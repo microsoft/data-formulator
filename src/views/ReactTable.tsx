@@ -18,7 +18,7 @@ export interface ColumnDef {
     label: string;
     minWidth?: number;
     align?: 'right';
-    source?: 'derived' | 'original' | 'custom' ;
+    source?: 'original' | 'custom' ;
     format?: (value: number) => string;
 }
 
@@ -65,10 +65,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
                             {columnDefs.map((column, i) => {
                                 let backgroundColor = "none";
                                 let borderBottomColor = theme.palette.primary.main;
-                                if (column.source == "derived") {
-                                    backgroundColor = alpha(theme.palette.derived.main, 0.05);
-                                    borderBottomColor = theme.palette.derived.main;
-                                } else if (column.source == "custom") {
+                                if (column.source == "custom") {
                                     backgroundColor = alpha(theme.palette.custom.main, 0.05);
                                     borderBottomColor = theme.palette.custom.main;
                                 } 
@@ -95,9 +92,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
                                         {columnDefs.map((column, j) => {
                                             const value = row[column.id];
                                             let backgroundColor = "none";
-                                            if (column.source == "derived") {
-                                                backgroundColor = alpha(theme.palette.derived.main, 0.05);
-                                            } else if (column.source == "custom") {
+                                            if (column.source == "custom") {
                                                 backgroundColor = alpha(theme.palette.custom.main, 0.05);
                                             } 
                                             return (

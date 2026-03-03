@@ -9,660 +9,631 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 import json
 import traceback
-from flask import request, send_from_directory, session, jsonify, Blueprint
+from flask import request, jsonify, Blueprint, Response
 import pandas as pd
-import random
-import string
 from pathlib import Path
-import uuid
+from werkzeug.utils import secure_filename
 
-from data_formulator.db_manager import db_manager
 from data_formulator.data_loader import DATA_LOADERS
+from data_formulator.auth import get_identity_id
+from data_formulator.datalake.workspace import Workspace
+from data_formulator.workspace_factory import get_workspace as _create_workspace
+from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name
+from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file
+from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata
 
 import re
-from typing import Tuple
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
 
 import os
-import tempfile
 
 tables_bp = Blueprint('tables', __name__, url_prefix='/api/tables')
 
+
+def _get_workspace():
+    """Get workspace for the current identity."""
+    return _create_workspace(get_identity_id())
+
+
+# Row-count threshold above which we use DuckDB for parquet tables
+# (avoids loading the entire file into memory via pandas).
+_LARGE_TABLE_THRESHOLD = 100_000
+
+
+def _should_use_duckdb(workspace, table_name: str) -> bool:
+    """Return True if the table is a large parquet file that benefits from DuckDB.
+
+    Small parquet tables are faster to handle with pandas (avoids DuckDB
+    connection overhead and repeated YAML reads).
+    """
+    meta = workspace.get_table_metadata(table_name)
+    if meta is None or meta.file_type != "parquet":
+        return False
+    row_count = meta.row_count or 0
+    return row_count > _LARGE_TABLE_THRESHOLD
+
+
+def _quote_duckdb(col: str) -> str:
+    """Quote identifier for DuckDB (double quotes, escape internal quotes)."""
+    return '"' + str(col).replace('"', '""') + '"'
+
+
+def _dedup_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove duplicate columns from a DataFrame, keeping the first occurrence."""
+    if df.columns.duplicated().any():
+        return df.loc[:, ~df.columns.duplicated()]
+    return df
+
+
+def _dedup_list(items: list) -> list:
+    """Remove duplicates from a list while preserving order."""
+    return list(dict.fromkeys(items))
+
+
+def _build_parquet_sample_sql(
+    columns: list[str],
+    aggregate_fields_and_functions: list,
+    select_fields: list,
+    method: str,
+    order_by_fields: list,
+    sample_size: int,
+) -> tuple[str, str]:
+    """
+    Build DuckDB SQL for sampling (and optional aggregation) over parquet.
+    Returns (main_sql, count_sql) where each contains {parquet} placeholder.
+    """
+    valid_agg = [(f, fn) for (f, fn) in aggregate_fields_and_functions if f is None or f in columns]
+    valid_select = _dedup_list([f for f in select_fields if f in columns])
+    valid_order = [f for f in order_by_fields if f in columns]
+
+    if valid_agg:
+        select_parts = []
+        for field, function in valid_agg:
+            fn = function.lower()
+            if field is None and fn == "count":
+                select_parts.append("COUNT(*) AS _count")
+            elif field in columns:
+                q = _quote_duckdb(field)
+                if fn == "count":
+                    select_parts.append(f"COUNT({q}) AS _count")
+                elif fn in ("avg", "average", "mean"):
+                    select_parts.append(f"AVG({q}) AS {_quote_duckdb(field + '_' + function)}")
+                elif fn == "sum":
+                    select_parts.append(f"SUM({q}) AS {_quote_duckdb(field + '_sum')}")
+                elif fn == "min":
+                    select_parts.append(f"MIN({q}) AS {_quote_duckdb(field + '_min')}")
+                elif fn == "max":
+                    select_parts.append(f"MAX({q}) AS {_quote_duckdb(field + '_max')}")
+        for f in valid_select:
+            select_parts.append(f"t.{_quote_duckdb(f)}")
+        group_cols = valid_select
+        group_by = f" GROUP BY {', '.join('t.' + _quote_duckdb(c) for c in group_cols)}" if group_cols else ""
+        inner = f"SELECT {', '.join(select_parts)} FROM {{parquet}} AS t{group_by}"
+        count_sql = f"SELECT COUNT(*) FROM ({inner}) AS sub"
+        if method == "random":
+            order_by = " ORDER BY RANDOM()"
+        elif method == "head" and valid_order:
+            order_by = " ORDER BY " + ", ".join(f"sub.{_quote_duckdb(c)} ASC" for c in valid_order)
+        elif method == "bottom" and valid_order:
+            order_by = " ORDER BY " + ", ".join(f"sub.{_quote_duckdb(c)} DESC" for c in valid_order)
+        else:
+            order_by = ""
+        main_sql = f"SELECT * FROM ({inner}) AS sub{order_by} LIMIT {sample_size}"
+        return main_sql, count_sql
+
+    count_sql = "SELECT COUNT(*) FROM {parquet} AS t"
+    if method == "random":
+        order_by = " ORDER BY RANDOM()"
+    elif method == "head" and valid_order:
+        order_by = " ORDER BY " + ", ".join(f"t.{_quote_duckdb(c)} ASC" for c in valid_order)
+    elif method == "bottom" and valid_order:
+        order_by = " ORDER BY " + ", ".join(f"t.{_quote_duckdb(c)} DESC" for c in valid_order)
+    else:
+        order_by = ""
+    if valid_select:
+        select_list = ", ".join(f"t.{_quote_duckdb(c)}" for c in valid_select)
+        main_sql = f"SELECT {select_list} FROM {{parquet}} AS t{order_by} LIMIT {sample_size}"
+    else:
+        main_sql = f"SELECT * FROM {{parquet}} AS t{order_by} LIMIT {sample_size}"
+    return main_sql, count_sql
+
+
+def _table_metadata_to_source_metadata(meta: DatalakeTableMetadata) -> dict | None:
+    """Convert workspace TableMetadata to API source_metadata dict (for refresh)."""
+    if meta.loader_type is None and meta.loader_params is None:
+        return None
+    return {
+        "table_name": meta.name,
+        "data_loader_type": meta.loader_type or "",
+        "data_loader_params": meta.loader_params or {},
+        "source_table_name": meta.source_table,
+        "source_query": meta.source_query,
+        "last_refreshed": meta.last_synced.isoformat() if meta.last_synced else None,
+        "content_hash": meta.content_hash,
+    }
+
+
+@tables_bp.route('/open-workspace', methods=['POST'])
+def open_workspace():
+    """Open the Data Formulator home directory in the system file manager."""
+    from flask import current_app
+    from data_formulator.datalake.workspace import get_data_formulator_home
+    import subprocess, platform
+
+    if current_app.config.get('CLI_ARGS', {}).get('disable_database', False):
+        return jsonify(status="error", message="Workspace access is disabled"), 403
+
+    try:
+        home_path = str(get_data_formulator_home())
+        # Ensure directory exists
+        Path(home_path).mkdir(parents=True, exist_ok=True)
+        system = platform.system()
+        if system == "Darwin":
+            subprocess.Popen(["open", home_path])
+        elif system == "Windows":
+            subprocess.Popen(["explorer", home_path])
+        else:
+            subprocess.Popen(["xdg-open", home_path])
+        return jsonify(status="ok", path=home_path)
+    except Exception as e:
+        logger.error(f"Failed to open workspace: {e}")
+        return jsonify(status="error", message=str(e)), 500
+
+
 @tables_bp.route('/list-tables', methods=['GET'])
 def list_tables():
-    """List all tables in the current session"""
+    """List all tables in the current workspace (datalake)."""
     try:
+        workspace = _get_workspace()
         result = []
-        with db_manager.connection(session['session_id']) as db:
-            table_metadata_list = db.execute("""
-                SELECT database_name, schema_name, table_name, schema_name==current_schema() as is_current_schema, 'table' as object_type 
-                FROM duckdb_tables() 
-                WHERE internal=False AND database_name == current_database()
-                UNION ALL 
-                SELECT database_name, schema_name, view_name as table_name, schema_name==current_schema() as is_current_schema, 'view' as object_type 
-                FROM duckdb_views()
-                WHERE view_name NOT LIKE 'duckdb_%' AND view_name NOT LIKE 'sqlite_%' AND view_name NOT LIKE 'pragma_%' AND database_name == current_database()
-            """).fetchall()
-        
-            
-            for table_metadata in table_metadata_list:
-                [database_name, schema_name, table_name, is_current_schema, object_type] = table_metadata
-                table_name = table_name if is_current_schema else '.'.join([database_name, schema_name, table_name])
-                
-                # Skip system databases and internal metadata tables
-                if database_name in ['system', 'temp']:
+        for table_name in workspace.list_tables():
+            try:
+                meta = workspace.get_table_metadata(table_name)
+                if meta is None:
                     continue
-                if table_name.startswith('_df_'):  # Internal Data Formulator metadata tables
-                    continue
-                
-                try:
-                    # Get column information
-                    columns = db.execute(f"DESCRIBE {table_name}").fetchall()
-                    # Get row count
-                    row_count = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-                    sample_rows = db.execute(f"SELECT * FROM {table_name} LIMIT 1000").fetchdf() if row_count > 0 else pd.DataFrame()
-                    
-                    # Check if this is a view or a table
+                columns = [{"name": c.name, "type": c.dtype} for c in (meta.columns or [])]
+                if not columns and meta.file_type == "parquet":
                     try:
-                        # Get both view existence and source in one query
-                        view_info = db.execute(f"SELECT view_name, sql FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone()
-                        view_source = view_info[1] if view_info else None
-                    except Exception as e:
-                        # If the query fails, assume it's a regular table
-                        view_source = None
-                    
-                    # Get source metadata if available (for refreshable tables)
-                    source_metadata = None
-                    try:
-                        source_metadata = get_table_metadata(db, table_name)
+                        schema_info = workspace.get_parquet_schema(table_name)
+                        columns = [{"name": c["name"], "type": c["type"]} for c in schema_info.get("columns", [])]
                     except Exception:
-                        pass  # Metadata table may not exist yet
-                    
-                    result.append({
-                        "name": table_name,
-                        "columns": [{"name": col[0], "type": col[1]} for col in columns],
-                        "row_count": row_count,
-                        "sample_rows": json.loads(sample_rows.to_json(orient='records', date_format='iso')),
-                        "view_source": view_source,
-                        "source_metadata": source_metadata
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
-                    continue
-        
-        return jsonify({
-            "status": "success",
-            "tables": result
-        })
+                        pass
+                row_count = meta.row_count
+                if row_count is None and meta.file_type == "parquet":
+                    try:
+                        schema_info = workspace.get_parquet_schema(table_name)
+                        row_count = schema_info.get("num_rows", 0) or 0
+                    except Exception:
+                        row_count = 0
+                if row_count is None:
+                    row_count = 0
+                sample_rows = []
+                if row_count > 0:
+                    try:
+                        if _should_use_duckdb(workspace, table_name):
+                            df = workspace.run_parquet_sql(table_name, "SELECT * FROM {parquet} AS t LIMIT 1000")
+                        else:
+                            df = workspace.read_data_as_df(table_name)
+                            df = df.head(1000)
+                        df = _dedup_dataframe_columns(df)
+                        sample_rows = json.loads(df.to_json(orient='records', date_format='iso'))
+                    except Exception:
+                        pass
+                source_metadata = _table_metadata_to_source_metadata(meta)
+                result.append({
+                    "name": table_name,
+                    "columns": columns,
+                    "row_count": row_count,
+                    "sample_rows": sample_rows,
+                    "view_source": None,
+                    "source_metadata": source_metadata,
+                })
+            except Exception as e:
+                logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
+                continue
+        return jsonify({"status": "success", "tables": result})
     except Exception as e:
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code
         
 
-def assemble_query(aggregate_fields_and_functions, group_fields, columns, table_name):
+def _apply_aggregation_and_sample(
+    df: pd.DataFrame,
+    aggregate_fields_and_functions: list,
+    select_fields: list,
+    method: str,
+    order_by_fields: list,
+    sample_size: int,
+) -> tuple[pd.DataFrame, int]:
     """
-    Assembles a SELECT query string based on binning, aggregation, and grouping specifications.
-    
-    Args:
-        bin_fields (list): Fields to be binned into ranges
-        aggregate_fields_and_functions (list): List of tuples (field, function) for aggregation
-        group_fields (list): Fields to group by
-        columns (list): All available column names
-    
-    Returns:
-        str: The assembled SELECT query projection part
+    Apply aggregation (optional), then sample with ordering.
+    Returns (sampled_df, total_row_count_after_aggregation).
     """
-    select_parts = []
-    output_column_names = []
+    columns = list(df.columns)
+    valid_agg = [
+        (f, fn) for (f, fn) in aggregate_fields_and_functions
+        if f is None or f in columns
+    ]
+    valid_select = _dedup_list([f for f in select_fields if f in columns])
+    valid_order = [f for f in order_by_fields if f in columns]
 
-    # Handle aggregate fields and functions
-    for field, function in aggregate_fields_and_functions:
-        if field is None:
-            # Handle count(*) case
-            if function.lower() == 'count':
-                select_parts.append('COUNT(*) as _count')
-                output_column_names.append('_count')
-        elif field in columns:
-            if function.lower() == 'count':
-                alias = f'_count'
-                select_parts.append(f'COUNT(*) as "{alias}"')
-                output_column_names.append(alias)
-            else:
-                # Sanitize function name and create alias
-                if function in ["avg", "average", "mean"]:
-                    aggregate_function = "AVG"
-                else:
-                    aggregate_function = function.upper()
-                
-                alias = f'{field}_{function}'
-                select_parts.append(f'{aggregate_function}("{field}") as "{alias}"')
-                output_column_names.append(alias)
+    if valid_agg:
+        group_cols = valid_select
+        agg_spec = {}
+        for field, function in valid_agg:
+            fn = function.lower()
+            if field is None and fn == "count":
+                agg_spec["_count"] = ("__size__", "size")
+            elif field in columns:
+                if fn == "count":
+                    agg_spec["_count"] = (field, "count")
+                elif fn in ("avg", "average", "mean"):
+                    agg_spec[f"{field}_{function}"] = (field, "mean")
+                elif fn == "sum":
+                    agg_spec[f"{field}_sum"] = (field, "sum")
+                elif fn == "min":
+                    agg_spec[f"{field}_min"] = (field, "min")
+                elif fn == "max":
+                    agg_spec[f"{field}_max"] = (field, "max")
+        if "_count" in agg_spec and agg_spec["_count"] == ("__size__", "size"):
+            df = df.assign(__size__=1)
+            agg_spec["_count"] = ("__size__", "count")
+        if group_cols:
+            df_agg = df.groupby(group_cols, dropna=False).agg(**{k: (c, f) for k, (c, f) in agg_spec.items()}).reset_index()
+        else:
+            df_agg = pd.DataFrame([{k: df[c].agg(f) for k, (c, f) in agg_spec.items()}])
+        total_row_count = len(df_agg)
+        work = df_agg
+    else:
+        total_row_count = len(df)
+        work = df[valid_select].copy() if valid_select else df.copy()
 
-    # Handle group fields
-    for field in group_fields:
-        if field in columns:
-            select_parts.append(f'"{field}"')
-            output_column_names.append(field)
-    # If no fields are specified, select all columns
-    if not select_parts:
-        select_parts = ["*"]
-        output_column_names = columns
+    if method == "random":
+        work = work.sample(n=min(sample_size, len(work)), random_state=None)
+    elif method == "head":
+        work = work.sort_values(by=valid_order, ascending=True).head(sample_size) if valid_order else work.head(sample_size)
+    elif method == "bottom":
+        work = work.sort_values(by=valid_order, ascending=False).head(sample_size) if valid_order else work.tail(sample_size).iloc[::-1].reset_index(drop=True)
+    else:
+        work = work.head(sample_size)
+    return work, total_row_count
 
-    from_clause = f"FROM {table_name}"
-    group_by_clause = f"GROUP BY {', '.join(group_fields)}" if len(group_fields) > 0 and len(aggregate_fields_and_functions) > 0 else ""
-
-    query = f"SELECT {', '.join(select_parts)} {from_clause} {group_by_clause}"
-    return query, output_column_names
 
 @tables_bp.route('/sample-table', methods=['POST'])
 def sample_table():
-    """Sample a table"""
+    """Sample a table from the workspace. Uses DuckDB for parquet (no full load)."""
     try:
         data = request.get_json()
         table_id = data.get('table')
         sample_size = data.get('size', 1000)
-        aggregate_fields_and_functions = data.get('aggregate_fields_and_functions', []) # each element is a tuple (field, function)
-        select_fields = data.get('select_fields', []) # if empty, we want to include all fields
-        method = data.get('method', 'random') # one of 'random', 'head', 'bottom'
+        aggregate_fields_and_functions = data.get('aggregate_fields_and_functions', [])
+        select_fields = data.get('select_fields', [])
+        method = data.get('method', 'random')
         order_by_fields = data.get('order_by_fields', [])
 
-        
-        total_row_count = 0
-        # Validate field names against table columns to prevent SQL injection
-        with db_manager.connection(session['session_id']) as db:
-            # Get valid column names
-            columns = [col[0] for col in db.execute(f"DESCRIBE {table_id}").fetchall()]
-
-            
-            # Filter order_by_fields to only include valid column names
-            valid_order_by_fields = [field for field in order_by_fields if field in columns]
-            valid_aggregate_fields_and_functions = [
-                field_and_function for field_and_function in aggregate_fields_and_functions 
-                if field_and_function[0] is None or field_and_function[0] in columns
-            ]
-            valid_select_fields = [field for field in select_fields if field in columns]
-
-            query, output_column_names = assemble_query(valid_aggregate_fields_and_functions, valid_select_fields, columns, table_id)
-
-
-            # Modify the original query to include the count:
-            count_query = f"SELECT *, COUNT(*) OVER () as total_count FROM ({query}) as subq LIMIT 1"
-            result = db.execute(count_query).fetchone()
-            total_row_count = result[-1] if result else 0
-
-
-            # Add ordering and limit to the main query
-            if method == 'random':
-                query += f" ORDER BY RANDOM() LIMIT {sample_size}"
-            elif method == 'head':
-                if valid_order_by_fields:
-                    # Build ORDER BY clause with validated fields
-                    order_by_clause = ", ".join([f'"{field}"' for field in valid_order_by_fields])
-                    query += f" ORDER BY {order_by_clause} LIMIT {sample_size}"
-                else:
-                    query += f" LIMIT {sample_size}"
-            elif method == 'bottom':
-                if valid_order_by_fields:
-                    # Build ORDER BY clause with validated fields in descending order
-                    order_by_clause = ", ".join([f'"{field}" DESC' for field in valid_order_by_fields])
-                    query += f" ORDER BY {order_by_clause} LIMIT {sample_size}"
-                else:
-                    query += f" ORDER BY ROWID DESC LIMIT {sample_size}"
-
-
-            result = db.execute(query).fetchdf()
-
-        
+        workspace = _get_workspace()
+        if _should_use_duckdb(workspace, table_id):
+            schema_info = workspace.get_parquet_schema(table_id)
+            columns = [c["name"] for c in schema_info.get("columns", [])]
+            main_sql, count_sql = _build_parquet_sample_sql(
+                columns,
+                aggregate_fields_and_functions,
+                select_fields,
+                method,
+                order_by_fields,
+                sample_size,
+            )
+            total_row_count = int(workspace.run_parquet_sql(table_id, count_sql).iloc[0, 0])
+            result_df = workspace.run_parquet_sql(table_id, main_sql)
+        else:
+            df = workspace.read_data_as_df(table_id)
+            result_df, total_row_count = _apply_aggregation_and_sample(
+                df,
+                aggregate_fields_and_functions,
+                select_fields,
+                method,
+                order_by_fields,
+                sample_size,
+            )
+        result_df = _dedup_dataframe_columns(result_df)
+        rows_json = json.loads(result_df.to_json(orient='records', date_format='iso'))
         return jsonify({
             "status": "success",
-            "rows": json.loads(result.to_json(orient='records', date_format='iso')),
-            "total_row_count": total_row_count
+            "rows": rows_json,
+            "total_row_count": total_row_count,
         })
     except Exception as e:
         logger.error(f"Error sampling table: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
 @tables_bp.route('/get-table', methods=['GET'])
 def get_table_data():
-    """Get data from a specific table"""
+    """Get data from a specific table in the workspace. Uses DuckDB for parquet (LIMIT/OFFSET only)."""
     try:
-        with db_manager.connection(session['session_id']) as db:
+        table_name = request.args.get('table_name')
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 100))
+        offset = (page - 1) * page_size
 
-            table_name = request.args.get('table_name')
-            # Get pagination parameters
-            page = int(request.args.get('page', 1))
-            page_size = int(request.args.get('page_size', 100))
-            offset = (page - 1) * page_size
-            
-            if not table_name:
-                return jsonify({
-                    "status": "error",
-                    "message": "Table name is required"
-                }), 400
-            
-            # Get total count
-            total_rows = db.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-            
-            # Get paginated data
-            result = db.execute(
-                f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}"
-            ).fetchall()
-            
-            # Get column names
-            columns = [col[0] for col in db.execute(f"DESCRIBE {table_name}").fetchall()]
-            
-            # Convert to list of dictionaries
-            rows = [dict(zip(columns, row)) for row in result]
-        
-            return jsonify({
-                "status": "success",
-                "table_name": table_name,
-                "columns": columns,
-                "rows": rows,
-                "total_rows": total_rows,
-                "page": page,
-                "page_size": page_size
-            })
-    
+        if not table_name:
+            return jsonify({"status": "error", "message": "Table name is required"}), 400
+
+        workspace = _get_workspace()
+        if _should_use_duckdb(workspace, table_name):
+            count_df = workspace.run_parquet_sql(table_name, "SELECT COUNT(*) FROM {parquet} AS t")
+            total_rows = int(count_df.iloc[0, 0])
+            page_df = workspace.run_parquet_sql(
+                table_name,
+                f"SELECT * FROM {{parquet}} AS t LIMIT {page_size} OFFSET {offset}",
+            )
+            page_df = _dedup_dataframe_columns(page_df)
+            columns = list(page_df.columns)
+            rows = json.loads(page_df.to_json(orient='records', date_format='iso'))
+        else:
+            df = workspace.read_data_as_df(table_name)
+            df = _dedup_dataframe_columns(df)
+            total_rows = len(df)
+            columns = list(df.columns)
+            page_df = df.iloc[offset : offset + page_size]
+            rows = json.loads(page_df.to_json(orient='records', date_format='iso'))
+
+        return jsonify({
+            "status": "success",
+            "table_name": table_name,
+            "columns": columns,
+            "rows": rows,
+            "total_rows": total_rows,
+            "page": page,
+            "page_size": page_size,
+        })
     except Exception as e:
         logger.error(f"Error getting table data: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
 @tables_bp.route('/create-table', methods=['POST'])
 def create_table():
-    """Create a new table from uploaded data"""
+    """Create a new table from uploaded file or raw data in the workspace."""
     try:
-        if 'file' not in request.files and 'raw_data' not in request.form:
+        has_file = 'file' in request.files
+        has_raw_data = 'raw_data' in request.files or 'raw_data' in request.form
+        if not has_file and not has_raw_data:
             return jsonify({"status": "error", "message": "No file or raw data provided"}), 400
-        
+
         table_name = request.form.get('table_name')
         if not table_name:
             return jsonify({"status": "error", "message": "No table name provided"}), 400
-        
-        df = None
-        if 'file' in request.files:
+
+        workspace = _get_workspace()
+        base_name = parquet_sanitize_table_name(table_name)
+        sanitized_table_name = base_name
+        counter = 1
+        while sanitized_table_name in workspace.list_tables():
+            sanitized_table_name = f"{base_name}_{counter}"
+            counter += 1
+
+        if has_file:
             file = request.files['file']
-            # Read file based on extension
-            if file.filename.endswith('.csv'):
-                df = pd.read_csv(file)
-            elif file.filename.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(file)
-            elif file.filename.endswith('.json'):
-                df = pd.read_json(file)
-            else:
+            if not file.filename or not is_supported_file(file.filename):
                 return jsonify({"status": "error", "message": "Unsupported file format"}), 400
+            safe_name = secure_filename(file.filename)
+            if not safe_name:
+                return jsonify({"status": "error", "message": "Invalid filename"}), 400
+            meta = save_uploaded_file(
+                workspace,
+                file.stream,
+                safe_name,
+                table_name=sanitized_table_name,
+                overwrite=False,
+            )
+            sanitized_table_name = meta.name
+            row_count = meta.row_count
+            columns = [c.name for c in (meta.columns or [])]
+            if row_count is None or not columns:
+                df = workspace.read_data_as_df(sanitized_table_name)
+                row_count = len(df)
+                columns = list(df.columns)
         else:
-            raw_data = request.form.get('raw_data')
+            # raw_data can come as a file upload (Blob) or as a form field
+            if 'raw_data' in request.files:
+                raw_data = request.files['raw_data'].read().decode('utf-8')
+            else:
+                raw_data = request.form.get('raw_data')
             try:
                 df = pd.DataFrame(json.loads(raw_data))
             except Exception as e:
-                return jsonify({"status": "error", "message": f"Invalid JSON data: {str(e)}, it must be in the format of a list of dictionaries"}), 400
+                return jsonify({"status": "error", "message": f"Invalid JSON data: {str(e)}, it must be a list of dictionaries"}), 400
+            workspace.write_parquet(df, sanitized_table_name)
+            row_count = len(df)
+            columns = list(df.columns)
 
-        if df is None:
-            return jsonify({"status": "error", "message": "No data provided"}), 400
-
-        sanitized_table_name = sanitize_table_name(table_name)
-            
-        with db_manager.connection(session['session_id']) as db:
-            # Check if table exists and generate unique name if needed
-            base_name = sanitized_table_name
-            counter = 1
-            while True:
-                # Check if table exists
-                exists = db.execute(f"SELECT COUNT(*) FROM duckdb_tables() WHERE table_name = '{sanitized_table_name}'").fetchone()[0] > 0
-                if not exists:
-                    break
-                # If exists, append counter to base name
-                sanitized_table_name = f"{base_name}_{counter}"
-                counter += 1
-
-            # Create table
-            db.register('df_temp', df)
-            db.execute(f"CREATE TABLE {sanitized_table_name} AS SELECT * FROM df_temp")
-            db.execute("DROP VIEW df_temp")  # Drop the temporary view after creating the table
-            
-            return jsonify({
-                "status": "success",
-                "table_name": sanitized_table_name,
-                "row_count": len(df),
-                "columns": list(df.columns),
-                "original_name": base_name,  # Include the original name in response
-                "is_renamed": base_name != sanitized_table_name  # Flag indicating if name was changed
-            })
-    
+        return jsonify({
+            "status": "success",
+            "table_name": sanitized_table_name,
+            "row_count": row_count,
+            "columns": columns,
+            "original_name": base_name,
+            "is_renamed": base_name != sanitized_table_name,
+        })
     except Exception as e:
         logger.error(f"Error creating table: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
+
+@tables_bp.route('/sync-table-data', methods=['POST'])
+def sync_table_data():
+    """Update an existing workspace table's parquet with new row data.
+    
+    Used when the frontend has fresher data than the workspace (e.g., from stream refresh)
+    and needs to sync it so sandbox code reads the latest data.
+    """
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        rows = data.get('rows')
+
+        if not table_name:
+            return jsonify({"status": "error", "message": "table_name is required"}), 400
+        if rows is None:
+            return jsonify({"status": "error", "message": "rows is required"}), 400
+
+        workspace = _get_workspace()
+
+        if table_name not in workspace.list_tables():
+            return jsonify({"status": "error", "message": f"Table '{table_name}' not found in workspace"}), 404
+
+        df = pd.DataFrame(rows) if rows else pd.DataFrame()
+        workspace.write_parquet(df, table_name)
+
+        return jsonify({
+            "status": "success",
+            "table_name": table_name,
+            "row_count": len(df),
+        })
+    except Exception as e:
+        logger.error(f"Error syncing table data: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
 
 @tables_bp.route('/delete-table', methods=['POST'])
 def drop_table():
-    """Drop a table or view"""
+    """Drop a table from the workspace."""
     try:
         data = request.get_json()
         table_name = data.get('table_name')
-        
         if not table_name:
             return jsonify({"status": "error", "message": "No table name provided"}), 400
-            
-        with db_manager.connection(session['session_id']) as db:
-            # First check if it exists as a view
-            view_exists = db.execute(f"SELECT view_name FROM duckdb_views() WHERE view_name = '{table_name}'").fetchone() is not None
-            if view_exists:
-                db.execute(f"DROP VIEW IF EXISTS {table_name}")
-            
-            # Then check if it exists as a table
-            table_exists = db.execute(f"SELECT table_name FROM duckdb_tables() WHERE table_name = '{table_name}'").fetchone() is not None
-            if table_exists:
-                db.execute(f"DROP TABLE IF EXISTS {table_name}")
 
-            if not view_exists and not table_exists:
-                return jsonify({
-                    "status": "error",
-                    "message": f"Table/view '{table_name}' does not exist"
-                }), 404
-        
-            return jsonify({
-                "status": "success",
-                "message": f"Table/view {table_name} dropped"
-            })
-    
+        workspace = _get_workspace()
+        if not workspace.delete_table(table_name):
+            return jsonify({"status": "error", "message": f"Table '{table_name}' does not exist"}), 404
+        return jsonify({"status": "success", "message": f"Table {table_name} dropped"})
     except Exception as e:
         logger.error(f"Error dropping table: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
 
 @tables_bp.route('/upload-db-file', methods=['POST'])
 def upload_db_file():
-    """Upload a db file"""
-    try:
-        if 'file' not in request.files:
-            return jsonify({"status": "error", "message": "No file provided"}), 400
-        
-        file = request.files['file']
-        if not file.filename.endswith('.db'):
-            return jsonify({"status": "error", "message": "Invalid file format. Only .db files are supported"}), 400
-
-        # Get the session ID
-        if 'session_id' not in session:
-            return jsonify({"status": "error", "message": "No session ID found"}), 400
-        
-        session_id = session['session_id']
-        
-        # Create temp directory if it doesn't exist
-        temp_dir = os.path.join(tempfile.gettempdir())
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Save the file temporarily to verify it
-        temp_db_path = os.path.join(temp_dir, f"temp_{session_id}.db")
-        file.save(temp_db_path)
-        
-        # Verify if it's a valid DuckDB file
-        try:
-            import duckdb
-            # Try to connect to the database
-            conn = duckdb.connect(temp_db_path, read_only=True)
-            # Try a simple query to verify it's a valid database
-            conn.execute("SELECT 1").fetchall()
-            conn.close()
-            
-            # If we get here, the file is valid - move it to final location
-            db_file_path = os.path.join(temp_dir, f"df_{session_id}.db")
-            os.replace(temp_db_path, db_file_path)
-            
-            # Update the db_manager's file mapping
-            db_manager._db_files[session_id] = db_file_path
-            
-        except Exception as db_error:
-            # Clean up temp file
-            logger.error(f"Error uploading db file: {str(db_error)}")
-            if os.path.exists(temp_db_path):
-                os.remove(temp_db_path)
-            return jsonify({
-                "status": "error",
-                "message": f"Invalid DuckDB database file."
-            }), 400
-        
-        return jsonify({
-            "status": "success",
-            "message": "Database file uploaded successfully",
-            "session_id": session_id
-        })
-        
-    except Exception as e:
-        logger.error(f"Error uploading db file: {str(e)}")
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error", 
-            "message": safe_msg
-        }), status_code
+    """No longer used: storage is workspace/datalake, not DuckDB. Kept for API compatibility."""
+    return jsonify({
+        "status": "error",
+        "message": "Database file upload is no longer supported. Data is stored in the workspace; use create-table with a file or data loaders to add data.",
+    }), 410
 
 
 @tables_bp.route('/download-db-file', methods=['GET'])
 def download_db_file():
-    """Download the db file for a session"""
-    try:
-        # Check if session exists
-        if 'session_id' not in session:
-            return jsonify({
-                "status": "error",
-                "message": "No session ID found"
-            }), 400
-        
-        session_id = session['session_id']
-        
-        # Get the database file path from db_manager
-        if session_id not in db_manager._db_files:
-            return jsonify({
-                "status": "error",
-                "message": "No database file found for this session"
-            }), 404
-            
-        db_file_path = db_manager._db_files[session_id]
-        
-        # Check if file exists
-        if not os.path.exists(db_file_path):
-            return jsonify({
-                "status": "error",
-                "message": "Database file not found"
-            }), 404
-            
-        # Generate a filename for download
-        download_name = f"data_formulator_{session_id}.db"
-        
-        # Return the file as an attachment
-        return send_from_directory(
-            os.path.dirname(db_file_path),
-            os.path.basename(db_file_path),
-            as_attachment=True,
-            download_name=download_name,
-            mimetype='application/x-sqlite3'
-        )
-        
-    except Exception as e:
-        logger.error(f"Error downloading db file: {str(e)}")
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
+    """No longer used: storage is workspace/datalake. Kept for API compatibility."""
+    return jsonify({
+        "status": "error",
+        "message": "Database file download is no longer supported. Data lives in the workspace.",
+    }), 410
 
 
 @tables_bp.route('/reset-db-file', methods=['POST'])
 def reset_db_file():
-    """Reset the db file for a session"""
+    """Reset the workspace for the current session (removes all tables and files)."""
     try:
-        if 'session_id' not in session:
-            return jsonify({
-                "status": "error",
-                "message": "No session ID found"
-            }), 400
-            
-        session_id = session['session_id']
-
-        logger.info(f"session_id: {session_id}")
-        
-        # First check if there's a reference in db_manager
-        if session_id in db_manager._db_files:
-            db_file_path = db_manager._db_files[session_id]
-            
-            # Remove the file if it exists
-            if db_file_path and os.path.exists(db_file_path):
-                os.remove(db_file_path)
-            
-            # Clear the reference
-            db_manager._db_files[session_id] = None
-            
-        # Also check for any temporary files
-        temp_db_path = os.path.join(tempfile.gettempdir(), f"temp_{session_id}.db")
-        if os.path.exists(temp_db_path):
-            os.remove(temp_db_path)
-            
-        # Check for the main db file
-        main_db_path = os.path.join(tempfile.gettempdir(), f"df_{session_id}.db")
-        if os.path.exists(main_db_path):
-            os.remove(main_db_path)
-
-        return jsonify({
-            "status": "success",
-            "message": "Database file reset successfully"
-        })
-
+        workspace = _get_workspace()
+        workspace.cleanup()
+        return jsonify({"status": "success", "message": "Workspace reset successfully"})
     except Exception as e:
-        logger.error(f"Error resetting db file: {str(e)}")
+        logger.error(f"Error resetting workspace: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
-# Example of a more complex query endpoint
+def _is_numeric_duckdb_type(col_type: str) -> bool:
+    """Return True if DuckDB/parquet type is numeric for min/max/avg."""
+    t = (col_type or "").upper()
+    return any(
+        t.startswith(k) for k in ("INT", "BIGINT", "SMALLINT", "TINYINT", "DOUBLE", "FLOAT", "REAL", "DECIMAL", "NUMERIC")
+    )
+
+
 @tables_bp.route('/analyze', methods=['POST'])
 def analyze_table():
-    """Get basic statistics about a table"""
+    """Get basic statistics about a table in the workspace. Uses DuckDB for parquet (no full load)."""
     try:
         data = request.get_json()
         table_name = data.get('table_name')
-        
         if not table_name:
             return jsonify({"status": "error", "message": "No table name provided"}), 400
-        
-        with db_manager.connection(session['session_id']) as db:
-        
-            # Get column information
-            columns = db.execute(f"DESCRIBE {table_name}").fetchall()
-            
+
+        workspace = _get_workspace()
+        if _should_use_duckdb(workspace, table_name):
+            schema_info = workspace.get_parquet_schema(table_name)
+            col_infos = schema_info.get("columns", [])
             stats = []
-            for col in columns:
-                col_name = col[0]
-                col_type = col[1]
-                
-                # Properly quote column names to avoid SQL keywords issues
-                quoted_col_name = f'"{col_name}"'
-                
-                # Basic stats query
-                stats_query = f"""
-                SELECT 
-                    COUNT(*) as count,
-                    COUNT(DISTINCT {quoted_col_name}) as unique_count,
-                    COUNT(*) - COUNT({quoted_col_name}) as null_count
-                FROM {table_name}
-                """
-                
-                # Add numeric stats if applicable
-                if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
-                    stats_query = f"""
-                    SELECT 
-                        COUNT(*) as count,
-                        COUNT(DISTINCT {quoted_col_name}) as unique_count,
-                        COUNT(*) - COUNT({quoted_col_name}) as null_count,
-                        MIN({quoted_col_name}) as min_value,
-                        MAX({quoted_col_name}) as max_value,
-                        AVG({quoted_col_name}) as avg_value
-                    FROM {table_name}
-                    """
-                
-                col_stats = db.execute(stats_query).fetchone()
-                
-                # Create a dictionary with appropriate keys based on column type
-                if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
-                    stats_dict = dict(zip(
-                        ["count", "unique_count", "null_count", "min", "max", "avg"],
-                        col_stats
-                    ))
+            for col_info in col_infos:
+                col_name = col_info["name"]
+                col_type = col_info.get("type", "")
+                q = _quote_duckdb(col_name)
+                if _is_numeric_duckdb_type(col_type):
+                    sql = (
+                        f"SELECT COUNT(*) AS count, COUNT(DISTINCT t.{q}) AS unique_count, "
+                        f"COUNT(*) - COUNT(t.{q}) AS null_count, "
+                        f"MIN(t.{q}) AS min_val, MAX(t.{q}) AS max_val, AVG(t.{q}) AS avg_val "
+                        f"FROM {{parquet}} AS t"
+                    )
+                    df = workspace.run_parquet_sql(table_name, sql)
+                    row = df.iloc[0]
+                    stats_dict = {
+                        "count": int(row["count"]),
+                        "unique_count": int(row["unique_count"]),
+                        "null_count": int(row["null_count"]),
+                        "min": float(row["min_val"]) if row["min_val"] is not None else None,
+                        "max": float(row["max_val"]) if row["max_val"] is not None else None,
+                        "avg": float(row["avg_val"]) if row["avg_val"] is not None else None,
+                    }
                 else:
-                    stats_dict = dict(zip(
-                        ["count", "unique_count", "null_count"],
-                        col_stats
-                    ))
-                
-                stats.append({
-                    "column": col_name,
-                    "type": col_type,
-                    "statistics": stats_dict
-                })
-        
-        return jsonify({
-            "status": "success",
-            "table_name": table_name,
-            "statistics": stats
-        })
-    
+                    sql = (
+                        f"SELECT COUNT(*) AS count, COUNT(DISTINCT t.{q}) AS unique_count, "
+                        f"COUNT(*) - COUNT(t.{q}) AS null_count FROM {{parquet}} AS t"
+                    )
+                    df = workspace.run_parquet_sql(table_name, sql)
+                    row = df.iloc[0]
+                    stats_dict = {
+                        "count": int(row["count"]),
+                        "unique_count": int(row["unique_count"]),
+                        "null_count": int(row["null_count"]),
+                    }
+                stats.append({"column": col_name, "type": col_type, "statistics": stats_dict})
+        else:
+            df = workspace.read_data_as_df(table_name)
+            stats = []
+            for col_name in df.columns:
+                s = df[col_name]
+                col_type = str(s.dtype)
+                stats_dict = {
+                    "count": int(s.count()),
+                    "unique_count": int(s.nunique()),
+                    "null_count": int(s.isna().sum()),
+                }
+                if pd.api.types.is_numeric_dtype(s):
+                    stats_dict["min"] = float(s.min()) if s.notna().any() else None
+                    stats_dict["max"] = float(s.max()) if s.notna().any() else None
+                    stats_dict["avg"] = float(s.mean()) if s.notna().any() else None
+                stats.append({"column": col_name, "type": col_type, "statistics": stats_dict})
+
+        return jsonify({"status": "success", "table_name": table_name, "statistics": stats})
     except Exception as e:
         logger.error(f"Error analyzing table: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error",
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code
+
 
 def sanitize_table_name(table_name: str) -> str:
-    """
-    Sanitize a table name to be a valid DuckDB table name.
-    """
-    # Sanitize table name:
-        # 1. Convert to lowercase
-        # 2. Replace hyphens with underscores
-        # 3. Replace spaces with underscores
-        # 4. Remove any other special characters
-    sanitized_table_name = table_name.lower()
-    sanitized_table_name = sanitized_table_name.replace('-', '_')
-    sanitized_table_name = sanitized_table_name.replace(' ', '_')
-    sanitized_table_name = ''.join(c for c in sanitized_table_name if c.isalnum() or c == '_')
-    
-    # Ensure table name starts with a letter
-    if not sanitized_table_name or not sanitized_table_name[0].isalpha():
-        sanitized_table_name = 'table_' + sanitized_table_name
-        
-    # Verify we have a valid table name after sanitization
-    if not sanitized_table_name:
-        return f'table_{uuid.uuid4()}'
-    return sanitized_table_name
+    """Sanitize a table name for use in the workspace."""
+    return parquet_sanitize_table_name(table_name)
 
-def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
+def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
     """
     Sanitize error messages before sending to client.
     Returns a tuple of (sanitized_message, status_code)
@@ -687,7 +658,7 @@ def sanitize_db_error_message(error: Exception) -> Tuple[str, int]:
 
         # Data loader errors
         r"Entity ID": (error_msg, 500),
-        r"session_id": ("session_id not found, please refresh the page", 500),
+        r"identity": ("Identity not found, please refresh the page", 500),
     }
     
     # Check if error matches any safe pattern
@@ -727,246 +698,70 @@ def data_loader_list_data_loaders():
 
 @tables_bp.route('/data-loader/list-tables', methods=['POST'])
 def data_loader_list_tables():
-    """List tables from a data loader"""
-
+    """List tables from a data loader (no workspace needed)."""
     try:
         data = request.get_json()
         data_loader_type = data.get('data_loader_type')
         data_loader_params = data.get('data_loader_params')
-        table_filter = data.get('table_filter', None)  # New filter parameter
+        table_filter = data.get('table_filter', None)
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
-            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            
-            # Pass table_filter to list_tables if the data loader supports it
-            if hasattr(data_loader, 'list_tables') and 'table_filter' in data_loader.list_tables.__code__.co_varnames:
-                tables = data_loader.list_tables(table_filter=table_filter)
-            else:
-                tables = data_loader.list_tables()
+        data_loader = DATA_LOADERS[data_loader_type](data_loader_params)
+        if hasattr(data_loader, 'list_tables') and 'table_filter' in data_loader.list_tables.__code__.co_varnames:
+            tables = data_loader.list_tables(table_filter=table_filter)
+        else:
+            tables = data_loader.list_tables()
 
-            return jsonify({
-                "status": "success",
-                "tables": tables
-            })
-
+        return jsonify({"status": "success", "tables": tables})
     except Exception as e:
         logger.error(f"Error listing tables from data loader: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error", 
-            "message": safe_msg
-        }), status_code
-
-
-def ensure_table_metadata_table(db_conn):
-    """
-    Ensure the _df_table_source_metadata table exists for storing table source information.
-    This stores connection info so backend can refresh tables - frontend manages timing/toggle.
-    """
-    db_conn.execute("""
-        CREATE TABLE IF NOT EXISTS _df_table_source_metadata (
-            table_name VARCHAR PRIMARY KEY,
-            data_loader_type VARCHAR,
-            data_loader_params JSON,
-            source_table_name VARCHAR,
-            source_query VARCHAR,
-            last_refreshed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            content_hash VARCHAR
-        )
-    """)
-    
-    # Add content_hash column if it doesn't exist (for existing databases)
-    try:
-        db_conn.execute("""
-            ALTER TABLE _df_table_source_metadata ADD COLUMN content_hash VARCHAR
-        """)
-    except Exception:
-        # Column already exists
-        pass
-
-
-def compute_table_content_hash(db_conn, table_name: str) -> str:
-    """
-    Compute a content hash for a table using DuckDB's built-in hash function.
-    Uses a sampling strategy for efficiency with large tables:
-    - Row count
-    - Column names
-    - First 50 rows, last 50 rows, and 50 sampled rows from middle
-    """
-    import hashlib
-    
-    # Get row count
-    row_count = db_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-    
-    # Get column names
-    columns = db_conn.execute(f"DESCRIBE {table_name}").fetchall()
-    column_names = [col[0] for col in columns]
-    
-    # Build hash components
-    hash_parts = [
-        f"count:{row_count}",
-        f"cols:{','.join(column_names)}"
-    ]
-    
-    if row_count > 0:
-        # Sample rows for hashing
-        # First 50 rows
-        first_rows = db_conn.execute(f"""
-            SELECT * FROM {table_name} LIMIT 50
-        """).fetchall()
-        
-        # Last 50 rows (using row number)
-        last_rows = db_conn.execute(f"""
-            SELECT * FROM (
-                SELECT *, ROW_NUMBER() OVER () as _rn FROM {table_name}
-            ) WHERE _rn > {max(0, row_count - 50)}
-        """).fetchall()
-        
-        # Middle sample (every Nth row to get ~50 rows)
-        if row_count > 100:
-            step = max(1, (row_count - 100) // 50)
-            middle_rows = db_conn.execute(f"""
-                SELECT * FROM (
-                    SELECT *, ROW_NUMBER() OVER () as _rn FROM {table_name}
-                ) WHERE _rn > 50 AND _rn <= {row_count - 50} AND (_rn - 50) % {step} = 0
-                LIMIT 50
-            """).fetchall()
-        else:
-            middle_rows = []
-        
-        # Convert rows to strings for hashing
-        all_sample_rows = first_rows + middle_rows + last_rows
-        row_strs = [str(row) for row in all_sample_rows]
-        hash_parts.append(f"rows:{';'.join(row_strs)}")
-    
-    # Compute hash
-    content_str = '|'.join(hash_parts)
-    return hashlib.md5(content_str.encode()).hexdigest()
-
-
-def save_table_metadata(db_conn, table_name: str, data_loader_type: str, data_loader_params: dict, 
-                        source_table_name: str = None, source_query: str = None, content_hash: str = None):
-    """Save or update table source metadata"""
-    ensure_table_metadata_table(db_conn)
-    
-    # Remove sensitive fields from params before storing
-    safe_params = {k: v for k, v in data_loader_params.items() if k not in ['password', 'api_key', 'secret']}
-    
-    # Compute content hash if not provided
-    if content_hash is None:
-        try:
-            content_hash = compute_table_content_hash(db_conn, table_name)
-        except Exception as e:
-            logger.warning(f"Failed to compute content hash for {table_name}: {e}")
-            content_hash = None
-    
-    db_conn.execute("""
-        INSERT OR REPLACE INTO _df_table_source_metadata 
-        (table_name, data_loader_type, data_loader_params, source_table_name, source_query, last_refreshed, content_hash)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
-    """, [table_name, data_loader_type, json.dumps(safe_params), source_table_name, source_query, content_hash])
-
-
-def get_table_metadata(db_conn, table_name: str) -> dict:
-    """Get metadata for a specific table (connection info for refresh)"""
-    ensure_table_metadata_table(db_conn)
-    
-    result = db_conn.execute("""
-        SELECT table_name, data_loader_type, data_loader_params, source_table_name, source_query, last_refreshed, content_hash
-        FROM _df_table_source_metadata 
-        WHERE table_name = ?
-    """, [table_name]).fetchone()
-    
-    if result:
-        return {
-            "table_name": result[0],
-            "data_loader_type": result[1],
-            "data_loader_params": json.loads(result[2]) if result[2] else {},
-            "source_table_name": result[3],
-            "source_query": result[4],
-            "last_refreshed": str(result[5]) if result[5] else None,
-            "content_hash": result[6]
-        }
-    return None
-
-
-def get_all_table_metadata(db_conn) -> list:
-    """Get metadata for all tables"""
-    ensure_table_metadata_table(db_conn)
-    
-    results = db_conn.execute("""
-        SELECT table_name, data_loader_type, data_loader_params, source_table_name, source_query, last_refreshed, content_hash
-        FROM _df_table_source_metadata
-    """).fetchall()
-    
-    return [{
-        "table_name": r[0],
-        "data_loader_type": r[1],
-        "data_loader_params": json.loads(r[2]) if r[2] else {},
-        "source_table_name": r[3],
-        "source_query": r[4],
-        "last_refreshed": str(r[5]) if r[5] else None,
-        "content_hash": r[6]
-    } for r in results]
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
 
 @tables_bp.route('/data-loader/ingest-data', methods=['POST'])
 def data_loader_ingest_data():
-    """Ingest data from a data loader"""
-
+    """Ingest data from a data loader into the workspace as parquet."""
     try:
         data = request.get_json()
         data_loader_type = data.get('data_loader_type')
         data_loader_params = data.get('data_loader_params')
         table_name = data.get('table_name')
-        import_options = data.get('import_options', {})
-        
-        # Extract import options
-        row_limit = import_options.get('row_limit', 1000000) if import_options else 1000000
-        sort_columns = import_options.get('sort_columns', None) if import_options else None
-        sort_order = import_options.get('sort_order', 'asc') if import_options else 'asc'
+        import_options = data.get('import_options', {}) or {}
+        row_limit = import_options.get('row_limit', 1000000)
+        sort_columns = import_options.get('sort_columns')
+        sort_order = import_options.get('sort_order', 'asc')
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
-            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            data_loader.ingest_data(table_name, size=row_limit, sort_columns=sort_columns, sort_order=sort_order)
-            
-            # Get the actual table name that was created (may be sanitized)
-            sanitized_name = table_name.split('.')[-1]  # Base name
-            
-            # Store metadata for refresh capability (include import options for future refresh)
-            save_table_metadata(
-                duck_db_conn, 
-                sanitized_name, 
-                data_loader_type, 
-                data_loader_params, 
-                source_table_name=table_name
-            )
-
-            return jsonify({
-                "status": "success",
-                "message": "Successfully ingested data from data loader",
-                "table_name": sanitized_name
-            })
-
+        workspace = _get_workspace()
+        data_loader = DATA_LOADERS[data_loader_type](data_loader_params)
+        safe_name = parquet_sanitize_table_name(table_name.split('.')[-1] if '.' in table_name else table_name)
+        meta = data_loader.ingest_to_workspace(
+            workspace,
+            safe_name,
+            source_table=table_name,
+            size=row_limit,
+            sort_columns=sort_columns,
+            sort_order=sort_order,
+        )
+        return jsonify({
+            "status": "success",
+            "message": "Successfully ingested data from data loader",
+            "table_name": meta.name,
+        })
     except Exception as e:
         logger.error(f"Error ingesting data from data loader: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error", 
-            "message": safe_msg
-        }), status_code
-    
+        return jsonify({"status": "error", "message": safe_msg}), status_code
+
 
 @tables_bp.route('/data-loader/view-query-sample', methods=['POST'])
 def data_loader_view_query_sample():
-    """View a sample of data from a query"""
-
+    """View a sample of data from a query (fetches from external source, no workspace)."""
     try:
         data = request.get_json()
         data_loader_type = data.get('data_loader_type')
@@ -975,203 +770,171 @@ def data_loader_view_query_sample():
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
-        
-        with db_manager.connection(session['session_id']) as duck_db_conn:
-            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            sample = data_loader.view_query_sample(query)
 
+        data_loader = DATA_LOADERS[data_loader_type](data_loader_params)
+        if hasattr(data_loader, 'view_query_sample') and callable(getattr(data_loader, 'view_query_sample')):
+            sample = data_loader.view_query_sample(query)
+        else:
             return jsonify({
-                "status": "success",
-                "sample": sample,
-                "message": "Successfully retrieved query sample"
-            })
+                "status": "error",
+                "message": "Query sample is only supported for loaders that implement view_query_sample. Use a source table to fetch data.",
+            }), 400
+        return jsonify({"status": "success", "sample": sample, "message": "Successfully retrieved query sample"})
     except Exception as e:
         logger.error(f"Error viewing query sample: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error", 
-            "sample": [],
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "sample": [], "message": safe_msg}), status_code
+
+
+@tables_bp.route('/data-loader/fetch-data', methods=['POST'])
+def data_loader_fetch_data():
+    """Fetch data from an external data loader and return as JSON rows WITHOUT saving to workspace.
     
-
-@tables_bp.route('/data-loader/ingest-data-from-query', methods=['POST'])
-def data_loader_ingest_data_from_query():
-    """Ingest data from a data loader"""
-
+    This is used when storeOnServer=false (local-only / incognito mode).
+    The data is returned directly to the frontend without being persisted as parquet.
+    """
     try:
         data = request.get_json()
         data_loader_type = data.get('data_loader_type')
         data_loader_params = data.get('data_loader_params')
-        query = data.get('query')
-        name_as = data.get('name_as')
+        table_name = data.get('table_name')
+        row_limit = data.get('row_limit', 10000)
+        sort_columns = data.get('sort_columns')
+        sort_order = data.get('sort_order', 'asc')
+
+        if not data_loader_type or not table_name:
+            return jsonify({"status": "error", "message": "data_loader_type and table_name are required"}), 400
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
-            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            data_loader.ingest_data_from_query(query, name_as)
-            
-            # Store metadata for refresh capability
-            save_table_metadata(
-                duck_db_conn, 
-                name_as, 
-                data_loader_type, 
-                data_loader_params, 
-                source_query=query
-            )
-
-            return jsonify({
-                "status": "success",
-                "message": "Successfully ingested data from data loader",
-                "table_name": name_as
-            })
-
-    except Exception as e:
-        logger.error(f"Error ingesting data from data loader: {str(e)}")
-        safe_msg, status_code = sanitize_db_error_message(e)
+        data_loader = DATA_LOADERS[data_loader_type](data_loader_params)
+        
+        # Fetch data as DataFrame (not Arrow, since we need JSON output not parquet)
+        df = data_loader.fetch_data_as_dataframe(
+            source_table=table_name,
+            size=row_limit,
+            sort_columns=sort_columns,
+            sort_order=sort_order,
+        )
+        
+        total_row_count = len(df)
+        # Apply row limit
+        if len(df) > row_limit:
+            df = df.head(row_limit)
+        
+        df = _dedup_dataframe_columns(df)
+        rows = json.loads(df.to_json(orient='records', date_format='iso'))
+        columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
+        
         return jsonify({
-            "status": "error", 
-            "message": safe_msg
-        }), status_code
+            "status": "success",
+            "rows": rows,
+            "columns": columns,
+            "total_row_count": total_row_count,
+            "row_limit_applied": row_limit,
+        })
+    except Exception as e:
+        logger.error(f"Error fetching data from data loader: {str(e)}")
+        logger.error(traceback.format_exc())
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({"status": "error", "message": safe_msg}), status_code
+
+
+@tables_bp.route('/data-loader/ingest-data-from-query', methods=['POST'])
+def data_loader_ingest_data_from_query():
+    """Ingest data from a query into the workspace as parquet."""
+    return jsonify({
+        "status": "error",
+        "message": "Ingestion from custom query is not supported. Please select a source table to ingest.",
+    }), 400
 
 
 @tables_bp.route('/data-loader/refresh-table', methods=['POST'])
 def data_loader_refresh_table():
-    """
-    Refresh a table by re-importing data from its original source.
-    Requires the table to have been imported via a data loader with stored metadata.
-    Returns content_hash and data_changed flag so frontend can skip resampling if data unchanged.
-    """
+    """Refresh a table by re-fetching from its source and updating parquet in the workspace."""
     try:
         data = request.get_json()
         table_name = data.get('table_name')
-        # Allow passing updated connection params (e.g., for password that wasn't stored)
         updated_params = data.get('data_loader_params', {})
 
         if not table_name:
             return jsonify({"status": "error", "message": "table_name is required"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
-            # Get stored metadata
-            metadata = get_table_metadata(duck_db_conn, table_name)
-            
-            if not metadata:
-                return jsonify({
-                    "status": "error", 
-                    "message": f"No source metadata found for table '{table_name}'. Cannot refresh."
-                }), 400
-            
-            # Get old content hash before refresh
-            old_content_hash = metadata.get('content_hash')
-            
-            data_loader_type = metadata['data_loader_type']
-            data_loader_params = {**metadata['data_loader_params'], **updated_params}
-            
-            if data_loader_type not in DATA_LOADERS:
-                return jsonify({
-                    "status": "error", 
-                    "message": f"Unknown data loader type: {data_loader_type}"
-                }), 400
-            
-            # Create data loader and refresh
-            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            
-            if metadata['source_query']:
-                # Refresh from query
-                data_loader.ingest_data_from_query(metadata['source_query'], table_name)
-            elif metadata['source_table_name']:
-                # Refresh from table
-                data_loader.ingest_data(metadata['source_table_name'], name_as=table_name)
-            else:
-                return jsonify({
-                    "status": "error", 
-                    "message": "No source table or query found in metadata"
-                }), 400
-            
-            # Compute new content hash after refresh
-            new_content_hash = compute_table_content_hash(duck_db_conn, table_name)
-            data_changed = old_content_hash != new_content_hash
-            
-            # Update last_refreshed timestamp and content_hash
-            duck_db_conn.execute("""
-                UPDATE _df_table_source_metadata 
-                SET last_refreshed = CURRENT_TIMESTAMP, content_hash = ?
-                WHERE table_name = ?
-            """, [new_content_hash, table_name])
-            
-            # Get updated row count
-            row_count = duck_db_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+        workspace = _get_workspace()
+        meta = workspace.get_table_metadata(table_name)
+        if meta is None:
+            return jsonify({"status": "error", "message": f"No table '{table_name}' found. Cannot refresh."}), 400
+        if not meta.loader_type:
+            return jsonify({"status": "error", "message": f"No source metadata for table '{table_name}'. Cannot refresh."}), 400
 
+        old_content_hash = meta.content_hash
+        data_loader_type = meta.loader_type
+        data_loader_params = {**(meta.loader_params or {}), **updated_params}
+
+        if data_loader_type not in DATA_LOADERS:
+            return jsonify({"status": "error", "message": f"Unknown data loader type: {data_loader_type}"}), 400
+
+        data_loader = DATA_LOADERS[data_loader_type](data_loader_params)
+        if meta.source_table:
+            arrow_table = data_loader.fetch_data_as_arrow(source_table=meta.source_table)
+        else:
             return jsonify({
-                "status": "success",
-                "message": f"Successfully refreshed table '{table_name}'",
-                "row_count": row_count,
-                "content_hash": new_content_hash,
-                "data_changed": data_changed
-            })
+                "status": "error",
+                "message": "Refresh is not supported for tables ingested from a query. Only table-based sources can be refreshed.",
+            }), 400
 
+        new_meta, data_changed = workspace.refresh_parquet_from_arrow(table_name, arrow_table)
+        return jsonify({
+            "status": "success",
+            "message": f"Successfully refreshed table '{table_name}'",
+            "row_count": new_meta.row_count,
+            "content_hash": new_meta.content_hash,
+            "data_changed": data_changed,
+        })
     except Exception as e:
         logger.error(f"Error refreshing table: {str(e)}")
         logger.error(traceback.format_exc())
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error", 
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
 
 @tables_bp.route('/data-loader/get-table-metadata', methods=['POST'])
 def data_loader_get_table_metadata():
-    """Get source metadata for a specific table"""
+    """Get source metadata for a specific table from workspace."""
     try:
         data = request.get_json()
         table_name = data.get('table_name')
-
         if not table_name:
             return jsonify({"status": "error", "message": "table_name is required"}), 400
 
-        with db_manager.connection(session['session_id']) as duck_db_conn:
-            metadata = get_table_metadata(duck_db_conn, table_name)
-            
-            if metadata:
-                return jsonify({
-                    "status": "success",
-                    "metadata": metadata
-                })
-            else:
-                return jsonify({
-                    "status": "success",
-                    "metadata": None,
-                    "message": f"No metadata found for table '{table_name}'"
-                })
-
+        workspace = _get_workspace()
+        meta = workspace.get_table_metadata(table_name)
+        metadata = _table_metadata_to_source_metadata(meta) if meta else None
+        return jsonify({
+            "status": "success",
+            "metadata": metadata,
+            "message": f"No metadata found for table '{table_name}'" if metadata is None else None,
+        })
     except Exception as e:
         logger.error(f"Error getting table metadata: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error", 
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
 
 @tables_bp.route('/data-loader/list-table-metadata', methods=['GET'])
 def data_loader_list_table_metadata():
-    """Get source metadata for all tables"""
+    """Get source metadata for all tables in the workspace."""
     try:
-        with db_manager.connection(session['session_id']) as duck_db_conn:
-            metadata_list = get_all_table_metadata(duck_db_conn)
-            
-            return jsonify({
-                "status": "success",
-                "metadata": metadata_list
-            })
-
+        workspace = _get_workspace()
+        metadata_list = []
+        for name in workspace.list_tables():
+            meta = workspace.get_table_metadata(name)
+            m = _table_metadata_to_source_metadata(meta) if meta else None
+            if m:
+                metadata_list.append(m)
+        return jsonify({"status": "success", "metadata": metadata_list})
     except Exception as e:
         logger.error(f"Error listing table metadata: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({
-            "status": "error", 
-            "message": safe_msg
-        }), status_code
+        return jsonify({"status": "error", "message": safe_msg}), status_code

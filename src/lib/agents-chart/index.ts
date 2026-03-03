@@ -1,0 +1,60 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+/**
+ * @module agents-chart
+ *
+ * Semantic-level chart assembly library.
+ *
+ * Given data, semantic types, encoding definitions, and a canvas size,
+ * generates a chart specification. No React/Redux/UI dependencies.
+ *
+ * Architecture:
+ *   core/       — Target-agnostic: semantic types, layout, decisions, types
+ *   vegalite/   — Vega-Lite backend: assembly, templates, spec instantiation
+ *   echarts/    — ECharts backend: assembly, templates, spec instantiation
+ *   chartjs/    — Chart.js backend: assembly, templates, spec instantiation
+ *   gofish/     — GoFish backend: assembly, templates, imperative rendering
+ *
+ * Assembly functions:
+ *   assembleVegaLite(input)  — Vega-Lite spec
+ *   assembleECharts(input)   — ECharts option object
+ *   assembleChartjs(input)   — Chart.js config object
+ *   assembleGoFish(input)    — GoFish spec with render() function
+ *
+ * Template registries:
+ *   vlTemplateDefs / vlGetTemplateDef / vlGetTemplateChannels
+ *   ecTemplateDefs / ecGetTemplateDef / ecGetTemplateChannels
+ *   cjsTemplateDefs / cjsGetTemplateDef / cjsGetTemplateChannels
+ *   gfTemplateDefs / gfGetTemplateDef / gfGetTemplateChannels
+ *
+ * Usage:
+ * ```ts
+ * import { assembleVegaLite } from './lib/agents-chart';
+ *
+ * const spec = assembleVegaLite({
+ *   data: { values: myData },
+ *   semantic_types: { weight: 'Quantity', mpg: 'Quantity', origin: 'Country' },
+ *   chart_spec: {
+ *     chartType: 'Scatter Plot',
+ *     encodings: { x: { field: 'weight' }, y: { field: 'mpg' }, color: { field: 'origin' } },
+ *     canvasSize: { width: 400, height: 300 },
+ *   },
+ * });
+ * ```
+ */
+
+// Core: types, semantic types, decisions, layout, overflow
+export * from './core';
+
+// Vega-Lite backend: assembleVegaLite, templates, spec instantiation
+export * from './vegalite';
+
+// ECharts backend: assembleECharts, templates, spec instantiation
+export * from './echarts';
+
+// Chart.js backend: assembleChartjs, templates, spec instantiation
+export * from './chartjs';
+
+// GoFish backend: assembleGoFish, templates, imperative rendering
+export * from './gofish';

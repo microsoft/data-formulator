@@ -171,3 +171,25 @@ h2.view-title {
         flex-shrink: 0;
     }
 }
+
+// Allotment sash (divider) styling
+
+// Outer allotment: trim sash to avoid overlapping with rounded corners of the vis panel
+.outer-allotment {
+    // Hide the gray separator border (it would overlap with the rounded vis panel corners)
+    --separator-border: transparent !important;
+    --focus-border: #007fd4 !important;
+    --sash-hover-transition-duration: 0s !important;
+
+    [class*="sash_"][class*="vertical"] {
+        top: 16px !important;
+        height: calc(100% - 32px) !important;
+    }
+}
+
+// Inner allotment: keep default/normal sash style with hover effect
+.inner-allotment {
+    --separator-border: rgba(128, 128, 128, 0.35) !important;
+    --focus-border: #007fd4 !important;
+    --sash-hover-transition-duration: 0s !important;
+}

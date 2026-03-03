@@ -3,7 +3,6 @@
 
 import requests
 from bs4 import BeautifulSoup
-from typing import Optional, Union
 import logging
 from urllib.parse import urlparse
 import tempfile
@@ -111,7 +110,7 @@ def _validate_url_for_ssrf(url: str) -> str:
     return url
 
 
-def download_html_content(url: str, timeout: int = 30, headers: Optional[dict] = None) -> str:
+def download_html_content(url: str, timeout: int = 30, headers: dict | None = None) -> str:
     """
     Download HTML content from a given URL with SSRF protection.
     
@@ -254,7 +253,7 @@ def html_to_text(html_content: str, remove_scripts: bool = True, remove_styles: 
         # Fallback: return the raw content if parsing fails
         return html_content
 
-def get_html_title(html_content: str) -> Optional[str]:
+def get_html_title(html_content: str) -> str | None:
     """
     Extract the title from HTML content.
     
@@ -276,7 +275,7 @@ def get_html_title(html_content: str) -> Optional[str]:
         return None
 
 
-def get_html_meta_description(html_content: str) -> Optional[str]:
+def get_html_meta_description(html_content: str) -> str | None:
     """
     Extract the meta description from HTML content.
     

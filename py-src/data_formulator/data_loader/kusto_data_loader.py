@@ -1,94 +1,65 @@
-import logging
-import sys
-from typing import Dict, Any, List
-import pandas as pd
 import json
-import duckdb
-import random
-import string
-from datetime import datetime
+import logging
+from typing import Any
+import pandas as pd
+import pyarrow as pa
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
-try:
-    from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
-    from azure.kusto.data.helpers import dataframe_from_result_table
-    KUSTO_AVAILABLE = True
-except ImportError:
-    KUSTO_AVAILABLE = False
+from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
+from azure.kusto.data.helpers import dataframe_from_result_table
 
-# Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
 
 class KustoDataLoader(ExternalDataLoader):
 
     @staticmethod
-    def list_params() -> bool:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "kusto_cluster", "type": "string", "required": True, "description": ""}, 
-            {"name": "kusto_database", "type": "string", "required": True, "description": ""}, 
-            {"name": "client_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}, 
-            {"name": "client_secret", "type": "string", "required": False, "description": "only necessary for AppKey auth"}, 
-            {"name": "tenant_id", "type": "string", "required": False, "description": "only necessary for AppKey auth"}
+            {"name": "kusto_cluster", "type": "string", "required": True, "description": "e.g., https://mycluster.region.kusto.windows.net"}, 
+            {"name": "kusto_database", "type": "string", "required": True, "description": "database name"}, 
+            {"name": "client_id", "type": "string", "required": False, "description": "only for App Key auth"}, 
+            {"name": "client_secret", "type": "string", "required": False, "description": "only for App Key auth"}, 
+            {"name": "tenant_id", "type": "string", "required": False, "description": "only for App Key auth"}
         ]
         return params_list
     
     @staticmethod
     def auth_instructions() -> str:
-        return """Azure Kusto Authentication Instructions
+        return """**Example (CLI):** kusto_cluster: `https://mycluster.westus.kusto.windows.net` · kusto_database: `mydb`
 
-Method 1: Azure CLI Authentication
-    1. Install Azure CLI: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli
-    2. Run `az login` in your terminal to authenticate
-    3. Ensure you have access to the specified Kusto cluster and database
-    4. Leave client_id, client_secret, and tenant_id parameters empty
+**Example (App Key):** kusto_cluster: `https://mycluster.westus.kusto.windows.net` · kusto_database: `mydb` · client_id: `abc-123...` · client_secret: `xyz...` · tenant_id: `def-456...`
 
-Method 2: Application Key Authentication
-    1. Register an Azure AD application in your tenant
-    2. Generate a client secret for the application
-    3. Grant the application appropriate permissions to your Kusto cluster:
-        - Go to your Kusto cluster in Azure Portal
-        - Navigate to Permissions > Add
-        - Add your application as a user with appropriate role (e.g., "AllDatabasesViewer" for read access)
-    4. Provide the following parameters:
-        - client_id: Application (client) ID from your Azure AD app registration
-        - client_secret: Client secret value you generated
-        - tenant_id: Directory (tenant) ID from your Azure AD
+**Option 1 — Azure CLI (recommended):**
+Run `az login` in your terminal. Leave `client_id`, `client_secret`, and `tenant_id` empty.
 
-Required Parameters:
-    - kusto_cluster: Your Kusto cluster URI (e.g., "https://mycluster.region.kusto.windows.net")
-    - kusto_database: Name of the database you want to access
-"""
+**Option 2 — App Key Authentication:**
+Register an Azure AD application, generate a client secret, and grant it access to your Kusto cluster (e.g., "AllDatabasesViewer" role via Azure Portal → Kusto cluster → Permissions). Provide `client_id`, `client_secret`, and `tenant_id`."""
 
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
-        if not KUSTO_AVAILABLE:
-            raise ImportError(
-                "azure-kusto-data is required for Kusto/Azure Data Explorer connections. "
-                "Install with: pip install azure-kusto-data"
-            )
-
+    def __init__(self, params: dict[str, Any]):
+        self.params = params
         self.kusto_cluster = params.get("kusto_cluster", None)
         self.kusto_database = params.get("kusto_database", None)
-        
+
         self.client_id = params.get("client_id", None)
         self.client_secret = params.get("client_secret", None)
         self.tenant_id = params.get("tenant_id", None)
 
         try:
             if self.client_id and self.client_secret and self.tenant_id:
-                # This function provides an interface to Kusto. It uses AAD application key authentication.
                 self.client = KustoClient(KustoConnectionStringBuilder.with_aad_application_key_authentication(
                     self.kusto_cluster, self.client_id, self.client_secret, self.tenant_id))
             else:
-                # This function provides an interface to Kusto. It uses Azure CLI auth, but you can also use other auth types.
                 cluster_url = KustoConnectionStringBuilder.with_az_cli_authentication(self.kusto_cluster)
                 logger.info(f"Connecting to Kusto cluster: {self.kusto_cluster}")
                 self.client = KustoClient(cluster_url)
-                logger.info("Using Azure CLI authentication for Kusto client. Ensure you have run `az login` in your terminal.")
+                logger.info("Using Azure CLI authentication for Kusto client.")
         except Exception as e:
             logger.error(f"Error creating Kusto client: {e}")
-            raise Exception(f"Error creating Kusto client: {e}, please authenticate with Azure CLI when starting the app.")        
-        self.duck_db_conn = duck_db_conn
+            raise RuntimeError(
+                f"Error creating Kusto client: {e}. "
+                "Please authenticate with Azure CLI (az login) when starting the app."
+            ) from e
 
     def _convert_kusto_datetime_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert Kusto datetime columns to proper pandas datetime format"""
@@ -156,7 +127,52 @@ Required Parameters:
         
         return df
 
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
+    def fetch_data_as_arrow(
+        self,
+        source_table: str,
+        size: int = 1000000,
+        sort_columns: list[str] | None = None,
+        sort_order: str = 'asc'
+    ) -> pa.Table:
+        """
+        Fetch data from Kusto/Azure Data Explorer as a PyArrow Table.
+        
+        Kusto SDK returns pandas, so we convert to Arrow format.
+        
+        Args:
+            source_table: Kusto table name
+            size: Maximum number of rows to fetch
+            sort_columns: Columns to sort by
+            sort_order: Sort direction
+        """
+        if not source_table:
+            raise ValueError("source_table must be provided")
+        
+        base_query = f"['{source_table}']"
+        
+        # Add sort if specified (KQL syntax)
+        sort_clause = ""
+        if sort_columns and len(sort_columns) > 0:
+            order_direction = "desc" if sort_order == 'desc' else "asc"
+            sort_cols_with_order = [f"{col} {order_direction}" for col in sort_columns]
+            sort_clause = f" | sort by {', '.join(sort_cols_with_order)}"
+        
+        # Add take limit
+        kql_query = f"{base_query}{sort_clause} | take {size}"
+        
+        logger.info(f"Executing Kusto query: {kql_query[:200]}...")
+        
+        # Execute query
+        df = self.query(kql_query)
+        
+        # Convert to Arrow
+        arrow_table = pa.Table.from_pandas(df, preserve_index=False)
+        
+        logger.info(f"Fetched {arrow_table.num_rows} rows from Kusto")
+        
+        return arrow_table
+
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         query = ".show tables"
         tables_df = self.query(query)
 
@@ -196,70 +212,3 @@ Required Parameters:
             })
 
         return tables
-    
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 5000000, sort_columns: List[str] = None, sort_order: str = 'asc') -> pd.DataFrame:
-        if name_as is None:
-            name_as = table_name
-        
-        # Build sort clause for Kusto (KQL syntax)
-        sort_clause = ""
-        if sort_columns and len(sort_columns) > 0:
-            # Kusto uses | sort by col1 asc/desc syntax
-            order_direction = "desc" if sort_order == 'desc' else "asc"
-            sort_cols_with_order = [f"{col} {order_direction}" for col in sort_columns]
-            sort_clause = f" | sort by {', '.join(sort_cols_with_order)}"
-        
-        # Create a subquery that applies random ordering once with a fixed seed
-        total_rows_ingested = 0
-        first_chunk = True
-        chunk_size = 100000
-
-        size_estimate_query = f"['{table_name}'] | take {10000} | summarize Total=sum(estimate_data_size(*))"
-        size_estimate_result = self.query(size_estimate_query)
-        size_estimate = size_estimate_result['Total'].values[0]
-        print(f"size_estimate: {size_estimate}")
-
-        chunk_size = min(64 * 1024 * 1024 / size_estimate * 0.9 * 10000, 5000000)
-        print(f"estimated_chunk_size: {chunk_size}")
-
-        while total_rows_ingested < size:
-            try:
-                # Apply sort if specified, then apply row numbering for pagination
-                query = f"['{table_name}']{sort_clause} | serialize | extend rn=row_number() | where rn >= {total_rows_ingested} and rn < {total_rows_ingested + chunk_size} | project-away rn"
-                chunk_df = self.query(query)
-            except Exception as e:
-                chunk_size = int(chunk_size * 0.8)
-                continue
-
-            print(f"total_rows_ingested: {total_rows_ingested}")
-            print(chunk_df.head())
-            
-            # Stop if no more data
-            if chunk_df.empty:
-                break
-
-             # Sanitize the table name for SQL compatibility
-            name_as = sanitize_table_name(name_as)
-            
-            # For first chunk, create new table; for subsequent chunks, append
-            if first_chunk:
-                self.ingest_df_to_duckdb(chunk_df, name_as)
-                first_chunk = False
-            else:
-                # Append to existing table
-                random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
-                self.duck_db_conn.register(f'df_temp_{random_suffix}', chunk_df)
-                self.duck_db_conn.execute(f"INSERT INTO {name_as} SELECT * FROM df_temp_{random_suffix}")
-                self.duck_db_conn.execute(f"DROP VIEW df_temp_{random_suffix}")
-            
-            total_rows_ingested += len(chunk_df)
-
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
-        df = self.query(query).head(10)
-        return json.loads(df.to_json(orient="records", date_format='iso'))
-
-    def ingest_data_from_query(self, query: str, name_as: str) -> pd.DataFrame:
-        # Sanitize the table name for SQL compatibility
-        name_as = sanitize_table_name(name_as)
-        df = self.query(query)
-        self.ingest_df_to_duckdb(df, name_as)

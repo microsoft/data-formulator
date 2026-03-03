@@ -255,13 +255,8 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 
 .data-thread-card:hover {
     transform: translateY(-1px);
-    box-shadow: 0 0 3px rgba(33,33,33,.2);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
     z-index: 1;
-}
-
-.unread-card {
-    border: 2px solid red !important;
-    border-color: #f44336 !important;
 }
 
 .hover-card {

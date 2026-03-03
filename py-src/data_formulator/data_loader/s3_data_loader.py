@@ -1,22 +1,23 @@
 import json
+import logging
+from typing import Any
+
+import boto3
 import pandas as pd
-import duckdb
-import os
+import pyarrow as pa
+import pyarrow.csv as pa_csv
+import pyarrow.parquet as pq
+from pyarrow import fs as pa_fs
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from typing import Dict, Any, List
-from data_formulator.security import validate_sql_query
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader
 
-try:
-    import boto3
-    BOTO3_AVAILABLE = True
-except ImportError:
-    BOTO3_AVAILABLE = False
+logger = logging.getLogger(__name__)
+
 
 class S3DataLoader(ExternalDataLoader):
 
     @staticmethod
-    def list_params() -> List[Dict[str, Any]]:
+    def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "aws_access_key_id", "type": "string", "required": True, "default": "", "description": "AWS access key ID"},
             {"name": "aws_secret_access_key", "type": "string", "required": True, "default": "", "description": "AWS secret access key"},
@@ -28,73 +29,86 @@ class S3DataLoader(ExternalDataLoader):
 
     @staticmethod
     def auth_instructions() -> str:
-        return """
-**Required AWS Credentials:**
-- **AWS Access Key ID**: Your AWS access key identifier
-- **AWS Secret Access Key**: Your AWS secret access key  
-- **Region Name**: AWS region (e.g., 'us-east-1', 'us-west-2')
-- **Bucket**: S3 bucket name
-- **AWS Session Token**: Optional, for temporary credentials only
+        return """**Example:** aws_access_key_id: `AKIA...` · aws_secret_access_key: `wJalr...` · region_name: `us-east-1` · bucket: `my-data-bucket`
 
-**Getting Credentials:**
-1. AWS Console → IAM → Users → Select user → Security credentials → Create access key
-2. Choose "Application running outside AWS"
+**Getting credentials:** AWS Console → IAM → Users → Security credentials → Create access key → choose "Application running outside AWS".
 
-**Required S3 Permissions:**
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": ["s3:GetObject", "s3:ListBucket"],
-    "Resource": [
-      "arn:aws:s3:::your-bucket-name",
-      "arn:aws:s3:::your-bucket-name/*"
-    ]
-  }]
-}
-```
+**Required permissions:** `s3:GetObject` and `s3:ListBucket` on your bucket.
 
-**Supported File Formats:**
-- CSV files (.csv)
-- Parquet files (.parquet) 
-- JSON files (.json, .jsonl)
+**Supported formats:** CSV, Parquet, JSON, JSONL"""
 
-**Security:** Never share secret keys, rotate regularly, use least privilege permissions.
-        """
-
-    def __init__(self, params: Dict[str, Any], duck_db_conn: duckdb.DuckDBPyConnection):
-        if not BOTO3_AVAILABLE:
-            raise ImportError(
-                "boto3 is required for S3 connections. "
-                "Install with: pip install boto3"
-            )
-        
+    def __init__(self, params: dict[str, Any]):
         self.params = params
-        self.duck_db_conn = duck_db_conn
-        
-        # Extract parameters
+
         self.aws_access_key_id = params.get("aws_access_key_id", "")
         self.aws_secret_access_key = params.get("aws_secret_access_key", "")
         self.aws_session_token = params.get("aws_session_token", "")
         self.region_name = params.get("region_name", "us-east-1")
         self.bucket = params.get("bucket", "")
-        
-        # Install and load the httpfs extension for S3 access
-        self.duck_db_conn.install_extension("httpfs")
-        self.duck_db_conn.load_extension("httpfs")
-        
-        # Set AWS credentials for DuckDB
-        self.duck_db_conn.execute(f"SET s3_region='{self.region_name}'")
-        self.duck_db_conn.execute(f"SET s3_access_key_id='{self.aws_access_key_id}'")
-        self.duck_db_conn.execute(f"SET s3_secret_access_key='{self.aws_secret_access_key}'")
-        if self.aws_session_token:  # Add this block
-            self.duck_db_conn.execute(f"SET s3_session_token='{self.aws_session_token}'")
 
-    def list_tables(self, table_filter: str = None) -> List[Dict[str, Any]]:
-        # Use boto3 to list objects in the bucket
-        import boto3
+        self.s3_fs = pa_fs.S3FileSystem(
+            access_key=self.aws_access_key_id,
+            secret_key=self.aws_secret_access_key,
+            session_token=self.aws_session_token if self.aws_session_token else None,
+            region=self.region_name,
+        )
+        logger.info(f"Initialized PyArrow S3 filesystem for bucket: {self.bucket}")
+
+    def fetch_data_as_arrow(
+        self,
+        source_table: str,
+        size: int = 1000000,
+        sort_columns: list[str] | None = None,
+        sort_order: str = 'asc'
+    ) -> pa.Table:
+        """
+        Fetch data from S3 as a PyArrow Table using PyArrow's native S3 filesystem.
         
+        For files (parquet, csv), reads directly using PyArrow.
+        """
+        if not source_table:
+            raise ValueError("source_table (S3 URL) must be provided")
+        
+        s3_url = source_table
+        
+        # Parse S3 URL: s3://bucket/key -> bucket/key for PyArrow
+        if s3_url.startswith("s3://"):
+            s3_path = s3_url[5:]  # Remove "s3://"
+        else:
+            s3_path = f"{self.bucket}/{s3_url}"
+        
+        logger.info(f"Reading S3 file via PyArrow: {s3_url}")
+        
+        # Read based on file extension
+        if s3_url.lower().endswith('.parquet'):
+            arrow_table = pq.read_table(s3_path, filesystem=self.s3_fs)
+        elif s3_url.lower().endswith('.csv'):
+            with self.s3_fs.open_input_file(s3_path) as f:
+                arrow_table = pa_csv.read_csv(f)
+        elif s3_url.lower().endswith('.json') or s3_url.lower().endswith('.jsonl'):
+            import pyarrow.json as pa_json
+            with self.s3_fs.open_input_file(s3_path) as f:
+                arrow_table = pa_json.read_json(f)
+        else:
+            raise ValueError(f"Unsupported file type: {s3_url}")
+        
+        # Apply sorting if specified
+        if sort_columns and len(sort_columns) > 0:
+            df = arrow_table.to_pandas()
+            ascending = sort_order != 'desc'
+            df = df.sort_values(by=sort_columns, ascending=ascending)
+            arrow_table = pa.Table.from_pandas(df, preserve_index=False)
+        
+        # Apply size limit
+        if arrow_table.num_rows > size:
+            arrow_table = arrow_table.slice(0, size)
+        
+        logger.info(f"Fetched {arrow_table.num_rows} rows from S3 [Arrow-native]")
+        
+        return arrow_table
+
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List available files from S3 bucket."""
         s3_client = boto3.client(
             's3',
             aws_access_key_id=self.aws_access_key_id,
@@ -103,7 +117,6 @@ class S3DataLoader(ExternalDataLoader):
             region_name=self.region_name
         )
         
-        # List objects in the bucket
         response = s3_client.list_objects_v2(Bucket=self.bucket)
         
         results = []
@@ -112,36 +125,24 @@ class S3DataLoader(ExternalDataLoader):
             for obj in response['Contents']:
                 key = obj['Key']
                 
-                # Skip directories and non-data files
                 if key.endswith('/') or not self._is_supported_file(key):
                     continue
                 
-                # Apply table filter if provided
                 if table_filter and table_filter.lower() not in key.lower():
                     continue
                 
-                # Create S3 URL
                 s3_url = f"s3://{self.bucket}/{key}"
                 
                 try:
-                    # Choose the appropriate read function based on file extension
-                    if s3_url.lower().endswith('.parquet'):
-                        sample_df = self.duck_db_conn.execute(f"SELECT * FROM read_parquet('{s3_url}') LIMIT 10").df()
-                    elif s3_url.lower().endswith('.json') or s3_url.lower().endswith('.jsonl'):
-                        sample_df = self.duck_db_conn.execute(f"SELECT * FROM read_json_auto('{s3_url}') LIMIT 10").df()
-                    elif s3_url.lower().endswith('.csv'):  # Default to CSV for other formats
-                        sample_df = self.duck_db_conn.execute(f"SELECT * FROM read_csv_auto('{s3_url}') LIMIT 10").df()
+                    sample_table = self._read_sample_arrow(s3_url, 10)
+                    sample_df = sample_table.to_pandas()
                     
-                    # Get column information
                     columns = [{
                         'name': col,
                         'type': str(sample_df[col].dtype)
                     } for col in sample_df.columns]
                     
-                    # Get sample data
                     sample_rows = json.loads(sample_df.to_json(orient="records"))
-                    
-                    # Estimate row count (this is approximate for CSV files)
                     row_count = self._estimate_row_count(s3_url)
                     
                     table_metadata = {
@@ -155,83 +156,45 @@ class S3DataLoader(ExternalDataLoader):
                         "metadata": table_metadata
                     })
                 except Exception as e:
-                    # Skip files that can't be read
-                    print(f"Error reading {s3_url}: {e}")
+                    logger.warning(f"Error reading {s3_url}: {e}")
                     continue
         
         return results
     
+    def _read_sample_arrow(self, s3_url: str, limit: int) -> pa.Table:
+        """Read sample data using PyArrow S3 filesystem."""
+        s3_path = s3_url[5:] if s3_url.startswith("s3://") else s3_url
+        
+        if s3_url.lower().endswith('.parquet'):
+            table = pq.read_table(s3_path, filesystem=self.s3_fs)
+        elif s3_url.lower().endswith('.csv'):
+            with self.s3_fs.open_input_file(s3_path) as f:
+                table = pa_csv.read_csv(f)
+        elif s3_url.lower().endswith('.json') or s3_url.lower().endswith('.jsonl'):
+            import pyarrow.json as pa_json
+            with self.s3_fs.open_input_file(s3_path) as f:
+                table = pa_json.read_json(f)
+        else:
+            raise ValueError(f"Unsupported file type: {s3_url}")
+        
+        return table.slice(0, limit) if table.num_rows > limit else table
+    
     def _is_supported_file(self, key: str) -> bool:
-        """Check if the file type is supported by DuckDB."""
-        supported_extensions = ['.csv', '.parquet', '.json', '.jsonl']
+        """Check if the file type is supported (CSV, Parquet, JSON)."""
+        supported_extensions = [".csv", ".parquet", ".json", ".jsonl"]
         return any(key.lower().endswith(ext) for ext in supported_extensions)
     
     def _estimate_row_count(self, s3_url: str) -> int:
         """Estimate the number of rows in a file."""
         try:
-            # For parquet files, we can get the exact count
+            # For parquet files, use PyArrow metadata for exact count
             if s3_url.lower().endswith('.parquet'):
-                count = self.duck_db_conn.execute(f"SELECT COUNT(*) FROM read_parquet('{s3_url}')").fetchone()[0]
-                return count
+                s3_path = s3_url[5:] if s3_url.startswith("s3://") else s3_url
+                parquet_file = pq.ParquetFile(s3_path, filesystem=self.s3_fs)
+                return parquet_file.metadata.num_rows
             
-            # For CSV, JSON, and JSONL files, we'll skip row count
-            if s3_url.lower().endswith('.csv') or s3_url.lower().endswith('.json') or s3_url.lower().endswith('.jsonl'):
-                return 0
-        except Exception as e:
-            print(f"Error estimating row count for {s3_url}: {e}")
+            # For CSV, JSON, and JSONL files, skip row count for efficiency
             return 0
-
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
-        if name_as is None:
-            name_as = table_name.split('/')[-1].split('.')[0]
-        
-        name_as = sanitize_table_name(name_as)
-        
-        # Build ORDER BY clause if sort_columns are specified
-        order_by_clause = ""
-        if sort_columns and len(sort_columns) > 0:
-            order_direction = "DESC" if sort_order == 'desc' else "ASC"
-            sanitized_cols = [f'"{col}" {order_direction}' for col in sort_columns]
-            order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
-        
-        # Determine file type and use appropriate DuckDB function
-        if table_name.lower().endswith('.csv'):
-            self.duck_db_conn.execute(f"""
-                CREATE OR REPLACE TABLE main.{name_as} AS 
-                SELECT * FROM read_csv_auto('{table_name}')
-                {order_by_clause}
-                LIMIT {size}
-            """)
-        elif table_name.lower().endswith('.parquet'):
-            self.duck_db_conn.execute(f"""
-                CREATE OR REPLACE TABLE main.{name_as} AS 
-                SELECT * FROM read_parquet('{table_name}')
-                {order_by_clause}
-                LIMIT {size}
-            """)
-        elif table_name.lower().endswith('.json') or table_name.lower().endswith('.jsonl'):
-            self.duck_db_conn.execute(f"""
-                CREATE OR REPLACE TABLE main.{name_as} AS 
-                SELECT * FROM read_json_auto('{table_name}')
-                {order_by_clause}
-                LIMIT {size}
-            """)
-        else:
-            raise ValueError(f"Unsupported file type: {table_name}")
-
-    def view_query_sample(self, query: str) -> List[Dict[str, Any]]:
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        return json.loads(self.duck_db_conn.execute(query).df().head(10).to_json(orient="records"))
-
-    def ingest_data_from_query(self, query: str, name_as: str):
-        # Execute the query and get results as a DataFrame
-        result, error_message = validate_sql_query(query)
-        if not result:
-            raise ValueError(error_message)
-        
-        df = self.duck_db_conn.execute(query).df()
-        # Use the base class's method to ingest the DataFrame
-        self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
+        except Exception as e:
+            logger.warning(f"Error estimating row count for {s3_url}: {e}")
+            return 0

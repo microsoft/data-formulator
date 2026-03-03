@@ -56,7 +56,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithIdentity } from '../app/utils';
 
 
 const decodeHtmlEntities = (text: string): string => {
@@ -114,7 +114,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     useEffect(() => {
         const fetchModelOptions = async () => {
             try {
-                const response = await fetch(getUrls().CHECK_AVAILABLE_MODELS);
+                const response = await fetchWithIdentity(getUrls().CHECK_AVAILABLE_MODELS);
                 const data = await response.json();
                 
                 // Group models by provider
@@ -163,7 +163,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 model: model,
             }),
         };
-        fetch(getUrls().TEST_MODEL, {...message })
+        fetchWithIdentity(getUrls().TEST_MODEL, {...message })
             .then((response) => response.json())
             .then((data) => {
                 let status = data["status"] || 'error';

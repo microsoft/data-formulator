@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useState, useEffect } from 'react';
+import { radius } from '../app/tokens';
 import {
     Button,
     Typography,
@@ -22,9 +23,13 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import Editor from 'react-simple-code-editor';
 
-export const AgentRulesDialog: React.FC = () => {
+export const AgentRulesDialog: React.FC<{
+    externalOpen?: boolean;
+    onExternalClose?: () => void;
+}> = ({ externalOpen, onExternalClose }) => {
     const theme = useTheme();
-    const [open, setOpen] = useState(false);
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = externalOpen !== undefined ? externalOpen : internalOpen;
     const dispatch = useDispatch();
     const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
 
@@ -83,7 +88,11 @@ export const AgentRulesDialog: React.FC = () => {
         // Reset to original values
         setCodingRules(agentRules.coding);
         setExplorationRules(agentRules.exploration);
-        setOpen(false);
+        if (onExternalClose) {
+            onExternalClose();
+        } else {
+            setInternalOpen(false);
+        }
     };
 
     // Check if there are changes for each tab
@@ -96,33 +105,35 @@ export const AgentRulesDialog: React.FC = () => {
 
     return (
         <>
-            <Badge 
-                color="primary" 
-                variant="standard" 
-                invisible={ruleCount === 0}
-                badgeContent={ruleCount}
-                sx={{
-                    '& .MuiBadge-badge': {
-                        minWidth: 0,
-                        height: 12,
-                        fontSize: 8,
-                        top: 12,
-                        right: 8,
-                        px: 0.5,
-                        color: theme.palette.primary.main,
-                        background: alpha(theme.palette.primary.light, 0.2),
-                    },
-                }}
-            >
-                <Button
-                    variant="text"
-                    sx={{ textTransform: 'none' }}
-                    onClick={() => setOpen(true)}
-                    startIcon={<RuleIcon />}
+            {externalOpen === undefined && (
+                <Badge 
+                    color="primary" 
+                    variant="standard" 
+                    invisible={ruleCount === 0}
+                    badgeContent={ruleCount}
+                    sx={{
+                        '& .MuiBadge-badge': {
+                            minWidth: 0,
+                            height: 12,
+                            fontSize: 8,
+                            top: 12,
+                            right: 8,
+                            px: 0.5,
+                            color: theme.palette.primary.textColor || theme.palette.primary.main,
+                            background: alpha(theme.palette.primary.light, 0.2),
+                        },
+                    }}
                 >
-                    Agent Rules
-                </Button>
-            </Badge>
+                    <Button
+                        variant="text"
+                        sx={{ textTransform: 'none' }}
+                        onClick={() => setInternalOpen(true)}
+                        startIcon={<RuleIcon />}
+                    >
+                        Agent Rules
+                    </Button>
+                </Badge>
+            )}
             <Dialog
                 onClose={handleClose}
                 open={open}
@@ -152,7 +163,7 @@ export const AgentRulesDialog: React.FC = () => {
                         <Box
                             sx={{
                                 border: `1px solid ${theme.palette.primary.main}`,
-                                borderRadius: 1,
+                                borderRadius: radius.sm,
                                 overflow: 'auto',
                                 height: 180,
                                 boxShadow: `0 2px 8px ${theme.palette.primary.main}40`,
@@ -200,7 +211,7 @@ export const AgentRulesDialog: React.FC = () => {
                         <Box
                             sx={{
                                 border: `1px solid ${theme.palette.secondary.main}`,
-                                borderRadius: 1,
+                                borderRadius: radius.sm,
                                 overflow: 'auto',
                                 height: 180,
                                 boxShadow: `0 2px 8px ${theme.palette.secondary.main}40`,

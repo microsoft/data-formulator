@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Top gray band -->
+  <path d="M8,82  Q48,55  96,48  Q144,42 192,62  Q224,74 248,58
+           L248,106 Q224,100 192,104 Q144,110 96,102 Q48,94  8,112 Z"
+        fill="#B8B8B8" stroke="#363636" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- Middle blue band -->
+  <path d="M8,112  Q48,94  96,102 Q144,110 192,104 Q224,100 248,106
+           L248,156 Q224,160 192,152 Q144,144 96,154 Q48,164 8,150 Z"
+        fill="#76c6ff" stroke="#363636" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- Bottom gray band -->
+  <path d="M8,150  Q48,164 96,154 Q144,144 192,152 Q224,160 248,156
+           L248,200 Q224,208 192,196 Q144,184 96,198 Q48,212 8,190 Z"
+        fill="#B8B8B8" stroke="#363636" stroke-width="2" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" fill="none">
+  <!-- Candlestick chart icon: 4 candles, 2 bullish (green), 2 bearish (red) -->
+  <!-- Candle 1: bearish (red) -->
+  <line x1="80" y1="45" x2="80" y2="195" stroke="#363636" stroke-width="3"/>
+  <rect x="68" y="80" width="24" height="70" fill="#e8868f" stroke="#363636" stroke-width="2" rx="2"/>
+  <!-- Candle 2: bullish (green) -->
+  <line x1="120" y1="55" x2="120" y2="185" stroke="#363636" stroke-width="3"/>
+  <rect x="108" y="65" width="24" height="80" fill="#6dc48d" stroke="#363636" stroke-width="2" rx="2"/>
+  <!-- Candle 3: bearish (red) -->
+  <line x1="160" y1="40" x2="160" y2="170" stroke="#363636" stroke-width="3"/>
+  <rect x="148" y="55" width="24" height="80" fill="#e8868f" stroke="#363636" stroke-width="2" rx="2"/>
+  <!-- Candle 4: bullish (green) -->
+  <line x1="200" y1="70" x2="200" y2="200" stroke="#363636" stroke-width="3"/>
+  <rect x="188" y="90" width="24" height="75" fill="#6dc48d" stroke="#363636" stroke-width="2" rx="2"/>
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+</svg>

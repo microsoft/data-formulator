@@ -7,7 +7,8 @@ import { useEffect, useState, useMemo } from 'react';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import { Button, Chip } from '@mui/material';
-import StreamIcon from '@mui/icons-material/Stream';
+import { borderColor } from '../app/tokens';
+import { StreamIcon } from '../icons';
 import { createTableFromFromObjectArray } from '../data/utils';
 import { MultiTablePreview } from './MultiTablePreview';
 import { DictTable } from '../components/ComponentType';
@@ -89,8 +90,7 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                 width: 180,
                 display: 'flex',
                 flexDirection: 'column',
-                borderRight: 1,
-                borderColor: 'divider',
+                borderRight: `1px solid ${borderColor.view}`,
                 overflow: 'hidden',
                 height: '100%'
             }}>
@@ -157,6 +157,7 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                                     maxRows={12}
                                     compact={false}
                                     showPreviewLabel={false}
+                                    hideRowCount={hideRowNum}
                                 />
                             </Box>
                             <Box sx={{display: 'flex', justifyContent: 'center', mt: 2}} >

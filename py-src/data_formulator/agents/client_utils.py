@@ -1,27 +1,7 @@
 import litellm
 import openai
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from typing import Dict, Optional, Union
 
-class OpenAIClientAdapter(object):
-    """
-    Wrapper around OpenAI or AzureOpenAI client that provides the same interface as Client.
-    """
-    def __init__(self, openai_client: Union[openai.OpenAI, openai.AzureOpenAI], model: str):
-        self._openai_client = openai_client
-        self.model = model
-        self.params = {}
-        
-    def get_completion(self, messages):
-        """
-        Returns a completion using the wrapped OpenAI client.
-        """
-        completion_params = {
-            "model": self.model,
-            "messages": messages,
-        }
-        
-        return self._openai_client.chat.completions.create(**completion_params)
 
 class Client(object):
     """
@@ -69,7 +49,7 @@ class Client(object):
                 self.model = f"ollama/{model}"
 
     @classmethod
-    def from_config(cls, model_config: Dict[str, str]):
+    def from_config(cls, model_config: dict[str, str]):
         """
         Create a client instance from model configuration.
         
@@ -132,7 +112,7 @@ class Client(object):
             )
 
         
-    def get_response(self, messages: list[dict], tools: Optional[list] = None):
+    def get_response(self, messages: list[dict], tools: list | None = None):
         """
         Returns a response using OpenAI's Response API approach.
         """
