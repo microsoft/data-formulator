@@ -573,6 +573,54 @@ function computeMaxStackedTotal(
 }
 
 /**
+ * Get the effective intrinsic domain for a field, even when no explicit
+ * `intrinsicDomain` is provided in the annotation.
+ *
+ * Mirrors steps 2–3 of `resolveDomainConstraint` (in field-semantics.ts)
+ * which infer intrinsic bounds from the semantic type:
+ *   - Percentage → [0, 1] or [0, 100] depending on data scale
+ *   - Latitude → [-90, 90]
+ *   - Longitude → [-180, 180]
+ *   - Correlation → [-1, 1]
+ *
+ * Without this: stacked charts with Percentage fields that lack explicit
+ * annotation never get domain constraints, because the stacking re-check
+ * in vlApplyFieldContext couldn't find the intrinsic bounds.
+ */
+function getEffectiveIntrinsicDomain(
+    cs: ChannelSemantics,
+    table: any[],
+    field: string,
+): [number, number] | undefined {
+    // 1. Explicit annotation — authoritative
+    if (cs.semanticAnnotation?.intrinsicDomain) {
+        return cs.semanticAnnotation.intrinsicDomain;
+    }
+
+    // 2. Infer from semantic type
+    const semanticType = cs.semanticAnnotation?.semanticType;
+    if (!semanticType) return undefined;
+
+    if (semanticType === 'Latitude')    return [-90, 90];
+    if (semanticType === 'Longitude')   return [-180, 180];
+    if (semanticType === 'Correlation') return [-1, 1];
+
+    if (semanticType === 'Percentage') {
+        const nums = table
+            .map(r => r[field])
+            .filter((v: any) => typeof v === 'number' && !isNaN(v));
+        if (nums.length > 0) {
+            // Inline scale detection: if ≥80% of |values| are ≤1, it's 0-1 scale
+            const countBelow1 = nums.filter(v => Math.abs(v) <= 1).length;
+            const isFractional = countBelow1 / nums.length >= 0.8;
+            return isFractional ? [0, 1] : [0, 100];
+        }
+    }
+
+    return undefined;
+}
+
+/**
  * Apply field-context semantic properties to VL encoding objects.
  *
  * Consumes the following ChannelSemantics properties that were previously
@@ -690,24 +738,67 @@ function vlApplyFieldContext(
             let effectiveDomainConstraint = cs.domainConstraint;
 
             if (isSumStacked) {
-                const intrinsic = cs.semanticAnnotation?.intrinsicDomain;
+                // Use explicit intrinsicDomain from annotation, or infer from
+                // semantic type for known bounded types (Percentage, Lat/Lon, etc.)
+                // Without this: Percentage fields without explicit annotation
+                // never get a domain constraint on stacked charts because
+                // individual values don't trigger snap, and the stacked re-check
+                // can't find the intrinsic bounds to snap totals against.
+                const intrinsic = getEffectiveIntrinsicDomain(cs, context.table, enc.field);
                 if (intrinsic) {
                     const maxTotal = computeMaxStackedTotal(
                         context.table, enc.field, ch, channelSemantics,
                     );
 
-                    if (cs.domainConstraint) {
-                        // Snap fired on individual values — check if stacked
-                        // totals would exceed the intrinsic bound.
-                        if (maxTotal !== undefined && maxTotal > intrinsic[1]) {
-                            skipDomain = true;
+                    if (maxTotal !== undefined && maxTotal > intrinsic[1]) {
+                        // Stacked totals exceed the intrinsic bound →
+                        // skip domain constraint to avoid clipping.
+                        // Use a small epsilon tolerance for floating-point
+                        // imprecision (e.g., shares summing to 1.0000000001
+                        // instead of exactly 1.0 should still be treated as
+                        // within bounds). Scale epsilon to the domain range.
+                        const range = intrinsic[1] - intrinsic[0];
+                        const epsilon = range * 1e-6;
+                        if (maxTotal > intrinsic[1] + epsilon) {
+                            if (cs.domainConstraint) {
+                                skipDomain = true;
+                            }
+                        } else {
+                            // Within epsilon — treat as equal to the bound.
+                            // Re-run snap so the bound gets applied.
+                            const stackedSnap = snapToBoundHeuristic(intrinsic, [intrinsic[1]]);
+                            if (stackedSnap) {
+                                if (cs.domainConstraint) {
+                                    effectiveDomainConstraint = {
+                                        min: cs.domainConstraint.min ?? stackedSnap.min,
+                                        max: cs.domainConstraint.max ?? stackedSnap.max,
+                                        clamp: cs.domainConstraint.clamp || stackedSnap.clamp,
+                                    };
+                                } else {
+                                    effectiveDomainConstraint = stackedSnap;
+                                }
+                            }
                         }
                     } else if (maxTotal !== undefined) {
-                        // Snap didn't fire on individual values — re-run snap
-                        // on the stacked totals to see if they're near bounds.
+                        // Stacked totals are within intrinsic bounds.
+                        // Re-run snap on stacked totals to pick up bounds
+                        // that individual values missed (e.g., individual
+                        // shares of 20–40% don't snap to 100%, but stacked
+                        // totals of ~100% should).
                         const stackedSnap = snapToBoundHeuristic(intrinsic, [maxTotal]);
                         if (stackedSnap) {
-                            effectiveDomainConstraint = stackedSnap;
+                            // Merge with existing constraint: keep any bound
+                            // already snapped from individual values, add any
+                            // new bound from stacked totals.
+                            if (cs.domainConstraint) {
+                                effectiveDomainConstraint = {
+                                    min: cs.domainConstraint.min ?? stackedSnap.min,
+                                    max: cs.domainConstraint.max ?? stackedSnap.max,
+                                    clamp: cs.domainConstraint.clamp || stackedSnap.clamp,
+                                };
+                            } else {
+                                effectiveDomainConstraint = stackedSnap;
+                            }
                         }
                     }
                 } else if (cs.domainConstraint) {

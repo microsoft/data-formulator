@@ -35,7 +35,6 @@ from data_formulator.agents.agent_interactive_explore import InteractiveExploreA
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
 
-from data_formulator.workflows.exploration_flow import run_exploration_flow_streaming
 from data_formulator.agents.data_agent import DataAgent
 
 # Get logger for this module (logging config done in app.py)
@@ -410,104 +409,6 @@ def derive_data():
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
-
-@agent_bp.route('/explore-data-streaming', methods=['GET', 'POST'])
-def explore_data_streaming():
-    def generate():
-        if request.is_json:
-            logger.setLevel(logging.INFO)
-
-            logger.info("# explore-data-streaming request")
-            content = request.get_json()        
-            token = content["token"]
-
-            # each table is a dict with {"name": xxx, "rows": [...]}
-            input_tables = content["input_tables"]
-            initial_plan = content["initial_plan"]  # The exploration question
-            max_iterations = content.get("max_iterations", 3)  # Number of exploration iterations
-            max_repair_attempts = content.get("max_repair_attempts", 1)
-            agent_exploration_rules = content.get("agent_exploration_rules", "")
-            agent_coding_rules = content.get("agent_coding_rules", "")
-            conversation_history = content.get("conversation_history", None)
-
-            logger.debug("== input tables ===>")
-            for table in input_tables:
-                logger.debug(f"===> Table: {table['name']} (first 5 rows)")
-                logger.debug(table['rows'][:5])
-
-            logger.debug("== exploration question ===")
-            logger.debug(initial_plan)
-
-            # Model config for the exploration flow
-            model_config = {
-                "endpoint": content['model']['endpoint'],
-                "model": content['model']['model'],
-                "api_key": content['model']['api_key'],
-                "api_base": content['model'].get('api_base', ''),
-                "api_version": content['model'].get('api_version', '')
-            }
-
-            # Get identity for workspace (used for both SQL and Python with WorkspaceWithTempData)
-            identity_id = get_identity_id()
-
-            try:
-                for result in run_exploration_flow_streaming(
-                    model_config=model_config,
-                    input_tables=input_tables,
-                    initial_plan=initial_plan,
-                    identity_id=identity_id,
-                    max_iterations=max_iterations,
-                    max_repair_attempts=max_repair_attempts,
-                    agent_exploration_rules=agent_exploration_rules,
-                    agent_coding_rules=agent_coding_rules,
-                    conversation_history=conversation_history
-                ):
-                    response_data = { 
-                        "token": token, 
-                        "status": "ok", 
-                        "result": result 
-                    }
-                    
-                    yield json.dumps(response_data) + '\n'
-                    
-                    # Break if we get a completion result
-                    if result.get("type") == "completion":
-                        break
-            
-            except Exception as e:
-                logger.setLevel(logging.WARNING)
-                logger.error(f"Error in exploration flow: {e}")
-                logger.error(traceback.format_exc())
-                error_data = { 
-                    "token": token, 
-                    "status": "error", 
-                    "result": None,
-                    "error_message": str(e)
-                }
-                yield json.dumps(error_data) + '\n'
-            
-            logger.setLevel(logging.WARNING)
-
-        else:
-            error_data = { 
-                "token": "", 
-                "status": "error", 
-                "result": None,
-                "error_message": "Invalid request format"
-            }
-            yield json.dumps(error_data) + '\n'
-
-    response = Response(
-        stream_with_context(generate()),
-        mimetype='application/json',
-        headers={
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type'
-        }
-    )
-    return response
-
 
 @agent_bp.route('/data-agent-streaming', methods=['GET', 'POST'])
 def data_agent_streaming():

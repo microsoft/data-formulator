@@ -27,34 +27,28 @@
 https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 -->
 
 <kbd>
-  <img src="public/data-formulator-screenshot-v0.5.png">
+  <img src="https://github.com/user-attachments/assets/3ffb15aa-93ce-42b8-92cf-aaf321f9a06a">
 </kbd>
 
 
 ## News 🔥🔥🔥
-[01-31-2025] **uv support** — Faster installation with uv
--  🚀 **Install with uv**: Data Formulator now supports installation via [uv](https://docs.astral.sh/uv/), the ultra-fast Python package manager. Get started in seconds with `uvx data_formulator` or `uv pip install data_formulator`.
 
-[01-25-2025] **Data Formulator 0.6** — Real-time insights from live data
--  ⚡ **Connect to live data**: Connect to URLs and databases with automatic refresh intervals. Visualizations update automatically as your data changes to provide you live insights. [Demo: track international space station position speed live](https://github.com/microsoft/data-formulator/releases/tag/0.6)
--  🎨 **UI Updates**: Unified UI for data loading; direct drag-and-drop fields from the data table to update visualization designs.
-
-[12-08-2025] **Data Formulator 0.5.1** — Connect more, visualize more, move faster
-- 🔌 **Community data loaders**: Google BigQuery, MySQL, Postgres, MongoDB
-- 📊 **New chart types**: US Map & Pie Chart (more to be added soon)
-- ✏️ **Editable reports**: Refine generated reports with [Chartifact](https://github.com/microsoft/chartifact) in markdown style. [demo](https://github.com/microsoft/data-formulator/pull/200#issue-3635408217)
-- ⚡ **Snappier UI**: Noticeably faster interactions across the board
-
-[11-07-2025] Data Formulator 0.5: Vibe with your data, in control
-
-- 📊 **Load (almost) any data**: load structured data, extract data from screenshots, from messy text blocks, or connect to databases.
-- 🤖 **Explore data with AI agents**: Use agent mode for hands-off exploration, or stay in control in interactive mode.
-- ✅ **Verify AI generated results**: interact with charts and inspect data, formulas, explanations, and code.
-- 📝 **Create reports to share insights**: choose charts you want to share, and ask agents to create reports grounded in data formulated throughout exploration.
+[03-02-2026] **Data Formulator 0.7 (alpha)** — More charts, new experience, enterprise-ready
+-  📊 **30 visualization types**: Expanded from ~15 to 30 chart types with a new semantic chart engine — new types include area, streamgraph, bump, candlestick, density, lollipop, pie, rose, waterfall, strip plot, radar, US map, world map, and more. Semantic field analysis automatically recommends the right chart for the data.
+-  💬 **New experience — hybrid chat + data thread**: Chat-based interaction is woven directly into the exploration thread. Richer thread cards show transformation lineage, chart previews, and agent reasoning in a unified timeline.
+-  🤖 **Redesigned agent architecture**: A unified `DataAgent` replaces four separate agents. New recommendation agent suggests charts and exploration directions; new insight agent generates natural-language takeaways from chart results.
+-  🏗️ **Workspace / Data Lake architecture**: A persistent, identity-based workspace layer manages user data with a `workspace.yaml` metadata catalog. Supports local and Azure Blob backends for enterprise deployments.
+-  🔒 **Security hardening**: Code signing for generated code, sandboxed execution (local & Docker), authentication layer, and Flask rate limiting.
+-  📦 **UV-first build**: Fully reproducible builds with `uv.lock`; `uv sync` + `uv run data_formulator` is now the recommended development workflow.
+-  📝 A detailed writeup on the new architecture and design is coming soon — stay tuned!
 
 ## Previous Updates
 
 Here are milestones that lead to the current design:
+- **v0.6** ([Demo](https://github.com/microsoft/data-formulator/releases/tag/0.6)): Real-time insights from live data — connect to URLs and databases with automatic refresh
+- **uv support**: Faster installation with [uv](https://docs.astral.sh/uv/) — `uvx data_formulator` or `uv pip install data_formulator`
+- **v0.5.1** ([Demo](https://github.com/microsoft/data-formulator/pull/200#issue-3635408217)): Community data loaders, US Map & Pie Chart, editable reports, snappier UI
+- **v0.5**: Vibe with your data, in control — agent mode, data extraction, reports
 - **v0.2.2** ([Demo](https://github.com/microsoft/data-formulator/pull/176)): Goal-driven exploration with agent recommendations and performance improvements
 - **v0.2.1.3/4** ([Readme](https://github.com/microsoft/data-formulator/tree/main/py-src/data_formulator/data_loader) | [Demo](https://github.com/microsoft/data-formulator/pull/155)): External data loaders (MySQL, PostgreSQL, MSSQL, Azure Data Explorer, S3, Azure Blob)
 - **v0.2** ([Demos](https://github.com/microsoft/data-formulator/releases/tag/0.2)): Large data support with DuckDB integration
