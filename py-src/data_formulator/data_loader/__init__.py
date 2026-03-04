@@ -8,6 +8,8 @@ from data_formulator.data_loader.postgresql_data_loader import PostgreSQLDataLoa
 from data_formulator.data_loader.mongodb_data_loader import MongoDBDataLoader
 from data_formulator.data_loader.bigquery_data_loader import BigQueryDataLoader
 from data_formulator.data_loader.athena_data_loader import AthenaDataLoader
+from data_formulator.data_loader.azure_sql_data_loader import AzureSQLDataLoader
+from data_formulator.data_loader.fabric_lakehouse_data_loader import FabricLakehouseDataLoader
 
 DATA_LOADERS = {
     "mysql": MySQLDataLoader,
@@ -18,7 +20,9 @@ DATA_LOADERS = {
     "postgresql": PostgreSQLDataLoader,
     "mongodb": MongoDBDataLoader,
     "bigquery": BigQueryDataLoader,
-    "athena": AthenaDataLoader
+    "athena": AthenaDataLoader,
+    "azure_sql": AzureSQLDataLoader,
+    "fabric_lakehouse": FabricLakehouseDataLoader,
 }
 
 __all__ = [
@@ -31,5 +35,7 @@ __all__ = [
     "PostgreSQLDataLoader", 
     "MongoDBDataLoader", 
     "BigQueryDataLoader",
-    "AthenaDataLoader", 
+    "AthenaDataLoader",
+    "AzureSQLDataLoader",
+    "FabricLakehouseDataLoader",
     "DATA_LOADERS"]

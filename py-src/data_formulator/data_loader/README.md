@@ -35,6 +35,8 @@ The UI uses the same loaders for connection setup, table listing, and ingestion 
 - **`MySQLDataLoader`**: MySQL (connectorx)
 - **`PostgreSQLDataLoader`**: PostgreSQL (connectorx)
 - **`MSSQLDataLoader`**: Microsoft SQL Server (connectorx)
+- **`AzureSQLDataLoader`**: Azure SQL Database / Managed Instance — SQL auth (connectorx) or Entra ID (pyodbc + AAD token)
+- **`FabricLakehouseDataLoader`**: Microsoft Fabric Lakehouse / Data Warehouse SQL Analytics Endpoint — Entra ID only (pyodbc + AAD token)
 - **`S3DataLoader`**: Amazon S3 files (CSV, Parquet, JSON) via PyArrow S3 filesystem
 - **`AzureBlobDataLoader`**: Azure Blob Storage via PyArrow
 - **`MongoDBDataLoader`**: MongoDB
