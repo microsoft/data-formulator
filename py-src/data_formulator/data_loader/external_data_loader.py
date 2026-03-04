@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Sensitive parameter names that should be excluded from stored metadata
-SENSITIVE_PARAMS = {'password', 'api_key', 'secret', 'token', 'access_key', 'secret_key'}
+SENSITIVE_PARAMS = {'password', 'api_key', 'secret', 'token', 'access_key', 'secret_key', 'client_secret'}
 
 
 def sanitize_table_name(name_as: str) -> str:
