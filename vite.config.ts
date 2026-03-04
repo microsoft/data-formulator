@@ -2,8 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
 
-// Get port from environment variable with fallback to 5567
-const apiPort = process.env.API_PORT || 5567;
+// Get port from environment variable with fallback to 5000
+const apiPort = process.env.API_PORT || 5000;
 
 export default defineConfig({
   plugins: [react()],

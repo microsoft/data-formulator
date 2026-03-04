@@ -174,7 +174,7 @@ def get_app_config():
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
-    parser.add_argument("-p", "--port", type=int, default=5567, help="The port number you want to use")
+    parser.add_argument("-p", "--port", type=int, default=5000, help="The port number you want to use")
     parser.add_argument("--sandbox", type=str, default=os.environ.get('SANDBOX', 'local'),
         choices=['local', 'docker'],
         help="Python code execution backend: 'local' (default, isolated subprocess with audit hooks), "

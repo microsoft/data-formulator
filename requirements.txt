@@ -29,5 +29,4 @@ pymysql
 pyodbc
 pymongo
 yfinance
-connectorx>=0.4.5
-pyarrow>=23.0.0
+pyyaml
