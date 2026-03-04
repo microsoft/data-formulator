@@ -73,7 +73,22 @@ export function getUrls() {
 
         // Workspace
         OPEN_WORKSPACE: `/api/tables/open-workspace`,
+
+        // URL proxy - fetches external URLs server-side (bypasses browser CORS)
+        FETCH_URL_PROXY: `/api/tables/fetch-url`,
     };
+}
+
+/**
+ * Build a fetch URL that routes external http/https URLs through the backend
+ * proxy to avoid CORS failures (e.g. public S3 buckets without CORS headers).
+ * Relative and non-http URLs are returned unchanged.
+ */
+export function buildProxiedUrl(url: string): string {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return `${getUrls().FETCH_URL_PROXY}?url=${encodeURIComponent(url)}`;
+    }
+    return url;
 }
 
 /**

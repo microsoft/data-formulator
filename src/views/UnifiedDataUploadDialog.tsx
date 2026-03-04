@@ -43,7 +43,7 @@ import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
-import { getUrls, fetchWithIdentity } from '../app/utils';
+import { getUrls, fetchWithIdentity, buildProxiedUrl } from '../app/utils';
 import { DBManagerPane } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
@@ -821,7 +821,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         const baseName = parts[parts.length - 1]?.split('?')[0] || 'dataset';
         const tableName = getUniqueTableName(baseName.replace(/\.[^.]+$/, ''), existingNames);
 
-        fetch(fullUrl)
+        // For external http/https URLs, route through the backend proxy to avoid
+        // CORS failures (e.g. public S3 buckets without Access-Control-Allow-Origin).
+        const fetchUrl = buildProxiedUrl(urlToUse) || fullUrl;
+
+        fetch(fetchUrl)
             .then(res => {
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
