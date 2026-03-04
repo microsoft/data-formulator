@@ -1282,9 +1282,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             left: 0,
             right: 0,
             bottom: 0,
+            overflow: 'auto',
             '& > *': {
                 minWidth: '1000px',
-                minHeight: '800px'
+                minHeight: '600px'
             },
         }}>
             <Box sx={{ 
@@ -1295,7 +1296,9 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 overflow: 'hidden'
             }}>
                 {appBar}
-                <RouterProvider router={router} />
+                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', '& > div': { height: '100%' } }}>
+                    <RouterProvider router={router} />
+                </Box>
                 <MessageSnackbar />
                 <ChartRenderService />
             </Box>

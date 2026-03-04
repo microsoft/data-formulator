@@ -348,8 +348,8 @@ export const DataFormulatorFC = ({ }) => {
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
             <Box ref={containerRef} className="outer-allotment" sx={{
-                    margin: '4px 8px 4px 8px', backgroundColor: 'white',
-                    display: 'flex', height: '100%', width: '100%', flexDirection: 'column',
+                    margin: '4px 8px 8px 8px', backgroundColor: 'white',
+                    display: 'flex', height: 'calc(100% - 12px)', width: '100%', flexDirection: 'column',
                     overflow: 'hidden',
                     position: 'relative'}}>
                 <Allotment ref={allotmentRef} onDragEnd={snapToColumns} proportionalLayout={false}>
@@ -472,7 +472,7 @@ export const DataFormulatorFC = ({ }) => {
     </Box>;
     
     return (
-        <Box sx={{ display: 'block', width: "100%", height: 'calc(100% - 54px)', position: 'relative' }}>
+        <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>
             <DndProvider backend={HTML5Backend}>
                 {tables.length > 0 ? fixedSplitPane : dataUploadRequestBox}
                 <UnifiedDataUploadDialog 

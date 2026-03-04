@@ -4,12 +4,17 @@
 @import '@fontsource/roboto/700.css';
 
 html,
-body,
-#root {
+body {
     height: 100%;
     margin: 0;
     /* transform: translateZ(0); */
     overflow: hidden;
+}
+
+#root {
+    height: 100%;
+    margin: 0;
+    overflow: auto;
 }
 
 /* Sharp window wipe animation */
