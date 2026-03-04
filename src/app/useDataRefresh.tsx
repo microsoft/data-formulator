@@ -7,7 +7,7 @@ import { DataFormulatorState, dfActions, selectRefreshConfigs } from './dfSlice'
 import { AppDispatch } from './store';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
-import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
+import { fetchWithIdentity, getUrls, computeContentHash, buildProxiedUrl } from './utils';
 
 interface RefreshResult {
     tableId: string;
@@ -55,7 +55,11 @@ export function useDataRefresh() {
         }
 
         try {
-            const response = await fetch(source.url);
+            // For external http/https URLs, route through the backend proxy to avoid
+            // CORS failures (e.g. public S3 buckets without Access-Control-Allow-Origin).
+            const fetchUrl = buildProxiedUrl(source.url);
+
+            const response = await fetch(fetchUrl);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }

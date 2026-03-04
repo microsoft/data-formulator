@@ -938,3 +938,121 @@ def data_loader_list_table_metadata():
         logger.error(f"Error listing table metadata: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
+
+
+@tables_bp.route('/fetch-url', methods=['GET'])
+def fetch_url_proxy():
+    """Proxy endpoint to fetch external URL content server-side.
+
+    This bypasses browser CORS restrictions for URLs that do not include
+    the required Access-Control-Allow-Origin header (e.g. public S3 files).
+    Only http:// and https:// URLs are allowed.  Requests to private/internal
+    network addresses are blocked to prevent Server-Side Request Forgery (SSRF).
+    All resolved IP addresses are validated and the connection is pinned to the
+    validated IP to prevent DNS-rebinding attacks.
+    """
+    import ipaddress
+    import socket as _socket
+    import requests as _requests
+    from requests.adapters import HTTPAdapter
+    from urllib.parse import urlparse, urlunparse
+
+    url = request.args.get('url', '').strip()
+    if not url:
+        return jsonify({"status": "error", "message": "Missing 'url' query parameter"}), 400
+
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return jsonify({"status": "error", "message": "Only http:// and https:// URLs are supported"}), 400
+
+    # SSRF protection: resolve all IP addresses for the hostname and ensure none
+    # of them point to a private or reserved range.  Validating every resolved
+    # address prevents an attacker from mixing a public IP with a private one in
+    # round-robin DNS to bypass the check.  The connection URL is then rebuilt
+    # using the resolved IP directly so the OS cannot re-resolve the hostname
+    # to a different (possibly private) IP between validation and connection.
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ''
+
+        if not hostname or hostname.lower() == 'localhost':
+            return jsonify({"status": "error", "message": "Requests to internal addresses are not allowed"}), 403
+
+        try:
+            addr_infos = _socket.getaddrinfo(hostname, None)
+            if not addr_infos:
+                return jsonify({"status": "error", "message": "Unable to resolve hostname"}), 400
+
+            for info in addr_infos:
+                raw_ip = info[4][0]
+                try:
+                    ip_obj = ipaddress.ip_address(raw_ip)
+                except ValueError:
+                    continue
+                if (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local
+                        or ip_obj.is_reserved or ip_obj.is_unspecified):
+                    return jsonify({"status": "error", "message": "Requests to internal addresses are not allowed"}), 403
+
+            # Use the first resolved address for the pinned connection.
+            resolved_ip = addr_infos[0][4][0]
+        except _socket.gaierror:
+            return jsonify({"status": "error", "message": "Unable to resolve hostname"}), 400
+
+        default_port = 443 if parsed.scheme == 'https' else 80
+        port = parsed.port or default_port
+        # Omit the port from the netloc when it equals the scheme default to
+        # avoid confusing servers that do not expect an explicit default port.
+        ip_netloc = resolved_ip if port == default_port else f"{resolved_ip}:{port}"
+        # Reconstruct the URL with the validated IP in the netloc so subsequent
+        # network I/O uses the already-verified address (no re-resolution).
+        safe_url = urlunparse((parsed.scheme, ip_netloc, parsed.path or '/',
+                               parsed.params, parsed.query, ''))
+
+    except Exception as e:
+        logger.warning(f"SSRF check error for URL {url}: {e}")
+        return jsonify({"status": "error", "message": "Invalid URL"}), 400
+
+    _STREAM_CHUNK_SIZE = 8192
+
+    class _HostnameVerifyAdapter(HTTPAdapter):
+        """Adapter that verifies TLS certificates against *hostname* even when the
+        connection URL contains an IP address.  This is needed because we pin the
+        connection to the pre-resolved IP (to prevent DNS-rebinding) while still
+        needing to match the cert's CN/SAN, which is issued for the hostname."""
+
+        def __init__(self, hostname: str, *args, **kwargs):
+            self._hostname = hostname
+            super().__init__(*args, **kwargs)
+
+        def init_poolmanager(self, num_pools, maxsize, block=False,
+                             **connection_pool_kw):
+            connection_pool_kw['assert_hostname'] = self._hostname
+            super().init_poolmanager(num_pools, maxsize, block,
+                                     **connection_pool_kw)
+
+    try:
+        session = _requests.Session()
+        if parsed.scheme == 'https':
+            session.mount('https://', _HostnameVerifyAdapter(hostname))
+
+        resp = session.get(
+            safe_url, timeout=30, stream=True,
+            headers={'Host': hostname},
+            verify=True,
+        )
+        resp.raise_for_status()
+
+        content_type = resp.headers.get('Content-Type', 'text/plain')
+        return Response(
+            resp.iter_content(chunk_size=_STREAM_CHUNK_SIZE),
+            status=resp.status_code,
+            content_type=content_type,
+        )
+    except _requests.exceptions.Timeout:
+        logger.warning(f"Timeout fetching URL: {url}")
+        return jsonify({"status": "error", "message": "Request timed out"}), 504
+    except _requests.exceptions.HTTPError as e:
+        logger.warning(f"HTTP error fetching URL {url}: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 502
+    except Exception as e:
+        logger.error(f"Error fetching URL {url}: {e}")
+        return jsonify({"status": "error", "message": "Failed to fetch URL"}), 502
