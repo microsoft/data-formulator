@@ -4,7 +4,7 @@ from typing import Any
 
 import pandas as pd
 import pyarrow as pa
-import connectorx as cx
+import psycopg2
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader
 
@@ -50,27 +50,34 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         if not self.database:
             raise ValueError("PostgreSQL database is required")
 
-        # Build connection URL for connectorx: postgresql://user:password@host:port/database
-        # - Use explicit empty password (user:@host) so the URL parser sees user vs password correctly.
-        # - Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
-        host_for_url = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
-        if self.password:
-            self.connection_url = f"postgresql://{self.user}:{self.password}@{host_for_url}:{self.port}/{self.database}"
-        else:
-            self.connection_url = f"postgresql://{self.user}:@{host_for_url}:{self.port}/{self.database}"
+        # Build psycopg2 connection
+        # Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
+        host_for_conn = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
 
         try:
-            cx.read_sql(self.connection_url, "SELECT 1", return_type="arrow")
+            self._conn = psycopg2.connect(
+                host=host_for_conn,
+                port=int(self.port),
+                user=self.user,
+                password=self.password or "",
+                dbname=self.database,
+            )
+            self._conn.autocommit = True
         except Exception as e:
             logger.error(f"Failed to connect to PostgreSQL (postgresql://{self.user}:***@{self.host}:{self.port}/{self.database}): {e}")
             raise ValueError(f"Failed to connect to PostgreSQL database '{self.database}' on host '{self.host}': {e}") from e
         logger.info(f"Successfully connected to PostgreSQL: postgresql://{self.user}:***@{self.host}:{self.port}/{self.database}")
 
-    # PostgreSQL types that connectorx cannot handle natively
-    _CX_SPATIAL_TYPES = {'geometry', 'geography'}  # PostGIS types → ST_AsText()
-    _CX_OTHER_UNSUPPORTED = {'box', 'circle', 'line', 'lseg', 'path', 'point',
+    # PostgreSQL types that may need special handling
+    _SPATIAL_TYPES = {'geometry', 'geography'}  # PostGIS types → ST_AsText()
+    _OTHER_UNSUPPORTED = {'box', 'circle', 'line', 'lseg', 'path', 'point',
                               'polygon', 'bit', 'bit varying', 'xml', 'tsvector', 'tsquery'}
-    _CX_UNSUPPORTED_TYPES = _CX_SPATIAL_TYPES | _CX_OTHER_UNSUPPORTED
+    _UNSUPPORTED_TYPES = _SPATIAL_TYPES | _OTHER_UNSUPPORTED
+
+    def _read_sql(self, query: str) -> pa.Table:
+        """Execute a query and return results as a PyArrow Table via psycopg2."""
+        df = pd.read_sql(query, self._conn)
+        return pa.Table.from_pandas(df)
 
     def _safe_select_list(self, schema: str, table_name: str) -> str:
         """Build a SELECT column list that converts unsupported types to text.
@@ -83,17 +90,17 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 WHERE table_schema = '{schema}' AND table_name = '{table_name}'
                 ORDER BY ordinal_position
             """
-            cols_arrow = cx.read_sql(self.connection_url, columns_query, return_type="arrow")
+            cols_arrow = self._read_sql(columns_query)
             cols_df = cols_arrow.to_pandas()
-            has_unsupported = any(r['udt_name'].lower() in self._CX_UNSUPPORTED_TYPES for _, r in cols_df.iterrows())
+            has_unsupported = any(r['udt_name'].lower() in self._UNSUPPORTED_TYPES for _, r in cols_df.iterrows())
             if not has_unsupported:
                 return "*"
             parts = []
             for _, r in cols_df.iterrows():
                 col, dtype = r['column_name'], r['udt_name'].lower()
-                if dtype in self._CX_SPATIAL_TYPES:
+                if dtype in self._SPATIAL_TYPES:
                     parts.append(f'ST_AsText("{col}") AS "{col}"')
-                elif dtype in self._CX_OTHER_UNSUPPORTED:
+                elif dtype in self._OTHER_UNSUPPORTED:
                     parts.append(f'"{col}"::text AS "{col}"')
                 else:
                     parts.append(f'"{col}"')
@@ -109,10 +116,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         sort_order: str = 'asc'
     ) -> pa.Table:
         """
-        Fetch data from PostgreSQL as a PyArrow Table using connectorx.
-        
-        connectorx provides extremely fast Arrow-native data access,
-        typically 2-10x faster than pandas-based approaches.
+        Fetch data from PostgreSQL as a PyArrow Table.
         """
         if not source_table:
             raise ValueError("source_table must be provided")
@@ -139,21 +143,21 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         # Build full query with limit
         query = f"{base_query}{order_by_clause} LIMIT {size}"
         
-        logger.info(f"Executing PostgreSQL query via connectorx: {query[:200]}...")
+        logger.info(f"Executing PostgreSQL query: {query[:200]}...")
         
-        # Execute with connectorx - returns Arrow table directly
-        arrow_table = cx.read_sql(self.connection_url, query, return_type="arrow")
+        # Execute query — returns Arrow table
+        arrow_table = self._read_sql(query)
         
-        logger.info(f"Fetched {arrow_table.num_rows} rows from PostgreSQL [Arrow-native]")
+        logger.info(f"Fetched {arrow_table.num_rows} rows from PostgreSQL")
         
         return arrow_table
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List available tables from PostgreSQL."""
-        return self._list_tables_connectorx(table_filter)
+        return self._list_tables(table_filter)
 
-    def _list_tables_connectorx(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List tables using connectorx."""
+    def _list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List tables from PostgreSQL."""
         try:
             # Query tables from information_schema
             query = """
@@ -166,7 +170,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 AND table_type = 'BASE TABLE'
                 ORDER BY table_schema, table_name
             """
-            tables_arrow = cx.read_sql(self.connection_url, query, return_type="arrow")
+            tables_arrow = self._read_sql(query)
             tables_df = tables_arrow.to_pandas()
             
             logger.info(f"Found {len(tables_df)} tables")
@@ -190,7 +194,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                         WHERE table_schema = '{schema}' AND table_name = '{table_name}'
                         ORDER BY ordinal_position
                     """
-                    columns_arrow = cx.read_sql(self.connection_url, columns_query, return_type="arrow")
+                    columns_arrow = self._read_sql(columns_query)
                     columns_df = columns_arrow.to_pandas()
                     columns = [{
                         'name': col_row['column_name'],
@@ -204,7 +208,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                     sample_rows = []
                     sample_query = f'SELECT {col_list} FROM "{schema}"."{table_name}" LIMIT 10'
                     try:
-                        sample_arrow = cx.read_sql(self.connection_url, sample_query, return_type="arrow")
+                        sample_arrow = self._read_sql(sample_query)
                         sample_df = sample_arrow.to_pandas()
                         sample_rows = json.loads(sample_df.to_json(orient="records"))
                     except Exception as sample_err:
@@ -212,7 +216,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                     
                     # Get row count
                     count_query = f'SELECT COUNT(*) as cnt FROM "{schema}"."{table_name}"'
-                    count_arrow = cx.read_sql(self.connection_url, count_query, return_type="arrow")
+                    count_arrow = self._read_sql(count_query)
                     row_count = count_arrow.to_pandas()['cnt'].iloc[0]
                     
                     table_metadata = {

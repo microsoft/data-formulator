@@ -4,7 +4,7 @@ from typing import Any
 
 import pandas as pd
 import pyarrow as pa
-import connectorx as cx
+import pymysql
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader
 
@@ -57,32 +57,37 @@ class MySQLDataLoader(ExternalDataLoader):
         else:
             self.port = int(port)
         
-        # Build connection URL for connectorx
-        # Format: mysql://user:password@host:port/database
-        # - Use explicit empty password (user:@host) so the URL parser sees user vs password correctly.
-        # - Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
-        host_for_url = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
-        if self.password:
-            self.connection_url = f"mysql://{self.user}:{self.password}@{host_for_url}:{self.port}/{self.database}"
-        else:
-            self.connection_url = f"mysql://{self.user}:@{host_for_url}:{self.port}/{self.database}"
+        # Build pymysql connection
+        # Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
+        host_for_conn = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
         
         self._sanitized_url = f"mysql://{self.user}:***@{self.host}:{self.port}/{self.database}"
         
         # Test connection
         try:
-            cx.read_sql(self.connection_url, "SELECT 1", return_type="arrow")
+            self._conn = pymysql.connect(
+                host=host_for_conn,
+                user=self.user,
+                password=self.password or "",
+                database=self.database,
+                port=self.port,
+            )
         except Exception as e:
-            logger.error(f"Failed to connect to MySQL (mysql://{self.user}:***@{self.host}:{self.port}/{self.database}): {e}")
+            logger.error(f"Failed to connect to MySQL ({self._sanitized_url}): {e}")
             raise ValueError(f"Failed to connect to MySQL database '{self.database}' on host '{self.host}': {e}") from e
-        logger.info(f"Successfully connected to MySQL: mysql://{self.user}:***@{self.host}:{self.port}/{self.database}")
+        logger.info(f"Successfully connected to MySQL: {self._sanitized_url}")
 
-    # MySQL types that connectorx cannot handle natively
-    _CX_GEOMETRY_TYPES = {'geometry', 'point', 'linestring', 'polygon',
+    # MySQL types that may need special handling
+    _GEOMETRY_TYPES = {'geometry', 'point', 'linestring', 'polygon',
                            'multipoint', 'multilinestring', 'multipolygon',
                            'geometrycollection'}
-    _CX_OTHER_UNSUPPORTED = {'bit'}
-    _CX_UNSUPPORTED_TYPES = _CX_GEOMETRY_TYPES | _CX_OTHER_UNSUPPORTED
+    _OTHER_UNSUPPORTED = {'bit'}
+    _UNSUPPORTED_TYPES = _GEOMETRY_TYPES | _OTHER_UNSUPPORTED
+
+    def _read_sql(self, query: str) -> pa.Table:
+        """Execute a query and return results as a PyArrow Table via pymysql."""
+        df = pd.read_sql(query, self._conn)
+        return pa.Table.from_pandas(df)
 
     def _safe_select_list(self, schema: str, table_name: str) -> str:
         """Build a SELECT column list that converts unsupported types to text.
@@ -95,17 +100,17 @@ class MySQLDataLoader(ExternalDataLoader):
                 WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
                 ORDER BY ORDINAL_POSITION
             """
-            cols_arrow = cx.read_sql(self.connection_url, columns_query, return_type="arrow")
+            cols_arrow = self._read_sql(columns_query)
             cols_df = cols_arrow.to_pandas()
-            has_unsupported = any(r['DATA_TYPE'].lower() in self._CX_UNSUPPORTED_TYPES for _, r in cols_df.iterrows())
+            has_unsupported = any(r['DATA_TYPE'].lower() in self._UNSUPPORTED_TYPES for _, r in cols_df.iterrows())
             if not has_unsupported:
                 return "*"
             parts = []
             for _, r in cols_df.iterrows():
                 col, dtype = r['COLUMN_NAME'], r['DATA_TYPE'].lower()
-                if dtype in self._CX_GEOMETRY_TYPES:
+                if dtype in self._GEOMETRY_TYPES:
                     parts.append(f"ST_AsText(`{col}`) AS `{col}`")
-                elif dtype in self._CX_OTHER_UNSUPPORTED:
+                elif dtype in self._OTHER_UNSUPPORTED:
                     parts.append(f"CAST(`{col}` AS CHAR) AS `{col}`")
                 else:
                     parts.append(f"`{col}`")
@@ -121,9 +126,7 @@ class MySQLDataLoader(ExternalDataLoader):
         sort_order: str = 'asc'
     ) -> pa.Table:
         """
-        Fetch data from MySQL as a PyArrow Table using connectorx.
-        
-        connectorx provides extremely fast Arrow-native database access.
+        Fetch data from MySQL as a PyArrow Table.
         """
         if not source_table:
             raise ValueError("source_table must be provided")
@@ -146,20 +149,20 @@ class MySQLDataLoader(ExternalDataLoader):
         
         query = f"{base_query}{order_by_clause} LIMIT {size}"
         
-        logger.info(f"Executing MySQL query via connectorx: {query[:200]}...")
+        logger.info(f"Executing MySQL query: {query[:200]}...")
         
-        arrow_table = cx.read_sql(self.connection_url, query, return_type="arrow")
+        arrow_table = self._read_sql(query)
         
-        logger.info(f"Fetched {arrow_table.num_rows} rows from MySQL [Arrow-native]")
+        logger.info(f"Fetched {arrow_table.num_rows} rows from MySQL")
         
         return arrow_table
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List available tables from MySQL database."""
-        return self._list_tables_connectorx(table_filter)
+        return self._list_tables(table_filter)
     
-    def _list_tables_connectorx(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List tables using connectorx."""
+    def _list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List tables from MySQL database."""
         try:
             tables_query = f"""
                 SELECT TABLE_SCHEMA, TABLE_NAME 
@@ -167,7 +170,7 @@ class MySQLDataLoader(ExternalDataLoader):
                 WHERE TABLE_SCHEMA = '{self.database}'
                 AND TABLE_TYPE = 'BASE TABLE'
             """
-            tables_arrow = cx.read_sql(self.connection_url, tables_query, return_type="arrow")
+            tables_arrow = self._read_sql(tables_query)
             tables_df = tables_arrow.to_pandas()
             
             if tables_df.empty:
@@ -192,7 +195,7 @@ class MySQLDataLoader(ExternalDataLoader):
                         WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
                         ORDER BY ORDINAL_POSITION
                     """
-                    columns_arrow = cx.read_sql(self.connection_url, columns_query, return_type="arrow")
+                    columns_arrow = self._read_sql(columns_query)
                     columns_df = columns_arrow.to_pandas()
                     columns = [{
                         'name': col_row['COLUMN_NAME'],
@@ -206,7 +209,7 @@ class MySQLDataLoader(ExternalDataLoader):
                     sample_rows = []
                     sample_query = f"SELECT {col_list} FROM `{schema}`.`{table_name}` LIMIT 10"
                     try:
-                        sample_arrow = cx.read_sql(self.connection_url, sample_query, return_type="arrow")
+                        sample_arrow = self._read_sql(sample_query)
                         sample_df = sample_arrow.to_pandas()
                         sample_rows = json.loads(sample_df.to_json(orient="records", date_format='iso'))
                     except Exception as sample_err:
@@ -214,7 +217,7 @@ class MySQLDataLoader(ExternalDataLoader):
                     
                     # Get row count
                     count_query = f"SELECT COUNT(*) as cnt FROM `{schema}`.`{table_name}`"
-                    count_arrow = cx.read_sql(self.connection_url, count_query, return_type="arrow")
+                    count_arrow = self._read_sql(count_query)
                     row_count = int(count_arrow.to_pandas()['cnt'].iloc[0])
                     
                     table_metadata = {

@@ -25,6 +25,7 @@ import {
   useTheme,
   Link,
   alpha,
+  Tooltip,
 } from '@mui/material';
 
 import SearchIcon from '@mui/icons-material/Search';
@@ -142,6 +143,9 @@ export const DBManagerPane: React.FC<{
         params: {name: string, default: string, type: string, required: boolean, description: string}[], 
         auth_instructions: string}>>({});
 
+    // loaders whose deps are missing on the server, keyed by name -> install hint
+    const [disabledLoaders, setDisabledLoaders] = useState<Record<string, {install_hint: string}>>({});
+
     const [dbTables, setDbTables] = useState<DBTable[]>([]);
     const [selectedTabKey, setSelectedTabKey] = useState("");
     const [selectedDataLoader, setSelectedDataLoader] = useState<string>("");
@@ -197,6 +201,7 @@ export const DBManagerPane: React.FC<{
         .then(data => {
             if (data.status === "success") {
                 setDataLoaderMetadata(data.data_loaders);
+                setDisabledLoaders(data.disabled_loaders ?? {});
             } else {
                 console.error('Failed to fetch data loader params:', data.error);
             }
@@ -216,7 +221,7 @@ export const DBManagerPane: React.FC<{
         flexDirection: 'column', 
         width: '100%',
     }}>
-        {/* Data loaders */}
+        {/* Active data loaders */}
         {Object.keys(dataLoaderMetadata ?? {}).map((dataLoaderType) => (
             <Button
                 key={dataLoaderType}
@@ -240,6 +245,46 @@ export const DBManagerPane: React.FC<{
             >
                 {dataLoaderType}
             </Button>
+        ))}
+
+        {/* Disabled loaders (missing deps) — greyed out with install hint */}
+        {Object.keys(disabledLoaders).length > 0 && (
+            <Divider sx={{ my: 0.5 }} />
+        )}
+        {Object.entries(disabledLoaders).map(([loaderName, { install_hint }]) => (
+            <Tooltip
+                key={`disabled-${loaderName}`}
+                title={`Not installed. Run: ${install_hint}`}
+                placement="right"
+                arrow
+            >
+                <span style={{ width: '100%' }}>
+                <Button
+                    variant="text"
+                    size="small"
+                    disabled
+                    sx={{
+                        fontSize: 12,
+                        textTransform: "none",
+                        width: '100%',
+                        justifyContent: 'flex-start',
+                        textAlign: 'left',
+                        borderRadius: 0,
+                        py: 1,
+                        px: 2,
+                        color: 'text.disabled !important',
+                        cursor: 'default',
+                        userSelect: 'none',
+                        minWidth: 0,
+                        '&.Mui-disabled': {
+                            color: 'text.disabled',
+                        },
+                    }}
+                >
+                    {loaderName}
+                </Button>
+                </span>
+            </Tooltip>
         ))}
     </Box>
 
