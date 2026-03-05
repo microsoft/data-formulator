@@ -4,7 +4,7 @@ from typing import Any
 
 import pandas as pd
 import pyarrow as pa
-import connectorx as cx
+import pyodbc
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
 
@@ -106,24 +106,33 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         self.user = params.get("user", "").strip()
         self.password = params.get("password", "").strip()
         self.port = params.get("port", "1433")
+        self.driver = params.get("driver", "ODBC Driver 17 for SQL Server")
+        self.encrypt = params.get("encrypt", "yes")
+        self.trust_server_certificate = params.get("trust_server_certificate", "no")
+        self.connection_timeout = params.get("connection_timeout", "30")
 
-        # Build connection URL for connectorx: mssql://user:password@host:port/database
-        # - Use explicit empty password (user:@host) when user is set but password is blank.
-        # - Use 127.0.0.1 when server is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
-        server_for_url = "127.0.0.1" if (self.server or "").strip().lower() == "localhost" else self.server
+        # Build ODBC connection string
+        conn_str = (
+            f"DRIVER={{{self.driver}}};"
+            f"SERVER={self.server},{self.port};"
+            f"DATABASE={self.database};"
+            f"Encrypt={self.encrypt};"
+            f"TrustServerCertificate={self.trust_server_certificate};"
+            f"Connection Timeout={self.connection_timeout};"
+        )
         if self.user:
-            self.connection_url = f"mssql://{self.user}:{self.password}@{server_for_url}:{self.port}/{self.database}?TrustServerCertificate=true"
+            conn_str += f"UID={self.user};PWD={self.password};"
         else:
-            self.connection_url = f"mssql://{server_for_url}:{self.port}/{self.database}?TrustServerCertificate=true&IntegratedSecurity=true"
+            conn_str += "Trusted_Connection=yes;"
 
         try:
-            cx.read_sql(self.connection_url, "SELECT 1", return_type="arrow")
+            self._conn = pyodbc.connect(conn_str)
             log.info(f"Successfully connected to SQL Server: {self.server}/{self.database}")
         except Exception as e:
             log.error(f"Failed to connect to SQL Server: {e}")
             raise ValueError(f"Failed to connect to SQL Server '{self.server}': {e}") from e
 
-    # SQL Server types that connectorx cannot handle natively
+    # SQL Server types that may need special handling
     _CX_SPATIAL_TYPES = {'geometry', 'geography'}  # use .STAsText()
     _CX_OTHER_UNSUPPORTED = {'hierarchyid', 'xml', 'sql_variant', 'image', 'timestamp'}
     _CX_UNSUPPORTED_TYPES = _CX_SPATIAL_TYPES | _CX_OTHER_UNSUPPORTED
@@ -156,14 +165,19 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         except Exception:
             return "*"
 
+    def _read_sql(self, query: str) -> pa.Table:
+        """Execute a query and return results as a PyArrow Table via pyodbc."""
+        df = pd.read_sql(query, self._conn)
+        return pa.Table.from_pandas(df)
+
     def _execute_query_raw(self, query: str) -> pa.Table:
-        """Execute a query via connectorx (no error wrapping)."""
-        return cx.read_sql(self.connection_url, query, return_type="arrow")
+        """Execute a query (no error wrapping)."""
+        return self._read_sql(query)
 
     def _execute_query(self, query: str) -> pa.Table:
-        """Execute a query and return results as a PyArrow Table (via connectorx)."""
+        """Execute a query and return results as a PyArrow Table."""
         try:
-            return cx.read_sql(self.connection_url, query, return_type="arrow")
+            return self._read_sql(query)
         except Exception as e:
             log.error(f"Failed to execute query: {e}")
             raise
@@ -176,7 +190,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         sort_order: str = 'asc'
     ) -> pa.Table:
         """
-        Fetch data from SQL Server as a PyArrow Table using connectorx.
+        Fetch data from SQL Server as a PyArrow Table.
         """
         if not source_table:
             raise ValueError("source_table must be provided")
@@ -203,8 +217,8 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         
         log.info(f"Executing SQL Server query: {query[:200]}...")
         
-        arrow_table = cx.read_sql(self.connection_url, query, return_type="arrow")
-        log.info(f"Fetched {arrow_table.num_rows} rows from SQL Server [Arrow-native]")
+        arrow_table = self._execute_query(query)
+        log.info(f"Fetched {arrow_table.num_rows} rows from SQL Server")
         
         return arrow_table
 

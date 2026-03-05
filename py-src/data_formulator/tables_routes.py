@@ -14,7 +14,7 @@ import pandas as pd
 from pathlib import Path
 from werkzeug.utils import secure_filename
 
-from data_formulator.data_loader import DATA_LOADERS
+from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 from data_formulator.auth import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
@@ -675,7 +675,7 @@ def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
 
 @tables_bp.route('/data-loader/list-data-loaders', methods=['GET'])
 def data_loader_list_data_loaders():
-    """List all available data loaders"""
+    """List all available data loaders and disabled ones with install hints."""
 
     try:
         return jsonify({
@@ -686,6 +686,10 @@ def data_loader_list_data_loaders():
                     "auth_instructions": data_loader.auth_instructions()
                 }
                 for name, data_loader in DATA_LOADERS.items()
+            },
+            "disabled_loaders": {
+                name: {"install_hint": hint}
+                for name, hint in DISABLED_LOADERS.items()
             }
         })
     except Exception as e:

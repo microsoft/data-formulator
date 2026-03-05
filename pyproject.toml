@@ -36,20 +36,22 @@ dependencies = [
     "backoff",
     "beautifulsoup4",
     "scikit-learn",
-    "azure-identity",
-    "azure-kusto-data",
-    "azure-keyvault-secrets",
-    "azure-storage-blob",
-    "google-cloud-bigquery",
-    "google-auth",
-    "db-dtypes",
-    "boto3",
-    "pymysql",
-    "pyodbc",
-    "pymongo",
+    "pyyaml",
+    "pyarrow>=13.0.0",
     "yfinance",
-    "connectorx>=0.4.5",
-    "pyarrow>=23.0.0",
+    # Data-loader deps (all included by default; try/except keeps things safe)
+    "pymongo",                  # mongodb
+    "azure-storage-blob",       # azure_blob
+    "azure-identity",           # azure_blob, kusto
+    "azure-kusto-data",         # kusto
+    "azure-keyvault-secrets",   # kusto
+    "pymysql",                  # mysql
+    "pyodbc",                   # mssql
+    "psycopg2-binary",          # postgresql
+    "boto3",                    # s3, athena
+    "google-cloud-bigquery",    # bigquery
+    "google-auth",              # bigquery
+    "db-dtypes",                # bigquery
 ]
 
 [project.urls]
