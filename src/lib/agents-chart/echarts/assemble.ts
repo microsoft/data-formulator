@@ -68,6 +68,7 @@ import { ecApplyLayoutToSpec, ecApplyTooltips } from './instantiate-spec';
 import { ecCombineFacetPanels } from './facet';
 import { DEFAULT_COLORS } from './templates/utils';
 import { inferVisCategory, computeZeroDecision } from '../core/semantic-types';
+import { decideColorMaps, getPaletteForScheme } from '../core/color-decisions';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -213,6 +214,15 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         chartTemplate,
     );
 
+    const colorDecisions = decideColorMaps({
+        chartType,
+        encodings,
+        channelSemantics,
+        table: values,
+        backend: 'echarts',
+        background: 'light',
+    });
+
     // --- Template instantiate ---
 
     const instantiateContext: InstantiateContext = {
@@ -226,6 +236,7 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         semanticTypes,
         chartType,
         assembleOptions: effectiveOptions,
+        colorDecisions,
     };
 
     // --- Detect faceting (column / row channels) ---
@@ -469,50 +480,8 @@ interface ECResolvedChannelEncoding {
     offsetChannel?: 'xOffset' | 'yOffset';
 }
 
-const TABLEAU10 = [
-    '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
-    '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac',
-];
-const TABLEAU20 = [
-    '#4e79a7', '#a0cbe8', '#f28e2b', '#ffbe7d', '#59a14f', '#8cd17d',
-    '#b6992d', '#f1ce63', '#499894', '#86bcb6', '#e15759', '#ff9d9a',
-    '#79706e', '#bab0ac', '#d37295', '#fabfd2', '#b07aa1', '#d4a6c8',
-    '#9d7660', '#cee0b4',
-];
-const SET1 = [
-    '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
-    '#ffff33', '#a65628', '#f781bf', '#999999',
-];
-const SET2 = [
-    '#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854',
-    '#ffd92f', '#e5c494', '#b3b3b3',
-];
-const CATEGORY10 = [
-    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-];
-
-const SCHEME_TO_PALETTE: Record<string, string[]> = {
-    tableau10: TABLEAU10,
-    tableau20: TABLEAU20,
-    set1: SET1,
-    set2: SET2,
-    set3: SET2.concat(SET1),
-    category10: CATEGORY10,
-    category20: TABLEAU20,
-    pastel1: SET2,
-    accent: SET1,
-    paired: TABLEAU20,
-    default: DEFAULT_COLORS,
-};
-
-function schemeToPalette(schemeName: string): string[] {
-    const key = schemeName.toLowerCase().replace(/[- ]/g, '');
-    for (const [name, palette] of Object.entries(SCHEME_TO_PALETTE)) {
-        if (key === name.toLowerCase()) return palette;
-    }
-    return DEFAULT_COLORS;
-}
+// 颜色 palette 现在从 core/color-decisions 的统一注册表获取；
+// 这里保留 DEFAULT_COLORS 作为找不到注册表项时的兜底。
 
 /**
  * Translate Phase 0 channel semantics + declaration overrides into
@@ -640,18 +609,9 @@ function buildECEncodings(
             }
         }
 
-        // --- Color / group: palette + diverging domainMid (mirror VL) ---
-        if (channel === 'color' || channel === 'group') {
-            const schemeSource = encoding.scheme && encoding.scheme !== 'default'
-                ? encoding.scheme
-                : (fieldName && cs?.colorScheme?.scheme) ? cs.colorScheme.scheme : undefined;
-            if (schemeSource) {
-                entry.colorPalette = schemeToPalette(schemeSource);
-            }
-            if (fieldName && cs?.colorScheme?.type === 'diverging' && cs.colorScheme.domainMid !== undefined) {
-                entry.colorDomainMid = cs.colorScheme.domainMid;
-            }
-        }
+        // Color / group palettes are now sourced from backend-agnostic
+        // colorDecisions in InstantiateContext, so we no longer derive
+        // a palette directly from encoding.scheme or cs.colorScheme here.
 
         if (Object.keys(entry).length > 0) {
             resolved[channel] = entry;
@@ -678,10 +638,13 @@ function buildECEncodings(
         resolved.group.groupAxis = groupAxis;
         resolved.group.offsetChannel = offsetChannel;
         if (!resolved.color) {
+            const palette = groupCS.colorScheme?.scheme
+                ? (getPaletteForScheme(groupCS.colorScheme.scheme) ?? DEFAULT_COLORS)
+                : DEFAULT_COLORS;
             resolved.color = {
                 field: groupCS.field,
                 type: (groupCS.type ?? 'nominal') as ECResolvedChannelEncoding['type'],
-                colorPalette: resolved.group.colorPalette ?? (groupCS.colorScheme?.scheme ? schemeToPalette(groupCS.colorScheme.scheme) : undefined),
+                colorPalette: palette,
                 colorDomainMid: resolved.group.colorDomainMid,
                 ordinalSortOrder: resolved.group.ordinalSortOrder,
                 sortOrder: resolved.group.sortOrder,
@@ -692,7 +655,8 @@ function buildECEncodings(
                 legendLabelFontSize: resolved.group.legendLabelFontSize,
             };
         } else if (!resolved.color.colorPalette && groupCS.colorScheme?.scheme) {
-            resolved.color.colorPalette = schemeToPalette(groupCS.colorScheme.scheme);
+            resolved.color.colorPalette =
+                getPaletteForScheme(groupCS.colorScheme.scheme) ?? DEFAULT_COLORS;
         }
     }
 

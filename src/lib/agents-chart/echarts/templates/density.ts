@@ -12,7 +12,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { groupBy, DEFAULT_COLORS } from './utils';
+import { groupBy } from './utils';
 
 /**
  * Bandwidth for KDE — match vega-statistics (bandwidth.js).
@@ -88,12 +88,12 @@ export const ecDensityPlotDef: ChartTemplateDef = {
         if (colorField) {
             const groups = groupBy(table, colorField);
             option.legend = { data: [...groups.keys()] };
+            option._legendTitle = colorField;
             // Shared extent (like Vega's density with groupby) so all curves use the same x domain
             const allValues = table.map((r: any) => Number(r[xField])).filter((v: number) => !isNaN(v));
             const sharedExtent = allValues.length > 0
                 ? { min: Math.min(...allValues), max: Math.max(...allValues) }
                 : undefined;
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const values = rows.map((r: any) => Number(r[xField])).filter((v: number) => !isNaN(v));
                 const { x, y } = kde(values, steps, bandwidthMultiplier, sharedExtent);
@@ -103,10 +103,9 @@ export const ecDensityPlotDef: ChartTemplateDef = {
                     type: 'line',
                     data,
                     symbol: 'none',
-                    areaStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length], opacity: 0.5 },
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由 color-decisions / option.color 驱动；这里只设置透明度。
+                    areaStyle: { opacity: 0.5 },
                 });
-                colorIdx++;
             }
         } else {
             const values = table.map((r: any) => Number(r[xField])).filter((v: number) => !isNaN(v));

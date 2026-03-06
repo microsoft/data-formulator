@@ -67,8 +67,14 @@ export const ecWaterfallChartDef: ChartTemplateDef = {
             }
         }
 
+        const legendItems = ['Start/End', 'Increase', 'Decrease'];
+        const legendColors = ['#5470c6', '#91cc75', '#ee6666'];
+
         const option: any = {
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: {
+                data: legendItems,
+            },
             xAxis: {
                 type: 'category',
                 data: categories,
@@ -88,6 +94,13 @@ export const ecWaterfallChartDef: ChartTemplateDef = {
                     stack: 'wf',
                     itemStyle: { color: (params: any) => colors[params.dataIndex] },
                 },
+                // Legend-only series: no data, only for legend color/symbol
+                ...legendItems.map((name, i) => ({
+                    type: 'bar' as const,
+                    name,
+                    data: [] as number[],
+                    itemStyle: { color: legendColors[i] },
+                })),
             ],
         };
 

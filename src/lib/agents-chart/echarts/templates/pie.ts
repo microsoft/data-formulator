@@ -12,7 +12,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, DEFAULT_COLORS, computeCircumferencePressure, computeEffectiveBarCount } from './utils';
+import { extractCategories, computeCircumferencePressure, computeEffectiveBarCount } from './utils';
 
 export const ecPieChartDef: ChartTemplateDef = {
     chart: 'Pie Chart',
@@ -134,8 +134,7 @@ export const ecPieChartDef: ChartTemplateDef = {
                     borderRadius: chartProperties?.cornerRadius ?? 0,
                 },
             }],
-            // Assign colors
-            color: DEFAULT_COLORS,
+            // 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 设置 option.color
         };
 
         // Canvas size from context

@@ -7,7 +7,7 @@
  */
 
 import { ChartTemplateDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './utils';
+import { extractCategories, groupBy, getCategoryOrder } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
@@ -104,7 +104,6 @@ export const ecRangedDotPlotDef: ChartTemplateDef = {
                 }
             }
 
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const scatterData = xIsDiscrete
                     ? xCategories!.map((cat, xi) => {
@@ -120,9 +119,8 @@ export const ecRangedDotPlotDef: ChartTemplateDef = {
                     type: 'scatter',
                     data: scatterData,
                     symbolSize: 8,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 统一分配
                 });
-                colorIdx++;
             }
         } else {
             const lineData = xIsDiscrete

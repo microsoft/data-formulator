@@ -6,7 +6,7 @@
  */
 
 import { ChartTemplateDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS } from './utils';
+import { extractCategories, groupBy } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
@@ -107,16 +107,14 @@ export const ecStripPlotDef: ChartTemplateDef = {
         if (colorField) {
             const groups = groupBy(table, colorField);
             option.legend = { data: [...groups.keys()] };
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 option.series.push({
                     name,
                     type: 'scatter',
                     data: rows.map(buildPoint),
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length], opacity: 0.7 },
+                    itemStyle: { opacity: 0.7 },
                     symbolSize: 8,
                 });
-                colorIdx++;
             }
         } else {
             option.series.push({

@@ -16,6 +16,7 @@ import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import {
     extractCategories, groupBy, detectAxes, DEFAULT_COLORS, getCategoryOrder,
 } from './utils';
+import { pickColorMap } from '../../core/color-decisions';
 import {
     detectBandedAxisFromSemantics, detectBandedAxisForceDiscrete,
 } from '../../vegalite/templates/utils';
@@ -250,7 +251,6 @@ export const ecBarChartDef: ChartTemplateDef = {
                         : [titleGraphic];
             }
 
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const data = buildCategoryValues(rows, catField, valField, categories);
                 option.series.push({
@@ -258,9 +258,8 @@ export const ecBarChartDef: ChartTemplateDef = {
                     type: 'bar',
                     data,
                     stack: 'total',
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由 ecApplyLayoutToSpec 中的 palette 决定，这里不再硬编码。
                 });
-                colorIdx++;
             }
 
             Object.assign(spec, option);
@@ -270,11 +269,23 @@ export const ecBarChartDef: ChartTemplateDef = {
         }
 
         // x=temporal, y=nominal → vertical grouped bar: x=dates (labels), y=count, series=group
+        // 这里没有显式的 color/group 通道，但从 y 轴类别派生出了“系列分组”，
+        // 所以无法依赖全局 colorDecisions；改为在模板内部通过 color-decisions 的
+        // pickColorMap 主动选一个 categorical palette（通常是 cat10），并按 legend 顺序分配颜色。
         if (categoryAxis === 'y' && valCS?.type === 'temporal') {
             const dateCategories = extractCategories(table, valField, getCategoryOrder(ctx, valueAxis));
             dateCategories.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
             const groups = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis));
             const countMatrix = buildCategoryGroupCounts(table, valField, catField, dateCategories, groups);
+
+            // 使用 color-decisions 的 colormap 注册表选一个分类 palette（通常是 cat10）
+            const selection = pickColorMap({
+                type: 'categorical',
+                categoryCount: groups.length || undefined,
+                background: 'light',
+                chartType: ctx.chartType,
+            });
+            const palette = selection.map.colors;
 
             const option: any = {
                 tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -288,12 +299,14 @@ export const ecBarChartDef: ChartTemplateDef = {
                     axisLine: { show: true },
                 },
                 yAxis: { type: 'value', name: 'Count', axisTick: { show: true } },
+                // 显式把 palette 写到 option.color，方便和其它图类型保持一致
+                color: palette,
                 series: groups.map((name, i) => ({
                     name,
                     type: 'bar',
                     data: countMatrix[i],
                     itemStyle: {
-                        color: DEFAULT_COLORS[i % DEFAULT_COLORS.length],
+                        color: palette[i % palette.length],
                         borderRadius: chartProperties?.cornerRadius ?? 0,
                     },
                 })),
@@ -448,7 +461,6 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                     ? [existingGraphic, titleGraphic]
                     : [titleGraphic];
 
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const data = buildCategoryCounts(rows, channelSemantics.x!.field!, categoriesX);
                 option.series.push({
@@ -456,9 +468,8 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                     type: 'bar',
                     data,
                     stack: 'total',
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由全局 palette 决定。
                 });
-                colorIdx++;
             }
 
             Object.assign(spec, option);
@@ -529,7 +540,6 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                         : [titleGraphic];
             }
 
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const data = valCS?.type === 'temporal'
                     ? buildCategoryCounts(rows, catField, categories)
@@ -538,7 +548,7 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                     name,
                     type: 'bar',
                     data,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由全局 palette 决定。
                 };
                 if (stackGroup) {
                     series.stack = stackGroup;
@@ -551,7 +561,6 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                     // for now we just stack — full normalize would need data transform
                 }
                 option.series.push(series);
-                colorIdx++;
             }
         } else {
             // Single series stacked (no color = just a regular bar)
@@ -632,9 +641,7 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
                     name,
                     type: 'bar',
                     data: countMatrix[i],
-                    itemStyle: {
-                        color: DEFAULT_COLORS[i % DEFAULT_COLORS.length],
-                    },
+                    // 颜色由全局 palette 决定。
                 })),
             };
             // Let ecApplyLayoutToSpec place a single legend title for the group channel.
@@ -726,16 +733,14 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
                     ? [existingGraphic, titleGraphic]
                     : [titleGraphic];
 
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const data = buildCategoryCounts(rows, xField, categories);
                 option.series.push({
                     name,
                     type: 'bar',
                     data,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由全局 palette 决定。
                 });
-                colorIdx++;
             }
 
             Object.assign(spec, option);
@@ -773,7 +778,7 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
         };
         option._encodingTooltip = { trigger: 'axis', categoryLabel: catField, valueLabel: valField };
 
-        if (groupField) {
+            if (groupField) {
             // Each group becomes a separate series — ECharts places them
             // side-by-side within each category automatically
             const groups = groupBy(table, groupField);
@@ -813,16 +818,14 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
                         : [titleGraphic];
             }
 
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const data = buildCategoryValues(rows, catField, valField, categories);
                 option.series.push({
                     name,
                     type: 'bar',
                     data,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由全局 palette 决定。
                 });
-                colorIdx++;
             }
         } else {
             // No grouping — single series

@@ -10,8 +10,9 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './utils';
+import { extractCategories, groupBy, getCategoryOrder } from './utils';
 import { toTypeString } from '../../core/field-semantics';
+import { getPaletteForScheme } from '../../core/color-decisions';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
@@ -46,7 +47,7 @@ export const ecLineChartDef: ChartTemplateDef = {
         paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } },
     }),
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table, chartProperties } = ctx;
+        const { channelSemantics, table, chartProperties, colorDecisions } = ctx;
         const xCS = channelSemantics.x;
         const yCS = channelSemantics.y;
         const colorField = channelSemantics.color?.field;
@@ -132,11 +133,11 @@ export const ecLineChartDef: ChartTemplateDef = {
         // Interpolation / smooth
         const interpolate = chartProperties?.interpolate;
         const smooth = interpolate === 'monotone' || interpolate === 'basis' ||
-                        interpolate === 'cardinal' || interpolate === 'catmull-rom';
+            interpolate === 'cardinal' || interpolate === 'catmull-rom';
         const step = interpolate === 'step' ? 'middle'
-                   : interpolate === 'step-before' ? 'start'
-                   : interpolate === 'step-after' ? 'end'
-                   : undefined;
+            : interpolate === 'step-before' ? 'start'
+                : interpolate === 'step-after' ? 'end'
+                    : undefined;
 
         if (isContinuousColor && colorField) {
             // Continuous color (Quantity/Date): single line + colored points with a continuous visualMap.
@@ -161,6 +162,9 @@ export const ecLineChartDef: ChartTemplateDef = {
             const cMin = nums.length ? Math.min(...nums) : 0;
             const cMax = nums.length ? Math.max(...nums) : 1;
 
+            const decisionSchemeId = colorDecisions?.color?.schemeId;
+            const paletteFromDecision = decisionSchemeId ? getPaletteForScheme(decisionSchemeId) : undefined;
+
             option.visualMap = {
                 type: 'continuous',
                 min: cMin,
@@ -169,8 +173,12 @@ export const ecLineChartDef: ChartTemplateDef = {
                 orient: 'vertical',
                 right: 10,
                 top: 'center',
-                // Greens (matches VL example); can be overridden later via chartProperties if needed.
-                inRange: { color: ['#f7fcf5', '#74c476', '#00441b'] },
+                // 优先使用 colordecisions palette，找不到时退回原来的绿色色带。
+                inRange: {
+                    color: paletteFromDecision && paletteFromDecision.length > 0
+                        ? paletteFromDecision
+                        : ['#f7fcf5', '#74c476', '#00441b'],
+                },
                 seriesIndex: 1, // apply to point series
                 name: colorField,
                 textStyle: { fontSize: 10 },
@@ -212,11 +220,10 @@ export const ecLineChartDef: ChartTemplateDef = {
                 itemStyle: { opacity: 1 },
             });
         } else if (colorField && isDiscrete(colorType)) {
-            // Multi-series line chart
+            // Multi-series line chart — 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 统一分配
             const groups = groupBy(table, colorField);
             option.legend = { data: [...groups.keys()] };
 
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const seriesData =
                     yIsDiscrete && yCategories
@@ -229,7 +236,6 @@ export const ecLineChartDef: ChartTemplateDef = {
                     name,
                     type: 'line',
                     data: seriesData,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
                     // Default line chart: don't draw point markers.
                     showSymbol: false,
                     symbol: 'none',
@@ -238,7 +244,6 @@ export const ecLineChartDef: ChartTemplateDef = {
                 if (step) series.step = step;
 
                 option.series.push(series);
-                colorIdx++;
             }
         } else {
             // Single series
@@ -396,7 +401,7 @@ export const ecDottedLineChartDef: ChartTemplateDef = {
 
         const interpolate = chartProperties?.interpolate;
         const smooth = interpolate === 'monotone' || interpolate === 'basis' ||
-                        interpolate === 'cardinal' || interpolate === 'catmull-rom';
+            interpolate === 'cardinal' || interpolate === 'catmull-rom';
 
         const baseSeriesOpt = {
             showSymbol: true,
@@ -409,7 +414,6 @@ export const ecDottedLineChartDef: ChartTemplateDef = {
         if (colorField) {
             const groups = groupBy(table, colorField);
             option.legend = { data: [...groups.keys()] };
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const seriesData = xIsDiscrete
                     ? buildCategoryAlignedData(rows, xField, yField, categories!)
@@ -419,9 +423,8 @@ export const ecDottedLineChartDef: ChartTemplateDef = {
                     type: 'line',
                     data: seriesData,
                     ...baseSeriesOpt,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 统一分配
                 });
-                colorIdx++;
             }
         } else {
             const seriesData = xIsDiscrete
@@ -563,7 +566,6 @@ export const ecBumpChartDef: ChartTemplateDef = {
         if (colorField) {
             const groups = groupBy(table, colorField);
             option.legend = { data: [...groups.keys()] };
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const orderedRows = xIsDiscrete ? rows : sortRowsByX(rows);
                 const seriesData = xIsDiscrete
@@ -574,9 +576,8 @@ export const ecBumpChartDef: ChartTemplateDef = {
                     type: 'line',
                     data: seriesData,
                     ...baseSeriesOpt,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 统一分配
                 });
-                colorIdx++;
             }
         } else {
             const rows = xIsDiscrete ? table : sortRowsByX(table);

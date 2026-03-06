@@ -17,7 +17,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { groupBy, DEFAULT_COLORS } from './utils';
+import { groupBy } from './utils';
 
 export const ecStreamgraphDef: ChartTemplateDef = {
     chart: 'Streamgraph',
@@ -163,8 +163,7 @@ export const ecStreamgraphDef: ChartTemplateDef = {
             }],
         };
 
-        // Apply color palette
-        option.color = seriesNames.map((_, i) => DEFAULT_COLORS[i % DEFAULT_COLORS.length]);
+        // 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 设置 option.color，ThemeRiver 会按 stream 顺序使用
 
         Object.assign(spec, option);
         delete spec.mark;

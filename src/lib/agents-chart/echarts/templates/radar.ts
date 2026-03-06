@@ -17,7 +17,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS, computeCircumferencePressure } from './utils';
+import { extractCategories, groupBy, computeCircumferencePressure } from './utils';
 
 /** Round up to a nice ceiling for radar axis max. */
 function niceMax(v: number): number {
@@ -99,10 +99,8 @@ export const ecRadarChartDef: ChartTemplateDef = {
                 seriesData.push({
                     name,
                     value: values,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
                     areaStyle: filled ? { opacity: fillOpacity } : undefined,
                 });
-                colorIdx++;
             }
         } else {
             // Single group

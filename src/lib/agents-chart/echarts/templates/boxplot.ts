@@ -12,7 +12,7 @@
  */
 
 import { ChartTemplateDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './utils';
+import { extractCategories, groupBy, getCategoryOrder } from './utils';
 import { detectBandedAxisForceDiscrete } from '../../vegalite/templates/utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
@@ -110,7 +110,7 @@ export const ecBoxplotDef: ChartTemplateDef = {
         const catCS = channelSemantics[catAxis];
         const categories = extractCategories(table, catField, catCS?.ordinalSortOrder);
 
-        const colorPalette = (ctx.resolvedEncodings as any)?.color?.colorPalette ?? DEFAULT_COLORS;
+        // 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 统一分配（不在此处硬编码）
         const isHorizontal = catAxis === 'y';
 
         const catAxisLabel = {
@@ -159,12 +159,11 @@ export const ecBoxplotDef: ChartTemplateDef = {
                     }
                 }
 
-                const borderColor = colorPalette[cIdx % colorPalette.length];
                 option.series.push({
                     name: colorName,
                     type: 'boxplot',
                     data: boxData,
-                    itemStyle: { borderColor },
+                    // itemStyle 由 ecApplyLayoutToSpec 按 colorDecisions 填充
                 });
                 if (outlierData.length > 0) {
                     option.series.push({
@@ -172,7 +171,7 @@ export const ecBoxplotDef: ChartTemplateDef = {
                         type: 'scatter',
                         data: outlierData,
                         symbolSize: 4,
-                        itemStyle: { color: borderColor },
+                        // 颜色由 ecApplyLayoutToSpec 按类别与 box 一致分配
                     });
                 }
             }
@@ -200,7 +199,7 @@ export const ecBoxplotDef: ChartTemplateDef = {
             option.series.push({
                 type: 'boxplot',
                 data: boxData,
-                itemStyle: { borderColor: '#5470c6' },
+                // 单系列颜色由 ecApplyLayoutToSpec 使用 cat10[0] 等统一默认
             });
             if (outlierData.length > 0) {
                 option.series.push({
@@ -208,7 +207,7 @@ export const ecBoxplotDef: ChartTemplateDef = {
                     type: 'scatter',
                     data: outlierData,
                     symbolSize: 4,
-                    itemStyle: { color: '#ee6666' },
+                    // 离群点颜色由 ecApplyLayoutToSpec 分配
                 });
             }
         }

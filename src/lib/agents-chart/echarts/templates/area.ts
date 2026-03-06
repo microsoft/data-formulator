@@ -10,7 +10,8 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './utils';
+import { extractCategories, groupBy, getCategoryOrder } from './utils';
+import { getPaletteForScheme } from '../../core/color-decisions';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
@@ -34,7 +35,7 @@ export const ecAreaChartDef: ChartTemplateDef = {
         paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } },
     }),
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table, chartProperties } = ctx;
+        const { channelSemantics, table, chartProperties, colorDecisions } = ctx;
         const xCS = channelSemantics.x;
         const yCS = channelSemantics.y;
         const colorField = channelSemantics.color?.field;
@@ -114,11 +115,11 @@ export const ecAreaChartDef: ChartTemplateDef = {
         // Interpolation / smooth
         const interpolate = chartProperties?.interpolate;
         const smooth = interpolate === 'monotone' || interpolate === 'basis' ||
-                        interpolate === 'cardinal' || interpolate === 'catmull-rom';
+            interpolate === 'cardinal' || interpolate === 'catmull-rom';
         const step = interpolate === 'step' ? 'middle'
-                   : interpolate === 'step-before' ? 'start'
-                   : interpolate === 'step-after' ? 'end'
-                   : undefined;
+            : interpolate === 'step-before' ? 'start'
+                : interpolate === 'step-after' ? 'end'
+                    : undefined;
 
         if (isContinuousColor && colorField) {
             // Continuous color (Quantity/Date): single area + colored points with continuous visualMap (mirror VL layer: area + point).
@@ -151,6 +152,9 @@ export const ecAreaChartDef: ChartTemplateDef = {
                 ],
             };
 
+            const decisionSchemeId = colorDecisions?.color?.schemeId;
+            const paletteFromDecision = decisionSchemeId ? getPaletteForScheme(decisionSchemeId) : undefined;
+
             option.visualMap = {
                 type: 'continuous',
                 min: cMin,
@@ -159,7 +163,11 @@ export const ecAreaChartDef: ChartTemplateDef = {
                 orient: 'vertical',
                 right: 10,
                 top: 'center',
-                inRange: { color: ['#f7fcf5', '#74c476', '#00441b'] },
+                inRange: {
+                    color: paletteFromDecision && paletteFromDecision.length > 0
+                        ? paletteFromDecision
+                        : ['#f7fcf5', '#74c476', '#00441b'],
+                },
                 seriesIndex: 1,
                 name: colorField,
                 textStyle: { fontSize: 10 },
@@ -227,7 +235,6 @@ export const ecAreaChartDef: ChartTemplateDef = {
             // For temporal x with stacking, align all series to the same timeline so stack indices match.
             const sortedDates = xIsTemporal ? getSortedUniqueDates(table, xField) : undefined;
 
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 const seriesData = xIsDiscrete
                     ? buildCategoryAlignedData(rows, xField, yField, categories!)
@@ -244,14 +251,13 @@ export const ecAreaChartDef: ChartTemplateDef = {
                     showSymbol: false,
                     symbol: 'none',
                     areaStyle: { opacity },
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 统一分配
                 };
                 if (stackGroup) series.stack = stackGroup;
                 if (smooth) series.smooth = true;
                 if (step) series.step = step;
 
                 option.series.push(series);
-                colorIdx++;
             }
         } else {
             const seriesData =

@@ -3,12 +3,20 @@
 
 /**
  * ECharts Lollipop Chart — rule from 0 to value + dot at end (mirror vegalite/templates/lollipop.ts).
+ * Vega-Lite: rule strokeWidth 1.5、圆 size 80；茎黑色，圆点用图例色。
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, DEFAULT_COLORS } from './utils';
+import { extractCategories, groupBy, DEFAULT_COLORS, getCategoryOrder } from './utils';
 import { detectAxes } from './utils';
 import { detectBandedAxisFromSemantics } from '../../vegalite/templates/utils';
+
+/** Vega-Lite 风格：茎（rule）黑色、细线，圆点与 color 图例一致 */
+const STEM_COLOR = '#000000';
+/** 茎线宽度，对应 VL rule strokeWidth: 1.5 */
+const STEM_WIDTH_PX = 1.5;
+/** 圆点直径约 10px，对应 VL circle size: 80（面积量级） */
+const DOT_SIZE_BASE = 10;
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
@@ -44,7 +52,8 @@ export const ecLollipopChartDef: ChartTemplateDef = {
         if (!catField || !valField) return;
 
         const catCS = channelSemantics[categoryAxis];
-        const categories = extractCategories(table, catField, catCS?.ordinalSortOrder);
+        const colorField = channelSemantics.color?.field;
+        const categories = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis) ?? catCS?.ordinalSortOrder);
 
         const valueMap = new Map<string, number>();
         for (const row of table) {
@@ -57,8 +66,8 @@ export const ecLollipopChartDef: ChartTemplateDef = {
         const values = categories.map(cat => valueMap.get(cat) ?? null);
 
         const isHorizontal = categoryAxis === 'y';
-        const dotSize = chartProperties?.dotSize ?? 80;
-        const barWidth = Math.max(2, Math.min(8, dotSize / 10));
+        const dotSizeConfig = chartProperties?.dotSize ?? 80;
+        const symbolSizePx = Math.max(6, Math.min(DOT_SIZE_BASE + (dotSizeConfig - 80) / 40, 16));
 
         const option: any = {
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -102,21 +111,65 @@ export const ecLollipopChartDef: ChartTemplateDef = {
                 {
                     type: 'bar',
                     data: values,
-                    barWidth,
-                    itemStyle: { color: '#5470c6' },
-                },
-                {
-                    type: 'scatter',
-                    data: categories.map((cat, i) => {
-                        const v = values[i];
-                        return isHorizontal ? [v, cat] : [cat, v];
-                    }),
-                    symbolSize: Math.min(20, dotSize / 4),
-                    itemStyle: { color: '#5470c6', borderColor: '#fff', borderWidth: 1 },
-                    z: 2,
+                    barWidth: STEM_WIDTH_PX,
+                    itemStyle: { color: STEM_COLOR },
                 },
             ],
         };
+
+        // Tooltip：只展示圆点（scatter）的值，不展示茎（bar）
+        option.tooltip = option.tooltip ?? {};
+        option._encodingTooltip = {
+            trigger: 'axis',
+            categoryLabel: catField,
+            valueLabel: valField,
+            // 由 buildEncodingTooltipFormatter 只保留 seriesType === 'scatter' 的条目
+            filterScatterOnly: true,
+        };
+
+        if (colorField) {
+            const groups = groupBy(table, colorField);
+            const colorOrder = getCategoryOrder(ctx, 'color');
+            const legendKeys = colorOrder && colorOrder.length > 0
+                ? colorOrder.filter((k: string) => groups.has(k))
+                : [...groups.keys()];
+            if (legendKeys.length > 0) {
+                option.legend = { data: legendKeys };
+                option._legendTitle = colorField;
+            }
+            for (const name of legendKeys) {
+                const rows = groups.get(name) ?? [];
+                const scatterData = rows
+                    .filter((r: any) => {
+                        const v = r[valField];
+                        return v != null && !isNaN(Number(v));
+                    })
+                    .map((r: any) => {
+                        const cat = String(r[catField] ?? '');
+                        const v = Number(r[valField]);
+                        return isHorizontal ? [v, cat] : [cat, v];
+                    });
+                option.series.push({
+                    name,
+                    type: 'scatter',
+                    data: scatterData,
+                    symbolSize: symbolSizePx,
+                    itemStyle: { borderColor: '#fff', borderWidth: 1 },
+                    z: 2,
+                });
+            }
+        } else {
+            option.series.push({
+                type: 'scatter',
+                data: categories.map((cat, i) => {
+                    const v = values[i];
+                    return isHorizontal ? [v, cat] : [cat, v];
+                }),
+                symbolSize: symbolSizePx,
+                itemStyle: { color: DEFAULT_COLORS[0], borderColor: '#fff', borderWidth: 1 },
+                z: 2,
+            });
+        }
 
         Object.assign(spec, option);
         delete spec.mark;
