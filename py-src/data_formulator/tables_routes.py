@@ -860,9 +860,19 @@ def data_loader_ingest_data_from_query():
             data_loader.ingest_data_from_query(query, name_as)
             logger.info(f"Data ingested successfully for: {name_as}")
 
+            # Get the actual row count of the newly ingested table
+            row_count = 0
+            if name_as:
+                try:
+                    sanitized_name = sanitize_table_name(name_as)
+                    row_count = duck_db_conn.execute(f'SELECT COUNT(*) FROM "{sanitized_name}"').fetchone()[0]
+                except Exception:
+                    pass
+
             return jsonify({
                 "status": "success",
-                "message": "Successfully ingested data from data loader"
+                "message": "Successfully ingested data from data loader",
+                "row_count": row_count
             })
 
     except Exception as e:
@@ -871,5 +881,56 @@ def data_loader_ingest_data_from_query():
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error", 
+            "message": safe_msg
+        }), status_code
+
+
+@tables_bp.route('/execute-sql', methods=['POST'])
+def execute_sql():
+    """Execute a SQL query, store the result as a named table, and return the rows (for QC Live refresh of derived tables)"""
+    try:
+        data = request.get_json()
+        code = data.get('code')
+        name_as = data.get('name_as')
+
+        if not code or not name_as:
+            return jsonify({"status": "error", "message": "Missing 'code' or 'name_as'"}), 400
+
+        sanitized_name = sanitize_table_name(name_as)
+
+        with db_manager.connection(session['session_id']) as db:
+            # Replace any existing table/view with the same name.
+            # Each DROP is in its own try/except because DuckDB raises a type-mismatch
+            # error when you DROP TABLE on a VIEW (or vice-versa), and a single block
+            # would swallow both drops on the first failure.
+            try:
+                db.execute(f'DROP VIEW IF EXISTS "{sanitized_name}"')
+            except Exception:
+                pass
+            try:
+                db.execute(f'DROP TABLE IF EXISTS "{sanitized_name}"')
+            except Exception:
+                pass
+
+            db.execute(f'CREATE TABLE "{sanitized_name}" AS ({code})')
+            row_count = db.execute(f'SELECT COUNT(*) FROM "{sanitized_name}"').fetchone()[0]
+
+            # Return all rows so the frontend can update Redux state
+            rows_df = db.execute(f'SELECT * FROM "{sanitized_name}"').fetchdf()
+            rows = json.loads(rows_df.to_json(orient='records', date_format='iso', default_handler=str))
+
+            return jsonify({
+                "status": "success",
+                "table_name": sanitized_name,
+                "row_count": row_count,
+                "rows": rows
+            })
+
+    except Exception as e:
+        logger.error(f"Error executing SQL: {str(e)}")
+        logger.error(f"Error traceback: {traceback.format_exc()}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error",
             "message": safe_msg
         }), status_code

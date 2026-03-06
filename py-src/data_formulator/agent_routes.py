@@ -373,6 +373,7 @@ def derive_data():
 
         instruction = content["extra_prompt"]
         language = content.get("language", "python") # whether to use sql or python, default to python
+        prompt_source = content.get("prompt_source", "user")  # "user" or "agent"
         
         max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
         agent_coding_rules = content.get("agent_coding_rules", "")
@@ -401,7 +402,7 @@ def derive_data():
         if mode == "recommendation":
             # now it's in recommendation mode
             agent = SQLDataRecAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataRecAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
-            results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
+            results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages, prompt_source=prompt_source)
         else:
             agent = SQLDataTransformationAgent(client=client, conn=conn, agent_coding_rules=agent_coding_rules) if language == "sql" else PythonDataTransformationAgent(client=client, exec_python_in_subprocess=current_app.config['CLI_ARGS']['exec_python_in_subprocess'], agent_coding_rules=agent_coding_rules)
             results = agent.run(input_tables, instruction, chart_type, chart_encodings, prev_messages)

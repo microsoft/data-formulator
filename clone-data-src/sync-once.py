@@ -122,6 +122,11 @@ def safe_str(val):
         return None
     return str(val)
 
+def safe_str_upper(val):
+    if val is None:
+        return None
+    return str(val).upper()
+
 def safe_datetime_str(val):
     if val is None:
         return None
@@ -238,9 +243,9 @@ def build_row(r):
         safe_str(r.get("operationname")),
         safe_str(r.get("spitemoid")),
         safe_str(r.get("spitemname")),
-        safe_str(r.get("stdparamreportname")),
+        safe_str_upper(r.get("stdparamreportname")),
         safe_str(r.get("qcchecksheetname")),
-        safe_str(r.get("qcstdparamname")),
+        safe_str_upper(r.get("qcstdparamname")),
         safe_str(r.get("headername")),
         safe_str(r.get("headervalue")),
         safe_str(r.get("paramname")),
@@ -271,7 +276,7 @@ def build_row(r):
         safe_int(r.get("maxpolishround")),
         safe_str(r.get("ismaxqcround")),
         safe_str(r.get("qcworkeroid")),
-        safe_str(r.get("stdparamnickname")),
+        safe_str_upper(r.get("stdparamnickname")),
         safe_str(r.get("ngtypename")),
         safe_int(r.get("boxorder")),
         safe_str(r.get("spdisk3")),

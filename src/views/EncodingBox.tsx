@@ -185,8 +185,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
   const baseEncoding = chart.encodingMap[channel];
   const pendingEncodingsForChannel = useSelector((state: DataFormulatorState) =>
     state.pendingEncodings.filter(
-      (entry) => entry.chartId == chartId && entry.channel == channel
-    )
+      (entry) => entry.chartId == chartId && entry.channel == channel,
+    ),
   );
 
   const encoding = React.useMemo(() => {
@@ -208,7 +208,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
     encoding?: EncodingItem;
   }) => {
     dispatch(
-      dfActions.queueChartEncodingUpdate({ chartId, channel, ...params })
+      dfActions.queueChartEncodingUpdate({ chartId, channel, ...params }),
     );
   };
 
@@ -226,11 +226,11 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
   };
 
   const conceptShelfItems = useSelector(
-    (state: DataFormulatorState) => state.conceptShelfItems
+    (state: DataFormulatorState) => state.conceptShelfItems,
   );
 
   let field = conceptShelfItems.find(
-    (x: FieldItem) => x.id == encoding.fieldID
+    (x: FieldItem) => x.id == encoding.fieldID,
   );
   let fieldMetadata =
     field?.name && activeTable?.metadata[field?.name]
@@ -238,7 +238,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
       : undefined;
 
   let [autoSortResult, setAutoSortResult] = useState<any[] | undefined>(
-    fieldMetadata?.levels
+    fieldMetadata?.levels,
   );
   let [autoSortInferRunning, setAutoSortInferRunning] =
     useState<boolean>(false);
@@ -284,7 +284,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
         canDrop: monitor.canDrop(),
       }),
     }),
-    [chartId, encoding]
+    [chartId, encoding],
   ); // add dependency
 
   //useEffect(() => {resetConfigOptions()}, [encoding]);
@@ -325,7 +325,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
     key: string,
     width: number = 80,
     disabled: boolean = false,
-    tooltip: string = ""
+    tooltip: string = "",
   ) => {
     let comp = (
       <FormControlLabel
@@ -393,7 +393,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
           } else {
             updateEncProp(
               "dtype",
-              event.target.value as "quantitative" | "qualitative" | "temporal"
+              event.target.value as "quantitative" | "qualitative" | "temporal",
             );
           }
         }}
@@ -404,7 +404,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
           `dtype-auto`,
           40,
           false,
-          "auto"
+          "auto",
         )}
         {radioLabel(
           getIconFromDtype("quantitative"),
@@ -412,7 +412,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
           `dtype-quantitative`,
           40,
           false,
-          "quantitative"
+          "quantitative",
         )}
         {radioLabel(
           getIconFromDtype("nominal"),
@@ -420,7 +420,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
           `dtype-nominal`,
           40,
           false,
-          "nominal"
+          "nominal",
         )}
         {radioLabel(
           getIconFromDtype("temporal"),
@@ -428,7 +428,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
           `dtype-temporal`,
           40,
           false,
-          "temporal"
+          "temporal",
         )}
       </RadioGroup>
     </FormControl>,
@@ -465,7 +465,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
                   "stack",
                   event.target.value == "default"
                     ? undefined
-                    : event.target.value
+                    : event.target.value,
                 );
               }}
             >
@@ -525,7 +525,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
               component: "EncodingBox",
               type: "error",
               value: "unable to perform auto-sort.",
-            })
+            }),
           );
           setAutoSortResult(undefined);
         }
@@ -540,7 +540,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
             component: "EncodingBox",
             type: "error",
             value: "unable to perform auto-sort due to server issue.",
-          })
+          }),
         );
       });
   };
@@ -554,7 +554,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
     sortByOptions.push(radioLabel("x", "x", `sort-x-by-x-ascending`, 80));
     sortByOptions.push(radioLabel("y", "y", `sort-x-by-y-ascending`, 80));
     sortByOptions.push(
-      radioLabel("color", "color", `sort-x-by-color-ascending`, 80)
+      radioLabel("color", "color", `sort-x-by-color-ascending`, 80),
     );
   }
   if (
@@ -564,7 +564,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
     sortByOptions.push(radioLabel("x", "x", `sort-y-by-x-ascending`, 80));
     sortByOptions.push(radioLabel("y", "y", `sort-y-by-y-ascending`, 80));
     sortByOptions.push(
-      radioLabel("color", "color", `sort-y-by-color-ascending`, 80)
+      radioLabel("color", "color", `sort-y-by-color-ascending`, 80),
     );
   }
 
@@ -870,7 +870,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
       //console.log(`yah-haha: ${option}`);
       updateEncProp(
         "fieldID",
-        (conceptShelfItems.find((f) => f.name == option) as FieldItem).id
+        (conceptShelfItems.find((f) => f.name == option) as FieldItem).id,
       );
     } else {
       if (option == "") {
@@ -921,7 +921,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
         g.field.source === "custom" ||
         (targetTable &&
           targetTable.names.includes(g.field.name) &&
-          validTableIds.has(g.field.tableRef))
+          validTableIds.has(g.field.tableRef)),
     );
   } else {
     // no specific table selected: show all groups
@@ -1025,7 +1025,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
       }}
       groupBy={(option) => {
         let groupItem = filteredConceptGroups.find(
-          (item) => item.field.name == option
+          (item) => item.field.name == option,
         );
         if (groupItem && groupItem.field.name != "") {
           return `${groupItem.group}`;
@@ -1118,7 +1118,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
                   component={"span"}
                 >
                   {getIconFromType(
-                    activeTable?.metadata[fieldItem.name]?.type || Type.Auto
+                    activeTable?.metadata[fieldItem.name]?.type || Type.Auto,
                   )}
                   <span
                     style={{

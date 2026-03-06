@@ -57,18 +57,7 @@ class ExternalDataLoader(ABC):
                 sample_values = df[col].dropna().head(3)
                 logger.info(f"Datetime column '{col}' sample values: {list(sample_values)}")
 
-        base_name = table_name
-        counter = 1
-        while True:
-            # Check if table exists
-            exists = self.duck_db_conn.execute(f"SELECT COUNT(*) FROM duckdb_tables() WHERE table_name = '{table_name}'").fetchone()[0] > 0
-            if not exists:
-                break
-            # If exists, append counter to base name
-            table_name = f"{base_name}_{counter}"
-            counter += 1
-    
-        # Create table
+        # Create (or replace) table atomically — avoids write-write conflicts on re-ingest
         random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
         self.duck_db_conn.register(f'df_temp_{random_suffix}', df)
         
@@ -79,10 +68,16 @@ class ExternalDataLoader(ABC):
         except Exception as e:
             logger.warning(f"Could not get schema info: {e}")
         
-        self.duck_db_conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df_temp_{random_suffix}")
+        # If a VIEW exists with this name, CREATE OR REPLACE TABLE will fail.
+        # Drop the view first (ignore errors in case it's already a table or doesn't exist).
+        try:
+            self.duck_db_conn.execute(f"DROP VIEW IF EXISTS {table_name}")
+        except Exception:
+            pass
+        self.duck_db_conn.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM df_temp_{random_suffix}")
         self.duck_db_conn.execute(f"DROP VIEW df_temp_{random_suffix}")  # Drop the temporary view after creating the table
         
-        logger.info(f"Successfully created DuckDB table '{table_name}'")
+        logger.info(f"Successfully created/replaced DuckDB table '{table_name}'")
     
     
     @staticmethod

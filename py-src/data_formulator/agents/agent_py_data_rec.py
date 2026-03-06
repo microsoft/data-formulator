@@ -5,6 +5,7 @@ import json
 import pandas as pd
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_code_from_gpt_response, extract_and_log_user_prompt
+from data_formulator.agents.prompt_guard_agent import PromptGuardAgent, extract_all_columns_from_input_tables
 import data_formulator.py_sandbox as py_sandbox
 
 import traceback
@@ -33,7 +34,7 @@ Concretely, you should infer the appropriate data and create in the output secti
     "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
     "recommendation": "..." // string, explain why this recommendation is made
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
-    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
+    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", "linear_regression", "pie", "donut", "bubble", "waterfall", "radar", "funnel", "sankey", "tree", "network", "histogram", "boxplot", "violin", "sunburst", "scatter". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "chart_encodings": {
         "x": "",
         "y": "",
@@ -68,13 +69,24 @@ Concretely:
     - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
     - "chart_encodings" should specify which fields should be used to create the visualization
         - decide which visual channels should be used to create the visualization appropriate for the chart type.
-            - point: x, y, color, size, facet
+            - point (scatter): x, y, color, size, facet
             - histogram: x, color, facet
             - bar: x, y, color, facet
             - line: x, y, color, facet
             - area: x, y, color, facet
             - heatmap: x, y, color, facet
             - group_bar: x, y, color, facet
+            - pie/donut: categorical label + quantitative value, or facet
+            - bubble: x, y (quantitative), size (quantitative for bubble size), color (categorical for groups)
+            - waterfall: x (stages), y (values), color (up/down encoding)
+            - radar: x (categories), y (quantitative radius), color (groups)
+            - funnel: x (stages), value (converting value)
+            - sankey: source, target, value
+            - tree: hierarchical with value
+            - network: source, target, value
+            - boxplot: x (categorical), y (quantitative), color (groups)
+            - violin: x (categorical), y (quantitative), color (groups)
+            - sunburst: hierarchical categorical with quantitative
         - note that all fields used in "chart_encodings" should be included in "output_fields".
             - all fields you need for visualizations should be transformed into the output fields!
             - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
@@ -108,6 +120,29 @@ Concretely:
                 - best for: Trends over time, continuous data
             - (heatmap) Heatmaps: x,y: Categorical (you need to convert quantitative to nominal), color: Quantitative intensity, 
                 - best for: Pattern discovery in matrix data
+            - (pie) Pie Charts: values for sizes, labels for categories
+                - best for: Composition, parts of a whole (avoid with many categories)
+            - (donut) Donut Charts: same as pie, optional center label
+            - (bubble) Bubble Charts: x, y (positioning), size (bubble size), color (groups)
+                - best for: relationships with 3+ dimensions
+            - (waterfall) Waterfall Charts: x (stages/categories), y (changes/values), shows cumulative effect
+                - best for: showing how an initial value is affected by positive/negative values
+            - (radar) Radar Charts: x (categories around perimeter), y (distance from center)
+                - best for: comparing multiple quantitative variables for multiple entities
+            - (funnel) Funnel Charts: stages (x), values (y) showing progressive dropping
+                - best for: stages in a process, conversion funnels
+            - (sankey) Sankey Diagrams: source, target (flow), value (flow thickness)
+                - best for: flows and transitions between categories
+            - (tree/treemap) Treemaps: hierarchical structure with quantitative values
+                - best for: hierarchical data with large number of categories
+            - (network) Network Diagrams: connections between nodes, values for edge weights
+                - best for: relationships, connections, network structures
+            - (boxplot) Box Plots: x (categorical), y (quantitative)
+                - best for: distribution, quartiles, outliers
+            - (violin) Violin Plots: x (categorical), y (quantitative)
+                - best for: distribution shape comparison across categories
+            - (sunburst) Sunburst Charts: hierarchical rings with quantitative values
+                - best for: hierarchical composition similar to treemap
         - facet channel is available for all chart types, it supports a categorical field with small cardinality to visualize the data in different facets.
         - if you really need additional legend fields:
             - you can use opacity for legend (support Quantitative and Categorical).
@@ -223,6 +258,7 @@ class PythonDataRecAgent(object):
 
     def __init__(self, client, system_prompt=None, exec_python_in_subprocess=False, agent_coding_rules=""):
         self.client = client
+        self.guard = PromptGuardAgent(client=client)
         
         # Incorporate agent coding rules into system prompt if provided
         if system_prompt is not None:
@@ -297,7 +333,32 @@ class PythonDataRecAgent(object):
         return candidates
     
 
-    def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):
+    def run(self, input_tables, description, n=1, prev_messages: list[dict] = [], prompt_source: str = "user"):
+        # 🛡️ Guard: Validate prompt before processing
+        # Skip guard validation for agent-generated prompts
+        if prompt_source == "user":
+            # Extract columns from input_tables for QC data validation
+            data_columns = extract_all_columns_from_input_tables(input_tables)
+            guard_result = self.guard.validate(description, data_columns=data_columns)
+            if not guard_result["ok"]:
+                logger.info(f"🚫 Prompt blocked by guard: {guard_result['reason']}")
+                return [{
+                    "status": "blocked",
+                    "code": "",
+                    "content": guard_result["user_message"],
+                    "agent": "PythonDataRecAgent",
+                    "refined_goal": {
+                        "mode": "",
+                        "recommendation": guard_result["reason"],
+                        "output_fields": [],
+                        "chart_encodings": {},
+                        "chart_type": ""
+                    },
+                    "guard": guard_result,
+                    "dialog": [*prev_messages, {"role": "user", "content": description}],
+                }]
+        else:
+            logger.info(f"✅ Skipping guard validation for agent-generated prompt: '{description[:50]}...'")
 
         data_summary = generate_data_summary(input_tables, include_data_samples=True)
 
@@ -329,6 +390,8 @@ class PythonDataRecAgent(object):
         latest_data_sample: the latest data sample that the user is working on, it's a json object that contains the data sample of the current table
         new_instruction: the new instruction that the user wants to add to the latest data sample
         """
+        # Note: Guard validation already ran in run() method for the initial prompt
+        # Followup refinements don't need re-validation - guard is a one-time check
 
         logger.info(f"GOAL: \n\n{new_instruction}")
 

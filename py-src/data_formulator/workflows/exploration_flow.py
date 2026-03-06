@@ -169,7 +169,8 @@ def run_exploration_flow_streaming(
         else:
             transformation_results = rec_agent.run(
                 input_tables=input_tables,
-                description=current_question
+                description=current_question,
+                prompt_source="agent"
             )
 
         # give one attempt to fix potential errors

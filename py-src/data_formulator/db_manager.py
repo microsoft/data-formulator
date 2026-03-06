@@ -6,6 +6,7 @@ import pandas as pd
 from typing import Dict
 import tempfile
 import os
+import threading
 from contextlib import contextmanager
 from dotenv import load_dotenv
 import logging
@@ -18,21 +19,34 @@ class DuckDBManager:
         self._db_files: Dict[str, str] = {}
         self._local_db_dir: str = local_db_dir
         self._disabled: bool = disabled
+        # Per-session locks to serialize concurrent DB access (prevents write-write conflicts)
+        self._session_locks: Dict[str, threading.Lock] = {}
+        self._meta_lock = threading.Lock()  # protects _session_locks dict itself
 
     def is_disabled(self) -> bool:
         """Check if the database manager is disabled"""
         return self._disabled
 
+    def _get_session_lock(self, session_id: str) -> threading.Lock:
+        """Get (or create) the per-session threading lock."""
+        with self._meta_lock:
+            if session_id not in self._session_locks:
+                self._session_locks[session_id] = threading.Lock()
+            return self._session_locks[session_id]
+
     @contextmanager
     def connection(self, session_id: str):
-        """Get a DuckDB connection as a context manager that will be closed when exiting the context"""
+        """Get a DuckDB connection as a context manager that will be closed when exiting the context.
+        Serializes all access per session to prevent write-write conflicts."""
+        lock = self._get_session_lock(session_id)
         conn = None
-        try:
-            conn = self.get_connection(session_id)
-            yield conn
-        finally:
-            if conn:
-                conn.close()
+        with lock:
+            try:
+                conn = self.get_connection(session_id)
+                yield conn
+            finally:
+                if conn:
+                    conn.close()
     
     def get_connection(self, session_id: str) -> duckdb.DuckDBPyConnection:
         """Internal method to get or create a DuckDB connection for a session"""

@@ -36,6 +36,7 @@ import chartIconPie from "../assets/PieChart.png";
 import chartIconArea from "../assets/area-chart.png";
 import { interpolate, line } from "d3";
 import { size } from "lodash";
+import { log } from "console";
 
 const detectedLimits: Record<string, number | undefined> = {};
 
@@ -70,7 +71,7 @@ const ChartIcon: React.FC<{ src: string; alt?: string }> = ({
 function calculateOptimalYDomain(
   data: any[],
   yField: string,
-  paddingPercent: number = 10
+  paddingPercent: number = 10,
 ): [number, number] | null {
   if (!data || data.length === 0 || !yField) return null;
 
@@ -218,6 +219,17 @@ const scatterPlots: ChartTemplate[] = [
       column: ["encoding", "column"],
       row: ["encoding", "row"],
     },
+    postProcessor: (
+      vgSpec: any,
+      _table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number,
+    ) => {
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
+      return vgSpec;
+    },
   },
   {
     chart: "Linear Regression",
@@ -269,7 +281,7 @@ const scatterPlots: ChartTemplate[] = [
       _table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       try {
         const layers = vgSpec.layer || [];
@@ -333,7 +345,7 @@ const scatterPlots: ChartTemplate[] = [
       _table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       try {
         const layers = vgSpec.layer || [];
@@ -385,15 +397,15 @@ const scatterPlots: ChartTemplate[] = [
       table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       if (vgSpec.encoding.y?.type == "nominal") {
         vgSpec["layer"][0]["encoding"]["detail"] = JSON.parse(
-          JSON.stringify(vgSpec["encoding"]["y"])
+          JSON.stringify(vgSpec["encoding"]["y"]),
         );
       } else if (vgSpec.encoding.x?.type == "nominal") {
         vgSpec["layer"][0]["encoding"]["detail"] = JSON.parse(
-          JSON.stringify(vgSpec["encoding"]["x"])
+          JSON.stringify(vgSpec["encoding"]["x"]),
         );
       } else {
       }
@@ -414,14 +426,14 @@ const scatterPlots: ChartTemplate[] = [
       ["x", "y", "color", "opacity", "column", "row"].map((channel) => [
         channel,
         ["encoding", channel],
-      ])
+      ]),
     ),
     postProcessor: (
       vgSpec: any,
       table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
         vgSpec.encoding.x.type = "nominal";
@@ -455,7 +467,7 @@ const barCharts: ChartTemplate[] = [
       table: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       // Smart domain calculation for Y-axis and responsive width
       try {
@@ -476,7 +488,7 @@ const barCharts: ChartTemplate[] = [
           yDef.scale.nice = false;
           yDef.scale.clamp = true; // 🔧 Clamp values to domain
           console.log(
-            `📊 Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`
+            `📊 Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`,
           );
         }
 
@@ -586,7 +598,7 @@ const barCharts: ChartTemplate[] = [
       table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       try {
         if (table) {
@@ -607,9 +619,9 @@ const barCharts: ChartTemplate[] = [
                 .filter(
                   (r) =>
                     r[colorField] == colorValues[0] ||
-                    r[colorField] == colorValues[1]
+                    r[colorField] == colorValues[1],
                 )
-                .map((r) => r[xField])
+                .map((r) => r[xField]),
             ),
           ];
           let domain = [Math.min(...xValues, 0), Math.max(...xValues)];
@@ -645,7 +657,7 @@ const barCharts: ChartTemplate[] = [
       table: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       // Smart domain calculation for Y-axis and responsive width
       try {
@@ -666,7 +678,7 @@ const barCharts: ChartTemplate[] = [
           yDef.scale.nice = false;
           yDef.scale.clamp = true;
           console.log(
-            `📊 Grouped Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`
+            `📊 Grouped Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`,
           );
         }
 
@@ -711,7 +723,7 @@ const barCharts: ChartTemplate[] = [
         }
 
         console.log(
-          `📐 Grouped Bar Chart: width=${width}px for ${numGroups} groups`
+          `📐 Grouped Bar Chart: width=${width}px for ${numGroups} groups`,
         );
       } catch (error) {
         console.warn("⚠️ Grouped Bar Chart postProcessor failed:", error);
@@ -739,7 +751,7 @@ const barCharts: ChartTemplate[] = [
       table: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       // Smart domain calculation for Y-axis and responsive width
       try {
@@ -760,7 +772,7 @@ const barCharts: ChartTemplate[] = [
           yDef.scale.nice = false;
           yDef.scale.clamp = true;
           console.log(
-            `📊 Stacked Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`
+            `📊 Stacked Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`,
           );
         }
 
@@ -805,7 +817,7 @@ const barCharts: ChartTemplate[] = [
         }
 
         console.log(
-          `📐 Stacked Bar Chart: width=${width}px for ${numBars} bars`
+          `📐 Stacked Bar Chart: width=${width}px for ${numBars} bars`,
         );
       } catch (error) {
         console.warn("⚠️ Stacked Bar Chart postProcessor failed:", error);
@@ -833,7 +845,7 @@ const barCharts: ChartTemplate[] = [
       table: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       // Smart domain calculation for Y-axis and responsive width
       try {
@@ -854,7 +866,7 @@ const barCharts: ChartTemplate[] = [
           yDef.scale.nice = false;
           yDef.scale.clamp = true;
           console.log(
-            `📊 Histogram: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`
+            `📊 Histogram: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`,
           );
         }
 
@@ -927,7 +939,7 @@ const barCharts: ChartTemplate[] = [
       table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       const xDef = vgSpec.encoding?.x;
       const yDef = vgSpec.encoding?.y;
@@ -1047,6 +1059,17 @@ let lineCharts = [
       column: ["encoding", "column"],
       row: ["encoding", "row"],
     },
+    postProcessor: (
+      vgSpec: any,
+      _table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number,
+    ) => {
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
+      return vgSpec;
+    },
   },
   {
     chart: "Dotted Line Chart",
@@ -1062,6 +1085,17 @@ let lineCharts = [
       color: ["encoding", "color"],
       column: ["encoding", "column"],
       row: ["encoding", "row"],
+    },
+    postProcessor: (
+      vgSpec: any,
+      _table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number,
+    ) => {
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
+      return vgSpec;
     },
   },
   {
@@ -1087,7 +1121,7 @@ let lineCharts = [
               as: "rolling_mean",
             },
           ],
-          frame: [-15, 15], // Rolling 30 điểm (trước 15, sau 15)
+          frame: [-20, 20], // Rolling 30 điểm (trước 15, sau 15)
         },
       ],
       encoding: { x: {} },
@@ -1110,7 +1144,7 @@ let lineCharts = [
       table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       try {
         const yFieldDef = vgSpec.layer?.[0]?.encoding?.y;
@@ -1178,14 +1212,14 @@ let specialCharts: ChartTemplate[] = [
       ["x", "y", "color", "column", "row"].map((channel) => [
         channel,
         ["encoding", channel],
-      ])
+      ]),
     ),
     postProcessor: (
       vgSpec: any,
       table: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       if (vgSpec.encoding.y && vgSpec.encoding.y.type != "nominal") {
         vgSpec.encoding.y.type = "nominal";
@@ -1226,7 +1260,7 @@ let specialCharts: ChartTemplate[] = [
       table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       // Tính tổng giá trị để hiển thị phần trăm
       const total = table ? table.reduce((sum, row) => sum + row.value, 0) : 1;
@@ -1267,7 +1301,7 @@ let specialCharts: ChartTemplate[] = [
       table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       // Đặt lại tên biến cho rõ ràng
       const valueDef = vgSpec.encoding.theta; // field1: Thường là giá trị (PARAMVALUE)
@@ -1381,7 +1415,7 @@ let specialCharts: ChartTemplate[] = [
       table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       // ------------------------------
       // 🧩 1. Chuẩn hóa lại các channel
@@ -1510,8 +1544,19 @@ let specialCharts: ChartTemplate[] = [
       ["x", "y", "x2", "y2", "color", "column", "row"].map((channel) => [
         channel,
         ["encoding", channel],
-      ])
+      ]),
     ),
+    postProcessor: (
+      vgSpec: any,
+      _table?: any[],
+      _qcLimitsMode?: boolean,
+      chartWidth?: number,
+      chartHeight?: number,
+    ) => {
+      vgSpec.width = chartWidth || 800;
+      vgSpec.height = chartHeight || 400;
+      return vgSpec;
+    },
   },
   {
     chart: "Waterfall",
@@ -1602,7 +1647,7 @@ let specialCharts: ChartTemplate[] = [
       _table?: any[],
       _qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       // 🔧 Tự động gán fieldX/fieldY theo người dùng
       const xField = vgSpec.layer[0].encoding.x.field;
@@ -1641,7 +1686,7 @@ let customCharts: ChartTemplate[] = [
     chart: "QC Trend Line",
     icon: chartIconQCTrendChart,
     template: {
-      mark: "point",
+      // mark: "line",
       encoding: {
         index: { field: "INDEX", type: "quantitative" },
         value: { field: "VALUE", type: "quantitative" },
@@ -1665,7 +1710,7 @@ let customCharts: ChartTemplate[] = [
       table: any[],
       qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       if (!table || table.length === 0) return vgSpec;
       console.log("width:", chartWidth, "height:", chartHeight);
@@ -1737,7 +1782,7 @@ let customCharts: ChartTemplate[] = [
       // =========================================================================
 
       const pointLayer = {
-        mark: { type: "line", point: true, interpolate: "monotone" },
+        mark: { type: "line", interpolate: "monotone" },
         encoding: {
           x: { ...indexDef, type: "quantitative", title: indexDef.field },
           y: {
@@ -1787,7 +1832,7 @@ let customCharts: ChartTemplate[] = [
           ([name, value]) =>
             qcLimitNames.includes(name) &&
             typeof value === "number" &&
-            isFinite(value)
+            isFinite(value),
         )
         .map(([name, value]) => ({
           limitType: `${name} : ${value}`, // hiển thị cả tên + giá trị
@@ -1812,7 +1857,7 @@ let customCharts: ChartTemplate[] = [
                     domain: limitData.map((d) => d.limitType),
                     range: ["#00FFFF", "red", "red", "orange", "orange"].slice(
                       0,
-                      limitData.length
+                      limitData.length,
                     ),
                   },
                 },
@@ -1953,14 +1998,14 @@ let customCharts: ChartTemplate[] = [
           console.log(
             "✅ Đã thêm",
             shiftRuleLayers.length,
-            "đường dọc QCDATE+QCSHIFT"
+            "đường dọc QCDATE+QCSHIFT",
           );
         } else {
           console.warn("⚠️ Không tìm thấy nhóm QCDATE + QCSHIFT hợp lệ để vẽ");
         }
       } else {
         console.warn(
-          "⚠️ Không có cột QCDATE, QCSHIFT hoặc INDEX trong dữ liệu!"
+          "⚠️ Không có cột QCDATE, QCSHIFT hoặc INDEX trong dữ liệu!",
         );
       }
 
@@ -2017,7 +2062,7 @@ let customCharts: ChartTemplate[] = [
       table: any[],
       qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       if (!table || table.length === 0) return vgSpec;
 
@@ -2067,7 +2112,7 @@ let customCharts: ChartTemplate[] = [
       const vMin = Math.min(...valueValues);
       const vMax = Math.max(...valueValues);
       const limits = Object.values(detectedLimits).filter(
-        (v): v is number => typeof v === "number" && isFinite(v)
+        (v): v is number => typeof v === "number" && isFinite(v),
       );
       const globalMin = Math.min(vMin, ...limits);
       const globalMax = Math.max(vMax, ...limits);
@@ -2276,7 +2321,7 @@ let customCharts: ChartTemplate[] = [
 
       // Fallback: If there are no valid limits at all, only show histogram and envelope
       const hasAnyLimit = Object.values(detectedLimits).some(
-        (v) => typeof v === "number" && isFinite(v)
+        (v) => typeof v === "number" && isFinite(v),
       );
       if (!hasAnyLimit) {
         vgSpec.layer = [histogramLayer, envelopeLayer];
@@ -2303,7 +2348,7 @@ let customCharts: ChartTemplate[] = [
       table: any[],
       qcLimitsMode?: boolean,
       chartWidth?: number,
-      chartHeight?: number
+      chartHeight?: number,
     ) => {
       try {
         if (!table || table.length === 0) return vgSpec;

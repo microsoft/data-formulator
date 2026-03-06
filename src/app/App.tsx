@@ -1469,10 +1469,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                           },
                         },
                         ".mode-icon": {
-                          animation: "pulse 3s ease-out infinite",
+                          animation: "pulse 2s ease-out infinite",
                           "@keyframes pulse": {
                             "0%, 80%": { transform: "scale(1)" },
-                            "90%": { transform: "scale(1.3)" },
+                            "90%": { transform: "scale(1.6)" },
                             "100%": { transform: "scale(1)" },
                           },
                         },

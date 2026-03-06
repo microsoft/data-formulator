@@ -25,13 +25,6 @@ class QCDataLoader(ExternalDataLoader):
                 "description": "Ngày kết thúc (yyyy-mm-dd)"
             },
             {
-                "name": "group_item_name",
-                "type": "string",
-                "required": True,
-                "default": "",
-                "description": "STDPARAMREPORTNAME"
-            },
-            {
                 "name": "std_param_name",
                 "type": "string",
                 "required": True,
@@ -43,8 +36,29 @@ class QCDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": True,
                 "default": "",
-                "description": "STDPARAMREPORTNAME"
-            }
+                "description": "FACODENAME"
+            },
+            {
+                "name": "group_item_name",
+                "type": "string",
+                "required": False,
+                "default": "",
+                "description": "GROUPITEMNAME"
+            },
+            {
+                "name": "item_name",
+                "type": "string",
+                "required": False,
+                "default": "",
+                "description": "ITEMNAME"
+            },
+            {
+                "name": "operation_name",
+                "type": "string",
+                "required": True,
+                "default": "",
+                "description": "OPERATIONNAME"
+            },
         ]
 
     @staticmethod
@@ -168,9 +182,21 @@ class QCDataLoader(ExternalDataLoader):
         except Exception as e:
             raise Exception(f"ClickHouse query failed for '{q}': {e}")
         
-        # Convert VALUE column to numeric if possible (for QC data with mixed types)
+        # Convert VALUE column to numeric ONLY if ALL values are numeric strings
+        # Do NOT convert if it would result in NaN for any non-null values (mixed data types)
         if 'VALUE' in df.columns:
-            df['VALUE'] = pd.to_numeric(df['VALUE'], errors='coerce')
+            # Only convert if column is already numeric type
+            if df['VALUE'].dtype not in ['int64', 'int32', 'float64', 'float32', 'bool']:
+                # Try converting, but ONLY if ALL non-null values successfully convert (100% success)
+                converted = pd.to_numeric(df['VALUE'], errors='coerce')
+                original_non_null = df['VALUE'].notna().sum()
+                converted_non_null = converted.notna().sum()
+                
+                # Only use converted values if we preserve ALL non-null values (100% success)
+                # This prevents losing data when VALUE contains mixed types (numbers + strings)
+                if converted_non_null == original_non_null and original_non_null > 0:
+                    df['VALUE'] = converted
+                # else: keep original VALUE as-is (might be mixed string/numeric or pure strings)
         
         self.ingest_df_to_duckdb(df, sanitize_table_name(name_as))
         return df

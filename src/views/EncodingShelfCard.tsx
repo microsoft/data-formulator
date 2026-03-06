@@ -1767,7 +1767,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               <Slider
                 value={chartWidth}
                 onChange={(e, newValue) => setChartWidth(newValue as number)}
-                min={300}
+                min={800}
                 max={2000}
                 step={50}
                 valueLabelDisplay="auto"
@@ -1783,7 +1783,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               <Slider
                 value={chartHeight}
                 onChange={(e, newValue) => setChartHeight(newValue as number)}
-                min={200}
+                min={400}
                 max={1500}
                 step={50}
                 valueLabelDisplay="auto"

@@ -25,6 +25,7 @@ import {
   Icon,
   IconButton,
   LinearProgress,
+  MenuItem,
   Popover,
   Slider,
   Snackbar,
@@ -76,6 +77,7 @@ import InfoIcon from "@mui/icons-material/Info";
 import CasinoIcon from "@mui/icons-material/Casino";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
+import AutorenewIcon from "@mui/icons-material/Autorenew";
 
 import {
   CHART_TEMPLATES,
@@ -104,6 +106,7 @@ import {
   ConceptExplCards,
   extractConceptExplanations,
 } from "./ExplComponents";
+import { buildQcDataQuery } from "./DBTableManager";
 import CodeIcon from "@mui/icons-material/Code";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
@@ -120,7 +123,7 @@ export let generateChartSkeleton = (
   icon: any,
   width: number = 160,
   height: number = 160,
-  opacity: number = 0.5
+  opacity: number = 0.5,
 ) => (
   <Box width={width} height={height} sx={{ display: "flex" }}>
     {icon == undefined ? (
@@ -159,7 +162,7 @@ export let renderTableChart = (
   conceptShelfItems: FieldItem[],
   extTable: any[],
   width: number = 120,
-  height: number = 120
+  height: number = 120,
 ) => {
   let fields = Object.entries(chart.encodingMap)
     .filter(([channel, encoding]) => {
@@ -167,12 +170,12 @@ export let renderTableChart = (
     })
     .map(
       ([channel, encoding]) =>
-        conceptShelfItems.find((f) => f.id == encoding.fieldID) as FieldItem
+        conceptShelfItems.find((f) => f.id == encoding.fieldID) as FieldItem,
     );
 
   if (fields.length == 0) {
     fields = conceptShelfItems.filter((f) =>
-      Object.keys(extTable[0]).includes(f.name)
+      Object.keys(extTable[0]).includes(f.name),
     );
   }
 
@@ -180,8 +183,8 @@ export let renderTableChart = (
     Object.fromEntries(
       fields
         .filter((f) => Object.keys(row).includes(f.name))
-        .map((f) => [f.name, row[f.name]])
-    )
+        .map((f) => [f.name, row[f.name]]),
+    ),
   );
 
   let colDefs = fields.map((field) => {
@@ -221,7 +224,7 @@ export let getDataTable = (
   tables: DictTable[],
   charts: Chart[],
   conceptShelfItems: FieldItem[],
-  ignoreTableRef = false
+  ignoreTableRef = false,
 ) => {
   // given a chart, determine which table would be used to visualize the chart
 
@@ -233,7 +236,7 @@ export let getDataTable = (
   let activeFields = conceptShelfItems.filter((field) =>
     Array.from(Object.values(chart.encodingMap))
       .map((enc: EncodingItem) => enc.fieldID)
-      .includes(field.id)
+      .includes(field.id),
   );
 
   let workingTableCandidates = tables.filter((t) => {
@@ -241,7 +244,7 @@ export let getDataTable = (
   });
 
   let confirmedTableCandidates = workingTableCandidates.filter(
-    (t) => !charts.some((c) => c.saved && c.tableRef == t.id)
+    (t) => !charts.some((c) => c.saved && c.tableRef == t.id),
   );
   if (confirmedTableCandidates.length > 0) {
     return confirmedTableCandidates[0];
@@ -254,7 +257,7 @@ export let getDataTable = (
       .sort(
         (a, b) =>
           activeFields.filter((f) => a.names.includes(f.name)).length -
-          activeFields.filter((f) => b.names.includes(f.name)).length
+          activeFields.filter((f) => b.names.includes(f.name)).length,
       )
       .reverse()[0];
   }
@@ -276,11 +279,11 @@ export let CodeBox: FC<{ code: string; language: string; fontSize?: number }> =
 export let checkChartAvailabilityOnPreparedData = (
   chart: Chart,
   conceptShelfItems: FieldItem[],
-  visTableRows: any[]
+  visTableRows: any[],
 ) => {
   let visFieldsFinalNames = Object.keys(chart.encodingMap)
     .filter(
-      (key) => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined
+      (key) => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined,
     )
     .map((key) => [
       chart.encodingMap[key as keyof EncodingMap].fieldID,
@@ -302,7 +305,7 @@ export let checkChartAvailabilityOnPreparedData = (
     visFieldsFinalNames.length > 0 &&
     visTableRows.length > 0 &&
     visFieldsFinalNames.every((name) =>
-      Object.keys(visTableRows[0]).includes(name)
+      Object.keys(visTableRows[0]).includes(name),
     )
   );
 };
@@ -310,11 +313,11 @@ export let checkChartAvailabilityOnPreparedData = (
 export let checkChartAvailability = (
   chart: Chart,
   conceptShelfItems: FieldItem[],
-  visTableRows: any[]
+  visTableRows: any[],
 ) => {
   let visFieldIds = Object.keys(chart.encodingMap)
     .filter(
-      (key) => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined
+      (key) => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined,
     )
     .map((key) => chart.encodingMap[key as keyof EncodingMap].fieldID);
   let visFields = conceptShelfItems.filter((f) => visFieldIds.includes(f.id));
@@ -344,7 +347,7 @@ export let SampleSizeEditor: FC<{
   };
 
   const [sampleRange, setSampleRange] = useState<[number, number]>(() =>
-    normalizeRange(initialRange)
+    normalizeRange(initialRange),
   );
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
@@ -471,13 +474,13 @@ const VegaChartRenderer: FC<{
         chartWidth,
         chartHeight,
         true,
-        chart.qcLimitsMode || false
+        chart.qcLimitsMode || false,
       );
 
       embed(
         "#" + elementId,
         { ...assembledChart },
-        { actions: true, renderer: "svg" }
+        { actions: true, renderer: "svg" },
       )
         .then(function (result) {
           if (result.view.container()?.getElementsByTagName("svg")) {
@@ -488,7 +491,7 @@ const VegaChartRenderer: FC<{
                 "style",
                 `width: ${width * scaleFactor}px; height: ${
                   height * scaleFactor
-                }px;`
+                }px;`,
               );
             }
           }
@@ -503,7 +506,7 @@ const VegaChartRenderer: FC<{
                 "style",
                 `width: ${width * scaleFactor}px; height: ${
                   height * scaleFactor
-                }px;`
+                }px;`,
               );
             }
           }
@@ -563,7 +566,7 @@ const VegaChartRenderer: FC<{
       !checkChartAvailabilityOnPreparedData(
         chart,
         conceptShelfItems,
-        visTableRows
+        visTableRows,
       )
     ) {
       return (
@@ -581,7 +584,7 @@ const VegaChartRenderer: FC<{
     }
 
     return <Box id={elementId} sx={{ mx: 2 }}></Box>;
-  }
+  },
 );
 VegaChartRenderer.displayName = "VegaChartRenderer";
 
@@ -596,10 +599,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
   let charts = useSelector(dfSelectors.getAllCharts);
   let focusedChartId = useSelector(
-    (state: DataFormulatorState) => state.focusedChartId
+    (state: DataFormulatorState) => state.focusedChartId,
   );
   let chartSynthesisInProgress = useSelector(
-    (state: DataFormulatorState) => state.chartSynthesisInProgress
+    (state: DataFormulatorState) => state.chartSynthesisInProgress,
   );
 
   let synthesisRunning = focusedChartId
@@ -619,7 +622,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
   const dispatch = useDispatch();
 
   const conceptShelfItems = useSelector(
-    (state: DataFormulatorState) => state.conceptShelfItems
+    (state: DataFormulatorState) => state.conceptShelfItems,
+  );
+  const dataLoaderConnectParams = useSelector(
+    (state: DataFormulatorState) => state.dataLoaderConnectParams,
   );
 
   const [codeViewOpen, setCodeViewOpen] = useState<boolean>(false);
@@ -635,36 +641,379 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
   const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
   const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [chartWidth, setChartWidth] = useState<number>(
-    focusedChart?.chartWidth || config.defaultChartWidth || 800
-  );
-  const [chartHeight, setChartHeight] = useState<number>(
-    focusedChart?.chartHeight || config.defaultChartHeight || 450
-  );
+
+  // Sync isFullscreen state with the browser Fullscreen API
+  // (handles ESC / F11 exit from outside React)
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  const toggleBrowserFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {
+        // Fallback: just toggle the dialog if browser blocks fullscreen
+        setIsFullscreen((prev) => !prev);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  const exitBrowserFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      setIsFullscreen(false);
+    }
+  };
+  const [qcRefreshInterval, setQcRefreshInterval] = useState<number>(900);
+  const [qcCountdown, setQcCountdown] = useState<number>(900);
+  const [qcDaysRange, setQcDaysRange] = useState<number>(7);
+  const chartWidth =
+    focusedChart?.chartWidth || config.defaultChartWidth || 800;
+  const chartHeight =
+    focusedChart?.chartHeight || config.defaultChartHeight || 450;
 
   // Reset local UI state when focused chart changes
   useEffect(() => {
     setLocalScaleFactor(1);
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    }
     setIsFullscreen(false);
     setCodeViewOpen(false);
     setCodeExplViewOpen(false);
     setConceptExplanationsOpen(false);
     setExplanationMode("none");
     setChatDialogOpen(false);
-    // Update chart dimensions from the newly focused chart
-    setChartWidth(focusedChart?.chartWidth || config.defaultChartWidth || 800);
-    setChartHeight(
-      focusedChart?.chartHeight || config.defaultChartHeight || 450
-    );
   }, [focusedChartId]);
 
-  // Update chart dimensions when chart object changes (e.g., when Apply All Changes is clicked)
+  // Data Live: keep a stable ref to fetchDisplayRows to avoid stale closure in setInterval
+  const fetchDisplayRowsRef = useRef<
+    (range?: [number, number], totalRowsOverride?: number) => void
+  >(() => {});
+  const tableRef = useRef<DictTable | null>(null);
+  // Keep a stable ref to the full tables list to avoid stale closures in Data Live callbacks
+  const tablesRef = useRef<typeof tables>(tables);
   useEffect(() => {
-    setChartWidth(focusedChart?.chartWidth || config.defaultChartWidth || 800);
-    setChartHeight(
-      focusedChart?.chartHeight || config.defaultChartHeight || 450
-    );
-  }, [focusedChart?.chartWidth, focusedChart?.chartHeight]);
+    fetchDisplayRowsRef.current = fetchDisplayRows;
+  });
+
+  // QC Live: ref so countdown timer always calls the latest handleQcRefreshNow
+  const doQcRefreshRef = useRef<() => Promise<void>>(async () => {});
+  // Flag to trigger an immediate refresh once the ref is synced to the new handleQcRefreshNow
+  const triggerImmediateRef = useRef<boolean>(false);
+  // Track previous qcLimitsMode to detect when it's turned off → restore original data
+  const prevQcLiveRef = useRef<boolean>(false);
+
+  // QC Live: when turned OFF, re-ingest with original params to restore previous data
+  useEffect(() => {
+    const wasOn = prevQcLiveRef.current;
+    prevQcLiveRef.current = !!focusedChart.qcLive;
+    if (wasOn && !focusedChart.qcLive) {
+      // Turned off — restore original data
+      const currentTable = tableRef.current;
+      const qcParams = dataLoaderConnectParams["QC_Data"] ?? {};
+
+      if (currentTable?.derive?.code) {
+        // Agent-derived table: restore source virtual tables then re-run SQL
+        const allTables = tablesRef.current;
+        const virtualSources = (currentTable.derive.source ?? [])
+          .map((id) => allTables.find((t) => t.id === id))
+          .filter((t): t is (typeof tables)[0] => !!t?.virtual);
+        if (virtualSources.length > 0) {
+          Promise.all(
+            virtualSources.map((srcTable) => {
+              const built = buildQcDataQuery(qcParams);
+              if (!built) return Promise.resolve();
+              const nameAs = srcTable.virtual!.tableId || srcTable.id;
+              return fetch(getUrls().DATA_LOADER_INGEST_DATA_FROM_QUERY, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  data_loader_type: "QC_Data",
+                  data_loader_params: qcParams,
+                  query: built.query,
+                  name_as: nameAs,
+                }),
+              })
+                .then((r) => r.json())
+                .then((d) => {
+                  if (d.status === "success") {
+                    dispatch(
+                      dfActions.updateTableVirtualRowCount({
+                        tableId: srcTable.id,
+                        rowCount: d.row_count ?? 100000,
+                      }),
+                    );
+                  }
+                })
+                .catch((err) =>
+                  console.warn("Data Live derived restore ingest error:", err),
+                );
+            }),
+          )
+            .then(() =>
+              fetch(getUrls().EXECUTE_SQL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  code: currentTable.derive!.code,
+                  name_as: currentTable.virtual?.tableId || currentTable.id,
+                }),
+              }),
+            )
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.status === "success" && d.rows?.length > 0) {
+                dispatch(
+                  dfActions.replaceTable({ ...currentTable, rows: d.rows }),
+                );
+                setCurrentSampleRange(undefined);
+                fetchDisplayRowsRef.current(
+                  [0, Math.min(d.rows.length, 100000)],
+                  d.rows.length,
+                );
+              }
+            })
+            .catch((err) =>
+              console.error("Data Live derived restore error:", err),
+            );
+        }
+      } else if (currentTable?.virtual) {
+        // Direct virtual table: restore with original (no rolling window) params
+        const built = buildQcDataQuery(qcParams); // no date override → original range
+        const nameAs = currentTable.virtual.tableId || currentTable.id;
+        if (built) {
+          fetch(getUrls().DATA_LOADER_INGEST_DATA_FROM_QUERY, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              data_loader_type: "QC_Data",
+              data_loader_params: qcParams,
+              query: built.query,
+              name_as: nameAs,
+            }),
+          })
+            .then((r) => r.json())
+            .then((data) => {
+              if (data.status === "success") {
+                const restoredCount: number = data.row_count ?? 100000;
+                dispatch(
+                  dfActions.updateTableVirtualRowCount({
+                    tableId: currentTable.id,
+                    rowCount: restoredCount,
+                  }),
+                );
+                setCurrentSampleRange(undefined);
+                fetchDisplayRowsRef.current(
+                  [0, Math.min(restoredCount, 100000)],
+                  restoredCount,
+                );
+              }
+            })
+            .catch((err) => console.error("Data Live restore error:", err));
+        }
+      }
+    }
+  }, [focusedChart.qcLive, dataLoaderConnectParams]);
+
+  // Data Live: countdown timer and auto-refresh
+  useEffect(() => {
+    if (!focusedChart.qcLive) return;
+    setQcCountdown(qcRefreshInterval);
+    // Signal that an immediate refresh should fire once doQcRefreshRef is updated below
+    triggerImmediateRef.current = true;
+    const timer = setInterval(() => {
+      setQcCountdown((prev) => {
+        if (prev <= 1) {
+          doQcRefreshRef.current();
+          return qcRefreshInterval;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [focusedChart.qcLive, qcRefreshInterval]);
+
+  const handleQcRefreshNow = useCallback(async () => {
+    const currentTable = tableRef.current;
+    const qcParams = dataLoaderConnectParams["QC_Data"] ?? {};
+    const today = new Date();
+    const fromDate = new Date(today);
+    fromDate.setDate(today.getDate() - qcDaysRange);
+    const fmt = (d: Date) => d.toISOString().split("T")[0]; // YYYY-MM-DD
+
+    if (currentTable?.derive?.code && focusedChart.qcLive) {
+      // Agent-derived table: re-ingest source virtual tables then re-execute the SQL
+      const allTables = tablesRef.current;
+      const virtualSources = (currentTable.derive.source ?? [])
+        .map((id) => allTables.find((t) => t.id === id))
+        .filter((t): t is (typeof tables)[0] => !!t?.virtual);
+
+      try {
+        // 1. Re-ingest all virtual source tables with rolling date window
+        //    Use virtual.tableId as name_as to match the actual DuckDB table name
+        await Promise.all(
+          virtualSources.map((srcTable) => {
+            const built = buildQcDataQuery(qcParams, {
+              from_date: fmt(fromDate),
+              to_date: fmt(today),
+            });
+            if (!built) return Promise.resolve();
+            const nameAs = srcTable.virtual!.tableId || srcTable.id;
+            return fetch(getUrls().DATA_LOADER_INGEST_DATA_FROM_QUERY, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                data_loader_type: "QC_Data",
+                data_loader_params: qcParams,
+                query: built.query,
+                name_as: nameAs,
+              }),
+            })
+              .then((r) => r.json())
+              .then((d) => {
+                if (d.status === "success") {
+                  dispatch(
+                    dfActions.updateTableVirtualRowCount({
+                      tableId: srcTable.id,
+                      rowCount: d.row_count ?? 100000,
+                    }),
+                  );
+                } else {
+                  console.warn(
+                    "Data Live source re-ingest failed:",
+                    d.message ?? d.error,
+                  );
+                }
+              })
+              .catch((err) =>
+                console.warn("Data Live source re-ingest error:", err),
+              );
+          }),
+        );
+
+        // 2. Re-execute the derived SQL and get the fresh rows back
+        const derivedDuckDbName =
+          currentTable.virtual?.tableId || currentTable.id;
+        const sqlResp = await fetch(getUrls().EXECUTE_SQL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code: currentTable.derive.code,
+            name_as: derivedDuckDbName,
+          }),
+        });
+        let sqlData: any = {};
+        try {
+          sqlData = await sqlResp.json();
+        } catch {
+          sqlData = { status: "error", message: `HTTP ${sqlResp.status}` };
+        }
+        if (sqlData.status !== "success") {
+          console.warn(
+            "Data Live SQL re-execute failed:",
+            sqlData.message ?? sqlData.error,
+          );
+        } else {
+          // 3. Update Redux with the fresh rows so chart encodings stay correct
+          if (sqlData.rows && sqlData.rows.length > 0) {
+            dispatch(
+              dfActions.replaceTable({
+                ...currentTable,
+                rows: sqlData.rows,
+              }),
+            );
+          }
+          // 4. Refresh visTableRows from DuckDB (which now has the fresh TABLE data)
+          setCurrentSampleRange(undefined);
+          fetchDisplayRowsRef.current(
+            [0, Math.min(sqlData.rows?.length ?? 100000, 100000)],
+            sqlData.rows?.length ?? 100000,
+          );
+          setQcCountdown(qcRefreshInterval);
+          return;
+        }
+      } catch (err) {
+        console.error("Data Live derived table refresh error:", err);
+      }
+    } else if (currentTable?.virtual && focusedChart.qcLive) {
+      // Direct virtual Data table: re-ingest with a rolling date window
+      const built = buildQcDataQuery(qcParams, {
+        from_date: fmt(fromDate),
+        to_date: fmt(today),
+      });
+      if (built) {
+        try {
+          const resp = await fetch(
+            getUrls().DATA_LOADER_INGEST_DATA_FROM_QUERY,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                data_loader_type: "QC_Data",
+                data_loader_params: qcParams,
+                query: built.query,
+                name_as: currentTable.virtual!.tableId || currentTable.id,
+              }),
+            },
+          );
+          let data: any = {};
+          try {
+            data = await resp.json();
+          } catch {
+            data = { status: "error", message: `HTTP ${resp.status}` };
+          }
+          if (data.status !== "success") {
+            console.warn(
+              "Data Live re-ingest failed:",
+              data.message ?? data.error,
+            );
+          } else {
+            const newRowCount: number = data.row_count ?? 100000;
+            dispatch(
+              dfActions.updateTableVirtualRowCount({
+                tableId: currentTable.id,
+                rowCount: newRowCount,
+              }),
+            );
+            setCurrentSampleRange(undefined);
+            fetchDisplayRowsRef.current(
+              [0, Math.min(newRowCount, 100000)],
+              newRowCount,
+            );
+            setQcCountdown(qcRefreshInterval);
+            return;
+          }
+        } catch (err) {
+          console.error("Data Live re-ingest error:", err);
+        }
+      }
+    }
+
+    fetchDisplayRowsRef.current();
+    setQcCountdown(qcRefreshInterval);
+  }, [
+    focusedChart.qcLive,
+    dataLoaderConnectParams,
+    qcRefreshInterval,
+    qcDaysRange,
+  ]);
+
+  // Keep doQcRefreshRef in sync so the countdown timer always sees the latest version
+  // Also fires the immediate refresh when Data Live is first activated
+  useEffect(() => {
+    doQcRefreshRef.current = handleQcRefreshNow;
+    if (triggerImmediateRef.current) {
+      triggerImmediateRef.current = false;
+      handleQcRefreshNow();
+    }
+  });
 
   // Combined useEffect to scroll to exploration components when any of them open
   useEffect(() => {
@@ -682,23 +1031,44 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
   }, [conceptExplanationsOpen, codeViewOpen, codeExplViewOpen]);
 
   let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
+  // Keep tableRef and tablesRef in sync for use inside Data Live callbacks (defined above)
+  tableRef.current = table;
+  tablesRef.current = tables;
+
+  // Data Live button is only shown for tables loaded via the QC_Data data loader.
+  // A table qualifies if:
+  //   1. QC_Data connector is configured (has at least a host param), AND
+  //   2. The table itself is virtual (loaded from a data loader), OR
+  //      it is agent-derived and at least one of its source tables is virtual.
+  const isQcTable = useMemo(() => {
+    const qcParams = dataLoaderConnectParams["QC_Data"] ?? {};
+    const qcConfigured = Object.keys(qcParams).length > 0;
+    if (!qcConfigured) return false;
+    if (table.virtual) return true;
+    if (table.derive?.source?.length) {
+      return table.derive.source.some(
+        (srcId) => tables.find((t) => t.id === srcId)?.virtual != null,
+      );
+    }
+    return false;
+  }, [table, tables, dataLoaderConnectParams]);
 
   let visFieldIds = Object.keys(focusedChart.encodingMap)
     .filter(
       (key) =>
-        focusedChart.encodingMap[key as keyof EncodingMap].fieldID != undefined
+        focusedChart.encodingMap[key as keyof EncodingMap].fieldID != undefined,
     )
     .map((key) => focusedChart.encodingMap[key as keyof EncodingMap].fieldID);
   let visFields = conceptShelfItems.filter((f) => visFieldIds.includes(f.id));
   let dataFieldsAllAvailable = visFields.every((f) =>
-    table.names.includes(f.name)
+    table.names.includes(f.name),
   );
 
   // Create a stable identifier for data requirements (fields + aggregations)
   const dataRequirements = useMemo(() => {
     let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(
       focusedChart.encodingMap,
-      conceptShelfItems
+      conceptShelfItems,
     );
     let sortedFields = [
       ...aggregateFields.map((f) => `${f[0]}_${f[1]}`),
@@ -714,7 +1084,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
   let setSystemMessage = (
     content: string,
-    severity: "error" | "warning" | "info" | "success"
+    severity: "error" | "warning" | "info" | "success",
   ) => {
     dispatch(
       dfActions.addMessages({
@@ -722,7 +1092,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         component: "Chart Builder",
         type: severity,
         value: content,
-      })
+      }),
     );
   };
 
@@ -735,13 +1105,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       Object.fromEntries(
         visFields
           .filter((f) => table.names.includes(f.name))
-          .map((f) => [f.name, row[f.name]])
-      )
+          .map((f) => [f.name, row[f.name]]),
+      ),
     );
     let visTable = prepVisTable(
       filteredRows,
       conceptShelfItems,
-      focusedChart.encodingMap
+      focusedChart.encodingMap,
     );
 
     if (visTable.length > 5000) {
@@ -758,7 +1128,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
   const [visTableRows, setVisTableRows] = useState<any[]>(processedData);
   const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(
-    table.virtual?.rowCount || table.rows.length
+    table.virtual?.rowCount || table.rows.length,
   );
   const defaultRange = useMemo<[number, number]>(() => {
     const totalRows = table.virtual?.rowCount || table.rows.length;
@@ -771,7 +1141,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
   let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(
     focusedChart.encodingMap,
-    conceptShelfItems
+    conceptShelfItems,
   );
   let sortedVisDataFields = [
     ...aggregateFields.map((f) => `${f[0]}_${f[1]}`),
@@ -780,7 +1150,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
   // Track which chart+table+requiredFields the current data belongs to (prevents showing stale data during transitions)
   const [dataVersion, setDataVersion] = useState<string>(
-    `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`
+    `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`,
   );
   const currentRequestRef = useRef<string>("");
 
@@ -793,8 +1163,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
   const activeVisTableRows = isDataStale ? [] : visTableRows;
   const activeVisTableTotalRowCount = isDataStale ? 0 : visTableTotalRowCount;
 
-  async function fetchDisplayRows(range?: [number, number]) {
-    const totalRows = table.virtual?.rowCount || table.rows.length;
+  async function fetchDisplayRows(
+    range?: [number, number],
+    totalRowsOverride?: number,
+  ) {
+    const totalRows =
+      totalRowsOverride ?? (table.virtual?.rowCount || table.rows.length);
     const sliderMax = Math.min(totalRows, 100000);
     const sliderMin = 0;
 
@@ -825,7 +1199,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
       let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(
         focusedChart.encodingMap,
-        conceptShelfItems
+        conceptShelfItems,
       );
       fetch(getUrls().SAMPLE_TABLE, {
         method: "POST",
@@ -875,7 +1249,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       const rowSample = table.rows.slice(startIdx, endIdx);
       setVisTableRows(structuredClone(rowSample));
       setDataVersion(
-        `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`
+        `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`,
       );
     }
   }
@@ -917,7 +1291,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         focusedChart.encodingMap[key as keyof EncodingMap].fieldID ==
           undefined &&
         focusedChart.encodingMap[key as keyof EncodingMap].aggregate ==
-          undefined
+          undefined,
     );
   }, [focusedChart.encodingMap]);
 
@@ -955,6 +1329,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             return;
           }
 
+          // Use 80% of viewport width and 68% of viewport height so the chart
+          // always fits within the dialog without overflowing.
+          const fsWidth = Math.round(window.innerWidth * 0.8);
+          const fsHeight = Math.round(window.innerHeight * 0.68);
+
           const assembledChart = assembleVegaChart(
             focusedChart.chartType,
             focusedChart.encodingMap,
@@ -963,10 +1342,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             table.metadata,
             24,
             true,
-            Math.min(window.innerWidth - 80, 1600),
-            Math.min(window.innerHeight - 180, 1000),
+            fsWidth,
+            fsHeight,
             true,
-            focusedChart.qcLimitsMode || false
+            focusedChart.qcLimitsMode || false,
           );
 
           // Clear container before rendering
@@ -984,7 +1363,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               },
               renderer: "svg",
               downloadFileName: `chart-${focusedChart.id}`,
-            }
+            },
           ).catch((error) => {
             console.warn("Fullscreen chart rendering error:", error);
           });
@@ -1076,7 +1455,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
   // Handle explanation mode changes
   const handleExplanationModeChange = (
     event: React.MouseEvent<HTMLElement>,
-    newMode: "none" | "code" | "explanation" | "concepts"
+    newMode: "none" | "code" | "explanation" | "concepts",
   ) => {
     // If clicking the same mode that's already active, turn it off
     if (newMode === explanationMode) {
@@ -1627,11 +2006,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         direction="row"
         sx={{
           margin: 1,
-          width: 220,
+          width: "auto",
           position: "absolute",
           zIndex: 10,
           backgroundColor: "rgba(255, 255, 255, 0.9)",
           borderRadius: "4px",
+          flexWrap: "nowrap",
         }}
         alignItems="center"
       >
@@ -1660,6 +2040,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
           onChange={(event: Event, newValue: number | number[]) => {
             setLocalScaleFactor(newValue as number);
           }}
+          sx={{ width: 80, flexShrink: 0 }}
         />
         <Tooltip key="zoom-in-tooltip" title="zoom in">
           <span>
@@ -1686,7 +2067,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             <IconButton
               color="primary"
               size="small"
-              onClick={() => setIsFullscreen(!isFullscreen)}
+              onClick={toggleBrowserFullscreen}
             >
               {isFullscreen ? (
                 <FullscreenExitIcon fontSize="small" />
@@ -1696,9 +2077,201 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             </IconButton>
           </span>
         </Tooltip>
+        {isQcTable && (
+          <>
+            <Divider
+              orientation="vertical"
+              variant="middle"
+              flexItem
+              sx={{ mx: 0.5 }}
+            />
+            <Tooltip
+              key="data-live-tooltip"
+              title="Toggle Data Live auto-refresh"
+            >
+              <span>
+                <Button
+                  size="small"
+                  variant={focusedChart.qcLive ? "contained" : "outlined"}
+                  color="warning"
+                  sx={{
+                    textTransform: "none",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    minWidth: "auto",
+                    px: 1,
+                    py: 0.25,
+                    lineHeight: 1.5,
+                  }}
+                  onClick={() =>
+                    dispatch(
+                      dfActions.updateChartQcLive({
+                        chartId: focusedChart.id,
+                        qcLive: !focusedChart.qcLive,
+                      }),
+                    )
+                  }
+                >
+                  ⚡Data Live
+                </Button>
+              </span>
+            </Tooltip>
+            {focusedChart.qcLive && (
+              <>
+                <Divider
+                  orientation="vertical"
+                  variant="middle"
+                  flexItem
+                  sx={{ mx: 0.25 }}
+                />
+                <Typography
+                  fontSize="11px"
+                  color="text.secondary"
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  last
+                </Typography>
+                <TextField
+                  select
+                  size="small"
+                  value={qcDaysRange}
+                  onChange={(e) => setQcDaysRange(Number(e.target.value))}
+                  sx={{
+                    minWidth: 56,
+                    "& .MuiInputBase-input": {
+                      fontSize: "11px",
+                      py: "2px",
+                      px: "4px",
+                    },
+                    "& .MuiOutlinedInput-root": { height: 24 },
+                  }}
+                >
+                  {[
+                    { label: "1d", value: 1 },
+                    { label: "3d", value: 3 },
+                    { label: "7d", value: 7 },
+                    { label: "15d", value: 15 },
+                    { label: "30d", value: 30 },
+                  ].map(({ label, value }) => (
+                    <MenuItem
+                      key={value}
+                      value={value}
+                      sx={{ fontSize: "12px" }}
+                    >
+                      {label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Divider
+                  orientation="vertical"
+                  variant="middle"
+                  flexItem
+                  sx={{ mx: 0.25 }}
+                />
+                <Typography
+                  fontSize="11px"
+                  color="text.secondary"
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  every
+                </Typography>
+                <TextField
+                  select
+                  size="small"
+                  value={qcRefreshInterval}
+                  onChange={(e) => setQcRefreshInterval(Number(e.target.value))}
+                  sx={{
+                    minWidth: 64,
+                    "& .MuiInputBase-input": {
+                      fontSize: "11px",
+                      py: "2px",
+                      px: "4px",
+                    },
+                    "& .MuiOutlinedInput-root": { height: 24 },
+                  }}
+                >
+                  {[
+                    { label: "15m", value: 900 },
+                    { label: "30m", value: 1800 },
+                    { label: "1h", value: 3600 },
+                    { label: "6h", value: 21600 },
+                    { label: "12h", value: 43200 },
+                  ].map(({ label, value }) => (
+                    <MenuItem
+                      key={value}
+                      value={value}
+                      sx={{ fontSize: "12px" }}
+                    >
+                      {label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Divider
+                  orientation="vertical"
+                  variant="middle"
+                  flexItem
+                  sx={{ mx: 0.25 }}
+                />
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="warning"
+                  startIcon={
+                    <AutorenewIcon sx={{ fontSize: "13px !important" }} />
+                  }
+                  sx={{
+                    textTransform: "none",
+                    fontSize: "11px",
+                    py: "1px",
+                    px: "6px",
+                    minWidth: "auto",
+                    lineHeight: 1.6,
+                  }}
+                  onClick={handleQcRefreshNow}
+                >
+                  Refresh now
+                </Button>
+                <Divider
+                  orientation="vertical"
+                  variant="middle"
+                  flexItem
+                  sx={{ mx: 0.25 }}
+                />
+                <Typography
+                  fontSize="11px"
+                  color="warning.main"
+                  sx={{
+                    minWidth: 28,
+                    textAlign: "center",
+                    fontWeight: 600,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {(() => {
+                    const m = Math.floor(qcCountdown / 60);
+                    const s = qcCountdown % 60;
+                    return m > 0
+                      ? `${m}:${String(s).padStart(2, "0")}`
+                      : `${s}s`;
+                  })()}
+                </Typography>
+              </>
+            )}
+          </>
+        )}
       </Stack>
     ),
-    [localScaleFactor, isFullscreen]
+    [
+      localScaleFactor,
+      isFullscreen,
+      isQcTable,
+      focusedChart.qcLive,
+      focusedChart.id,
+      qcRefreshInterval,
+      qcDaysRange,
+      qcCountdown,
+      handleQcRefreshNow,
+    ],
   );
 
   return (
@@ -1707,7 +2280,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       sx={{ overflow: "hidden", display: "flex", flex: 1 }}
       onKeyDown={(e) => {
         if (e.key === "Escape" && isFullscreen) {
-          setIsFullscreen(false);
+          exitBrowserFullscreen();
         }
       }}
     >
@@ -1737,7 +2310,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       <Dialog
         fullScreen
         open={isFullscreen}
-        onClose={() => setIsFullscreen(false)}
+        onClose={exitBrowserFullscreen}
         PaperProps={{
           sx: {
             backgroundColor: "#fafafa",
@@ -1750,8 +2323,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             flexDirection: "column",
             height: "100%",
             width: "100%",
-            overflow: "auto",
+            overflow: "hidden",
             p: 2,
+            boxSizing: "border-box",
           }}
         >
           <Box
@@ -1762,14 +2336,43 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               mb: 2,
             }}
           >
-            <Typography variant="h6">
-              {focusedChart.chartType || "Chart"} - Fullscreen View
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Typography variant="h6">
+                {focusedChart.chartType || "Chart"} - Fullscreen View
+              </Typography>
+              {focusedChart.qcLive && (
+                <Tooltip title="Data Live is active">
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                    <Box
+                      sx={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        backgroundColor: "error.main",
+                        "@keyframes pulse": {
+                          "0%": { transform: "scale(1)", opacity: 1 },
+                          "50%": { transform: "scale(1.4)", opacity: 0.6 },
+                          "100%": { transform: "scale(1)", opacity: 1 },
+                        },
+                        animation: "pulse 1.4s ease-in-out infinite",
+                      }}
+                    />
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "error.main",
+                        fontWeight: 700,
+                        letterSpacing: "0.05em",
+                      }}
+                    >
+                      LIVE
+                    </Typography>
+                  </Box>
+                </Tooltip>
+              )}
+            </Box>
             <Tooltip title="Close fullscreen (or press ESC)">
-              <IconButton
-                onClick={() => setIsFullscreen(false)}
-                color="primary"
-              >
+              <IconButton onClick={exitBrowserFullscreen} color="primary">
                 <FullscreenExitIcon />
               </IconButton>
             </Tooltip>
@@ -1785,6 +2388,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               justifyContent: "center",
               alignItems: "center",
               overflow: "auto",
+              minHeight: 0,
             }}
           >
             {focusedChart.chartType === "Auto" ||
@@ -1805,24 +2409,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             ) : (
               <Box
                 sx={{
-                  width: "100%",
-                  height: "100%",
-                  display: "flex",
+                  display: "inline-flex",
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
                   position: "relative",
-                  overflow: "auto",
                 }}
               >
                 <Box
                   id={`fullscreen-chart-${focusedChart.id}`}
-                  sx={{
-                    minWidth: "800px",
-                    minHeight: "400px",
-                    maxWidth: "90%",
-                    maxHeight: "90%",
-                  }}
+                  sx={{ display: "flex" }}
                 ></Box>
               </Box>
             )}
@@ -1842,13 +2438,13 @@ export const VisualizationViewFC: FC<VisPanelProps> =
   function VisualizationView({}) {
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let focusedChartId = useSelector(
-      (state: DataFormulatorState) => state.focusedChartId
+      (state: DataFormulatorState) => state.focusedChartId,
     );
     let focusedTableId = useSelector(
-      (state: DataFormulatorState) => state.focusedTableId
+      (state: DataFormulatorState) => state.focusedTableId,
     );
     let chartSynthesisInProgress = useSelector(
-      (state: DataFormulatorState) => state.chartSynthesisInProgress
+      (state: DataFormulatorState) => state.chartSynthesisInProgress,
     );
 
     const dispatch = useDispatch();
@@ -1871,7 +2467,7 @@ export const VisualizationViewFC: FC<VisPanelProps> =
         >
           {Object.entries(CHART_TEMPLATES)
             .flatMap(([cls, templates]) =>
-              templates.map((t, index) => ({ ...t, group: cls, index }))
+              templates.map((t, index) => ({ ...t, group: cls, index })),
             )
             .filter((t) => t.chart != "Auto")
             .map((t, globalIndex) => {
@@ -1889,21 +2485,21 @@ export const VisualizationViewFC: FC<VisPanelProps> =
                   }}
                   onClick={() => {
                     let focusedChart = allCharts.find(
-                      (c) => c.id == focusedChartId
+                      (c) => c.id == focusedChartId,
                     );
                     if (focusedChart?.chartType == "?") {
                       dispatch(
                         dfActions.updateChartType({
                           chartType: t.chart,
                           chartId: focusedChartId as string,
-                        })
+                        }),
                       );
                     } else {
                       dispatch(
                         dfActions.createNewChart({
                           chartType: t.chart,
                           tableId: focusedTableId as string,
-                        })
+                        }),
                       );
                     }
                   }}

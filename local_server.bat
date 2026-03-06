@@ -7,4 +7,5 @@
 :: set https_proxy=http://127.0.0.1:7890
 
 set FLASK_RUN_PORT=8000
-python -m py-src.data_formulator.app --port %FLASK_RUN_PORT% --dev
+set PYTHONPATH=%CD%\py-src;%PYTHONPATH%
+python -m data_formulator.app --port %FLASK_RUN_PORT% --dev

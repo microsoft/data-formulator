@@ -771,6 +771,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       max_repair_attempts: config.maxRepairAttempts,
       agent_coding_rules: agentRules.coding,
       language: actionTables.some((t) => t.virtual) ? "sql" : "python",
+      prompt_source: "user",
     });
     let engine = getUrls().DERIVE_DATA;
 
@@ -805,6 +806,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           max_repair_attempts: config.maxRepairAttempts,
           agent_coding_rules: agentRules.coding,
           language: actionTables.some((t) => t.virtual) ? "sql" : "python",
+          prompt_source: "user",
         });
         engine = getUrls().DERIVE_DATA;
       } else {
@@ -829,6 +831,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           max_repair_attempts: config.maxRepairAttempts,
           agent_coding_rules: agentRules.coding,
           language: actionTables.some((t) => t.virtual) ? "sql" : "python",
+          prompt_source: "user",
         });
         engine = getUrls().REFINE_DATA;
       }
@@ -1087,6 +1090,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       agent_exploration_rules: agentRules.exploration,
       agent_coding_rules: agentRules.coding,
       language: actionTables.some((t) => t.virtual) ? "sql" : "python",
+      prompt_source: "agent",
     });
 
     const controller = new AbortController();

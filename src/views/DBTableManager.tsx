@@ -45,7 +45,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import TableRowsIcon from "@mui/icons-material/TableRows";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
 import SearchIcon from "@mui/icons-material/Search";
 import DownloadIcon from "@mui/icons-material/Download";
 
@@ -68,7 +68,6 @@ import "prismjs/themes/prism.css"; //Example style, you can use another
 import PrecisionManufacturingIcon from "@mui/icons-material/PrecisionManufacturing";
 import CheckIcon from "@mui/icons-material/Check";
 import MuiMarkdown from "mui-markdown";
-import CleaningServicesIcon from "@mui/icons-material/CleaningServices";
 
 // Type definition for Autocomplete options
 interface ParamOption {
@@ -216,6 +215,61 @@ export const loadItemOptions = async (groupItemId: string) => {
     console.error("Failed to load operation options from API:", err);
   }
 })();
+
+/**
+ * Build the QC_Data SQL query from connection params, optionally overriding date range.
+ * Returns { query, name_as } or null if required params are missing.
+ */
+export const buildQcDataQuery = (
+  params: Record<string, string>,
+  overrides?: { from_date?: string; to_date?: string },
+): { query: string; name_as: string } | null => {
+  const merged = { ...params, ...overrides };
+  const from = (merged["from_date"] ?? "").toString().replace(/-/g, "");
+  const to = (merged["to_date"] ?? "").toString().replace(/-/g, "");
+  const stdParam = (params["std_param_name"] ?? "").toString().trim();
+  if (!from || !to || !stdParam) return null;
+
+  const facode = (params["facode_name"] ?? "").toString();
+  const itemGroup = (params["group_item_name"] ?? "").toString().trim();
+  const item = (params["item_name"] ?? "").toString().trim();
+  const operation = (params["operation_name"] ?? "").toString().trim();
+
+  const safeParam = stdParam.replace(/'/g, "''");
+  const safeFacode = facode.replace(/'/g, "''");
+  const safeItemGroup = itemGroup.replace(/'/g, "''");
+  const safeItem = item.replace(/'/g, "''");
+  const safeOperation = operation.replace(/'/g, "''");
+  // PARAMVALUE,
+  let query = `SELECT
+                    ROW_NUMBER() OVER (ORDER BY LASTUPDATE) AS INDEX,
+                    VALUEVIEW AS VALUE,
+                    QCSTDPARAMNAME,
+                    STDPARAMNICKNAME AS PARAMNICKNAME,
+                    SLIPNO,
+                    LL,ARLL,TARGET,ARUL,UL,
+                    QCDATE,
+                    QCSHIFT,
+                    DISKNO,
+                    LASTUPDATE,
+                    SPITEMNAME as ITEMNAME,
+                    OPERATIONNAME as OPERATION,
+                    FACODE
+                    FROM gcdb.DPD_QC_INFO
+                    WHERE QCDATE >= '${from}' AND QCDATE <= '${to}'
+                    AND ISMAXQCROUND = '1'
+                    AND IS_DELETED <> '1'
+                    AND (MAINSLIPNO = '1' OR MAINSLIPNO is null)`;
+
+  if (safeParam) query += ` AND STDPARAMREPORTNAME ='${safeParam}'`;
+  if (safeFacode) query += ` AND FACODE ='${safeFacode}'`;
+  if (safeItemGroup) query += ` AND GROUPITEMOID ='${safeItemGroup}'`;
+  if (safeItem) query += ` AND SPITEMOID ='${safeItem}'`;
+  if (safeOperation) query += ` AND OPERATIONOID ='${safeOperation}'`;
+  query += " ORDER BY LASTUPDATE";
+
+  return { query, name_as: safeParam.replace(" ", "-") };
+};
 
 export const handleDBDownload = async (sessionId: string) => {
   const response = await fetch(getUrls().DOWNLOAD_DB_FILE, {
@@ -664,8 +718,27 @@ export const DBTableSelectionDialog: React.FC<{
       });
       const data = await response.json();
       if (data.status === "success") {
-        fetchTables();
-        setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
+        // Remove from UI state immediately
+        setDbTables((prevTables) =>
+          prevTables.filter((t) => t.name !== tableName),
+        );
+
+        // Clean up analysis cache for this table
+        setTableAnalysisMap((prevMap) => {
+          const newMap = { ...prevMap };
+          delete newMap[tableName];
+          return newMap;
+        });
+
+        // Reset selected tab if we deleted the currently selected table
+        setSelectedTabKey((prevKey) => {
+          if (prevKey === tableName) {
+            return "";
+          }
+          return prevKey;
+        });
+
+        setSystemMessage(`Table ${tableName} deleted successfully`, "success");
       } else {
         setSystemMessage(data.error || "Failed to delete table", "error");
       }
@@ -722,6 +795,51 @@ export const DBTableSelectionDialog: React.FC<{
     } else {
       // If no analysis yet, fetch it
       handleAnalyzeData(tableName);
+    }
+  };
+
+  // Clear all tables
+  const handleClearAllTables = async () => {
+    if (dbTables.length === 0) return;
+
+    if (
+      !confirm(
+        `Are you sure you want to delete all ${dbTables.length} tables? This action cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    const tablesToDelete = [...dbTables];
+    let deletedCount = 0;
+
+    for (let table of tablesToDelete) {
+      try {
+        const response = await fetch(getUrls().DELETE_TABLE, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ table_name: table.name }),
+        });
+        const data = await response.json();
+        if (data.status === "success") {
+          deletedCount++;
+        }
+      } catch (error) {
+        console.error(`Failed to delete table ${table.name}:`, error);
+      }
+    }
+
+    setDbTables([]);
+    setTableAnalysisMap({});
+    setSelectedTabKey("");
+
+    if (deletedCount > 0) {
+      setSystemMessage(
+        `Successfully deleted ${deletedCount} table(s)`,
+        "success",
+      );
     }
   };
 
@@ -803,7 +921,9 @@ export const DBTableSelectionDialog: React.FC<{
       createdBy: "user",
       attachedMetadata: "",
     };
-    dispatch(dfActions.loadTable(table));
+    // Use replaceTable so that if a table with the same ID already exists it is
+    // updated in-place (rows, rowCount, columns) rather than duplicated.
+    dispatch(dfActions.replaceTable(table));
     dispatch(fetchFieldSemanticType(table));
     setTableDialogOpen(false);
   };
@@ -906,49 +1026,52 @@ export const DBTableSelectionDialog: React.FC<{
         </Typography>
       </Box>
 
-      {["file upload", ...Object.keys(dataLoaderMetadata ?? {})].map(
-        (dataLoaderType, i) => (
-          <Button
-            key={`dataLoader:${dataLoaderType}`}
-            variant="text"
-            size="small"
-            onClick={() => {
-              setSelectedTabKey("dataLoader:" + dataLoaderType);
-            }}
-            color="secondary"
+      {[
+        "file upload",
+        ...Object.keys(dataLoaderMetadata ?? {}).filter(
+          (type) => type !== "s3" && type !== "kusto",
+        ),
+      ].map((dataLoaderType, i) => (
+        <Button
+          key={`dataLoader:${dataLoaderType}`}
+          variant="text"
+          size="small"
+          onClick={() => {
+            setSelectedTabKey("dataLoader:" + dataLoaderType);
+          }}
+          color="secondary"
+          sx={{
+            textTransform: "none",
+            width: 120,
+            justifyContent: "flex-start",
+            textAlign: "left",
+            borderRadius: 0,
+            py: 0.5,
+            px: 2,
+            color:
+              selectedTabKey === "dataLoader:" + dataLoaderType
+                ? "secondary.main"
+                : "text.secondary",
+            borderRight:
+              selectedTabKey === "dataLoader:" + dataLoaderType ? 2 : 0,
+            borderColor: "secondary.main",
+          }}
+        >
+          <Typography
+            fontSize="inherit"
             sx={{
               textTransform: "none",
-              width: 120,
-              justifyContent: "flex-start",
+              width: "calc(100% - 4px)",
               textAlign: "left",
-              borderRadius: 0,
-              py: 0.5,
-              px: 2,
-              color:
-                selectedTabKey === "dataLoader:" + dataLoaderType
-                  ? "secondary.main"
-                  : "text.secondary",
-              borderRight:
-                selectedTabKey === "dataLoader:" + dataLoaderType ? 2 : 0,
-              borderColor: "secondary.main",
+              textOverflow: "ellipsis",
+              overflow: "hidden",
+              whiteSpace: "nowrap",
             }}
           >
-            <Typography
-              fontSize="inherit"
-              sx={{
-                textTransform: "none",
-                width: "calc(100% - 4px)",
-                textAlign: "left",
-                textOverflow: "ellipsis",
-                overflow: "hidden",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {dataLoaderType}
-            </Typography>
-          </Button>
-        ),
-      )}
+            {dataLoaderType}
+          </Typography>
+        </Button>
+      ))}
     </Box>
   );
 
@@ -989,6 +1112,24 @@ export const DBTableSelectionDialog: React.FC<{
             }}
           >
             <RefreshIcon sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="clear all tables">
+          <IconButton
+            size="small"
+            color="primary"
+            sx={{
+              "&:hover": {
+                transform: "rotate(180deg)",
+              },
+              transition: "transform 0.3s ease-in-out",
+            }}
+            onClick={() => {
+              handleClearAllTables();
+            }}
+            disabled={dbTables.length === 0}
+          >
+            <DeleteIcon sx={{ fontSize: 14 }} />
           </IconButton>
         </Tooltip>
       </Box>
@@ -1154,32 +1295,37 @@ export const DBTableSelectionDialog: React.FC<{
 
       {/* Data loader forms */}
       {dataLoaderMetadata &&
-        Object.entries(dataLoaderMetadata).map(
-          ([dataLoaderType, metadata]) =>
-            selectedTabKey === "dataLoader:" + dataLoaderType && (
-              <Box
-                key={`dataLoader:${dataLoaderType}`}
-                sx={{ position: "relative", maxWidth: "100%" }}
-              >
-                <DataLoaderForm
-                  key={`data-loader-form-${dataLoaderType}`}
-                  dataLoaderType={dataLoaderType}
-                  paramDefs={metadata.params}
-                  authInstructions={metadata.auth_instructions}
-                  onImport={() => {
-                    setIsUploading(true);
-                  }}
-                  onFinish={(status, message) => {
-                    setIsUploading(false);
-                    fetchTables();
-                    if (status === "error") {
-                      setSystemMessage(message, "error");
-                    }
-                  }}
-                />
-              </Box>
-            ),
-        )}
+        Object.entries(dataLoaderMetadata)
+          .filter(
+            ([dataLoaderType]) =>
+              dataLoaderType !== "s3" && dataLoaderType !== "kusto",
+          )
+          .map(
+            ([dataLoaderType, metadata]) =>
+              selectedTabKey === "dataLoader:" + dataLoaderType && (
+                <Box
+                  key={`dataLoader:${dataLoaderType}`}
+                  sx={{ position: "relative", maxWidth: "100%" }}
+                >
+                  <DataLoaderForm
+                    key={`data-loader-form-${dataLoaderType}`}
+                    dataLoaderType={dataLoaderType}
+                    paramDefs={metadata.params}
+                    authInstructions={metadata.auth_instructions}
+                    onImport={() => {
+                      setIsUploading(true);
+                    }}
+                    onFinish={(status, message) => {
+                      setIsUploading(false);
+                      fetchTables();
+                      if (status === "error") {
+                        setSystemMessage(message, "error");
+                      }
+                    }}
+                  />
+                </Box>
+              ),
+          )}
 
       {/* Table content */}
       {dbTables.map((t, i) => {
@@ -1828,6 +1974,7 @@ export const DataLoaderForm: React.FC<{
     mode === "query" && (
       <DataQueryForm
         dataLoaderType={dataLoaderType}
+        paramDefs={paramDefs}
         availableTables={Object.keys(tableMetadata).map((t) => ({
           name: t,
           fields: tableMetadata[t].columns.map((c: any) => c.name),
@@ -2085,11 +2232,65 @@ export const DataLoaderForm: React.FC<{
               />
             ) : null}
 
+            {/* ✅ Operation Combobox */}
+            {dataLoaderType === "QC_Data" &&
+            paramDef.name === "operation_name" ? (
+              <Autocomplete<ParamOption>
+                freeSolo={false}
+                disableClearable={false}
+                options={operationOptions}
+                getOptionLabel={(option) => option.text}
+                value={
+                  operationOptions.find(
+                    (o) => o.value === params[paramDef.name],
+                  ) || null
+                }
+                onChange={(event, newValue) => {
+                  dispatch(
+                    dfActions.updateDataLoaderConnectParam({
+                      dataLoaderType,
+                      paramName: paramDef.name,
+                      paramValue: newValue ? newValue.value : "",
+                    }),
+                  );
+                }}
+                disabled={operationOptions.length === 0}
+                renderInput={(paramsInput) => (
+                  <TextField
+                    {...paramsInput}
+                    sx={{
+                      width: "270px",
+                      "& .MuiInputLabel-root": { fontSize: 14 },
+                      "& .MuiInputBase-root": { fontSize: 14 },
+                      "& .MuiInputBase-input::placeholder": {
+                        fontSize: 12,
+                        fontStyle: "italic",
+                      },
+                    }}
+                    variant="standard"
+                    size="small"
+                    required={paramDef.required}
+                    key={paramDef.name}
+                    label="Operation"
+                    placeholder={
+                      operationOptions.length === 0
+                        ? "Loading..."
+                        : "Select Operation"
+                    }
+                    slotProps={{
+                      inputLabel: { shrink: true },
+                    }}
+                  />
+                )}
+              />
+            ) : null}
+
             {/* Default TextField */}
             {paramDef.name !== "std_param_name" &&
             paramDef.name !== "facode_name" &&
             paramDef.name !== "group_item_name" &&
             paramDef.name !== "item_name" &&
+            paramDef.name !== "operation_name" &&
             !paramDef.name.toLowerCase().includes("param") ? (
               <TextField
                 disabled={Object.keys(tableMetadata).length > 0}
@@ -2126,105 +2327,6 @@ export const DataLoaderForm: React.FC<{
             ) : null}
           </Box>
         ))}
-
-        {/* ✅ Item Combobox - Standalone for QC_Data */}
-        {dataLoaderType === "QC_Data" && (
-          <Autocomplete<ParamOption>
-            key={`item-combobox-${itemsLoaded}`}
-            freeSolo={false}
-            disableClearable={false}
-            options={itemOptions}
-            getOptionLabel={(option) => option.text}
-            value={
-              itemOptions.find((o) => o.value === params["item_name"]) || null
-            }
-            onChange={(event, newValue) => {
-              dispatch(
-                dfActions.updateDataLoaderConnectParam({
-                  dataLoaderType,
-                  paramName: "item_name",
-                  paramValue: newValue ? newValue.value : "",
-                }),
-              );
-            }}
-            disabled={itemOptions.length === 0}
-            renderInput={(paramsInput) => (
-              <TextField
-                {...paramsInput}
-                sx={{
-                  width: "270px",
-                  "& .MuiInputLabel-root": { fontSize: 14 },
-                  "& .MuiInputBase-root": { fontSize: 14 },
-                  "& .MuiInputBase-input::placeholder": {
-                    fontSize: 12,
-                    fontStyle: "italic",
-                  },
-                }}
-                variant="standard"
-                size="small"
-                label="Item"
-                placeholder={
-                  itemOptions.length === 0
-                    ? "Select Item Group first"
-                    : "Select Item"
-                }
-                slotProps={{
-                  inputLabel: { shrink: true },
-                }}
-              />
-            )}
-          />
-        )}
-
-        {/* ✅ Operation Combobox - Standalone for QC_Data */}
-        {dataLoaderType === "QC_Data" && (
-          <Autocomplete<ParamOption>
-            freeSolo={false}
-            disableClearable={false}
-            options={operationOptions}
-            getOptionLabel={(option) => option.text}
-            value={
-              operationOptions.find(
-                (o) => o.value === params["operation_name"],
-              ) || null
-            }
-            onChange={(event, newValue) => {
-              dispatch(
-                dfActions.updateDataLoaderConnectParam({
-                  dataLoaderType,
-                  paramName: "operation_name",
-                  paramValue: newValue ? newValue.value : "",
-                }),
-              );
-            }}
-            disabled={operationOptions.length === 0}
-            renderInput={(paramsInput) => (
-              <TextField
-                {...paramsInput}
-                sx={{
-                  width: "270px",
-                  "& .MuiInputLabel-root": { fontSize: 14 },
-                  "& .MuiInputBase-root": { fontSize: 14 },
-                  "& .MuiInputBase-input::placeholder": {
-                    fontSize: 12,
-                    fontStyle: "italic",
-                  },
-                }}
-                variant="standard"
-                size="small"
-                label="Operation"
-                placeholder={
-                  operationOptions.length === 0
-                    ? "Loading..."
-                    : "Select Operation"
-                }
-                slotProps={{
-                  inputLabel: { shrink: true },
-                }}
-              />
-            )}
-          />
-        )}
 
         {/* Show table filter only for non-QC loaders */}
         {dataLoaderType !== "QC_Data" && (
@@ -2374,6 +2476,16 @@ export const DataLoaderForm: React.FC<{
                       setIsConnecting(false);
                       return;
                     }
+                    if (!facode) {
+                      onFinish("error", "Please select Factory (Facode)");
+                      setIsConnecting(false);
+                      return;
+                    }
+                    if (!operation) {
+                      onFinish("error", "Please select Operation");
+                      setIsConnecting(false);
+                      return;
+                    }
 
                     // safe escape single quote
                     const safeParam = stdParam.replace(/'/g, "''");
@@ -2390,24 +2502,24 @@ export const DataLoaderForm: React.FC<{
                     const queryOperation = ` AND OPERATIONOID ='${safeOperation}'`;
                     const queryEnd = " ORDER BY LASTUPDATE";
                     let query = `SELECT
-                                        ROW_NUMBER() OVER (ORDER BY LASTUPDATE) AS INDEX,
-                                        VALUEVIEW AS VALUE,
-                                                        PARAMVALUE,
-                                                        QCSTDPARAMNAME,
-                                                        STDPARAMNICKNAME AS PARAMNICKNAME,
-                                                        SLIPNO, 
-                                                        LL,ARLL,TARGET,ARUL,UL,
-                                                        QCDATE,                                                                                      
-                                                        QCSHIFT,
-                                                        DISKNO, 
-                                                        LASTUPDATE, 
-                                                        SPITEMNAME as ITEMNAME,
-                                                        OPERATIONNAME as OPERATION
-                                                        FROM gcdb.DPD_QC_INFO 
-                                                        WHERE QCDATE >= '${from}' AND QCDATE <= '${to}'                                                     
-                                                        AND ISMAXQCROUND = '1'
-                                                        AND IS_DELETED <> '1'
-                                                        AND (MAINSLIPNO = '1' OR MAINSLIPNO is null) `;
+                                ROW_NUMBER() OVER (ORDER BY LASTUPDATE) AS INDEX,
+                                VALUEVIEW AS VALUE,
+                                QCSTDPARAMNAME,
+                                STDPARAMNICKNAME AS PARAMNICKNAME,
+                                SLIPNO,
+                                LL,ARLL,TARGET,ARUL,UL,
+                                QCDATE,
+                                QCSHIFT,
+                                DISKNO,
+                                LASTUPDATE,
+                                SPITEMNAME as ITEMNAME,
+                                OPERATIONNAME as OPERATION,
+                                FACODE
+                                FROM gcdb.DPD_QC_INFO
+                                WHERE QCDATE >= '${from}' AND QCDATE <= '${to}'
+                                AND ISMAXQCROUND = '1'
+                                AND IS_DELETED <> '1'
+                                AND (MAINSLIPNO = '1' OR MAINSLIPNO is null)`;
 
                     if (safeParam.trim() !== "") {
                       query += queryParam;
@@ -2593,18 +2705,46 @@ export const DataLoaderForm: React.FC<{
 
 export const DataQueryForm: React.FC<{
   dataLoaderType: string;
+  paramDefs?: {
+    name: string;
+    required: boolean;
+  }[];
   availableTables: { name: string; fields: string[] }[];
   dataLoaderParams: Record<string, string>;
   onImport: () => void;
   onFinish: (status: "success" | "error", message: string) => void;
 }> = ({
   dataLoaderType,
+  paramDefs = [],
   availableTables,
   dataLoaderParams,
   onImport,
   onFinish,
 }) => {
   let activeModel = useSelector(dfSelectors.getActiveModel);
+
+  // Helper function to validate required params
+  const validateRequiredParams = (): string | null => {
+    for (const paramDef of paramDefs) {
+      if (paramDef.required && !dataLoaderParams[paramDef.name]) {
+        // Format param names for display
+        const paramLabel =
+          paramDef.name === "from_date"
+            ? "from_date"
+            : paramDef.name === "to_date"
+            ? "to_date"
+            : paramDef.name === "std_param_name"
+            ? "Parameter"
+            : paramDef.name === "facode_name"
+            ? "Factory (Facode)"
+            : paramDef.name === "operation_name"
+            ? "Operation"
+            : paramDef.name;
+        return `Please select ${paramLabel}`;
+      }
+    }
+    return null;
+  };
 
   const [selectedTables, setSelectedTables] = useState<string[]>(
     availableTables.map((t) => t.name).slice(0, 5),
@@ -2803,7 +2943,15 @@ export const DataQueryForm: React.FC<{
               size="small"
               disabled={queryResultName === ""}
               sx={{ textTransform: "none", width: 120 }}
-              onClick={() => handleImportQueryResult()}
+              onClick={() => {
+                // Validate all required params
+                const error = validateRequiredParams();
+                if (error) {
+                  onFinish("error", error);
+                  return;
+                }
+                handleImportQueryResult();
+              }}
             >
               import data
             </Button>
@@ -2938,7 +3086,15 @@ export const DataQueryForm: React.FC<{
             sx={{ textTransform: "none" }}
             disabled={queryResult?.status === "error"}
             startIcon={<PrecisionManufacturingIcon />}
-            onClick={() => aiCompleteQuery(query)}
+            onClick={() => {
+              // Validate all required params
+              const error = validateRequiredParams();
+              if (error) {
+                onFinish("error", error);
+                return;
+              }
+              aiCompleteQuery(query);
+            }}
           >
             help me complete the query from selected tables
           </Button>
@@ -2963,7 +3119,15 @@ export const DataQueryForm: React.FC<{
             color="primary"
             size="small"
             sx={{ textTransform: "none", ml: "auto", width: 80 }}
-            onClick={() => handleViewQuerySample(query)}
+            onClick={() => {
+              // Validate all required params
+              const error = validateRequiredParams();
+              if (error) {
+                onFinish("error", error);
+                return;
+              }
+              handleViewQuerySample(query);
+            }}
           >
             run query
           </Button>

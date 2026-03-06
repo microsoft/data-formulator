@@ -66,6 +66,8 @@ export function getUrls() {
     DATA_LOADER_VIEW_QUERY_SAMPLE: `/api/tables/data-loader/view-query-sample`,
     DATA_LOADER_INGEST_DATA_FROM_QUERY: `/api/tables/data-loader/ingest-data-from-query`,
 
+    EXECUTE_SQL: `/api/tables/execute-sql`,
+
     QUERY_COMPLETION: `/api/agent/query-completion`,
     GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
     GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
@@ -241,8 +243,8 @@ export const assembleVegaChart = (
   },
   maxFacetNominalValues: number = 30,
   aggrPreprocessed: boolean = false, // whether the data has been preprocessed for aggregation and binning
-  defaultChartWidth: number = 100,
-  defaultChartHeight: number = 80,
+  defaultChartWidth: number = 800,
+  defaultChartHeight: number = 400,
   addTooltips: boolean = false,
   qcLimitsMode?: boolean,
   chartWidth?: number,
@@ -1015,6 +1017,16 @@ export const assembleVegaChart = (
       };
     }
   }
+
+  // Ensure explicit width/height so Vega-Lite doesn't fall back to its 300px default.
+  // postProcessors that already set vgObj.width/height explicitly are not overridden here.
+  if (vgObj.width === undefined) {
+    vgObj.width = defaultChartWidth;
+  }
+  if (vgObj.height === undefined) {
+    vgObj.height = defaultChartHeight;
+  }
+
   return { ...vgObj, data: { values: values } };
 };
 

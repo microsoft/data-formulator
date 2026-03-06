@@ -51,6 +51,7 @@ import { DBTableSelectionDialog } from "./DBTableManager";
 import { getUrls } from "../app/utils";
 import { DataLoadingChatDialog } from "./DataLoadingChat";
 import { ReportView } from "./ReportView";
+import { LiveView } from "./LiveView";
 import {
   ExampleSession,
   exampleSessions,
@@ -274,7 +275,7 @@ export const DataFormulatorFC = ({}) => {
           ...borderBoxStyle,
           margin: "4px 4px 4px 8px",
           backgroundColor: "white",
-          display: "flex",
+          display: viewMode === "live" ? "none" : "flex",
           height: "100%",
           width: "fit-content",
           flexDirection: "column",
@@ -298,7 +299,7 @@ export const DataFormulatorFC = ({}) => {
       <Box
         sx={{
           ...borderBoxStyle,
-          margin: "4px 8px 4px 4px",
+          margin: viewMode === "live" ? "4px 8px 4px 8px" : "4px 8px 4px 4px",
           backgroundColor: "white",
           display: "flex",
           height: "100%",
@@ -312,9 +313,11 @@ export const DataFormulatorFC = ({}) => {
             {visPane}
             <ConceptShelf />
           </>
-        ) : (
+        ) : viewMode === "report" ? (
           <ReportView />
-        )}
+        ) : viewMode === "live" ? (
+          <LiveView />
+        ) : null}
       </Box>
     </Box>
   );

@@ -133,7 +133,7 @@ export function createDictTable(
   virtual: { tableId: string; rowCount: number } | undefined = undefined,
   anchored: boolean = false,
   createdBy: "user" | "agent" = "user", // by default, all tables are created by the user
-  attachedMetadata: string = ""
+  attachedMetadata: string = "",
 ): DictTable {
   let names = Object.keys(rows[0]);
 
@@ -151,7 +151,7 @@ export function createDictTable(
           levels: [],
         },
       }),
-      {}
+      {},
     ),
     derive,
     virtual,
@@ -170,6 +170,7 @@ export type Chart = {
   source: "user" | "trigger";
   unread: boolean;
   qcLimitsMode?: boolean;
+  qcLive?: boolean;
   chartWidth?: number;
   chartHeight?: number;
 };
@@ -184,6 +185,7 @@ export let duplicateChart = (chart: Chart): Chart => {
     source: chart.source,
     unread: false,
     qcLimitsMode: chart.qcLimitsMode,
+    qcLive: chart.qcLive,
     chartWidth: chart.chartWidth,
     chartHeight: chart.chartHeight,
   };
@@ -215,7 +217,7 @@ export type ChartTemplate = {
     table: any[],
     qcLimitsMode?: boolean,
     chartWidth?: number,
-    chartHeight?: number
+    chartHeight?: number,
   ) => any;
 };
 

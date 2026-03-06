@@ -39,7 +39,7 @@ enableMapSet();
 export const generateFreshChart = (
   tableRef: string,
   chartType: string,
-  source: "user" | "trigger" = "user"
+  source: "user" | "trigger" = "user",
 ): Chart => {
   return {
     id: `chart-${Date.now() - Math.floor(Math.random() * 10000)}`,
@@ -48,12 +48,14 @@ export const generateFreshChart = (
       {},
       ...getChartChannels(chartType).map((channel) => ({
         [channel]: { channel: channel, bin: false },
-      }))
+      })),
     ),
     tableRef: tableRef,
     saved: false,
     source: source,
     unread: true,
+    chartWidth: 800,
+    chartHeight: 400,
   };
 };
 
@@ -147,7 +149,7 @@ export interface DataFormulatorState {
   focusedTableId: string | undefined;
   focusedChartId: string | undefined;
 
-  viewMode: "editor" | "report";
+  viewMode: "editor" | "report" | "live";
 
   chartSynthesisInProgress: string[];
 
@@ -239,12 +241,12 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
   let allCharts = dfSelectors.getAllCharts(state);
   let chartRefedTables = allCharts
     .map((chart) =>
-      getDataTable(chart, state.tables, allCharts, state.conceptShelfItems)
+      getDataTable(chart, state.tables, allCharts, state.conceptShelfItems),
     )
     .map((t) => t.id);
   let tableWithDescendants = state.tables
     .filter((table) =>
-      state.tables.some((t) => t.derive?.trigger.tableId == table.id)
+      state.tables.some((t) => t.derive?.trigger.tableId == table.id),
     )
     .map((t) => t.id);
 
@@ -253,7 +255,7 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
       (table) =>
         table.derive &&
         !tableWithDescendants.includes(table.id) &&
-        !chartRefedTables.includes(table.id)
+        !chartRefedTables.includes(table.id),
     )
     .map((t) => t.id);
 };
@@ -269,7 +271,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     state.focusedTableId = charts.find((c) => c.id == focusedChartId)?.tableRef;
   }
   state.chartSynthesisInProgress = state.chartSynthesisInProgress.filter(
-    (s) => !chartIds.includes(s)
+    (s) => !chartIds.includes(s),
   );
 
   // update focusedChart and activeThreadChart
@@ -323,7 +325,7 @@ export const fetchFieldSemanticType = createAsyncThunk(
     });
 
     return response.json();
-  }
+  },
 );
 
 export const fetchCodeExpl = createAsyncThunk(
@@ -360,7 +362,7 @@ export const fetchCodeExpl = createAsyncThunk(
     });
 
     return response.json();
-  }
+  },
 );
 
 export const fetchAvailableModels = createAsyncThunk(
@@ -385,7 +387,7 @@ export const fetchAvailableModels = createAsyncThunk(
     });
 
     return response.json();
-  }
+  },
 );
 
 export const getSessionId = createAsyncThunk(
@@ -404,7 +406,7 @@ export const getSessionId = createAsyncThunk(
       }),
     });
     return response.json();
-  }
+  },
 );
 
 export const dataFormulatorSlice = createSlice({
@@ -495,7 +497,7 @@ export const dataFormulatorSlice = createSlice({
         description: string;
         status: "running" | "completed" | "warning" | "failed";
         hidden: boolean;
-      }>
+      }>,
     ) => {
       if (
         state.agentActions.some((a) => a.actionId == action.payload.actionId)
@@ -503,7 +505,7 @@ export const dataFormulatorSlice = createSlice({
         state.agentActions = state.agentActions.map((a) =>
           a.actionId == action.payload.actionId
             ? { ...a, ...action.payload, lastUpdate: Date.now() }
-            : a
+            : a,
         );
       } else {
         state.agentActions = [
@@ -519,7 +521,7 @@ export const dataFormulatorSlice = createSlice({
     },
     deleteAgentWorkInProgress: (state, action: PayloadAction<string>) => {
       state.agentActions = state.agentActions.filter(
-        (a) => a.actionId != action.payload
+        (a) => a.actionId != action.payload,
       );
     },
     setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
@@ -528,12 +530,15 @@ export const dataFormulatorSlice = createSlice({
     setConfig: (state, action: PayloadAction<ClientConfig>) => {
       state.config = action.payload;
     },
-    setViewMode: (state, action: PayloadAction<"editor" | "report">) => {
+    setViewMode: (
+      state,
+      action: PayloadAction<"editor" | "report" | "live">,
+    ) => {
       state.viewMode = action.payload;
     },
     setAgentRules: (
       state,
-      action: PayloadAction<{ coding: string; exploration: string }>
+      action: PayloadAction<{ coding: string; exploration: string }>,
     ) => {
       state.agentRules = action.payload;
     },
@@ -545,7 +550,7 @@ export const dataFormulatorSlice = createSlice({
       action: PayloadAction<{
         slotType: ModelSlotType;
         modelId: string | undefined;
-      }>
+      }>,
     ) => {
       state.modelSlots = {
         ...state.modelSlots,
@@ -573,7 +578,7 @@ export const dataFormulatorSlice = createSlice({
         id: string;
         status: "ok" | "error" | "testing" | "unknown";
         message: string;
-      }>
+      }>,
     ) => {
       let id = action.payload.id;
       let status = action.payload.status;
@@ -596,13 +601,44 @@ export const dataFormulatorSlice = createSlice({
       state.focusedTableId = table.id;
       state.focusedChartId = undefined;
     },
+    replaceTable: (state, action: PayloadAction<DictTable>) => {
+      const table = action.payload;
+      const existing = state.tables.find((t) => t.id === table.id);
+      if (existing) {
+        // Replace the table in-place, preserving position in array
+        state.tables = state.tables.map((t) => (t.id === table.id ? table : t));
+        // Only rebuild concept shelf items when the schema (column names) changes.
+        // Skipping this for row-only updates (e.g. QC Live refresh) prevents
+        // spurious reference changes that trigger the "Selector unknown" warning
+        // and unnecessary re-renders in EncodingBox / VisualizationView.
+        const schemaChanged =
+          existing.names.length !== table.names.length ||
+          existing.names.some((n, i) => n !== table.names[i]);
+        if (schemaChanged) {
+          state.conceptShelfItems = [
+            ...state.conceptShelfItems.filter((f) => f.tableRef !== table.id),
+            ...getDataFieldItems(table),
+          ];
+        }
+        // Do NOT touch focusedChartId / focusedTableId — would close the open chart.
+      } else {
+        // Table doesn't exist yet, behave like loadTable
+        state.tables = [...state.tables, table];
+        state.conceptShelfItems = [
+          ...state.conceptShelfItems,
+          ...getDataFieldItems(table),
+        ];
+        state.focusedTableId = table.id;
+        state.focusedChartId = undefined;
+      }
+    },
     deleteTable: (state, action: PayloadAction<string>) => {
       let tableId = action.payload;
       state.tables = state.tables.filter((t) => t.id != tableId);
 
       // feels problematic???
       state.conceptShelfItems = state.conceptShelfItems.filter(
-        (f) => !(f.tableRef == tableId)
+        (f) => !(f.tableRef == tableId),
       );
 
       // delete charts that refer to this table and intermediate charts that produce this table
@@ -613,32 +649,43 @@ export const dataFormulatorSlice = createSlice({
     },
     updateTableAnchored: (
       state,
-      action: PayloadAction<{ tableId: string; anchored: boolean }>
+      action: PayloadAction<{ tableId: string; anchored: boolean }>,
     ) => {
       let tableId = action.payload.tableId;
       let anchored = action.payload.anchored;
       state.tables = state.tables.map((t) =>
-        t.id == tableId ? { ...t, anchored } : t
+        t.id == tableId ? { ...t, anchored } : t,
       );
     },
     updateTableDisplayId: (
       state,
-      action: PayloadAction<{ tableId: string; displayId: string }>
+      action: PayloadAction<{ tableId: string; displayId: string }>,
     ) => {
       let tableId = action.payload.tableId;
       let displayId = action.payload.displayId;
       state.tables = state.tables.map((t) =>
-        t.id == tableId ? { ...t, displayId } : t
+        t.id == tableId ? { ...t, displayId } : t,
       );
     },
     updateTableAttachedMetadata: (
       state,
-      action: PayloadAction<{ tableId: string; attachedMetadata: string }>
+      action: PayloadAction<{ tableId: string; attachedMetadata: string }>,
     ) => {
       let tableId = action.payload.tableId;
       let attachedMetadata = action.payload.attachedMetadata;
       state.tables = state.tables.map((t) =>
-        t.id == tableId ? { ...t, attachedMetadata } : t
+        t.id == tableId ? { ...t, attachedMetadata } : t,
+      );
+    },
+    updateTableVirtualRowCount: (
+      state,
+      action: PayloadAction<{ tableId: string; rowCount: number }>,
+    ) => {
+      const { tableId, rowCount } = action.payload;
+      state.tables = state.tables.map((t) =>
+        t.id == tableId && t.virtual
+          ? { ...t, virtual: { ...t.virtual, rowCount } }
+          : t,
       );
     },
     extendTableWithNewFields: (
@@ -649,7 +696,7 @@ export const dataFormulatorSlice = createSlice({
         values: any[];
         previousName: string | undefined;
         parentIDs: string[];
-      }>
+      }>,
     ) => {
       // extend the existing extTable with new columns from the new table
       let newValues = action.payload.values;
@@ -660,7 +707,7 @@ export const dataFormulatorSlice = createSlice({
 
       // Find the first parent's column name
       let lastParentField = state.conceptShelfItems.find(
-        (f) => f.id === parentIDs[parentIDs.length - 1]
+        (f) => f.id === parentIDs[parentIDs.length - 1],
       );
       let lastParentName = lastParentField?.name;
 
@@ -713,7 +760,7 @@ export const dataFormulatorSlice = createSlice({
     },
     removeDerivedField: (
       state,
-      action: PayloadAction<{ tableId: string; fieldId: string }>
+      action: PayloadAction<{ tableId: string; fieldId: string }>,
     ) => {
       let tableId = action.payload.tableId;
       let fieldId = action.payload.fieldId;
@@ -735,7 +782,7 @@ export const dataFormulatorSlice = createSlice({
     },
     createNewChart: (
       state,
-      action: PayloadAction<{ chartType: string; tableId: string }>
+      action: PayloadAction<{ chartType: string; tableId: string }>,
     ) => {
       let chartType = action.payload.chartType;
       let tableId = action.payload.tableId || state.tables[0].id;
@@ -761,8 +808,8 @@ export const dataFormulatorSlice = createSlice({
 
       let chartCopy = JSON.parse(
         JSON.stringify(
-          state.charts.find((chart) => chart.id == chartId) as Chart
-        )
+          state.charts.find((chart) => chart.id == chartId) as Chart,
+        ),
       ) as Chart;
       chartCopy = { ...chartCopy, saved: false, unread: true };
       chartCopy.id = `chart-${Date.now() - Math.floor(Math.random() * 10000)}`;
@@ -788,7 +835,7 @@ export const dataFormulatorSlice = createSlice({
     },
     updateChartType: (
       state,
-      action: PayloadAction<{ chartId: string; chartType: string }>
+      action: PayloadAction<{ chartId: string; chartType: string }>,
     ) => {
       let chartId = action.payload.chartId;
       let chartType = action.payload.chartType;
@@ -804,7 +851,7 @@ export const dataFormulatorSlice = createSlice({
     },
     updateChartQcLimitsMode: (
       state,
-      action: PayloadAction<{ chartId: string; qcLimitsMode: boolean }>
+      action: PayloadAction<{ chartId: string; qcLimitsMode: boolean }>,
     ) => {
       let chartId = action.payload.chartId;
       let qcLimitsMode = action.payload.qcLimitsMode;
@@ -815,9 +862,22 @@ export const dataFormulatorSlice = createSlice({
       }
     },
 
+    updateChartQcLive: (
+      state,
+      action: PayloadAction<{ chartId: string; qcLive: boolean }>,
+    ) => {
+      let chartId = action.payload.chartId;
+      let qcLive = action.payload.qcLive;
+
+      let chart = dfSelectors.getAllCharts(state).find((c) => c.id == chartId);
+      if (chart) {
+        chart.qcLive = qcLive;
+      }
+    },
+
     updateChartDimensions: (
       state,
-      action: PayloadAction<{ chartId: string; width: number; height: number }>
+      action: PayloadAction<{ chartId: string; width: number; height: number }>,
     ) => {
       let { chartId, width, height } = action.payload;
       let chart = dfSelectors.getAllCharts(state).find((c) => c.id == chartId);
@@ -829,7 +889,7 @@ export const dataFormulatorSlice = createSlice({
 
     updateTableRef: (
       state,
-      action: PayloadAction<{ chartId: string; tableRef: string }>
+      action: PayloadAction<{ chartId: string; tableRef: string }>,
     ) => {
       let chartId = action.payload.chartId;
       let tableRef = action.payload.tableRef;
@@ -847,7 +907,7 @@ export const dataFormulatorSlice = createSlice({
         chartId: string;
         channel: Channel;
         encoding: EncodingItem;
-      }>
+      }>,
     ) => {
       let chartId = action.payload.chartId;
       let channel = action.payload.channel;
@@ -864,7 +924,7 @@ export const dataFormulatorSlice = createSlice({
         channel: Channel;
         prop: string;
         value: any;
-      }>
+      }>,
     ) => {
       let chartId = action.payload.chartId;
       let channel = action.payload.channel;
@@ -872,7 +932,7 @@ export const dataFormulatorSlice = createSlice({
       let value = action.payload.value;
       let chart = dfSelectors.getAllCharts(state).find((c) => c.id == chartId);
       let table = state.tables.find(
-        (t) => t.id == chart?.tableRef
+        (t) => t.id == chart?.tableRef,
       ) as DictTable;
 
       if (chart) {
@@ -915,13 +975,13 @@ export const dataFormulatorSlice = createSlice({
         prop?: string;
         value?: any;
         encoding?: EncodingItem;
-      }>
+      }>,
     ) => {
       const { chartId, channel, prop, value, encoding } = action.payload;
 
       if (encoding !== undefined) {
         state.pendingEncodings = state.pendingEncodings.filter(
-          (entry) => !(entry.chartId === chartId && entry.channel === channel)
+          (entry) => !(entry.chartId === chartId && entry.channel === channel),
         );
         state.pendingEncodings.push(action.payload);
         return;
@@ -935,7 +995,7 @@ export const dataFormulatorSlice = createSlice({
         (entry) =>
           entry.chartId === chartId &&
           entry.channel === channel &&
-          entry.prop === prop
+          entry.prop === prop,
       );
 
       if (existingIndex >= 0) {
@@ -995,7 +1055,7 @@ export const dataFormulatorSlice = createSlice({
               enc.dtype = value;
               break;
           }
-        }
+        },
       );
       state.pendingEncodings = [];
     },
@@ -1005,7 +1065,7 @@ export const dataFormulatorSlice = createSlice({
         chartId: string;
         channel1: Channel;
         channel2: Channel;
-      }>
+      }>,
     ) => {
       let chartId = action.payload.chartId;
       let channel1 = action.payload.channel1;
@@ -1037,7 +1097,7 @@ export const dataFormulatorSlice = createSlice({
       let concept = action.payload;
       let conceptShelfItems = [...state.conceptShelfItems];
       let index = conceptShelfItems.findIndex(
-        (field) => field.id === concept.id
+        (field) => field.id === concept.id,
       );
       if (index != -1) {
         conceptShelfItems[index] = concept;
@@ -1048,10 +1108,10 @@ export const dataFormulatorSlice = createSlice({
           // insert the new concept right after the first parent
           conceptShelfItems.splice(
             conceptShelfItems.findIndex(
-              (f) => f.id == concept.transform?.parentIDs[0]
+              (f) => f.id == concept.transform?.parentIDs[0],
             ) + 1,
             0,
-            concept
+            concept,
           );
         }
       }
@@ -1067,8 +1127,8 @@ export const dataFormulatorSlice = createSlice({
             chart.saved &&
             Object.entries(chart.encodingMap).some(
               ([channel, encoding]) =>
-                encoding.fieldID && conceptID == encoding.fieldID
-            )
+                encoding.fieldID && conceptID == encoding.fieldID,
+            ),
         )
       ) {
         console.log("cannot delete!");
@@ -1077,7 +1137,7 @@ export const dataFormulatorSlice = createSlice({
         if (field?.source == "derived") {
           // delete generated column from the derived table
           let table = state.tables.find(
-            (t) => t.id == field.tableRef
+            (t) => t.id == field.tableRef,
           ) as DictTable;
           let fieldIndex = table.names.indexOf(field.name);
           table.names = table.names
@@ -1090,7 +1150,7 @@ export const dataFormulatorSlice = createSlice({
           });
         }
         state.conceptShelfItems = state.conceptShelfItems.filter(
-          (f) => f.id != conceptID
+          (f) => f.id != conceptID,
         );
 
         for (let chart of allCharts) {
@@ -1113,14 +1173,14 @@ export const dataFormulatorSlice = createSlice({
               chart.saved &&
               Object.entries(chart.encodingMap).some(
                 ([channel, encoding]) =>
-                  encoding.fieldID && conceptID == encoding.fieldID
-              )
+                  encoding.fieldID && conceptID == encoding.fieldID,
+              ),
           )
         ) {
           console.log("cannot delete!");
         } else {
           state.conceptShelfItems = state.conceptShelfItems.filter(
-            (field) => field.id != conceptID
+            (field) => field.id != conceptID,
           );
           for (let chart of allCharts) {
             for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
@@ -1151,11 +1211,11 @@ export const dataFormulatorSlice = createSlice({
       let referredTableId = allCharts.map(
         (chart) =>
           getDataTable(chart, state.tables, allCharts, state.conceptShelfItems)
-            .id
+            .id,
       );
       state.tables = state.tables.filter(
         (t) =>
-          !(t.derive && !referredTableId.some((tableId) => tableId == t.id))
+          !(t.derive && !referredTableId.some((tableId) => tableId == t.id)),
       );
     },
     clearUnReferencedCustomConcepts: (state) => {
@@ -1166,7 +1226,7 @@ export const dataFormulatorSlice = createSlice({
           (c) =>
             Object.values(c.encodingMap)
               .map((enc) => enc.fieldID)
-              .filter((fid) => fid != undefined) as string[]
+              .filter((fid) => fid != undefined) as string[],
         )
         .flat();
 
@@ -1178,7 +1238,7 @@ export const dataFormulatorSlice = createSlice({
               fieldNamesFromTables.includes(field.name) ||
               fieldIdsReferredByCharts.includes(field.id)
             )
-          )
+          ),
       );
 
       // consider cleaning up other fields if
@@ -1194,7 +1254,7 @@ export const dataFormulatorSlice = createSlice({
     },
     setFocusedDataCleanBlockId: (
       state,
-      action: PayloadAction<{ blockId: string; itemId: number } | undefined>
+      action: PayloadAction<{ blockId: string; itemId: number } | undefined>,
     ) => {
       state.focusedDataCleanBlockId = action.payload;
     },
@@ -1215,7 +1275,7 @@ export const dataFormulatorSlice = createSlice({
         } else {
           // Check if it's a trigger chart in tables
           let table = state.tables.find(
-            (t) => t.derive?.trigger?.chart?.id === chartId
+            (t) => t.derive?.trigger?.chart?.id === chartId,
           );
           if (table?.derive?.trigger?.chart) {
             table.derive.trigger.chart.unread = false;
@@ -1225,7 +1285,7 @@ export const dataFormulatorSlice = createSlice({
     },
     changeChartRunningStatus: (
       state,
-      action: PayloadAction<{ chartId: string; status: boolean }>
+      action: PayloadAction<{ chartId: string; status: boolean }>,
     ) => {
       if (action.payload.status) {
         state.chartSynthesisInProgress = [
@@ -1236,7 +1296,7 @@ export const dataFormulatorSlice = createSlice({
         ];
       } else {
         state.chartSynthesisInProgress = state.chartSynthesisInProgress.filter(
-          (s) => s != action.payload.chartId
+          (s) => s != action.payload.chartId,
         );
       }
     },
@@ -1248,7 +1308,7 @@ export const dataFormulatorSlice = createSlice({
       action: PayloadAction<{
         dataLoaderType: string;
         params: Record<string, string>;
-      }>
+      }>,
     ) => {
       let dataLoaderType = action.payload.dataLoaderType;
       let params = action.payload.params;
@@ -1260,7 +1320,7 @@ export const dataFormulatorSlice = createSlice({
         dataLoaderType: string;
         paramName: string;
         paramValue: string;
-      }>
+      }>,
     ) => {
       let dataLoaderType = action.payload.dataLoaderType;
       if (!state.dataLoaderConnectParams[dataLoaderType]) {
@@ -1283,10 +1343,10 @@ export const dataFormulatorSlice = createSlice({
     },
     removeDataCleanBlocks: (
       state,
-      action: PayloadAction<{ blockIds: string[] }>
+      action: PayloadAction<{ blockIds: string[] }>,
     ) => {
       state.dataCleanBlocks = state.dataCleanBlocks.filter(
-        (block) => !action.payload.blockIds.includes(block.id)
+        (block) => !action.payload.blockIds.includes(block.id),
       );
     },
     resetDataCleanBlocks: (state) => {
@@ -1294,7 +1354,7 @@ export const dataFormulatorSlice = createSlice({
     },
     updateLastDataCleanBlock: (
       state,
-      action: PayloadAction<Partial<DataCleanBlock>>
+      action: PayloadAction<Partial<DataCleanBlock>>,
     ) => {
       if (state.dataCleanBlocks.length > 0) {
         const lastIndex = state.dataCleanBlocks.length - 1;
@@ -1312,7 +1372,7 @@ export const dataFormulatorSlice = createSlice({
       const report = action.payload;
       // Check if report with same ID already exists and update it, otherwise add new
       const existingIndex = state.generatedReports.findIndex(
-        (r) => r.id === report.id
+        (r) => r.id === report.id,
       );
       if (existingIndex >= 0) {
         state.generatedReports[existingIndex] = report;
@@ -1324,7 +1384,7 @@ export const dataFormulatorSlice = createSlice({
     deleteGeneratedReport: (state, action: PayloadAction<string>) => {
       const reportId = action.payload;
       state.generatedReports = state.generatedReports.filter(
-        (r) => r.id !== reportId
+        (r) => r.id !== reportId,
       );
       // Redux Persist will handle persistence automatically
     },
@@ -1338,7 +1398,7 @@ export const dataFormulatorSlice = createSlice({
     },
     removeChatMessage: (state, action: PayloadAction<string>) => {
       state.chatHistory = state.chatHistory.filter(
-        (msg) => msg.id !== action.payload
+        (msg) => msg.id !== action.payload,
       );
       // Redux Persist will handle persistence automatically
     },
@@ -1402,8 +1462,8 @@ export const dataFormulatorSlice = createSlice({
                   m.endpoint === e.endpoint &&
                   m.model === e.model &&
                   m.api_base === e.api_base &&
-                  m.api_version === e.api_version
-              )
+                  m.api_version === e.api_version,
+              ),
           ),
         ];
 
@@ -1412,7 +1472,7 @@ export const dataFormulatorSlice = createSlice({
             return { id: m.id, status: "ok" };
           }),
           ...state.testedModels.filter(
-            (t) => !defaultModels.map((m: ModelConfig) => m.id).includes(t.id)
+            (t) => !defaultModels.map((m: ModelConfig) => m.id).includes(t.id),
           ),
         ];
 
@@ -1454,7 +1514,7 @@ export const dfSelectors = {
   },
   getModelBySlot: (
     state: DataFormulatorState,
-    slotType: ModelSlotType
+    slotType: ModelSlotType,
   ): ModelConfig | undefined => {
     const modelId = state.modelSlots[slotType];
     return modelId ? state.models.find((m) => m.id === modelId) : undefined;
@@ -1481,7 +1541,7 @@ export const dfSelectors = {
         .filter((t) => t.derive?.trigger?.chart)
         .map((t) => t.derive?.trigger?.chart) as Chart[];
       return [...userCharts, ...triggerCharts];
-    }
+    },
   ),
 
   replaceChart: (state: DataFormulatorState, chart: Chart) => {
@@ -1491,7 +1551,7 @@ export const dfSelectors = {
     } else {
       // chart is from tables
       let table = state.tables.find(
-        (t) => t.derive?.trigger?.chart?.id == chart.id
+        (t) => t.derive?.trigger?.chart?.id == chart.id,
       ) as DictTable;
       if (table.derive?.trigger) {
         table.derive = {

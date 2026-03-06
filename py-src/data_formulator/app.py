@@ -7,6 +7,12 @@ import sys
 import os
 import mimetypes
 from functools import lru_cache
+from pathlib import Path
+
+# Add parent directory to path so data_formulator module can be imported
+# This is needed because app.py is located in py-src/data_formulator/
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
