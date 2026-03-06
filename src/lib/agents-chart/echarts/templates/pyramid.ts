@@ -40,9 +40,10 @@ export const ecPyramidChartDef: ChartTemplateDef = {
             xAxis: {
                 type: 'value',
                 name: valField,
+                axisTick: { show: true },
                 axisLabel: { formatter: (v: number) => Math.abs(v).toString() },
             },
-            yAxis: { type: 'category', data: categories, name: catField },
+            yAxis: { type: 'category', data: categories, name: catField, axisTick: { show: true, alignWithLabel: true } },
             series: [
                 { type: 'bar', data: values.map(v => -v), itemStyle: { color: '#4e79a7' }, barGap: '-100%' },
                 { type: 'bar', data: values, itemStyle: { color: '#e15759' } },

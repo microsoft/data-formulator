@@ -17,7 +17,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { groupBy, DEFAULT_COLORS } from './utils';
+import { groupBy } from './utils';
 
 export const ecStreamgraphDef: ChartTemplateDef = {
     chart: 'Streamgraph',
@@ -52,8 +52,9 @@ export const ecStreamgraphDef: ChartTemplateDef = {
                     name: xField,
                     nameLocation: 'middle',
                     nameGap: 30,
+                    axisTick: { show: true },
                 },
-                yAxis: { type: 'value', show: false },
+                yAxis: { type: 'value', show: false, axisTick: { show: true } },
                 series: [{
                     type: 'line',
                     data: table.map(r => [r[xField], r[yField]]),
@@ -83,19 +84,26 @@ export const ecStreamgraphDef: ChartTemplateDef = {
         const groups = groupBy(table, colorField);
         const seriesNames = [...groups.keys()];
 
-        // Build a lookup: (xVal, seriesName) → value
+        // Build a lookup: (xVal, seriesName) → numeric value
         const valMap = new Map<string, number>();
         for (const row of table) {
             const key = `${row[xField]}|||${row[colorField]}`;
-            valMap.set(key, row[yField] ?? 0);
+            const v = row[yField];
+            valMap.set(key, v != null && v !== '' ? Number(v) : 0);
         }
 
-        // Build themeRiver data array — every series must appear at every x-value
-        const riverData: [string, number, string][] = [];
-        for (const xv of xVals) {
+        // ThemeRiver expects first element to be date or number; category labels as string often don't render.
+        // For category x: use numeric index (0,1,2,...) and axisLabel.formatter to show category names.
+        const xIsTemporal = xCS.type === 'temporal';
+        const riverData: [string | number, number, string][] = [];
+        for (let i = 0; i < xVals.length; i++) {
+            const xv = xVals[i];
             for (const sn of seriesNames) {
                 const key = `${xv}|||${sn}`;
-                riverData.push([xv, valMap.get(key) ?? 0, sn]);
+                const numVal = valMap.get(key);
+                const value = numVal != null && Number.isFinite(numVal) ? numVal : 0;
+                // Use index for category so ThemeRiver renders; use string for temporal (date string)
+                riverData.push([xIsTemporal ? xv : i, value, sn]);
             }
         }
 
@@ -104,19 +112,44 @@ export const ecStreamgraphDef: ChartTemplateDef = {
             tooltip: {
                 trigger: 'axis',
                 axisPointer: { type: 'line', lineStyle: { color: 'rgba(0,0,0,0.2)', width: 1, type: 'solid' } },
+                formatter: (params: any) => {
+                    if (!params || params.length === 0) return '';
+                    const xVal = params[0].value[0];
+                    const displayX = xIsTemporal ? xVal : (xVals[xVal] ?? xVal);
+                    let html = `<b>${displayX}</b><br/>`;
+                    // Sort by value descending
+                    const sortedParams = [...params].sort((a, b) => (b.value[1] || 0) - (a.value[1] || 0));
+                    sortedParams.forEach((p: any) => {
+                        html += `${p.marker} ${p.value[2]}: <b>${p.value[1]}</b><br/>`;
+                    });
+                    return html;
+                },
             },
             legend: {
                 data: seriesNames,
             },
             singleAxis: {
-                type: xCS.type === 'temporal' ? 'time' : 'category',
-                ...(xCS.type !== 'temporal' ? { data: xVals } : {}),
+                ...(xIsTemporal
+                    ? { type: 'time' as const }
+                    : {
+                        type: 'value' as const,
+                        min: 0,
+                        max: Math.max(1, xVals.length - 1),
+                        axisLabel: {
+                            fontSize: 11,
+                            formatter: (value: number) => {
+                                const idx = Math.round(Number(value));
+                                return xVals[idx] ?? value;
+                            },
+                        },
+                    }),
+                axisTick: { show: true },
                 bottom: 45,         // enough room for tick labels + axis name below
                 name: xField,
                 nameLocation: 'middle',
                 nameGap: 25,
                 nameTextStyle: { fontSize: 12 },
-                axisLabel: { fontSize: 11 },
+                ...(xIsTemporal ? { axisLabel: { fontSize: 11 } } : {}),
             },
             series: [{
                 type: 'themeRiver',
@@ -130,8 +163,7 @@ export const ecStreamgraphDef: ChartTemplateDef = {
             }],
         };
 
-        // Apply color palette
-        option.color = seriesNames.map((_, i) => DEFAULT_COLORS[i % DEFAULT_COLORS.length]);
+        // 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 设置 option.color，ThemeRiver 会按 stream 顺序使用
 
         Object.assign(spec, option);
         delete spec.mark;
@@ -145,13 +177,11 @@ export const ecStreamgraphDef: ChartTemplateDef = {
         // singleAxis margins and canvas to match consistently.
         if (option.singleAxis) {
             const BUFFER = 15;
+            const LEGEND_GAP = 12;
             const hasLegend = !!option.legend;
-            const rightMargin = hasLegend ? 130 : 20;
-
-            // singleAxis positions: left/right control horizontal extent,
-            // top/bottom control vertical extent
-            option.singleAxis.left = option.singleAxis.left || 50;
-            option.singleAxis.right = option.singleAxis.right || rightMargin;
+            // Reserve enough right margin for legend so it doesn't overlap the chart
+            const legendWidth = (option._legendWidth as number) || 140;
+            const rightMargin = hasLegend ? legendWidth + LEGEND_GAP + BUFFER : 20;
 
             // Ensure canvas is large enough
             const minW = 600 + BUFFER;
@@ -164,6 +194,32 @@ export const ecStreamgraphDef: ChartTemplateDef = {
             }
             if (!option._width) option._width = minW;
             if (!option._height) option._height = minH;
+
+            // singleAxis positions: left/right control horizontal extent,
+            // top/bottom control vertical extent
+            option.singleAxis.left = option.singleAxis.left || 50;
+            option.singleAxis.right = Math.max(option.singleAxis.right || 0, rightMargin);
+
+            // Position legend in the right margin so it doesn't overlap the stream
+            if (hasLegend && option.legend) {
+                const legendLeft = option._width - rightMargin + BUFFER;
+                option.legend.left = legendLeft;
+                delete option.legend.right; // Use left to align with graphic titles
+                option.legend.top = 20;
+                option.legend.orient = option.legend.orient || 'vertical';
+                option.legend.align = 'left';
+
+                // Also update any custom graphic legend titles
+                if (Array.isArray(option.graphic)) {
+                    for (const g of option.graphic) {
+                        // The legend title added in instantiate-spec.ts typically has top: 4 and type: 'text'
+                        if (g.type === 'text' && (g.top === 4 || g.top === 20) && g.style && g.style.fontWeight === 'bold') {
+                            g.left = legendLeft;
+                            delete g.right;
+                        }
+                    }
+                }
+            }
 
             // Push the axis up from the canvas bottom to avoid clipping
             if (typeof option.singleAxis.bottom === 'number') {

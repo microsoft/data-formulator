@@ -17,7 +17,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS, computeCircumferencePressure } from './utils';
+import { extractCategories, groupBy, computeCircumferencePressure } from './utils';
 
 export const ecRoseChartDef: ChartTemplateDef = {
     chart: 'Rose Chart',
@@ -44,7 +44,6 @@ export const ecRoseChartDef: ChartTemplateDef = {
             // Stacked rose: one series per color group
             const groups = groupBy(table, colorField);
 
-            let colorIdx = 0;
             for (const [name, rows] of groups) {
                 legendData.push(name);
 
@@ -64,10 +63,8 @@ export const ecRoseChartDef: ChartTemplateDef = {
                     data: values,
                     coordinateSystem: 'polar',
                     stack: 'rose',
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
                     emphasis: { focus: 'series' },
                 });
-                colorIdx++;
             }
         } else {
             // Single series: one value per category
@@ -84,7 +81,6 @@ export const ecRoseChartDef: ChartTemplateDef = {
                 type: 'bar',
                 data: values,
                 coordinateSystem: 'polar',
-                itemStyle: { color: DEFAULT_COLORS[0] },
             });
         }
 
@@ -145,7 +141,7 @@ export const ecRoseChartDef: ChartTemplateDef = {
                 ...(polarCenter != null ? { center: polarCenter } : {}),
             },
             series: seriesArr,
-            color: DEFAULT_COLORS,
+            // 颜色调色板由 color-decisions / ecApplyLayoutToSpec 注入到 option.color
             // Canvas size
             _width: canvasW,
             _height: canvasH,

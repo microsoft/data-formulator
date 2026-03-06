@@ -17,7 +17,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS, computeCircumferencePressure } from './utils';
+import { extractCategories, groupBy, computeCircumferencePressure } from './utils';
 
 /** Round up to a nice ceiling for radar axis max. */
 function niceMax(v: number): number {
@@ -99,10 +99,8 @@ export const ecRadarChartDef: ChartTemplateDef = {
                 seriesData.push({
                     name,
                     value: values,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
                     areaStyle: filled ? { opacity: fillOpacity } : undefined,
                 });
-                colorIdx++;
             }
         } else {
             // Single group
@@ -127,22 +125,25 @@ export const ecRadarChartDef: ChartTemplateDef = {
             });
         }
 
-        // ── Circumference-pressure sizing (spring model) ──────────────
-        // Radar: uniform spokes — each metric is one "bar".
-        // Spokes need more spacing for axis labels than pie/rose.
-        const { radius: pressureRadius, canvasW, canvasH }
+        // ── Layout: keep radar and axis labels inside canvas, legend not overlapping ──
+        // Use percentage center/radius so top/bottom axis labels don't overflow; reserve bottom for legend.
+        const hasLegend = legendData.length > 0;
+        const { canvasW, canvasH }
             = computeCircumferencePressure(metrics.length, ctx.canvasSize, {
-                minArcPx: 60,  // spokes need more spacing for axis labels
+                minArcPx: 60,
                 minRadius: 80,
                 maxStretch: ctx.assembleOptions?.maxStretch,
             });
+        const chartH = canvasH + (hasLegend ? 36 : 0);
 
         const option: any = {
             tooltip: { trigger: 'item' },
             radar: {
                 indicator,
                 shape: chartProperties?.shape === 'circle' ? 'circle' : 'polygon',
-                radius: pressureRadius,
+                center: ['50%', '46%'],
+                radius: '38%',
+                axisName: { fontSize: 11 },
             },
             series: [{
                 type: 'radar',
@@ -151,13 +152,17 @@ export const ecRadarChartDef: ChartTemplateDef = {
                     lineStyle: { width: 3 },
                 },
             }],
-            // Enforce minimum canvas for radar readability
             _width: canvasW,
-            _height: canvasH,
+            _height: chartH,
         };
 
-        if (legendData.length > 0) {
-            option.legend = { data: legendData };
+        if (hasLegend) {
+            option.legend = {
+                data: legendData,
+                bottom: 12,
+                left: 'center',
+                orient: 'horizontal',
+            };
         }
 
         Object.assign(spec, option);
