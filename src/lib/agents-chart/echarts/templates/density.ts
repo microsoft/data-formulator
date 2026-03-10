@@ -2,29 +2,61 @@
 // Licensed under the MIT License.
 
 /**
- * ECharts Density Plot — area from binned distribution (mirror vegalite/templates/density.ts).
- * Single channel x; optional color. Uses histogram bins then area chart as approximation.
+ * ECharts Density Plot — KDE area (align with vegalite/templates/density.ts).
+ *
+ * Why VL and EC specs differ:
+ *   - Vega-Lite: spec keeps raw data + transform [{ density: field }]; the runtime computes
+ *     kernel density (KDE) when rendering. Encoding uses transform outputs "value" and "density".
+ *   - ECharts: no transform pipeline; we compute KDE here and put (value, density) points
+ *     into series[].data. The spec therefore contains the derived curve, not the raw rows.
  */
 
-import { ChartTemplateDef } from '../../core/types';
-import { groupBy, DEFAULT_COLORS } from './utils';
+import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
+import { groupBy } from './utils';
 
-function binData(values: number[], numBins: number): { x: number[]; y: number[] } {
+/**
+ * Bandwidth for KDE — match vega-statistics (bandwidth.js).
+ * Scott/Silverman-style: 1.06 * v * n^(-0.2) with v = min(std, IQR/1.34).
+ */
+function estimateBandwidth(values: number[]): number {
+    const n = values.length;
+    if (n < 2) return 1;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mean = values.reduce((a, b) => a + b, 0) / n;
+    const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+    const d = Math.sqrt(variance); // standard deviation
+    const q1 = sorted[Math.floor((n - 1) * 0.25)];
+    const q3 = sorted[Math.floor((n - 1) * 0.75)];
+    const iqr = (q3 != null && q1 != null) ? q3 - q1 : 0;
+    const h = iqr / 1.34;
+    const v = Math.min(d, h || d) || d || 1;
+    return 1.06 * v * Math.pow(n, -0.2);
+}
+
+/** One-dimensional Gaussian KDE over extent; formula matches vega-statistics kde.pdf. */
+function kde(values: number[], steps: number, bandwidthMultiplier: number, extent?: { min: number; max: number }): { x: number[]; y: number[] } {
     if (values.length === 0) return { x: [], y: [] };
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const step = (max - min) / numBins || 1;
-    const bins = new Array(numBins + 1).fill(0);
-    const edges = new Array(numBins + 1).fill(0).map((_, i) => min + i * step);
+    const min = extent ? extent.min : Math.min(...values);
+    const max = extent ? extent.max : Math.max(...values);
+    const range = max - min || 1;
+    const lo = min;
+    const hi = max;
+    const h = estimateBandwidth(values) * bandwidthMultiplier;
+    const n = values.length;
 
-    for (const v of values) {
-        const i = Math.min(Math.floor((v - min) / step), numBins - 1);
-        bins[i]++;
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i <= steps; i++) {
+        const t = lo + (i / steps) * (hi - lo || range);
+        let sum = 0;
+        for (const v of values) {
+            const z = (t - v) / h;
+            sum += Math.exp(-0.5 * z * z);
+        }
+        const density = sum / (n * h * Math.sqrt(2 * Math.PI));
+        x.push(t);
+        y.push(density);
     }
-
-    const total = values.length;
-    const x = edges.slice(0, -1).map((e, i) => (e + edges[i + 1]) / 2);
-    const y = bins.slice(0, -1).map(c => c / total);
     return { x, y };
 }
 
@@ -40,14 +72,15 @@ export const ecDensityPlotDef: ChartTemplateDef = {
 
         if (!xField) return;
 
-        const numBins = Math.min(40, Math.max(10, Math.ceil(Math.sqrt(table.length))));
-        const bandwidth = chartProperties?.bandwidth ?? 0.4;
-        const bins = Math.max(10, Math.round(numBins / (1 + bandwidth)));
+        const steps = 200; // match Vega density minsteps/maxsteps (default up to 200)
+        const bandwidthMultiplier = (chartProperties?.bandwidth != null && chartProperties.bandwidth > 0)
+            ? chartProperties.bandwidth
+            : 1;
 
         const option: any = {
             tooltip: { trigger: 'axis' },
-            xAxis: { type: 'value', name: xField, nameLocation: 'middle', nameGap: 30 },
-            yAxis: { type: 'value', name: 'Density', nameLocation: 'middle', nameGap: 40 },
+            xAxis: { type: 'value', name: xField, nameLocation: 'middle', nameGap: 30, axisTick: { show: true } },
+            yAxis: { type: 'value', name: 'Density', nameLocation: 'middle', nameGap: 40, axisTick: { show: true } },
             series: [],
         };
         option._encodingTooltip = { trigger: 'axis', categoryLabel: xField, valueLabel: 'Density' };
@@ -55,27 +88,33 @@ export const ecDensityPlotDef: ChartTemplateDef = {
         if (colorField) {
             const groups = groupBy(table, colorField);
             option.legend = { data: [...groups.keys()] };
-            let colorIdx = 0;
+            option._legendTitle = colorField;
+            // Shared extent (like Vega's density with groupby) so all curves use the same x domain
+            const allValues = table.map((r: any) => Number(r[xField])).filter((v: number) => !isNaN(v));
+            const sharedExtent = allValues.length > 0
+                ? { min: Math.min(...allValues), max: Math.max(...allValues) }
+                : undefined;
             for (const [name, rows] of groups) {
                 const values = rows.map((r: any) => Number(r[xField])).filter((v: number) => !isNaN(v));
-                const { x, y } = binData(values, bins);
+                const { x, y } = kde(values, steps, bandwidthMultiplier, sharedExtent);
                 const data = x.map((xi, i) => [xi, y[i]]);
                 option.series.push({
                     name,
                     type: 'line',
                     data,
-                    areaStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length], opacity: 0.5 },
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    symbol: 'none',
+                    // 颜色由 color-decisions / option.color 驱动；这里只设置透明度。
+                    areaStyle: { opacity: 0.5 },
                 });
-                colorIdx++;
             }
         } else {
             const values = table.map((r: any) => Number(r[xField])).filter((v: number) => !isNaN(v));
-            const { x, y } = binData(values, bins);
+            const { x, y } = kde(values, steps, bandwidthMultiplier);
             const data = x.map((xi, i) => [xi, y[i]]);
             option.series.push({
                 type: 'line',
                 data,
+                symbol: 'none',
                 areaStyle: { opacity: 0.5 },
             });
         }
@@ -84,4 +123,7 @@ export const ecDensityPlotDef: ChartTemplateDef = {
         delete spec.mark;
         delete spec.encoding;
     },
+    properties: [
+        { key: 'bandwidth', label: 'Bandwidth', type: 'continuous', min: 0.05, max: 2, step: 0.05, defaultValue: 0 },
+    ] as ChartPropertyDef[],
 };

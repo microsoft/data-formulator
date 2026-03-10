@@ -8,6 +8,17 @@
 import { ChartTemplateDef } from '../../core/types';
 import { extractCategories } from './utils';
 
+/** True if all category labels parse as numbers → horizontal; else vertical (align with line/bar). */
+function areCategoriesNumeric(cats: string[]): boolean {
+    if (cats.length === 0) return true;
+    return cats.every((c) => {
+        const s = String(c).trim();
+        if (s === '') return false;
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n);
+    });
+}
+
 export const ecWaterfallChartDef: ChartTemplateDef = {
     chart: 'Waterfall Chart',
     template: { mark: 'bar', encoding: {} },
@@ -56,10 +67,24 @@ export const ecWaterfallChartDef: ChartTemplateDef = {
             }
         }
 
+        const legendItems = ['Start/End', 'Increase', 'Decrease'];
+        const legendColors = ['#5470c6', '#91cc75', '#ee6666'];
+
         const option: any = {
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-            xAxis: { type: 'category', data: categories, name: xField },
-            yAxis: { type: 'value', name: yField },
+            legend: {
+                data: legendItems,
+            },
+            xAxis: {
+                type: 'category',
+                data: categories,
+                name: xField,
+                nameLocation: 'middle',
+                nameGap: 30,
+                axisTick: { show: true, alignWithLabel: true },
+                axisLabel: { rotate: areCategoriesNumeric(categories) ? 0 : 90 },
+            },
+            yAxis: { type: 'value', name: yField, axisTick: { show: true } },
             series: [
                 { type: 'bar', name: '_base', data: baseData, stack: 'wf', itemStyle: { color: 'transparent' } },
                 {
@@ -69,6 +94,13 @@ export const ecWaterfallChartDef: ChartTemplateDef = {
                     stack: 'wf',
                     itemStyle: { color: (params: any) => colors[params.dataIndex] },
                 },
+                // Legend-only series: no data, only for legend color/symbol
+                ...legendItems.map((name, i) => ({
+                    type: 'bar' as const,
+                    name,
+                    data: [] as number[],
+                    itemStyle: { color: legendColors[i] },
+                })),
             ],
         };
 

@@ -4,6 +4,7 @@
 import type { ZeroDecision, ColorSchemeRecommendation } from './semantic-types';
 import type { LabelSizingDecision } from './decisions';
 import type { SemanticAnnotation, FormatSpec, DomainConstraint, TickConstraint } from './field-semantics';
+import type { ColorDecisionResult } from './color-decisions';
 
 /**
  * Core types for the chart engine library.
@@ -411,6 +412,13 @@ export interface InstantiateContext {
 
     /** Assembly options (layout tuning parameters from the caller) */
     assembleOptions?: AssembleOptions;
+
+    /**
+     * Backend-agnostic color decisions.
+     * Computed once per chart from semantic + layout context and reused
+     * by all backends to map into their native color configuration.
+     */
+    colorDecisions?: ColorDecisionResult;
 }
 
 

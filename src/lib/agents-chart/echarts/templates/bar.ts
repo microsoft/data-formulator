@@ -16,6 +16,7 @@ import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import {
     extractCategories, groupBy, detectAxes, DEFAULT_COLORS, getCategoryOrder,
 } from './utils';
+import { pickColorMap } from '../../core/color-decisions';
 import {
     detectBandedAxisFromSemantics, detectBandedAxisForceDiscrete,
 } from '../../vegalite/templates/utils';
@@ -77,6 +78,17 @@ function buildCategoryGroupCounts(
     );
 }
 
+/** True if all labels parse as numbers → horizontal axis labels; otherwise vertical (for heatmap). */
+function areHeatmapCategoriesNumeric(cats: string[]): boolean {
+    if (cats.length === 0) return true;
+    return cats.every((c) => {
+        const s = String(c).trim();
+        if (s === '') return false;
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n);
+    });
+}
+
 // ─── Bar Chart ──────────────────────────────────────────────────────────────
 
 export const ecBarChartDef: ChartTemplateDef = {
@@ -100,6 +112,8 @@ export const ecBarChartDef: ChartTemplateDef = {
         if (!catField || !valField) return;
 
         const catCS = channelSemantics[categoryAxis];
+        const valCS = channelSemantics[valueAxis];
+        const colorField = channelSemantics.color?.field;
         const bothDiscrete =
             isDiscrete(channelSemantics.x?.type) && isDiscrete(channelSemantics.y?.type);
 
@@ -124,25 +138,32 @@ export const ecBarChartDef: ChartTemplateDef = {
             if (maxVal === -Infinity) maxVal = 1;
 
             const option: any = {
-                tooltip: {
-                    position: 'top',
-                    formatter: (params: any) => {
-                        const d = params.data;
-                        return `${categories[d[0]]}, ${groups[d[1]]}: ${d[2]}`;
-                    },
+                tooltip: { position: 'top' },
+                _encodingTooltip: {
+                    trigger: 'item',
+                    parts: [
+                        { from: 'data', index: 0, label: catField, format: 'category', categoryNames: categories },
+                        { from: 'data', index: 1, label: valField, format: 'category', categoryNames: groups },
+                        { from: 'data', index: 2, label: 'Count', format: 'number' },
+                    ],
                 },
                 xAxis: {
                     type: 'category',
                     data: categories,
                     name: catField,
                     splitArea: { show: true },
-                    axisLabel: { rotate: 90 },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLabel: {
+                        rotate: areHeatmapCategoriesNumeric(categories) ? 0 : 90,
+                    },
                 },
                 yAxis: {
                     type: 'category',
                     data: groups,
                     name: valField,
                     splitArea: { show: true },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLabel: { rotate: 0 },
                 },
                 visualMap: {
                     min: minVal,
@@ -170,7 +191,133 @@ export const ecBarChartDef: ChartTemplateDef = {
             return;
         }
 
-        const valCS = channelSemantics[valueAxis];
+        // Color + quantitative value → default to stacked bar (like Vega-Lite).
+        if (colorField && valCS?.type === 'quantitative') {
+            const categories = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis));
+            const isHorizontal = categoryAxis === 'y';
+
+            const option: any = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                xAxis: isHorizontal
+                    ? { type: 'value', name: valField }
+                    : {
+                        type: 'category',
+                        data: categories,
+                        name: catField,
+                        axisLabel: { rotate: catCS?.type === 'quantitative' ? 0 : 90 },
+                        axisTick: { show: true, alignWithLabel: true },
+                        axisLine: { show: true },
+                    },
+                yAxis: isHorizontal
+                    ? { type: 'category', data: categories, name: catField }
+                    : { type: 'value', name: valField },
+                series: [],
+            };
+            option._encodingTooltip = { trigger: 'axis', categoryLabel: catField, valueLabel: valField };
+
+            const groups = groupBy(table, colorField);
+            const legendKeys = [...groups.keys()];
+            const highCardinality = legendKeys.length > 10;
+            option.legend = {
+                data: legendKeys,
+                orient: 'vertical',
+                right: 10,
+                top: highCardinality ? 30 : 20,
+                bottom: highCardinality ? 10 : undefined,
+                type: highCardinality ? 'scroll' : 'plain',
+                align: 'left',
+            };
+
+            // Legend title (e.g., Segment) aligned with legend symbols on the right
+            if (colorField) {
+                const titleGraphic = {
+                    type: 'text' as const,
+                    right: 10,
+                    top: 4,
+                    z: 100,
+                    style: {
+                        text: colorField,
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        fill: '#333',
+                        textAlign: 'right',
+                    },
+                };
+                const existingGraphic = (spec as any).graphic ?? option.graphic;
+                option.graphic = Array.isArray(existingGraphic)
+                    ? [...existingGraphic, titleGraphic]
+                    : existingGraphic
+                        ? [existingGraphic, titleGraphic]
+                        : [titleGraphic];
+            }
+
+            for (const [name, rows] of groups) {
+                const data = buildCategoryValues(rows, catField, valField, categories);
+                option.series.push({
+                    name,
+                    type: 'bar',
+                    data,
+                    stack: 'total',
+                    // 颜色由 ecApplyLayoutToSpec 中的 palette 决定，这里不再硬编码。
+                });
+            }
+
+            Object.assign(spec, option);
+            delete spec.mark;
+            delete spec.encoding;
+            return;
+        }
+
+        // x=temporal, y=nominal → vertical grouped bar: x=dates (labels), y=count, series=group
+        // 这里没有显式的 color/group 通道，但从 y 轴类别派生出了“系列分组”，
+        // 所以无法依赖全局 colorDecisions；改为在模板内部通过 color-decisions 的
+        // pickColorMap 主动选一个 categorical palette（通常是 cat10），并按 legend 顺序分配颜色。
+        if (categoryAxis === 'y' && valCS?.type === 'temporal') {
+            const dateCategories = extractCategories(table, valField, getCategoryOrder(ctx, valueAxis));
+            dateCategories.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+            const groups = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis));
+            const countMatrix = buildCategoryGroupCounts(table, valField, catField, dateCategories, groups);
+
+            // 使用 color-decisions 的 colormap 注册表选一个分类 palette（通常是 cat10）
+            const selection = pickColorMap({
+                type: 'categorical',
+                categoryCount: groups.length || undefined,
+                background: 'light',
+                chartType: ctx.chartType,
+            });
+            const palette = selection.map.colors;
+
+            const option: any = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                legend: { data: groups },
+                xAxis: {
+                    type: 'category',
+                    data: dateCategories,
+                    name: valField,
+                    axisLabel: { rotate: 90 },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLine: { show: true },
+                },
+                yAxis: { type: 'value', name: 'Count', axisTick: { show: true } },
+                // 显式把 palette 写到 option.color，方便和其它图类型保持一致
+                color: palette,
+                series: groups.map((name, i) => ({
+                    name,
+                    type: 'bar',
+                    data: countMatrix[i],
+                    itemStyle: {
+                        color: palette[i % palette.length],
+                        borderRadius: chartProperties?.cornerRadius ?? 0,
+                    },
+                })),
+            };
+            option._encodingTooltip = { trigger: 'axis', categoryLabel: valField, valueLabel: 'Count', groupLabel: catField };
+            Object.assign(spec, option);
+            delete spec.mark;
+            delete spec.encoding;
+            return;
+        }
+
         let categories = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis));
         let values: (number | null)[];
         if (valCS?.type === 'temporal') {
@@ -249,16 +396,92 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
         if (!catField || !valField) return;
 
         const catCS = channelSemantics[categoryAxis];
+        const valCS = channelSemantics[valueAxis];
         let categories = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis));
         if (catCS?.type === 'temporal') {
             categories = [...categories].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
         }
         const isHorizontal = categoryAxis === 'y';
+        const valueLabel = valCS?.type === 'temporal' ? 'Count' : valField;
+
+        // All categorical (e.g., x=Category, y=Group, color=Segment) → count per (x, color) with stacked bars.
+        if (colorField && isDiscrete(channelSemantics.x?.type) && isDiscrete(channelSemantics.y?.type)) {
+            const categoriesX = extractCategories(table, channelSemantics.x!.field!, getCategoryOrder(ctx, 'x'));
+            const groups = groupBy(table, colorField);
+
+            const option: any = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                xAxis: {
+                    type: 'category',
+                    data: categoriesX,
+                    name: channelSemantics.x!.field,
+                    axisLabel: { rotate: 90 },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLine: { show: true },
+                },
+                yAxis: { type: 'value', name: 'Count', axisTick: { show: true } },
+                series: [],
+            };
+            option._encodingTooltip = {
+                trigger: 'axis',
+                categoryLabel: channelSemantics.x!.field!,
+                valueLabel: 'Count',
+                groupLabel: colorField,
+            };
+
+            const legendKeys = [...groups.keys()];
+            const highCardinality = legendKeys.length > 10;
+            option.legend = {
+                data: legendKeys,
+                orient: 'vertical',
+                right: 10,
+                top: highCardinality ? 30 : 20,
+                bottom: highCardinality ? 10 : undefined,
+                type: highCardinality ? 'scroll' : 'plain',
+                align: 'left',
+            };
+
+            const titleGraphic = {
+                type: 'text' as const,
+                right: 10,
+                top: 4,
+                z: 100,
+                style: {
+                    text: colorField,
+                    fontSize: 11,
+                    fontWeight: 'bold',
+                    fill: '#333',
+                    textAlign: 'right',
+                },
+            };
+            const existingGraphic = (spec as any).graphic ?? option.graphic;
+            option.graphic = Array.isArray(existingGraphic)
+                ? [...existingGraphic, titleGraphic]
+                : existingGraphic
+                    ? [existingGraphic, titleGraphic]
+                    : [titleGraphic];
+
+            for (const [name, rows] of groups) {
+                const data = buildCategoryCounts(rows, channelSemantics.x!.field!, categoriesX);
+                option.series.push({
+                    name,
+                    type: 'bar',
+                    data,
+                    stack: 'total',
+                    // 颜色由全局 palette 决定。
+                });
+            }
+
+            Object.assign(spec, option);
+            delete spec.mark;
+            delete spec.encoding;
+            return;
+        }
 
         const option: any = {
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
             xAxis: isHorizontal
-                ? { type: 'value', name: valField }
+                ? { type: 'value', name: valueLabel }
                 : {
                     type: 'category',
                     data: categories,
@@ -269,10 +492,10 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                 },
             yAxis: isHorizontal
                 ? { type: 'category', data: categories, name: catField }
-                : { type: 'value', name: valField },
+                : { type: 'value', name: valueLabel },
             series: [],
         };
-        option._encodingTooltip = { trigger: 'axis', categoryLabel: catField, valueLabel: valField };
+        option._encodingTooltip = { trigger: 'axis', categoryLabel: catField, valueLabel };
 
         // Stack mode from chart properties
         const stackMode = chartProperties?.stackMode;
@@ -281,16 +504,51 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
 
         if (colorField) {
             const groups = groupBy(table, colorField);
-            option.legend = { data: [...groups.keys()] };
+            const legendKeys = [...groups.keys()];
+            const highCardinality = legendKeys.length > 10;
+            option.legend = {
+                data: legendKeys,
+                orient: 'vertical',
+                right: 10,
+                top: highCardinality ? 30 : 20,
+                bottom: highCardinality ? 10 : undefined,
+                type: highCardinality ? 'scroll' : 'plain',
+                align: 'left',
+            };
 
-            let colorIdx = 0;
+            // Legend title (e.g., Segment) aligned with legend symbols on the right
+            const titleField = colorField;
+            if (titleField) {
+                const titleGraphic = {
+                    type: 'text' as const,
+                    right: 10,
+                    top: 4,
+                    z: 100,
+                    style: {
+                        text: titleField,
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        fill: '#333',
+                        textAlign: 'right',
+                    },
+                };
+                const existingGraphic = (spec as any).graphic ?? option.graphic;
+                option.graphic = Array.isArray(existingGraphic)
+                    ? [...existingGraphic, titleGraphic]
+                    : existingGraphic
+                        ? [existingGraphic, titleGraphic]
+                        : [titleGraphic];
+            }
+
             for (const [name, rows] of groups) {
-                const data = buildCategoryValues(rows, catField, valField, categories);
+                const data = valCS?.type === 'temporal'
+                    ? buildCategoryCounts(rows, catField, categories)
+                    : buildCategoryValues(rows, catField, valField, categories);
                 const series: any = {
                     name,
                     type: 'bar',
                     data,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由全局 palette 决定。
                 };
                 if (stackGroup) {
                     series.stack = stackGroup;
@@ -303,11 +561,12 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                     // for now we just stack — full normalize would need data transform
                 }
                 option.series.push(series);
-                colorIdx++;
             }
         } else {
             // Single series stacked (no color = just a regular bar)
-            const data = buildCategoryValues(table, catField, valField, categories);
+            const data = valCS?.type === 'temporal'
+                ? buildCategoryCounts(table, catField, categories)
+                : buildCategoryValues(table, catField, valField, categories);
             option.series.push({ type: 'bar', data, stack: stackGroup });
         }
 
@@ -343,13 +602,154 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
     },
     instantiate: (spec, ctx) => {
         const { channelSemantics, table } = ctx;
-        const { categoryAxis, valueAxis } = detectAxes(channelSemantics);
 
-        // The "group" channel in the core maps to color in ECharts
+        // The "group" channel in the core maps to color/series in ECharts
         const groupField = channelSemantics.group?.field || channelSemantics.color?.field;
 
+        // ── Special case: x=temporal, y=nominal, group=Segment → vertical grouped bars by Date ──
+        // Mirror ecBarChartDef's "x=temporal, y=nominal" behaviour, but use the explicit group channel
+        // for series instead of the y field. Result:
+        //   - x axis: Date categories (sorted)
+        //   - y axis: Count
+        //   - series: Segment (group channel), values = count of rows per (Date, Segment)
+        if (channelSemantics.x?.type === 'temporal'
+            && isDiscrete(channelSemantics.y?.type)
+            && groupField
+            && channelSemantics.x.field) {
+            const xField = channelSemantics.x.field;
+            const xCS = channelSemantics.x;
+
+            const dateCategories = extractCategories(table, xField, getCategoryOrder(ctx, 'x'));
+            dateCategories.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+            const segments = extractCategories(table, groupField, getCategoryOrder(ctx, 'group'));
+            const countMatrix = buildCategoryGroupCounts(table, xField, groupField, dateCategories, segments);
+
+            const option: any = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                legend: { data: segments },
+                xAxis: {
+                    type: 'category',
+                    data: dateCategories,
+                    name: xField,
+                    axisLabel: { rotate: xCS?.type === 'quantitative' ? 0 : 90 },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLine: { show: true },
+                },
+                yAxis: { type: 'value', name: 'Count', axisTick: { show: true } },
+                series: segments.map((name, i) => ({
+                    name,
+                    type: 'bar',
+                    data: countMatrix[i],
+                    // 颜色由全局 palette 决定。
+                })),
+            };
+            // Let ecApplyLayoutToSpec place a single legend title for the group channel.
+            // Avoid adding our own graphic here, otherwise we'd get a duplicate "Segment" title.
+            option._legendTitle = groupField;
+            option._encodingTooltip = {
+                trigger: 'axis',
+                categoryLabel: xField,
+                valueLabel: 'Count',
+                groupLabel: groupField,
+            };
+
+            Object.assign(spec, option);
+            delete spec.mark;
+            delete spec.encoding;
+            return;
+        }
+
+        const { categoryAxis, valueAxis } = detectAxes(channelSemantics);
         const catField = channelSemantics[categoryAxis]?.field;
         const valField = channelSemantics[valueAxis]?.field;
+        const valType = channelSemantics[valueAxis]?.type;
+
+        // ── Fallback: no numeric value axis, but we do have a group channel ──
+        // Example specs:
+        //   - x=Category (nominal), y=Group (nominal), group=Segment
+        //   - x=Date (temporal),   y=Group (nominal), group=Segment
+        // In these cases we mirror bar chart's "all categorical" behaviour:
+        // use x as the category axis and plot grouped bars where height = count.
+        if ((!valField || valType === 'nominal' || valType === 'ordinal') && groupField && channelSemantics.x?.field) {
+            const xField = channelSemantics.x.field!;
+            const xCS = channelSemantics.x;
+            let categories = extractCategories(table, xField, getCategoryOrder(ctx, 'x'));
+            if (xCS?.type === 'temporal') {
+                categories = [...categories].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+            }
+
+            const groups = groupBy(table, groupField);
+            const legendKeys = [...groups.keys()];
+            const highCardinality = legendKeys.length > 10;
+
+            const option: any = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                xAxis: {
+                    type: 'category',
+                    data: categories,
+                    name: xField,
+                    axisLabel: { rotate: xCS?.type === 'quantitative' ? 0 : 90 },
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLine: { show: true },
+                },
+                yAxis: { type: 'value', name: 'Count', axisTick: { show: true } },
+                series: [],
+            };
+            option._encodingTooltip = {
+                trigger: 'axis',
+                categoryLabel: xField,
+                valueLabel: 'Count',
+                groupLabel: groupField,
+            };
+
+            option.legend = {
+                data: legendKeys,
+                orient: 'vertical',
+                right: 10,
+                top: highCardinality ? 30 : 20,
+                bottom: highCardinality ? 10 : undefined,
+                type: highCardinality ? 'scroll' : 'plain',
+                align: 'left',
+            };
+
+            const titleGraphic = {
+                type: 'text' as const,
+                right: 10,
+                top: 4,
+                z: 100,
+                style: {
+                    text: groupField,
+                    fontSize: 11,
+                    fontWeight: 'bold',
+                    fill: '#333',
+                    textAlign: 'right',
+                },
+            };
+            const existingGraphic = (spec as any).graphic ?? option.graphic;
+            option.graphic = Array.isArray(existingGraphic)
+                ? [...existingGraphic, titleGraphic]
+                : existingGraphic
+                    ? [existingGraphic, titleGraphic]
+                    : [titleGraphic];
+
+            for (const [name, rows] of groups) {
+                const data = buildCategoryCounts(rows, xField, categories);
+                option.series.push({
+                    name,
+                    type: 'bar',
+                    data,
+                    // 颜色由全局 palette 决定。
+                });
+            }
+
+            Object.assign(spec, option);
+            delete spec.mark;
+            delete spec.encoding;
+            return;
+        }
+
+        // ── Default: we have a proper value axis (quantitative / temporal) ──
         if (!catField || !valField) return;
 
         const catCS = channelSemantics[categoryAxis];
@@ -378,22 +778,54 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
         };
         option._encodingTooltip = { trigger: 'axis', categoryLabel: catField, valueLabel: valField };
 
-        if (groupField) {
+            if (groupField) {
             // Each group becomes a separate series — ECharts places them
             // side-by-side within each category automatically
             const groups = groupBy(table, groupField);
-            option.legend = { data: [...groups.keys()] };
+            const legendKeys = [...groups.keys()];
+            const highCardinality = legendKeys.length > 10;
+            option.legend = {
+                data: legendKeys,
+                orient: 'vertical',
+                right: 10,
+                top: highCardinality ? 30 : 20,
+                bottom: highCardinality ? 10 : undefined,
+                type: highCardinality ? 'scroll' : 'plain',
+                align: 'left',
+            };
 
-            let colorIdx = 0;
+            // Legend title (e.g., Segment) aligned with legend symbols on the right
+            const titleField = groupField;
+            if (titleField) {
+                const titleGraphic = {
+                    type: 'text' as const,
+                    right: 10,
+                    top: 4,
+                    z: 100,
+                    style: {
+                        text: titleField,
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        fill: '#333',
+                        textAlign: 'right',
+                    },
+                };
+                const existingGraphic = (spec as any).graphic ?? option.graphic;
+                option.graphic = Array.isArray(existingGraphic)
+                    ? [...existingGraphic, titleGraphic]
+                    : existingGraphic
+                        ? [existingGraphic, titleGraphic]
+                        : [titleGraphic];
+            }
+
             for (const [name, rows] of groups) {
                 const data = buildCategoryValues(rows, catField, valField, categories);
                 option.series.push({
                     name,
                     type: 'bar',
                     data,
-                    itemStyle: { color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length] },
+                    // 颜色由全局 palette 决定。
                 });
-                colorIdx++;
             }
         } else {
             // No grouping — single series

@@ -37,6 +37,135 @@ import {
     levelToFormat,
     SEMANTIC_LEVEL,
 } from '../core/resolve-semantics';
+import { ColorDecisionResult, getPaletteForScheme } from '../core/color-decisions';
+import { DEFAULT_COLORS } from './templates/utils';
+
+/**
+ * 在给定调色板长度和需要的颜色数量时，返回一组「在色带上尽量均匀分布」的索引。
+ * 例如 paletteLength=10, count=4 → [0, 3, 6, 9]。
+ */
+function pickEvenlySpacedColorIndices(paletteLength: number, count: number): number[] {
+    if (paletteLength <= 0 || count <= 0) return [];
+    if (count === 1) return [0];
+
+    // 当类别数超过调色板长度时，退化为简单循环使用全部颜色。
+    if (count >= paletteLength) {
+        return Array.from({ length: count }, (_, i) => i % paletteLength);
+    }
+
+    const maxIndex = paletteLength - 1;
+    const step = maxIndex / (count - 1);
+    const indices: number[] = [];
+    for (let i = 0; i < count; i += 1) {
+        const idx = Math.round(i * step);
+        indices.push(idx);
+    }
+    return indices;
+}
+
+/**
+ * 简单的 HEX → RGB 转换（仅支持 #rrggbb）。
+ */
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return null;
+    const intVal = parseInt(m[1], 16);
+    return {
+        r: (intVal >> 16) & 255,
+        g: (intVal >> 8) & 255,
+        b: intVal & 255,
+    };
+}
+
+function componentToHex(c: number): string {
+    const v = Math.max(0, Math.min(255, Math.round(c)));
+    const s = v.toString(16);
+    return s.length === 1 ? `0${s}` : s;
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+    return `#${componentToHex(r)}${componentToHex(g)}${componentToHex(b)}`;
+}
+
+/**
+ * 将基础调色板插值为 256 个颜色采样点，用于 Rank / 连续映射。
+ * 线性插值 RGB 空间，保证整体趋势与原色带一致。
+ */
+function samplePaletteTo256(base: string[]): string[] {
+    if (base.length === 0) return [];
+    if (base.length === 1) return new Array(256).fill(base[0]);
+
+    const stops = base.map(hexToRgb);
+    if (stops.some(s => s == null)) {
+        // 回退：若存在无法解析的颜色，直接重复基础调色板。
+        return Array.from({ length: 256 }, (_, i) => base[i % base.length]);
+    }
+
+    const rgbStops = stops as { r: number; g: number; b: number }[];
+    const segmentCount = rgbStops.length - 1;
+    const result: string[] = [];
+
+    for (let i = 0; i < 256; i += 1) {
+        const t = i / 255;
+        const pos = t * segmentCount;
+        const idx = Math.floor(pos);
+        const localT = pos - idx;
+        const c0 = rgbStops[idx];
+        const c1 = rgbStops[Math.min(idx + 1, segmentCount)];
+        const r = c0.r + (c1.r - c0.r) * localT;
+        const g = c0.g + (c1.g - c0.g) * localT;
+        const b = c0.b + (c1.b - c0.b) * localT;
+        result.push(rgbToHex(r, g, b));
+    }
+
+    return result;
+}
+
+/**
+ * 基于 legend 标签的数值（Rank/Index），从顺序色带采样 256 个颜色后，
+ * 为每个 rank 值分配对应的颜色。
+ */
+function buildRankColorLookupFromLegend(
+    legendData: any[],
+    palette: string[],
+): Map<string, string> {
+    const labels: string[] = legendData.map((d: any) =>
+        typeof d === 'string' ? d : (d?.name ?? String(d ?? '')),
+    );
+
+    const numericEntries = labels
+        .map((name) => {
+            const v = Number(name);
+            return Number.isFinite(v) ? { name, value: v } : null;
+        })
+        .filter((x): x is { name: string; value: number } => x != null);
+
+    if (numericEntries.length === 0) return new Map();
+
+    const values = numericEntries.map(e => e.value);
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const span = maxVal - minVal;
+
+    const sampled = samplePaletteTo256(palette);
+    if (sampled.length === 0) return new Map();
+
+    const colorMap = new Map<string, string>();
+    for (const { name, value } of numericEntries) {
+        let t: number;
+        if (!Number.isFinite(span) || span === 0) {
+            t = 0.5;
+        } else {
+            t = (value - minVal) / span;
+            if (t < 0) t = 0;
+            if (t > 1) t = 1;
+        }
+        const idx = Math.round(t * (sampled.length - 1));
+        colorMap.set(name, sampled[idx]);
+    }
+
+    return colorMap;
+}
 
 /**
  * Phase 2: Apply layout and semantic decisions to the ECharts option object.
@@ -48,6 +177,21 @@ import {
  *   - Color scheme application
  *   - Temporal format application
  */
+function roundAxisNumber(v: number): number {
+    if (!Number.isFinite(v)) return v;
+    // Reduce floating point noise like 8.899999999999999 → 8.9
+    return Number(v.toFixed(10));
+}
+
+function cleanAxisNumericFields(axis: any): void {
+    if (!axis || typeof axis !== 'object') return;
+    for (const key of ['min', 'max', 'interval']) {
+        if (typeof axis[key] === 'number') {
+            axis[key] = roundAxisNumber(axis[key]);
+        }
+    }
+}
+
 export function ecApplyLayoutToSpec(
     option: any,
     context: InstantiateContext,
@@ -152,7 +296,13 @@ export function ecApplyLayoutToSpec(
         // If the template already fully positioned the legend (e.g. pie),
         // skip repositioning — detect by checking if orient was already set.
         const alreadyPositioned = option.legend.orient && (option.legend.right !== undefined || option.legend.left !== undefined);
-        const legendTitle = option._legendTitle as string | undefined;
+        // Derive a default legend title from semantics when templates don't set one explicitly.
+        let legendTitle = option._legendTitle as string | undefined;
+        if (legendTitle == null) {
+            const colorField = (channelSemantics as any)?.color?.field;
+            const groupField = (channelSemantics as any)?.group?.field;
+            legendTitle = colorField || groupField;
+        }
         if (legendTitle != null) delete option._legendTitle;
         if (!alreadyPositioned) {
             const rawLegendData = option.legend.data || [];
@@ -203,8 +353,23 @@ export function ecApplyLayoutToSpec(
                 const rightMarginPx = option._legendWidth + LEGEND_GAP + CANVAS_BUFFER;
                 const hasYTitle = !!option.yAxis?.name;
                 const gridLeft = (hasYTitle ? 70 : 50) + CANVAS_BUFFER;
-                // Use same effective width as later (plotWidth + grid.left + grid.right) so legend aligns with grid
-                const plotW = layout?.subplotWidth ?? canvasSize?.width ?? 400;
+                // Use same effective plot width as canvas block (grouped bar/boxplot widen the plot) so legend does not overlap chart
+                let plotW = layout?.subplotWidth ?? canvasSize?.width ?? 400;
+                const xIsDiscreteForLegend = layout.xNominalCount > 0 || layout.xContinuousAsDiscrete > 0;
+                if (xIsDiscreteForLegend) {
+                    let xItemCount = layout.xNominalCount || layout.xContinuousAsDiscrete || 0;
+                    if (layout.xStepUnit === 'group' && option.series && Array.isArray(option.series) && layout.xNominalCount > 0) {
+                        const barSeriesCount = option.series.filter((s: any) => s.type === 'bar').length || option.series.length;
+                        if (barSeriesCount > 0) {
+                            xItemCount = Math.max(1, Math.round(layout.xNominalCount / barSeriesCount));
+                        }
+                    }
+                    plotW = xItemCount > 0 ? layout.xStep * xItemCount : plotW;
+                    const boxplotSeriesCount = option.series?.filter((s: any) => s.type === 'boxplot').length || 0;
+                    if (boxplotSeriesCount > 1) {
+                        plotW = plotW * boxplotSeriesCount;
+                    }
+                }
                 const effectiveChartWidth = plotW + gridLeft + rightMarginPx;
                 const legendLeftPx = Math.max(0, effectiveChartWidth - rightMarginPx);
                 option.legend = {
@@ -307,11 +472,27 @@ export function ecApplyLayoutToSpec(
         let plotWidth: number;
         let plotHeight: number;
 
-        if (xIsDiscrete && layout.xStepUnit !== 'group') {
-            const xItemCount = layout.xNominalCount || layout.xContinuousAsDiscrete || 0;
+        if (xIsDiscrete) {
+            // For grouped discrete axes (stepUnit='group'), layout.xNominalCount
+            // typically includes the group multiplier (categories × seriesCount).
+            // To mimic Vega-Lite's width:{step} behaviour (canvas grows with the
+            // number of *categories*), derive an approximate category count
+            // from the series when possible.
+            let xItemCount = layout.xNominalCount || layout.xContinuousAsDiscrete || 0;
+            if (layout.xStepUnit === 'group' && option.series && Array.isArray(option.series) && layout.xNominalCount > 0) {
+                const barSeriesCount = option.series.filter((s: any) => s.type === 'bar').length || option.series.length;
+                if (barSeriesCount > 0) {
+                    xItemCount = Math.max(1, Math.round(layout.xNominalCount / barSeriesCount));
+                }
+            }
             plotWidth = xItemCount > 0 ? layout.xStep * xItemCount : (layout.subplotWidth || canvasSize.width);
+            // Grouped boxplot: multiple boxplot series (e.g. by color) need more horizontal space so boxes don't overlap (same idea as grouped bar).
+            const boxplotSeriesCount = option.series?.filter((s: any) => s.type === 'boxplot').length || 0;
+            if (boxplotSeriesCount > 1) {
+                plotWidth = plotWidth * boxplotSeriesCount;
+            }
         } else {
-            // Continuous axis or group-stepped axis — subplotWidth is already correct
+            // Continuous axis — subplotWidth is already correct
             plotWidth = layout.subplotWidth || canvasSize.width;
         }
 
@@ -346,9 +527,10 @@ export function ecApplyLayoutToSpec(
                 const catGapPct = `${Math.round(bandPadding * 100)}%`;
 
                 if (!isStacked && (stepUnit === 'group' || barSeries.length > 1)) {
-                    // Grouped: each bar gets an equal share of the usable band
+                    // Grouped: each bar gets an equal share of the usable band.
+                    // Use (seriesCount + 1) so total bar width stays strictly inside the slot and bars不会互相挤压重叠.
                     const usableStep = step * (1 - bandPadding);
-                    const barW = Math.max(1, Math.floor(usableStep / barSeries.length));
+                    const barW = Math.max(1, Math.floor(usableStep / (barSeries.length + 1)));
                     for (const s of barSeries) {
                         s.barWidth = barW;
                         s.barGap = '0%';
@@ -370,8 +552,15 @@ export function ecApplyLayoutToSpec(
     if (option.xAxis && layout.xLabel) {
         if (!option.xAxis.axisLabel) option.xAxis.axisLabel = {};
 
-        // ECharts uses degrees (positive = counter-clockwise). Don't override category axis rotate (template set it for scatter).
-        if (layout.xLabel.labelAngle && layout.xLabel.labelAngle !== 0 && option.xAxis.type !== 'category') {
+        // Category axis: templates (line, heatmap, bar) set rotate by label type (numeric vs non-numeric). Preserve it.
+        // Time axis: line chart sets rotate 90 for date labels; preserve that too.
+        const templateRotate = option.xAxis.axisLabel.rotate;
+        const isCategoryX = option.xAxis.type === 'category';
+        const isTimeX = option.xAxis.type === 'time';
+        const preserveTemplateRotate =
+            (isCategoryX && (templateRotate === 0 || templateRotate === 90)) ||
+            (isTimeX && templateRotate === 90);
+        if (layout.xLabel.labelAngle != null && layout.xLabel.labelAngle !== 0 && !preserveTemplateRotate) {
             option.xAxis.axisLabel.rotate = -layout.xLabel.labelAngle;  // VL convention → EC convention
         }
 
@@ -444,6 +633,8 @@ export function ecApplyLayoutToSpec(
                 axisObj.axisLabel.formatter = convertTemporalFormat(cs.temporalFormat);
             }
             if (axisObj.type === 'value' && cs.type === 'temporal') {
+                // Bar (and similar) repurpose temporal channel as count → axis shows numbers, not dates
+                if (axisObj.name === 'Count') continue;
                 if (!axisObj.axisLabel) axisObj.axisLabel = {};
                 const fmt = cs.temporalFormat;
                 axisObj.axisLabel.formatter = (val: number) => formatTimestamp(val, fmt);
@@ -451,12 +642,267 @@ export function ecApplyLayoutToSpec(
         }
     }
 
+    // ── Clean axis numeric fields (min/max/interval) to avoid long floats ─
+    for (const axisKey of ['xAxis', 'yAxis'] as const) {
+        const axisVal = (option as any)[axisKey];
+        if (Array.isArray(axisVal)) {
+            axisVal.forEach(cleanAxisNumericFields);
+        } else {
+            cleanAxisNumericFields(axisVal);
+        }
+    }
+
+    // ── Tooltip category as temporal (line/area/bar axis tooltip) ─────────
+    const enc = option._encodingTooltip;
+    if (enc?.trigger === 'axis' && enc.categoryLabel != null && option.xAxis?.type === 'time') {
+        const xFmt = channelSemantics?.x?.temporalFormat;
+        if (xFmt) {
+            option._encodingTooltip = { ...enc, categoryFormat: 'temporal', temporalFormat: xFmt };
+        }
+    }
+
     // ── Color scheme ─────────────────────────────────────────────────────
-    // Use palette from buildECEncodings when present (VL scheme → EC hex array).
-    const colorPalette = context.resolvedEncodings?.color?.colorPalette
-        ?? context.resolvedEncodings?.group?.colorPalette;
-    if (colorPalette?.length) {
-        option.color = [...colorPalette];
+    // Use palette derived from backend-agnostic colorDecisions when present.
+    const decisions: ColorDecisionResult | undefined = context.colorDecisions;
+    let colorDecision = decisions ? (decisions.color ?? decisions.group) : undefined;
+    let effectivePalette: string[] | undefined;
+    if (decisions && colorDecision && colorDecision.schemeId) {
+        const fromResolved =
+            context.resolvedEncodings?.color?.colorPalette
+            ?? context.resolvedEncodings?.group?.colorPalette;
+
+        let palette: string[] | undefined;
+        const isCategoricalScheme = colorDecision.schemeType === 'categorical';
+
+        if (isCategoricalScheme) {
+            // 对于分类色盘，优先使用统一注册表中的 cat10/cat20 等，
+            // 避免后端各自的默认调色板导致视觉风格不一致。
+            const fromRegistry = getPaletteForScheme(colorDecision.schemeId);
+            if (fromRegistry && fromRegistry.length > 0) {
+                palette = fromRegistry;
+            } else {
+                const targetId =
+                    (colorDecision.categoryCount ?? 0) > 10
+                        ? 'cat20'
+                        : 'cat10';
+                palette = getPaletteForScheme(targetId)
+                    ?? (fromResolved && fromResolved.length > 0 ? fromResolved : DEFAULT_COLORS);
+            }
+        } else {
+            // 顺序 / 发散色带：优先使用统一注册表中的连续色带（例如 viridis），
+            // 这样 Rank / 连续映射在所有后端保持一致；只有当注册表缺失时，
+            // 才退回到上游解析好的 palette 或默认颜色。
+            const fromRegistry = getPaletteForScheme(colorDecision.schemeId);
+            if (fromRegistry && fromRegistry.length > 0) {
+                palette = fromRegistry;
+            } else if (fromResolved && fromResolved.length > 0) {
+                palette = fromResolved;
+            } else {
+                palette = DEFAULT_COLORS;
+            }
+        }
+
+        if (palette && palette.length) {
+            option.color = [...palette];
+            effectivePalette = palette;
+        }
+    } else {
+        // Back-compat: keep existing behavior when colorDecisions are absent.
+        const colorPalette = context.resolvedEncodings?.color?.colorPalette
+            ?? context.resolvedEncodings?.group?.colorPalette;
+        if (colorPalette?.length) {
+            option.color = [...colorPalette];
+            effectivePalette = colorPalette;
+        }
+    }
+
+    // 若上述两步都没有得到有效 palette，则回退到统一默认：cat10。
+    // 这覆盖「没有显式 color/group 通道」的情况：此时也会有一个稳定的默认调色板，
+    // 从而保证单系列用 cat10[0]，多系列则依次使用 cat10[i]。
+    if (!effectivePalette || effectivePalette.length === 0) {
+        const cat10 = getPaletteForScheme('cat10');
+        if (cat10 && cat10.length > 0) {
+            effectivePalette = cat10;
+            if (!option.color) {
+                option.color = [...cat10];
+            }
+        }
+    }
+
+    // 当存在调色板时，覆盖模板中的硬编码 itemStyle.color，
+    // 让最终颜色真正由 colorDecisions / colormap 注册表驱动。
+    if (effectivePalette && effectivePalette.length > 0 && Array.isArray(option.series)) {
+        const n = effectivePalette.length;
+        const schemeType = colorDecision?.schemeType;
+
+        // 由 colorDecisions 实际使用的通道（color 或 group）来驱动语义判断，
+        // 这样 Grouped Bar 等只用 group 通道的图表也能正确应用 Rank 等语义。
+        let drivingColorChannel: ChannelSemantics | undefined;
+        if (decisions?.color && channelSemantics.color) {
+            drivingColorChannel = channelSemantics.color;
+        } else if (decisions?.group && channelSemantics.group) {
+            drivingColorChannel = channelSemantics.group;
+        }
+        const colorSemanticType = drivingColorChannel?.semanticAnnotation?.semanticType;
+        const isRankLikeColor = !!colorSemanticType
+            && (colorSemanticType === 'Rank' || colorSemanticType === 'Index');
+        const useEvenSpacing = !isRankLikeColor && (schemeType === 'sequential' || schemeType === 'diverging');
+
+        // 特例：Regression 图表有「散点 + 趋势线」成对系列。
+        // 颜色应该按「类别（legend 项）」而不是「series 索引」消费 palette，
+        // 否则当类别很多时，series 数翻倍会导致 palette 提前回绕，最后一个类别复用第一个颜色。
+        if (context.chartType === 'Regression' && option.legend && Array.isArray(option.legend.data)) {
+            // 1) 建立 legend 类别 → 调色板颜色 的映射
+            const legendLabels: string[] = option.legend.data.map((d: any) =>
+                typeof d === 'string' ? d : (d?.name ?? ''),
+            );
+            const categoryToColor = new Map<string, string>();
+            if (useEvenSpacing) {
+                const spacedLegendIndices = pickEvenlySpacedColorIndices(n, legendLabels.length);
+                legendLabels.forEach((name, i) => {
+                    if (!name) return;
+                    const paletteIndex = spacedLegendIndices[i] ?? (i % n);
+                    categoryToColor.set(name, effectivePalette[paletteIndex]);
+                });
+            } else {
+                let colorIdx = 0;
+                for (const name of legendLabels) {
+                    if (!name) continue;
+                    categoryToColor.set(name, effectivePalette[colorIdx % n]);
+                    colorIdx += 1;
+                }
+            }
+
+            // 2) 为每个 series 赋色：
+            //    - series.name 为 "Math" / "Science" 等 → 直接查映射；
+            //    - 趋势线系列名为 "Math (trend)" → 去掉 " (trend)" 后再查映射；
+            //    - 找不到映射时兜底按 series 索引循环 palette。
+            option.series.forEach((s: any, idx: number) => {
+                if (!s) return;
+                const rawName: string = typeof s.name === 'string' ? s.name : '';
+                const baseName = rawName.endsWith(' (trend)')
+                    ? rawName.slice(0, -' (trend)'.length)
+                    : rawName;
+
+                const mappedColor = baseName && categoryToColor.has(baseName)
+                    ? categoryToColor.get(baseName)
+                    : effectivePalette[idx % n];
+
+                s.itemStyle = s.itemStyle || {};
+                s.itemStyle.color = mappedColor!;
+            });
+        } else if (context.chartType === 'Boxplot' && option.legend && Array.isArray(option.legend.data)) {
+            // Boxplot：每个类别有 boxplot + 可选 scatter(outliers)，需按 legend 类别赋同一颜色
+            const legendLabels: string[] = option.legend.data.map((d: any) =>
+                typeof d === 'string' ? d : (d?.name ?? ''),
+            );
+            const categoryToColor = new Map<string, string>();
+            legendLabels.forEach((name, i) => {
+                if (!name) return;
+                categoryToColor.set(name, effectivePalette[i % n]);
+            });
+            option.series.forEach((s: any, idx: number) => {
+                if (!s) return;
+                const rawName: string = typeof s.name === 'string' ? s.name : (s.name != null ? String(s.name) : '');
+                const baseName = rawName.endsWith(' (outliers)')
+                    ? rawName.slice(0, -' (outliers)'.length)
+                    : rawName;
+                const mappedColor = baseName && categoryToColor.has(baseName)
+                    ? categoryToColor.get(baseName)
+                    : effectivePalette[idx % n];
+                s.itemStyle = s.itemStyle || {};
+                s.itemStyle.color = mappedColor!;
+                if (s.type === 'boxplot') {
+                    s.itemStyle.borderColor = mappedColor!;
+                }
+            });
+        } else {
+            // Pie / Rose / Streamgraph：颜色按 data 项或 stream 由 option.color[i] 分配，不要给 series 设 itemStyle.color，否则整图会变成一种颜色。
+            const colorByDataItem = context.chartType === 'Pie Chart' || context.chartType === 'Rose Chart'
+                || context.chartType === 'Streamgraph';
+            if (colorByDataItem) {
+                // option.color 已在上面设为 effectivePalette，ECharts 会按索引给每个扇区上色，无需再处理 series。
+            } else if (context.chartType === 'Radar Chart') {
+                // Radar：通常是「单个 radar series + 多个 data item(类别)」。
+                // 颜色应按类别(data item)分配，而不是按 series 分配，否则所有多边形会共用同色。
+                const legendLabels: string[] = option.legend?.data?.map((d: any) =>
+                    typeof d === 'string' ? d : (d?.name ?? ''),
+                ) ?? [];
+                const categoryToColor = new Map<string, string>();
+                legendLabels.forEach((name, i) => {
+                    if (!name) return;
+                    categoryToColor.set(name, effectivePalette[i % n]);
+                });
+
+                const radarSeries = Array.isArray(option.series)
+                    ? option.series.find((s: any) => s && s.type === 'radar')
+                    : null;
+                if (radarSeries && Array.isArray(radarSeries.data)) {
+                    radarSeries.data.forEach((item: any, i: number) => {
+                        if (!item) return;
+                        const rawName: string = typeof item.name === 'string' ? item.name : '';
+                        const mapped = rawName && categoryToColor.has(rawName)
+                            ? categoryToColor.get(rawName)
+                            : effectivePalette[i % n];
+                        const color = mapped!;
+                        item.itemStyle = item.itemStyle || {};
+                        if (item.itemStyle.color == null) item.itemStyle.color = color;
+                        // Keep fill opacity set by template; only supply fill color if unset.
+                        item.areaStyle = item.areaStyle || {};
+                        if (item.areaStyle.color == null) item.areaStyle.color = color;
+                        item.lineStyle = item.lineStyle || {};
+                        if (item.lineStyle.color == null) item.lineStyle.color = color;
+                    });
+                }
+            } else {
+                // 默认：按 series 索引循环 palette，但仅在模板未显式指定颜色时填充：
+                // - 无 color/group 编码的单系列图表 → 使用 cat10[0] 作为默认颜色
+                // - 多系列 → 依次使用 palette[i]，保持跨图表的一致顺序
+                // - 若模板已为某些 series 设置特殊颜色（透明底座、参考线等），则尊重模板设置。
+                const hasLegend = !!option.legend && Array.isArray(option.legend.data);
+                const rankLegendColorMap = (isRankLikeColor && hasLegend)
+                    ? buildRankColorLookupFromLegend(option.legend.data, effectivePalette)
+                    : new Map<string, string>();
+
+                // 只对「需要上色」的 series 从 palette 取色，已设 color 的（如连接线、参考线）不占下标，使 Min/Max 等得到第 1、2 个颜色
+                const colorableCount = option.series.filter((s: any) => s && s.itemStyle?.color == null).length;
+                const spacedIndices = useEvenSpacing && colorableCount > 0
+                    ? pickEvenlySpacedColorIndices(n, colorableCount)
+                    : null;
+                let colorIdx = 0;
+
+                option.series.forEach((s: any, idx: number) => {
+                    if (!s) return;
+                    s.itemStyle = s.itemStyle || {};
+                    if (s.itemStyle.color != null) return;
+
+                    // Rank / Index 颜色映射：根据 rank 数值在连续色带上取色
+                    if (isRankLikeColor && rankLegendColorMap.size > 0) {
+                        const rawName: string = typeof s.name === 'string'
+                            ? s.name
+                            : (s.name != null ? String(s.name) : '');
+                        const mapped = rawName ? rankLegendColorMap.get(rawName) : undefined;
+                        if (mapped) {
+                            s.itemStyle.color = mapped;
+                            if (s.type === 'boxplot') s.itemStyle.borderColor = mapped;
+                            colorIdx += 1;
+                            return;
+                        }
+                        // 若找不到映射，则继续走下面的一般逻辑兜底。
+                    }
+
+                    const paletteIndex = spacedIndices
+                        ? (spacedIndices[colorIdx] ?? colorIdx % n)
+                        : (colorIdx % n);
+                    const color = effectivePalette[paletteIndex];
+                    s.itemStyle.color = color;
+                    if (s.type === 'boxplot') {
+                        s.itemStyle.borderColor = color;
+                    }
+                    colorIdx += 1;
+                });
+            }
+        }
     }
 
     // ── Overflow truncation markers ──────────────────────────────────────
@@ -560,15 +1006,30 @@ function buildEncodingTooltipFormatter(option: any): ((params: any) => string) |
     if (enc.trigger === 'axis' && enc.categoryLabel != null) {
         const categoryLabel = enc.categoryLabel;
         const valueLabel = enc.valueLabel ?? 'Value';
+        const categoryFormat = enc.categoryFormat;
+        const temporalFormat = enc.temporalFormat ?? '%b %d, %Y';
+        const filterScatterOnly = !!enc.filterScatterOnly;
         return (params: any) => {
-            const list = Array.isArray(params) ? params : [params];
+            const rawList = Array.isArray(params) ? params : [params];
+            const list = filterScatterOnly
+                ? rawList.filter((item: any) => item && item.seriesType === 'scatter')
+                : rawList;
             if (list.length === 0) return '';
             const p = list[0];
-            const cat = p.axisValue ?? p.name ?? '';
+            let cat: string;
+            const rawCat = p.axisValue ?? p.name ?? '';
+            if (categoryFormat === 'temporal' && (rawCat !== '' && rawCat != null)) {
+                const ts = typeof rawCat === 'number' ? rawCat : new Date(rawCat as string).getTime();
+                cat = Number.isFinite(ts) ? formatTimestamp(ts, temporalFormat) : String(rawCat);
+            } else {
+                cat = String(rawCat);
+            }
             const parts = [`${categoryLabel}: ${cat}`];
             for (const item of list) {
                 const name = item.seriesName ?? valueLabel;
-                const val = item.value != null ? item.value : (Array.isArray(item.data) ? item.data[item.dataIndex] : item.data);
+                let val = item.value != null ? item.value : (Array.isArray(item.data) ? item.data[item.dataIndex] : item.data);
+                // Line/area series data is [x, y]; ECharts may pass the full point — use y (index 1) for value.
+                if (Array.isArray(val) && val.length >= 2) val = val[1];
                 parts.push(`${name}: ${fmtNumForTooltip(val)}`);
             }
             return parts.join('<br/>');
@@ -598,7 +1059,8 @@ function buildEncodingTooltipFormatter(option: any): ((params: any) => string) |
             if (val == null && p.from !== 'series' && p.from !== 'name') continue;
             let str: string;
             if (p.format === 'temporal') {
-                str = formatTimestamp(Number(val), p.temporalFormat ?? '%b %d, %Y');
+                const ts = typeof val === 'number' ? val : new Date(val as string).getTime();
+                str = Number.isFinite(ts) ? formatTimestamp(ts, p.temporalFormat ?? '%b %d, %Y') : String(val ?? '');
             } else if (p.format === 'category' && p.categoryNames) {
                 const i = Number(val);
                 str = Number.isInteger(i) && p.categoryNames[i] != null ? p.categoryNames[i] : String(val ?? '');
@@ -634,9 +1096,10 @@ export function ecApplyTooltips(option: any): void {
         const hasScatter = option.series?.some((s: any) => s.type === 'scatter');
         const hasPie = option.series?.some((s: any) => s.type === 'pie');
         const hasRadar = option.series?.some((s: any) => s.type === 'radar');
+        const hasHeatmap = option.series?.some((s: any) => s.type === 'heatmap');
         const hasCandlestick = option.series?.some((s: any) => s.type === 'candlestick');
         const hasThemeRiver = option.series?.some((s: any) => s.type === 'themeRiver');
-        option.tooltip.trigger = (hasScatter || hasPie || hasRadar || hasThemeRiver)
+        option.tooltip.trigger = (hasScatter || hasPie || hasRadar || hasHeatmap || hasThemeRiver)
             ? 'item'
             : 'axis';
         // Candlestick charts benefit from crosshair pointer
