@@ -39,7 +39,7 @@ CLICKHOUSE_USER = os.environ.get("CH_USER", "admin")
 CLICKHOUSE_PASS = os.environ.get("CH_PASSWORD", "1fEQlaBivOpYXzw#")
 
 CLICKHOUSE_TABLE = "DPD_QC_INFO"
-BATCH_SIZE = 50000
+BATCH_SIZE = 1000
 MAX_RETRIES = 3
 
 # ================= CONNECTION =================

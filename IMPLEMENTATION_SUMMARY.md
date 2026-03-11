@@ -2,7 +2,7 @@
 
 ## Overview
 
-Enhanced the Data Formulator with dynamic PowerPoint template selection for report exports. The system now automatically discovers available PPTX templates and allows users to choose which template to use before exporting.
+Enhanced the GDIS AI Agent with dynamic PowerPoint template selection for report exports. The system now automatically discovers available PPTX templates and allows users to choose which template to use before exporting.
 
 ## Changes Made
 
@@ -14,7 +14,7 @@ Enhanced the Data Formulator with dynamic PowerPoint template selection for repo
 
 ```typescript
 const [selectedTemplate, setSelectedTemplate] = useState<string>(
-  "HOYA MD Presentation Template v4 20241126 Internal.pptx"
+  "HOYA MD Presentation Template v4 20241126 Internal.pptx",
 );
 const [availableTemplates, setAvailableTemplates] = useState<string[]>([
   "HOYA MD Presentation Template v4 20241126 Internal.pptx",
@@ -57,7 +57,7 @@ Changed from hardcoded template:
 ```typescript
 form.append(
   "template",
-  "HOYA MD Presentation Template v4 20241126 Internal.pptx"
+  "HOYA MD Presentation Template v4 20241126 Internal.pptx",
 );
 ```
 

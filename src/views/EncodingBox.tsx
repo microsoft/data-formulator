@@ -183,10 +183,16 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({
   let activeTable = tables.find((t) => t.id == tableId);
 
   const baseEncoding = chart.encodingMap[channel];
-  const pendingEncodingsForChannel = useSelector((state: DataFormulatorState) =>
-    state.pendingEncodings.filter(
-      (entry) => entry.chartId == chartId && entry.channel == channel,
-    ),
+  const allPendingEncodings = useSelector(
+    (state: DataFormulatorState) => state.pendingEncodings,
+  );
+
+  const pendingEncodingsForChannel = React.useMemo(
+    () =>
+      allPendingEncodings.filter(
+        (entry) => entry.chartId == chartId && entry.channel == channel,
+      ),
+    [allPendingEncodings, chartId, channel],
   );
 
   const encoding = React.useMemo(() => {

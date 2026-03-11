@@ -1,7 +1,9 @@
-# Set up Data Formulator on Codespaces
-Use a preconfigured Codespace to get Data Formulator up and running quickly.
+# Set up GDIS AI Agent on Codespaces
+
+Use a preconfigured Codespace to get GDIS AI Agent up and running quickly.
 
 ## Prerequisites
+
 You will need a GitHub account and to be logged in to use Codespaces.
 
 ### Step 1: Create a Codespace (~5 minutes)
@@ -13,15 +15,16 @@ You will need a GitHub account and to be logged in to use Codespaces.
 </kbd>
 
 ### Step 2: Run the app
+
 The codespace is a VSCode development environment in the cloud. Once the Codespace is created, start Data Formuator with the following steps:
 
-* A toast about port forwarding will appear, click the **Open in Browser** button.
-* You will see the Data Formulator app!
+- A toast about port forwarding will appear, click the **Open in Browser** button.
+- You will see the GDIS AI Agent app!
 
 <kbd>
   <img width="528" alt="image" src="https://github.com/user-attachments/assets/cb9e2123-4a42-4926-8b59-5bafb9be25fa">
 </kbd>
 
-
 ### Usage
+
 See the [Usage section on the README.md page](README.md#usage).

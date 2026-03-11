@@ -1,6 +1,7 @@
-# Embed Data Formulator
+# Embed GDIS AI Agent
 
 First you'll need to build the bundle:
+
 ```
 yarn build
 ```
@@ -9,20 +10,23 @@ This puts the complete js file in the `dist` folder.
 
 ## Test bundle
 
-Next you can test to see the complete Data Formulator app by opening `/embed/index.html` in your browser. You can do this by double-clicking in your file explorer (this would use the `file://` protocol). 
+Next you can test to see the complete GDIS AI Agent app by opening `/embed/index.html` in your browser. You can do this by double-clicking in your file explorer (this would use the `file://` protocol).
 
 To test cross-frame messaging, launch `postMessageTest.html` which hosts the app in an iframe, and has buttons to send commands such as `load data`.
 
 ## Use in Fabric Notebook
 
 You willl need to enable access to your `dist` from the cloud. There are 2 ways to do this:
-* Publish the `dist` (e.g. pip, npm, or other)
-* Create a tunnel to your localhost
+
+- Publish the `dist` (e.g. pip, npm, or other)
+- Create a tunnel to your localhost
 
 ### Tunnel to localhost
+
 One way is to install [local-web-server](https://www.npmjs.com/package/local-web-server). This will serve a local folder as a website on http://localhost:8000. Next, you can set up a tunnel such as [ngrok](https://ngrok.com/download) which can provide a cloud-accesible url proxy to your local server.
 
 Copy the python function in a notebook cell:
+
 ```py
 def dfviz(df, tableName, serverUrl):
     # df is a PySpark DataFrame
@@ -77,9 +81,9 @@ def dfviz(df, tableName, serverUrl):
 ```
 
 Get a dataframe and pass it to the `dfviz` function:
+
 ```py
 df = spark.sql("SELECT * FROM Sample_lakehouse_475.publicholidays LIMIT 100")
 display(df)
 dfviz(df, 'Holidays', 'https://<your_tunnel_url>')
 ```
-

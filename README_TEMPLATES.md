@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Your Data Formulator now supports **exporting reports to existing PowerPoint templates**! The system automatically discovers available PPTX files and lets you choose which template to use before each export.
+Your GDIS AI Agent now supports **exporting reports to existing PowerPoint templates**! The system automatically discovers available PPTX files and lets you choose which template to use before each export.
 
 ### What Changed
 
@@ -51,7 +51,7 @@ data-formulator/ppt_templates/
 
 ### Step 4: Use It!
 
-1. Open Data Formulator → Report view
+1. Open GDIS AI Agent → Report view
 2. See dropdown with available templates
 3. Select your template
 4. Click "Export to PowerPoint"

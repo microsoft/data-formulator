@@ -22,6 +22,11 @@ let store = configureStore({
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware({
             serializableCheck: false,
+            immutableCheck: {
+                // Increase threshold from 32ms to 1 second since state is large
+                warnAfter: 1000,
+                ignoredActions: ['persist/PERSIST', 'persist/REHYDRATE'],
+            },
     }),
 })
 

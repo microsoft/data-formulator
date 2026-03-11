@@ -13,7 +13,7 @@ authors = [
 ]
 readme = "README.md"
 license = "MIT"
-description = "Data Formulator is research protoype data visualization tool powered by AI."
+description = "GDIS AI Agent is research protoype data visualization tool powered by AI."
 keywords = ["data visualization", "LLM", "AI"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -44,9 +44,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/microsoft/data-formulator"
-Repository = "https://github.com/microsoft/data-formulator.git"
-"Bug Tracker" = "https://github.com/microsoft/data-formulator/issues"
+Homepage = "https://github.com/xxx"
+Repository = "https://github.com/xxx.git"
+"Bug Tracker" = "https://github.com/xxx/issues"
 
 [tool.setuptools]
 package-dir = {"" = "py-src"}

@@ -173,6 +173,8 @@ export type Chart = {
   qcLive?: boolean;
   chartWidth?: number;
   chartHeight?: number;
+  dataVersion?: number; // Track when chart data was last updated for preview cache invalidation
+  dataSampleRange?: [number, number]; // Save user's selected data range for this chart
 };
 
 export let duplicateChart = (chart: Chart): Chart => {
@@ -188,6 +190,8 @@ export let duplicateChart = (chart: Chart): Chart => {
     qcLive: chart.qcLive,
     chartWidth: chart.chartWidth,
     chartHeight: chart.chartHeight,
+    dataVersion: chart.dataVersion,
+    dataSampleRange: chart.dataSampleRange,
   };
 };
 

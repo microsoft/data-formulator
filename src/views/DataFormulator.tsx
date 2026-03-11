@@ -381,7 +381,7 @@ Totals (7 entries)	5	5	5	15
         sx={{ textTransform: "none" }}
         target="_blank"
         rel="noopener noreferrer"
-        href="https://github.com/microsoft/data-formulator/issues"
+        href="https://github.com/xxx/issues"
       >
         Contact Us
       </Button> */}
@@ -733,7 +733,7 @@ Totals (7 entries)	5	5	5	15
                 sx={{ mt: 2, width: 600 }}
               >
                 💡 Models with strong code generation capabilities (e.g., gpt-5,
-                claude-sonnet-4-5) provide best experience with Data Formulator.
+                claude-sonnet-4-5) provide best experience with GDIS AI Agent.
               </Typography>
             </Box>
             {footer}

@@ -178,6 +178,11 @@ export interface DataFormulatorState {
 
   // Generated reports state
   generatedReports: GeneratedReport[];
+  chartSampleData: Record<string, any[]>; // Sample data for each chart to display in DataThread
+  chartPreviewImages: Record<
+    string,
+    { url: string; width: number; height: number }
+  >; // Cached preview images for reports
 }
 
 // Define the initial state using that type
@@ -234,6 +239,8 @@ const initialState: DataFormulatorState = {
   cleanInProgress: false,
 
   generatedReports: [],
+  chartSampleData: {},
+  chartPreviewImages: {},
 };
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -273,6 +280,11 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
   state.chartSynthesisInProgress = state.chartSynthesisInProgress.filter(
     (s) => !chartIds.includes(s),
   );
+
+  // Clean up sample data for deleted charts
+  chartIds.forEach((chartId) => {
+    delete state.chartSampleData[chartId];
+  });
 
   // update focusedChart and activeThreadChart
   state.charts = charts;
@@ -884,6 +896,49 @@ export const dataFormulatorSlice = createSlice({
       if (chart) {
         chart.chartWidth = width;
         chart.chartHeight = height;
+      }
+    },
+
+    updateChartDataVersion: (
+      state,
+      action: PayloadAction<{ chartId: string }>,
+    ) => {
+      let chartId = action.payload.chartId;
+      let chart = dfSelectors.getAllCharts(state).find((c) => c.id == chartId);
+      if (chart) {
+        chart.dataVersion = (chart.dataVersion || 0) + 1;
+      }
+    },
+
+    updateChartSampleData: (
+      state,
+      action: PayloadAction<{ chartId: string; sampleData: any[] }>,
+    ) => {
+      let { chartId, sampleData } = action.payload;
+      state.chartSampleData[chartId] = sampleData;
+    },
+
+    updateChartPreviewImage: (
+      state,
+      action: PayloadAction<{
+        chartId: string;
+        url: string;
+        width: number;
+        height: number;
+      }>,
+    ) => {
+      let { chartId, url, width, height } = action.payload;
+      state.chartPreviewImages[chartId] = { url, width, height };
+    },
+
+    updateChartDataSampleRange: (
+      state,
+      action: PayloadAction<{ chartId: string; sampleRange: [number, number] }>,
+    ) => {
+      let { chartId, sampleRange } = action.payload;
+      let chart = dfSelectors.getAllCharts(state).find((c) => c.id == chartId);
+      if (chart) {
+        chart.dataSampleRange = sampleRange;
       }
     },
 
@@ -1544,6 +1599,78 @@ export const dfSelectors = {
     },
   ),
 
+  // Memoized selector for model slots
+  getModelSlots: createSelector(
+    [(state: DataFormulatorState) => state.modelSlots],
+    (modelSlots) => modelSlots,
+  ),
+
+  // Memoized selector for concept shelf items
+  getConceptShelfItems: createSelector(
+    [(state: DataFormulatorState) => state.conceptShelfItems],
+    (items) => items,
+  ),
+
+  // Memoized selector for chart sample data
+  getChartSampleData: createSelector(
+    [(state: DataFormulatorState) => state.chartSampleData],
+    (data) => data,
+  ),
+
+  // Memoized selector for chart preview images
+  getChartPreviewImages: createSelector(
+    [(state: DataFormulatorState) => state.chartPreviewImages],
+    (images) => images,
+  ),
+
+  // Memoized selector for models
+  getModels: createSelector(
+    [(state: DataFormulatorState) => state.models],
+    (models) => models,
+  ),
+
+  // Memoized selector for agent rules
+  getAgentRules: createSelector(
+    [(state: DataFormulatorState) => state.agentRules],
+    (rules) => rules,
+  ),
+
+  // Memoized selector for config
+  getConfig: createSelector(
+    [(state: DataFormulatorState) => state.config],
+    (config) => config,
+  ),
+
+  // Memoized selector for tables
+  getTables: createSelector(
+    [(state: DataFormulatorState) => state.tables],
+    (tables) => tables,
+  ),
+
+  // Memoized selector for chart synthesis in progress
+  getChartSynthesisInProgress: createSelector(
+    [(state: DataFormulatorState) => state.chartSynthesisInProgress],
+    (items) => items,
+  ),
+
+  // Memoized selector for view mode
+  getViewMode: createSelector(
+    [(state: DataFormulatorState) => state.viewMode],
+    (mode) => mode,
+  ),
+
+  // Memoized selector for server config
+  getServerConfig: createSelector(
+    [(state: DataFormulatorState) => state.serverConfig],
+    (config) => config,
+  ),
+
+  // Memoized selector for agent actions
+  getAgentActions: createSelector(
+    [(state: DataFormulatorState) => state.agentActions],
+    (actions) => actions,
+  ),
+
   replaceChart: (state: DataFormulatorState, chart: Chart) => {
     if (state.charts.find((c) => c.id == chart.id)) {
       // chart is from charts
@@ -1562,8 +1689,10 @@ export const dfSelectors = {
     }
   },
   // Generated reports selectors
-  getAllGeneratedReports: (state: DataFormulatorState) =>
-    state.generatedReports,
+  getAllGeneratedReports: createSelector(
+    [(state: DataFormulatorState) => state.generatedReports],
+    (reports) => reports,
+  ),
   getReportById: (state: DataFormulatorState, reportId: string) =>
     state.generatedReports.find((r) => r.id === reportId),
 };

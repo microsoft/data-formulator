@@ -335,8 +335,8 @@ const AgentStatusBox = memo<{
                 event.stopPropagation();
                 dispatch(
                   dfActions.deleteAgentWorkInProgress(
-                    relevantAgentActions[0].actionId
-                  )
+                    relevantAgentActions[0].actionId,
+                  ),
                 );
               }}
             >
@@ -395,7 +395,7 @@ AgentStatusBox.displayName = "AgentStatusBox";
 let buildChartCard = (
   chartElement: { tableId: string; chartId: string; element: any },
   focusedChartId?: string,
-  unread?: boolean
+  unread?: boolean,
 ) => {
   let selectedClassName =
     focusedChartId == chartElement.chartId ? "selected-card" : "";
@@ -564,7 +564,7 @@ let SingleThreadGroupView: FC<{
   usedIntermediateTableIds, // tables that have been used
   sx,
 }) {
-  let tables = useSelector((state: DataFormulatorState) => state.tables);
+  let tables = useSelector(dfSelectors.getTables);
 
   let leafTableIds = leafTables.map((lt) => lt.id);
   let parentTableId = leafTables[0].derive?.trigger.tableId || undefined;
@@ -572,21 +572,19 @@ let SingleThreadGroupView: FC<{
 
   let charts = useSelector(dfSelectors.getAllCharts);
   let focusedChartId = useSelector(
-    (state: DataFormulatorState) => state.focusedChartId
+    (state: DataFormulatorState) => state.focusedChartId,
   );
   let focusedTableId = useSelector(
-    (state: DataFormulatorState) => state.focusedTableId
+    (state: DataFormulatorState) => state.focusedTableId,
   );
-  let agentActions = useSelector(
-    (state: DataFormulatorState) => state.agentActions
-  );
+  let agentActions = useSelector(dfSelectors.getAgentActions);
 
   // Metadata popup state
   const [metadataPopupOpen, setMetadataPopupOpen] = useState(false);
   const [selectedTableForMetadata, setSelectedTableForMetadata] =
     useState<DictTable | null>(null);
   const [metadataAnchorEl, setMetadataAnchorEl] = useState<HTMLElement | null>(
-    null
+    null,
   );
 
   let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
@@ -594,7 +592,7 @@ let SingleThreadGroupView: FC<{
       dfActions.updateTableDisplayId({
         tableId: tableId,
         displayId: displayId,
-      })
+      }),
     );
   };
 
@@ -616,7 +614,7 @@ let SingleThreadGroupView: FC<{
         dfActions.updateTableAttachedMetadata({
           tableId: selectedTableForMetadata.id,
           attachedMetadata: metadata,
-        })
+        }),
       );
     }
   };
@@ -698,7 +696,7 @@ let SingleThreadGroupView: FC<{
 
               // Find and set the first chart associated with this table
               let firstRelatedChart = charts.find(
-                (c: Chart) => c.tableRef == tableId && c.source != "trigger"
+                (c: Chart) => c.tableRef == tableId && c.source != "trigger",
               );
 
               if (firstRelatedChart) {
@@ -734,7 +732,7 @@ let SingleThreadGroupView: FC<{
     // filter charts relavent to this
     let relevantCharts = chartElements.filter(
       (ce) =>
-        ce.tableId == tableId && !usedIntermediateTableIds.includes(tableId)
+        ce.tableId == tableId && !usedIntermediateTableIds.includes(tableId),
     );
 
     let table = tables.find((t) => t.id == tableId);
@@ -758,14 +756,14 @@ let SingleThreadGroupView: FC<{
         {buildChartCard(
           ce,
           focusedChartId,
-          charts.find((c) => c.id == ce.chartId)?.unread
+          charts.find((c) => c.id == ce.chartId)?.unread,
         )}
       </Box>
     ));
 
     // only charts without dependency can be deleted
     let tableDeleteEnabled = !tables.some(
-      (t) => t.derive?.trigger.tableId == tableId
+      (t) => t.derive?.trigger.tableId == tableId,
     );
 
     let tableCardIcon = table?.anchored ? (
@@ -807,7 +805,7 @@ let SingleThreadGroupView: FC<{
             dispatch(dfActions.setFocusedTable(tableId));
             if (focusedChart?.tableRef != tableId) {
               let firstRelatedChart = charts.find(
-                (c: Chart) => c.tableRef == tableId && c.source != "trigger"
+                (c: Chart) => c.tableRef == tableId && c.source != "trigger",
               );
               if (firstRelatedChart) {
                 dispatch(dfActions.setFocusedChart(firstRelatedChart.id));
@@ -848,7 +846,7 @@ let SingleThreadGroupView: FC<{
                     dfActions.updateTableAnchored({
                       tableId: tableId,
                       anchored: !table?.anchored,
-                    })
+                    }),
                   );
                 }}
               >
@@ -1053,7 +1051,7 @@ let SingleThreadGroupView: FC<{
   const theme = useTheme();
 
   let focusedChart = useSelector((state: DataFormulatorState) =>
-    charts.find((c) => c.id == focusedChartId)
+    charts.find((c) => c.id == focusedChartId),
   );
 
   const dispatch = useDispatch();
@@ -1075,13 +1073,13 @@ let SingleThreadGroupView: FC<{
     : [];
 
   let usedTableIdsInThread = tableIdList.filter((id) =>
-    usedIntermediateTableIds.includes(id)
+    usedIntermediateTableIds.includes(id),
   );
   let newTableIds = tableIdList.filter(
-    (id) => !usedTableIdsInThread.includes(id)
+    (id) => !usedTableIdsInThread.includes(id),
   );
   let newTriggers = triggers.filter((tg) =>
-    newTableIds.includes(tg.resultTableId)
+    newTableIds.includes(tg.resultTableId),
   );
 
   let highlightedTableIds: string[] = [];
@@ -1090,12 +1088,12 @@ let SingleThreadGroupView: FC<{
   } else if (focusedTableId && newTableIds.includes(focusedTableId)) {
     highlightedTableIds = tableIdList.slice(
       0,
-      tableIdList.indexOf(focusedTableId) + 1
+      tableIdList.indexOf(focusedTableId) + 1,
     );
   }
 
   let tableElementList = newTableIds.map((tableId, i) =>
-    buildTableCard(tableId)
+    buildTableCard(tableId),
   );
   let triggerCards = newTriggers.map((trigger) => buildTriggerCard(trigger));
 
@@ -1386,7 +1384,7 @@ const VegaLiteChartElement = memo<{
         </Box>
       </Box>
     );
-  }
+  },
 );
 
 VegaLiteChartElement.displayName = "VegaLiteChartElement";
@@ -1396,23 +1394,37 @@ const MemoizedChartObject = memo<{
   table: DictTable;
   conceptShelfItems: FieldItem[];
   status: "available" | "pending" | "unavailable";
+  chartSampleData?: any[];
   onChartClick: (chartId: string, tableId: string) => void;
   onDelete: (chartId: string) => void;
 }>(
-  ({ chart, table, conceptShelfItems, status, onChartClick, onDelete }) => {
+  ({
+    chart,
+    table,
+    conceptShelfItems,
+    status,
+    chartSampleData,
+    onChartClick,
+    onDelete,
+  }) => {
+    // Use chartSampleData from Redux if available, otherwise fallback to table.rows
+    const dataSource = chartSampleData || table.rows;
+
     let visTableRows: any[] = [];
-    if (table.rows.length > 1000) {
-      visTableRows = structuredClone(_.sampleSize(table.rows, 1000));
+    if (dataSource.length > 1000) {
+      visTableRows = structuredClone(_.sampleSize(dataSource, 1000));
     } else {
-      visTableRows = structuredClone(table.rows);
+      visTableRows = structuredClone(dataSource);
     }
 
-    // Preprocess the data for aggregations (same as VisualizationView)
-    visTableRows = prepVisTable(
-      visTableRows,
-      conceptShelfItems,
-      chart.encodingMap
-    );
+    // Only preprocess if using table.rows (not already preprocessed from Redux)
+    if (!chartSampleData) {
+      visTableRows = prepVisTable(
+        visTableRows,
+        conceptShelfItems,
+        chart.encodingMap,
+      );
+    }
 
     let deleteButton = (
       <Box
@@ -1540,7 +1552,7 @@ const MemoizedChartObject = memo<{
                 chartTemplate?.icon,
                 32,
                 32,
-                chart.chartType == "Table" ? 1 : 0.5
+                chart.chartType == "Table" ? 1 : 0.5,
               )}
             </Box>
             {deleteButton}
@@ -1558,7 +1570,14 @@ const MemoizedChartObject = memo<{
       visTableRows,
       table.metadata,
       20,
-      true
+      true,
+      800,
+      400,
+      true,
+      chart.qcLimitsMode || false,
+      undefined,
+      undefined,
+      table.rows,
     );
 
     // Check if assembledChart is valid (not a fallback array)
@@ -1638,43 +1657,46 @@ const MemoizedChartObject = memo<{
       prevProps.chart.id === nextProps.chart.id &&
       prevProps.chart.chartType === nextProps.chart.chartType &&
       prevProps.chart.saved === nextProps.chart.saved &&
+      prevProps.chart.dataVersion === nextProps.chart.dataVersion &&
       prevProps.status === nextProps.status &&
       _.isEqual(prevProps.chart.encodingMap, nextProps.chart.encodingMap) &&
       // Only check tables/charts that this specific chart depends on
       _.isEqual(prevProps.table, nextProps.table) &&
       _.isEqual(
         prevProps.table.attachedMetadata,
-        nextProps.table.attachedMetadata
+        nextProps.table.attachedMetadata,
       ) &&
+      // Check if sample data has changed (by reference for performance)
+      prevProps.chartSampleData === nextProps.chartSampleData &&
       // Check if conceptShelfItems have changed
       _.isEqual(
         prevProps.conceptShelfItems.filter((c) =>
-          nextReferredConcepts.includes(c.id)
+          nextReferredConcepts.includes(c.id),
         ),
         nextProps.conceptShelfItems.filter((c) =>
-          nextReferredConcepts.includes(c.id)
-        )
+          nextReferredConcepts.includes(c.id),
+        ),
       )
     );
-  }
+  },
 );
 
 MemoizedChartObject.displayName = "MemoizedChartObject";
 
 export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
-  let tables = useSelector((state: DataFormulatorState) => state.tables);
+  let tables = useSelector(dfSelectors.getTables);
   let focusedTableId = useSelector(
-    (state: DataFormulatorState) => state.focusedTableId
+    (state: DataFormulatorState) => state.focusedTableId,
   );
   let charts = useSelector(dfSelectors.getAllCharts);
 
   let chartSynthesisInProgress = useSelector(
-    (state: DataFormulatorState) => state.chartSynthesisInProgress
+    dfSelectors.getChartSynthesisInProgress,
   );
 
-  const conceptShelfItems = useSelector(
-    (state: DataFormulatorState) => state.conceptShelfItems
-  );
+  const conceptShelfItems = useSelector(dfSelectors.getConceptShelfItems);
+
+  const chartSampleData = useSelector(dfSelectors.getChartSampleData);
 
   let [threadDrawerOpen, setThreadDrawerOpen] = useState<boolean>(false);
 
@@ -1695,7 +1717,7 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
   const handleDeleteAll = () => {
     if (tables.length > 0) {
       const confirmed = window.confirm(
-        `Delete all ${tables.length} table(s)? This action cannot be undone.`
+        `Delete all ${tables.length} table(s)? This action cannot be undone.`,
       );
       if (confirmed) {
         tables.forEach((table) => {
@@ -1735,6 +1757,7 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
             table={table}
             conceptShelfItems={conceptShelfItems}
             status={status}
+            chartSampleData={chartSampleData[chart.id]}
             onChartClick={() => {
               dispatch(dfActions.setFocusedChart(chart.id));
               dispatch(dfActions.setFocusedTable(table.id));
@@ -1746,7 +1769,13 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
         );
         return { chartId: chart.id, tableId: table.id, element };
       });
-  }, [charts, tables, conceptShelfItems, chartSynthesisInProgress]);
+  }, [
+    charts,
+    tables,
+    conceptShelfItems,
+    chartSynthesisInProgress,
+    chartSampleData,
+  ]);
 
   // anchors are considered leaf tables to simplify the view
 
@@ -1766,7 +1795,7 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
     tables.map((table, index) => [
       table.id,
       index + (table.anchored ? 1 : 0) * tables.length,
-    ])
+    ]),
   );
   let getAncestorOrders = (leafTable: DictTable) => {
     let triggers = getTriggers(leafTable, tables);
@@ -1817,7 +1846,7 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
 
       return groups;
     },
-    {}
+    {},
   );
 
   let drawerOpen = threadDrawerOpen && leafTables.length > 1;
@@ -1887,9 +1916,9 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
       {_.chunk(
         Array.from(
           { length: Object.keys(leafTableGroups).length },
-          (_, i) => i
+          (_, i) => i,
         ),
-        3
+        3,
       ).map((group, groupIdx) => {
         const startNum = group[0] + 1;
         const endNum = group[group.length - 1] + 1;
@@ -1911,16 +1940,16 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
                   const viewportCenter = window.innerWidth / 2;
                   const currentIndex =
                     Array.from(
-                      document.querySelectorAll("[data-thread-index]")
+                      document.querySelectorAll("[data-thread-index]"),
                     ).reduce((closest, element) => {
                       const rect = element.getBoundingClientRect();
                       const distance = Math.abs(
-                        rect.left + rect.width / 2 - viewportCenter
+                        rect.left + rect.width / 2 - viewportCenter,
                       );
                       if (!closest || distance < closest.distance) {
                         return {
                           index: parseInt(
-                            element.getAttribute("data-thread-index") || "0"
+                            element.getAttribute("data-thread-index") || "0",
                           ),
                           distance,
                         };
@@ -1937,7 +1966,7 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
                       : group[group.length - 1];
 
                   const targetElement = document.querySelector(
-                    `[data-thread-index="${targetIndex}"]`
+                    `[data-thread-index="${targetIndex}"]`,
                   );
                   if (targetElement) {
                     targetElement.scrollIntoView({
@@ -1970,7 +1999,7 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
             sx={{ fontSize: "12px", padding: "4px" }}
             onClick={() => {
               const threadElement = document.querySelector(
-                `[data-thread-index="${idx}"]`
+                `[data-thread-index="${idx}"]`,
               );
               threadElement?.scrollIntoView({ behavior: "smooth" });
             }}

@@ -249,6 +249,7 @@ export const assembleVegaChart = (
   qcLimitsMode?: boolean,
   chartWidth?: number,
   chartHeight?: number,
+  originalTable?: any[], // Original full table containing all columns including QC limits
 ) => {
   if (chartType == "Table") {
     return ["Table", undefined];
@@ -598,6 +599,10 @@ export const assembleVegaChart = (
 
   // use post processor to handle smart chart instantiation
   if (chartTemplate.postProcessor) {
+    // Attach original table to vgObj so postProcessor can access it
+    vgObj._originalTable = originalTable || workingTable;
+    vgObj._workingTable = workingTable;
+
     vgObj = chartTemplate.postProcessor(
       vgObj,
       workingTable,
@@ -1021,10 +1026,10 @@ export const assembleVegaChart = (
   // Ensure explicit width/height so Vega-Lite doesn't fall back to its 300px default.
   // postProcessors that already set vgObj.width/height explicitly are not overridden here.
   if (vgObj.width === undefined) {
-    vgObj.width = defaultChartWidth;
+    vgObj.width = chartWidth || defaultChartWidth;
   }
   if (vgObj.height === undefined) {
-    vgObj.height = defaultChartHeight;
+    vgObj.height = chartHeight || defaultChartHeight;
   }
 
   return { ...vgObj, data: { values: values } };

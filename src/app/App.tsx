@@ -755,7 +755,7 @@ const SessionMenu: React.FC = () => {
   const sessionId = useSelector(
     (state: DataFormulatorState) => state.sessionId,
   );
-  const tables = useSelector((state: DataFormulatorState) => state.tables);
+  const tables = useSelector(dfSelectors.getTables);
   const theme = useTheme();
 
   const dispatch = useDispatch();
@@ -945,7 +945,7 @@ const ResetDialog: React.FC = () => {
 const ConfigDialog: React.FC = () => {
   const [open, setOpen] = useState(false);
   const dispatch = useDispatch();
-  const config = useSelector((state: DataFormulatorState) => state.config);
+  const config = useSelector(dfSelectors.getConfig);
 
   const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(
     config.formulateTimeoutSeconds,
@@ -1187,16 +1187,12 @@ const ConfigDialog: React.FC = () => {
 
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
   const dispatch = useDispatch<AppDispatch>();
-  const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
-  const generatedReports = useSelector(
-    (state: DataFormulatorState) => state.generatedReports,
-  );
+  const viewMode = useSelector(dfSelectors.getViewMode);
+  const generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
   const focusedTableId = useSelector(
     (state: DataFormulatorState) => state.focusedTableId,
   );
-  const serverConfig = useSelector(
-    (state: DataFormulatorState) => state.serverConfig,
-  );
+  const serverConfig = useSelector(dfSelectors.getServerConfig);
 
   useEffect(() => {
     fetch(getUrls().APP_CONFIG)
@@ -1574,7 +1570,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             <Tooltip title="View on GitHub">
               <IconButton
                 component="a"
-                href="https://github.com/microsoft/data-formulator"
+                href="https://github.com/xxx"
                 target="_blank"
                 rel="noopener noreferrer"
                 sx={{
@@ -1629,7 +1625,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
           <Tooltip title="View on GitHub">
             <Button
               component="a"
-              href="https://github.com/microsoft/data-formulator"
+              href="https://github.com/xxx"
               target="_blank"
               rel="noopener noreferrer"
               sx={{
@@ -1744,7 +1740,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
   //       sx={{ textTransform: "none" }}
   //       target="_blank"
   //       rel="noopener noreferrer"
-  //       href="https://github.com/microsoft/data-formulator/issues"
+  //       href="https://github.com/xxx/issues"
   //     >
   //       Contact Us
   //     </Button>

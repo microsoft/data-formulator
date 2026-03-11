@@ -651,37 +651,33 @@ export const ReportView: FC = () => {
 
   const charts = useSelector((state: DataFormulatorState) => state.charts);
   const tables = useSelector((state: DataFormulatorState) => state.tables);
-  const modelSlot = useSelector(
-    (state: DataFormulatorState) => state.modelSlots
-  );
-  const models = useSelector((state: DataFormulatorState) => state.models);
-  const conceptShelfItems = useSelector(
-    (state: DataFormulatorState) => state.conceptShelfItems
-  );
+  const modelSlot = useSelector(dfSelectors.getModelSlots);
+  const models = useSelector(dfSelectors.getModels);
+  const conceptShelfItems = useSelector(dfSelectors.getConceptShelfItems);
   const config = useSelector((state: DataFormulatorState) => state.config);
+  const chartSampleData = useSelector(dfSelectors.getChartSampleData);
   const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
   const focusedChartId = useSelector(
-    (state: DataFormulatorState) => state.focusedChartId
+    (state: DataFormulatorState) => state.focusedChartId,
   );
   const theme = useTheme();
 
   const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(
-    new Set(focusedChartId ? [focusedChartId] : [])
+    new Set(focusedChartId ? [focusedChartId] : []),
   );
   const [previewImages, setPreviewImages] = useState<
     Map<string, { url: string; width: number; height: number }>
   >(new Map());
-  const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string>("");
   const [style, setStyle] = useState<string>("short note");
   const [mode, setMode] = useState<"compose" | "post">(
-    allGeneratedReports.length > 0 ? "post" : "compose"
+    allGeneratedReports.length > 0 ? "post" : "compose",
   );
 
   // Local state for current report
   const [currentReportId, setCurrentReportId] = useState<string | undefined>(
-    undefined
+    undefined,
   );
   const [generatedReport, setGeneratedReport] = useState<string>("");
   const [generatedStyle, setGeneratedStyle] = useState<string>("short note");
@@ -718,12 +714,12 @@ export const ReportView: FC = () => {
             console.warn(
               `pptx icon not found at ${src}, trying next path: ${
                 possiblePptxIconPaths[pptxIconIdx + 1]
-              }`
+              }`,
             );
             setPptxIconIdx((i) => i + 1);
           } else {
             console.warn(
-              `pptx icon not found in any known path, falling back to SVG icon`
+              `pptx icon not found in any known path, falling back to SVG icon`,
             );
             setPptxIconError(true);
           }
@@ -736,7 +732,7 @@ export const ReportView: FC = () => {
     chartId: string,
     blobUrl: string,
     width: number,
-    height: number
+    height: number,
   ) => {
     setCachedReportImages((prev) => ({
       ...prev,
@@ -747,7 +743,7 @@ export const ReportView: FC = () => {
   // Helper function to show messages using dfSlice
   const showMessage = (
     message: string,
-    type: "success" | "error" | "info" | "warning" = "success"
+    type: "success" | "error" | "info" | "warning" = "success",
   ) => {
     const msg: Message = {
       type,
@@ -876,7 +872,7 @@ export const ReportView: FC = () => {
     try {
       // Find the report content element
       const reportElement = document.querySelector(
-        "[data-report-content]"
+        "[data-report-content]",
       ) as HTMLElement;
       if (!reportElement) {
         showMessage("Could not find report content to capture", "error");
@@ -938,7 +934,7 @@ export const ReportView: FC = () => {
               ])
               .then(() => {
                 showMessage(
-                  "Report image copied to clipboard! You can now paste it anywhere to share."
+                  "Report image copied to clipboard! You can now paste it anywhere to share.",
                 );
                 setShareButtonSuccess(true);
                 setTimeout(() => setShareButtonSuccess(false), 2000);
@@ -946,24 +942,24 @@ export const ReportView: FC = () => {
               .catch(() => {
                 showMessage(
                   "Failed to copy to clipboard. Your browser may not support this feature.",
-                  "error"
+                  "error",
                 );
               });
           } else {
             showMessage(
               "Clipboard API not supported in your browser. Please use a modern browser.",
-              "error"
+              "error",
             );
           }
         },
         "image/png",
-        0.95
+        0.95,
       );
     } catch (error) {
       console.error("Error generating report image:", error);
       showMessage(
         "Failed to generate report image. Please try again.",
-        "error"
+        "error",
       );
     }
   };
@@ -974,7 +970,7 @@ export const ReportView: FC = () => {
     setIsExporting(true);
 
     const reportElement = document.querySelector(
-      "[data-report-content]"
+      "[data-report-content]",
     ) as HTMLElement;
     if (!reportElement) {
       showMessage("Could not find report content to capture", "error");
@@ -1033,12 +1029,12 @@ export const ReportView: FC = () => {
           return "Report";
         };
         const titleText = deriveTitle(
-          generatedReport || reportElement.textContent || ""
+          generatedReport || reportElement.textContent || "",
         );
 
         // Collect images embedded in the report (if any)
         const imgEls = Array.from(
-          reportElement.querySelectorAll("img")
+          reportElement.querySelectorAll("img"),
         ) as HTMLImageElement[];
 
         const images = await Promise.all(
@@ -1051,7 +1047,7 @@ export const ReportView: FC = () => {
               height: img.naturalHeight || 400,
               alt: img.alt || "",
             };
-          })
+          }),
         );
 
         // Extract paragraph blocks
@@ -1171,7 +1167,7 @@ export const ReportView: FC = () => {
         // If client-side export fails (e.g., dependency not installed), fall back to server approach
         console.warn(
           "Client-side PPTX export failed, falling back to server export:",
-          clientErr
+          clientErr,
         );
       }
 
@@ -1209,7 +1205,7 @@ export const ReportView: FC = () => {
       }
 
       const blob = await new Promise<Blob | null>((resolve) =>
-        canvas!.toBlob(resolve, "image/png", 0.95)
+        canvas!.toBlob(resolve, "image/png", 0.95),
       );
       if (!blob) {
         showMessage("Failed to generate image", "error");
@@ -1220,11 +1216,11 @@ export const ReportView: FC = () => {
       const form = new FormData();
       form.append(
         "image",
-        new File([blob], "report.png", { type: "image/png" })
+        new File([blob], "report.png", { type: "image/png" }),
       );
       form.append(
         "template",
-        "HOYA MD Presentation Template v4 20241126 Internal.pptx"
+        "HOYA MD Presentation Template v4 20241126 Internal.pptx",
       );
       // Derive title from the report source: prefer the first non-empty non-code line from generatedReport
       const deriveTitle = (source: string) => {
@@ -1245,7 +1241,7 @@ export const ReportView: FC = () => {
         return "Report";
       };
       const titleText = deriveTitle(
-        generatedReport || reportElement.textContent || ""
+        generatedReport || reportElement.textContent || "",
       );
       form.append("title", titleText.substring(0, 250));
 
@@ -1293,9 +1289,9 @@ export const ReportView: FC = () => {
       ([chartId, { url, width, height }]) => {
         processed = processed.replace(
           new RegExp(`\\[IMAGE\\(${chartId}\\)\\]`, "g"),
-          `<img src="${url}" alt="Chart" width="${width}" height="${height}" />`
+          `<img src="${url}" alt="Chart" width="${width}" height="${height}" />`,
         );
-      }
+      },
     );
 
     return processed;
@@ -1308,25 +1304,35 @@ export const ReportView: FC = () => {
       setGeneratedReport(report.content);
       setGeneratedStyle(report.style);
 
-      // load / assemble chart images for the report
+      // Load chart images for the report - use cached preview images when available
       report.selectedChartIds.forEach((chartId) => {
         const chart = charts.find((c) => c.id === chartId);
-        if (!chart) return null;
+        if (!chart) return;
 
         const chartTable = tables.find((t) => t.id === chart.tableRef);
-        if (!chartTable) return null;
+        if (!chartTable) return;
 
         if (chart.chartType === "Table" || chart.chartType === "?") {
-          return null;
+          return;
         }
-        getChartImageFromVega(chart, chartTable).then(
-          ({ blobUrl, width, height }) => {
-            if (blobUrl) {
-              // Use blob URL for local display and caching
-              updateCachedReportImages(chart.id, blobUrl, width, height);
+
+        // Try to use cached preview image first for consistency
+        if (chartPreviewImages[chart.id] && chartPreviewImages[chart.id].url) {
+          // Use cached preview image
+          const { url, width, height } = chartPreviewImages[chart.id];
+          updateCachedReportImages(chart.id, url, width, height);
+        } else {
+          // Fall back to regenerating if no cached preview
+          getChartImageFromVega(
+            chart,
+            chartTable,
+            chartSampleData[chart.id],
+          ).then(({ dataUrl, width, height }) => {
+            if (dataUrl) {
+              updateCachedReportImages(chart.id, dataUrl, width, height);
             }
-          }
-        );
+          });
+        }
       });
     }
   };
@@ -1344,7 +1350,7 @@ export const ReportView: FC = () => {
       tables.map((table, index) => [
         table.id,
         index + (table.anchored ? 1 : 0) * tables.length,
-      ])
+      ]),
     );
 
     // Get ancestor orders for a table
@@ -1388,59 +1394,85 @@ export const ReportView: FC = () => {
     };
   }, []); // Only cleanup on unmount, not when images change
 
-  // Generate preview images for all charts
+  // Get cached preview images from Redux
+  const chartPreviewImages = useSelector(dfSelectors.getChartPreviewImages);
+
+  // Sync cached preview images from Redux to local preview state
   useEffect(() => {
-    const generatePreviews = async () => {
-      setIsLoadingPreviews(true);
-      const newPreviewImages = new Map<
-        string,
-        { url: string; width: number; height: number }
-      >();
+    const newPreviewImages = new Map(previewImages);
+    let hasChanges = false;
 
-      // Clean up old preview images
-      previewImages.forEach(({ url }) => {
-        if (url.startsWith("blob:")) {
-          URL.revokeObjectURL(url);
+    Object.entries(chartPreviewImages).forEach(([chartId, imageData]) => {
+      if (!previewImages.has(chartId)) {
+        newPreviewImages.set(chartId, imageData);
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      setPreviewImages(newPreviewImages);
+    }
+  }, [chartPreviewImages]);
+
+  // Generate missing preview images on-demand and cache them in Redux
+  useEffect(() => {
+    let isMounted = true;
+
+    const generateMissingPreviews = async () => {
+      for (const chart of sortedCharts) {
+        if (!isMounted) break;
+
+        // Skip non-chart types
+        if (
+          chart.chartType === "Table" ||
+          chart.chartType === "?" ||
+          chart.chartType === "Auto"
+        ) {
+          continue;
         }
-      });
 
-      await Promise.all(
-        sortedCharts.map(async (chart) => {
-          try {
-            const chartTable = tables.find((t) => t.id === chart.tableRef);
-            if (
-              !chartTable ||
-              chart.chartType === "Table" ||
-              chart.chartType === "?" ||
-              chart.chartType === "Auto"
-            ) {
-              return;
-            }
+        // Skip if already cached in Redux
+        if (chartPreviewImages[chart.id]) {
+          continue;
+        }
 
-            const { blobUrl, width, height } = await getChartImageFromVega(
-              chart,
-              chartTable
-            );
-            if (blobUrl) {
-              newPreviewImages.set(chart.id, { url: blobUrl, width, height });
-            }
-          } catch (error) {
-            console.warn(
-              `Failed to generate preview for chart ${chart.id}:`,
-              error
+        const chartTable = tables.find((t) => t.id === chart.tableRef);
+        if (!chartTable) continue;
+
+        try {
+          const { dataUrl, width, height } = await getChartImageFromVega(
+            chart,
+            chartTable,
+            chartSampleData[chart.id],
+          );
+
+          if (isMounted && dataUrl) {
+            // Cache dataUrl (base64 string) in Redux - this is persistent and won't be revoked
+            dispatch(
+              dfActions.updateChartPreviewImage({
+                chartId: chart.id,
+                url: dataUrl,
+                width,
+                height,
+              }),
             );
           }
-        })
-      );
-
-      setPreviewImages(newPreviewImages);
-      setIsLoadingPreviews(false);
+        } catch (error) {
+          console.warn(
+            `Failed to generate preview for chart ${chart.id}:`,
+            error,
+          );
+        }
+      }
     };
 
-    if (sortedCharts.length > 0) {
-      generatePreviews();
-    }
-  }, [sortedCharts, tables, conceptShelfItems, config]);
+    // Run on-demand generation
+    generateMissingPreviews();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [sortedCharts, tables, chartSampleData, dispatch]);
 
   const toggleChartSelection = (chartId: string) => {
     const newSelection = new Set(selectedChartIds);
@@ -1473,7 +1505,8 @@ export const ReportView: FC = () => {
 
   const getChartImageFromVega = async (
     chart: any,
-    chartTable: any
+    chartTable: any,
+    chartSampleDataForChart?: any[],
   ): Promise<{
     dataUrl: string;
     blobUrl: string;
@@ -1481,12 +1514,22 @@ export const ReportView: FC = () => {
     height: number;
   }> => {
     try {
-      // Preprocess the data for aggregations
-      const processedRows = prepVisTable(
-        chartTable.rows,
-        conceptShelfItems,
-        chart.encodingMap
-      );
+      // Use sample data from Redux if available, otherwise use table rows
+      const dataToUse = chartSampleDataForChart || chartTable.rows;
+
+      // Only preprocess if using chartTable.rows (not already preprocessed from Redux)
+      let processedRows: any[];
+      if (chartSampleDataForChart) {
+        // Data is already preprocessed from Redux
+        processedRows = chartSampleDataForChart;
+      } else {
+        // Need to preprocess table rows
+        processedRows = prepVisTable(
+          dataToUse,
+          conceptShelfItems,
+          chart.encodingMap,
+        );
+      }
 
       // Assemble the Vega spec
       const assembledChart = assembleVegaChart(
@@ -1499,7 +1542,11 @@ export const ReportView: FC = () => {
         true,
         config.defaultChartWidth,
         config.defaultChartHeight,
-        true
+        true,
+        chart.qcLimitsMode || false,
+        undefined,
+        undefined,
+        chartTable.rows,
       );
 
       // Create a temporary container for embedding
@@ -1531,10 +1578,10 @@ export const ReportView: FC = () => {
 
         // Get original dimensions
         const originalWidth = parseFloat(
-          svgElement.getAttribute("width") || "0"
+          svgElement.getAttribute("width") || "0",
         );
         const originalHeight = parseFloat(
-          svgElement.getAttribute("height") || "0"
+          svgElement.getAttribute("height") || "0",
         );
 
         // Convert SVG to PNG using canvas
@@ -1614,7 +1661,7 @@ export const ReportView: FC = () => {
 
     // Create a new report ID
     const reportId = `report-${Date.now()}-${Math.floor(
-      Math.random() * 10000
+      Math.random() * 10000,
     )}`;
 
     try {
@@ -1642,12 +1689,34 @@ export const ReportView: FC = () => {
               return null;
             }
 
-            const { dataUrl, blobUrl, width, height } =
-              await getChartImageFromVega(chart, chartTable);
+            // Try to use cached preview image first to ensure consistency with what user sees
+            let dataUrl = "";
+            let width = 0;
+            let height = 0;
 
-            if (blobUrl) {
-              // Use blob URL for local display and caching
-              updateCachedReportImages(chart.id, blobUrl, width, height);
+            if (
+              chartPreviewImages[chart.id] &&
+              chartPreviewImages[chart.id].url
+            ) {
+              // Use cached preview image - this ensures report image matches preview
+              dataUrl = chartPreviewImages[chart.id].url;
+              width = chartPreviewImages[chart.id].width;
+              height = chartPreviewImages[chart.id].height;
+            } else {
+              // Fall back to generating if no cached preview
+              const generated = await getChartImageFromVega(
+                chart,
+                chartTable,
+                chartSampleData[chart.id],
+              );
+              dataUrl = generated.dataUrl;
+              width = generated.width;
+              height = generated.height;
+            }
+
+            if (dataUrl) {
+              // Cache dataUrl (base64 string) - this is persistent and won't be revoked
+              updateCachedReportImages(chart.id, dataUrl, width, height);
             }
 
             return {
@@ -1657,9 +1726,9 @@ export const ReportView: FC = () => {
                 name: chartTable.id,
                 rows: chartTable.rows,
               },
-              chart_url: dataUrl, // use data_url to send to the agent
+              chart_url: dataUrl, // Send dataUrl to server (server can process this)
             };
-          })
+          }),
       );
 
       const validCharts = selectedCharts.filter((c) => c !== null);
@@ -1738,7 +1807,7 @@ export const ReportView: FC = () => {
     // If we're deleting the currently viewed report, switch to another report or clear the view
     if (currentReportId === reportId) {
       const remainingReports = allGeneratedReports.filter(
-        (r) => r.id !== reportId
+        (r) => r.id !== reportId,
       );
       if (remainingReports.length > 0) {
         // Switch to the first remaining report
@@ -2069,20 +2138,6 @@ export const ReportView: FC = () => {
               <Typography color="text.secondary">
                 No charts available. Create some visualizations first.
               </Typography>
-            ) : isLoadingPreviews ? (
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  py: 4,
-                }}
-              >
-                <CircularProgress size={18} sx={{ color: "text.secondary" }} />
-                <Typography sx={{ ml: 2 }} color="text.secondary">
-                  loading chart previews...
-                </Typography>
-              </Box>
             ) : (
               (() => {
                 // Filter out unavailable charts (Table, ?, Auto, and charts without preview images)
@@ -2393,7 +2448,7 @@ export const ReportView: FC = () => {
                           charts,
                           tables,
                           conceptShelfItems,
-                          config
+                          config,
                         );
                         openChartifactViewer(chartifactMarkdown);
                       }}
@@ -2497,7 +2552,7 @@ export const ReportView: FC = () => {
                     ...(generatedStyle === "social post" ||
                     generatedStyle === "short note"
                       ? {
-                          maxWidth: "520px",
+                          maxWidth: "720px",
                           borderRadius: "12px",
                           border: "1px solid",
                           borderColor: COLOR_SOCIAL_BORDER,
@@ -2534,7 +2589,7 @@ export const ReportView: FC = () => {
                         }
                       : generatedStyle === "executive summary"
                       ? {
-                          maxWidth: "700px",
+                          maxWidth: "900px",
                           p: 2.5,
                           backgroundColor: "white",
                           fontFamily: FONT_FAMILY_SERIF,
@@ -2565,7 +2620,7 @@ export const ReportView: FC = () => {
                           },
                         }
                       : {
-                          maxWidth: "800px",
+                          maxWidth: "1000px",
                           px: 6,
                           py: 0,
                           backgroundColor: "background.paper",
@@ -2619,7 +2674,7 @@ export const ReportView: FC = () => {
                   >
                     created with AI using{" "}
                     {/* <Link
-                      href="https://github.com/microsoft/data-formulator"
+                      href="https://github.com/xxx"
                       target="_blank"
                       rel="noopener noreferrer"
                       sx={{
@@ -2630,7 +2685,7 @@ export const ReportView: FC = () => {
                         },
                       }}
                     >
-                      https://github.com/microsoft/data-formulator
+                      https://github.com/xxx
                     </Link> */}
                   </Box>
                 </Box>

@@ -121,7 +121,7 @@ export const About: FC<{}> = function About({}) {
   }, [currentFeature]);
 
   const serverConfig = useSelector(
-    (state: DataFormulatorState) => state.serverConfig
+    (state: DataFormulatorState) => state.serverConfig,
   );
 
   let actionButtons = !serverConfig.PROJECT_FRONT_PAGE ? (
@@ -173,7 +173,7 @@ export const About: FC<{}> = function About({}) {
         startIcon={<GitHubIcon sx={{ fontSize: "1rem", color: "#000000" }} />}
         target="_blank"
         rel="noopener noreferrer"
-        href="https://github.com/microsoft/data-formulator"
+        href="https://github.com/xxx"
       >
         GitHub
       </Button>
@@ -206,16 +206,16 @@ export const About: FC<{}> = function About({}) {
             "0%, 100%": {
               boxShadow: `0 0 8px ${alpha(
                 theme.palette.primary.main,
-                0.4
+                0.4,
               )}, 0 0 16px ${alpha(theme.palette.primary.main, 0.2)}`,
             },
             "50%": {
               boxShadow: `0 0 12px ${alpha(
                 theme.palette.primary.main,
-                0.6
+                0.6,
               )}, 0 0 24px ${alpha(
                 theme.palette.primary.main,
-                0.3
+                0.3,
               )}, 0 0 32px ${alpha(theme.palette.primary.main, 0.1)}`,
             },
           },
@@ -223,7 +223,7 @@ export const About: FC<{}> = function About({}) {
             animation: "subtleGlow 1.5s ease-in-out infinite",
             boxShadow: `0 0 16px ${alpha(
               theme.palette.primary.main,
-              0.7
+              0.7,
             )}, 0 0 32px ${alpha(theme.palette.primary.main, 0.4)} !important`,
           },
         }}
@@ -310,11 +310,11 @@ export const About: FC<{}> = function About({}) {
             background: `
                         linear-gradient(90deg, ${alpha(
                           theme.palette.text.secondary,
-                          0.02
+                          0.02,
                         )} 1px, transparent 1px),
                         linear-gradient(0deg, ${alpha(
                           theme.palette.text.secondary,
-                          0.02
+                          0.02,
                         )} 1px, transparent 1px)
                     `,
             backgroundSize: "16px 16px",
@@ -439,7 +439,7 @@ export const About: FC<{}> = function About({}) {
                       if (video.duration && !isNaN(video.duration)) {
                         videoDurationsRef.current.set(
                           features[currentFeature].media,
-                          video.duration
+                          video.duration,
                         );
                       }
                     }}
@@ -524,8 +524,8 @@ export const About: FC<{}> = function About({}) {
                 </li>
                 <li>
                   🗄️ <strong>Database:</strong> Only available for locally
-                  installed Data Formulator (a DuckDB database file is created
-                  in temp directory to store data); not available in online demo
+                  installed GDIS AI Agent (a DuckDB database file is created in
+                  temp directory to store data); not available in online demo
                 </li>
                 <li>
                   🤖 <strong>LLM Endpoints:</strong> Small data samples are sent

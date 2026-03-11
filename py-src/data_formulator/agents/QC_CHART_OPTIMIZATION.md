@@ -241,4 +241,4 @@ Output shows:
 
 - [Claude Prompt Caching Documentation](https://docs.anthropic.com/en/docs/build-a-bot/prompt-caching)
 - [Token Usage Optimization Best Practices](https://docs.anthropic.com/en/docs/build-a-bot/costs)
-- [Data Formulator Architecture](../../ARCHITECTURE.md)
+- [GDIS AI Agent Architecture](../../ARCHITECTURE.md)

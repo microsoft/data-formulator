@@ -44,7 +44,7 @@ GET /api/export/list-templates
 // BEFORE: Hardcoded
 form.append(
   "template",
-  "HOYA MD Presentation Template v4 20241126 Internal.pptx"
+  "HOYA MD Presentation Template v4 20241126 Internal.pptx",
 );
 
 // AFTER: Dynamic based on user selection
@@ -82,7 +82,7 @@ mkdir -p data-formulator/ppt_templates
 
 ### Step 3: Use It! 🎉
 
-1. Open Data Formulator → Report view
+1. Open GDIS AI Agent → Report view
 2. Create/Select your report
 3. See dropdown: "Select PowerPoint template for export"
 4. Choose your template
@@ -233,7 +233,7 @@ mkdir -p data-formulator/ppt_templates
 # 3. Restart the backend
 # (Run local_server.sh or restart your Docker container)
 
-# 4. Open Data Formulator in browser
+# 4. Open GDIS AI Agent in browser
 # - Go to Report view
 # - You should see the dropdown with your template
 # - Select it and export

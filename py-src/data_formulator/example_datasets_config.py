@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 """
-Sample datasets configuration for Data Formulator.
+Sample datasets configuration for GDIS AI Agent.
 """
 
 EXAMPLE_DATASETS = [

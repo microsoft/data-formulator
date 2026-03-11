@@ -7,6 +7,9 @@ import jsxA11y from "eslint-plugin-jsx-a11y";
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   {
+    ignores: ["dist/", "node_modules/", "build/"], // Ignore generated files
+  },
+  {
     languageOptions: { globals: globals.browser },
     settings: {
       react: {

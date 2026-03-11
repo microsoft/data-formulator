@@ -702,7 +702,7 @@ export const DBTableSelectionDialog: React.FC<{
     if (tables.some((t) => t.id === tableName)) {
       if (
         !confirm(
-          `Are you sure you want to delete ${tableName}? \n ${tableName} is currently loaded into the data formulator and will be removed from the database.`,
+          `Are you sure you want to delete ${tableName}? \n ${tableName} is currently loaded into the GDIS AI Agent and will be removed from the database.`,
         )
       )
         return;
@@ -1631,13 +1631,13 @@ export const DBTableSelectionDialog: React.FC<{
               {/* Install GDIS AI Agent locally to use database. <br />
               Link:{" "}
               <Link
-                href="https://github.com/microsoft/data-formulator"
+                href="https://github.com/xxx"
                 target="_blank"
                 rel="noopener noreferrer"
                 sx={{ color: "inherit", textDecoration: "underline" }}
                 onClick={(e) => e.stopPropagation()}
               >
-                https://github.com/microsoft/data-formulator
+                https://github.com/xxx
               </Link> */}
             </Typography>
           ) : (

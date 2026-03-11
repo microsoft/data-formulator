@@ -2,7 +2,7 @@
 
 ## Overview
 
-Data Formulator now supports exporting reports directly to existing PowerPoint templates. This allows you to maintain consistent branding, layouts, and formatting across all generated reports.
+GDIS AI Agent now supports exporting reports directly to existing PowerPoint templates. This allows you to maintain consistent branding, layouts, and formatting across all generated reports.
 
 ## How It Works
 
@@ -79,7 +79,7 @@ If the backend is already running, you may need to restart it for the template l
 
 ### 1. Navigate to the Report View
 
-In the Data Formulator interface, go to the **Report** view.
+In the GDIS AI Agent interface, go to the **Report** view.
 
 ### 2. Select Your Template
 

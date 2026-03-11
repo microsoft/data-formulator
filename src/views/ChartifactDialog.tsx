@@ -137,7 +137,7 @@ export const convertToChartifact = (
   charts: Chart[],
   tables: DictTable[],
   conceptShelfItems: FieldItem[],
-  config: ClientConfig
+  config: ClientConfig,
 ) => {
   try {
     // Extract chart IDs from the report markdown images
@@ -179,7 +179,7 @@ export const convertToChartifact = (
         const processedRows = prepVisTable(
           chartTable.rows,
           conceptShelfItems,
-          chart.encodingMap
+          chart.encodingMap,
         );
 
         // Assemble the Vega-Lite spec
@@ -193,7 +193,11 @@ export const convertToChartifact = (
           true,
           config.defaultChartWidth,
           config.defaultChartHeight,
-          true
+          true,
+          chart.qcLimitsMode || false,
+          undefined,
+          undefined,
+          chartTable.rows,
         );
 
         // Convert the spec to use named data source
@@ -231,7 +235,7 @@ ${JSON.stringify(modifiedSpec, null, 2)}
     }
 
     result +=
-      "\n\n---\ncreated with AI using [Data Formulator](https://github.com/microsoft/data-formulator)\n\n";
+      "\n\n---\ncreated with AI using [GDIS AI Agent](https://github.com/xxx)\n\n";
 
     // Prepend CSS styling based on report type
     const cssStyles = generateStyleCSS(reportStyle);
@@ -258,7 +262,7 @@ export const openChartifactViewer = async (chartifactMarkdown: string) => {
     // Open the Chartifact viewer in a new tab
     const chartifactWindow = window.open(
       "https://microsoft.github.io/chartifact/view/?post",
-      "_blank"
+      "_blank",
     );
 
     if (!chartifactWindow) {
@@ -291,7 +295,7 @@ export const openChartifactViewer = async (chartifactMarkdown: string) => {
 
         chartifactWindow.postMessage(
           renderRequest,
-          "https://microsoft.github.io"
+          "https://microsoft.github.io",
         );
 
         //Call here to show source
@@ -305,7 +309,7 @@ export const openChartifactViewer = async (chartifactMarkdown: string) => {
 
         chartifactWindow.postMessage(
           toolbarControl,
-          "https://microsoft.github.io"
+          "https://microsoft.github.io",
         );
 
         // Remove the event listener after sending

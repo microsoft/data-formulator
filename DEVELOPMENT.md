@@ -1,4 +1,4 @@
-# Set up a local Data Formulator development environment
+# Set up a local GDIS AI Agent development environment
 
 How to set up your local machine.
 
@@ -33,7 +33,7 @@ How to set up your local machine.
     - copy `.env.template` to `.env`
     - configure settings as needed:
       - DISABLE_DISPLAY_KEYS: if true, API keys will not be shown in the frontend
-      - EXEC_PYTHON_IN_SUBPROCESS: if true, Python code runs in a subprocess (safer but slower), you may consider setting it true when you are hosting Data Formulator for others
+      - EXEC_PYTHON_IN_SUBPROCESS: if true, Python code runs in a subprocess (safer but slower), you may consider setting it true when you are hosting GDIS AI Agent for others
       - LOCAL_DB_DIR: directory to store the local database (uses temp directory if not set)
       - External database settings (when USE_EXTERNAL_DB=true):
         - DB_NAME: name to refer to this database connection
@@ -107,7 +107,7 @@ How to set up your local machine.
   pip install dist/data_formulator-<version>-py3-none-any.whl
   ```
 
-  Once installed, you can run Data Formulator with:
+  Once installed, you can run GDIS AI Agent with:
 
   ```bash
   data_formulator
@@ -125,18 +125,18 @@ How to set up your local machine.
 
 ⚠️ **IMPORTANT SECURITY WARNING FOR PRODUCTION DEPLOYMENT**
 
-When deploying Data Formulator to production, please be aware of the following security considerations:
+When deploying GDIS AI Agent to production, please be aware of the following security considerations:
 
 ### Database Storage Security
 
-1. **Local DuckDB Files**: When database functionality is enabled (default), Data Formulator stores DuckDB database files locally on the server. These files contain user data and are stored in the system's temporary directory or a configured `LOCAL_DB_DIR`.
+1. **Local DuckDB Files**: When database functionality is enabled (default), GDIS AI Agent stores DuckDB database files locally on the server. These files contain user data and are stored in the system's temporary directory or a configured `LOCAL_DB_DIR`.
 
 2. **Session Management**:
 
    - When database is **enabled**: Session IDs are stored in Flask sessions (cookies) and linked to local DuckDB files
    - When database is **disabled**: No persistent storage is used, and no cookies are set. Session IDs are generated per request for API consistency
 
-3. **Data Persistence**: User data processed through Data Formulator may be temporarily stored in these local DuckDB files, which could be a security risk in multi-tenant environments.
+3. **Data Persistence**: User data processed through GDIS AI Agent may be temporarily stored in these local DuckDB files, which could be a security risk in multi-tenant environments.
 
 ### Recommended Security Measures
 

@@ -38,8 +38,6 @@ import { interpolate, line } from "d3";
 import { size } from "lodash";
 import { log } from "console";
 
-const detectedLimits: Record<string, number | undefined> = {};
-
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({
   src,
@@ -487,9 +485,6 @@ const barCharts: ChartTemplate[] = [
           yDef.scale.zero = false;
           yDef.scale.nice = false;
           yDef.scale.clamp = true; // 🔧 Clamp values to domain
-          console.log(
-            `📊 Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`,
-          );
         }
 
         // Calculate responsive width based on number of bars
@@ -538,8 +533,6 @@ const barCharts: ChartTemplate[] = [
           delete vgSpec.mark.clip;
           delete vgSpec.mark.width;
         }
-
-        console.log(`📐 Bar Chart: width=${width}px for ${numBars} bars`);
       } catch (error) {
         console.warn("⚠️ Bar Chart postProcessor failed:", error);
       }
@@ -677,9 +670,6 @@ const barCharts: ChartTemplate[] = [
           yDef.scale.zero = false;
           yDef.scale.nice = false;
           yDef.scale.clamp = true;
-          console.log(
-            `📊 Grouped Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`,
-          );
         }
 
         // Calculate responsive width based on number of groups
@@ -721,10 +711,6 @@ const barCharts: ChartTemplate[] = [
           vgSpec.mark.tooltip = true;
           delete vgSpec.mark.clip;
         }
-
-        console.log(
-          `📐 Grouped Bar Chart: width=${width}px for ${numGroups} groups`,
-        );
       } catch (error) {
         console.warn("⚠️ Grouped Bar Chart postProcessor failed:", error);
       }
@@ -771,9 +757,6 @@ const barCharts: ChartTemplate[] = [
           yDef.scale.zero = false;
           yDef.scale.nice = false;
           yDef.scale.clamp = true;
-          console.log(
-            `📊 Stacked Bar Chart: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`,
-          );
         }
 
         // Calculate responsive width based on number of bars
@@ -815,10 +798,6 @@ const barCharts: ChartTemplate[] = [
           vgSpec.mark.tooltip = true;
           delete vgSpec.mark.clip;
         }
-
-        console.log(
-          `📐 Stacked Bar Chart: width=${width}px for ${numBars} bars`,
-        );
       } catch (error) {
         console.warn("⚠️ Stacked Bar Chart postProcessor failed:", error);
       }
@@ -865,9 +844,6 @@ const barCharts: ChartTemplate[] = [
           yDef.scale.zero = false;
           yDef.scale.nice = false;
           yDef.scale.clamp = true;
-          console.log(
-            `📊 Histogram: Y-axis domain [${yDef.scale.domain[0]}, ${yDef.scale.domain[1]}]`,
-          );
         }
 
         // Calculate responsive width based on number of bins
@@ -909,8 +885,6 @@ const barCharts: ChartTemplate[] = [
           vgSpec.mark.tooltip = true;
           delete vgSpec.mark.clip;
         }
-
-        console.log(`📐 Histogram: width=${width}px for ${numBins} bins`);
       } catch (error) {
         console.warn("⚠️ Histogram postProcessor failed:", error);
       }
@@ -1713,7 +1687,6 @@ let customCharts: ChartTemplate[] = [
       chartHeight?: number,
     ) => {
       if (!table || table.length === 0) return vgSpec;
-      console.log("width:", chartWidth, "height:", chartHeight);
 
       // =========================================================================
       // 1. LẤY KÊNH CHÍNH
@@ -1733,15 +1706,29 @@ let customCharts: ChartTemplate[] = [
       // =========================================================================
       const tableColumns = Object.keys(table[0]);
 
+      // Get original full table if available (contains limit columns)
+      const fullTable = vgSpec._originalTable || table;
+      const fullTableColumns =
+        fullTable && fullTable.length > 0 ? Object.keys(fullTable[0]) : [];
       // =========================================================================
       // 3. TÌM GIỚI HẠN SỐ → detectedLimits (chỉ dùng vẽ rule ngang)
       // =========================================================================
+      // Create local detectedLimits to avoid caching from previous renders
+      let detectedLimits: Record<string, number | undefined> = {};
       const limitFieldNames = ["TARGET", "ARUL", "ARLL", "UL", "LL"];
 
+      // Try to find limit columns in full table first, then fallback to working table
+      const sourceTable = fullTableColumns.length > 0 ? fullTable : table;
+      const columnsToSearch =
+        fullTableColumns.length > 0 ? fullTableColumns : tableColumns;
       limitFieldNames.forEach((name) => {
-        const col = tableColumns.find((c) => c.toUpperCase() === name);
+        const col = columnsToSearch.find(
+          (c: string) => c.toUpperCase() === name,
+        );
         if (col) {
-          const val = table.find((r) => typeof r[col] === "number")?.[col];
+          const val = sourceTable.find(
+            (r: any) => typeof r[col] === "number",
+          )?.[col];
           if (typeof val === "number" && isFinite(val)) {
             detectedLimits[name] = val;
           }
@@ -1826,56 +1813,55 @@ let customCharts: ChartTemplate[] = [
       };
 
       // 🟢 Gom tất cả rule (TARGET, UL, LL, ARUL, ARLL) vào 1 layer có legend
-      const qcLimitNames = ["TARGET", "UL", "LL", "ARUL", "ARLL"];
-      const limitData = Object.entries(detectedLimits)
-        .filter(
-          ([name, value]) =>
-            qcLimitNames.includes(name) &&
-            typeof value === "number" &&
-            isFinite(value),
-        )
-        .map(([name, value]) => ({
-          limitType: `${name} : ${value}`, // hiển thị cả tên + giá trị
-          limit: value,
-        }));
+      let ruleLayers: any[] = [];
 
-      const ruleLayer =
-        limitData.length > 0
-          ? {
-              data: { values: limitData },
-              mark: {
-                type: "rule",
-                strokeWidth: 1.5,
-              },
-              encoding: {
-                y: { field: "limit", type: "quantitative" },
-                color: {
-                  field: "limitType",
-                  type: "nominal",
-                  legend: { title: "QC Limited" },
-                  scale: {
-                    domain: limitData.map((d) => d.limitType),
-                    range: ["#00FFFF", "red", "red", "orange", "orange"].slice(
-                      0,
-                      limitData.length,
-                    ),
-                  },
+      if (qcLimitsMode === true && Object.keys(detectedLimits).length > 0) {
+        const qcLimitNames = ["TARGET", "UL", "LL", "ARUL", "ARLL"];
+        const limitData = Object.entries(detectedLimits)
+          .filter(
+            ([name, value]) =>
+              qcLimitNames.includes(name) &&
+              typeof value === "number" &&
+              isFinite(value),
+          )
+          .map(([name, value]) => ({
+            limitType: `${name} : ${value}`, // hiển thị cả tên + giá trị
+            limit: value,
+          }));
+
+        if (limitData.length > 0) {
+          const ruleLayer = {
+            data: { values: limitData },
+            mark: {
+              type: "rule",
+              strokeWidth: 1.5,
+            },
+            encoding: {
+              y: { field: "limit", type: "quantitative" },
+              color: {
+                field: "limitType",
+                type: "nominal",
+                legend: { title: "QC Limited" },
+                scale: {
+                  domain: limitData.map((d) => d.limitType),
+                  range: ["#00FFFF", "red", "red", "orange", "orange"].slice(
+                    0,
+                    limitData.length,
+                  ),
                 },
-
-                tooltip: [
-                  { field: "limitType", title: "Limited" },
-                  { field: "limit", title: "Value", format: ".2f" },
-                ],
               },
-            }
-          : null;
 
-      const ruleLayers = [ruleLayer];
-      if (qcLimitsMode === true) {
-        vgSpec.layer = [pointLayer, loessLayer, ...ruleLayers];
-      } else {
-        vgSpec.layer = [pointLayer, loessLayer];
+              tooltip: [
+                { field: "limitType", title: "Limited" },
+                { field: "limit", title: "Value", format: ".2f" },
+              ],
+            },
+          };
+          ruleLayers.push(ruleLayer);
+        }
       }
+
+      vgSpec.layer = [pointLayer, loessLayer, ...ruleLayers];
 
       vgSpec.title = "Quality Control Chart";
       vgSpec.resolve = { scale: { color: "independent" } };
@@ -1890,8 +1876,6 @@ let customCharts: ChartTemplate[] = [
       const hasIndex = table.some((r) => r["INDEX"] !== undefined);
       const shiftRuleLayers: any[] = [];
       if (hasQCDate && hasQCShift && hasIndex) {
-        console.log("⚙️ Bắt đầu tạo rule theo QCDATE + QCSHIFT");
-
         // Bước 2️⃣: Gom nhóm theo (QCDATE, QCSHIFT) để tìm INDEX nhỏ nhất của mỗi nhóm
         const groupMap = new Map<
           string,
@@ -1933,9 +1917,6 @@ let customCharts: ChartTemplate[] = [
 
         // ✅ Sort theo INDEX tăng dần để hiển thị đúng thứ tự thời gian
         shiftMarkers.sort((a, b) => a.index - b.index);
-
-        console.log("🟣 Đường chia ca phát hiện:", shiftMarkers);
-
         shiftMarkers.forEach((m) => {
           const isNight = m.shift?.toUpperCase() === "NIGHT";
           const color = isNight ? "#000000" : "#9467bd"; // 🔹 NIGHT = đen, DAY = tím
@@ -1995,11 +1976,6 @@ let customCharts: ChartTemplate[] = [
         // ✅ Thêm vào biểu đồ
         if (shiftRuleLayers.length > 0) {
           vgSpec.layer.push(...shiftRuleLayers);
-          console.log(
-            "✅ Đã thêm",
-            shiftRuleLayers.length,
-            "đường dọc QCDATE+QCSHIFT",
-          );
         } else {
           console.warn("⚠️ Không tìm thấy nhóm QCDATE + QCSHIFT hợp lệ để vẽ");
         }
@@ -2065,9 +2041,6 @@ let customCharts: ChartTemplate[] = [
       chartHeight?: number,
     ) => {
       if (!table || table.length === 0) return vgSpec;
-
-      console.log("Mode:", qcLimitsMode);
-
       // =========================================================================
       // 1️⃣ LẤY CÁC CHANNEL CHÍNH
       // =========================================================================
@@ -2084,23 +2057,35 @@ let customCharts: ChartTemplate[] = [
       // =========================================================================
       const tableColumns = Object.keys(table[0]);
 
+      // Get original full table if available (contains limit columns)
+      const fullTable = vgSpec._originalTable || table;
+      const fullTableColumns =
+        fullTable && fullTable.length > 0 ? Object.keys(fullTable[0]) : [];
       // =========================================================================
       // 2️⃣ PHÁT HIỆN GIỚI HẠN QC
       // =========================================================================
+      // Create local detectedLimits to avoid caching from previous renders
+      let detectedLimits: Record<string, number | undefined> = {};
       const limitFieldNames = ["TARGET", "ARUL", "ARLL", "UL", "LL"];
 
+      // Try to find limit columns in full table first, then fallback to working table
+      const sourceTable = fullTableColumns.length > 0 ? fullTable : table;
+      const columnsToSearch =
+        fullTableColumns.length > 0 ? fullTableColumns : tableColumns;
+
       limitFieldNames.forEach((name) => {
-        const col = tableColumns.find((c) => c.toUpperCase() === name);
+        const col = columnsToSearch.find(
+          (c: string) => c.toUpperCase() === name,
+        );
         if (col) {
-          const val = table.find((r) => typeof r[col] === "number")?.[col];
+          const val = sourceTable.find(
+            (r: any) => typeof r[col] === "number",
+          )?.[col];
           if (typeof val === "number" && isFinite(val)) {
             detectedLimits[name] = val;
           }
         }
       });
-
-      console.log("Detected QC limits:", detectedLimits);
-
       // =========================================================================
       // 3️⃣ TÍNH DOMAIN TRỤC X BAO GỒM GIỚI HẠN
       // =========================================================================
@@ -2251,59 +2236,64 @@ let customCharts: ChartTemplate[] = [
       };
 
       // Only show rule layers for limits that have a valid number value
-      const ruleLayers = Object.entries(detectedLimits)
-        .filter(([_, val]) => typeof val === "number" && isFinite(val))
-        .map(([name, val]) => ({
-          data: { values: [{ limit: val, label: `${name}: ${val}` }] },
-          mark: {
-            type: "rule",
-            color: limitColors[name] || "#999",
-            size: 1,
-            strokeDash: name === "TARGET" ? [4, 2] : undefined,
-          },
-          encoding: {
-            x: { field: "limit", type: "quantitative" },
-            tooltip: [{ field: "label", title: "QC Limit" }],
-          },
-        }));
+      let ruleLayers: any[] = [];
+      let labelLayers: any[] = [];
 
-      // =========================================================================
-      // 6️⃣ NHÃN TRÊN CÁC ĐƯỜNG DỌC
-      // =========================================================================
-      // Only show label layers for limits that have a valid number value
-      const labelLayers = Object.entries(detectedLimits)
-        .filter(([_, val]) => typeof val === "number" && isFinite(val))
-        .map(([name, val]) => ({
-          data: { values: [{ limit: val, label: `${name}: ${val}` }] },
-          mark: {
-            type: "text",
-            angle: -90,
-            dx: 10,
-            dy: -10,
-            fontSize: 11,
-            fontWeight: "bold",
-            color: limitColors[name] || "#444",
-          },
-          encoding: {
-            x: { field: "limit", type: "quantitative" },
-            text: { field: "label" },
-          },
-        }));
+      if (
+        qcLimitsMode === true &&
+        Object.values(detectedLimits).some(
+          (v) => typeof v === "number" && isFinite(v),
+        )
+      ) {
+        ruleLayers = Object.entries(detectedLimits)
+          .filter(([_, val]) => typeof val === "number" && isFinite(val))
+          .map(([name, val]) => ({
+            data: { values: [{ limit: val, label: `${name}: ${val}` }] },
+            mark: {
+              type: "rule",
+              color: limitColors[name] || "#999",
+              size: 1,
+              strokeDash: name === "TARGET" ? [4, 2] : undefined,
+            },
+            encoding: {
+              x: { field: "limit", type: "quantitative" },
+              tooltip: [{ field: "label", title: "QC Limit" }],
+            },
+          }));
+
+        // =========================================================================
+        // 6️⃣ NHÃN TRÊN CÁC ĐƯỜNG DỌC
+        // =========================================================================
+        labelLayers = Object.entries(detectedLimits)
+          .filter(([_, val]) => typeof val === "number" && isFinite(val))
+          .map(([name, val]) => ({
+            data: { values: [{ limit: val, label: `${name}: ${val}` }] },
+            mark: {
+              type: "text",
+              angle: -90,
+              dx: 10,
+              dy: -10,
+              fontSize: 11,
+              fontWeight: "bold",
+              color: limitColors[name] || "#444",
+            },
+            encoding: {
+              x: { field: "limit", type: "quantitative" },
+              text: { field: "label" },
+            },
+          }));
+      }
 
       // =========================================================================
       // 7️⃣ GHÉP LỚP VÀ HOÀN THIỆN
       // =========================================================================
 
-      if (qcLimitsMode === true) {
-        vgSpec.layer = [
-          histogramLayer,
-          ...ruleLayers,
-          ...labelLayers,
-          envelopeLayer,
-        ];
-      } else {
-        vgSpec.layer = [histogramLayer, envelopeLayer];
-      }
+      vgSpec.layer = [
+        histogramLayer,
+        ...ruleLayers,
+        ...labelLayers,
+        envelopeLayer,
+      ];
 
       vgSpec.title = "Histogram QC (%)";
       // Set config
@@ -2318,14 +2308,6 @@ let customCharts: ChartTemplate[] = [
 
       delete vgSpec.encoding;
       delete vgSpec.mark;
-
-      // Fallback: If there are no valid limits at all, only show histogram and envelope
-      const hasAnyLimit = Object.values(detectedLimits).some(
-        (v) => typeof v === "number" && isFinite(v),
-      );
-      if (!hasAnyLimit) {
-        vgSpec.layer = [histogramLayer, envelopeLayer];
-      }
 
       return vgSpec;
     },
@@ -2353,19 +2335,24 @@ let customCharts: ChartTemplate[] = [
       try {
         if (!table || table.length === 0) return vgSpec;
 
-        let detectedLimits: Record<string, number | undefined> = {};
+        // Get original full table if available (contains limit columns)
+        const fullTable = vgSpec._originalTable || table;
         const tableColumns = Object.keys(table[0] || {});
+        const fullTableColumns =
+          fullTable && fullTable.length > 0
+            ? Object.keys(fullTable[0] || {})
+            : [];
 
+        let detectedLimits: Record<string, number | undefined> = {};
+
+        // Try to find limit columns in full table first, then fallback to working table
+        const sourceTable = fullTableColumns.length > 0 ? fullTable : table;
+        const columnsToSearch =
+          fullTableColumns.length > 0 ? fullTableColumns : tableColumns;
         // Assume color field represents ValueType
         const qcdateField = vgSpec.encoding?.QCDATE?.field || "QCDATE";
         const qcshiftField = vgSpec.encoding?.QCSHIFT?.field || "QCSHIFT";
         const valueField = vgSpec.encoding?.VALUE?.field || "VALUE";
-
-        console.log("Fields:", {
-          qcdateField,
-          qcshiftField,
-          valueField,
-        });
 
         // Set transform to aggregate from raw data
         vgSpec.transform = [
@@ -2492,15 +2479,14 @@ let customCharts: ChartTemplate[] = [
         if (qcLimitsMode) {
           const limitFieldNames = ["TARGET", "ARUL", "ARLL", "UL", "LL"];
           limitFieldNames.forEach((name) => {
-            const col = tableColumns.find((c) => c.toUpperCase() === name);
+            const col = columnsToSearch.find((c) => c.toUpperCase() === name);
             if (col) {
-              const vals = table
+              const vals = sourceTable
                 .map((r: any) => r[col])
                 .filter((v: any) => typeof v === "number" && isFinite(v));
               if (vals.length > 0) detectedLimits[name] = vals[0];
             }
           });
-
           const hasAnyLimit = Object.keys(detectedLimits).length > 0;
           if (hasAnyLimit) {
             const limitColors: Record<string, string> = {
@@ -2522,7 +2508,7 @@ let customCharts: ChartTemplate[] = [
                 },
                 encoding: {
                   y: { datum: val, type: "quantitative" },
-                  tooltip: [{ title: "QC Limit", value: `${name}: ${val}` }],
+                  tooltip: [{ value: `${name}: ${val}` }],
                 },
               }));
 

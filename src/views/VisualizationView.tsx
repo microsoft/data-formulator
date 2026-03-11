@@ -441,6 +441,7 @@ const VegaChartRenderer: FC<{
   chartHeight: number;
   scaleFactor: number;
   chartUnavailable: boolean;
+  originalTable?: any[]; // Original full table with all columns
 }> = React.memo(
   ({
     chart,
@@ -451,8 +452,10 @@ const VegaChartRenderer: FC<{
     chartHeight,
     scaleFactor,
     chartUnavailable,
+    originalTable,
   }) => {
     const elementId = `focused-chart-element-${chart.id}`;
+    const dispatch = useDispatch();
 
     useEffect(() => {
       if (
@@ -475,12 +478,15 @@ const VegaChartRenderer: FC<{
         chartHeight,
         true,
         chart.qcLimitsMode || false,
+        undefined,
+        undefined,
+        originalTable,
       );
 
       embed(
         "#" + elementId,
         { ...assembledChart },
-        { actions: true, renderer: "svg" },
+        { actions: true, renderer: "canvas" },
       )
         .then(function (result) {
           if (result.view.container()?.getElementsByTagName("svg")) {
@@ -510,6 +516,37 @@ const VegaChartRenderer: FC<{
               );
             }
           }
+
+          // Capture the rendered chart and cache to Redux
+          (async () => {
+            try {
+              const container = result.view.container();
+              if (!container) return;
+
+              // Get the canvas element
+              const canvasElement = container.getElementsByTagName("canvas")[0];
+              if (!canvasElement) return;
+
+              // Convert canvas to dataUrl (base64 string) - this persists and never expires
+              const dataUrl = canvasElement.toDataURL("image/png");
+              const { width, height } = canvasElement.getBoundingClientRect();
+
+              // Cache the preview image (as dataUrl) in Redux
+              dispatch(
+                dfActions.updateChartPreviewImage({
+                  chartId: chart.id,
+                  url: dataUrl,
+                  width: Math.round(width),
+                  height: Math.round(height),
+                }),
+              );
+            } catch (error) {
+              console.warn(
+                `Failed to cache preview for chart ${chart.id}:`,
+                error,
+              );
+            }
+          })();
         })
         .catch((error) => {
           //console.error('Chart rendering error:', error);
@@ -526,6 +563,7 @@ const VegaChartRenderer: FC<{
       chartHeight,
       scaleFactor,
       chartUnavailable,
+      dispatch,
     ]);
 
     if (chart.chartType === "Auto") {
@@ -589,20 +627,20 @@ const VegaChartRenderer: FC<{
 VegaChartRenderer.displayName = "VegaChartRenderer";
 
 export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
-  const config = useSelector((state: DataFormulatorState) => state.config);
+  const config = useSelector(dfSelectors.getConfig);
   const componentRef = useRef<HTMLHeadingElement>(null);
 
   // Add ref for the container box that holds all exploration components
   const explanationComponentsRef = useRef<HTMLDivElement>(null);
 
-  let tables = useSelector((state: DataFormulatorState) => state.tables);
+  let tables = useSelector(dfSelectors.getTables);
 
   let charts = useSelector(dfSelectors.getAllCharts);
   let focusedChartId = useSelector(
     (state: DataFormulatorState) => state.focusedChartId,
   );
   let chartSynthesisInProgress = useSelector(
-    (state: DataFormulatorState) => state.chartSynthesisInProgress,
+    dfSelectors.getChartSynthesisInProgress,
   );
 
   let synthesisRunning = focusedChartId
@@ -1163,6 +1201,15 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
   const activeVisTableRows = isDataStale ? [] : visTableRows;
   const activeVisTableTotalRowCount = isDataStale ? 0 : visTableTotalRowCount;
 
+  // Load the sample range from the chart when it's focused
+  useEffect(() => {
+    if (focusedChart.dataSampleRange) {
+      setCurrentSampleRange(focusedChart.dataSampleRange);
+    } else {
+      setCurrentSampleRange(undefined);
+    }
+  }, [focusedChart.id, focusedChart.dataSampleRange]);
+
   async function fetchDisplayRows(
     range?: [number, number],
     totalRowsOverride?: number,
@@ -1192,6 +1239,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const sampleSize = rangeSize;
 
     setCurrentSampleRange(normalizedRange);
+    dispatch(
+      dfActions.updateChartDataSampleRange({
+        chartId: focusedChart.id,
+        sampleRange: normalizedRange,
+      }),
+    );
     if (table.virtual) {
       // Generate unique request ID to track this specific request
       const requestId = `${focusedChart.id}-${table.id}-${Date.now()}`;
@@ -1224,9 +1277,32 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               table.id
             }-${sortedVisDataFields.join("_")}`;
             if (data.status == "success") {
-              setVisTableRows(data.rows);
+              // Preprocess data before saving
+              const filteredRows = data.rows.map((row: any) =>
+                Object.fromEntries(
+                  visFields
+                    .filter((f) => table.names.includes(f.name))
+                    .map((f) => [f.name, row[f.name]]),
+                ),
+              );
+              const preprocessedData = prepVisTable(
+                filteredRows,
+                conceptShelfItems,
+                focusedChart.encodingMap,
+              );
+              setVisTableRows(preprocessedData);
               setVisTableTotalRowCount(data.total_row_count);
               setDataVersion(versionId);
+              // Invalidate cached preview images in ReportView and update DataThread
+              dispatch(
+                dfActions.updateChartDataVersion({ chartId: focusedChart.id }),
+              );
+              dispatch(
+                dfActions.updateChartSampleData({
+                  chartId: focusedChart.id,
+                  sampleData: preprocessedData,
+                }),
+              );
             } else {
               setVisTableRows([]);
               setVisTableTotalRowCount(0);
@@ -1247,9 +1323,31 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       const startIdx = Math.min(Math.max(rangeMin, 0), table.rows.length);
       const endIdx = Math.min(startIdx + sampleSize, table.rows.length);
       const rowSample = table.rows.slice(startIdx, endIdx);
-      setVisTableRows(structuredClone(rowSample));
+      const clonedSample = structuredClone(rowSample);
+      // Preprocess data before saving
+      const filteredRows = clonedSample.map((row: any) =>
+        Object.fromEntries(
+          visFields
+            .filter((f) => table.names.includes(f.name))
+            .map((f) => [f.name, row[f.name]]),
+        ),
+      );
+      const preprocessedData = prepVisTable(
+        filteredRows,
+        conceptShelfItems,
+        focusedChart.encodingMap,
+      );
+      setVisTableRows(preprocessedData);
       setDataVersion(
         `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`,
+      );
+      // Invalidate cached preview images in ReportView and update DataThread
+      dispatch(dfActions.updateChartDataVersion({ chartId: focusedChart.id }));
+      dispatch(
+        dfActions.updateChartSampleData({
+          chartId: focusedChart.id,
+          sampleData: preprocessedData,
+        }),
       );
     }
   }
@@ -1276,12 +1374,30 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         setVisTableRows(newProcessedData);
         setVisTableTotalRowCount(table.rows.length);
         setDataVersion(versionId);
+        // Invalidate cached preview images in ReportView and update DataThread
+        dispatch(
+          dfActions.updateChartDataVersion({ chartId: focusedChart.id }),
+        );
+        dispatch(
+          dfActions.updateChartSampleData({
+            chartId: focusedChart.id,
+            sampleData: newProcessedData,
+          }),
+        );
       }
     } else {
       // If no fields, just use the table rows directly
       setVisTableRows(table.rows);
       setVisTableTotalRowCount(table.virtual?.rowCount || table.rows.length);
       setDataVersion(versionId);
+      // Invalidate cached preview images in ReportView and update DataThread
+      dispatch(dfActions.updateChartDataVersion({ chartId: focusedChart.id }));
+      dispatch(
+        dfActions.updateChartSampleData({
+          chartId: focusedChart.id,
+          sampleData: table.rows,
+        }),
+      );
     }
   }, [dataRequirements]);
 
@@ -1346,6 +1462,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             fsHeight,
             true,
             focusedChart.qcLimitsMode || false,
+            undefined,
+            undefined,
+            table.rows,
           );
 
           // Clear container before rendering
@@ -1361,7 +1480,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 source: true,
                 editor: true,
               },
-              renderer: "svg",
+              renderer: "canvas",
               downloadFileName: `chart-${focusedChart.id}`,
             },
           ).catch((error) => {
@@ -1840,6 +1959,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             chartHeight={chartHeight}
             scaleFactor={localScaleFactor}
             chartUnavailable={chartUnavailable}
+            originalTable={table.rows}
           />
         </Box>
         {chartActionItems}

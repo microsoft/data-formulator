@@ -493,9 +493,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
   // reference to states
   const tables = useSelector((state: DataFormulatorState) => state.tables);
   const config = useSelector((state: DataFormulatorState) => state.config);
-  const agentRules = useSelector(
-    (state: DataFormulatorState) => state.agentRules,
-  );
+  const agentRules = useSelector(dfSelectors.getAgentRules);
   let existMultiplePossibleBaseTables =
     tables.filter((t) => t.derive == undefined || t.anchored).length > 1;
 
@@ -543,6 +541,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
 
   const conceptShelfItems = useSelector(
     (state: DataFormulatorState) => state.conceptShelfItems,
+  );
+
+  const pendingEncodings = useSelector(
+    (state: DataFormulatorState) => state.pendingEncodings,
   );
 
   let currentTable = getDataTable(chart, tables, allCharts, conceptShelfItems);
@@ -755,6 +757,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
               80,
               false,
               chart.qcLimitsMode || false,
+              undefined,
+              undefined,
+              currentTable.rows,
             ),
           )
         : undefined;
@@ -1798,17 +1803,37 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
             color="primary"
             size="small"
             onClick={() => {
-              dispatch(
-                dfActions.updateChartQcLimitsMode({ chartId, qcLimitsMode }),
+              // Check what actually changed
+              const qcLimitsModeChanged = chart.qcLimitsMode !== qcLimitsMode;
+              const chartDimensionsChanged =
+                chart.chartWidth !== chartWidth ||
+                chart.chartHeight !== chartHeight;
+              const hasEncodingChanges = pendingEncodings.some(
+                (pe) => pe.chartId === chartId,
               );
-              dispatch(
-                dfActions.updateChartDimensions({
-                  chartId,
-                  width: chartWidth,
-                  height: chartHeight,
-                }),
-              );
-              dispatch(dfActions.applyAllPendingEncodings());
+
+              // Only reload chart if encodings changed or qcLimitsMode changed
+              // If only dimensions changed, just update without reloading
+              if (qcLimitsModeChanged) {
+                dispatch(
+                  dfActions.updateChartQcLimitsMode({ chartId, qcLimitsMode }),
+                );
+              }
+
+              if (chartDimensionsChanged) {
+                dispatch(
+                  dfActions.updateChartDimensions({
+                    chartId,
+                    width: chartWidth,
+                    height: chartHeight,
+                  }),
+                );
+              }
+
+              // Only trigger full chart update if encodings or qc limits changed
+              if (hasEncodingChanges || qcLimitsModeChanged) {
+                dispatch(dfActions.applyAllPendingEncodings());
+              }
             }}
             sx={{
               textTransform: "none",
@@ -1901,7 +1926,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
             Drop us a message at{" "}
             <Typography
               component="a"
-              href="https://github.com/microsoft/data-formulator"
+              href="https://github.com/xxx"
               target="_blank"
               rel="noopener noreferrer"
               sx={{
@@ -1914,7 +1939,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({
                 },
               }}
             >
-              github.com/microsoft/data-formulator
+              github.com/xxx
             </Typography>{" "}
             if you have any questions or feedback.
           </Typography>

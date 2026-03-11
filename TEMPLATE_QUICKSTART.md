@@ -25,7 +25,7 @@ The system automatically detects new templates. If already running, restart for 
 
 ### Step 1: Open Report View
 
-Navigate to the **Report** tab in Data Formulator
+Navigate to the **Report** tab in GDIS AI Agent
 
 ### Step 2: Select Template
 

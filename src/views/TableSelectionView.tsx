@@ -603,13 +603,13 @@ export const TableUploadDialog: React.FC<TableUploadDialogProps> = ({
               <br />
               Link:{" "}
               <Link
-                href="https://github.com/microsoft/data-formulator"
+                href="https://github.com/xxx"
                 target="_blank"
                 rel="noopener noreferrer"
                 sx={{ color: "inherit", textDecoration: "underline" }}
                 onClick={(e) => e.stopPropagation()}
               >
-                https://github.com/microsoft/data-formulator
+                https://github.com/xxx
               </Link> */}
             </Box>
           ) : (
