@@ -50,9 +50,9 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
         let rowData = [];
         if (targetTable) {
             if (targetTable.virtual) {
-                rowData = targetTable.rows;
+                rowData = targetTable.rows.filter(Boolean);
             } else {
-                rowData = targetTable.rows;
+                rowData = targetTable.rows.filter(Boolean);
                 rowData = rowData.map((r: any, i: number) => ({ ...r, "#rowId": i }));
             }
         }
@@ -66,7 +66,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
             if (name === "#rowId") return { minWidth: 10, width: 40 }; // Default for row ID column
             
             // Get all values for this column from sampled rows
-            const values = sampledRows.map(row => String(row[name] || ''));
+            const values = sampledRows.filter(Boolean).map(row => String(row[name] || ''));
             
             // Estimate width based on content length (simple approach)
             const avgLength = values.length > 0 

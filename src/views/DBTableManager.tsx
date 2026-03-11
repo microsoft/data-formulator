@@ -414,7 +414,7 @@ export const DataLoaderForm: React.FC<{
     const previewTable: DictTable | null = useMemo(() => {
         if (!selectedPreviewTable || !tableMetadata[selectedPreviewTable]) return null;
         const metadata = tableMetadata[selectedPreviewTable];
-        const sampleRows = metadata.sample_rows || [];
+        const sampleRows = (metadata.sample_rows || []).filter(Boolean);
         const columns = metadata.columns || [];
         const names = columns.map((c: any) => c.name);
         return {
@@ -644,7 +644,7 @@ export const DataLoaderForm: React.FC<{
                                         }
                                     }
 
-                                    const sampleRows = metadata.sample_rows || [];
+                                    const sampleRows = (metadata.sample_rows || []).filter(Boolean);
                                     const columns = metadata.columns || [];
                                     const tableObj: DictTable = {
                                         id: tableName.split('.').pop() || tableName,

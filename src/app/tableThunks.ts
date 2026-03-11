@@ -229,7 +229,7 @@ export const loadTable = createAsyncThunk<
                     });
                     const data = await response.json();
                     if (data.status === 'success') {
-                        const rows = data.rows;
+                        const rows = (data.rows || []).filter(Boolean);
                         const names = rows.length > 0 ? Object.keys(rows[0]) : [];
                         const totalCount: number = data.total_row_count ?? rows.length;
                         originalRowCount = totalCount;
