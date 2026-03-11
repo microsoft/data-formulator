@@ -86,7 +86,11 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             return { valid: false, message: 'No data found in the uploaded content.' };
         }
 
-        const newColumns = Object.keys(newRows[0]).sort();
+        const firstRow = newRows.find(Boolean);
+        if (!firstRow) {
+            return { valid: false, message: 'No valid data rows found in the uploaded content.' };
+        }
+        const newColumns = Object.keys(firstRow).sort();
         const existingColumns = [...table.names].sort();
 
         if (newColumns.length !== existingColumns.length) {

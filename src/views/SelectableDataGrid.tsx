@@ -262,7 +262,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
 
     let theme = useTheme();
 
-    const [rowsToDisplay, setRowsToDisplay] = React.useState<any[]>(rows);
+    const [rowsToDisplay, setRowsToDisplay] = React.useState<any[]>((rows || []).filter(Boolean));
     
     // Initialize as true to cover the initial mount delay
     const [isLoading, setIsLoading] = React.useState<boolean>(true);
@@ -273,10 +273,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
     }, []);
 
     React.useEffect(() => {
+        const safeRows = (rows || []).filter(Boolean);
         if (orderBy && !isLoading) {
-            setRowsToDisplay(rows.slice().sort(getComparator(order, orderBy)));
+            setRowsToDisplay(safeRows.slice().sort(getComparator(order, orderBy)));
         } else {
-            setRowsToDisplay(rows);
+            setRowsToDisplay(safeRows);
         }
     }, [rows, order, orderBy])
 
@@ -358,7 +359,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                setRowsToDisplay(data.rows);
+                setRowsToDisplay((data.rows || []).filter(Boolean));
             }
             // Set loading to false when done
             setIsLoading(false);
@@ -451,6 +452,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                         )
                     }}
                     itemContent={(rowIndex, data) => {
+                        if (!data) return null;
                         return (
                             <>
                                 {columnDefs.map((column, colIndex) => {

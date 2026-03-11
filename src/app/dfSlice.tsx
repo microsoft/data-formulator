@@ -655,11 +655,12 @@ export const dataFormulatorSlice = createSlice({
                 if (t.id == tableId) {
                     // Update metadata type inference based on new data
                     let newMetadata = { ...t.metadata };
+                    const safeNewRows = newRows.filter(Boolean);
                     for (let name of t.names) {
-                        if (newRows.length > 0 && name in newRows[0]) {
+                        if (safeNewRows.length > 0 && name in safeNewRows[0]) {
                             newMetadata[name] = {
                                 ...newMetadata[name],
-                                type: inferTypeFromValueArray(newRows.map(r => r[name])),
+                                type: inferTypeFromValueArray(safeNewRows.map(r => r[name])),
                             };
                         }
                     }
@@ -667,7 +668,7 @@ export const dataFormulatorSlice = createSlice({
                     const updatedSource = t.source ? { ...t.source, lastRefreshed: Date.now() } : undefined;
                     // Use provided content hash (from backend for virtual/DB tables) or compute locally
                     // For virtual tables, backend hash reflects full table; for stream tables, compute from actual rows
-                    const newContentHash = providedContentHash || computeContentHash(newRows, t.names);
+                    const newContentHash = providedContentHash || computeContentHash(safeNewRows, t.names);
                     return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash };
                 }
                 return t;
@@ -684,16 +685,17 @@ export const dataFormulatorSlice = createSlice({
                 const newRows = update.rows;
                 const providedContentHash = update.contentHash;
                 let newMetadata = { ...t.metadata };
+                const safeNewRows = newRows.filter(Boolean);
                 for (let name of t.names) {
-                    if (newRows.length > 0 && name in newRows[0]) {
+                    if (safeNewRows.length > 0 && name in safeNewRows[0]) {
                         newMetadata[name] = {
                             ...newMetadata[name],
-                            type: inferTypeFromValueArray(newRows.map(r => r[name])),
+                            type: inferTypeFromValueArray(safeNewRows.map(r => r[name])),
                         };
                     }
                 }
                 const updatedSource = t.source ? { ...t.source, lastRefreshed: Date.now() } : undefined;
-                const newContentHash = providedContentHash || computeContentHash(newRows, t.names);
+                const newContentHash = providedContentHash || computeContentHash(safeNewRows, t.names);
                 return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash };
             });
         },
@@ -751,7 +753,7 @@ export const dataFormulatorSlice = createSlice({
             }
 
             // Create new rows with the column positioned after the first parent
-            let newRows = table.rows.map((row, i) => {
+            let newRows = table.rows.filter(Boolean).map((row, i) => {
                 let newRow: {[key: string]: any} = {};
                 for (let key of Object.keys(row)) {
                     newRow[key] = row[key];
@@ -782,7 +784,7 @@ export const dataFormulatorSlice = createSlice({
             if (fieldIndex != -1) {
                 table.names = table.names.slice(0, fieldIndex).concat(table.names.slice(fieldIndex + 1));
                 delete table.metadata[fieldName];
-                table.rows = table.rows.map(r => {
+                table.rows = table.rows.filter(Boolean).map(r => {
                     delete r[fieldName];
                     return r;
                 });

@@ -158,17 +158,18 @@ export function createDictTable(
     source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
     
-    let names = Object.keys(rows[0])
+    const safeRows = rows.filter(Boolean);
+    let names = safeRows.length > 0 ? Object.keys(safeRows[0]) : [];
 
     return {
         id,
         displayId: `${id}`,
         names, 
-        rows,
+        rows: safeRows,
         metadata: names.reduce((acc, name) => ({
             ...acc,
             [name]: {
-                type: inferTypeFromValueArray(rows.map(r => r[name])),
+                type: inferTypeFromValueArray(safeRows.map(r => r[name])),
                 semanticType: "",
                 levels: []
             }

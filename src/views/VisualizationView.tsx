@@ -119,11 +119,12 @@ export let renderTableChart = (
         return encoding.fieldID != undefined;
     }).map(([channel, encoding]) => conceptShelfItems.find(f => f.id == encoding.fieldID) as FieldItem);
 
-    if (fields.length == 0) {
-        fields = conceptShelfItems.filter(f => Object.keys(extTable[0]).includes(f.name));
+    const safeExtTable = extTable.filter(Boolean);
+    if (fields.length == 0 && safeExtTable.length > 0) {
+        fields = conceptShelfItems.filter(f => Object.keys(safeExtTable[0]).includes(f.name));
     }
 
-    let rows = extTable.map(row => Object.fromEntries(fields.filter(f => Object.keys(row).includes(f.name)).map(f => [f.name, row[f.name]])))
+    let rows = safeExtTable.map(row => Object.fromEntries(fields.filter(f => Object.keys(row).includes(f.name)).map(f => [f.name, row[f.name]])))
 
     let colDefs = fields.map(field => {
         let name = field.name;
@@ -193,7 +194,8 @@ export let checkChartAvailabilityOnPreparedData = (chart: Chart, conceptShelfIte
                 }
                 return undefined;
             }).filter((f): f is string => f != undefined);
-    return visFieldsFinalNames.length > 0 && visTableRows.length > 0 && visFieldsFinalNames.every(name => Object.keys(visTableRows[0]).includes(name));
+    const firstRow = visTableRows.find(Boolean);
+    return visFieldsFinalNames.length > 0 && firstRow != null && visFieldsFinalNames.every(name => Object.keys(firstRow).includes(name));
 }
 
 export let checkChartAvailability = (chart: Chart, conceptShelfItems: FieldItem[], visTableRows: any[]) => {
@@ -201,7 +203,8 @@ export let checkChartAvailability = (chart: Chart, conceptShelfItems: FieldItem[
             .filter(key => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined)
             .map(key => chart.encodingMap[key as keyof EncodingMap].fieldID);
     let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
-    return visFields.length > 0 && visTableRows.length > 0 && visFields.every(f => Object.keys(visTableRows[0]).includes(f.name));
+    const firstRow = visTableRows.find(Boolean);
+    return visFields.length > 0 && firstRow != null && visFields.every(f => Object.keys(firstRow).includes(f.name));
 }
 
 export let SampleSizeEditor: FC<{
@@ -592,10 +595,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let createVisTableRowsLocal = (rows: any[]) => {
         if (visFields.length == 0) {
-            return rows;
+            return rows.filter(Boolean);
         }
         
-        let filteredRows = rows.map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
+        let filteredRows = rows.filter(Boolean).map(row => Object.fromEntries(visFields.filter(f => table.names.includes(f.name)).map(f => [f.name, row[f.name]])));
         let visTable = prepVisTable(filteredRows, conceptShelfItems, focusedChart.encodingMap);
 
         if (visTable.length > serverConfig.MAX_DISPLAY_ROWS) {
@@ -664,7 +667,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 if (currentRequestRef.current === requestId) {
                     const versionId = computeVersionId();
                     if (data.status == "success") {
-                        setVisTableRows(data.rows);
+                        setVisTableRows((data.rows || []).filter(Boolean));
                         setVisTableTotalRowCount(data.total_row_count);
                         setDataVersion(versionId);
                         // Cache for instant reuse on chart revisit

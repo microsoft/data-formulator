@@ -86,6 +86,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
                     </TableHead>
                     <TableBody>
                         {rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                            .filter(Boolean)
                             .map((row, i) => {
                                 return (
                                     <TableRow hover tabIndex={-1} key={i} sx={{ background: i % 2 == 0 ? '#F0F0F0' : "none" }}>

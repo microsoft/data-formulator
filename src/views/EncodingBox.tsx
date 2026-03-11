@@ -279,7 +279,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     let stackOpt: any[] = [];
 
-    let domainItems = (field && activeTable) ? activeTable.rows.map(row => row[field!.name]) : [];
+    let domainItems = (field && activeTable) ? activeTable.rows.filter(Boolean).map(row => row[field!.name]) : [];
     domainItems = [...new Set(domainItems)];
 
     let autoSortEnabled = field && fieldMetadata?.type == Type.String && domainItems.length < 200;
