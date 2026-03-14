@@ -31,3 +31,4 @@ boto3
 google-cloud-bigquery
 google-auth
 db-dtypes
+-e .
