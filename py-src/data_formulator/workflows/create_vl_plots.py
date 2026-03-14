@@ -29,7 +29,7 @@ def field_metadata_to_semantic_types(
     and has the shape::
 
         {
-            "Revenue": {"semantic_type": "Revenue", "unit": "USD"},
+            "Revenue": {"semantic_type": "Amount", "unit": "USD"},
             "Month":   {"semantic_type": "Month"},
         }
 
@@ -633,7 +633,7 @@ def assemble_vegailte_chart(
     - max_nominal_values: maximum number of values for nominal axes before truncating
     - config: optional chart configuration (binCount, innerRadius, colorScheme, etc.)
     - semantic_types: optional dict mapping field names to semantic type strings or
-      annotation dicts {"type": "Revenue", "unit": "USD", "intrinsic_domain": [0, 100]}
+      annotation dicts {"type": "Amount", "unit": "USD", "intrinsic_domain": [0, 100]}
     
     Returns:
     - dict: Vega-Lite specification

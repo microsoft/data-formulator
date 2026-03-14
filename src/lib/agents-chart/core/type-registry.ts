@@ -33,7 +33,7 @@ export type T0Family = 'Temporal' | 'Measure' | 'Discrete' | 'Geographic' | 'Cat
 export type T1Category =
     | 'DateTime' | 'DateGranule' | 'Duration'
     | 'Amount' | 'Physical' | 'Proportion' | 'SignedMeasure' | 'GenericMeasure'
-    | 'Rank' | 'Score' | 'Index'
+    | 'Rank' | 'Score'
     | 'GeoCoordinate' | 'GeoPlace'
     | 'Entity' | 'Coded' | 'Binned'
     | 'ID';
@@ -88,9 +88,9 @@ const TYPE_REGISTRY: Record<string, TypeRegistryEntry> = {
     // --- Temporal: DateGranule ---
     Year:          { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['temporal', 'ordinal'], aggRole: 'dimension', domainShape: 'open',    diverging: 'none', formatClass: 'integer',        zeroBaseline: 'arbitrary', zeroPad: 0.03 },
     Quarter:       { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['ordinal'],            aggRole: 'dimension', domainShape: 'cyclic',  diverging: 'none', formatClass: 'plain',          zeroBaseline: 'none', zeroPad: 0 },
-    Month:         { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['ordinal'],            aggRole: 'dimension', domainShape: 'cyclic',  diverging: 'none', formatClass: 'plain',          zeroBaseline: 'arbitrary', zeroPad: 0 },
+    Month:         { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['ordinal'],            aggRole: 'dimension', domainShape: 'cyclic',  diverging: 'none', formatClass: 'plain',          zeroBaseline: 'none', zeroPad: 0 },
     Week:          { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['ordinal'],            aggRole: 'dimension', domainShape: 'cyclic',  diverging: 'none', formatClass: 'plain',          zeroBaseline: 'none', zeroPad: 0 },
-    Day:           { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['ordinal'],            aggRole: 'dimension', domainShape: 'cyclic',  diverging: 'none', formatClass: 'plain',          zeroBaseline: 'arbitrary', zeroPad: 0 },
+    Day:           { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['ordinal'],            aggRole: 'dimension', domainShape: 'cyclic',  diverging: 'none', formatClass: 'plain',          zeroBaseline: 'none', zeroPad: 0 },
     Hour:          { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['ordinal'],            aggRole: 'dimension', domainShape: 'cyclic',  diverging: 'none', formatClass: 'integer',        zeroBaseline: 'arbitrary', zeroPad: 0 },
     YearMonth:     { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['temporal', 'ordinal'], aggRole: 'dimension', domainShape: 'open',   diverging: 'none', formatClass: 'plain',          zeroBaseline: 'none', zeroPad: 0 },
     YearQuarter:   { t0: 'Temporal', t1: 'DateGranule', visEncodings: ['temporal', 'ordinal'], aggRole: 'dimension', domainShape: 'open',   diverging: 'none', formatClass: 'plain',          zeroBaseline: 'none', zeroPad: 0 },
@@ -103,8 +103,6 @@ const TYPE_REGISTRY: Record<string, TypeRegistryEntry> = {
     // --- Measure: Amount ---
     Amount:        { t0: 'Measure', t1: 'Amount', visEncodings: ['quantitative'],          aggRole: 'additive',   domainShape: 'open',    diverging: 'none',        formatClass: 'currency',   zeroBaseline: 'meaningful', zeroPad: 0 },
     Price:         { t0: 'Measure', t1: 'Amount', visEncodings: ['quantitative'],          aggRole: 'intensive',  domainShape: 'open',    diverging: 'none',        formatClass: 'currency',   zeroBaseline: 'meaningful', zeroPad: 0 },
-    Revenue:       { t0: 'Measure', t1: 'Amount', visEncodings: ['quantitative'],          aggRole: 'additive',   domainShape: 'open',    diverging: 'none',        formatClass: 'currency',   zeroBaseline: 'meaningful', zeroPad: 0 },
-    Cost:          { t0: 'Measure', t1: 'Amount', visEncodings: ['quantitative'],          aggRole: 'additive',   domainShape: 'open',    diverging: 'none',        formatClass: 'currency',   zeroBaseline: 'meaningful', zeroPad: 0 },
 
     // --- Measure: Physical ---
     Quantity:      { t0: 'Measure', t1: 'Physical', visEncodings: ['quantitative'],        aggRole: 'additive',   domainShape: 'open',    diverging: 'none',        formatClass: 'unit-suffix', zeroBaseline: 'meaningful', zeroPad: 0 },
@@ -126,8 +124,6 @@ const TYPE_REGISTRY: Record<string, TypeRegistryEntry> = {
     // --- Discrete ---
     Rank:          { t0: 'Discrete', t1: 'Rank',  visEncodings: ['ordinal'],               aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'integer',    zeroBaseline: 'arbitrary', zeroPad: 0.08 },
     Score:         { t0: 'Discrete', t1: 'Score', visEncodings: ['quantitative', 'ordinal'], aggRole: 'intensive', domainShape: 'bounded', diverging: 'conditional', formatClass: 'decimal',    zeroBaseline: 'contextual', zeroPad: 0.05 },
-    Rating:        { t0: 'Discrete', t1: 'Score', visEncodings: ['quantitative', 'ordinal'], aggRole: 'intensive', domainShape: 'bounded', diverging: 'conditional', formatClass: 'decimal',    zeroBaseline: 'contextual', zeroPad: 0.05 },
-    Index:         { t0: 'Discrete', t1: 'Index', visEncodings: ['ordinal'],               aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'integer',    zeroBaseline: 'arbitrary', zeroPad: 0.08 },
     ID:            { t0: 'Identifier', t1: 'ID',  visEncodings: ['nominal'],               aggRole: 'identifier', domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'arbitrary', zeroPad: 0 },
 
     // --- Geographic ---
@@ -138,27 +134,20 @@ const TYPE_REGISTRY: Record<string, TypeRegistryEntry> = {
     City:          { t0: 'Geographic', t1: 'GeoPlace', visEncodings: ['nominal'],         aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
     Region:        { t0: 'Geographic', t1: 'GeoPlace', visEncodings: ['nominal'],         aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
     Address:       { t0: 'Geographic', t1: 'GeoPlace', visEncodings: ['nominal'],         aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
-    ZipCode:       { t0: 'Geographic', t1: 'GeoPlace', visEncodings: ['nominal'],         aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
-
+    ZipCode:       { t0: 'Geographic', t1: 'GeoPlace', visEncodings: ['nominal'],         aggRole: 'identifier', domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
     // --- Categorical: Entity ---
-    PersonName:    { t0: 'Categorical', t1: 'Entity', visEncodings: ['nominal'],           aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
-    Company:       { t0: 'Categorical', t1: 'Entity', visEncodings: ['nominal'],           aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
-    Product:       { t0: 'Categorical', t1: 'Entity', visEncodings: ['nominal'],           aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
     Category:      { t0: 'Categorical', t1: 'Entity', visEncodings: ['nominal'],           aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
     Name:          { t0: 'Categorical', t1: 'Entity', visEncodings: ['nominal'],           aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
 
     // --- Categorical: Coded ---
     Status:        { t0: 'Categorical', t1: 'Coded', visEncodings: ['nominal'],            aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
-    Type:          { t0: 'Categorical', t1: 'Coded', visEncodings: ['nominal'],            aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
     Boolean:       { t0: 'Categorical', t1: 'Coded', visEncodings: ['nominal'],            aggRole: 'dimension',  domainShape: 'fixed',   diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
     Direction:     { t0: 'Categorical', t1: 'Coded', visEncodings: ['ordinal', 'nominal'], aggRole: 'dimension',  domainShape: 'cyclic',  diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
 
     // --- Categorical: Binned ---
     Range:         { t0: 'Categorical', t1: 'Binned', visEncodings: ['ordinal'],           aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
-    AgeGroup:      { t0: 'Categorical', t1: 'Binned', visEncodings: ['ordinal'],           aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
 
     // --- Fallbacks ---
-    String:        { t0: 'Categorical', t1: 'Entity', visEncodings: ['nominal'],           aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
     Unknown:       { t0: 'Categorical', t1: 'Entity', visEncodings: ['nominal'],           aggRole: 'dimension',  domainShape: 'open',    diverging: 'none',        formatClass: 'plain',      zeroBaseline: 'none', zeroPad: 0 },
 };
 

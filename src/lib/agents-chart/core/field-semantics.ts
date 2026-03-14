@@ -49,7 +49,7 @@ export type { TypeRegistryEntry } from './type-registry';
  * Enriched semantic annotation from LLM or user.
  */
 export interface SemanticAnnotation {
-    /** The T2 semantic type string (e.g., "Revenue", "Rating", "Month") */
+    /** The T2 semantic type string (e.g., "Amount", "Score", "Month") */
     semanticType: string;
 
     /**
@@ -195,8 +195,8 @@ export function toTypeString(input: string | SemanticAnnotation | undefined): st
  * consistent SemanticAnnotation.
  *
  * Accepts:
- *   "Revenue"                                          → { semanticType: "Revenue" }
- *   { semanticType: "Rating", intrinsicDomain: [1,5] } → as-is
+ *   "Amount"                                          → { semanticType: "Amount" }
+ *   { semanticType: "Score", intrinsicDomain: [1,5] }  → as-is
  *   undefined / ""                                     → { semanticType: "Unknown" }
  */
 export function normalizeAnnotation(
@@ -350,30 +350,36 @@ export function resolveFormat(
             }
             const rep = detectPercentageRepresentation(nums);
             if (rep === '0-1') {
-                // d3's .% format multiplies by 100 automatically
+                // d3's .% format multiplies by 100 automatically.
+                // Use ~ (trim trailing zeros) so VL-generated axis ticks like
+                // 0.2 → "20%" rather than "20.00%" with a fixed .2% pattern.
                 const p = detectPrecision(nums);
-                // After ×100 we still need (p-2) decimals, minimum 0
                 const axisP = Math.max(0, p - 2);
                 const tipP  = Math.min(axisP + 1, 4);
                 return {
-                    format:  { pattern: `.${axisP}%` },
+                    format:  { pattern: `.${axisP}~%` },
                     tooltipFormat: { pattern: `.${tipP}%` },
                 };
             }
-            // Whole-number percentage (0–100): use data precision
+            // Whole-number percentage (0–100).
+            // Axis: ~ trims zeros so clean ticks (20) show as "20%" not "20.0%".
+            // Tooltip: full data precision.
+            const p = detectPrecision(nums);
             return {
-                format:  { pattern: precisionFormat(nums, false), suffix: '%' },
+                format:  { pattern: `.${p}~f`, suffix: '%' },
                 tooltipFormat: { pattern: precisionFormat(nums, false), suffix: '%' },
             };
         }
 
         case 'signed-percent': {
-            // Without an explicit intrinsicDomain we cannot reliably tell
-            // whether values are fractional 0-1 or whole-number 0-100, so
-            // fall back to plain signed formatting to avoid misinterpretation.
+            // Axis labels don't need explicit + sign — VL shows - on negatives
+            // naturally.  Forcing + on positives is visual noise and fragile
+            // (e.g. +~g breaks with certain Vega/d3-format versions for larger
+            // values → scientific notation like +1.2e2).
+            // Mirror the unsigned `percent` paths for axis; keep + only in tooltip.
             if (!annotation.intrinsicDomain) {
                 return {
-                    format:  { pattern: precisionFormat(nums, true, '+') },
+                    format:  {},
                     tooltipFormat: { pattern: precisionFormat(nums, true, '+') },
                 };
             }
@@ -383,21 +389,28 @@ export function resolveFormat(
                 const axisP = Math.max(0, p - 2);
                 const tipP  = Math.min(axisP + 1, 4);
                 return {
-                    format:  { pattern: `+.${axisP}%` },
+                    format:  { pattern: `.${axisP}~%` },
                     tooltipFormat: { pattern: `+.${tipP}%` },
                 };
             }
+            // Whole-number: axis same as unsigned percent, tooltip adds +.
+            const p = detectPrecision(nums);
             return {
-                format:  { pattern: precisionFormat(nums, false, '+'), suffix: '%' },
+                format:  { pattern: `.${p}~f`, suffix: '%' },
                 tooltipFormat: { pattern: precisionFormat(nums, false, '+'), suffix: '%' },
             };
         }
 
-        case 'signed-decimal':
+        case 'signed-decimal': {
+            // Axis ticks don't need + sign — VL shows - on negatives naturally.
+            // Defer entirely to VL default (same as `decimal`), which adapts
+            // precision and avoids scientific notation for typical ranges.
+            // Only the tooltip (showing actual data values) gets signed precision.
             return {
-                format:  { pattern: precisionFormat(nums, false, '+') },
+                format:  {},
                 tooltipFormat: { pattern: precisionFormat(nums, false, '+') },
             };
+        }
 
         case 'unit-suffix': {
             const sfx = unitSuffix ?? '';
@@ -789,8 +802,8 @@ export function resolveTickConstraint(
         return tc;
     }
 
-    // Score/Rating with bounded domain → integer ticks
-    if ((semanticType === 'Score' || semanticType === 'Rating') && domain) {
+    // Score with bounded domain → integer ticks
+    if (semanticType === 'Score' && domain) {
         const span = domain[1] - domain[0];
         const tc: TickConstraint = { integersOnly: true, minStep: 1 };
         if (span <= 20 && span > 0) {
@@ -1008,8 +1021,8 @@ export function resolveBinningSuggested(
     // Small bounded domains have too few values to bin
     if (domain && (domain[1] - domain[0]) <= 20) return false;
 
-    // Rating/Score with known small range
-    if (semanticType === 'Rating' && !domain) return false;
+    // Score with known small range
+    if (semanticType === 'Score' && !domain) return false;
 
     return true;
 }

@@ -46,21 +46,21 @@ Choose the most specific type that fits. Only annotate fields used in chart enco
 | Category | Types |
 |---|---|
 | Temporal | DateTime, Date, Time, Timestamp, Year, Quarter, Month, Week, Day, Hour, YearMonth, YearQuarter, YearWeek, Decade, Duration |
-| Monetary measures | Amount, Price, Revenue, Cost |
+| Monetary measures | Amount, Price |
 | Physical measures | Quantity, Temperature |
 | Proportion | Percentage |
 | Signed/diverging | Profit, PercentageChange, Sentiment, Correlation |
 | Generic measures | Count, Number |
-| Discrete numeric | Rank, Score, Rating, Index |
+| Discrete numeric | Rank, Score |
 | Identifier | ID |
 | Geographic | Latitude, Longitude, Country, State, City, Region, Address, ZipCode |
-| Entity names | PersonName, Company, Product, Category, Name |
-| Coded categorical | Status, Type, Boolean, Direction |
-| Binned ranges | Range, AgeGroup |
-| Fallback | String, Unknown |
+| Entity names | Category, Name |
+| Coded categorical | Status, Boolean, Direction |
+| Binned ranges | Range |
+| Fallback | Unknown |
 
 Key guidelines:
-- Use **Revenue/Cost** for summed monetary totals, **Price** for per-unit prices, **Profit** for values that can be negative.
+- Use **Amount** for summed monetary totals, **Price** for per-unit prices, **Profit** for values that can be negative.
 - Use **Temperature** (not Quantity) for temperature — it has special diverging behavior.
 - Use **Year** (not Number) for columns like "year" with values 2020, 2021.'''
 
@@ -136,7 +136,7 @@ You will produce two outputs: a JSON spec (```json```) and a Python script (```p
         "config": {{{{}}}}       // optional styling
     }}}},
     "field_metadata": {{{{     // semantic type for each encoding field
-        "<field>": "Type"    // from [SEMANTIC TYPE REFERENCE]
+        "<field>": "Category"    // from [SEMANTIC TYPE REFERENCE]
     }}}},
     "output_variable": ""   // descriptive snake_case name (e.g. "sales_by_region"), not "result_df"
 }}}}

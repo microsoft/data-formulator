@@ -60,7 +60,7 @@ function genRevenueFormatTest(): TestCase {
         fields: [makeField('city'), makeField('revenue')],
         metadata: {
             city:    { type: Type.String, semanticType: 'City',    levels: CITIES },
-            revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+            revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
         },
         encodingMap: {
             x: makeEncodingItem('city'),
@@ -151,12 +151,12 @@ function genRatingDomainTest(): TestCase {
         fields: [makeField('product'), makeField('rating'), makeField('reviews')],
         metadata: {
             product: { type: Type.String, semanticType: 'Category', levels: products },
-            rating:  { type: Type.Number, semanticType: 'Rating',   levels: [] },
+            rating:  { type: Type.Number, semanticType: 'Score',   levels: [] },
             reviews: { type: Type.Number, semanticType: 'Count',    levels: [] },
         },
         // Enriched annotation for rating — provides intrinsic domain
         semanticAnnotations: {
-            rating: { semanticType: 'Rating', intrinsicDomain: [1, 5] },
+            rating: { semanticType: 'Score', intrinsicDomain: [1, 5] },
         },
         encodingMap: {
             x: makeEncodingItem('reviews'),
@@ -351,7 +351,7 @@ function genRevenueVsPercentTest(): TestCase {
         fields: [makeField('city'), makeField('revenue'), makeField('growth_rate')],
         metadata: {
             city:        { type: Type.String, semanticType: 'City',       levels: CITIES },
-            revenue:     { type: Type.Number, semanticType: 'Revenue',    levels: [] },
+            revenue:     { type: Type.Number, semanticType: 'Amount',    levels: [] },
             growth_rate: { type: Type.Number, semanticType: 'Percentage', levels: [] },
         },
         semanticAnnotations: {
@@ -449,10 +449,10 @@ function genRatingBarDomainTest(): TestCase {
         fields: [makeField('restaurant'), makeField('avg_rating')],
         metadata: {
             restaurant: { type: Type.String, semanticType: 'Category', levels: restaurants },
-            avg_rating: { type: Type.Number, semanticType: 'Rating',   levels: [] },
+            avg_rating: { type: Type.Number, semanticType: 'Score',   levels: [] },
         },
         semanticAnnotations: {
-            avg_rating: { semanticType: 'Rating', intrinsicDomain: [1, 5] },
+            avg_rating: { semanticType: 'Score', intrinsicDomain: [1, 5] },
         },
         encodingMap: {
             x: makeEncodingItem('restaurant'),
@@ -492,7 +492,7 @@ function genRevenueBarZeroTest(): TestCase {
         fields: [makeField('product'), makeField('revenue')],
         metadata: {
             product: { type: Type.String, semanticType: 'Category', levels: products },
-            revenue: { type: Type.Number, semanticType: 'Revenue',  levels: [] },
+            revenue: { type: Type.Number, semanticType: 'Amount',  levels: [] },
         },
         encodingMap: {
             x: makeEncodingItem('product'),
@@ -907,7 +907,7 @@ function genMonthCanonicalOrderTest(): TestCase {
         fields: [makeField('month'), makeField('sales')],
         metadata: {
             month: { type: Type.String, semanticType: 'Month',    levels: shuffledMonths },
-            sales: { type: Type.Number, semanticType: 'Revenue',  levels: [] },
+            sales: { type: Type.Number, semanticType: 'Amount',  levels: [] },
         },
         encodingMap: {
             x: makeEncodingItem('month'),
@@ -1091,7 +1091,7 @@ function genRevenueSequentialColorTest(): TestCase {
         metadata: {
             region:  { type: Type.String, semanticType: 'Category', levels: regions },
             quarter: { type: Type.String, semanticType: 'Quarter',  levels: ['Q1', 'Q2', 'Q3', 'Q4'] },
-            revenue: { type: Type.Number, semanticType: 'Revenue',  levels: [] },
+            revenue: { type: Type.Number, semanticType: 'Amount',  levels: [] },
         },
         encodingMap: {
             x: makeEncodingItem('region'),
@@ -1300,7 +1300,7 @@ function genQuarterCanonicalOrderTest(): TestCase {
         metadata: {
             quarter: { type: Type.String, semanticType: 'Quarter',  levels: shuffledQuarters },
             region:  { type: Type.String, semanticType: 'Category', levels: ['North', 'South', 'East'] },
-            sales:   { type: Type.Number, semanticType: 'Revenue',  levels: [] },
+            sales:   { type: Type.Number, semanticType: 'Amount',  levels: [] },
         },
         encodingMap: {
             x:     makeEncodingItem('quarter'),
@@ -1344,7 +1344,7 @@ function genCostCurrencyFormatTest(): TestCase {
         fields: [makeField('department'), makeField('annual_cost')],
         metadata: {
             department:  { type: Type.String, semanticType: 'Category', levels: departments },
-            annual_cost: { type: Type.Number, semanticType: 'Cost',     levels: [] },
+            annual_cost: { type: Type.Number, semanticType: 'Amount',     levels: [] },
         },
         encodingMap: {
             x: makeEncodingItem('department'),
@@ -1435,12 +1435,12 @@ function genAgeGroupOrdinalTest(): TestCase {
         data,
         fields: [makeField('age_group'), makeField('population'), makeField('avg_income')],
         metadata: {
-            age_group:  { type: Type.String, semanticType: 'AgeGroup', levels: ageGroups },
+            age_group:  { type: Type.String, semanticType: 'Range', levels: ageGroups },
             population: { type: Type.Number, semanticType: 'Count',    levels: [] },
             avg_income: { type: Type.Number, semanticType: 'Amount',   levels: [] },
         },
         semanticAnnotations: {
-            age_group: { semanticType: 'AgeGroup', sortOrder: ageGroups },
+            age_group: { semanticType: 'Range', sortOrder: ageGroups },
         },
         encodingMap: {
             x: makeEncodingItem('age_group'),
@@ -1547,20 +1547,18 @@ function genLongitudeDomainClampTest(): TestCase {
 }
 
 // ============================================================================
-// 32. Index — ordinal, NOT reversed (contrast with Rank)
-//     Semantic type: "Index" → ordinal encoding, ascending sort
+// 32. ID — nominal unique identifier (sequence numbers, row IDs)
+//     Semantic type: "ID" → nominal encoding
 //
-//     Unlike Rank (which reverses so #1 appears at top), Index is a
-//     sequence number (position, row number). Index 1 should appear first
-//     in data order — ascending, not reversed.
+//     Previously "Index" — removed because ID already covers row/sequence
+//     numbers, and quantitative index-like measures (Gini, BMI) are just Number.
 //
 //     WITHOUT this annotation:
-//       Treated as generic number → quantitative encoding. Index values
+//       Treated as generic number → quantitative encoding. Values
 //       like 1, 2, 3 would have fractional ticks and continuous axis.
 //
-//     WITH "Index":
-//       Ordinal encoding (no fractional values). Ascending sort direction.
-//       Integer ticks only. Contrast with Rank which reverses.
+//     WITH "ID":
+//       Nominal encoding. No aggregation. Used as a unique identifier.
 // ============================================================================
 
 function genIndexOrdinalTest(): TestCase {
@@ -1571,18 +1569,17 @@ function genIndexOrdinalTest(): TestCase {
     }));
 
     return {
-        title: 'Index Ordinal (Not Reversed)',
+        title: 'ID Sequence Number',
         description:
-            'Semantic type "Index" uses ordinal encoding with ascending sort. ' +
-            'Contrasts with Rank which reverses (best-first). Index is a plain ' +
-            'sequence: trial 1 → trial 10, no reversal. ' +
+            'Semantic type "ID" uses nominal encoding for unique identifiers. ' +
+            'Covers row numbers, sequence numbers, trial IDs. ' +
             'WITHOUT this: treated as quantitative with fractional ticks.',
-        tags: ['semantic', 'ordinal', 'index', 'ascending'],
+        tags: ['semantic', 'nominal', 'id', 'identifier'],
         chartType: 'Line Chart',
         data,
         fields: [makeField('trial_number'), makeField('response_time_ms')],
         metadata: {
-            trial_number:    { type: Type.Number, semanticType: 'Index',    levels: [] },
+            trial_number:    { type: Type.Number, semanticType: 'ID',       levels: [] },
             response_time_ms:{ type: Type.Number, semanticType: 'Duration', levels: [] },
         },
         semanticAnnotations: {
@@ -1790,7 +1787,7 @@ function genYearOrdinalDisambiguationTest(): TestCase {
         metadata: {
             year:    { type: Type.Number, semanticType: 'Year',     levels: years },
             region:  { type: Type.String, semanticType: 'Category', levels: ['North', 'South'] },
-            revenue: { type: Type.Number, semanticType: 'Revenue',  levels: [] },
+            revenue: { type: Type.Number, semanticType: 'Amount',  levels: [] },
         },
         encodingMap: {
             x:     makeEncodingItem('year'),
@@ -1839,7 +1836,7 @@ function genProfitColorDivergingTest(): TestCase {
         fields: [makeField('product'), makeField('revenue'), makeField('profit')],
         metadata: {
             product: { type: Type.String, semanticType: 'Category', levels: divisions },
-            revenue: { type: Type.Number, semanticType: 'Revenue',  levels: [] },
+            revenue: { type: Type.Number, semanticType: 'Amount',  levels: [] },
             profit:  { type: Type.Number, semanticType: 'Profit',   levels: [] },
         },
         encodingMap: {

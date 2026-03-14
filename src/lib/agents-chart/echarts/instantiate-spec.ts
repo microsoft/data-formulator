@@ -745,7 +745,7 @@ export function ecApplyLayoutToSpec(
         }
         const colorSemanticType = drivingColorChannel?.semanticAnnotation?.semanticType;
         const isRankLikeColor = !!colorSemanticType
-            && (colorSemanticType === 'Rank' || colorSemanticType === 'Index');
+            && colorSemanticType === 'Rank';
         const useEvenSpacing = !isRankLikeColor && (schemeType === 'sequential' || schemeType === 'diverging');
 
         // 特例：Regression 图表有「散点 + 趋势线」成对系列。

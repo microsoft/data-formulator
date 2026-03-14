@@ -124,6 +124,7 @@ export function computeLayout(
         stepPadding: stepPaddingVal = 0.1,
         maintainContinuousAxisRatio = false,
         continuousMarkCrossSection,
+        facetAspectRatioResistance = 0,
     } = options;
 
     const defaultChartWidth = canvasSize.width;
@@ -279,11 +280,51 @@ export function computeLayout(
         subplotHeight = defaultChartHeight;
     }
 
-    // --- Gas pressure stretch for continuous non-banded axes ---
+    // --- Facet aspect-ratio resistance (non-gas-pressure charts) ---
+    // When faceting compresses one dimension (e.g. width ÷ columns), the
+    // aspect ratio drifts.  Line/area charts are very sensitive to this.
+    // For charts entering the 2D gas pressure path, AR resistance is
+    // handled inside the ideal-then-squeeze logic below. This block
+    // only applies when both axes are NOT continuous-non-banded.
     const xIsContinuousNonBanded = xTotalNominalCount === 0 && xContinuousAsDiscrete === 0;
     const yIsContinuousNonBanded = yTotalNominalCount === 0 && yContinuousAsDiscrete === 0;
+    const bothContinuousNonBanded = xIsContinuousNonBanded && yIsContinuousNonBanded;
 
-    if (xIsContinuousNonBanded && yIsContinuousNonBanded) {
+    if (facetAspectRatioResistance > 0 && !bothContinuousNonBanded
+        && (facetCols > 1 || facetRows > 1)) {
+        const baseAR = defaultChartWidth / defaultChartHeight;
+        const facetAR = subplotWidth / subplotHeight;
+        const arDrift = facetAR / baseAR; // <1 when panel got relatively narrower
+
+        if (arDrift < 1) {
+            // Panel is narrower than base → shrink height to compensate
+            subplotHeight = Math.round(
+                Math.max(minContinuousSizeY, subplotHeight * Math.pow(arDrift, facetAspectRatioResistance)),
+            );
+        } else if (arDrift > 1) {
+            // Panel is wider than base → shrink width to compensate
+            subplotWidth = Math.round(
+                Math.max(minContinuousSizeX, subplotWidth * Math.pow(1 / arDrift, facetAspectRatioResistance)),
+            );
+        }
+    }
+
+    // --- Gas pressure stretch for continuous non-banded axes ---
+    //
+    // Design: per-subplot baseline → pressure → AR blend → fit.
+    //
+    //   Baseline: each subplot gets a fair share of the canvas with
+    //             facet elasticity applied (cols^e / cols).
+    //   Step 1 — Gas pressure measures crowding against the per-subplot
+    //            baseline and produces per-axis raw stretches.
+    //   Step 2 — Decide AR: blend gas-pressure AR (density asymmetry)
+    //            with banking AR (perceptual slope optimization) in
+    //            log space.  Distribute gas-pressure area into the
+    //            blended AR.
+    //   Step 3 — Fit into budget: uniform scale-down so neither axis
+    //            exceeds maxStretch, preserving the AR.
+
+    if (bothContinuousNonBanded) {
         const xCS = channelSemantics.x;
         const yCS = channelSemantics.y;
 
@@ -312,9 +353,26 @@ export function computeLayout(
                 const yMin = Math.min(...yNumeric);
                 const yMax = Math.max(...yNumeric);
 
+                // Expand to visual domain (include zero when axis starts at zero).
                 const xDomain: [number, number] = [xMin, xMax];
                 const yDomain: [number, number] = [yMin, yMax];
+                if (xCS.zero?.zero) {
+                    if (xDomain[0] > 0) xDomain[0] = 0;
+                    if (xDomain[1] < 0) xDomain[1] = 0;
+                }
+                if (yCS.zero?.zero) {
+                    if (yDomain[0] > 0) yDomain[0] = 0;
+                    if (yDomain[1] < 0) yDomain[1] = 0;
+                }
 
+                // Data-coverage guard: skip banking when zero dominates.
+                const xDataCoverage = (xDomain[1] - xDomain[0]) > 0
+                    ? (xMax - xMin) / (xDomain[1] - xDomain[0]) : 1;
+                const yDataCoverage = (yDomain[1] - yDomain[0]) > 0
+                    ? (yMax - yMin) / (yDomain[1] - yDomain[0]) : 1;
+                const BANKING_COVERAGE_THRESHOLD = 0.2;
+
+                // --- Gas pressure params ---
                 let gasPressureParams: GasPressureParams = DEFAULT_GAS_PRESSURE_PARAMS;
                 if (continuousMarkCrossSection != null) {
                     if (typeof continuousMarkCrossSection === 'number') {
@@ -330,11 +388,9 @@ export function computeLayout(
                             ...(continuousMarkCrossSection.maxStretch != null && { maxStretch: continuousMarkCrossSection.maxStretch }),
                         };
 
-                        // Series-count-based pressure
                         if (continuousMarkCrossSection.seriesCountAxis) {
                             const resolvedAxis = continuousMarkCrossSection.seriesCountAxis === 'auto'
                                 ? 'y' : continuousMarkCrossSection.seriesCountAxis;
-
                             const nSeries = countDistinctSeries(channelSemantics, table);
                             if (resolvedAxis === 'y') {
                                 gasPressureParams.yItemCountOverride = nSeries;
@@ -345,29 +401,128 @@ export function computeLayout(
                     }
                 }
 
-                const gasPressureResult = computeGasPressure(
+                // --- Per-subplot baseline canvas ---
+                // Gas pressure must measure crowding against the actual
+                // per-subplot space, not the full canvas.  When faceted,
+                // each subplot gets a share of the canvas that includes
+                // facet elasticity (the same formula used for discrete
+                // axes): `canvas × cols^elasticity / cols`.  This way
+                // 2 columns don't naively halve the space — some stretch
+                // is assumed before gas pressure even kicks in.
+                const perSubplotCanvasW = facetCols > 1
+                    ? Math.max(minContinuousSizeX,
+                        (defaultChartWidth * Math.min(maxStretchVal, Math.pow(facetCols, facetElasticityVal)) - fixW)
+                            / facetCols - gap)
+                    : defaultChartWidth;
+                const perSubplotCanvasH = facetRows > 1
+                    ? Math.max(minContinuousSizeY,
+                        (defaultChartHeight * Math.min(maxStretchVal, Math.pow(facetRows, facetElasticityVal)) - fixH)
+                            / facetRows - gap)
+                    : defaultChartHeight;
+
+                // --- Gas pressure: per-axis raw stretches ---
+                const idealResult = computeGasPressure(
                     xNumeric, yNumeric, xDomain, yDomain,
-                    subplotWidth, subplotHeight, gasPressureParams,
+                    perSubplotCanvasW, perSubplotCanvasH, gasPressureParams,
                 );
 
-                if (gasPressureResult.stretchX > 1 || gasPressureResult.stretchY > 1) {
-                    let sx = gasPressureResult.stretchX;
-                    let sy = gasPressureResult.stretchY;
-                    if (maintainContinuousAxisRatio) {
-                        const maxStretch = Math.max(sx, sy);
-                        sx = maxStretch;
-                        sy = maxStretch;
+                const isConnected = typeof continuousMarkCrossSection === 'object'
+                    && !!continuousMarkCrossSection.seriesCountAxis;
+                const useBanking = xDataCoverage >= BANKING_COVERAGE_THRESHOLD
+                    && yDataCoverage >= BANKING_COVERAGE_THRESHOLD;
+
+                let idealW: number;
+                let idealH: number;
+
+                // Gas pressure's native per-axis dimensions (uncapped).
+                const rawW = perSubplotCanvasW * idealResult.rawStretchX;
+                const rawH = perSubplotCanvasH * idealResult.rawStretchY;
+
+                if (useBanking) {
+                    // ── Step 1: Decide AR ──────────────────────────────
+                    // Blend gas-pressure AR (which axis is more crowded)
+                    // with banking AR (perceptual slope optimization).
+                    const seriesFields: string[] = [];
+                    const colorField = channelSemantics.color?.field;
+                    const detailField = channelSemantics.detail?.field;
+                    if (colorField) seriesFields.push(colorField);
+                    if (detailField && detailField !== colorField) seriesFields.push(detailField);
+
+                    const perPointSeriesKeys: string[] = new Array(xNumeric.length);
+                    if (seriesFields.length === 0) {
+                        perPointSeriesKeys.fill('');
+                    } else {
+                        let idx = 0;
+                        for (const row of table) {
+                            const xv = xCS?.field ? row[xCS.field] : undefined;
+                            const yv = yCS?.field ? row[yCS.field] : undefined;
+                            if (xv == null || yv == null) continue;
+                            const xn = isTempX ? +new Date(xv) : +xv;
+                            const yn = isTempY ? +new Date(yv) : +yv;
+                            if (isNaN(xn) || isNaN(yn)) continue;
+                            perPointSeriesKeys[idx++] = seriesFields
+                                .map(f => String(row[f] ?? '')).join('\x00');
+                        }
                     }
-                    if (typeof continuousMarkCrossSection === 'object' &&
-                        continuousMarkCrossSection.seriesCountAxis) {
-                        const sAxis = continuousMarkCrossSection.seriesCountAxis === 'auto'
-                            ? 'y' : continuousMarkCrossSection.seriesCountAxis;
-                        if (sAxis === 'y' && sy > 1 && sx < sy) sx = sy;
-                        if (sAxis === 'x' && sx > 1 && sy < sx) sy = sx;
-                    }
-                    subplotWidth = Math.round(subplotWidth * sx);
-                    subplotHeight = Math.round(subplotHeight * sy);
+
+                    const bankingAR = computeBankingAR(
+                        xNumeric, yNumeric, xDomain, yDomain,
+                        perPointSeriesKeys, isConnected,
+                    );
+
+                    // ── Step 2: Blend AR + distribute area ────────────
+                    // Gas pressure knows which axis is crowded (per-axis
+                    // stretch).  Banking knows the perceptual ideal AR.
+                    // Blend in log space so both signals contribute:
+                    //   gasAR reflects density asymmetry (X crowded → landscape)
+                    //   bankingAR reflects slope perception
+                    const BANKING_BLEND = 0.5;
+                    const gasAR = rawW / rawH;
+                    const blendedAR = gasAR > 0 && bankingAR > 0
+                        ? Math.exp((1 - BANKING_BLEND) * Math.log(gasAR)
+                            + BANKING_BLEND * Math.log(bankingAR))
+                        : bankingAR;
+
+                    // Total area from gas pressure (capped so subplot
+                    // doesn't blow past per-subplot budget before fit).
+                    const rawArea = rawW * rawH;
+                    const maxArea = perSubplotCanvasW * perSubplotCanvasH * maxStretchVal;
+                    const area = Math.min(rawArea, maxArea);
+
+                    idealW = Math.sqrt(area * blendedAR);
+                    idealH = Math.sqrt(area / blendedAR);
+                } else {
+                    // Banking skipped (zero dominates): gas pressure shape.
+                    idealW = rawW;
+                    idealH = rawH;
                 }
+
+                // ── Step 3: Fit into budget, preserving AR ───────────
+                // Hard ceiling per subplot: canvas × maxStretch shared
+                // across facet panels.
+                const availW = facetCols > 1
+                    ? Math.max(minContinuousSizeX, (defaultChartWidth * maxStretchVal - fixW) / facetCols - gap)
+                    : defaultChartWidth * maxStretchVal;
+                const availH = facetRows > 1
+                    ? Math.max(minContinuousSizeY, (defaultChartHeight * maxStretchVal - fixH) / facetRows - gap)
+                    : defaultChartHeight * maxStretchVal;
+
+                // Scale down to fit: if either axis exceeds its budget,
+                // shrink both axes by the tighter ratio so neither
+                // exceeds AND the AR is preserved.
+                const scaleX = idealW > availW ? availW / idealW : 1;
+                const scaleY = idealH > availH ? availH / idealH : 1;
+                const fitScale = Math.min(scaleX, scaleY);
+
+                let finalW = idealW * fitScale;
+                let finalH = idealH * fitScale;
+
+                // Enforce minimums (may slightly distort AR at extremes).
+                finalW = Math.max(finalW, minContinuousSizeX);
+                finalH = Math.max(finalH, minContinuousSizeY);
+
+                subplotWidth = Math.round(finalW);
+                subplotHeight = Math.round(finalH);
             }
         }
     } else if (xIsContinuousNonBanded || yIsContinuousNonBanded) {
@@ -544,6 +699,40 @@ export function computeLayout(
     subplotWidth = Math.min(subplotWidth, Math.round(maxSubplotW));
     subplotHeight = Math.min(subplotHeight, Math.round(maxSubplotH));
 
+    // --- Band AR blending ---
+    // When one axis is banded (discrete) and the other is continuous,
+    // each band has a natural AR = continuousSize / stepSize.  If the
+    // actual band AR exceeds the target, blend the subplot AR toward
+    // the target (in log space) to avoid excessively tall/wide bands.
+    const targetBandAR = options.targetBandAR;
+    if (targetBandAR && targetBandAR > 0) {
+        const xIsBanded = xTotalNominalCount > 0 || xContinuousAsDiscrete > 0;
+        const yIsBanded = yTotalNominalCount > 0 || yContinuousAsDiscrete > 0;
+
+        if (xIsBanded && !yIsBanded) {
+            // X is banded, Y is continuous → band AR = subplotHeight / xStepSize
+            const actualBandAR = subplotHeight / xStepSize;
+            if (actualBandAR > targetBandAR) {
+                const idealH = xStepSize * targetBandAR;
+                // Blend: 50/50 between actual and target in log space.
+                const blendedH = Math.exp(
+                    0.5 * Math.log(subplotHeight) + 0.5 * Math.log(idealH));
+                subplotHeight = Math.round(
+                    Math.max(minContinuousSizeY, Math.min(blendedH, subplotHeight)));
+            }
+        } else if (yIsBanded && !xIsBanded) {
+            // Y is banded, X is continuous → band AR = subplotWidth / yStepSize
+            const actualBandAR = subplotWidth / yStepSize;
+            if (actualBandAR > targetBandAR) {
+                const idealW = yStepSize * targetBandAR;
+                const blendedW = Math.exp(
+                    0.5 * Math.log(subplotWidth) + 0.5 * Math.log(idealW));
+                subplotWidth = Math.round(
+                    Math.max(minContinuousSizeX, Math.min(blendedW, subplotWidth)));
+            }
+        }
+    }
+
     // --- Label sizing ---
     const xHasDiscreteItems = xTotalNominalCount > 0;
     const yHasDiscreteItems = yTotalNominalCount > 0;
@@ -600,6 +789,177 @@ function countDistinctSeries(
         seriesKeys.add(key);
     }
     return seriesKeys.size;
+}
+
+/**
+ * Compute the ideal aspect ratio for a both-continuous chart.
+ *
+ * Dispatches to two strategies depending on mark type:
+ *
+ * - **Scatter / point** (`isConnected = false`): Uses the normalized
+ *   standard-deviation ratio of the point cloud — a unit-independent
+ *   shape measure.  Dampened 0.3× toward 1.0 so scatter stays near
+ *   square.
+ *
+ * - **Connected marks** (line/area/bump, `isConnected = true`): Uses
+ *   multi-scale banking to 45° (Heer & Agrawala 2006).  Slopes are
+ *   computed at multiple octave-band smoothing levels and combined via
+ *   geometric mean so that trend, periodicity, and noise each
+ *   contribute proportionally — avoiding the dense-data failure mode
+ *   of Cleveland's single-scale median.
+ *
+ * @param xValues     Numeric X values
+ * @param yValues     Numeric Y values (parallel array)
+ * @param xDomain     [min, max] of the visual X axis
+ * @param yDomain     [min, max] of the visual Y axis
+ * @param seriesKeys  Per-point series key ('' if no series)
+ * @param isConnected Whether the mark connects points (line/area vs scatter)
+ * @returns Ideal AR (width/height). Clamped to [0.5, 3.0].
+ */
+function computeBankingAR(
+    xValues: number[],
+    yValues: number[],
+    xDomain: [number, number],
+    yDomain: [number, number],
+    seriesKeys: string[],
+    isConnected: boolean,
+): number {
+    const MIN_AR = 0.5;
+    const MAX_AR = 3.0;
+
+    const xRange = xDomain[1] - xDomain[0];
+    const yRange = yDomain[1] - yDomain[0];
+    if (xRange <= 0 || yRange <= 0) return 1;
+
+    // ── Scatter: σ-ratio ──────────────────────────────────────────────
+    if (!isConnected) {
+        const n = xValues.length;
+        let sumX = 0, sumY = 0;
+        for (let i = 0; i < n; i++) {
+            sumX += (xValues[i] - xDomain[0]) / xRange;
+            sumY += (yValues[i] - yDomain[0]) / yRange;
+        }
+        const meanX = sumX / n;
+        const meanY = sumY / n;
+        let varX = 0, varY = 0;
+        for (let i = 0; i < n; i++) {
+            const dx = (xValues[i] - xDomain[0]) / xRange - meanX;
+            const dy = (yValues[i] - yDomain[0]) / yRange - meanY;
+            varX += dx * dx;
+            varY += dy * dy;
+        }
+        const sdX = Math.sqrt(varX / n);
+        const sdY = Math.sqrt(varY / n);
+        if (sdY <= 0) return MAX_AR;
+        if (sdX <= 0) return MIN_AR;
+
+        const sdRatio = sdX / sdY;
+        const ar = sdRatio > 1
+            ? 1 + (sdRatio - 1) * 0.3
+            : 1 - (1 - sdRatio) * 0.3;
+        return Math.min(MAX_AR, Math.max(MIN_AR, ar));
+    }
+
+    // ── Connected marks: multi-scale banking (Heer & Agrawala 2006) ──
+
+    // Group by series and sort by X.
+    const seriesMap = new Map<string, { x: number; y: number }[]>();
+    for (let i = 0; i < xValues.length; i++) {
+        const key = seriesKeys[i];
+        let arr = seriesMap.get(key);
+        if (!arr) { arr = []; seriesMap.set(key, arr); }
+        arr.push({ x: xValues[i], y: yValues[i] });
+    }
+    for (const pts of seriesMap.values()) {
+        pts.sort((a, b) => a.x - b.x);
+    }
+
+    // Collect per-scale median absolute slopes, then combine with
+    // geometric mean across scales.  Each scale is a box-filter
+    // smoothing at window width 2^k (k = 0, 1, 2, …).
+    // Scale 0 = raw data (Cleveland's original).
+    const scaleMedians: number[] = [];
+
+    // Determine max scale: largest power of 2 that still leaves ≥ 3
+    // points in the longest series after smoothing.
+    let maxSeriesLen = 0;
+    for (const pts of seriesMap.values()) {
+        if (pts.length > maxSeriesLen) maxSeriesLen = pts.length;
+    }
+    const maxScale = Math.max(0, Math.floor(Math.log2(maxSeriesLen)) - 1);
+
+    for (let scale = 0; scale <= maxScale; scale++) {
+        const windowSize = 1 << scale;  // 1, 2, 4, 8, …
+        const absSlopes: number[] = [];
+
+        for (const pts of seriesMap.values()) {
+            // Smooth: non-overlapping bucket averages of `windowSize` points.
+            // The last bucket may be smaller — included as-is.
+            const n = pts.length;
+            if (n < 2) continue;
+
+            const smoothed: { x: number; y: number }[] = [];
+            for (let i = 0; i < n; i += windowSize) {
+                const end = Math.min(i + windowSize, n);
+                let sx = 0, sy = 0;
+                for (let j = i; j < end; j++) {
+                    sx += pts[j].x;
+                    sy += pts[j].y;
+                }
+                const cnt = end - i;
+                smoothed.push({ x: sx / cnt, y: sy / cnt });
+            }
+
+            // Compute slopes between consecutive smoothed points.
+            for (let i = 1; i < smoothed.length; i++) {
+                const dx = (smoothed[i].x - smoothed[i - 1].x) / xRange;
+                const dy = (smoothed[i].y - smoothed[i - 1].y) / yRange;
+                if (dx === 0) continue;
+                absSlopes.push(Math.abs(dy / dx));
+            }
+        }
+
+        if (absSlopes.length === 0) continue;
+
+        // Median absolute slope at this scale.
+        absSlopes.sort((a, b) => a - b);
+        const mid = absSlopes.length >> 1;
+        const median = absSlopes.length % 2 === 1
+            ? absSlopes[mid]
+            : (absSlopes[mid - 1] + absSlopes[mid]) / 2;
+        if (median > 0) {
+            scaleMedians.push(median);
+        }
+    }
+
+    if (scaleMedians.length === 0) return 1;
+
+    // Geometric mean of per-scale median slopes.
+    // This gives equal weight to each octave band: trend (coarse),
+    // periodicity (middle), and noise (fine) all contribute.
+    let logSum = 0;
+    for (const m of scaleMedians) {
+        logSum += Math.log(m);
+    }
+    const combinedSlope = Math.exp(logSum / scaleMedians.length);
+
+    if (combinedSlope <= 0) return MAX_AR;
+
+    // Banking to 45°: display_slope = s_norm × (H/W).
+    // For median |display_slope| = 1:  H/W = 1/median(|s_norm|),
+    // so W/H = median(|s_norm|) = combinedSlope.
+    //
+    // No dampening here — the caller (computeLayout) blends banking AR
+    // with gas-pressure AR at 50/50, which already moderates it.
+    // Applying dampening on top of the blend would double-moderate.
+
+    // Landscape floor for connected marks: time series, line charts,
+    // and area charts are conventionally landscape.  Banking can push
+    // wider (when slopes are steep) but never portrait — the gentle-
+    // slope majority in typical time series would otherwise dominate
+    // the median and produce portrait, compressing the time axis.
+    const ar = Math.max(1.0, combinedSlope);
+    return Math.min(MAX_AR, Math.max(MIN_AR, ar));
 }
 
 // ---------------------------------------------------------------------------
@@ -883,6 +1243,95 @@ export function computeFacetGrid(
         }
     }
 
+    // --- Continuous axes: AR-based min subplot size ---
+    // When both axes are continuous (non-banded), the expected aspect
+    // ratio tells us which axis needs more room.  The shorter dimension
+    // stays at baseMinSubplot; the longer gets up to ms× (maxStretch)
+    // of the base.  This ensures line charts (landscape AR) get wider
+    // min subplots, so maxFacetColumns is lower → fewer, wider panels.
+    const xIsCont = (() => {
+        const cs = channelSemantics.x;
+        if (!cs?.field) return false;
+        const t = declaration.resolvedTypes?.x ?? cs.type;
+        return !isDiscreteType(t) && !(declaration.axisFlags?.x?.banded === true);
+    })();
+    const yIsCont = (() => {
+        const cs = channelSemantics.y;
+        if (!cs?.field) return false;
+        const t = declaration.resolvedTypes?.y ?? cs.type;
+        return !isDiscreteType(t) && !(declaration.axisFlags?.y?.banded === true);
+    })();
+
+    if (xIsCont && yIsCont) {
+        const xCS = channelSemantics.x;
+        const yCS = channelSemantics.y;
+        if (xCS?.field && yCS?.field) {
+            const isTempX = (declaration.resolvedTypes?.x ?? xCS.type) === 'temporal';
+            const isTempY = (declaration.resolvedTypes?.y ?? yCS.type) === 'temporal';
+            const cmcs = options.continuousMarkCrossSection;
+            const isConn = typeof cmcs === 'object' && !!cmcs.seriesCountAxis;
+
+            const xNum: number[] = [];
+            const yNum: number[] = [];
+            const sKeys: string[] = [];
+            const sFields: string[] = [];
+            // Include facet fields in series keys so banking computes
+            // slopes within each panel, not across panel boundaries.
+            const colF = channelSemantics.column?.field;
+            const rowF = channelSemantics.row?.field;
+            if (colF) sFields.push(colF);
+            if (rowF) sFields.push(rowF);
+            const cf = channelSemantics.color?.field;
+            const df = channelSemantics.detail?.field;
+            if (cf) sFields.push(cf);
+            if (df && df !== cf) sFields.push(df);
+
+            for (const row of data) {
+                let xv = row[xCS.field];
+                let yv = row[yCS.field];
+                if (xv == null || yv == null) continue;
+                const xn = isTempX ? +new Date(xv) : +xv;
+                const yn = isTempY ? +new Date(yv) : +yv;
+                if (isNaN(xn) || isNaN(yn)) continue;
+                xNum.push(xn);
+                yNum.push(yn);
+                sKeys.push(sFields.length > 0
+                    ? sFields.map(f => String(row[f] ?? '')).join('\x00')
+                    : '');
+            }
+
+            if (xNum.length > 1) {
+                const xMin = Math.min(...xNum);
+                const xMax = Math.max(...xNum);
+                const yMin = Math.min(...yNum);
+                const yMax = Math.max(...yNum);
+                const xDom: [number, number] = [xMin, xMax];
+                const yDom: [number, number] = [yMin, yMax];
+                if (xCS.zero?.zero) {
+                    if (xDom[0] > 0) xDom[0] = 0;
+                    if (xDom[1] < 0) xDom[1] = 0;
+                }
+                if (yCS.zero?.zero) {
+                    if (yDom[0] > 0) yDom[0] = 0;
+                    if (yDom[1] < 0) yDom[1] = 0;
+                }
+
+                const ar = computeBankingAR(xNum, yNum, xDom, yDom, sKeys, isConn);
+
+                // Distribute: shorter side = base, longer side = base × min(ar, ms).
+                if (ar >= 1) {
+                    minSubplotWidth = Math.max(minSubplotWidth,
+                        Math.round(baseMinSubplot * Math.min(ar, ms)));
+                    minSubplotHeight = Math.max(minSubplotHeight, baseMinSubplot);
+                } else {
+                    minSubplotWidth = Math.max(minSubplotWidth, baseMinSubplot);
+                    minSubplotHeight = Math.max(minSubplotHeight,
+                        Math.round(baseMinSubplot * Math.min(1 / ar, ms)));
+                }
+            }
+        }
+    }
+
     // effectiveW = totalBudget - fixedOverhead; each panel costs (subplot + gap).
     const effectiveW = maxW;
     const effectiveH = maxH;
@@ -906,17 +1355,40 @@ export function computeFacetGrid(
     if (colCount === 0 && rowCount === 0) return undefined;
 
     if (colCount > 0 && rowCount === 0) {
-        // Column-only: 2D budget for total panels, wrap visually.
-        const maxTotalPanels = maxFacetColumns * maxFacetRows;
-        const effectiveCount = Math.min(colCount, maxTotalPanels);
-        // Balanced wrapping: compute rows first, then distribute evenly.
-        // e.g. 10 items, max 6/row → 2 rows of 5 instead of 6+4.
-        const visRows = Math.ceil(effectiveCount / maxFacetColumns);
-        const visCols = Math.ceil(effectiveCount / visRows);
+        // Column-only.  If all panels fit in one row, use a single row.
+        // Otherwise wrap into a balanced grid: pick the number of rows
+        // that makes the grid as square as possible (cols ≈ rows) while
+        // staying within the max budget per dimension.
+        if (colCount <= maxFacetColumns) {
+            return {
+                columns: colCount,
+                rows: 1,
+                maxColumnValues: colCount,
+                maxRowValues: maxFacetRows,
+            };
+        }
+
+        // Need to wrap.  Use maxFacetColumns as the column count
+        // (fill the width), but reduce columns slightly if it would
+        // produce a widow row (a single orphan panel on the last row).
+        let nCols = maxFacetColumns;
+        let nRows = Math.ceil(colCount / nCols);
+
+        // Check for widow: if last row has only 1 panel, try nCols-1
+        // to redistribute more evenly.  Keep reducing while widow
+        // exists and nCols > 2.
+        while (nCols > 2 && (colCount % nCols) === 1) {
+            nCols--;
+            nRows = Math.ceil(colCount / nCols);
+        }
+
+        const visRows = Math.min(nRows, maxFacetRows);
+        const maxTotal = nCols * visRows;
+
         return {
-            columns: visCols,
+            columns: nCols,
             rows: visRows,
-            maxColumnValues: maxTotalPanels,
+            maxColumnValues: maxTotal,
             maxRowValues: maxFacetRows,
         };
     }

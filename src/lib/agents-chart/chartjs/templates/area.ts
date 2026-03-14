@@ -21,7 +21,7 @@ export const cjsAreaChartDef: ChartTemplateDef = {
     channels: ['x', 'y', 'color', 'opacity', 'column', 'row'],
     markCognitiveChannel: 'area',
     declareLayoutMode: () => ({
-        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } },
+        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' }, facetAspectRatioResistance: 0.5 },
     }),
     instantiate: (spec, ctx) => {
         const { channelSemantics, table, chartProperties } = ctx;

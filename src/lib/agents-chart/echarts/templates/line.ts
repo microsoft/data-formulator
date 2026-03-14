@@ -334,7 +334,7 @@ function buildCategoryAlignedXYData(
 }
 
 /** RANK_SEMANTIC_TYPES: used to detect rank axis for Bump Chart (mirror vegalite/templates/bump.ts). */
-const RANK_SEMANTIC_TYPES = new Set(['Rank', 'Index', 'Score', 'Rating', 'Level']);
+const RANK_SEMANTIC_TYPES = new Set(['Rank', 'Score', 'Level']);
 
 /**
  * Dotted Line Chart — same as Line Chart with showSymbol and dashed line (mirror vegalite Dotted Line).

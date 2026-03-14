@@ -188,7 +188,7 @@ export function genBoxplotTests(): TestCase[] {
             fields: [makeField('Country'), makeField('Revenue'), makeField('Quarter')],
             metadata: {
                 Country: { type: Type.String, semanticType: 'Country', levels: countries },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Quarter: { type: Type.String, semanticType: 'Category', levels: quarters },
             },
             encodingMap: { x: makeEncodingItem('Country'), y: makeEncodingItem('Revenue'), color: makeEncodingItem('Quarter') },

@@ -33,7 +33,7 @@ Enriched annotation fields (optional — provide when applicable):
     - Infer from data values and context: e.g., if a "rating" column has values 1-10, the domain is [1, 10]; if it's clearly a 5-star system, use [1, 5].
     - For Percentage: [0, 100] if values are whole-number percentages, [0, 1] if fractional.
     - For Correlation: always [-1, 1].
-    - Do NOT provide for open-ended measures like Revenue, Count, Quantity, Temperature, etc.
+    - Do NOT provide for open-ended measures like Amount, Count, Quantity, Temperature, etc.
     - Only provide when the scale bounds are clear from the data or domain knowledge.
 - "unit": a short unit string for physical/monetary quantities.
     - Temperature: "°C", "°F", "K"

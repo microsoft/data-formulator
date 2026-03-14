@@ -5,7 +5,7 @@ import { ChartTemplateDef } from '../../core/types';
 import { defaultBuildEncodings } from './utils';
 
 /** Semantic types that indicate a rank-like field */
-const RANK_SEMANTIC_TYPES = new Set(['Rank', 'Index', 'Score', 'Rating', 'Level']);
+const RANK_SEMANTIC_TYPES = new Set(['Rank', 'Score', 'Level']);
 
 const isDiscrete = (type: string | undefined) =>
     type === 'nominal' || type === 'ordinal';
@@ -19,7 +19,7 @@ export const bumpChartDef: ChartTemplateDef = {
     channels: ["x", "y", "color", "detail", "column", "row"],
     markCognitiveChannel: 'position',
     declareLayoutMode: () => ({
-        paramOverrides: { continuousMarkCrossSection: { x: 80, y: 20, seriesCountAxis: 'auto' } },
+        paramOverrides: { continuousMarkCrossSection: { x: 80, y: 20, seriesCountAxis: 'auto' }, facetAspectRatioResistance: 0.4 },
     }),
     instantiate: (spec, ctx) => {
         defaultBuildEncodings(spec, ctx.resolvedEncodings);

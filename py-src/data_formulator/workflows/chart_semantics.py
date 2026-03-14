@@ -65,10 +65,6 @@ TYPE_REGISTRY: Dict[str, TypeRegistryEntry] = {
     # --- Measure: Amount ---
     'Amount':      TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
     'Price':       TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'intensive', 'open'),
-    'Revenue':     TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
-    'Cost':        TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
-    'Currency':    TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
-    'GDP':         TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
     # --- Measure: Physical ---
     'Quantity':    TypeRegistryEntry('Measure', 'Physical', ('quantitative',), 'additive', 'open'),
     'Temperature': TypeRegistryEntry('Measure', 'Physical', ('quantitative',), 'intensive', 'open'),
@@ -85,30 +81,24 @@ TYPE_REGISTRY: Dict[str, TypeRegistryEntry] = {
     # --- Discrete ---
     'Rank':        TypeRegistryEntry('Discrete', 'Rank', ('ordinal',), 'dimension', 'open'),
     'Score':       TypeRegistryEntry('Discrete', 'Score', ('quantitative', 'ordinal'), 'intensive', 'bounded'),
-    'Rating':      TypeRegistryEntry('Discrete', 'Score', ('quantitative', 'ordinal'), 'intensive', 'bounded'),
-    'Index':       TypeRegistryEntry('Discrete', 'Index', ('ordinal',), 'dimension', 'open'),
     'ID':          TypeRegistryEntry('Identifier', 'ID', ('nominal',), 'identifier', 'open'),
     # --- Geographic ---
     'Country':     TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'dimension', 'open'),
     'State':       TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'dimension', 'open'),
     'City':        TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'dimension', 'open'),
     'Region':      TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'dimension', 'open'),
+    'Address':     TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'dimension', 'open'),
+    'ZipCode':     TypeRegistryEntry('Categorical', 'GeoPlace', ('nominal',), 'identifier', 'open'),
     'Latitude':    TypeRegistryEntry('Measure', 'GeoCoord', ('geographic', 'quantitative'), 'dimension', 'fixed'),
     'Longitude':   TypeRegistryEntry('Measure', 'GeoCoord', ('geographic', 'quantitative'), 'dimension', 'fixed'),
     # --- Categorical ---
     'Category':    TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open'),
-    'String':      TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open'),
     'Boolean':     TypeRegistryEntry('Categorical', 'Status', ('nominal',), 'dimension', 'open'),
     'Status':      TypeRegistryEntry('Categorical', 'Status', ('nominal',), 'dimension', 'open'),
-    'Gender':      TypeRegistryEntry('Categorical', 'Demographic', ('nominal',), 'dimension', 'open'),
-    'AgeGroup':    TypeRegistryEntry('Categorical', 'Range', ('ordinal',), 'dimension', 'open'),
     'Range':       TypeRegistryEntry('Categorical', 'Range', ('ordinal',), 'dimension', 'open'),
-    'Direction':   TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'cyclic'),
+    'Direction':   TypeRegistryEntry('Categorical', 'Coded', ('ordinal', 'nominal'), 'dimension', 'cyclic'),
     # --- Identifiers ---
-    'Name':        TypeRegistryEntry('Identifier', 'Name', ('nominal',), 'identifier', 'open'),
-    'Label':       TypeRegistryEntry('Identifier', 'Name', ('nominal',), 'identifier', 'open'),
-    'Code':        TypeRegistryEntry('Identifier', 'Code', ('nominal',), 'identifier', 'open'),
-    'Population':  TypeRegistryEntry('Measure', 'Amount', ('quantitative',), 'additive', 'open'),
+    'Name':        TypeRegistryEntry('Categorical', 'Entity', ('nominal',), 'dimension', 'open'),
 }
 
 
@@ -418,7 +408,7 @@ def infer_ordinal_sort_order(semantic_type: str, values: List[Any]) -> list[str]
             return result
 
     # Auto-detect for generic types
-    if not semantic_type or semantic_type in ('Category', 'String', 'Unknown'):
+    if not semantic_type or semantic_type in ('Category', 'Unknown'):
         for seqs in _ORDINAL_SEQUENCES.values():
             result = _match_sequence(values, seqs)
             if result:

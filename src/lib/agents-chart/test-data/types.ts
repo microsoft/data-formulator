@@ -29,7 +29,7 @@ export interface TestCase {
     /**
      * Enriched semantic annotations that override the plain semanticType strings
      * in metadata. Use this when a field needs extra info like intrinsicDomain or unit.
-     * E.g., { rating: { semanticType: 'Rating', intrinsicDomain: [1, 5] } }
+     * E.g., { rating: { semanticType: 'Score', intrinsicDomain: [1, 5] } }
      */
     semanticAnnotations?: Record<string, SemanticAnnotation>;
 }

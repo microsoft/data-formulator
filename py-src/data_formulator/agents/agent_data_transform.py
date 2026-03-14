@@ -50,7 +50,7 @@ Check if the user's "chart" (chart_type + encodings) is sufficient for their "go
         "config": {{{{}}}}           // optional styling
     }}}},
     "field_metadata": {{{{         // semantic type for each encoding field
-        "<field>": "Type"        // from [SEMANTIC TYPE REFERENCE]
+        "<field>": "Category"        // from [SEMANTIC TYPE REFERENCE]
     }}}},
     "output_variable": "",       // descriptive snake_case name (e.g. "sales_by_region"), not "result_df"
     "reason": ""                 // why this refinement is made

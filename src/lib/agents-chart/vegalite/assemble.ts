@@ -184,6 +184,9 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     if (effectiveOptions.facetGap == null) {
         effectiveOptions.facetGap = 10;
     }
+    if (effectiveOptions.targetBandAR == null) {
+        effectiveOptions.targetBandAR = 10;
+    }
     const facetFixW = effectiveOptions.facetFixedPadding.width;
     const facetFixH = effectiveOptions.facetFixedPadding.height;
 
@@ -559,24 +562,29 @@ function buildVLEncodings(
                     encodingObj.sort = `${encoding.sortOrder === "ascending" ? "" : "-"}${encoding.sortBy}`;
                 }
             } else {
-                try {
-                    if (fieldName) {
-                        const fieldSemType = toTypeString(semanticTypes[fieldName]);
-                        const fieldVisCat = inferVisCategory(data.map(r => r[fieldName]));
-                        let sortedValues = JSON.parse(encoding.sortBy);
+                // Temporal fields sort chronologically by default in VL; an explicit
+                // value array is redundant, pollutes the spec with potentially hundreds
+                // of date strings, and can break continuous temporal scales.
+                if (encodingObj.type !== 'temporal') {
+                    try {
+                        if (fieldName) {
+                            const fieldSemType = toTypeString(semanticTypes[fieldName]);
+                            const fieldVisCat = inferVisCategory(data.map(r => r[fieldName]));
+                            let sortedValues = JSON.parse(encoding.sortBy);
 
-                        if (fieldVisCat === 'temporal' || fieldSemType === "Year" || fieldSemType === "Decade") {
-                            sortedValues = sortedValues.map((v: any) => v.toString());
+                            if (fieldVisCat === 'temporal' || fieldSemType === "Year" || fieldSemType === "Decade") {
+                                sortedValues = sortedValues.map((v: any) => v.toString());
+                            }
+
+                            // Preserve numeric types for nominal fields with numeric data
+                            sortedValues = preserveDomainTypes(sortedValues);
+
+                            encodingObj.sort = (encoding.sortOrder === "ascending" || !encoding.sortOrder)
+                                ? sortedValues : sortedValues.reverse();
                         }
-
-                        // Preserve numeric types for nominal fields with numeric data
-                        sortedValues = preserveDomainTypes(sortedValues);
-
-                        encodingObj.sort = (encoding.sortOrder === "ascending" || !encoding.sortOrder)
-                            ? sortedValues : sortedValues.reverse();
+                    } catch {
+                        console.warn(`sort error > ${encoding.sortBy}`);
                     }
-                } catch {
-                    console.warn(`sort error > ${encoding.sortBy}`);
                 }
             }
         } else {

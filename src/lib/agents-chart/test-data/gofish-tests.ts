@@ -227,7 +227,7 @@ export function genGoFishLineTests(): TestCase[] {
             fields: [makeField('Month'), makeField('Revenue')],
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Revenue') },
         });
@@ -245,7 +245,7 @@ export function genGoFishLineTests(): TestCase[] {
             fields: [makeField('Month'), makeField('Sales'), makeField('Product')],
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'] },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Product: { type: Type.String, semanticType: 'Category', levels: ['ProductA', 'ProductB', 'ProductC'] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Sales'), color: makeEncodingItem('Product') },
@@ -270,7 +270,7 @@ export function genGoFishBarTests(): TestCase[] {
             fields: [makeField('Product'), makeField('Sales')],
             metadata: {
                 Product: { type: Type.String, semanticType: 'Category', levels: ['Apples', 'Bananas', 'Cherries', 'Dates', 'Elderberries'] },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Sales') },
         });
@@ -316,7 +316,7 @@ export function genGoFishStackedBarTests(): TestCase[] {
             fields: [makeField('Quarter'), makeField('Revenue'), makeField('Region')],
             metadata: {
                 Quarter: { type: Type.String, semanticType: 'Category', levels: ['Q1', 'Q2', 'Q3', 'Q4'] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Region: { type: Type.String, semanticType: 'Category', levels: ['North', 'South', 'East', 'West'] },
             },
             encodingMap: { x: makeEncodingItem('Quarter'), y: makeEncodingItem('Revenue'), color: makeEncodingItem('Region') },
@@ -411,7 +411,7 @@ export function genGoFishPieTests(): TestCase[] {
             fields: [makeField('Category'), makeField('Revenue')],
             metadata: {
                 Category: { type: Type.String, semanticType: 'Category', levels: ['Electronics', 'Clothing', 'Food', 'Books', 'Toys'] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { color: makeEncodingItem('Category'), size: makeEncodingItem('Revenue') },
         });
@@ -488,7 +488,7 @@ export function genGoFishStressTests(): TestCase[] {
             fields: [makeField('Item'), makeField('Sales')],
             metadata: {
                 Item: { type: Type.String, semanticType: 'Category', levels: items },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Item'), y: makeEncodingItem('Sales') },
         });

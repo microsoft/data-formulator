@@ -35,13 +35,12 @@ export type { VisCategory } from './type-registry';
  *    │           │        │           │         │           │
  *  Point     Granule    Measure   Discrete    Entity     Coded
  *    │           │        │           │         │           │
- * DateTime    Year     Quantity    Rank      Person     Status
- * Date        Month    Count       Index     Company    Boolean
- * Time        Day      Price       Score     Product    Category
- *             Quarter  Percentage  Rating
- *             Decade   Amount      ID
+ * DateTime    Year     Quantity    Rank      Category   Status
+ * Date        Month    Count       Score     Name       Boolean
+ * Time        Day      Price       ID                   Direction
+ *             Quarter  Percentage
+ *             Decade   Amount
  *                      Temperature
- *                      Revenue
  * 
  * =============================================================================
  */
@@ -90,8 +89,6 @@ export const SemanticTypes = {
     Count: 'Count',             // Discrete count of items
     Amount: 'Amount',           // Monetary or general amounts
     Price: 'Price',             // Unit price
-    Revenue: 'Revenue',         // Total revenue/sales
-    Cost: 'Cost',               // Expenses/costs
     Percentage: 'Percentage',   // 0-100% or 0-1 ratio
     Temperature: 'Temperature', // Degrees
     
@@ -106,10 +103,8 @@ export const SemanticTypes = {
     // =========================================================================
     
     Rank: 'Rank',               // Position in ordered list: 1st, 2nd, 3rd
-    Index: 'Index',             // Row number, sequence number
     ID: 'ID',                   // Unique identifier (not for aggregation!)
     Score: 'Score',             // Rating score: 1-5, 1-10, 0-100
-    Rating: 'Rating',           // Star rating, letter grade
     
     // =========================================================================
     // GEOGRAPHIC TYPES - Location-based data
@@ -121,25 +116,21 @@ export const SemanticTypes = {
     State: 'State',             // State/Province
     City: 'City',               // City name
     Region: 'Region',           // Geographic region
-    Address: 'Address',         // Street address
-    ZipCode: 'ZipCode',         // Postal code
+    Address: 'Address',         // Street address (geo lookup)
+    ZipCode: 'ZipCode',         // Postal code (geo lookup)
     
     // =========================================================================
     // CATEGORICAL ENTITY TYPES - Named entities
     // =========================================================================
     
-    PersonName: 'PersonName',   // Full name, first/last name
-    Company: 'Company',         // Company/Organization name
-    Product: 'Product',         // Product name
-    Category: 'Category',       // Product/item category
-    Name: 'Name',               // Generic named entity (fallback)
+    Category: 'Category',       // Discrete category / product / entity class
+    Name: 'Name',               // Generic named entity (person, company, product, etc.)
     
     // =========================================================================
     // CATEGORICAL CODED TYPES - Discrete categories/statuses
     // =========================================================================
     
     Status: 'Status',           // State: "Active", "Pending", "Closed"
-    Type: 'Type',               // Type classification
     Boolean: 'Boolean',         // True/False, Yes/No
     Direction: 'Direction',     // Compass direction: "N", "NE", "East", etc.
     
@@ -147,14 +138,12 @@ export const SemanticTypes = {
     // BINNED/RANGE TYPES - Discretized continuous values
     // =========================================================================
     
-    Range: 'Range',             // Numeric range: "10000-20000", "<50", "50+"
-    AgeGroup: 'AgeGroup',       // Age range: "18-24", "25-34"
+    Range: 'Range',             // Numeric range, age group, binned values
     
     // =========================================================================
     // FALLBACK TYPES
     // =========================================================================
     
-    String: 'String',           // Generic string (categorical fallback)
     Number: 'Number',           // Generic number (measure fallback)
     Unknown: 'Unknown',         // Cannot determine type
 } as const;
@@ -189,7 +178,7 @@ export const measureTypes = new Set<string>(
 
 /** Numeric types that should NOT be used as measures (don't aggregate) */
 export const nonMeasureNumericTypes = new Set<string>([
-    'Rank', 'Index', 'ID', 'Score', 'Rating',
+    'Rank', 'ID', 'Score',
     'Year', 'Month', 'Day', 'Hour',
     'Latitude', 'Longitude',
 ]);
@@ -406,7 +395,7 @@ export function getZeroClass(semanticType: string): ZeroClass | 'unknown' {
  * This is a pure decision function — it returns a ZeroDecision object
  * without modifying any spec. The caller applies the decision to VL.
  *
- * @param semanticType  The semantic type of the field (e.g. 'Revenue', 'Temperature')
+ * @param semanticType  The semantic type of the field (e.g. 'Amount', 'Temperature')
  * @param channel       The VL channel ('x', 'y', 'size', etc.)
  * @param markType      The mark type ('bar', 'line', 'point', etc.)
  * @param values        Optional numeric data values for data-range analysis
@@ -638,16 +627,16 @@ export function getRecommendedColorScheme(
         return { scheme: 'oranges', type: 'sequential', reason: 'percentage all same sign uses sequential' };
     }
 
-    // Revenue/Price/Cost/Amount
-    if (['Revenue', 'Price', 'Cost', 'Amount'].includes(semanticType)) {
+    // Price/Amount
+    if (['Price', 'Amount'].includes(semanticType)) {
         if (colorHint?.type === 'diverging') {
             return { scheme: 'redblue', type: 'diverging', reason: 'financial data spans positive and negative' };
         }
         return { scheme: 'goldgreen', type: 'sequential', reason: 'financial data uses gold-green' };
     }
 
-    // Score/Rating - evaluation metrics; diverging when hint says so (e.g., domain midpoint)
-    if (['Score', 'Rating'].includes(semanticType)) {
+    // Score - evaluation metrics; diverging when hint says so (e.g., domain midpoint)
+    if (semanticType === 'Score') {
         if (colorHint?.type === 'diverging') {
             return { scheme: 'redblue', type: 'diverging', reason: 'score/rating diverging around midpoint' };
         }
@@ -655,13 +644,13 @@ export function getRecommendedColorScheme(
     }
 
     // Rank - use single-hue sequential
-    if (['Rank', 'Index'].includes(semanticType)) {
+    if (semanticType === 'Rank') {
         return { scheme: 'purples', type: 'sequential', reason: 'ranks use single-hue sequential' };
     }
 
-    // Age groups / ranges - use sequential
-    if (['AgeGroup', 'Range'].includes(semanticType)) {
-        return { scheme: 'blues', type: 'sequential', reason: 'age/range groups use sequential' };
+    // Ranges - use sequential
+    if (semanticType === 'Range') {
+        return { scheme: 'blues', type: 'sequential', reason: 'range groups use sequential' };
     }
 
     // Temporal granules (Year, Month, Quarter, etc.) - sequential for continuity
@@ -682,8 +671,8 @@ export function getRecommendedColorScheme(
         return { scheme: 'set1', type: 'categorical', reason: 'status uses high-contrast categorical' };
     }
 
-    // Categories/Types - use standard categorical
-    if (['Category', 'Type'].includes(semanticType)) {
+    // Categories - use standard categorical
+    if (semanticType === 'Category') {
         return { 
             scheme: uniqueValueCount > 10 ? 'tableau20' : 'tableau10', 
             type: 'categorical', 
@@ -691,17 +680,8 @@ export function getRecommendedColorScheme(
         };
     }
 
-    // Companies/Products - use paired for small sets, tableau for large
-    if (['Company', 'Product'].includes(semanticType)) {
-        return { 
-            scheme: uniqueValueCount > 10 ? 'tableau20' : 'paired', 
-            type: 'categorical', 
-            reason: 'entities use distinct categorical' 
-        };
-    }
-
-    // Person names - use saturated schemes for readability; only pastel for very small sets
-    if (['Name', 'PersonName'].includes(semanticType)) {
+    // Names (persons, companies, products) - use saturated schemes for readability
+    if (semanticType === 'Name') {
         return { 
             scheme: uniqueValueCount > 8 ? 'tableau20' : 'set2', 
             type: 'categorical', 
@@ -909,7 +889,7 @@ export function inferOrdinalSortOrder(
     }
 
     // 2. Auto-detect: try all sequences if semantic type is generic
-    if (!semanticType || semanticType === 'Category' || semanticType === 'String' || semanticType === 'Unknown') {
+    if (!semanticType || semanticType === 'Category' || semanticType === 'Unknown') {
         for (const seqs of Object.values(ORDINAL_SEQUENCES)) {
             const result = matchSequence(values, seqs);
             if (result) return result;

@@ -101,7 +101,7 @@ export const lineChartDef: ChartTemplateDef = {
     channels: ["x", "y", "color", "strokeDash", "detail", "opacity", "column", "row"],
     markCognitiveChannel: 'position',
     declareLayoutMode: () => ({
-        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } },
+        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' }, facetAspectRatioResistance: 0.5 },
     }),
     instantiate: (spec, ctx) => {
         if (hasContinuousColor(ctx.resolvedEncodings)) {
@@ -120,7 +120,7 @@ export const dottedLineChartDef: ChartTemplateDef = {
     channels: ["x", "y", "color", "detail", "column", "row"],
     markCognitiveChannel: 'position',
     declareLayoutMode: () => ({
-        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } },
+        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' }, facetAspectRatioResistance: 0.5 },
     }),
     instantiate: (spec, ctx) => {
         if (hasContinuousColor(ctx.resolvedEncodings)) {

@@ -691,4 +691,51 @@ export interface AssembleOptions {
          */
         seriesCountAxis?: 'x' | 'y' | 'auto';
     };
+    /**
+     * Resistance to aspect-ratio distortion when faceting.
+     *
+     * When faceting divides one dimension (e.g. width by column count),
+     * the subplot aspect ratio drifts away from the single-plot ratio.
+     * Line and area charts are very sensitive to this because their
+     * visual signal is encoded in slopes and curve shapes.
+     *
+     * This parameter partially compensates by shrinking the undivided
+     * dimension so the panel aspect ratio stays closer to the original:
+     *
+     *   arDrift = facetedAR / baseAR          (< 1 when panel is narrower)
+     *   correctedDim = dim × arDrift ^ resistance
+     *
+     * - 0 (default): no correction — current behavior.
+     * - 0.3–0.5: moderate resistance (recommended for line / area).
+     * - 1: fully preserve the single-plot aspect ratio.
+     */
+    facetAspectRatioResistance?: number;
+    /**
+     * Whether to auto-wrap column-only facets into a 2D grid.
+     *
+     * When `true` (default), `computeFacetGrid` considers wrapping N
+     * column facets into multiple rows, choosing the layout whose
+     * overall aspect ratio best matches the canvas AR.
+     *
+     * When `false`, column-only facets stay in a single row (capped
+     * at the maximum that fits the canvas budget). Useful for small
+     * multiples that should always be side-by-side.
+     */
+    autoFacetWrap?: boolean;
+    /**
+     * Target aspect ratio for a single band (step height ÷ step width).
+     *
+     * When a banded (discrete) axis is opposite a continuous axis, each
+     * band has a natural AR = continuousAxisSize / stepSize.  If that
+     * exceeds the target, the continuous axis is shrunk via a log-space
+     * blend so bands don't become excessively tall/wide.
+     *
+     * - `undefined` / 0: no band-AR correction.
+     * - Typical values: 8–15 (VL default ≈ 10, ECharts ≈ 12).
+     *
+     * Only affects charts with exactly one banded axis and one
+     * continuous axis (e.g. bar, lollipop).  Has no effect on
+     * scatter, line, or fully-banded charts.
+     */
+    targetBandAR?: number;
 }

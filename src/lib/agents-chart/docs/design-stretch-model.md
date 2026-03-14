@@ -45,6 +45,8 @@ All four share a common pattern:
   - [§2.5 Parameter Table](#25-parameter-table)
   - [§2.6 Worked Examples](#26-worked-examples)
   - [§2.7 Summary](#27-summary)
+  - [§2.8 Faceted Continuous Layout](#28-faceted-continuous-layout-per-subplot-baseline--pressure--ar-blend--fit)
+  - [§2.9 Band AR Blending](#29-band-ar-blending)
 - [§3 Circumference (Radial Pressure Model)](#3-circumference-radial-pressure-model)
   - [§3.1 Problem](#31-problem)
   - [§3.2 Parameters](#32-parameters)
@@ -384,15 +386,18 @@ The gas pressure model (§2) runs within each subplot using $W_{\text{sub}} \tim
 
 ### §1.9.6 Facet wrap (column-only folding)
 
-When only a column facet is specified and $F$ is large, panels wrap into a 2D grid:
+When only a column facet is specified and $F$ exceeds the maximum columns that fit, panels wrap into a 2D grid:
 
-1. **Determine columns:** $F_c = \min(F,\; \lfloor (W_0 \cdot \beta) / S_{\min} \rfloor)$, further constrained by internal discrete pressure.
-2. **Compute rows:** $F_r = \lceil F / F_c \rceil$.
-3. **Size subplots:** Each dimension uses $\lambda_f = \min(\beta, F^{\alpha_f})$.
+1. **Maximum columns:** $F_{c,\max} = \lfloor \text{effectiveW} / (S_{\min} + \text{gap}) \rfloor$, where $\text{effectiveW} = W_0 \times \beta - \text{fixPad}$.
+2. **Single row:** If $F \leq F_{c,\max}$, all panels fit in one row. No wrapping.
+3. **Wrapping:** Otherwise, start with $F_c = F_{c,\max}$ columns and compute $F_r = \lceil F / F_c \rceil$ rows.
+4. **Widow avoidance:** If the last row would contain exactly 1 panel (a "widow"), reduce $F_c$ by 1 and recompute. Repeat while $F_c > 2$ and widow exists. This redistributes panels more evenly — e.g., 11 panels with maxCols=5 → 5×3 would leave 1 orphan, so try 4×3 (last row has 3).
 
-Wrapping transfers pressure from horizontal to vertical — fewer columns give each subplot more width, but total chart height grows.
+The minimum subplot size ($S_{\min}$) is axis-aware:
+- **Discrete/banded axes:** $S_{\min} = \ell_{\min} \times N$ (minStep × value count per axis).
+- **Continuous axes:** $S_{\min} = \text{baseMinSubplot}$ (default 60 px), adjusted by banking AR when both axes are continuous — the shorter dimension stays at base, the longer gets up to $\beta \times$ base. This ensures line charts (landscape AR) get wider min subplots, producing fewer wider panels.
 
-> **Implementation:** `computeFacetGrid()` and `computeChannelBudgets()` in `compute-layout.ts`. The facet grid is computed **before** `computeLayout()` to break the circularity between wrapping and banded axis sizing.
+> **Implementation:** `computeFacetGrid()` in `compute-layout.ts`. Runs **before** `computeLayout()` to break the circularity between wrapping and axis sizing.
 
 ## §1.10 Summary
 
@@ -482,9 +487,9 @@ Here $\sigma$ is used **directly** (not square-rooted) since series count is inh
 
 ## §2.4 Positional ≥ Series Constraint
 
-For charts where both axes are continuous (line, area), stretching the positional axis also reduces visual overlap between series. So:
+For charts where both axes are continuous (line, area), more series means more visual clutter on the **positional** axis too — more overlapping lines means more crossings and parallel strokes competing for the reader's attention. The positional axis ideal stretch is lifted to at least the series axis ideal stretch:
 
-$$s_{\text{positional}} = \max(s_{\text{positional}},\; s_{\text{series}})$$
+$$\text{ideal}_{\text{positional}} = \max(\text{ideal}_{\text{positional}},\; \text{ideal}_{\text{series}})$$
 
 When `maintainContinuousAxisRatio` is set, both axes use the maximum of the two stretches.
 
@@ -559,6 +564,171 @@ H = H₀ · stretch_y
 ```
 
 > **Key functions:** `computeGasPressure()` in `core/decisions.ts`; gas-pressure integration in `computeLayout()` in `core/compute-layout.ts`.
+
+## §2.8 Faceted Continuous Layout (Per-Subplot Baseline → Pressure → AR Blend → Fit)
+
+### §2.8.1 Problem
+
+When faceted, the gas pressure model must answer: **what canvas does each subplot's data crowd against?**
+
+Naive approach: run gas pressure against the full canvas, then divide by column/row count. This over-estimates available space — each subplot only gets a fraction. Sub-plots end up too large, exceeding the total budget.
+
+Alternative naive approach: divide the raw canvas by column/row count first, then run gas pressure per-subplot. This under-estimates — it ignores the facet stretch the layout engine will apply, so gas pressure sees an artificially tiny canvas and immediately saturates.
+
+The correct answer is: **gas pressure runs against the per-subplot canvas that already accounts for facet elasticity** — the same stretch formula used for discrete axes.
+
+### §2.8.2 Per-Subplot Baseline Canvas
+
+Before gas pressure runs, we compute what each subplot would get from facet stretch alone:
+
+$$W_{\text{sub}} = \max\!\left(S_{\min},\; \frac{W_0 \cdot \lambda_f - \text{fixPad}}{F_c} - \text{gap}\right)$$
+
+where $\lambda_f = \min(\beta,\; F_c^{\,\alpha_f})$ is the facet elasticity stretch (§1.9.1). For a single-panel chart ($F_c = 1$), $W_{\text{sub}} = W_0$.
+
+This gives gas pressure a realistic baseline: the space the subplot will actually occupy before any gas-pressure-driven stretch.
+
+> **Implementation:** `perSubplotCanvasW/H` in `computeLayout()` (~line 410–420). Uses `facetElasticityVal = 0.3` and `maxStretchVal = 2`.
+
+### §2.8.3 Banking AR (Multi-Scale Slope Optimization)
+
+For charts with connected marks (line, area, streamgraph), the data has a **perceptually optimal aspect ratio** determined by the slopes of the line segments. This is the *banking to 45°* principle (Cleveland, 1993): the chart should be shaped so that the median line segment slope approaches 45°, making trends maximally visible.
+
+We use a **multi-scale banking** approach (Heer & Agrawala, 2006) that considers slopes at multiple smoothing levels:
+
+**Algorithm:**
+
+1. **Group by series** (color ∪ detail fields). Sort each series by X.
+2. **For each scale** $k = 0, 1, 2, \ldots$ (window size $= 2^k$):
+   - Smooth each series with non-overlapping box filters of width $2^k$.
+   - Compute absolute slopes between consecutive smoothed points: $|s| = |\Delta y / \Delta x|$ (in normalized data coordinates).
+   - Take the **median** absolute slope at this scale.
+3. **Combine** per-scale medians via geometric mean:
+   $$\text{combinedSlope} = \exp\!\left(\frac{1}{K}\sum_{k=0}^{K}\ln(\text{median}_k)\right)$$
+4. **Clamp** to $[0.5,\; 3.0]$.
+5. **Landscape floor** (connected marks only): $\text{AR} = \max(1.0,\; \text{combinedSlope})$. Time series are conventionally landscape; banking should push wider (when slopes are steep) but never portrait — the gentle-slope majority in typical time series would otherwise dominate the median and produce portrait, compressing the time axis.
+
+**For scatter plots** (non-connected): Instead of line slopes, use the standard-deviation ratio $\sigma_x / \sigma_y$ in normalized coordinates, with a dampened response: $\text{AR} = 1 + 0.3 \times (\text{sdRatio} - 1)$.
+
+**No dampening.** The raw combined slope is returned without any multiplicative dampening. The 50/50 blend with gas pressure (§2.8.4) is the sole moderation — applying dampening on top would double-moderate.
+
+> **Implementation:** `computeBankingAR()` in `compute-layout.ts` (~line 819). Returns W/H aspect ratio in $[0.5,\; 3.0]$.
+
+### §2.8.4 Gas–Banking AR Blend
+
+Gas pressure knows which axis is more crowded (density asymmetry). Banking knows the perceptual ideal AR (slope optimization). We blend both signals in **log space** with equal weight:
+
+$$\text{gasAR} = \frac{\text{rawW}}{\text{rawH}} \qquad \text{(from gas pressure per-axis stretches)}$$
+
+$$\text{blendedAR} = \exp\!\left(0.5 \cdot \ln(\text{gasAR}) + 0.5 \cdot \ln(\text{bankingAR})\right)$$
+
+This is the geometric mean: if gas pressure says 2:1 (X crowded) and banking says 1:1 (slopes are gentle), the blend yields $\sqrt{2} \approx 1.41$.
+
+**Coverage gate:** Banking is only applied when both X and Y data cover at least 20% of their respective domains. When data is concentrated in a small region (e.g., a cluster in one corner), slopes are unreliable and gas pressure alone drives the AR.
+
+### §2.8.5 Area Budget and Shape
+
+The blend decides the AR; gas pressure decides the total area:
+
+$$\text{rawArea} = \text{rawW} \times \text{rawH}$$
+
+Capped to prevent the subplot from exceeding its per-subplot budget before the fit step:
+
+$$\text{area} = \min(\text{rawArea},\; W_{\text{sub}} \times H_{\text{sub}} \times \beta)$$
+
+Distribute area to match the blended AR:
+
+$$\text{idealW} = \sqrt{\text{area} \times \text{blendedAR}} \qquad \text{idealH} = \sqrt{\text{area} / \text{blendedAR}}$$
+
+### §2.8.6 Fit to Budget (Preserving AR)
+
+Hard ceiling per subplot: $W_0 \times \beta$ total, shared across facet panels:
+
+$$\text{availW} = \frac{W_0 \cdot \beta - \text{fixPad}}{F_c} - \text{gap} \qquad \text{availH} = \frac{H_0 \cdot \beta - \text{fixPad}}{F_r} - \text{gap}$$
+
+Scale down uniformly to preserve the blended AR:
+
+$$\text{fitScale} = \min\!\left(\frac{\text{availW}}{\text{idealW}},\; \frac{\text{availH}}{\text{idealH}},\; 1\right)$$
+
+$$\text{finalW} = \max(S_{\min},\; \text{idealW} \times \text{fitScale}) \qquad \text{finalH} = \max(S_{\min},\; \text{idealH} \times \text{fitScale})$$
+
+The uniform `fitScale` ensures neither axis exceeds its budget AND the blended AR is preserved (except at minimum-size extremes).
+
+### §2.8.7 Worked Example
+
+150 dates × 8 series × 3 column facets (base $400 \times 300$, $\beta = 2.0$, line chart: $\sigma_x = 100$, $\sigma_y = 20$, `seriesCountAxis: auto → Y`, `facetElasticity = 0.3`):
+
+**Per-subplot baseline:**
+- Facet stretch: $\lambda_f = \min(2, 3^{0.3}) = 1.35$
+- $W_{\text{sub}} = (400 \times 1.35) / 3 = 180$ px
+
+**Gas pressure** (against $180 \times 300$):
+- X positional: 150 unique, $\sigma_{1d} = 10$ → $p = 8.33$ → raw stretch $= 8.33^{0.3} = 1.93$
+- Y series: 8 series, $\sigma = 20$ → $p = 0.53$ → raw stretch $= 1.0$
+- rawW $= 180 \times 1.93 = 347$, rawH $= 300 \times 1.0 = 300$, gasAR $= 1.16$
+
+**Banking AR** (multi-scale slopes): Suppose combinedSlope yields bankingAR $= 1.8$ (landscape).
+
+**Blend:** $\text{blendedAR} = \exp(0.5 \ln 1.16 + 0.5 \ln 1.8) = \sqrt{1.16 \times 1.8} = 1.44$
+
+**Area:** rawArea $= 347 \times 300 = 104{,}100$. maxArea $= 180 \times 300 \times 2 = 108{,}000$. area $= 104{,}100$.
+- idealW $= \sqrt{104100 \times 1.44} = 387$, idealH $= \sqrt{104100 / 1.44} = 269$
+
+**Fit:** availW $= (800 - 0) / 3 = 267$, availH $= 600$.
+- fitScale $= \min(267/387, 600/269, 1) = 0.69$
+- finalW $= 387 \times 0.69 = 267$, finalH $= 269 \times 0.69 = 186$
+- **Final: 267 × 186, AR = 1.44** ✓ landscape preserved, total width = 800
+
+> **Implementation:** `computeLayout()` in `core/compute-layout.ts` — the cont×cont path (~lines 370–530). `computeBankingAR()` (~line 819). `computeGasPressure()` in `core/decisions.ts`.
+
+## §2.9 Band AR Blending
+
+### §2.9.1 Problem
+
+When one axis is banded (discrete) and the other is continuous — e.g., a bar chart with categories on X and values on Y — the step size from §1 determines the band width, while the continuous axis uses the default canvas height. If there are few categories with a tall canvas, each band becomes excessively elongated (tall, thin bars). This degrades readability: labels crowd, bar proportions look distorted, and the chart wastes vertical space.
+
+### §2.9.2 Target Band AR
+
+The **band aspect ratio** is the ratio of the continuous dimension to the step size:
+
+$$\text{bandAR} = \frac{\text{continuousDim}}{\text{stepSize}}$$
+
+When `bandAR` is large (e.g., 20:1), each bar is 20× taller than it is wide — visually extreme. A `targetBandAR` parameter (default: 10) defines the maximum acceptable ratio.
+
+### §2.9.3 Log-Space Blend
+
+When the actual band AR exceeds the target, the continuous axis is **shrunk** toward the ideal via a 50/50 log-space blend (same mechanism as §2.8.4):
+
+$$\text{idealDim} = \text{stepSize} \times \text{targetBandAR}$$
+
+$$\text{blendedDim} = \exp\!\left(0.5 \cdot \ln(\text{actualDim}) + 0.5 \cdot \ln(\text{idealDim})\right)$$
+
+The result is clamped to $[S_{\min},\; \text{actualDim}]$ — the blend only **shrinks**, never grows. If `bandAR ≤ targetBandAR`, no adjustment is made.
+
+### §2.9.4 Orientation Handling
+
+| Axis layout | Band AR formula | Adjusted dimension |
+|---|---|---|
+| X banded, Y continuous | $H / \text{xStep}$ | Shrink $H$ |
+| Y banded, X continuous | $W / \text{yStep}$ | Shrink $W$ |
+
+### §2.9.5 Worked Example
+
+5 categories on X, step = 40 px, canvas height = 300 px, targetBandAR = 10:
+
+- bandAR $= 300 / 40 = 7.5 \leq 10$ → **no adjustment**.
+
+3 categories on X, step = 60 px, canvas height = 300 px, targetBandAR = 10:
+
+- bandAR $= 300 / 60 = 5.0 \leq 10$ → **no adjustment**.
+
+20 categories on X, step = 12 px, canvas height = 300 px, targetBandAR = 10:
+
+- bandAR $= 300 / 12 = 25 > 10$ → blend.
+- idealH $= 12 \times 10 = 120$.
+- blendedH $= \exp(0.5 \ln 300 + 0.5 \ln 120) = \sqrt{300 \times 120} = 190$ px.
+- **Result: height shrinks from 300 → 190.**
+
+> **Implementation:** Band AR blending block in `computeLayout()` (~lines 702–735). Controlled by `options.targetBandAR` (`AssembleOptions`). VL backend sets default `targetBandAR = 10` in `assemble.ts`.
 
 ---
 
@@ -820,13 +990,25 @@ The four models adapt the same core idea — **pressure → elastic stretch → 
 3. **Per-dimension cap $\beta$.** No axis grows beyond $\beta \times$ base. For radial/area models this translates to radius or area caps.
 4. **Effective item count.** For variable-width items (pie, treemap), $N_{\text{eff}} = \sum v_i / \min(v_i)$ measures worst-case crowding.
 
+### AR-aware extensions (§2.8–§2.9)
+
+For continuous axes, raw pressure is augmented with aspect-ratio intelligence:
+
+5. **Banking AR (§2.8.3).** Multi-scale slope analysis (Heer & Agrawala 2006) determines the perceptual ideal W/H ratio. Connected marks get a landscape floor (AR ≥ 1). Scatter uses σ-ratio.
+6. **Gas–Banking blend (§2.8.4).** 50/50 geometric mean in log space: gasAR (density) × bankingAR (perception).
+7. **Per-subplot baseline (§2.8.2).** Faceted charts feed per-subplot canvas (with facet elasticity) to gas pressure, not the full canvas.
+8. **Band AR blending (§2.9).** When one axis is banded and the other continuous, `targetBandAR` prevents excessively elongated bands via log-space blend.
+
 ### Decision tree
 
 ```
 Is the chart axis-based?
 ├── YES: Does it have banded (discrete) axes?
-│   ├── YES → §1 Elastic Budget Model
-│   └── NO  → §2 Gas Pressure Model
+│   ├── Both banded  → §1 Elastic Budget on each axis
+│   ├── One banded   → §1 for banded axis, §2 for continuous axis
+│   │                  + §2.9 Band AR blending if targetBandAR set
+│   └── Neither      → §2 Gas Pressure (both axes continuous)
+│                      + §2.8 Banking AR + Gas–Banking blend
 └── NO:  Is the layout radial (items around a circle)?
     ├── YES → §3 Circumference Model
     └── NO  → §4 Area Model (2D space-filling)
@@ -839,9 +1021,10 @@ Is the chart axis-based?
 | `computeElasticBudget()` | `core/decisions.ts` | §1 |
 | `computeAxisStep()` | `core/decisions.ts` | §1 |
 | `computeGasPressure()` | `core/decisions.ts` | §2 |
+| `computeBankingAR()` | `core/compute-layout.ts` | §2.8 |
 | `computeCircumferencePressure()` | `core/decisions.ts` | §3 |
 | `computeEffectiveBarCount()` | `core/decisions.ts` | §3, §4 |
-| `computeLayout()` | `core/compute-layout.ts` | §1, §2 orchestration |
-| `computeFacetGrid()` | `core/compute-layout.ts` | §1.9 faceting |
+| `computeLayout()` | `core/compute-layout.ts` | §1, §2, §2.8, §2.9 orchestration |
+| `computeFacetGrid()` | `core/compute-layout.ts` | §1.9 faceting, §2.8 min subplot |
 | `computeChannelBudgets()` | `core/compute-layout.ts` | §1.9 overflow budgets |
 | Area pressure (inline) | `echarts/templates/treemap.ts` | §4 |

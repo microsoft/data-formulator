@@ -27,7 +27,7 @@ export {
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
     genRoseTests,
 } from './specialized-tests';
-export { FACET_SIZES, DISCRETE_SIZES, genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests, genFacetOverflowedColTests, genFacetOverflowedColRowTests, genFacetOverflowedRowTests } from './facet-tests';
+export { FACET_SIZES, DISCRETE_SIZES, genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests, genFacetOverflowedColTests, genFacetOverflowedColRowTests, genFacetOverflowedRowTests, genFacetDenseLineTests } from './facet-tests';
 export { genOverflowTests, genElasticityTests } from './stress-tests';
 export { genGasPressureTests } from './gas-pressure-tests';
 export { genLineAreaStretchTests } from './line-area-stretch-tests';
@@ -55,7 +55,7 @@ import {
     genCustomTests, genWaterfallTests, genCandlestickTests, genRadarTests, genPyramidTests,
     genRoseTests,
 } from './specialized-tests';
-import { genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests, genFacetOverflowedColTests, genFacetOverflowedColRowTests, genFacetOverflowedRowTests } from './facet-tests';
+import { genFacetColumnTests, genFacetRowTests, genFacetColRowTests, genFacetSmallTests, genFacetWrapTests, genFacetClipTests, genFacetOverflowedColTests, genFacetOverflowedColRowTests, genFacetOverflowedRowTests, genFacetDenseLineTests } from './facet-tests';
 import { genOverflowTests, genElasticityTests } from './stress-tests';
 import { genGasPressureTests } from './gas-pressure-tests';
 import { genLineAreaStretchTests } from './line-area-stretch-tests';
@@ -102,6 +102,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Facet: Overflowed Col': genFacetOverflowedColTests,
     'Facet: Overflowed Col+Row': genFacetOverflowedColRowTests,
     'Facet: Overflowed Row': genFacetOverflowedRowTests,
+    'Facet: Dense Line': genFacetDenseLineTests,
     'Overflow': genOverflowTests,
     'Elasticity & Stretch': genElasticityTests,
     'Dates: Year': genDateYearTests,
@@ -191,7 +192,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
     {
         label: 'Facets',
         description: 'Faceting modes and feature combinations',
-        entries: ['Facet: Columns', 'Facet: Rows', 'Facet: Cols+Rows', 'Facet: Small', 'Facet: Wrap', 'Facet: Clip', 'Facet: Overflowed Col', 'Facet: Overflowed Col+Row', 'Facet: Overflowed Row'],
+        entries: ['Facet: Columns', 'Facet: Rows', 'Facet: Cols+Rows', 'Facet: Small', 'Facet: Wrap', 'Facet: Clip', 'Facet: Overflowed Col', 'Facet: Overflowed Col+Row', 'Facet: Overflowed Row', 'Facet: Dense Line'],
     },
     {
         label: 'Stress Tests',
