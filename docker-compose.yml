@@ -1,0 +1,28 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+# Docker Compose configuration for Data Formulator.
+#
+# Quick start:
+#   1. Copy .env.template to .env and fill in your API keys.
+#   2. docker compose up --build
+#   3. Open http://localhost:5567 in your browser.
+
+services:
+  data-formulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: data-formulator:latest
+    ports:
+      - "5567:5567"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Persist workspace data (uploaded files, sessions, etc.) across container restarts.
+      - data_formulator_home:/home/appuser/.data_formulator
+    restart: unless-stopped
+
+volumes:
+  data_formulator_home:
