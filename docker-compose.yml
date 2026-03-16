@@ -17,8 +17,7 @@ services:
     ports:
       - "5567:5567"
     env_file:
-      - path: .env
-        required: false
+      - .env
     volumes:
       # Persist workspace data (uploaded files, sessions, etc.) across container restarts.
       - data_formulator_home:/home/appuser/.data_formulator
