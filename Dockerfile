@@ -35,6 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create a non-root user to run the application
 RUN useradd -m -s /bin/bash appuser
 
+# Set the home directory for workspace data to a deterministic path
+ENV DATA_FORMULATOR_HOME=/home/appuser/.data_formulator
+
 WORKDIR /app
 
 # Copy Python package sources
@@ -47,8 +50,8 @@ COPY --from=frontend-builder /app/py-src/data_formulator/dist ./py-src/data_form
 # Install the package and its dependencies
 RUN pip install --no-cache-dir .
 
-# Switch to non-root user and set the home directory for workspace data
-RUN chown -R appuser:appuser /app
+# Switch to non-root user and ensure workspace and app directories are owned by it
+RUN mkdir -p "${DATA_FORMULATOR_HOME}" && chown -R appuser:appuser /app "${DATA_FORMULATOR_HOME}"
 USER appuser
 
 EXPOSE 5567
