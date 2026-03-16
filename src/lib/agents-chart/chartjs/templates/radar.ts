@@ -13,7 +13,15 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS, DEFAULT_BG_COLORS } from './utils';
+import {
+    extractCategories,
+    groupBy,
+    DEFAULT_COLORS,
+    DEFAULT_BG_COLORS,
+    getChartJsPalette,
+    getSeriesBorderColor,
+    getSeriesBackgroundColor,
+} from './utils';
 
 export const cjsRadarChartDef: ChartTemplateDef = {
     chart: 'Radar Chart',
@@ -34,6 +42,8 @@ export const cjsRadarChartDef: ChartTemplateDef = {
 
         const filled = chartProperties?.filled !== false;
         const fillOpacity = chartProperties?.fillOpacity ?? 0.3;
+
+        const palette = getChartJsPalette(ctx, 'color');
 
         const config: any = {
             type: 'radar',
@@ -82,8 +92,8 @@ export const cjsRadarChartDef: ChartTemplateDef = {
                     return entry ? Math.round((entry.sum / entry.count) * 100) / 100 : 0;
                 });
 
-                const borderColor = DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length];
-                const bgColor = borderColor.replace(/[\d.]+\)$/, `${fillOpacity})`);
+                const borderColor = getSeriesBorderColor(palette, colorIdx);
+                const bgColor = getSeriesBackgroundColor(palette, colorIdx, fillOpacity);
 
                 config.data.datasets.push({
                     label: name,
@@ -115,11 +125,11 @@ export const cjsRadarChartDef: ChartTemplateDef = {
             config.data.datasets.push({
                 label: valueField,
                 data: values,
-                borderColor: DEFAULT_COLORS[0],
+                borderColor: getSeriesBorderColor(palette, 0),
                 backgroundColor: filled
-                    ? DEFAULT_COLORS[0].replace(/[\d.]+\)$/, `${fillOpacity})`)
+                    ? getSeriesBackgroundColor(palette, 0, fillOpacity)
                     : 'transparent',
-                pointBackgroundColor: DEFAULT_COLORS[0],
+                pointBackgroundColor: getSeriesBorderColor(palette, 0),
                 fill: filled,
             });
             config.options.plugins.legend = { display: false };

@@ -37,6 +37,7 @@ import { resolveChannelSemantics, convertTemporalData } from '../core/resolve-se
 import { computeZeroDecision } from '../core/semantic-types';
 import { filterOverflow } from '../core/filter-overflow';
 import { computeLayout, computeChannelBudgets } from '../core/compute-layout';
+import { decideColorMaps } from '../core/color-decisions';
 import { cjsApplyLayoutToSpec, cjsApplyTooltips } from './instantiate-spec';
 
 // ---------------------------------------------------------------------------
@@ -179,6 +180,14 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
         semanticTypes,
         chartType,
         assembleOptions: effectiveOptions,
+        colorDecisions: decideColorMaps({
+            chartType,
+            encodings,
+            channelSemantics,
+            table: values,
+            backend: 'chartjs',
+            background: 'light',
+        }),
     };
 
     // Standard single-panel rendering (no faceting for initial CJS backend)

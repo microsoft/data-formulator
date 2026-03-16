@@ -10,7 +10,14 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, DEFAULT_COLORS, DEFAULT_BG_COLORS } from './utils';
+import {
+    extractCategories,
+    DEFAULT_COLORS,
+    DEFAULT_BG_COLORS,
+    getChartJsPalette,
+    getSeriesBorderColor,
+    getSeriesBackgroundColor,
+} from './utils';
 
 export const cjsPieChartDef: ChartTemplateDef = {
     chart: 'Pie Chart',
@@ -24,6 +31,8 @@ export const cjsPieChartDef: ChartTemplateDef = {
 
         const labels: string[] = [];
         const values: number[] = [];
+
+        const palette = getChartJsPalette(ctx, 'color');
 
         if (colorField && sizeField) {
             // color = category (slice label), size = measure (slice value)
@@ -67,8 +76,8 @@ export const cjsPieChartDef: ChartTemplateDef = {
                 labels,
                 datasets: [{
                     data: values,
-                    backgroundColor: DEFAULT_BG_COLORS.slice(0, labels.length),
-                    borderColor: DEFAULT_COLORS.slice(0, labels.length),
+                    backgroundColor: labels.map((_, i) => getSeriesBackgroundColor(palette, i, 0.6)),
+                    borderColor: labels.map((_, i) => getSeriesBorderColor(palette, i)),
                     borderWidth: 1,
                 }],
             },

@@ -25,6 +25,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, DEFAULT_COLORS } from './utils';
+import { getPaletteForScheme } from '../../core/color-decisions';
 
 export const ecFunnelChartDef: ChartTemplateDef = {
     chart: 'Funnel Chart',
@@ -38,7 +39,7 @@ export const ecFunnelChartDef: ChartTemplateDef = {
         },
     }),
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table, chartProperties, layout } = ctx;
+        const { channelSemantics, table, chartProperties, layout, colorDecisions } = ctx;
         const stageField = channelSemantics.y?.field;
         const valField = channelSemantics.size?.field;
 
@@ -49,6 +50,21 @@ export const ecFunnelChartDef: ChartTemplateDef = {
             table, stageField, channelSemantics.y?.ordinalSortOrder,
         );
         if (stages.length === 0) return;
+
+        // ── Resolve color palette from backend-agnostic color decisions ──
+        const decision = colorDecisions?.color ?? colorDecisions?.group;
+        let palette: string[] | undefined;
+        if (decision?.schemeId) {
+            const fromRegistry = getPaletteForScheme(decision.schemeId);
+            if (fromRegistry && fromRegistry.length > 0) {
+                palette = fromRegistry;
+            }
+        }
+        if (!palette || palette.length === 0) {
+            const catCount = stages.length;
+            const fallbackId = catCount > 10 ? 'cat20' : 'cat10';
+            palette = getPaletteForScheme(fallbackId) ?? DEFAULT_COLORS;
+        }
 
         // Aggregate values per stage
         const funnelData: { name: string; value: number }[] = [];
@@ -128,7 +144,12 @@ export const ecFunnelChartDef: ChartTemplateDef = {
                 sort: sortOrder,
                 orient,
                 gap: chartProperties?.gap ?? 2,
-                data: funnelData,
+                data: funnelData.map((d, idx) => ({
+                    ...d,
+                    itemStyle: {
+                        ...(palette ? { color: palette[idx % palette.length] } : {}),
+                    },
+                })),
                 label: {
                     show: true,
                     position: 'inside',
@@ -145,7 +166,7 @@ export const ecFunnelChartDef: ChartTemplateDef = {
                     borderWidth: 1,
                 },
             }],
-            color: DEFAULT_COLORS,
+            color: palette ?? DEFAULT_COLORS,
             _width: canvasW,
             _height: canvasH,
         };

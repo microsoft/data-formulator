@@ -11,8 +11,12 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import {
-    extractCategories, groupBy, buildCategoryAlignedData,
+    extractCategories,
+    groupBy,
+    buildCategoryAlignedData,
     DEFAULT_COLORS,
+    getChartJsPalette,
+    getSeriesBorderColor,
 } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
@@ -50,6 +54,8 @@ export const cjsLineChartDef: ChartTemplateDef = {
                       : interpolate === 'step-before' ? 'before' as const
                       : interpolate === 'step-after' ? 'after' as const
                       : false as const;
+
+        const palette = getChartJsPalette(ctx, 'color');
 
         const config: any = {
             type: 'line',
@@ -95,7 +101,7 @@ export const cjsLineChartDef: ChartTemplateDef = {
                 config.data.datasets.push({
                     label: name,
                     data,
-                    borderColor: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length],
+                    borderColor: getSeriesBorderColor(palette, colorIdx),
                     backgroundColor: 'transparent',
                     tension,
                     stepped,
@@ -115,7 +121,7 @@ export const cjsLineChartDef: ChartTemplateDef = {
             config.data.datasets.push({
                 label: yField,
                 data,
-                borderColor: DEFAULT_COLORS[0],
+                borderColor: getSeriesBorderColor(palette, 0),
                 backgroundColor: 'transparent',
                 tension,
                 stepped,

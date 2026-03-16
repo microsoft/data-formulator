@@ -9,8 +9,14 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import {
-    extractCategories, groupBy, buildCategoryAlignedData,
-    DEFAULT_COLORS, DEFAULT_BG_COLORS,
+    extractCategories,
+    groupBy,
+    buildCategoryAlignedData,
+    DEFAULT_COLORS,
+    DEFAULT_BG_COLORS,
+    getChartJsPalette,
+    getSeriesBorderColor,
+    getSeriesBackgroundColor,
 } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
@@ -49,6 +55,8 @@ export const cjsAreaChartDef: ChartTemplateDef = {
         const tension = (interpolate === 'monotone' || interpolate === 'basis' ||
                          interpolate === 'cardinal' || interpolate === 'catmull-rom')
             ? 0.4 : 0;
+
+        const palette = getChartJsPalette(ctx, 'color');
 
         const config: any = {
             type: 'line',
@@ -93,13 +101,13 @@ export const cjsAreaChartDef: ChartTemplateDef = {
                     ? buildCategoryAlignedData(rows, xField, yField, categories!)
                     : rows.map(r => ({ x: r[xField], y: r[yField] }));
 
-                const bgColor = DEFAULT_BG_COLORS[colorIdx % DEFAULT_BG_COLORS.length]
-                    .replace(/[\d.]+\)$/, `${opacity})`);
+                const borderColor = getSeriesBorderColor(palette, colorIdx);
+                const bgColor = getSeriesBackgroundColor(palette, colorIdx, opacity);
 
                 config.data.datasets.push({
                     label: name,
                     data,
-                    borderColor: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length],
+                    borderColor,
                     backgroundColor: bgColor,
                     tension,
                     fill: stacked ? 'stack' : 'origin',
@@ -118,8 +126,8 @@ export const cjsAreaChartDef: ChartTemplateDef = {
             config.data.datasets.push({
                 label: yField,
                 data,
-                borderColor: DEFAULT_COLORS[0],
-                backgroundColor: `rgba(54, 162, 235, ${opacity})`,
+                borderColor: getSeriesBorderColor(palette, 0),
+                backgroundColor: getSeriesBackgroundColor(palette, 0, opacity),
                 tension,
                 fill: 'origin',
                 pointRadius: 2,
