@@ -6,7 +6,8 @@
  * Pure logic — no UI dependencies.
  */
 
-import type { ChannelSemantics } from '../../core/types';
+import type { ChannelSemantics, InstantiateContext } from '../../core/types';
+import { getPaletteForScheme } from '../../core/color-decisions';
 
 // ---------------------------------------------------------------------------
 // Discrete-dimension helpers
@@ -100,6 +101,95 @@ export const DEFAULT_BG_COLORS = [
     'rgba(231, 76, 60, 0.6)',
     'rgba(149, 165, 166, 0.6)',
 ];
+
+// ---------------------------------------------------------------------------
+// Color-decisions integration
+// ---------------------------------------------------------------------------
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return null;
+    const intVal = parseInt(m[1], 16);
+    return {
+        r: (intVal >> 16) & 255,
+        g: (intVal >> 8) & 255,
+        b: intVal & 255,
+    };
+}
+
+function rgbaFromHex(hex: string, alpha: number): string {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return hex;
+    const a = Math.max(0, Math.min(1, alpha));
+    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
+}
+
+function applyAlphaToColor(color: string, alpha: number): string {
+    const a = Math.max(0, Math.min(1, alpha));
+    if (color.startsWith('#')) {
+        return rgbaFromHex(color, a);
+    }
+    if (color.startsWith('rgba')) {
+        return color.replace(
+            /rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/,
+            (_m, r, g, b) => `rgba(${r}, ${g}, ${b}, ${a})`,
+        );
+    }
+    if (color.startsWith('rgb(')) {
+        return color.replace(
+            /rgb\((\d+),\s*(\d+),\s*(\d+)\)/,
+            (_m, r, g, b) => `rgba(${r}, ${g}, ${b}, ${a})`,
+        );
+    }
+    return color;
+}
+
+/**
+ * 从 color-decisions 解析调色板；若没有决策则回退到 DEFAULT_COLORS。
+ */
+export function getChartJsPalette(ctx: InstantiateContext, preferred: 'color' | 'group' = 'color'): string[] {
+    const decisions = ctx.colorDecisions;
+    const decision =
+        preferred === 'color'
+            ? decisions?.color ?? decisions?.group
+            : decisions?.group ?? decisions?.color;
+
+    const schemeId = decision?.schemeId;
+    if (schemeId) {
+        const fromRegistry = getPaletteForScheme(schemeId);
+        if (fromRegistry && fromRegistry.length > 0) {
+            return fromRegistry;
+        }
+    }
+
+    // 与 Vega-Lite / ECharts 对齐的兜底逻辑：
+    // 当没有显式 color/group 通道或没有决策时，统一回退到 cat10。
+    const cat10 = getPaletteForScheme('cat10');
+    if (cat10 && cat10.length > 0) {
+        return cat10;
+    }
+
+    // 再次兜底到旧的 Chart.js 默认色盘，避免完全没有颜色可用。
+    return DEFAULT_COLORS;
+}
+
+/**
+ * 取得第 i 个系列的描边色（优先使用统一调色板）。
+ */
+export function getSeriesBorderColor(palette: string[], index: number): string {
+    if (!palette.length) {
+        return DEFAULT_COLORS[index % DEFAULT_COLORS.length];
+    }
+    return palette[index % palette.length];
+}
+
+/**
+ * 取得第 i 个系列的填充色，自动按需要设置透明度。
+ */
+export function getSeriesBackgroundColor(palette: string[], index: number, alpha = 0.6): string {
+    const border = getSeriesBorderColor(palette, index);
+    return applyAlphaToColor(border, alpha);
+}
 
 /**
  * Detect which axis is the category (banded) axis and which is the value axis.

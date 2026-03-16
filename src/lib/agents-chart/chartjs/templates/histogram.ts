@@ -9,7 +9,13 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { DEFAULT_COLORS, DEFAULT_BG_COLORS } from './utils';
+import {
+    DEFAULT_COLORS,
+    DEFAULT_BG_COLORS,
+    getChartJsPalette,
+    getSeriesBorderColor,
+    getSeriesBackgroundColor,
+} from './utils';
 
 export const cjsHistogramDef: ChartTemplateDef = {
     chart: 'Histogram',
@@ -21,6 +27,8 @@ export const cjsHistogramDef: ChartTemplateDef = {
         const xField = channelSemantics.x?.field;
         const colorField = channelSemantics.color?.field;
         if (!xField) return;
+
+        const palette = getChartJsPalette(ctx, 'color');
 
         const binCount = chartProperties?.binCount ?? 10;
 
@@ -78,8 +86,8 @@ export const cjsHistogramDef: ChartTemplateDef = {
             config.data.datasets.push({
                 label: 'Count',
                 data: counts,
-                backgroundColor: DEFAULT_BG_COLORS[0],
-                borderColor: DEFAULT_COLORS[0],
+                backgroundColor: getSeriesBackgroundColor(palette, 0),
+                borderColor: getSeriesBorderColor(palette, 0),
                 borderWidth: 1,
                 barPercentage: 1.0,
                 categoryPercentage: 1.0,
@@ -110,8 +118,8 @@ export const cjsHistogramDef: ChartTemplateDef = {
                 config.data.datasets.push({
                     label: name,
                     data: counts,
-                    backgroundColor: DEFAULT_BG_COLORS[colorIdx % DEFAULT_BG_COLORS.length],
-                    borderColor: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length],
+                    backgroundColor: getSeriesBackgroundColor(palette, colorIdx),
+                    borderColor: getSeriesBorderColor(palette, colorIdx),
                     borderWidth: 1,
                     barPercentage: 1.0,
                     categoryPercentage: 1.0,
