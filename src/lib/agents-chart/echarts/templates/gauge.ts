@@ -24,6 +24,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, groupBy, DEFAULT_COLORS } from './utils';
+import { getPaletteForScheme } from '../../core/color-decisions';
 
 export const ecGaugeChartDef: ChartTemplateDef = {
     chart: 'Gauge Chart',
@@ -31,7 +32,7 @@ export const ecGaugeChartDef: ChartTemplateDef = {
     channels: ['size', 'column'],
     markCognitiveChannel: 'position',
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table, chartProperties } = ctx;
+        const { channelSemantics, table, chartProperties, colorDecisions } = ctx;
         const valueField = channelSemantics.size?.field;
         const columnField = channelSemantics.column?.field;
 
@@ -43,6 +44,27 @@ export const ecGaugeChartDef: ChartTemplateDef = {
 
         const scaleMin = chartProperties?.min ?? 0;
         const scaleMax = chartProperties?.max ?? niceGaugeMax(dataMax);
+
+        // ── Resolve palette from backend-agnostic color decisions ───────
+        // 1) 若存在显式 color/group 决策，则优先使用其 schemeId 对应的注册表色盘。
+        // 2) 否则根据仪表数量选择 cat10 / cat20。
+        // 3) 注册表缺失时，退回到 ECharts 默认颜色。
+        const decision = colorDecisions?.color ?? colorDecisions?.group;
+        let palette: string[] | undefined;
+        if (decision?.schemeId) {
+            const fromRegistry = getPaletteForScheme(decision.schemeId);
+            if (fromRegistry && fromRegistry.length > 0) {
+                palette = fromRegistry;
+            }
+        }
+        if (!palette || palette.length === 0) {
+            const fallbackId = (channelSemantics.column
+                ? Math.max(1, extractCategories(table, channelSemantics.column.field, channelSemantics.column.ordinalSortOrder).length)
+                : 1) > 10
+                ? 'cat20'
+                : 'cat10';
+            palette = getPaletteForScheme(fallbackId) ?? DEFAULT_COLORS;
+        }
 
         // ── Build gauge items: one per column category, or single ────────
         const gaugeItems: { name: string; value: number; color?: string }[] = [];
@@ -61,7 +83,7 @@ export const ecGaugeChartDef: ChartTemplateDef = {
                 gaugeItems.push({
                     name: cat,
                     value: avg,
-                    color: DEFAULT_COLORS[idx % DEFAULT_COLORS.length],
+                    color: palette![idx % palette!.length],
                 });
             });
         } else {
