@@ -37,7 +37,8 @@ import {
     levelToFormat,
     SEMANTIC_LEVEL,
 } from '../core/resolve-semantics';
-import { ColorDecisionResult, getPaletteForScheme } from '../core/color-decisions';
+import { ColorDecisionResult } from '../core/color-decisions';
+import { getPaletteForScheme } from './colormap';
 import { DEFAULT_COLORS } from './templates/utils';
 
 /**
@@ -666,21 +667,23 @@ export function ecApplyLayoutToSpec(
     const decisions: ColorDecisionResult | undefined = context.colorDecisions;
     let colorDecision = decisions ? (decisions.color ?? decisions.group) : undefined;
     let effectivePalette: string[] | undefined;
-    if (decisions && colorDecision && colorDecision.schemeId) {
-        const fromResolved =
-            context.resolvedEncodings?.color?.colorPalette
-            ?? context.resolvedEncodings?.group?.colorPalette;
-
+    if (decisions && colorDecision) {
         let palette: string[] | undefined;
         const isCategoricalScheme = colorDecision.schemeType === 'categorical';
 
+        // 对于 categorical：沿用原有逻辑（cat10/cat20 等）。
         if (isCategoricalScheme) {
-            // 对于分类色盘，优先使用统一注册表中的 cat10/cat20 等，
-            // 避免后端各自的默认调色板导致视觉风格不一致。
-            const fromRegistry = getPaletteForScheme(colorDecision.schemeId);
-            if (fromRegistry && fromRegistry.length > 0) {
-                palette = fromRegistry;
-            } else {
+            const fromResolved =
+                context.resolvedEncodings?.color?.colorPalette
+                ?? context.resolvedEncodings?.group?.colorPalette;
+
+            if (colorDecision.schemeId) {
+                const fromRegistry = getPaletteForScheme(colorDecision.schemeId);
+                if (fromRegistry && fromRegistry.length > 0) {
+                    palette = fromRegistry;
+                }
+            }
+            if (!palette) {
                 const targetId =
                     (colorDecision.categoryCount ?? 0) > 10
                         ? 'cat20'
@@ -689,16 +692,24 @@ export function ecApplyLayoutToSpec(
                     ?? (fromResolved && fromResolved.length > 0 ? fromResolved : DEFAULT_COLORS);
             }
         } else {
-            // 顺序 / 发散色带：优先使用统一注册表中的连续色带（例如 viridis），
-            // 这样 Rank / 连续映射在所有后端保持一致；只有当注册表缺失时，
-            // 才退回到上游解析好的 palette 或默认颜色。
-            const fromRegistry = getPaletteForScheme(colorDecision.schemeId);
-            if (fromRegistry && fromRegistry.length > 0) {
-                palette = fromRegistry;
-            } else if (fromResolved && fromResolved.length > 0) {
-                palette = fromResolved;
-            } else {
-                palette = DEFAULT_COLORS;
+            // 对于 sequential/diverging（包括 Rank 数值型）：
+            //   - 若有显式 schemeId，则先尝试对应的连续色带；
+            //   - 否则根据类型自动挑选连续 palette（如 viridis / RdBu），
+            //     以便后续 Rank 颜色采样在连续 colormap 上进行。
+            if (colorDecision.schemeId) {
+                const fromRegistry = getPaletteForScheme(colorDecision.schemeId);
+                if (fromRegistry && fromRegistry.length > 0) {
+                    palette = fromRegistry;
+                }
+            }
+            if (!palette) {
+                if (colorDecision.schemeType === 'sequential') {
+                    palette = getPaletteForScheme('viridis') ?? DEFAULT_COLORS;
+                } else if (colorDecision.schemeType === 'diverging') {
+                    palette = getPaletteForScheme('RdBu') ?? DEFAULT_COLORS;
+                } else {
+                    palette = DEFAULT_COLORS;
+                }
             }
         }
 

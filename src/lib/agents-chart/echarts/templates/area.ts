@@ -11,7 +11,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, groupBy, getCategoryOrder } from './utils';
-import { getPaletteForScheme } from '../../core/color-decisions';
+import { getPaletteForScheme } from '../colormap';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 

@@ -68,7 +68,8 @@ import { ecApplyLayoutToSpec, ecApplyTooltips } from './instantiate-spec';
 import { ecCombineFacetPanels } from './facet';
 import { DEFAULT_COLORS } from './templates/utils';
 import { inferVisCategory, computeZeroDecision } from '../core/semantic-types';
-import { decideColorMaps, getPaletteForScheme } from '../core/color-decisions';
+import { decideColorMaps } from '../core/color-decisions';
+import { getPaletteForScheme } from './colormap';
 
 // ---------------------------------------------------------------------------
 // Public API

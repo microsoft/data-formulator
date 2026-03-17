@@ -18,7 +18,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, DEFAULT_COLORS } from './utils';
-import { getPaletteForScheme } from '../../core/color-decisions';
+import { getPaletteForScheme } from '../colormap';
 import { computeEffectiveBarCount } from '../../core/decisions';
 
 export const ecTreemapDef: ChartTemplateDef = {

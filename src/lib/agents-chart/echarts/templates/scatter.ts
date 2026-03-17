@@ -12,7 +12,7 @@
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { formatTimestamp } from '../instantiate-spec';
 import { DEFAULT_COLORS, groupBy, getCategoryOrder, extractCategories } from './utils';
-import { getPaletteForScheme } from '../../core/color-decisions';
+import { getPaletteForScheme } from '../colormap';
 
 /** Compute a reasonable scatter symbolSize based on canvas area and point count. */
 function computeSymbolSize(width: number, height: number, pointCount: number): number {
