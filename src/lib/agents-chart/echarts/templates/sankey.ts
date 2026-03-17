@@ -25,7 +25,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { DEFAULT_COLORS } from './utils';
-import { getPaletteForScheme } from '../../core/color-decisions';
+import { getPaletteForScheme } from '../colormap';
 
 export const ecSankeyDef: ChartTemplateDef = {
     chart: 'Sankey Diagram',

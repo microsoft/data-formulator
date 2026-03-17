@@ -7,7 +7,7 @@
  */
 
 import type { ChannelSemantics, InstantiateContext } from '../../core/types';
-import { getPaletteForScheme } from '../../core/color-decisions';
+import { pickChartJsPalette } from '../colormap';
 
 // ---------------------------------------------------------------------------
 // Discrete-dimension helpers
@@ -145,7 +145,7 @@ function applyAlphaToColor(color: string, alpha: number): string {
 }
 
 /**
- * 从 color-decisions 解析调色板；若没有决策则回退到 DEFAULT_COLORS。
+ * 从 color-decisions 解析调色板；若没有决策则回退到 Chart.js 默认 cat10。
  */
 export function getChartJsPalette(ctx: InstantiateContext, preferred: 'color' | 'group' = 'color'): string[] {
     const decisions = ctx.colorDecisions;
@@ -154,22 +154,10 @@ export function getChartJsPalette(ctx: InstantiateContext, preferred: 'color' | 
             ? decisions?.color ?? decisions?.group
             : decisions?.group ?? decisions?.color;
 
-    const schemeId = decision?.schemeId;
-    if (schemeId) {
-        const fromRegistry = getPaletteForScheme(schemeId);
-        if (fromRegistry && fromRegistry.length > 0) {
-            return fromRegistry;
-        }
+    const palette = pickChartJsPalette(decision);
+    if (palette.length > 0) {
+        return palette;
     }
-
-    // 与 Vega-Lite / ECharts 对齐的兜底逻辑：
-    // 当没有显式 color/group 通道或没有决策时，统一回退到 cat10。
-    const cat10 = getPaletteForScheme('cat10');
-    if (cat10 && cat10.length > 0) {
-        return cat10;
-    }
-
-    // 再次兜底到旧的 Chart.js 默认色盘，避免完全没有颜色可用。
     return DEFAULT_COLORS;
 }
 

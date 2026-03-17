@@ -19,7 +19,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, DEFAULT_COLORS, computeCircumferencePressure, computeEffectiveBarCount } from './utils';
-import { getPaletteForScheme } from '../../core/color-decisions';
+import { getPaletteForScheme } from '../colormap';
 
 export const ecSunburstDef: ChartTemplateDef = {
     chart: 'Sunburst Chart',

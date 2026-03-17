@@ -24,7 +24,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, groupBy, DEFAULT_COLORS } from './utils';
-import { getPaletteForScheme } from '../../core/color-decisions';
+import { getPaletteForScheme } from '../colormap';
 
 export const ecGaugeChartDef: ChartTemplateDef = {
     chart: 'Gauge Chart',

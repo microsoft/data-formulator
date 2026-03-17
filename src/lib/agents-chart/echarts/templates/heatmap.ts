@@ -12,7 +12,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, DEFAULT_COLORS } from './utils';
-import { getPaletteForScheme } from '../../core/color-decisions';
+import { getPaletteForScheme } from '../colormap';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
@@ -102,12 +102,33 @@ export const ecHeatmapDef: ChartTemplateDef = {
 
         // Color scheme
         const schemeName = chartProperties?.colorScheme || 'viridis';
-        // 优先使用 colorDecisions 决策出的 colormap；找不到时退回本地 SCHEME_COLORS。
-        const decisionSchemeId = colorDecisions?.color?.schemeId ?? schemeName;
-        const paletteFromDecision = getPaletteForScheme(decisionSchemeId);
-        const schemeColors = paletteFromDecision && paletteFromDecision.length > 0
-            ? paletteFromDecision
-            : (SCHEME_COLORS[schemeName] || SCHEME_COLORS.viridis);
+        // 优先使用 backend-agnostic colorDecisions：
+        //   - 若有显式 schemeId，则尝试该 id；
+        //   - 否则依据 schemeType（sequential / diverging）选择默认连续 / 发散色带；
+        //   - 都没有时，再退回到本地 SCHEME_COLORS（兼容旧行为）。
+        const decision = colorDecisions?.color ?? colorDecisions?.group;
+        let schemeColors: string[];
+
+        if (decision) {
+            let paletteFromDecision: string[] | undefined;
+            if (decision.schemeId) {
+                paletteFromDecision = getPaletteForScheme(decision.schemeId);
+            }
+            if (!paletteFromDecision || paletteFromDecision.length === 0) {
+                if (decision.schemeType === 'diverging') {
+                    paletteFromDecision = getPaletteForScheme('RdBu');
+                } else if (decision.schemeType === 'sequential') {
+                    paletteFromDecision = getPaletteForScheme('viridis');
+                }
+            }
+            if (paletteFromDecision && paletteFromDecision.length > 0) {
+                schemeColors = paletteFromDecision;
+            } else {
+                schemeColors = SCHEME_COLORS[schemeName] || SCHEME_COLORS.viridis;
+            }
+        } else {
+            schemeColors = SCHEME_COLORS[schemeName] || SCHEME_COLORS.viridis;
+        }
 
         const option: any = {
             tooltip: { position: 'top' },

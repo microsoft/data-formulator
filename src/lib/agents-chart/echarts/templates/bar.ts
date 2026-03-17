@@ -14,9 +14,10 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import {
-    extractCategories, groupBy, detectAxes, DEFAULT_COLORS, getCategoryOrder,
+    extractCategories, groupBy, detectAxes, getCategoryOrder,
 } from './utils';
-import { pickColorMap } from '../../core/color-decisions';
+import type { ColorDecision } from '../../core/color-decisions';
+import { pickEChartsPalette } from '../colormap';
 import {
     detectBandedAxisFromSemantics, detectBandedAxisForceDiscrete,
 } from '../../vegalite/templates/utils';
@@ -270,22 +271,25 @@ export const ecBarChartDef: ChartTemplateDef = {
 
         // x=temporal, y=nominal → vertical grouped bar: x=dates (labels), y=count, series=group
         // 这里没有显式的 color/group 通道，但从 y 轴类别派生出了“系列分组”，
-        // 所以无法依赖全局 colorDecisions；改为在模板内部通过 color-decisions 的
-        // pickColorMap 主动选一个 categorical palette（通常是 cat10），并按 legend 顺序分配颜色。
+        // 所以无法直接复用 global colorDecisions.color / group。
+        // 在这种场景下，通过一个「虚拟」的 ColorDecision 调用 pickEChartsPalette，
+        // 依然走统一的 colormap 选盘逻辑（通常会得到 cat10 / cat20）。
         if (categoryAxis === 'y' && valCS?.type === 'temporal') {
             const dateCategories = extractCategories(table, valField, getCategoryOrder(ctx, valueAxis));
             dateCategories.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
             const groups = extractCategories(table, catField, getCategoryOrder(ctx, categoryAxis));
             const countMatrix = buildCategoryGroupCounts(table, valField, catField, dateCategories, groups);
 
-            // 使用 color-decisions 的 colormap 注册表选一个分类 palette（通常是 cat10）
-            const selection = pickColorMap({
-                type: 'categorical',
+            const virtualDecision: ColorDecision = {
+                channel: 'color',
+                schemeType: 'categorical',
+                // 这里没有真实的 encoding.color，但我们知道会画按 group 分类的条形，
+                // 因此用 group 数作为 categoryCount，方便 colormap 选择 cat10/cat20。
                 categoryCount: groups.length || undefined,
-                background: 'light',
-                chartType: ctx.chartType,
-            });
-            const palette = selection.map.colors;
+                primary: true,
+                dataDriven: true,
+            };
+            const palette = pickEChartsPalette(virtualDecision);
 
             const option: any = {
                 tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
