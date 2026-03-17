@@ -128,6 +128,7 @@ class DockerSandbox(Sandbox):
                 "--memory", "512m",
                 "--cpus", "1",
                 "--pids-limit", "256",
+                "--user", f"{os.getuid()}:{os.getgid()}",
             ]
 
             abs_ws = os.path.abspath(workspace_path)
