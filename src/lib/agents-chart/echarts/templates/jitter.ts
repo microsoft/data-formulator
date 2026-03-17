@@ -36,7 +36,7 @@ export const ecStripPlotDef: ChartTemplateDef = {
     channels: ['x', 'y', 'color', 'size', 'column', 'row'],
     markCognitiveChannel: 'position',
     declareLayoutMode: () => ({
-        paramOverrides: { defaultStepMultiplier: 2, minStep: 16 },
+        paramOverrides: { defaultBandSize: 50, minStep: 16 },
     }),
     instantiate: (spec, ctx) => {
         const { channelSemantics, table, chartProperties } = ctx;
@@ -57,52 +57,64 @@ export const ecStripPlotDef: ChartTemplateDef = {
 
         const categories = extractCategories(table, catField!, (catAxis === 'x' ? xCS : yCS)?.ordinalSortOrder);
         const catToIndex = new Map(categories.map((c, i) => [c, i]));
-        // Jitter in band [i, i+1]. ECharts category axis only accepts integer indices so jitter is invisible;
-        // use value axis with range [0, n] and formatter so fractional x/y are rendered.
-        const jitterHalfWidth = 0.5;
+        const jitterHalfWidth = 0.3;
         const rand = jitter(42);
         const nCat = categories.length;
-        const catAxisLabel = () => ({
-            interval: 0,
-            rotate: areCategoriesNumeric(categories) ? 0 : 90,
-            formatter: (value: number) => categories[Math.min(Math.floor(value), nCat - 1)] ?? '',
-        });
-        const valueAxisCommon = (name: string, nameGap: number) => ({
+
+        const isHorizontal = catAxis === 'y';
+        const catAxisLabel = {
+            rotate: isHorizontal ? 0 : (areCategoriesNumeric(categories) ? 0 : 45),
+        };
+        const valueAxisCommon = (name: string) => ({
             type: 'value' as const,
             name,
-            nameLocation: 'middle' as const,
-            nameGap,
             axisTick: { show: true },
             axisLabel: { rotate: 0 },
+            axisLine: { onZero: false },
         });
-        const catAxisConfig = () => ({
-            type: 'value' as const,
-            name: catField,
-            nameLocation: 'middle' as const,
-            nameGap: 30,
-            min: 0,
-            max: nCat,
-            interval: 1,
-            axisTick: { show: true },
-            axisLabel: catAxisLabel(),
-        });
+
+        // Use a visible category axis for labels + a hidden value axis for scatter positioning.
+        // This lets fractional indices produce real jitter while keeping clean category labels.
+        const catAxisIdx = isHorizontal ? 'yAxis' : 'xAxis';
+        const valAxisIdx = isHorizontal ? 'xAxis' : 'yAxis';
 
         const option: any = {
             tooltip: { trigger: 'item' },
-            xAxis: catAxis === 'x' ? catAxisConfig() : valueAxisCommon(contField!, 30),
-            yAxis: catAxis === 'y' ? catAxisConfig() : valueAxisCommon(contField!, 40),
+            [catAxisIdx]: [
+                {
+                    type: 'category',
+                    data: categories,
+                    name: catField,
+                    boundaryGap: true,
+                    axisTick: { show: true, alignWithLabel: true },
+                    axisLabel: catAxisLabel,
+                },
+                {
+                    // Hidden value axis aligned with the category axis for scatter jitter.
+                    type: 'value',
+                    min: -0.5,
+                    max: nCat - 0.5,
+                    show: false,
+                },
+            ],
+            [valAxisIdx]: valueAxisCommon(contField!),
             series: [],
         };
+
+        const catScatterAxisIndex = 1; // use the hidden value axis
 
         const buildPoint = (row: any) => {
             const cat = String(row[catField!] ?? '');
             const idx = catToIndex.get(cat) ?? 0;
-            const center = idx + 0.5;
             const offset = rand() * jitterHalfWidth;
-            const x = catAxis === 'x' ? center + offset : row[contField];
-            const y = catAxis === 'y' ? center + offset : row[contField];
-            return [x, y];
+            const catVal = idx + offset;
+            const contVal = row[contField];
+            return catAxis === 'x' ? [catVal, contVal] : [contVal, catVal];
         };
+
+        const scatterAxisRef = isHorizontal
+            ? { yAxisIndex: catScatterAxisIndex }
+            : { xAxisIndex: catScatterAxisIndex };
 
         if (colorField) {
             const groups = groupBy(table, colorField);
@@ -111,6 +123,7 @@ export const ecStripPlotDef: ChartTemplateDef = {
                 option.series.push({
                     name,
                     type: 'scatter',
+                    ...scatterAxisRef,
                     data: rows.map(buildPoint),
                     itemStyle: { opacity: 0.7 },
                     symbolSize: 8,
@@ -119,6 +132,7 @@ export const ecStripPlotDef: ChartTemplateDef = {
         } else {
             option.series.push({
                 type: 'scatter',
+                ...scatterAxisRef,
                 data: table.map(buildPoint),
                 itemStyle: { opacity: 0.7 },
                 symbolSize: 8,

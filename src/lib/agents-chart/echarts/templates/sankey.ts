@@ -41,7 +41,7 @@ export const ecSankeyDef: ChartTemplateDef = {
             // Each node block needs generous space:
             // x-step covers node width (~20px) + edge routing gap (~60px)
             // y-step covers node height + nodeGap
-            defaultStepMultiplier: 3,
+            defaultBandSize: 60,
         },
     }),
     instantiate: (spec, ctx) => {

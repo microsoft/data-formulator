@@ -337,7 +337,7 @@ function testCaseToEChartsInput(testCase: TestCase, canvasSize: { width: number;
 }
 
 /** Stable default so useEffect dependencies don't change on every render. */
-const DEFAULT_CANVAS_SIZE = { width: 400, height: 300 } as const;
+const DEFAULT_CANVAS_SIZE = { width: 300, height: 300 } as const;
 
 const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number } }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -647,15 +647,12 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             delete displayConfig._height;
             setSpecJson(JSON.stringify(displayConfig, null, 2));
 
-            // Set container size — Chart.js responsive mode will fill it
+            // Set canvas size directly — responsive mode causes Chart.js to
+            // shrink when the flex container can't fit all three backends.
             const w = cjsConfig._width || 400;
             const h = cjsConfig._height || 300;
-            const container = canvasRef.current.parentElement;
-            if (container) {
-                container.style.width = `${w}px`;
-                container.style.height = `${h}px`;
-                container.style.position = 'relative';
-            }
+            canvasRef.current.width = w;
+            canvasRef.current.height = h;
 
             // Destroy previous chart
             if (chartRef.current) {
@@ -673,8 +670,7 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             // Ensure animation is disabled for gallery rendering
             if (!cleanConfig.options) cleanConfig.options = {};
             cleanConfig.options.animation = false;
-            cleanConfig.options.responsive = true;
-            cleanConfig.options.maintainAspectRatio = false;
+            cleanConfig.options.responsive = false;
 
             chartRef.current = new Chart(canvasRef.current, cleanConfig);
             setError(null);
@@ -759,9 +755,9 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
                 ))}
             </Box>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                <VegaChartInline testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
-                <EChartsChart testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
-                <ChartJsChart testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
+                <VegaChartInline testCase={testCase} />
+                <EChartsChart testCase={testCase} />
+                <ChartJsChart testCase={testCase} />
             </Box>
         </Paper>
     );

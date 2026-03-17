@@ -109,6 +109,9 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
         : {};
 
     const effectiveOptions: AssembleOptions = {
+        // Chart.js fills its canvas natively — a wider default band size
+        // matches its generous category spacing behavior.
+        defaultBandSize: 30,
         ...options,
         ...(declaration.paramOverrides || {}),
     };
@@ -185,7 +188,6 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
             encodings,
             channelSemantics,
             table: values,
-            backend: 'chartjs',
             background: 'light',
         }),
     };

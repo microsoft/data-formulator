@@ -13,7 +13,7 @@ export const stripPlotDef: ChartTemplateDef = {
     channels: ["x", "y", "color", "size", "column", "row"],
     markCognitiveChannel: 'position',
     declareLayoutMode: () => ({
-        paramOverrides: { defaultStepMultiplier: 2, minStep: 16 },
+        paramOverrides: { defaultBandSize: 50, minStep: 16 },
     }),
     instantiate: (spec, ctx) => {
         defaultBuildEncodings(spec, ctx.resolvedEncodings);
@@ -83,7 +83,7 @@ export const stripPlotDef: ChartTemplateDef = {
         spec.mark.opacity = opacity;
 
         // Set step width and derive jitter
-        const jitterWidth = stepWidth * 0.8;
+        const jitterWidth = stepWidth * 0.6;
         if (catAxis === 'x') {
             spec.width = { step: stepWidth };
         } else if (catAxis === 'y') {

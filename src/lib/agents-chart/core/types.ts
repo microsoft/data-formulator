@@ -656,8 +656,24 @@ export interface AssembleOptions {
      * Each backend sets its own value (VL ≈ 10, ECharts ≈ 14); core uses 0.
      */
     facetGap?: number;
-    /** Multiplier for the default step size (default: 1). Values >1 give more room per category. */
-    defaultStepMultiplier?: number;
+    /**
+     * Base pixels per discrete category at a 300px baseline canvas.
+     * Scaled proportionally with canvas size by the core layout engine.
+     * The final default step size is:
+     *
+     *   defaultStepSize = defaultBandSize × max(1, canvasSize/300)
+     *
+     * Backends set this to match their native bar/band rendering:
+     *   - VL:  ~20 (VL uses width:{step:N} which auto-sizes the plot area)
+     *   - EC:  ~20 (ECharts adds generous grid margins)
+     *   - CJS: ~30 (Chart.js fills the canvas; wider bands look more native)
+     *
+     * Templates can override via paramOverrides for chart types that need
+     * more space per band (e.g. jitter: 40, funnel: 50, sankey: 60).
+     *
+     * Default: 20.
+     */
+    defaultBandSize?: number;
     /**
      * When true, continuous X and Y axes stretch together using the
      * larger of the two per-axis stretch factors. This preserves the

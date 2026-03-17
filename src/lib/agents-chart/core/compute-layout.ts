@@ -120,7 +120,6 @@ export function computeLayout(
         facetElasticity: facetElasticityVal = 0.3,
         minStep: minStepVal = 6,
         minSubplotSize: minSubplotVal = 60,
-        defaultStepMultiplier = 1,
         stepPadding: stepPaddingVal = 0.1,
         maintainContinuousAxisRatio = false,
         continuousMarkCrossSection,
@@ -137,7 +136,8 @@ export function computeLayout(
 
     const baseRefSize = 300;
     const sizeRatio = Math.max(defaultChartWidth, defaultChartHeight) / baseRefSize;
-    const defaultStepSize = Math.round(20 * Math.max(1, sizeRatio) * defaultStepMultiplier);
+    const baseBandSize = options.defaultBandSize ?? 20;
+    const defaultStepSize = Math.round(baseBandSize * Math.max(1, sizeRatio));
 
     const isDiscreteType = (t: string | undefined) => t === 'nominal' || t === 'ordinal';
 
@@ -694,6 +694,18 @@ export function computeLayout(
         if (axis === 'x') subplotWidth = Math.round(stepSize * (count + 1));
         else subplotHeight = Math.round(stepSize * (count + 1));
     }
+
+    // --- Nominal discrete subplot sizing ---
+    // For nominal discrete axes, one backend (VL) overrides subplotWidth
+    // with step-based sizing (width:{step:N}), so the subplot dimension
+    // doesn't matter.  Other backends (Chart.js, ECharts) fill the canvas
+    // and divide evenly among categories — for them, the subplot dimension
+    // IS the canvas width.
+    //
+    // Ensure the subplot is at least as wide as canvasSize (the user's
+    // requested chart size) so backends that fill the canvas get generous
+    // bars when there are few categories.  The subplot only exceeds
+    // canvasSize when faceting shrinks it, which is already handled above.
 
     // Clamp continuous subplot dimensions.
     subplotWidth = Math.min(subplotWidth, Math.round(maxSubplotW));

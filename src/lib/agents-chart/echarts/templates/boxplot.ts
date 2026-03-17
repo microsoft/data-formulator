@@ -81,6 +81,7 @@ export const ecBoxplotDef: ChartTemplateDef = {
         return {
             axisFlags: { [result.axis]: { banded: true } },
             resolvedTypes: result.resolvedTypes,
+            paramOverrides: { defaultBandSize: 28 },  // box+whisker needs wider bands
         };
     },
     instantiate: (spec, ctx) => {
