@@ -259,7 +259,7 @@ class DataTransformationAgent(object):
             if chart_image:
                 user_content = [
                     {"type": "text", "text": user_query},
-                    {"type": "image_url", "image_url": {"url": chart_image, "detail": "high"}}
+                    {"type": "image_url", "image_url": {"url": chart_image, "detail": "low"}}
                 ]
             else:
                 user_content = user_query
@@ -332,7 +332,7 @@ class DataTransformationAgent(object):
             if chart_image:
                 user_content = [
                     {"type": "text", "text": followup_text},
-                    {"type": "image_url", "image_url": {"url": chart_image, "detail": "high"}}
+                    {"type": "image_url", "image_url": {"url": chart_image, "detail": "low"}}
                 ]
             else:
                 user_content = followup_text

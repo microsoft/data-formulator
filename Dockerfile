@@ -62,4 +62,4 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 # Run the app on all interfaces so Docker port-forwarding works.
 # We do not pass --dev so Flask runs in production mode (no debugger/reloader).
 # webbrowser.open() fails silently in a headless container, which is harmless.
-ENTRYPOINT ["python", "-m", "data_formulator", "--port", "5567"]
+ENTRYPOINT ["python", "-m", "data_formulator", "--host", "0.0.0.0", "--port", "5567"]

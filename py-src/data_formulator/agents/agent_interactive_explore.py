@@ -176,7 +176,7 @@ class InteractiveExploreAgent(object):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": [
                         {"type": "text", "text": context},
-                        {"type": "image_url", "image_url": {"url": current_chart, "detail": "high"}}
+                        {"type": "image_url", "image_url": {"url": current_chart, "detail": "low"}}
                     ]}
                 ]
             else:

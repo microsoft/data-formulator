@@ -64,7 +64,7 @@ class ChartInsightAgent(object):
                 "type": "image_url",
                 "image_url": {
                     "url": f"data:image/png;base64,{chart_image_base64}",
-                    "detail": "low"
+                    "detail": "high"
                 }
             }
         ]

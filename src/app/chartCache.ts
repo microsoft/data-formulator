@@ -84,6 +84,35 @@ export async function getChartPngDataUrl(
 }
 
 /**
+ * Downscale an image data URL for sending to an AI agent.
+ * Renders the original onto a smaller canvas to reduce payload size
+ * while preserving the original chart layout.
+ */
+export async function downscaleImageForAgent(
+    dataUrl: string,
+    maxDim: number = 200,
+    quality: number = 0.75,
+): Promise<string> {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = reject;
+        img.src = dataUrl;
+    });
+    const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', quality);
+}
+
+/**
  * Compute a deterministic cache key from chart rendering inputs.
  * This is used to detect when a chart needs re-rendering.
  * We intentionally use JSON.stringify for simplicity — it's fast enough

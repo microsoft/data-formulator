@@ -370,6 +370,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(
             chart.chartType, chart.encodingMap, activeFields, currentTable.rows,
             currentTable.metadata, 100, 80, false, chart.config)) : undefined;
+        if (currentChartPng) {
+            const { downscaleImageForAgent } = await import('../app/chartCache');
+            currentChartPng = await downscaleImageForAgent(currentChartPng);
+        }
 
         await streamIdeas({
             actionTableIds,
@@ -441,6 +445,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 chart.chartType, chart.encodingMap, activeFields, currentTable.rows,
                 currentTable.metadata, 100, 80, false, chart.config
             ));
+            if (currentChartImage) {
+                const { downscaleImageForAgent } = await import('../app/chartCache');
+                currentChartImage = await downscaleImageForAgent(currentChartImage);
+            }
         }
 
         let currentVisualization = (chartComplete && chartSpec) ? {

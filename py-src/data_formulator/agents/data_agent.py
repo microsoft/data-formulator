@@ -557,7 +557,7 @@ class DataAgent:
             if chart_image.startswith("data:") or chart_image.startswith("http"):
                 content.append({
                     "type": "image_url",
-                    "image_url": {"url": chart_image},
+                    "image_url": {"url": chart_image, "detail": "low"},
                 })
             return {"role": "user", "content": content}
 
