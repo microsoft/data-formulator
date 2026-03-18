@@ -875,8 +875,10 @@ class WorkspaceWithTempData:
 
     def __enter__(self) -> "WorkspaceWithTempData":
         if not self._temp_data:
+            logger.debug("[WorkspaceWithTempData] no temp data to mount")
             return self
 
+        logger.debug(f"[WorkspaceWithTempData] mounting {len(self._temp_data)} temp table(s)")
         for item in self._temp_data:
             base_name = item.get("name", "table")
             safe_name = sanitize_table_name(base_name)
@@ -895,13 +897,22 @@ class WorkspaceWithTempData:
 
             self._temp_table_names.append(safe_name)
             logger.debug(
-                f"Mounted temp table '{safe_name}' "
-                f"({len(df)} rows, in-memory metadata)"
+                f"[WorkspaceWithTempData] mounted temp table '{base_name}' -> '{safe_name}' "
+                f"({len(df)} rows, file={safe_name}.parquet)"
             )
+
+        # Debug: list all files in workspace after mounting
+        try:
+            ws_path = self._base._path
+            ws_files = [f for f in os.listdir(ws_path) if not f.startswith('.')]
+            logger.debug(f"[WorkspaceWithTempData] workspace files after mount: {ws_files}")
+        except Exception as e:
+            logger.debug(f"[WorkspaceWithTempData] could not list workspace files: {e}")
 
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        logger.debug(f"[WorkspaceWithTempData] cleaning up {len(self._temp_table_names)} temp table(s): {self._temp_table_names}")
         for name in self._temp_table_names:
             try:
                 self._base.delete_table(name)

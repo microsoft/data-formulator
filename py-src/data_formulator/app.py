@@ -175,6 +175,9 @@ def get_app_config():
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data Formulator")
     parser.add_argument("-p", "--port", type=int, default=5567, help="The port number you want to use")
+    parser.add_argument("--host", type=str, default=os.environ.get('HOST', '127.0.0.1'),
+        help="Network interface to bind to (default: 127.0.0.1). "
+             "Use 0.0.0.0 to accept connections from other machines.")
     parser.add_argument("--sandbox", type=str, default=os.environ.get('SANDBOX', 'local'),
         choices=['local', 'docker'],
         help="Python code execution backend: 'local' (default, isolated subprocess with audit hooks), "
@@ -244,7 +247,7 @@ def run_app():
         threading.Timer(1.5, lambda: webbrowser.open(url, new=2)).start()
 
     debug_mode = args.dev
-    app.run(host='0.0.0.0', port=args.port, debug=debug_mode, use_reloader=debug_mode)
+    app.run(host=args.host, port=args.port, debug=debug_mode, use_reloader=debug_mode)
 
 if __name__ == '__main__':
     run_app()

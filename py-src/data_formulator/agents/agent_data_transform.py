@@ -203,7 +203,16 @@ class DataTransformationAgent(object):
         t_total = time.time() - t_start
         t_llm_val = t_llm or 0.0
         t_misc = t_total - t_exec_total
-        logger.info(f"[DataTransformAgent] timing: llm={t_llm_val:.3f}s, exec={t_exec_total:.3f}s, misc={t_misc:.3f}s, total={t_total + t_llm_val:.3f}s")
+
+        # Log token usage if available
+        usage = getattr(response, 'usage', None)
+        usage_str = ""
+        if usage:
+            prompt_tok = getattr(usage, 'prompt_tokens', None)
+            completion_tok = getattr(usage, 'completion_tokens', None)
+            usage_str = f" | tokens: in={prompt_tok}, out={completion_tok}"
+
+        logger.info(f"[DataTransformAgent] timing: llm={t_llm_val:.3f}s, exec={t_exec_total:.3f}s, misc={t_misc:.3f}s, total={t_total + t_llm_val:.3f}s{usage_str}")
         return candidates
 
 
@@ -244,6 +253,8 @@ class DataTransformationAgent(object):
 
         # Build user message content: include chart image if available
         chart_image = current_visualization.get('chart_image') if current_visualization else None
+        has_image = bool(chart_image)
+        logger.info(f"[DataTransformAgent] run LLM call | messages={1 + len(filtered_prev_messages) + 1}, has_image={has_image}")
         try:
             if chart_image:
                 user_content = [
@@ -315,6 +326,8 @@ class DataTransformationAgent(object):
 
         # Build user message content: include chart image if available
         chart_image = current_visualization.get('chart_image') if current_visualization else None
+        has_image = bool(chart_image)
+        logger.info(f"[DataTransformAgent] followup LLM call | messages={len(updated_dialog) + 1}, has_image={has_image}")
         try:
             if chart_image:
                 user_content = [

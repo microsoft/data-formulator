@@ -22,6 +22,7 @@ Rate Limiting:
 - Limits are set per IP address using Flask-Limiter
 """
 
+import os
 import random
 import logging
 import requests
@@ -37,6 +38,15 @@ import threading
 logger = logging.getLogger(__name__)
 
 demo_stream_bp = Blueprint('demo_stream', __name__, url_prefix='/api/demo-stream')
+
+
+@demo_stream_bp.after_request
+def _set_cors(response):
+    """Set CORS headers from CORS_ORIGIN env-var (same logic as agent_routes)."""
+    origin = os.environ.get('CORS_ORIGIN', '')
+    if origin:
+        response.headers['Access-Control-Allow-Origin'] = origin
+    return response
 
 # ============================================================================
 # Rate Limiting Configuration
@@ -94,7 +104,6 @@ def make_csv_response(rows: list, filename: str = "data.csv") -> Response:
     return Response(
         output.getvalue(),
         mimetype='text/csv',
-        headers={'Access-Control-Allow-Origin': '*'}
     )
 
 

@@ -91,7 +91,7 @@ export const renderTextWithEmphasis = (text: string | any, highlightChipSx?: SxP
     // Split the prompt by ** patterns and create an array of text and highlighted segments
     const parts = text.split(/(\*\*.*?\*\*)/g);
     
-    return parts.map((part, index) => {
+    return parts.map((part: string, index: number) => {
         if (part.startsWith('**') && part.endsWith('**')) {
             // This is a highlighted part - remove the ** and wrap with styled component
             const content = part.slice(2, -2).replaceAll('_', ' ');

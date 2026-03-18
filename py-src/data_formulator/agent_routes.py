@@ -53,9 +53,30 @@ def get_temp_tables(workspace, input_tables: list[dict]) -> list[dict]:
         List of table dicts that don't exist in the workspace (temp tables)
     """
     existing_tables = set(workspace.list_tables())
-    return [table for table in input_tables if table.get('name') not in existing_tables]
+    input_names = [t.get('name') for t in input_tables]
+    temp_tables = [table for table in input_tables if table.get('name') not in existing_tables]
+    temp_names = [t.get('name') for t in temp_tables]
+    logger.info(f"[get_temp_tables] existing={existing_tables}, input={input_names}, temp={temp_names}")
+    return temp_tables
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
+
+
+@agent_bp.after_request
+def _set_cors(response):
+    """Set CORS headers from server configuration.
+
+    By default no ``Access-Control-Allow-Origin`` header is emitted
+    (same-origin only).  To allow cross-origin requests set the
+    ``CORS_ORIGIN`` env-var (e.g. ``CORS_ORIGIN=https://my-embed-host``).
+    Use ``CORS_ORIGIN=*`` only for development / fully trusted networks.
+    """
+    origin = os.environ.get('CORS_ORIGIN', '')
+    if origin:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
 
 @agent_bp.errorhandler(Exception)
 def handle_agent_error(e):
@@ -68,7 +89,6 @@ def handle_agent_error(e):
         "results": [],
         "result": []
     })
-    response.headers.add('Access-Control-Allow-Origin', '*')
     return response, 500
 
 def get_client(model_config):
@@ -240,7 +260,6 @@ def process_data_on_load_request():
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
-    response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
 
@@ -287,11 +306,6 @@ def clean_data_stream_request():
     response = Response(
         stream_with_context(generate()),
         mimetype='application/json',
-        headers={
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type'
-        }
     )
     return response
 
@@ -319,7 +333,6 @@ def sort_data_request():
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
-    response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
 @agent_bp.route('/derive-data', methods=['GET', 'POST'])
@@ -407,7 +420,6 @@ def derive_data():
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
-    response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
 @agent_bp.route('/data-agent-streaming', methods=['GET', 'POST'])
@@ -526,11 +538,6 @@ def data_agent_streaming():
     response = Response(
         stream_with_context(generate()),
         mimetype='application/json',
-        headers={
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-        }
     )
     return response
 
@@ -603,7 +610,6 @@ def refine_data():
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": []})
 
-    response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
 @agent_bp.route('/code-expl', methods=['GET', 'POST'])
@@ -728,7 +734,6 @@ def get_recommendation_questions():
     response = Response(
         stream_with_context(generate()),
         mimetype='application/json',
-        headers={ 'Access-Control-Allow-Origin': '*',  }
     )
     return response
 
@@ -769,7 +774,6 @@ def generate_report_stream():
     response = Response(
         stream_with_context(generate()),
         mimetype='application/json',
-        headers={ 'Access-Control-Allow-Origin': '*',  }
     )
     return response
 

@@ -31,12 +31,44 @@ def _warm_worker_loop(conn):
     waits for code to execute.
 
     Protocol (over *conn*):
-        Host -> worker:  (code: str, allowed_objects: dict)
+        Host -> worker:  (code: str, allowed_objects: dict, workspace_path: str)
         Worker -> host:   {"status": "ok", "allowed_objects": {...}}
                       or {"status": "error", "error_message": "..."}
         Host -> worker:  None   -> terminate
     """
     warnings.filterwarnings("ignore")
+
+    # Scrub sensitive environment variables before accepting any code.
+    # Legitimate sandbox code (pandas/numpy transforms) never needs these.
+    _SENSITIVE_PATTERNS = ("KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL", "CONNECTION_STRING")
+    for _key in list(os.environ):
+        if any(p in _key.upper() for p in _SENSITIVE_PATTERNS):
+            del os.environ[_key]
+
+    # Mutable container: the audit hook reads this to know which
+    # workspace directory is currently allowed for file reads.
+    # Set before each exec(), cleared after.  When None, only
+    # library-level opens (pre-import phase) are permitted.
+    _allowed_workspace = [None]
+
+    # Build a set of directories that should always be readable
+    # (Python stdlib, site-packages, etc.) so that library imports
+    # (e.g. pyarrow.parquet) are not blocked during code execution.
+    import site as _site, sysconfig as _sysconfig
+    _allowed_lib_prefixes = set()
+    for _p in (
+        *_site.getsitepackages(),
+        _site.getusersitepackages(),
+        _sysconfig.get_path("stdlib"),
+        _sysconfig.get_path("purelib"),
+        _sysconfig.get_path("platlib"),
+    ):
+        if _p:
+            _rp = os.path.realpath(_p)
+            if not _rp.endswith(os.sep):
+                _rp += os.sep
+            _allowed_lib_prefixes.add(_rp)
+    _allowed_lib_prefixes = tuple(_allowed_lib_prefixes)  # tuple for fast startswith()
 
     # Install audit hooks once -- they persist for the process lifetime.
     def block_mischief(event, arg):
@@ -45,6 +77,13 @@ def _warm_worker_loop(conn):
         # Block file writes (only allow reading)
         if event == "open" and type(arg[1]) == str and arg[1] not in ("r", "rb"):
             raise IOError("file write forbidden")
+        # Restrict file reads to the workspace directory during code execution.
+        # Always allow reads from Python library directories (stdlib, site-packages).
+        if (event == "open" and type(arg[1]) == str and arg[1] in ("r", "rb")
+                and _allowed_workspace[0] is not None):
+            resolved = os.path.realpath(arg[0])
+            if not resolved.startswith(_allowed_workspace[0]) and not resolved.startswith(_allowed_lib_prefixes):
+                raise IOError(f"file read outside workspace forbidden: {arg[0]}")
         # Block dangerous filesystem / process operations
         _blocked_prefixes = ("subprocess", "shutil", "winreg", "webbrowser")
         if event.split(".")[0] in _blocked_prefixes:
@@ -87,7 +126,17 @@ def _warm_worker_loop(conn):
         if msg is None:
             break
 
-        code, allowed_objects = msg
+        code, allowed_objects, workspace_path = msg
+
+        # Resolve the workspace path once so the audit hook can compare
+        # against a canonical absolute prefix (with trailing separator).
+        if workspace_path:
+            _ws = os.path.realpath(workspace_path)
+            if not _ws.endswith(os.sep):
+                _ws += os.sep
+            _allowed_workspace[0] = _ws
+        else:
+            _allowed_workspace[0] = None
 
         namespace = {**allowed_objects}
         try:
@@ -99,8 +148,10 @@ def _warm_worker_loop(conn):
             exec(code, namespace)  # nosec  # codeql[py/code-injection]
         except Exception as err:
             conn.send({"status": "error", "error_message": f"Error: {type(err).__name__} - {err}"})
+            _allowed_workspace[0] = None
             continue
 
+        _allowed_workspace[0] = None
         conn.send({"status": "ok", "allowed_objects": {k: namespace[k] for k in allowed_objects}})
 
     conn.close()
@@ -214,7 +265,13 @@ class LocalSandbox(Sandbox):
         """
         with workspace.local_dir() as local_path:
             workspace_path = os.path.abspath(str(local_path))
-
+            # Debug: list files in workspace directory before execution
+            try:
+                ws_files = os.listdir(workspace_path)
+                logger.info(f"[LocalSandbox] workspace_path={workspace_path}")
+                logger.info(f"[LocalSandbox] files in workspace ({len(ws_files)}): {ws_files}")
+            except Exception as e:
+                logger.warning(f"[LocalSandbox] failed to list workspace dir: {e}")
             # Prepend a chdir so the script runs inside the workspace directory.
             ws_escaped = workspace_path.replace("\\", "\\\\").replace("'", "\\'")
             chdir_preamble = f"import os as _sandbox_os; _sandbox_os.chdir('{ws_escaped}')\n"
@@ -222,7 +279,7 @@ class LocalSandbox(Sandbox):
 
             try:
                 allowed_objects = {output_variable: None}
-                result = self._run_in_warm_subprocess(code_with_chdir, allowed_objects)
+                result = self._run_in_warm_subprocess(code_with_chdir, allowed_objects, workspace_path)
 
                 if result["status"] == "ok":
                     output_df = result["allowed_objects"][output_variable]
@@ -236,7 +293,12 @@ class LocalSandbox(Sandbox):
                         }
                     return {"status": "ok", "content": output_df}
                 else:
-                    return result
+                    # Normalise: the warm-subprocess protocol uses
+                    # "error_message" but the public sandbox API uses "content".
+                    return {
+                        "status": "error",
+                        "content": result.get("error_message", result.get("content", "Unknown error")),
+                    }
 
             except Exception as e:
                 return {
@@ -252,11 +314,11 @@ class LocalSandbox(Sandbox):
     EXECUTION_TIMEOUT = int(os.environ.get("DF_SANDBOX_TIMEOUT", "120"))
 
     @staticmethod
-    def _run_in_warm_subprocess(code, allowed_objects):
+    def _run_in_warm_subprocess(code, allowed_objects, workspace_path=None):
         """Send code to a warm worker from the pool, return the result."""
         proc, conn = _worker_pool.acquire()
         try:
-            conn.send((code, {**allowed_objects}))
+            conn.send((code, {**allowed_objects}, workspace_path))
             # Enforce a wall-clock timeout to prevent runaway code
             if conn.poll(timeout=LocalSandbox.EXECUTION_TIMEOUT):
                 result = conn.recv()
@@ -265,7 +327,7 @@ class LocalSandbox(Sandbox):
                 _worker_pool.discard(proc, conn)
                 return {
                     "status": "error",
-                    "error_message": (
+                    "content": (
                         f"Code execution timed out after "
                         f"{LocalSandbox.EXECUTION_TIMEOUT}s"
                     ),
@@ -274,6 +336,6 @@ class LocalSandbox(Sandbox):
             return result
         except Exception as e:
             _worker_pool.discard(proc, conn)
-            return {"status": "error", "error_message": f"Error: worker communication failed - {e}"}
+            return {"status": "error", "content": f"Error: worker communication failed - {e}"}
 
 
