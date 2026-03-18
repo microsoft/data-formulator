@@ -130,6 +130,16 @@ class DockerSandbox(Sandbox):
                 "--pids-limit", "256",
             ]
 
+            # Only set an explicit user on platforms that support os.getuid/os.getgid
+            user_flag: list[str] = []
+            if hasattr(os, "getuid") and hasattr(os, "getgid"):
+                try:
+                    user_flag = ["--user", f"{os.getuid()}:{os.getgid()}"]
+                except OSError:
+                    # Fall back to image's default user if UID/GID cannot be determined
+                    user_flag = []
+            docker_cmd += user_flag
+
             abs_ws = os.path.abspath(workspace_path)
             docker_cmd += ["-v", f"{abs_ws}:/sandbox/workdir:ro"]
             docker_cmd += ["-v", f"{output_dir}:/sandbox/outputs:rw"]
