@@ -487,6 +487,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [filePreviewError, setFilePreviewError] = useState<string | null>(null);
     const [filePreviewFiles, setFilePreviewFiles] = useState<File[]>([]);
     const [filePreviewActiveIndex, setFilePreviewActiveIndex] = useState<number>(0);
+    const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
     // URL tab state (separate from file upload)
     const [tableURL, setTableURL] = useState<string>("");
@@ -622,110 +623,143 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         onClose();
     }, [onClose]);
 
-    // File upload handler
-    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
-        const files = event.target.files;
+    // Shared file processing logic (used by both file input and drag-and-drop)
+    const processUploadedFiles = useCallback((selectedFiles: File[]): void => {
+        setFilePreviewFiles(selectedFiles);
+        setFilePreviewError(null);
+        setFilePreviewTables(null);
+        setFilePreviewLoading(true);
 
-        if (files && files.length > 0) {
-            const selectedFiles = Array.from(files);
-            setFilePreviewFiles(selectedFiles);
-            setFilePreviewError(null);
-            setFilePreviewTables(null);
-            setFilePreviewLoading(true);
+        const MAX_FILE_SIZE = 5 * 1024 * 1024;
+        const previewTables: DictTable[] = [];
+        const errors: string[] = [];
 
-            const MAX_FILE_SIZE = 5 * 1024 * 1024;
-            const previewTables: DictTable[] = [];
-            const errors: string[] = [];
+        const processFiles = async () => {
+            for (const file of selectedFiles) {
+                const uniqueName = getUniqueTableName(file.name, existingNames);
+                const isTextFile = file.type === 'text/csv' || 
+                    file.type === 'text/tab-separated-values' || 
+                    file.type === 'application/json' ||
+                    file.name.endsWith('.csv') || 
+                    file.name.endsWith('.tsv') || 
+                    file.name.endsWith('.json');
+                const isExcelFile = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                    file.type === 'application/vnd.ms-excel' ||
+                    file.name.endsWith('.xlsx') || 
+                    file.name.endsWith('.xls');
 
-            const processFiles = async () => {
-                for (const file of selectedFiles) {
-                    const uniqueName = getUniqueTableName(file.name, existingNames);
-                    const isTextFile = file.type === 'text/csv' || 
-                        file.type === 'text/tab-separated-values' || 
-                        file.type === 'application/json' ||
-                        file.name.endsWith('.csv') || 
-                        file.name.endsWith('.tsv') || 
-                        file.name.endsWith('.json');
-                    const isExcelFile = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-                        file.type === 'application/vnd.ms-excel' ||
-                        file.name.endsWith('.xlsx') || 
-                        file.name.endsWith('.xls');
-
-                    if (file.size > MAX_FILE_SIZE && isTextFile) {
-                        errors.push(t('upload.errors.fileTooLarge', { name: file.name, size: (file.size / (1024 * 1024)).toFixed(2) }));
-                        continue;
-                    }
-
-                    if (isTextFile) {
-                        try {
-                            const text = await file.text();
-                            const table = loadTextDataWrapper(uniqueName, text, file.type);
-                            if (table) {
-                                previewTables.push(table);
-                            } else {
-                                errors.push(t('upload.errors.failedToParse', { name: file.name }));
-                            }
-                        } catch {
-                            errors.push(t('upload.errors.failedToRead', { name: file.name }));
-                        }
-                        continue;
-                    }
-
-                    if (isExcelFile) {
-                        const isLegacyXls = file.name.toLowerCase().endsWith('.xls') && !file.name.toLowerCase().endsWith('.xlsx');
-                        if (isLegacyXls) {
-                            try {
-                                const formData = new FormData();
-                                formData.append('file', file);
-                                const resp = await fetchWithIdentity(getUrls().PARSE_FILE, {
-                                    method: 'POST',
-                                    body: formData,
-                                });
-                                const result = await resp.json();
-                                if (result.status === 'success' && result.sheets?.length > 0) {
-                                    for (const sheet of result.sheets) {
-                                        const sheetTitle = result.sheets.length > 1
-                                            ? `${uniqueName}-${sheet.sheet_name}`
-                                            : uniqueName;
-                                        const table = createTableFromFromObjectArray(sheetTitle, sheet.data, true);
-                                        previewTables.push(table);
-                                    }
-                                } else {
-                                    errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
-                                }
-                            } catch {
-                                errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
-                            }
-                        } else {
-                            try {
-                                const arrayBuffer = await file.arrayBuffer();
-                                const tables = await loadBinaryDataWrapper(uniqueName, arrayBuffer);
-                                if (tables.length > 0) {
-                                    previewTables.push(...tables);
-                                } else {
-                                    errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
-                                }
-                            } catch {
-                                errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
-                            }
-                        }
-                        continue;
-                    }
-
-                    errors.push(t('upload.errors.unsupportedFormat', { name: file.name }));
+                if (file.size > MAX_FILE_SIZE && isTextFile) {
+                    errors.push(t('upload.errors.fileTooLarge', { name: file.name, size: (file.size / (1024 * 1024)).toFixed(2) }));
+                    continue;
                 }
 
-                setFilePreviewTables(previewTables.length > 0 ? previewTables : null);
-                setFilePreviewError(errors.length > 0 ? errors.join(' ') : null);
-                setFilePreviewLoading(false);
-            };
+                if (isTextFile) {
+                    try {
+                        const text = await file.text();
+                        const table = loadTextDataWrapper(uniqueName, text, file.type);
+                        if (table) {
+                            previewTables.push(table);
+                        } else {
+                            errors.push(t('upload.errors.failedToParse', { name: file.name }));
+                        }
+                    } catch {
+                        errors.push(t('upload.errors.failedToRead', { name: file.name }));
+                    }
+                    continue;
+                }
 
-            processFiles();
+                if (isExcelFile) {
+                    const isLegacyXls = file.name.toLowerCase().endsWith('.xls') && !file.name.toLowerCase().endsWith('.xlsx');
+                    if (isLegacyXls) {
+                        try {
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            const resp = await fetchWithIdentity(getUrls().PARSE_FILE, {
+                                method: 'POST',
+                                body: formData,
+                            });
+                            const result = await resp.json();
+                            if (result.status === 'success' && result.sheets?.length > 0) {
+                                for (const sheet of result.sheets) {
+                                    const sheetTitle = result.sheets.length > 1
+                                        ? `${uniqueName}-${sheet.sheet_name}`
+                                        : uniqueName;
+                                    const table = createTableFromFromObjectArray(sheetTitle, sheet.data, true);
+                                    previewTables.push(table);
+                                }
+                            } else {
+                                errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
+                            }
+                        } catch {
+                            errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
+                        }
+                    } else {
+                        try {
+                            const arrayBuffer = await file.arrayBuffer();
+                            const tables = await loadBinaryDataWrapper(uniqueName, arrayBuffer);
+                            if (tables.length > 0) {
+                                previewTables.push(...tables);
+                            } else {
+                                errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
+                            }
+                        } catch {
+                            errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
+                        }
+                    }
+                    continue;
+                }
+
+                errors.push(t('upload.errors.unsupportedFormat', { name: file.name }));
+            }
+
+            setFilePreviewTables(previewTables.length > 0 ? previewTables : null);
+            setFilePreviewError(errors.length > 0 ? errors.join(' ') : null);
+            setFilePreviewLoading(false);
+        };
+
+        processFiles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [existingNames, t]);
+
+    // File input change handler
+    const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+        const files = event.target.files;
+        if (files && files.length > 0) {
+            processUploadedFiles(Array.from(files));
         }
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
     };
+
+    // Drag-and-drop handlers
+    const handleDragOver = useCallback((event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+    }, []);
+
+    const handleDragEnter = useCallback((event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragOver(true);
+    }, []);
+
+    const handleDragLeave = useCallback((event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+        setIsDragOver(false);
+    }, []);
+
+    const handleFileDrop = useCallback((event: React.DragEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragOver(false);
+        const files = event.dataTransfer.files;
+        if (files && files.length > 0) {
+            processUploadedFiles(Array.from(files));
+        }
+    }, [processUploadedFiles]);
 
     // Reset activeIndex when tables change
     useEffect(() => {
@@ -1123,7 +1157,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             type="file"
                             sx={{ display: 'none' }}
                             inputRef={fileInputRef}
-                            onChange={handleFileUpload}
+                            onChange={handleFileInputChange}
                         />
                         
                         {/* File Upload Section - only show drop zone when file upload is enabled */}
@@ -1131,18 +1165,23 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             <Box
                                 sx={{
                                     border: '2px dashed',
-                                    borderColor: borderColor.divider,
+                                    borderColor: isDragOver ? 'primary.main' : borderColor.divider,
                                     borderRadius: radius.md,
                                     p: showFilePreview ? 2 : 3,
                                     textAlign: 'center',
                                     cursor: 'pointer',
                                     transition: transition.normal,
+                                    backgroundColor: isDragOver ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
                                     '&:hover': {
                                         borderColor: 'primary.main',
                                         backgroundColor: alpha(theme.palette.primary.main, 0.04),
                                     }
                                 }}
                                 onClick={() => fileInputRef.current?.click()}
+                                onDrop={handleFileDrop}
+                                onDragOver={handleDragOver}
+                                onDragEnter={handleDragEnter}
+                                onDragLeave={handleDragLeave}
                             >
                                 <UploadFileIcon sx={{ fontSize: showFilePreview ? 28 : 36, color: 'text.secondary', mb: 1 }} />
                                 <Typography variant={showFilePreview ? "body2" : "subtitle1"} gutterBottom>
