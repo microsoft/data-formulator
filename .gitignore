@@ -409,6 +409,8 @@ FodyWeavers.xsd
 *.sln.iml
 venv
 
+# Temporary documentation directory
+tmp-docs/
 
 \.\NUL
 NUL
