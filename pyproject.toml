@@ -69,4 +69,5 @@ data_formulator = "data_formulator:run_app"
 [tool.uv]
 dev-dependencies = [
     "build",
+    "pytest",
 ]
