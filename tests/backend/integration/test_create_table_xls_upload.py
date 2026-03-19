@@ -131,3 +131,36 @@ def test_upload_xls_rejects_missing_table_name(client):
 
     assert resp.status_code == 400
     assert resp.get_json()["status"] == "error"
+
+
+def test_list_tables_returns_sample_rows_for_xls(client, tmp_workspace):
+    """After uploading .xls, list-tables must return non-empty sample_rows and correct row_count."""
+    xls_path = FIXTURE_DIR / "test_cn.xls"
+    if not xls_path.exists():
+        pytest.skip("test_cn.xls fixture not found")
+
+    with open(xls_path, "rb") as f:
+        create_resp = client.post(
+            "/api/tables/create-table",
+            data={
+                "file": (f, "test_cn.xls"),
+                "table_name": "list_tables_test",
+            },
+            content_type="multipart/form-data",
+        )
+    create_data = create_resp.get_json()
+    assert create_data["status"] == "success"
+
+    list_resp = client.get("/api/tables/list-tables")
+    assert list_resp.status_code == 200
+    list_data = list_resp.get_json()
+    assert list_data["status"] == "success"
+
+    table_entry = next(
+        (t for t in list_data["tables"] if t["name"] == create_data["table_name"]),
+        None,
+    )
+    assert table_entry is not None, f"Table {create_data['table_name']} not found in list-tables"
+    assert table_entry["row_count"] > 0, "row_count should be > 0 for uploaded .xls"
+    assert len(table_entry["sample_rows"]) > 0, "sample_rows should not be empty for uploaded .xls"
+    assert len(table_entry["columns"]) > 0, "columns should not be empty for uploaded .xls"

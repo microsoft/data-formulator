@@ -20,7 +20,7 @@ from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
 from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file
-from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata
+from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
 
 import re
 
@@ -200,6 +200,12 @@ def list_tables():
                         columns = [{"name": c["name"], "type": c["type"]} for c in schema_info.get("columns", [])]
                     except Exception:
                         pass
+                if not columns:
+                    try:
+                        df = workspace.read_data_as_df(table_name)
+                        columns = [{"name": str(c), "type": str(df[c].dtype)} for c in df.columns]
+                    except Exception:
+                        pass
                 row_count = meta.row_count
                 if row_count is None and meta.file_type == "parquet":
                     try:
@@ -208,7 +214,11 @@ def list_tables():
                     except Exception:
                         row_count = 0
                 if row_count is None:
-                    row_count = 0
+                    try:
+                        df = workspace.read_data_as_df(table_name)
+                        row_count = len(df)
+                    except Exception:
+                        row_count = 0
                 sample_rows = []
                 if row_count > 0:
                     try:
@@ -436,6 +446,12 @@ def create_table():
                 df = workspace.read_data_as_df(sanitized_table_name)
                 row_count = len(df)
                 columns = list(df.columns)
+                meta.row_count = row_count
+                meta.columns = [
+                    ColumnInfo(name=str(c), dtype=str(df[c].dtype))
+                    for c in df.columns
+                ]
+                workspace.add_table_metadata(meta)
         else:
             # raw_data can come as a file upload (Blob) or as a form field
             if 'raw_data' in request.files:
