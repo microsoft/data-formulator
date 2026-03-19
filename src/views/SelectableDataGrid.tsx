@@ -481,7 +481,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 </Box>
             </Fade>
             <Paper variant="outlined"
-                sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 12 }}>
+                sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 25 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
                         {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }
