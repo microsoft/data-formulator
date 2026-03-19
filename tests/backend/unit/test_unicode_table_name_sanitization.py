@@ -14,10 +14,6 @@ from data_formulator.datalake.parquet_utils import (
 pytestmark = [pytest.mark.backend]
 
 
-@pytest.mark.xfail(
-    reason="Known issue: current parquet table-name sanitization still drops Chinese characters",
-    strict=False,
-)
 @pytest.mark.parametrize(
     ("raw_name", "expected"),
     [
@@ -30,10 +26,6 @@ def test_parquet_sanitize_table_name_should_preserve_unicode(raw_name: str, expe
     assert parquet_sanitize(raw_name) == expected
 
 
-@pytest.mark.xfail(
-    reason="Known issue: current external data loader sanitization still uses an ASCII-only allowlist",
-    strict=False,
-)
 @pytest.mark.parametrize(
     ("raw_name", "expected"),
     [
@@ -46,10 +38,6 @@ def test_external_loader_sanitize_should_preserve_unicode(raw_name: str, expecte
     assert external_loader_sanitize(raw_name) == expected
 
 
-@pytest.mark.xfail(
-    reason="Known issue: current SQL identifier sanitization still removes Chinese characters",
-    strict=False,
-)
 @pytest.mark.parametrize(
     ("raw_name", "expected"),
     [

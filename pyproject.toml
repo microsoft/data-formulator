@@ -38,6 +38,7 @@ dependencies = [
     "scikit-learn",
     "pyyaml",
     "pyarrow>=13.0.0",
+    "xlrd",
     "yfinance",
     # Data-loader deps (all included by default; try/except keeps things safe)
     "pymongo",                  # mongodb

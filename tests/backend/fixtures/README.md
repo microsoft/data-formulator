@@ -4,6 +4,8 @@ This directory is for backend test sample data.
 
 Suggested future additions:
 
+- `excel/`
+  - hand-crafted Excel samples for upload and parsing regression tests
 - `json/`
   - samples with Chinese table names
   - samples with Chinese column names
@@ -12,4 +14,4 @@ Suggested future additions:
 - `expected/`
   - expected output notes or golden files
 
-For this first round, no real sample data is added yet. The goal is to establish the structure first.
+Current contents may include hand-crafted regression samples such as `excel/test_cn.xls`.
