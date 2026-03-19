@@ -130,6 +130,33 @@ declare module '@mui/material/styles' {
 
 export const toolName = "Data Formulator"
 
+const LanguageSwitcher: React.FC = () => {
+    const { i18n } = useTranslation();
+
+    return (
+        <ToggleButtonGroup
+            value={i18n.language.split('-')[0]}
+            exclusive
+            onChange={(_, value) => value && i18n.changeLanguage(value)}
+            size="small"
+            sx={{ 
+                height: '28px', 
+                my: 'auto',
+                mr: 1,
+                '& .MuiToggleButton-root': {
+                    textTransform: 'none',
+                    fontSize: '12px',
+                    py: 0,
+                    minWidth: '40px',
+                },
+            }}
+        >
+            <ToggleButton value="en">EN</ToggleButton>
+            <ToggleButton value="zh">中文</ToggleButton>
+        </ToggleButtonGroup>
+    );
+};
+
 export interface AppFCProps {
 }
 
@@ -1116,6 +1143,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 )}
                 {isAppPage && (
                     <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
+                        <LanguageSwitcher />
                         {focusedId !== undefined && <React.Fragment><ToggleButtonGroup
                             value={viewMode}
                             exclusive
@@ -1168,6 +1196,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 )}
                 {isAboutPage && (
                     <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
+                        <LanguageSwitcher />
                         <Tooltip title={t('appBar.watchVideo')}>
                             <IconButton
                                 component="a"
