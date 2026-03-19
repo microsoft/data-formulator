@@ -56,6 +56,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CloudIcon from '@mui/icons-material/Cloud';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import LanguageIcon from '@mui/icons-material/Language';
+import { useTranslation } from 'react-i18next';
 
 export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore';
 
@@ -188,33 +189,34 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     variant = 'dialog'
 }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     // Data source configurations
     const regularDataSources = [
         { 
             value: 'explore' as UploadTabType, 
-            title: 'Sample Datasets', 
-            description: 'Explore and load curated example datasets',
+            title: t('upload.sampleDatasets'), 
+            description: t('upload.sampleDatasetsDesc'),
             icon: <ExploreIcon />, 
             disabled: false
         },
         { 
             value: 'upload' as UploadTabType, 
-            title: 'Upload File', 
-            description: 'Upload local files (CSV, TSV, JSON, Excel)',
+            title: t('upload.uploadFile'), 
+            description: t('upload.uploadFileDesc'),
             icon: <UploadFileIcon />, 
             disabled: false
         },
         { 
             value: 'paste' as UploadTabType, 
-            title: 'Paste Data', 
-            description: 'Paste tabular data directly from clipboard',
+            title: t('upload.pasteData'), 
+            description: t('upload.pasteDataDesc'),
             icon: <ContentPasteIcon />, 
             disabled: false
         },
         { 
             value: 'extract' as UploadTabType, 
-            title: 'Extract Unstructured Data', 
-            description: 'Extract tables from images or text using AI',
+            title: t('upload.extractData'), 
+            description: t('upload.extractDataDesc'),
             icon: <ImageSearchIcon />, 
             disabled: false
         },
@@ -223,15 +225,15 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     const liveDataSources = [
         { 
             value: 'url' as UploadTabType, 
-            title: 'Load from URL', 
-            description: 'Load data from a URL with optional auto-refresh',
+            title: t('upload.loadFromUrl'), 
+            description: t('upload.loadFromUrlDesc'),
             icon: <LinkIcon />, 
             disabled: false
         },
         { 
             value: 'database' as UploadTabType, 
-            title: 'Database', 
-            description: 'Connect to databases or data services',
+            title: t('upload.database'), 
+            description: t('upload.databaseDesc'),
             icon: <StorageIcon />, 
             disabled: false
         },
@@ -271,7 +273,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         '0%': { opacity: 1, color: 'primary.main' },
                         '50%': { opacity: 0.5, color: 'primary.light' },
                         '100%': { opacity: 1, color: 'primary.main' },
-                    }, }} /> Connect to live data sources
+                    }, }} /> {t('upload.connectToLiveData')}
                 </Typography>
                 <Typography 
                     variant="body2" 
@@ -283,7 +285,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         letterSpacing: '0.02em'
                     }}
                 >
-                    Load local data
+                    {t('upload.loadLocalData')}
                 </Typography>
                 
                 {/* Background for Live Data Column */}
@@ -375,7 +377,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     letterSpacing: '0.02em'
                 }}
             >
-                Local data
+                {t('upload.localData')}
             </Typography>
 
             <Box sx={{ 
@@ -415,7 +417,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     '0%': { opacity: 1, color: 'primary.main' },
                     '50%': { opacity: 0.5, color: 'primary.light' },
                     '100%': { opacity: 1, color: 'primary.main' },
-                }, }} /> Or connect to a data source (with optional auto-refresh)
+                }, }} /> {t('upload.orConnectToDataSource')}
             </Typography>
 
             <Box sx={{ 
@@ -450,6 +452,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     initialTab = 'menu',
 }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
@@ -649,7 +652,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         file.name.endsWith('.xls');
 
                     if (file.size > MAX_FILE_SIZE && isTextFile) {
-                        errors.push(`File ${file.name} is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Use Database for large files.`);
+                        errors.push(t('upload.errors.fileTooLarge', { name: file.name, size: (file.size / (1024 * 1024)).toFixed(2) }));
                         continue;
                     }
 
@@ -660,10 +663,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             if (table) {
                                 previewTables.push(table);
                             } else {
-                                errors.push(`Failed to parse ${file.name}.`);
+                                errors.push(t('upload.errors.failedToParse', { name: file.name }));
                             }
                         } catch {
-                            errors.push(`Failed to read ${file.name}.`);
+                            errors.push(t('upload.errors.failedToRead', { name: file.name }));
                         }
                         continue;
                     }
@@ -675,15 +678,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             if (tables.length > 0) {
                                 previewTables.push(...tables);
                             } else {
-                                errors.push(`Failed to parse Excel file ${file.name}.`);
+                                errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
                             }
                         } catch {
-                            errors.push(`Failed to parse Excel file ${file.name}.`);
+                            errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
                         }
                         continue;
                     }
 
-                    errors.push(`Unsupported file format: ${file.name}.`);
+                    errors.push(t('upload.errors.unsupportedFormat', { name: file.name }));
                 }
 
                 setFilePreviewTables(previewTables.length > 0 ? previewTables : null);
@@ -862,11 +865,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 if (table) {
                     setUrlPreviewTables([table]);
                 } else {
-                    setUrlPreviewError('Unable to parse data from the provided URL. Please ensure the URL points to CSV, JSON, or JSONL data.');
+                    setUrlPreviewError(t('upload.errors.unableToParseUrl'));
                 }
             })
             .catch((err) => {
-                setUrlPreviewError(`Failed to fetch data: ${err.message}. Please ensure the URL points to CSV, JSON, or JSONL data.`);
+                setUrlPreviewError(t('upload.errors.failedToFetch', { message: err.message }));
             })
             .finally(() => {
                 setUrlPreviewLoading(false);
@@ -944,15 +947,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     // Get current tab title for header
     const getCurrentTabTitle = () => {
         const tabTitles: Record<UploadTabType, string> = {
-            'menu': 'Load Data',
-            'explore': 'Sample Datasets',
-            'upload': 'Upload File',
-            'paste': 'Paste Data',
-            'extract': 'Extract from Documents',
-            'url': 'Load from URL',
-            'database': 'Database',
+            'menu': t('upload.title'),
+            'explore': t('upload.sampleDatasets'),
+            'upload': t('upload.uploadFile'),
+            'paste': t('upload.pasteData'),
+            'extract': t('upload.extractFromDocuments'),
+            'url': t('upload.loadFromUrl'),
+            'database': t('upload.database'),
         };
-        return tabTitles[activeTab] || 'Add Data';
+        return tabTitles[activeTab] || t('upload.addData');
     };
 
     return (
@@ -983,10 +986,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     </IconButton>
                 )}
                 <Typography variant="h6" component="span">
-                    {activeTab === 'menu' ? 'Load Data' : getCurrentTabTitle()}
+                    {activeTab === 'menu' ? t('upload.title') : getCurrentTabTitle()}
                 </Typography>
                 {activeTab === 'extract' && dataCleanBlocks.length > 0 && (
-                    <Tooltip title="Reset extraction">
+                    <Tooltip title={t('upload.resetExtraction')}>
                         <IconButton 
                             size="small" 
                             color='warning' 
@@ -1005,7 +1008,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {activeTab !== 'menu' && (
                     <Box sx={{ ml: 'auto', mr: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.secondary', mr: 0.5 }}>
-                            Load data in
+                            {t('upload.loadDataIn')}
                         </Typography>
                         <ToggleButtonGroup
                             value={storeOnServer ? 'disk' : 'browser'}
@@ -1015,29 +1018,29 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             sx={{ height: 26, '& .MuiToggleButton-root': { textTransform: 'none', fontSize: '0.7rem', px: 1, py: 0 } }}
                         >
                             <ToggleButton value="browser">
-                                <Tooltip title={`Data stays in browser only (limited to ${frontendRowLimit.toLocaleString()} rows)`} placement="bottom">
+                                <Tooltip title={t('upload.browserTooltip', { limit: frontendRowLimit.toLocaleString() })} placement="bottom">
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <LanguageIcon sx={{ fontSize: 14 }} /> Browser
+                                        <LanguageIcon sx={{ fontSize: 14 }} /> {t('upload.browserLabel')}
                                     </Box>
                                 </Tooltip>
                             </ToggleButton>
                             <ToggleButton value="disk" disabled={diskPersistenceDisabled}>
                                 <Tooltip title={diskPersistenceDisabled
-                                    ? 'Install Data Formulator locally to unlock analysis for large datasets'
+                                    ? t('upload.installLocallyTooltip')
                                     : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
-                                        ? 'Data stored in Azure Blob Storage (supports large tables)'
-                                        : 'Data stored in workspace on disk (supports large tables)'} placement="bottom">
+                                        ? t('upload.azureBlobTooltip')
+                                        : t('upload.diskTooltip')} placement="bottom">
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                         {serverConfig.WORKSPACE_BACKEND === 'azure_blob'
-                                            ? <><CloudIcon sx={{ fontSize: 14 }} /> Azure</>
-                                            : <><FolderOpenIcon sx={{ fontSize: 14 }} /> Disk</>}
+                                            ? <><CloudIcon sx={{ fontSize: 14 }} /> {t('upload.azureLabel')}</>
+                                            : <><FolderOpenIcon sx={{ fontSize: 14 }} /> {t('upload.diskLabel')}</>}
                                     </Box>
                                 </Tooltip>
                             </ToggleButton>
                         </ToggleButtonGroup>
                         {storeOnServer && !diskPersistenceDisabled && serverConfig.DATA_FORMULATOR_HOME
                             && serverConfig.WORKSPACE_BACKEND !== 'azure_blob' && (
-                            <Tooltip title={`Open workspace: ${serverConfig.DATA_FORMULATOR_HOME}`} placement="bottom">
+                            <Tooltip title={t('upload.openWorkspace', { path: serverConfig.DATA_FORMULATOR_HOME })} placement="bottom">
                                 <IconButton
                                     size="small"
                                     onClick={() => {
@@ -1117,24 +1120,24 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             >
                                 <UploadFileIcon sx={{ fontSize: showFilePreview ? 28 : 36, color: 'text.secondary', mb: 1 }} />
                                 <Typography variant={showFilePreview ? "body2" : "subtitle1"} gutterBottom>
-                                    Drag & drop file here
+                                    {t('upload.dragDrop')}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary" sx={{ fontSize: showFilePreview ? '0.75rem' : '0.875rem' }}>
-                                    or <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>Browse</Link>
+                                    {t('upload.or')} <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>{t('upload.browse')}</Link>
                                 </Typography>
                                 {!showFilePreview && (
                                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        Supported: CSV, TSV, JSON, Excel (xlsx, xls)
+                                        {t('upload.supportedFormats')}
                                     </Typography>
                                 )}
                             </Box>
                         ) : (
                             <Box sx={{ textAlign: 'center', py: 4, px: 2 }}>
                                 <Typography color="text.secondary" sx={{ mb: 2 }}>
-                                    File upload is disabled in this environment.
+                                    {t('upload.fileUploadDisabled')}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    Use "Load from URL" to load data from a remote source.
+                                    {t('upload.useLoadFromUrl')}
                                 </Typography>
                             </Box>
                         )}
@@ -1146,7 +1149,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     loading={filePreviewLoading}
                                     error={filePreviewError}
                                     tables={filePreviewTables}
-                                    emptyLabel="Select a file to preview."
+                                    emptyLabel={t('upload.selectFileToPreview')}
                                     onRemoveTable={handleRemoveFilePreviewTable}
                                     activeIndex={filePreviewActiveIndex}
                                     onActiveIndexChange={setFilePreviewActiveIndex}
@@ -1162,7 +1165,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     disabled={filePreviewLoading}
                                     sx={{ textTransform: 'none', width: 240 }}
                                 >
-                                    Load Table
+                                    {t('upload.loadTable')}
                                 </Button>
                                 {hasMultipleFileTables && (
                                     <Button
@@ -1171,7 +1174,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         disabled={filePreviewLoading}
                                         sx={{ textTransform: 'none', width: 240 }}
                                     >
-                                        Load All Tables
+                                        {t('upload.loadAllTables')}
                                     </Button>
                                 )}
                             </Box>
@@ -1196,12 +1199,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <TextField
                                         fullWidth
-                                        placeholder="Enter URL: https://example.com/data.json or /api/data"
+                                        placeholder={t('upload.placeholder.url')}
                                         value={tableURL || ''}
                                         onChange={(e) => setTableURL((e.target.value || '').trim())}
                                         inputRef={urlInputRef}
                                         error={tableURL !== "" && !hasValidUrl}
-                                        helperText={tableURL !== "" && !hasValidUrl ? "Enter a valid URL starting with http://, https://, or /" : undefined}
+                                        helperText={tableURL !== "" && !hasValidUrl ? t('upload.helperText.urlInvalid') : undefined}
                                         size="small"
                                         sx={{ 
                                             flex: 1,
@@ -1220,11 +1223,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         disabled={!hasValidUrl || urlPreviewLoading}
                                         sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
                                     >
-                                        Preview
+                                        {t('upload.preview')}
                                     </Button>
                                 </Box>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', ml: 0.5 }}>
-                                    The URL must point to data in CSV, JSON, or JSONL format
+                                    {t('upload.urlFormatHint')}
                                 </Typography>
                             </Box>
                             
@@ -1241,14 +1244,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         }
                                         label={
                                             <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
-                                                Watch Mode
+                                                {t('upload.watchMode')}
                                             </Typography>
                                         }
                                     />
                                     {urlAutoRefresh ? (
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, }}>
                                             <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
-                                                check data updates every
+                                                {t('upload.checkUpdatesEvery')}
                                             </Typography>
                                             {[
                                                 { seconds: 5, label: '5s' },
@@ -1277,7 +1280,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                             ))}
                                         </Box>
                                     ) : <Typography component="span" variant="caption" color="text.secondary">
-                                        automatically check and refresh data from the URL at regular intervals
+                                        {t('upload.watchHint')}
                                     </Typography>}
                                     
                                 </Box>
@@ -1287,7 +1290,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             {(!urlPreviewTables || urlPreviewTables.length === 0) && !urlPreviewLoading && (
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                                     <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
-                                        Try examples:
+                                        {t('upload.tryExamples')}
                                     </Typography>
                                     <Box component="ul" sx={{ 
                                         listStyle: 'none', 
@@ -1358,7 +1361,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                         }}
                                                     >
                                                         <RestartAltIcon sx={{ fontSize: 12 }} />
-                                                        reset
+                                                        {t('upload.resetLabel')}
                                                     </Typography>
                                                 )}
                                             </Box>
@@ -1374,7 +1377,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     loading={urlPreviewLoading}
                                     error={urlPreviewError}
                                     tables={urlPreviewTables}
-                                    emptyLabel="Enter a URL and click Preview to see data."
+                                    emptyLabel={t('upload.enterUrlToPreview')}
                                     onRemoveTable={handleRemoveUrlPreviewTable}
                                     activeIndex={urlPreviewActiveIndex}
                                     onActiveIndexChange={setUrlPreviewActiveIndex}
@@ -1387,7 +1390,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 {urlAutoRefresh && (
                                     <Typography variant="caption" color="success.main" sx={{ mr: 1 }}>
                                         <StreamIcon sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.5 }} />
-                                        Watch mode: {urlRefreshInterval < 60 ? `${urlRefreshInterval}s` : `${Math.floor(urlRefreshInterval / 60)}m`}
+                                        {t('upload.watchModeStatus')} {urlRefreshInterval < 60 ? `${urlRefreshInterval}s` : `${Math.floor(urlRefreshInterval / 60)}m`}
                                     </Typography>
                                 )}
                                 <Button
@@ -1396,7 +1399,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     disabled={urlPreviewLoading}
                                     sx={{ textTransform: 'none', width: 240 }}
                                 >
-                                    Load Table
+                                    {t('upload.loadTable')}
                                 </Button>
                                 {hasMultipleUrlTables && (
                                     <Button
@@ -1406,7 +1409,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         disabled={urlPreviewLoading}
                                         sx={{ textTransform: 'none' }}
                                     >
-                                        Load All Tables
+                                        {t('upload.loadAllTables')}
                                     </Button>
                                 )}
                             </Box>
@@ -1436,9 +1439,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 border: '1px solid rgba(244, 67, 54, 0.3)' 
                             }}>
                                 <Typography variant="caption" sx={{ flex: 1, color: 'error.main', fontWeight: 500 }}>
-                                    ⚠️ Content exceeds {(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0)}MB size limit. 
-                                    Current size: {(new Blob([pasteContent]).size / (1024 * 1024)).toFixed(2)}MB. 
-                                    Please use the DATABASE tab for large datasets.
+                                    {t('upload.contentExceedsSizeLimit', {
+                                        limit: (MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0),
+                                        size: (new Blob([pasteContent]).size / (1024 * 1024)).toFixed(2)
+                                    })}
                                 </Typography>
                             </Box>
                         )}
@@ -1453,8 +1457,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 borderRadius: 1 
                             }}>
                                 <Typography variant="caption" sx={{ flex: 1 }}>
-                                    Large content detected ({Math.round(pasteContent.length / 1000)}KB). 
-                                    {showFullContent ? 'Showing full content (may be slow)' : 'Showing preview for performance'}
+                                    {t('upload.largeContentDetected', { size: Math.round(pasteContent.length / 1000) })}{' '}
+                                    {showFullContent ? t('upload.showingFullContent') : t('upload.showingPreview')}
                                 </Typography>
                                 <Button 
                                     size="small" 
@@ -1462,7 +1466,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     onClick={toggleFullContent}
                                     sx={{ textTransform: 'none', minWidth: 'auto' }}
                                 >
-                                    {showFullContent ? 'Show Preview' : 'Show Full'}
+                                    {showFullContent ? t('upload.showPreview') : t('upload.showFull')}
                                 </Button>
                             </Box>
                         )}
@@ -1474,7 +1478,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 fullWidth
                                 value={pasteContent}
                                 onChange={handleContentChange}
-                                placeholder="Paste your data here (CSV, TSV, or JSON format)"
+                                placeholder={t('upload.placeholder.paste')}
                                 InputProps={{
                                     readOnly: isLargeContent && !showFullContent,
                                 }}
@@ -1506,7 +1510,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`
                                 }}>
                                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                                        Preview mode: Editing disabled. Click "Show Full" to enable editing.
+                                        {t('upload.previewMode')}
                                     </Typography>
                                 </Box>
                             )}
@@ -1519,7 +1523,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 disabled={(pasteContent || '').trim() === '' || isOverSizeLimit}
                                 sx={{ textTransform: 'none' }}
                             >
-                                Upload Data
+                                {t('upload.uploadData')}
                             </Button>
                         </Box>
                     </Box>
@@ -1546,7 +1550,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             const isLiveDataset = dataset.live === true;
                             
                             setDatasetLoading(true);
-                            setDatasetLoadingLabel(`Loading ${dataset.name}...`);
+                            setDatasetLoadingLabel(t('upload.loadingDataset', { name: dataset.name }));
                             
                             try {
                                 const loadPromises = dataset.tables.map(async (table) => {
@@ -1612,7 +1616,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             >
                 <CircularProgress size={36} />
                 <Typography variant="body2" color="text.secondary">
-                    {datasetLoadingLabel || 'Loading data...'}
+                    {datasetLoadingLabel || t('upload.loadingData')}
                 </Typography>
                 <Button
                     variant="text"
@@ -1620,7 +1624,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     onClick={() => { setDatasetLoading(false); setDatasetLoadingLabel(''); }}
                     sx={{ mt: 1, textTransform: 'none', color: 'text.secondary' }}
                 >
-                    Cancel
+                    {t('app.cancel')}
                 </Button>
             </Backdrop>
         </Dialog>

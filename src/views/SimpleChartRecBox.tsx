@@ -36,10 +36,12 @@ import ClearIcon from '@mui/icons-material/Clear';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
+import { useTranslation } from 'react-i18next';
 
 const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCancel?: () => void }> = ({ relevantAgentActions, theme, onCancel }) => {
+    const { t } = useTranslation();
     const runningAction = relevantAgentActions.find(a => a.status === 'running');
-    const latestMessage = runningAction?.description || 'thinking...';
+    const latestMessage = runningAction?.description || t('dataThread.thinking');
     return (
         <Box sx={{
             position: 'absolute',
@@ -71,7 +73,7 @@ const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCan
                     ✏️
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 10 }}>
-                    Agent is working...
+                    {t('chartRec.agentWorking')}
                 </Typography>
             </Box>
             {onCancel && (
@@ -113,6 +115,7 @@ export const SimpleChartRecBox: FC = function () {
     const agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
 
     const theme = useTheme();
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
     const [chatPrompt, setChatPrompt] = useState("");
@@ -139,10 +142,10 @@ export const SimpleChartRecBox: FC = function () {
         for (const action of staleRunning) {
             dispatch(dfActions.updateAgentWorkInProgress({
                 actionId: action.actionId,
-                description: action === lastStale ? 'Interrupted by page refresh' : action.description,
+                description: action === lastStale ? t('chartRec.interruptedByRefresh') : action.description,
                 status: 'warning',
                 hidden: false,
-                ...(action === lastStale ? { message: { content: 'Interrupted by page refresh', role: 'clarify' } } : {}),
+                ...(action === lastStale ? { message: { content: t('chartRec.interruptedByRefresh'), role: 'clarify' } } : {}),
             }));
         }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -251,7 +254,10 @@ export const SimpleChartRecBox: FC = function () {
                 explorationThread = triggers.map(trigger => ({
                     name: trigger.resultTableId,
                     rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                    description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
+                    description: t('chartRec.explorationThreadDeriveDescription', {
+                        source: String(tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source ?? ''),
+                        instruction: trigger.instruction,
+                    }),
                 }));
             }
 
@@ -282,7 +288,7 @@ export const SimpleChartRecBox: FC = function () {
 
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const reader = response.body?.getReader();
-            if (!reader) throw new Error('No response body reader available');
+            if (!reader) throw new Error(t('chartRec.noResponseReader'));
 
             const decoder = new TextDecoder();
             let buffer = '';
@@ -321,7 +327,7 @@ export const SimpleChartRecBox: FC = function () {
             setThinkingBuffer('');
             ideasAbortRef.current = null;
         }
-    }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, agentRules, config, dispatch]);
+    }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, agentRules, config, dispatch, t]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         trajectory: any[];
@@ -426,7 +432,7 @@ export const SimpleChartRecBox: FC = function () {
         const processStreamingResult = (result: any) => {
             // Agent thinking / choosing next action
             if (result.type === "action" && result.action === "visualize") {
-                const thinkingMsg = result.thought || "Thinking...";
+                const thinkingMsg = result.thought || t('dataThread.thinking');
                 const currentObserveId = lastCreatedTableId || focusedTableId;
                 dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: thinkingMsg, status: 'running', hidden: false,
                     message: { content: thinkingMsg, role: 'thinking', observeTableId: currentObserveId } }));
@@ -445,14 +451,14 @@ export const SimpleChartRecBox: FC = function () {
 
                 const rows = transformedData.rows;
                 const candidateTableId = transformedData.virtual?.table_name || genTableId();
-                const displayInstruction = refinedGoal?.display_instruction || `Exploration step ${createdTables.length + 1}: ${question}`;
+                const displayInstruction = refinedGoal?.display_instruction || t('chartRec.explorationStep', { step: createdTables.length + 1, question });
 
                 // Chain from last created table, or focused table if first
                 const triggerTableId = lastCreatedTableId || focusedTableId!;
 
                 const candidateTable = createDictTable(candidateTableId, rows, undefined);
                 candidateTable.derive = {
-                    code: code || `# Exploration step ${createdTables.length + 1}`,
+                    code: code || t('chartRec.explorationStepCodeComment', { step: createdTables.length + 1 }),
                     codeSignature: result.content?.result?.code_signature,
                     outputVariable: refinedGoal?.output_variable || 'result_df',
                     source: selectedTableIds,
@@ -543,7 +549,7 @@ export const SimpleChartRecBox: FC = function () {
             }
             // Agent asks for clarification — pause and let user respond
             if (result.type === "clarify") {
-                const clarifyMsg = result.message || "Could you clarify?";
+                const clarifyMsg = result.message || t('chartRec.couldYouClarify');
                 dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: clarifyMsg, status: 'warning', hidden: false,
                     message: { content: clarifyMsg, role: 'clarify' },
                     pendingClarification: {
@@ -575,8 +581,8 @@ export const SimpleChartRecBox: FC = function () {
                     message: { content: summary, role: 'completion' } }));
                 setChatPrompt("");
             } else {
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: "The agent got lost in the data.", status: 'warning', hidden: false,
-                    message: { content: "The agent got lost in the data.", role: 'clarify' } }));
+                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: t('chartRec.agentLost'), status: 'warning', hidden: false,
+                    message: { content: t('chartRec.agentLost'), role: 'clarify' } }));
             }
         };
 
@@ -589,7 +595,7 @@ export const SimpleChartRecBox: FC = function () {
         .then(async (response) => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const reader = response.body?.getReader();
-            if (!reader) throw new Error('No response body reader available');
+            if (!reader) throw new Error(t('chartRec.noResponseReader'));
 
             const decoder = new TextDecoder();
             let buffer = '';
@@ -614,8 +620,8 @@ export const SimpleChartRecBox: FC = function () {
                                     } else if (data.status === "error") {
                                         setIsChatFormulating(false);
                                         clearTimeout(timeoutId);
-                                        dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: data.error_message || "Error during exploration", status: 'failed', hidden: false,
-                                            message: { content: data.error_message || "Error during exploration", role: 'error' } }));
+                                        dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: data.error_message || t('chartRec.errorDuringExploration'), status: 'failed', hidden: false,
+                                            message: { content: data.error_message || t('chartRec.errorDuringExploration'), role: 'error' } }));
                                         return;
                                     }
                                 }
@@ -634,11 +640,11 @@ export const SimpleChartRecBox: FC = function () {
             agentAbortRef.current = null;
             clearTimeout(timeoutId);
             const isCancelled = error.name === 'AbortError' && !isCompleted;
-            const errorMessage = isCancelled ? "Exploration cancelled" : error.name === 'AbortError' ? "Exploration timed out" : `Exploration failed: ${error.message}`;
+            const errorMessage = isCancelled ? t('chartRec.explorationCancelled') : error.name === 'AbortError' ? t('chartRec.explorationTimedOut') : t('chartRec.explorationFailed', { message: error.message });
             dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessage, status: isCancelled ? 'warning' : 'failed', hidden: false,
                     message: { content: errorMessage, role: isCancelled ? 'clarify' : 'error' } }));
         });
-    }, [focusedTableId, tables, activeModel, agentRules, config, conceptShelfItems, dispatch, relevantAgentActions]);
+    }, [focusedTableId, tables, activeModel, agentRules, config, conceptShelfItems, dispatch, relevantAgentActions, t]);
 
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
@@ -649,14 +655,14 @@ export const SimpleChartRecBox: FC = function () {
         if (pendingClarification) {
             dispatch(dfActions.updateAgentWorkInProgress({
                 actionId: pendingClarification.actionId,
-                description: "Conversation ended by user.",
+                description: t('chartRec.conversationEnded'),
                 status: 'completed',
                 hidden: false,
-                message: { content: "Conversation ended by user.", role: 'completion' },
+                message: { content: t('chartRec.conversationEnded'), role: 'completion' },
                 pendingClarification: null,
             }));
         }
-    }, [pendingClarification, dispatch]);
+    }, [pendingClarification, dispatch, t]);
 
     const gradientBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.6)}, ${alpha(theme.palette.secondary.main, 0.55)})`;
     const workingBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
@@ -719,14 +725,14 @@ export const SimpleChartRecBox: FC = function () {
                 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', mb: '2px' }}>
                         <TipsAndUpdatesIcon sx={{ fontSize: 12, color: theme.palette.secondary.main }} />
-                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: theme.palette.secondary.main, flex: 1 }}>Ideas</Typography>
-                        <Tooltip title="Regenerate ideas">
+                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: theme.palette.secondary.main, flex: 1 }}>{t('chartRec.ideas')}</Typography>
+                        <Tooltip title={t('chartRec.regenerateIdeas')}>
                             <IconButton size="small" onClick={() => getIdeasFromAgent()}
                                 sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.primary.main } }}>
                                 <RefreshIcon sx={{ fontSize: 12 }} />
                             </IconButton>
                         </Tooltip>
-                        <Tooltip title="Clear ideas">
+                        <Tooltip title={t('chartRec.clearIdeas')}>
                             <IconButton size="small" onClick={() => setIdeas([])}
                                 sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.error.main } }}>
                                 <ClearIcon sx={{ fontSize: 12 }} />
@@ -778,7 +784,7 @@ export const SimpleChartRecBox: FC = function () {
                 onKeyDown={(event: any) => {
                     if (event.key === 'Tab' && !event.shiftKey && chatPrompt.trim() === '' && !isChatFormulating) {
                         event.preventDefault();
-                        setChatPrompt('help me suggest some exploration directions from this thread');
+                        setChatPrompt(t('chartRec.threadExplorePrompt'));
                     }
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
@@ -819,7 +825,7 @@ export const SimpleChartRecBox: FC = function () {
                     input: { readOnly: isChatFormulating },
                 }}
                 value={chatPrompt}
-                placeholder={pendingClarification ? "Reply to agent's question..." : "Ask agent to explore a new direction"}
+                placeholder={pendingClarification ? t('chartRec.replyPlaceholder') : t('chartRec.explorePlaceholder')}
                 fullWidth
                 multiline
                 minRows={2}
@@ -828,7 +834,7 @@ export const SimpleChartRecBox: FC = function () {
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
                 {/* Action buttons */}
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.5, overflow: 'hidden', flex: 1 }}>
-                    <Tooltip title="Add more data to the workspace">
+                    <Tooltip title={t('chartRec.addMoreData')}>
                         <IconButton
                             size="small"
                             onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
@@ -845,7 +851,7 @@ export const SimpleChartRecBox: FC = function () {
                     <CircularProgress size={18} sx={{ m: 0.5 }} />
                 ) : (
                     <>
-                        <Tooltip title="Get idea suggestions">
+                        <Tooltip title={t('chartRec.getIdeaSuggestions')}>
                             <span>
                                 <IconButton
                                     size="small"
@@ -866,7 +872,7 @@ export const SimpleChartRecBox: FC = function () {
                             </span>
                         </Tooltip>
                         {pendingClarification && !isChatFormulating && (
-                            <Tooltip title="End conversation">
+                            <Tooltip title={t('chartRec.endConversation')}>
                                 <IconButton
                                     size="small"
                                     sx={{ p: 0.5, color: theme.palette.warning.main }}
@@ -876,7 +882,7 @@ export const SimpleChartRecBox: FC = function () {
                                 </IconButton>
                             </Tooltip>
                         )}
-                        <Tooltip title={pendingClarification ? "Send reply" : "Explore"}>
+                        <Tooltip title={pendingClarification ? t('chartRec.sendReply') : t('chartRec.explore')}>
                             <span>
                                 <IconButton
                                     size="small"
@@ -903,7 +909,7 @@ export const SimpleChartRecBox: FC = function () {
             {(isChatFormulating || isLoadingIdeas) && (
                 <AgentWorkingOverlay 
                     relevantAgentActions={isLoadingIdeas && !isChatFormulating 
-                        ? [{ status: 'running', description: 'Generating exploration ideas...' }] 
+                        ? [{ status: 'running', description: t('chartRec.generatingIdeas') }] 
                         : relevantAgentActions}
                     theme={theme}
                     onCancel={isLoadingIdeas && !isChatFormulating ? () => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); } : cancelAgent}

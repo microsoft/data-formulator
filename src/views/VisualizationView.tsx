@@ -71,6 +71,8 @@ import 'prismjs/components/prism-markdown' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
+import { useTranslation } from 'react-i18next';
+
 import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
@@ -210,6 +212,7 @@ export let SampleSizeEditor: FC<{
     onSampleSizeChange: (newSize: number) => void;
 }> = function SampleSizeEditor({ initialSize, totalSize, onSampleSizeChange }) {
 
+    const { t } = useTranslation();
     const [localSampleSize, setLocalSampleSize] = useState<number>(initialSize);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
@@ -250,7 +253,7 @@ export let SampleSizeEditor: FC<{
         >
             <Box sx={{ p: 2, width: 300 }}>
                 <Typography fontSize="small" gutterBottom>
-                    Adjust sample size: {localSampleSize} / {totalSize} rows
+                    {t('chart.adjustSampleSize', { sampleSize: localSampleSize, totalSize })}
                 </Typography>
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
                     <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>100</Typography>
@@ -262,14 +265,14 @@ export let SampleSizeEditor: FC<{
                         value={localSampleSize}
                         onChange={(_, value) => setLocalSampleSize(value as number)}
                         valueLabelDisplay="auto"
-                        aria-label="Sample size"
+                        aria-label={t('chart.sampleSizeAria')}
                     />
                     <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>{maxSliderSize}</Typography>
                     <Button sx={{ textTransform: 'none', ml: 2, fontSize: '12px' }} onClick={() => {
                         onSampleSizeChange(localSampleSize);
                         setAnchorEl(null);
                     }}>
-                        Resample
+                        {t('chart.resample')}
                     </Button>
                 </Box>
             </Box>
@@ -483,6 +486,7 @@ const VegaChartRenderer: FC<{
 
 export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
+    const { t } = useTranslation();
     const config = useSelector((state: DataFormulatorState) => state.config);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const componentRef = useRef<HTMLHeadingElement>(null);
@@ -584,7 +588,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
         dispatch(dfActions.addMessages({
             "timestamp": Date.now(),
-            "component": "Chart Builder",
+            "component": t('chart.chartBuilder'),
             "type": severity,
             "value": content
         }));
@@ -771,7 +775,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     };
 
     let saveButton = (
-        <Tooltip key="save-copy-tooltip" title={focusedChart.saved ? "Not anymore" : "I like it!"}>
+        <Tooltip key="save-copy-tooltip" title={focusedChart.saved ? t('chart.notAnymore') : t('chart.iLikeIt')}>
             <span>
                 <IconButton key="unsave-btn" size="small" sx={actionBtnSx}
                     onClick={() => {
@@ -786,7 +790,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     );
 
     let deleteButton = (
-        <Tooltip title="Delete" key="delete-btn-tooltip">
+        <Tooltip title={t('chart.delete')} key="delete-btn-tooltip">
             <span>
                 <IconButton size="small" disabled={trigger != undefined}
                     sx={{ ...actionBtnSx, color: 'error.main', '&:hover': { backgroundColor: 'rgba(211, 47, 47, 0.08)', color: 'error.main' } }}
@@ -848,7 +852,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     }}
                 >
                     <QuestionAnswerIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                    log
+                    {t('chart.log')}
                 </Button>
                 <Button 
                     key="code-btn"
@@ -871,7 +875,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     }}
                 >
                     <TerminalIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                    code
+                    {t('chart.code')}
                 </Button>
                 {hasConcepts && (
                     <Button 
@@ -895,7 +899,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         }}
                     >
                         <InfoIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                        concepts
+                        {t('chart.concepts')}
                     </Button>
                 )}
             </ButtonGroup>
@@ -946,13 +950,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 }}
             >
                 <InsightIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                {insightLoading ? <CircularProgress size={10} sx={{ ml: 0.5 }} /> : 'insight'}
+                {insightLoading ? <CircularProgress size={10} sx={{ ml: 0.5 }} /> : t('chart.insight')}
             </Button>
         </Box>
     ) : null;
     
     let vegaEditorButton = (
-        <Tooltip key="vega-editor-tooltip" title="Open in Vega Editor">
+        <Tooltip key="vega-editor-tooltip" title={t('chart.openInVegaEditor')}>
             <span>
                 <IconButton key="vega-editor-btn" size="small" sx={actionBtnSx}
                     disabled={!renderedSpec || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
@@ -974,17 +978,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let chartMessage = "";
     if (focusedChart.chartType == "Table") {
-        chartMessage = "Tell me what you want to visualize!";
+        chartMessage = t('chart.msgTable');
     } else if (focusedChart.chartType == "Auto") {
-        chartMessage = "Say something to get chart recommendations!";
+        chartMessage = t('chart.msgAuto');
     } else if (encodingShelfEmpty) {
-        chartMessage = "Put data fields to chart builder or describe what you want!";
+        chartMessage = t('chart.msgEncodingEmpty');
     } else if (chartUnavailable) {
-        chartMessage = "Formulate data to create the visualization!";
+        chartMessage = t('chart.msgUnavailable');
     } else if (chartSynthesisInProgress.includes(focusedChart.id)) {
-        chartMessage = "Synthesis in progress...";
+        chartMessage = t('chart.msgSynthesizing');
     } else if (table.derive) {
-        chartMessage = "AI generated results can be inaccurate, inspect it!";
+        chartMessage = t('chart.msgWarning');
     }
 
     let chartActionItems = isDataStale ? [] : (
@@ -992,7 +996,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             {(table.virtual ? activeVisTableTotalRowCount > serverConfig.MAX_DISPLAY_ROWS : table.rows.length > serverConfig.MAX_DISPLAY_ROWS) && !(chartUnavailable || encodingShelfEmpty) ? (
                 <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
-                        visualizing
+                        {t('chart.visualizing')}
                     </Typography>
                     <SampleSizeEditor 
                         initialSize={activeVisTableRows.length}
@@ -1002,9 +1006,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         }}
                     />
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
-                        sample rows
+                        {t('chart.sampleRows')}
                     </Typography>
-                    <Tooltip title="sample again!">
+                    <Tooltip title={t('chart.sampleAgain')}>
                         <IconButton size="small" color="primary" onClick={() => {
                             fetchDisplayRows(activeVisTableRows.length);
                         }}>
@@ -1060,7 +1064,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                         <ConceptExplCards 
                             concepts={extractConceptExplanations(table)}
-                            title="Derived Concepts"
+                            title={t('chart.derivedConcepts')}
                             maxCards={8}
                         />
                     </Box>
@@ -1070,13 +1074,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
                             <IconButton onClick={() => {
                                 setCodeViewOpen(false);
-                            }}  color='primary' aria-label="delete">
+                            }}  color='primary' aria-label={t('app.close')}>
                                 <CloseIcon />
                             </IconButton>
                         </ButtonGroup>
                         {/* <Typography fontSize="small" sx={{color: 'gray'}}>{table.derive?.source} → {table.id}</Typography> */}
                         <CodeExplanationCard
-                            title="Data transformation code"
+                            title={t('chart.dataTransformCode')}
                             icon={<CodeIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
                         >
                             <Box sx={{
@@ -1096,18 +1100,18 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
                             <IconButton onClick={() => {
                                 setInsightViewOpen(false);
-                            }}  color='primary' aria-label="close">
+                            }}  color='primary' aria-label={t('app.close')}>
                                 <CloseIcon />
                             </IconButton>
                         </ButtonGroup>
                         <CodeExplanationCard
-                            title="Chart insight"
+                            title={t('chart.chartInsight')}
                             icon={<InsightIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
                         >
                             {insightLoading ? (
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1 }}>
                                     <CircularProgress size={16} />
-                                    <Typography fontSize="small" color="text.secondary">Analyzing chart...</Typography>
+                                    <Typography fontSize="small" color="text.secondary">{t('chart.analyzingChart')}</Typography>
                                 </Box>
                             ) : insightFresh && focusedChart.insight ? (
                                 <Box sx={{ p: 0.5 }}>
@@ -1126,13 +1130,13 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                             dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
                                         }}
                                     >
-                                        regenerate
+                                        {t('chart.regenerate')}
                                     </Button>
                                 </Box>
                             ) : (
                                 <Box sx={{ p: 0.5 }}>
                                     <Typography fontSize="small" color="text.secondary">
-                                        No insight available.
+                                        {t('chart.noInsightAvailable')}
                                     </Typography>
                                     <Button 
                                         size="small" 
@@ -1141,7 +1145,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                             dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
                                         }}
                                     >
-                                        generate insight
+                                        {t('chart.generateInsight')}
                                     </Button>
                                 </Box>
                             )}
@@ -1187,7 +1191,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         backgroundColor: 'rgba(255, 255, 255, 0.9)',
         borderRadius: '4px',
     }} alignItems="center">
-        <Tooltip key="zoom-out-tooltip" title="zoom out">
+        <Tooltip key="zoom-out-tooltip" title={t('chart.zoomOut')}>
             <span>
                 <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
                     setLocalScaleFactor(s => Math.max(scaleMin, Math.round((s - 0.1) * 10) / 10));
@@ -1196,11 +1200,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 </IconButton>
             </span>
         </Tooltip>
-        <Slider aria-label="chart-resize" size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
+        <Slider aria-label={t('chart.resizeSliderAria')} size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
                 value={localScaleFactor} onChange={(event: Event, newValue: number | number[]) => {
             setLocalScaleFactor(newValue as number);
         }} />
-        <Tooltip key="zoom-in-tooltip" title="zoom in">
+        <Tooltip key="zoom-in-tooltip" title={t('chart.zoomIn')}>
             <span>
                 <IconButton color="primary" size='small' disabled={localScaleFactor >= scaleMax} onClick={() => {
                     setLocalScaleFactor(s => Math.min(scaleMax, Math.round((s + 0.1) * 10) / 10));
@@ -1209,7 +1213,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 </IconButton>
             </span>
         </Tooltip>
-    </Stack>, [localScaleFactor]);
+    </Stack>, [localScaleFactor, t]);
 
     return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
         {synthesisRunning ? <Box sx={{
@@ -1225,6 +1229,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
+    const { t } = useTranslation();
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
@@ -1282,7 +1287,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                 {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
                 <Divider sx={{my: 3}} textAlign='left'>
                     <Typography sx={{fontSize: 12, color: "text.secondary"}}>
-                        or, start with a chart type
+                        {t('chart.orStartWithChartType')}
                     </Typography>
                 </Divider>
                 {chartSelectionBox}

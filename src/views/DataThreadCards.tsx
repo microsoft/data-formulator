@@ -93,6 +93,8 @@ export interface BuildTableCardProps {
     dispatch: any;
     handleOpenTableMenu: (table: DictTable, anchorEl: HTMLElement) => void;
     primaryBgColor: string | undefined;
+    /** i18n `t` from `useTranslation()` */
+    t: (key: string, options?: Record<string, unknown>) => string;
 }
 
 export let buildTableCard = (props: BuildTableCardProps) => {
@@ -100,7 +102,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         tableId, tables, charts, chartElements, usedIntermediateTableIds,
         highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
         parentTable, tableIdList, collapsed, scrollRef, dispatch,
-        handleOpenTableMenu, primaryBgColor,
+        handleOpenTableMenu, primaryBgColor, t,
     } = props;
 
     if (parentTable && tableId == parentTable.id && parentTable.anchored && tableIdList.length > 1) {
@@ -184,9 +186,9 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                         }}>{table?.displayId || tableId}</Typography>
                     </Box>
                 </Stack>
-                <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto", flexShrink: 0 }}>
-                    <Tooltip key="create-chart-btn-tooltip" title="create chart">
-                        <IconButton className="create-chart-btn" color="primary" aria-label="create chart" size="small" sx={{ padding: 0.25, '&:hover': {
+                <ButtonGroup aria-label={t('dataThread.tableCardActionsAria')} variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto", flexShrink: 0 }}>
+                    <Tooltip key="create-chart-btn-tooltip" title={t('dataThread.createNewChart')}>
+                        <IconButton className="create-chart-btn" color="primary" aria-label={t('dataThread.createNewChart')} size="small" sx={{ padding: 0.25, '&:hover': {
                             transform: 'scale(1.2)',
                             transition: transition.fast
                             } }}
@@ -198,8 +200,8 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                             <AddchartIcon fontSize="small" sx={{ fontSize: 16 }} />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip key="more-options-btn-tooltip" title="more options">
-                        <IconButton className="more-options-btn" color="primary" aria-label="more options" size="small" sx={{ padding: 0.25, '&:hover': {
+                    <Tooltip key="more-options-btn-tooltip" title={t('dataThread.moreOptions')}>
+                        <IconButton className="more-options-btn" color="primary" aria-label={t('dataThread.moreOptions')} size="small" sx={{ padding: 0.25, '&:hover': {
                             transform: 'scale(1.2)',
                             transition: transition.fast
                             } }}

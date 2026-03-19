@@ -57,6 +57,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 import { getUrls, fetchWithIdentity } from '../app/utils';
+import { useTranslation } from 'react-i18next';
 
 
 const decodeHtmlEntities = (text: string): string => {
@@ -78,6 +79,7 @@ const simpleHash = (str: string): string => {
 
 export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
 
     const dispatch = useDispatch();
     const models = useSelector((state: DataFormulatorState) => state.models);
@@ -206,7 +208,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 renderInput={(params) => (
                     <TextField
                         {...params}
-                        placeholder="provider"
+                        placeholder={t('model.providerPlaceholder')}
                         slotProps={{
                             input: {
                                 ...params.InputProps,
@@ -226,7 +228,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     paper: (props) => {
                         return <Paper {...props}>
                             <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: '0.75rem' }}>
-                                examples
+                                {t('model.example')}
                             </Typography>
                             {props.children}
                         </Paper>
@@ -241,7 +243,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         style: { fontSize: "0.75rem" }
                     }
                 }}
-                placeholder='optional for keyless endpoint'
+                placeholder={t('model.optionalKeylessEndpoint')}
                 value={newApiKey}  
                 onChange={(event: any) => { setNewApiKey(event.target.value); }} 
                 autoComplete='off'
@@ -253,19 +255,19 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 fullWidth
                 value={newModel}
                 onChange={(event) => { setNewModel(event.target.value); }}
-                placeholder="e.g., gpt-5.1"
+                placeholder={t('model.modelPlaceholder')}
                 error={newEndpoint != "" && !newModel}
                 slotProps={{
                     input: {
                         style: { fontSize: "0.75rem" },
-                        'aria-label': 'Enter a model name',
+                        'aria-label': t('model.enterModelName'),
                     }
                 }}
             />
         </TableCell>
         <TableCell align="right">
             <TextField size="small" type="text" fullWidth
-                placeholder="optional"
+                placeholder={t('model.optional')}
                 slotProps={{
                     input: {
                         style: { fontSize: "0.75rem" }
@@ -285,11 +287,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 }}
                 value={newApiVersion}  onChange={(event: any) => { setNewApiVersion(event.target.value); }} 
                 autoComplete='off'
-                placeholder="optional"
+                placeholder={t('model.optional')}
             />
         </TableCell>
         <TableCell align="right">
-            <Tooltip title={modelExists ? "provider + model already exists" : "add and test model"}>
+            <Tooltip title={modelExists ? t('model.providerModelExists') : t('model.addAndTestModel')}>
                 <span>  
                     <IconButton color={modelExists ? 'error' : 'primary'}
                         disabled={!readyToTest}
@@ -345,7 +347,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             </Tooltip>
         </TableCell>
         <TableCell align="right">
-            <Tooltip title={"clear"}>
+            <Tooltip title={t('model.clear')}>
                 <IconButton 
                     onClick={(event) => {
                         event.stopPropagation()
@@ -366,12 +368,12 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         <Table sx={{ minWidth: 600, "& .MuiTableCell-root": { padding: "4px 8px", borderBottom: "none", fontSize: '0.75rem' } }} size="small" >
             <TableHead>
                 <TableRow>
-                    <TableCell sx={{fontWeight: 'bold', width: '120px'}}>Provider</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '160px'}}>API Key</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '160px'}} align="left">Model</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '200px'}} align="left">API Base</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', width: '120px'}} align="left">API Version</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}} align="left">Status</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '120px'}}>{t('model.provider')}</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '160px'}}>{t('model.apiKey')}</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '160px'}} align="left">{t('model.model')}</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '200px'}} align="left">{t('model.apiBase')}</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', width: '120px'}} align="left">{t('model.apiVersion')}</TableCell>
+                    <TableCell sx={{fontWeight: 'bold'}} align="left">{t('model.status')}</TableCell>
                     <TableCell sx={{fontWeight: 'bold'}} align="right"></TableCell>
                 </TableRow>
             </TableHead>
@@ -382,12 +384,12 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     let statusIcon = status  == "unknown" ? <HelpOutlineIcon color="warning" fontSize="small" /> : ( status == 'testing' ? <CircularProgress size={20} />:
                             (status == "ok" ? <CheckCircleOutlineIcon color="success" fontSize="small"/> : <ErrorOutlineIcon color="error" fontSize="small"/> ))
                     
-                    let message = "Model is ready to use";
+                    let message = t('model.modelReadyMessage');
                     if (status == "unknown") {
-                        message = "Click to test if this model is working";
+                        message = t('model.clickToTestModel');
                     } else if (status == "error") {
-                        const rawMessage = testedModels.find(t => t.id == model.id)?.message || "Unknown error";
-                        message = `Error: ${decodeHtmlEntities(rawMessage)}. Click to retest.`;
+                        const rawMessage = testedModels.find(tm => tm.id == model.id)?.message || t('model.unknownError');
+                        message = t('model.errorMessage', { message: decodeHtmlEntities(rawMessage) });
                     }
 
                     const borderStyle = ['error'].includes(status) ? '1px dashed lightgray' : undefined;
@@ -427,7 +429,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                         {model.api_key}
                                     </Typography> 
                                     : <Typography variant="body2" sx={{ fontSize: 'inherit', fontFamily: 'monospace', color: 'text.secondary' }}>••••••••••••</Typography>)
-                                     : <Typography sx={{color: "text.secondary", fontSize: 'inherit', fontStyle: 'italic'}}>None</Typography>
+                                     : <Typography sx={{color: "text.secondary", fontSize: 'inherit', fontStyle: 'italic'}}>{t('model.none')}</Typography>
                                 }
                             </TableCell>
                             <TableCell align="left" sx={{ borderBottom: borderStyle, ...disabledStyle }}>
@@ -447,7 +449,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                     </Typography>
                                 ) : (
                                     <Typography sx={{ color: "text.secondary", fontSize: 'inherit', fontStyle: 'italic' }}>
-                                        Default
+                                        {t('model.default')}
                                     </Typography>
                                 )}
                             </TableCell>
@@ -458,7 +460,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                     </Typography>
                                 ) : (
                                     <Typography sx={{ color: "text.secondary", fontSize: 'inherit', fontStyle: 'italic' }}>
-                                        Default
+                                        {t('model.default')}
                                     </Typography>
                                 )}
                             </TableCell>
@@ -471,12 +473,12 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                         sx={{ p: 0.75, fontSize: "0.75rem", textTransform: "none" }}
                                         startIcon={statusIcon}
                                     >
-                                        {status == 'ok' ? 'Ready' : status == 'error' ? 'Retest' : 'Test'}
+                                        {status == 'ok' ? t('model.ready') : status == 'error' ? t('model.retest') : t('model.test')}
                                     </Button>
                                 </Tooltip>
                             </TableCell>
                             <TableCell sx={{ borderBottom: borderStyle }} align="right">
-                                <Tooltip title="remove model">
+                                <Tooltip title={t('model.removeModel')}>
                                     <IconButton 
                                         size="small"
                                         onClick={()=>{
@@ -514,13 +516,13 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
     let modelNotReady = tempSelectedModelId == undefined || getStatus(tempSelectedModelId) !== 'ok';
 
     let tempModel = models.find(m => m.id == tempSelectedModelId);
-    let tempModelName = tempModel ? `${tempModel.endpoint}/${tempModel.model}` : 'Please select a model';
-    let selectedModelName = models.find(m => m.id == selectedModelId)?.model || 'Unselected';
+    let tempModelName = tempModel ? `${tempModel.endpoint}/${tempModel.model}` : t('model.pleaseSelectModel');
+    let selectedModelName = models.find(m => m.id == selectedModelId)?.model || t('model.unselected');
 
     return <>
-        <Tooltip title="Select a model">
+        <Tooltip title={t('model.selectModel')}>
             <Button sx={{fontSize: "inherit", textTransform: "none"}} variant="text" color={modelNotReady ? 'warning' : "primary"} onClick={()=>{setModelDialogOpen(true)}}>
-                {modelNotReady ? 'Select Models' : selectedModelName}
+                {modelNotReady ? t('model.selectModels') : selectedModelName}
             </Button>
         </Tooltip>
         <Dialog 
@@ -532,7 +534,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 }
             }}
         >
-            <DialogTitle sx={{display: "flex",  alignItems: "center"}}>Select a model</DialogTitle>
+            <DialogTitle sx={{display: "flex",  alignItems: "center"}}>{t('model.selectModel')}</DialogTitle>
             <DialogContent >
             <Box sx={{
                     display: 'flex', 
@@ -544,26 +546,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 }}>
                     <Box>
                         <Typography variant="caption" component="div" sx={{ lineHeight: 1.6 }}>
-                            • Models with strong code generation capabilities (e.g., <code style={{ 
-                                backgroundColor: alpha(theme.palette.text.primary, 0.05), 
-                                padding: '1px 4px', 
-                                borderRadius: 3,
-                                fontSize: '0.7rem'
-                            }}>gpt-5.1</code>, <code style={{ 
-                                backgroundColor: alpha(theme.palette.text.primary, 0.05), 
-                                padding: '1px 4px', 
-                                borderRadius: 3,
-                                fontSize: '0.7rem'
-                            }}>claude-sonnet-4-5</code>) provide best experience.
+                            • {t('model.recommendedModelTip')}
                         </Typography>
                         <Typography variant="caption" component="div" sx={{ lineHeight: 1.6, mt: 0.5 }}>
-                            • Model configuration based on LiteLLM. <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">See supported providers</a>.
-                            Use <code style={{ 
-                                backgroundColor: alpha(theme.palette.text.primary, 0.05), 
-                                padding: '1px 4px', 
-                                borderRadius: 3,
-                                fontSize: '0.7rem'
-                            }}>openai</code> provider for OpenAI-compatible APIs.
+                            • {t('model.litellmNote').split('.')[0]}. <a href="https://docs.litellm.ai/docs/" target="_blank" rel="noopener noreferrer">{t('model.seeDocs')}</a>.
+                            {t('model.openaiProviderTip')}
                         </Typography>
                         
                     </Box>
@@ -575,18 +562,18 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 {!serverConfig.DISABLE_DISPLAY_KEYS && (
                     <Button sx={{marginRight: 'auto'}} endIcon={showKeys ? <VisibilityOffIcon /> : <VisibilityIcon />} onClick={()=>{
                         setShowKeys(!showKeys);}}>
-                            {showKeys ? 'hide' : 'show'} keys
+                            {showKeys ? t('model.hideKeys') : t('model.showKeys')}
                     </Button>
                 )}
                 <Button disabled={modelNotReady} sx={{textTransform: 'none'}}
                     variant={modelNotReady ? 'text' : 'contained'}
                     onClick={()=>{
                         dispatch(dfActions.selectModel(tempSelectedModelId));
-                        setModelDialogOpen(false);}}>Use {tempModelName}</Button>
+                        setModelDialogOpen(false);}}>{t('model.useModel', { modelName: tempModelName })}</Button>
                 <Button onClick={()=>{
                     setTempSelectedModelId(selectedModelId);
                     setModelDialogOpen(false);
-                }}>cancel</Button>
+                }}>{t('model.cancel')}</Button>
             </DialogActions>
         </Dialog>
     </>;

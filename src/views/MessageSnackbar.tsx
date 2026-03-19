@@ -11,6 +11,7 @@ import { Alert, Box, Paper, Tooltip, Typography } from '@mui/material';
 import { shadow, transition } from '../app/tokens';
 import InfoIcon from '@mui/icons-material/Info';
 import DeleteIcon from '@mui/icons-material/Delete';
+import { useTranslation } from 'react-i18next';
 
 export interface Message {
     type: "success" | "info" | "error" | "warning",
@@ -51,6 +52,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
     const displayedMessageIdx = useSelector((state: DataFormulatorState) => state.displayedMessageIdx);
     
     const dispatch = useDispatch();
+    const { t } = useTranslation();
 
     const [openLastMessage, setOpenLastMessage] = React.useState(false);
     const [latestMessage, setLatestMessage] = React.useState<Message | undefined>();
@@ -131,7 +133,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
             boxShadow: shadow.xl,
             transition: transition.slow
         }}}>
-            <Tooltip placement="left" title="view system messages">
+            <Tooltip placement="left" title={t('messages.viewSystemMessages')}>
                 <IconButton 
                     className='snackbar-button'
                     color="warning"
@@ -157,9 +159,9 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                     {/* Header */}
                     <Box sx={{display: 'flex', alignItems: 'center', px: 1.5}}>
                         <Typography variant="subtitle1" sx={{fontSize: 12, flexGrow: 1, color: 'text.secondary'}}>
-                            system messages ({messages.length}){messages.length > MAX_DISPLAY_MESSAGES ? ` — showing latest ${MAX_DISPLAY_MESSAGES}` : ''}
+                            {t('messages.systemMessagesWithCount', { count: messages.length })}{messages.length > MAX_DISPLAY_MESSAGES ? ` — showing latest ${MAX_DISPLAY_MESSAGES}` : ''}
                         </Typography>
-                        <Tooltip title="clear all messages">
+                        <Tooltip title={t('messages.clearAllMessages')}>
                             <IconButton
                                 size="small"
                                 color="warning"
@@ -193,7 +195,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                         }}
                     >
                         {messages.length === 0 && (
-                            <Typography fontSize={10} sx={{ opacity: 0.5, fontStyle: 'italic' }}>No messages yet</Typography>
+                            <Typography fontSize={10} sx={{ opacity: 0.5, fontStyle: 'italic' }}>{t('messages.noMessages')}</Typography>
                         )}
                         {groupedMessages.map((msg, index) => {
                             const color = TYPE_COLORS[msg.type] || '#333';
@@ -218,7 +220,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                                                 style={{ color: '#0288d1', cursor: 'pointer', userSelect: 'none' }}
                                                 onClick={() => toggleExpand(index)}
                                             >
-                                                {isExpanded ? '▾ collapse' : '▸ details'}
+                                                {isExpanded ? `▾ ${t('messages.details')}` : `▸ ${t('messages.details')}`}
                                             </span>
                                         )}
                                     </Typography>

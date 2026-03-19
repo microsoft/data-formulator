@@ -30,6 +30,7 @@ import {
 
 
 import '../scss/VisualizationView.scss';
+import { useTranslation } from 'react-i18next';
 import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
@@ -119,6 +120,8 @@ export const ThinkingBanner = (message: string, sx?: SxProps) => (
     </Box>
 );
 
+/** Seconds options for stream/database auto-refresh interval (labels in i18n: dataThread.refreshInterval.*). */
+const STREAM_REFRESH_INTERVAL_SECONDS = [1, 10, 30, 60, 300, 600, 1800, 3600, 86400] as const;
 
 // Streaming Settings Popup Component
 const StreamingSettingsPopup = memo<{
@@ -137,6 +140,7 @@ const StreamingSettingsPopup = memo<{
     );
     const [selectMenuOpen, setSelectMenuOpen] = useState<boolean>(false);
     const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+    const { t } = useTranslation();
 
     useEffect(() => {
         if (open) {
@@ -218,7 +222,7 @@ const StreamingSettingsPopup = memo<{
                                 }
                                 label={
                                     <Typography variant="body2" sx={{ fontSize: 11 }}>
-                                        Watch for updates
+                                        {t('dataThread.watchForUpdates')}
                                     </Typography>
                                 }
                                 sx={{ mr: 0 }}
@@ -226,7 +230,7 @@ const StreamingSettingsPopup = memo<{
                             {autoRefresh && (
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
                                     <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
-                                        every
+                                        {t('dataThread.every')}
                                     </Typography>
                                     <TextField
                                         select
@@ -246,15 +250,11 @@ const StreamingSettingsPopup = memo<{
                                             '& .MuiSelect-select': { py: 0.5 }
                                         }}
                                     >
-                                        <MenuItem value={1}>1s</MenuItem>
-                                        <MenuItem value={10}>10s</MenuItem>
-                                        <MenuItem value={30}>30s</MenuItem>
-                                        <MenuItem value={60}>1m</MenuItem>
-                                        <MenuItem value={300}>5m</MenuItem>
-                                        <MenuItem value={600}>10m</MenuItem>
-                                        <MenuItem value={1800}>30m</MenuItem>
-                                        <MenuItem value={3600}>1h</MenuItem>
-                                        <MenuItem value={86400}>24h</MenuItem>
+                                        {STREAM_REFRESH_INTERVAL_SECONDS.map((sec) => (
+                                            <MenuItem key={sec} value={sec}>
+                                                {t(`dataThread.refreshInterval.${sec}`)}
+                                            </MenuItem>
+                                        ))}
                                     </TextField>
                                 </Box>
                             )}
@@ -272,7 +272,7 @@ const StreamingSettingsPopup = memo<{
                                         alignSelf: 'flex-start'
                                     }}
                                 >
-                                    Refresh now
+                                    {t('dataThread.refreshNow')}
                                 </Button>
                             )}
                         </Box>
@@ -293,6 +293,7 @@ const MetadataPopup = memo<{
     tableName: string;
 }>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
     const [metadata, setMetadata] = useState(initialValue);
+    const { t } = useTranslation();
 
     let hasChanges = metadata !== initialValue;
 
@@ -337,12 +338,12 @@ const MetadataPopup = memo<{
                     }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                        Attach metadata to <Typography component="span" sx={{ fontSize: 'inherit', color: 'primary.main'}}>{tableName}</Typography>
+                        {t('dataThread.attachMetadataTo', { table: tableName })}
                     </Typography>
                     <TextField
                         autoFocus
-                        label="metadata"
-                        placeholder="Attach additional contexts or guidance so that AI agents can better understand and process the data."
+                        label={t('dataThread.metadata')}
+                        placeholder={t('dataThread.metadataPlaceholder')}
                         fullWidth
                         multiline
                         slotProps={{
@@ -358,8 +359,8 @@ const MetadataPopup = memo<{
                         sx={{ my: 1, '& .MuiInputBase-input': { fontSize: 12 } }}
                     />
                     <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <Button size="small" sx={{ml: 'auto'}} onClick={handleCancel} color="primary">Cancel</Button>
-                        <Button size="small" onClick={handleSave} color="primary" disabled={!hasChanges}>Save</Button>
+                        <Button size="small" sx={{ml: 'auto'}} onClick={handleCancel} color="primary">{t('app.cancel')}</Button>
+                        <Button size="small" onClick={handleSave} color="primary" disabled={!hasChanges}>{t('app.save')}</Button>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -379,6 +380,7 @@ const RenameTablePopup = memo<{
     tableName: string;
 }>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
     const [name, setName] = useState(initialValue);
+    const { t } = useTranslation();
 
     useEffect(() => {
         setName(initialValue);
@@ -413,7 +415,7 @@ const RenameTablePopup = memo<{
                     sx={{ width: 240, fontSize: 12, p: 1.5, mt: 1, ...ViewBorderStyle }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 0.5, fontSize: 12 }}>
-                        Rename table
+                        {t('dataThread.renameTable')}
                     </Typography>
                     <TextField
                         autoFocus
@@ -426,8 +428,8 @@ const RenameTablePopup = memo<{
                         sx={{ my: 0.5, '& .MuiInputBase-input': { fontSize: 12 } }}
                     />
                     <Box sx={{ mt: 0.5, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                        <Button size="small" onClick={onClose}>Cancel</Button>
-                        <Button size="small" onClick={handleSave} color="primary" disabled={name.trim() === '' || name.trim() === initialValue}>Save</Button>
+                        <Button size="small" onClick={onClose}>{t('app.cancel')}</Button>
+                        <Button size="small" onClick={handleSave} color="primary" disabled={name.trim() === '' || name.trim() === initialValue}>{t('app.save')}</Button>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -442,6 +444,7 @@ const WorkspacePanel: FC<{
     sx?: SxProps,
 }> = function ({ tables, chartElements, suppressScrollRef, sx }) {
     const theme = useTheme();
+    const { t } = useTranslation();
     const dispatch = useDispatch();
     const charts = useSelector(dfSelectors.getAllCharts);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
@@ -521,7 +524,7 @@ const WorkspacePanel: FC<{
                 const url = new URL(table.source.url);
                 return url.hostname;
             } catch {
-                return 'stream';
+                return t('dataThread.streamSourceLabel');
             }
         }
         return null;
@@ -556,7 +559,7 @@ const WorkspacePanel: FC<{
                         <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
                     }
                     <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
-                        Workspace
+                        {t('dataThread.workspace')}
                     </Typography>
                 </Box>
                 <Box
@@ -570,7 +573,7 @@ const WorkspacePanel: FC<{
                     }}
                 >
                     <AddIcon sx={{ fontSize: 14 }} />
-                    <Typography sx={{ fontSize: 11, fontWeight: 600 }}>add data</Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600 }}>{t('dataThread.addData')}</Typography>
                 </Box>
             </Box>
 
@@ -783,6 +786,7 @@ let SingleThreadGroupView: FC<{
 }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    const { t } = useTranslation();
     const { manualRefresh } = useDataRefresh();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
 
@@ -1019,8 +1023,11 @@ let SingleThreadGroupView: FC<{
                         dispatch(dfActions.addMessages({
                             timestamp: Date.now(),
                             type: 'error',
-                            component: 'data refresh',
-                            value: `Failed to refresh derived table "${derivedTable.displayId || derivedTable.id}": ${result.message || 'Unknown error'}`
+                            component: t('messages.dataRefresh.component'),
+                            value: t('messages.dataRefresh.failedDerivedTable', {
+                                table: derivedTable.displayId || derivedTable.id,
+                                detail: result.message || t('messages.dataRefresh.unknownError'),
+                            }),
                         }));
                         return null;
                     }
@@ -1029,8 +1036,10 @@ let SingleThreadGroupView: FC<{
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(),
                         type: 'error',
-                        component: 'data refresh',
-                        value: `Error refreshing derived table "${derivedTable.displayId || derivedTable.id}"`
+                        component: t('messages.dataRefresh.component'),
+                        value: t('messages.dataRefresh.errorRefreshingDerivedTable', {
+                            table: derivedTable.displayId || derivedTable.id,
+                        }),
                     }));
                     return null;
                 }
@@ -1062,16 +1071,18 @@ let SingleThreadGroupView: FC<{
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'success',
-                component: 'data refresh',
-                value: `Successfully refreshed data for "${selectedTableForRefresh.displayId || selectedTableForRefresh.id}" and updated derived tables.`
+                component: t('messages.dataRefresh.component'),
+                value: t('messages.dataRefresh.successRefreshedWithDerived', {
+                    table: selectedTableForRefresh.displayId || selectedTableForRefresh.id,
+                }),
             }));
         } catch (error) {
             console.error('Error during refresh:', error);
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
-                component: 'data refresh',
-                value: `Error refreshing data: ${error}`
+                component: t('messages.dataRefresh.component'),
+                value: t('messages.dataRefresh.errorRefreshingData', { error: String(error) }),
             }));
         } finally {
             setIsRefreshing(false);
@@ -1108,6 +1119,7 @@ let SingleThreadGroupView: FC<{
         highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
         parentTable, tableIdList, collapsed, scrollRef, dispatch,
         handleOpenTableMenu, primaryBgColor: theme.palette.primary.bgcolor,
+        t,
     };
 
     let _buildTableCard = (tableId: string) => {
@@ -1213,7 +1225,7 @@ let SingleThreadGroupView: FC<{
         // If an agent is running on this table, add a "working..." indicator
         if (runningAgentTableIds.has(tableId)) {
             const runningAction = runningAgentTableIds.get(tableId);
-            const message = runningAction?.description || 'working...';
+            const message = runningAction?.description || t('dataThread.working');
             timelineItems.push({
                 key: `agent-running-${tableId}`,
                 type: 'chart',
@@ -1227,7 +1239,7 @@ let SingleThreadGroupView: FC<{
                 type: 'chart',
                 highlighted: isHighlighted,
                 isClarifying: true,
-                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>waiting for clarification...</Typography>,
+                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
             });
         } else if (completedAgentTableIds.has(tableId)) {
             const completedAction = completedAgentTableIds.get(tableId);
@@ -1284,7 +1296,7 @@ let SingleThreadGroupView: FC<{
         // If an agent is running on this leaf table, add a "working..." indicator
         if (runningAgentTableIds.has(lt.id)) {
             const runningAction = runningAgentTableIds.get(lt.id);
-            const message = runningAction?.description || 'working...';
+            const message = runningAction?.description || t('dataThread.working');
             timelineItems.push({
                 key: `agent-running-${lt.id}`,
                 type: 'chart',
@@ -1298,7 +1310,7 @@ let SingleThreadGroupView: FC<{
                 type: 'chart',
                 highlighted: highlightedTableIds.includes(lt.id),
                 isClarifying: true,
-                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>waiting for clarification...</Typography>,
+                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
             });
         } else if (completedAgentTableIds.has(lt.id)) {
             const completedAction = completedAgentTableIds.get(lt.id);
@@ -1536,7 +1548,7 @@ let SingleThreadGroupView: FC<{
                             textTransform: 'uppercase', letterSpacing: '0.02em',
                             color: headerHL ? hlColor : 'rgba(0,0,0,0.55)', 
                         }}>
-                            {threadLabel || (threadIdx === -1 ? 'Thread 0' : `Thread ${threadIdx + 1}`)}
+                            {threadLabel || (threadIdx === -1 ? t('dataThread.threadZero') : t('dataThread.threadIndex', { index: threadIdx + 1 }))}
                         </Typography>
                     </Box>
                 </Box>
@@ -1579,7 +1591,7 @@ let SingleThreadGroupView: FC<{
                 sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
             >
                 <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
-                Rename
+                {t('dataThread.rename')}
             </MenuItem>
             {/* Pin option - only for derived tables */}
             {selectedTableForMenu?.derive != undefined && (
@@ -1594,7 +1606,7 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <AnchorIcon sx={{ fontSize: 16, color: selectedTableForMenu?.anchored ? 'primary.main' : 'text.secondary' }}/>
-                    {selectedTableForMenu?.anchored ? "Unpin table" : "Pin table"}
+                    {selectedTableForMenu?.anchored ? t('dataThread.unpinTable') : t('dataThread.pinTable')}
                 </MenuItem>
             )}
             {/* Non-derived table options */}
@@ -1613,7 +1625,7 @@ let SingleThreadGroupView: FC<{
                         fontSize: 16,
                         color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
                     }}/>
-                    {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
+                    {selectedTableForMenu?.attachedMetadata ? t('dataThread.editMetadata') : t('dataThread.attachMetadata')}
                 </MenuItem>
             )}
             {/* Refresh settings - shown for stream/database sources to configure auto-refresh interval */}
@@ -1631,7 +1643,7 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <StreamIcon sx={{ fontSize: 16, color: selectedTableForMenu.source?.autoRefresh ? 'success.main' : 'text.secondary' }}/>
-                    {selectedTableForMenu.source?.autoRefresh ? 'Refresh settings' : 'Watch for updates'}
+                    {selectedTableForMenu.source?.autoRefresh ? t('dataThread.refreshSettings') : t('dataThread.watchForUpdates')}
                 </MenuItem>
             )}
             {/* Refresh data - hidden for database tables and derived tables */}
@@ -1646,7 +1658,7 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
-                    Replace data
+                    {t('dataThread.replaceData')}
                 </MenuItem>
             )}
             <MenuItem 
@@ -1663,7 +1675,7 @@ let SingleThreadGroupView: FC<{
                 sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
             >
                 <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>
-                Delete table
+                {t('dataThread.deleteTable')}
             </MenuItem>
         </Menu>
 
@@ -1699,11 +1711,12 @@ const ChartThumbnail: FC<{
     onChartClick: (chartId: string, tableId: string) => void;
     onDelete: (chartId: string) => void;
 }> = ({ chart, table, status, onChartClick, onDelete }) => {
+    const { t } = useTranslation();
 
     let deleteButton = <Box className='data-thread-chart-card-action-button'
         sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-        <Tooltip title="delete chart">
-            <IconButton size="small" color="warning" onClick={(event) => {
+        <Tooltip title={t('dataThread.deleteChart')}>
+            <IconButton size="small" color="warning" aria-label={t('dataThread.deleteChart')} onClick={(event) => {
                 event.stopPropagation();
                 onDelete(chart.id);
             }}><DeleteIcon fontSize="small" /></IconButton>
@@ -1771,7 +1784,7 @@ const ChartThumbnail: FC<{
                     >
                         <img 
                             src={chart.thumbnail} 
-                            alt={`${chart.chartType} chart`}
+                            alt={t('dataThread.chartAlt', { type: chart.chartType })}
                             style={{ maxWidth: 120, maxHeight: 100, objectFit: 'contain' }} 
                         />
                     </Box>
@@ -1984,6 +1997,7 @@ function chooseBestColumnLayout(
 }
 
 export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
+    const { t } = useTranslation();
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
@@ -2311,7 +2325,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             // Promoted intermediate — gets a main thread index
             realThreadIdx++;
             extraLeafToThreadIdx.set(lt.id, realThreadIdx);
-            threadLabel = `thread - ${realThreadIdx}`;
+            threadLabel = t('dataThread.threadIndex', { index: String(realThreadIdx) });
             threadIdxForEntry = realThreadIdx - 1;
         } else if (isContinuation) {
             // Real leaf whose chain was split — gets sub-index under the last extra leaf's index
@@ -2321,12 +2335,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             const parentIdx = extraLeafToThreadIdx.get(lastExtra) ?? realThreadIdx;
             const subIdx = (subThreadCounters.get(parentIdx) || 0) + 1;
             subThreadCounters.set(parentIdx, subIdx);
-            threadLabel = `thread - ${parentIdx}.${subIdx}`;
+            threadLabel = t('dataThread.threadIndex', { index: `${parentIdx}.${subIdx}` });
             threadIdxForEntry = i;
         } else {
             // Normal thread (no splitting involved)
             realThreadIdx++;
-            threadLabel = `thread - ${realThreadIdx}`;
+            threadLabel = t('dataThread.threadIndex', { index: String(realThreadIdx) });
             threadIdxForEntry = realThreadIdx - 1;
         }
 
@@ -2462,9 +2476,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         <Box className="data-thread" sx={{ ...sx, position: 'relative', display: 'flex', flexDirection: 'column' }}>
             {/* Mode toggle button — floats on top-right corner */}
             <Box sx={{ position: 'absolute', top: 4, right: 16, zIndex: 5 }}>
-                <Tooltip title={chatMode ? 'Switch to thread view' : 'Switch to chat view'}>
+                <Tooltip title={chatMode ? t('dataThread.switchToThreadView') : t('dataThread.switchToChatView')}>
                     <IconButton
                         size="small"
+                        aria-label={chatMode ? t('dataThread.switchToThreadView') : t('dataThread.switchToChatView')}
                         onClick={() => setChatMode(m => !m)}
                         sx={{ p: 0.5, color: theme.palette.text.secondary,
                             backgroundColor: alpha(theme.palette.action.selected, 0.04),

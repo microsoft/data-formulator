@@ -27,6 +27,7 @@ import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
+import { useTranslation } from 'react-i18next';
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -63,6 +64,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     onRefreshComplete,
 }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const [tabValue, setTabValue] = useState(0);
     const [pasteContent, setPasteContent] = useState('');
     const [urlContent, setUrlContent] = useState('');
@@ -83,7 +85,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
 
     const validateColumns = (newRows: any[]): { valid: boolean; message: string } => {
         if (!newRows || newRows.length === 0) {
-            return { valid: false, message: 'No data found in the uploaded content.' };
+            return { valid: false, message: t('refresh.errorNoData') };
         }
 
         const newColumns = Object.keys(newRows[0]).sort();
@@ -92,7 +94,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
         if (newColumns.length !== existingColumns.length) {
             return {
                 valid: false,
-                message: `Column count mismatch. Expected ${existingColumns.length} columns (${existingColumns.join(', ')}), but got ${newColumns.length} columns (${newColumns.join(', ')}).`,
+                message: t('refresh.errorColumnCountMismatch', { expected: existingColumns.length, expectedNames: existingColumns.join(', '), actual: newColumns.length, actualNames: newColumns.join(', ') }),
             };
         }
 
@@ -100,12 +102,12 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
         const extraColumns = newColumns.filter(col => !existingColumns.includes(col));
 
         if (missingColumns.length > 0 || extraColumns.length > 0) {
-            let message = 'Column names do not match.';
+            let message = t('refresh.errorColumnNamesMismatch');
             if (missingColumns.length > 0) {
-                message += ` Missing: ${missingColumns.join(', ')}.`;
+                message += ` ${t('refresh.errorMissingColumns', { columns: missingColumns.join(', ') })}`;
             }
             if (extraColumns.length > 0) {
-                message += ` Unexpected: ${extraColumns.join(', ')}.`;
+                message += ` ${t('refresh.errorUnexpectedColumns', { columns: extraColumns.join(', ') })}`;
             }
             return { valid: false, message };
         }
@@ -157,12 +159,14 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
         if (isLarge && !showFullContent) {
             const lines = newContent.split('\n');
             const previewLines = lines.slice(0, MAX_DISPLAY_LINES);
-            const preview = previewLines.join('\n') + (lines.length > MAX_DISPLAY_LINES ? '\n... (truncated for performance)' : '');
+            const preview =
+                previewLines.join('\n') +
+                (lines.length > MAX_DISPLAY_LINES ? `\n${t('upload.pastePreviewTruncatedSuffix')}` : '');
             setDisplayContent(preview);
         } else {
             setDisplayContent(newContent);
         }
-    }, [showFullContent]);
+    }, [showFullContent, t]);
 
     const toggleFullContent = useCallback(() => {
         setShowFullContent(!showFullContent);
@@ -171,15 +175,17 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
         } else {
             const lines = pasteContent.split('\n');
             const previewLines = lines.slice(0, MAX_DISPLAY_LINES);
-            const preview = previewLines.join('\n') + (lines.length > MAX_DISPLAY_LINES ? '\n... (truncated for performance)' : '');
+            const preview =
+                previewLines.join('\n') +
+                (lines.length > MAX_DISPLAY_LINES ? `\n${t('upload.pastePreviewTruncatedSuffix')}` : '');
             setDisplayContent(preview);
         }
-    }, [showFullContent, pasteContent]);
+    }, [showFullContent, pasteContent, t]);
 
     // Handle paste submit
     const handlePasteSubmit = () => {
         if (!pasteContent.trim()) {
-            setError('Please paste some data.');
+            setError(t('refresh.errorPleaseAddData'));
             return;
         }
 
@@ -191,7 +197,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                 if (Array.isArray(jsonContent)) {
                     newRows = jsonContent;
                 } else {
-                    setError('JSON content must be an array of objects.');
+                    setError(t('refresh.errorJsonArray'));
                     setIsLoading(false);
                     return;
                 }
@@ -201,14 +207,14 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                 if (tempTable) {
                     newRows = tempTable.rows;
                 } else {
-                    setError('Could not parse the pasted content as JSON or CSV/TSV.');
+                    setError(t('refresh.errorParsePaste'));
                     setIsLoading(false);
                     return;
                 }
             }
             processAndValidateData(newRows);
         } catch (err) {
-            setError('Failed to parse the pasted content.');
+            setError(t('refresh.errorParseContent'));
         } finally {
             setIsLoading(false);
         }
@@ -217,13 +223,13 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     // Handle URL submit
     const handleUrlSubmit = () => {
         if (!urlContent.trim()) {
-            setError('Please enter a URL.');
+            setError(t('refresh.errorPleaseEnterUrl'));
             return;
         }
 
         const hasValidSuffix = urlContent.endsWith('.csv') || urlContent.endsWith('.tsv') || urlContent.endsWith('.json');
         if (!hasValidSuffix) {
-            setError('URL must point to a .csv, .tsv, or .json file.');
+            setError(t('refresh.errorUrlSuffix'));
             return;
         }
 
@@ -237,7 +243,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     if (Array.isArray(jsonContent)) {
                         newRows = jsonContent;
                     } else {
-                        setError('JSON content must be an array of objects.');
+                        setError(t('refresh.errorJsonArray'));
                         setIsLoading(false);
                         return;
                     }
@@ -246,7 +252,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     if (tempTable) {
                         newRows = tempTable.rows;
                     } else {
-                        setError('Could not parse the URL content as JSON or CSV/TSV.');
+                        setError(t('refresh.errorParseUrl'));
                         setIsLoading(false);
                         return;
                     }
@@ -254,7 +260,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                 processAndValidateData(newRows);
             })
             .catch(err => {
-                setError(`Failed to fetch data from URL: ${err.message}`);
+                setError(t('refresh.errorFetchUrl', { message: err.message }));
             })
             .finally(() => {
                 setIsLoading(false);
@@ -278,7 +284,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
 
             const MAX_FILE_SIZE = 5 * 1024 * 1024;
             if (file.size > MAX_FILE_SIZE) {
-                setError(`File is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maximum size is 5MB.`);
+                setError(t('refresh.errorFileTooLarge', { size: (file.size / (1024 * 1024)).toFixed(2) }));
                 setIsLoading(false);
                 return;
             }
@@ -290,7 +296,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     if (Array.isArray(jsonContent)) {
                         newRows = jsonContent;
                     } else {
-                        setError('JSON content must be an array of objects.');
+                        setError(t('refresh.errorJsonArray'));
                         setIsLoading(false);
                         return;
                     }
@@ -299,14 +305,14 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     if (tempTable) {
                         newRows = tempTable.rows;
                     } else {
-                        setError('Could not parse the file content.');
+                        setError(t('refresh.errorParseFile'));
                         setIsLoading(false);
                         return;
                     }
                 }
                 processAndValidateData(newRows);
             }).catch(err => {
-                setError(`Failed to read file: ${err.message}`);
+                setError(t('refresh.errorReadFile', { message: err.message }));
             }).finally(() => {
                 setIsLoading(false);
             });
@@ -324,17 +330,17 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                         if (tables.length > 0) {
                             processAndValidateData(tables[0].rows);
                         } else {
-                            setError('Failed to parse Excel file.');
+                            setError(t('refresh.errorParseExcel'));
                         }
                     } catch (err) {
-                        setError('Failed to parse Excel file.');
+                        setError(t('refresh.errorParseExcel'));
                     }
                 }
                 setIsLoading(false);
             };
             reader.readAsArrayBuffer(file);
         } else {
-            setError('Unsupported file format. Please use CSV, TSV, JSON, or Excel files.');
+            setError(t('refresh.errorUnsupportedFormat'));
             setIsLoading(false);
         }
 
@@ -356,7 +362,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
         >
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', pb: 1 }}>
                 <Typography variant="h6" component="span">
-                    Refresh Data for "{table.displayId || table.id}"
+                    {t('refresh.titleForTable', { table: table.displayId || table.id })}
                 </Typography>
                 <IconButton
                     sx={{ marginLeft: 'auto' }}
@@ -378,7 +384,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                             lineHeight: 1.5
                         }}
                     >
-                        Upload new data to replace the current table content. Required columns: <strong style={{ color: 'inherit' }}>{table.names.join(', ')}</strong>
+                        {t('refresh.description')} <strong style={{ color: 'inherit' }}>{table.names.join(', ')}</strong>
                     </Typography>
 
                     {error && (
@@ -401,9 +407,9 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                 </Box>
 
                 <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: `1px solid ${borderColor.divider}`, px: 3 }}>
-                    <Tab label="Paste Data" sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
-                    <Tab label="Upload File" sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
-                    <Tab label="From URL" sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
+                    <Tab label={t('upload.pasteData')} sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
+                    <Tab label={t('upload.uploadFile')} sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
+                    <Tab label={t('upload.loadFromUrl')} sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
                 </Tabs>
 
                 <TabPanel value={tabValue} index={0}>
@@ -418,7 +424,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                                 }}
                             >
                                 <Typography variant="caption" sx={{ color: 'error.main', fontSize: '0.75rem', lineHeight: 1.5 }}>
-                                    Content exceeds {(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0)}MB limit ({(new Blob([pasteContent]).size / (1024 * 1024)).toFixed(2)}MB)
+                                    {t('refresh.contentExceedsLimit', { limit: (MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0), size: (new Blob([pasteContent]).size / (1024 * 1024)).toFixed(2) })}
                                 </Typography>
                             </Box>
                         )}
@@ -433,7 +439,9 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                                 border: `1px solid ${borderColor.divider}`
                             }}>
                                 <Typography variant="caption" sx={{ flex: 1, fontSize: '0.75rem', color: 'text.secondary' }}>
-                                    Large content ({Math.round(pasteContent.length / 1000)}KB) • {showFullContent ? 'Full view' : 'Preview'}
+                                    {t('upload.largeContentDetected', { size: Math.round(pasteContent.length / 1000) })}{' '}
+                                    •{' '}
+                                    {showFullContent ? t('upload.showingFullContent') : t('upload.showingPreview')}
                                 </Typography>
                                 <Button 
                                     size="small" 
@@ -449,7 +457,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                                         }
                                     }}
                                 >
-                                    {showFullContent ? 'Preview' : 'Full'}
+                                    {showFullContent ? t('upload.preview') : t('upload.showFull')}
                                 </Button>
                             </Box>
                         )}
@@ -459,7 +467,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                             fullWidth
                             value={displayContent}
                             onChange={handlePasteContentChange}
-                            placeholder="Paste your data here (CSV, TSV, or JSON format)"
+                            placeholder={t('upload.placeholder.paste')}
                             disabled={isLoading}
                             sx={{
                                 '& .MuiInputBase-root': {
@@ -480,10 +488,10 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     {serverConfig.DISABLE_FILE_UPLOAD ? (
                         <Box sx={{ textAlign: 'center', py: 6 }}>
                             <Typography color="text.secondary" sx={{ mb: 1.5, fontSize: '0.875rem' }}>
-                                File upload is disabled in this environment.
+                                {t('upload.fileUploadDisabled')}
                             </Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                                Install Data Formulator locally to enable file upload. <br />
+                                {t('refresh.installLocallyForUpload')} <br />
                                 <Link 
                                     href="https://github.com/microsoft/data-formulator" 
                                     target="_blank" 
@@ -521,13 +529,16 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                             >
                                 <UploadFileIcon sx={{ fontSize: 40, color: 'text.secondary', mb: 1.5 }} />
                                 <Typography variant="subtitle1" gutterBottom sx={{ fontSize: '0.9375rem', fontWeight: 500 }}>
-                                    Drag & drop file here
+                                    {t('upload.dragDrop')}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8125rem', mb: 0.5 }}>
-                                    or <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>Browse</Link>
+                                    {t('upload.or')}{' '}
+                                    <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>
+                                        {t('upload.browse')}
+                                    </Link>
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                                    Supported: CSV, TSV, JSON, Excel (xlsx, xls)
+                                    {t('upload.supportedFormats')}
                                 </Typography>
                             </Box>
                         </Box>
@@ -537,12 +548,12 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                 <TabPanel value={tabValue} index={2}>
                     <TextField
                         fullWidth
-                        placeholder="Load a CSV, TSV, or JSON file from a URL, e.g. https://example.com/data.json"
+                        placeholder={t('refresh.urlPlaceholder')}
                         value={urlContent}
                         onChange={(e) => setUrlContent(e.target.value.trim())}
                         disabled={isLoading}
                         error={urlContent !== '' && !hasValidUrlSuffix}
-                        helperText={urlContent !== '' && !hasValidUrlSuffix ? 'URL should link to a .csv, .tsv, or .json file' : ''}
+                        helperText={urlContent !== '' && !hasValidUrlSuffix ? t('refresh.urlSuffixHelper') : ''}
                         size="small"
                         sx={{ 
                             '& .MuiInputBase-input': {
@@ -564,7 +575,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     disabled={isLoading}
                     sx={{ textTransform: 'none' }}
                 >
-                    Cancel
+                    {t('app.cancel')}
                 </Button>
                 {tabValue === 0 && (
                     <Button
@@ -573,7 +584,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                         disabled={isLoading || !pasteContent.trim() || isOverSizeLimit}
                         sx={{ textTransform: 'none' }}
                     >
-                        Refresh Data
+                        {t('refresh.refreshData')}
                     </Button>
                 )}
                 {tabValue === 2 && (
@@ -583,7 +594,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                         disabled={isLoading || !urlContent.trim() || !hasValidUrlSuffix}
                         sx={{ textTransform: 'none' }}
                     >
-                        Refresh Data
+                        {t('refresh.refreshData')}
                     </Button>
                 )}
             </DialogActions>

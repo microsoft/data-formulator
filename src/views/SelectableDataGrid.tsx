@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { shadow, transition } from '../app/tokens';
 import { TableVirtuoso } from 'react-virtuoso';
 import Table from '@mui/material/Table';
@@ -104,6 +105,7 @@ interface DraggableHeaderProps {
 const DraggableHeader: React.FC<DraggableHeaderProps> = ({ 
     columnDef, orderBy, order, onSortClick, tableId 
 }) => {
+    const { t } = useTranslation();
     const theme = useTheme();
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -229,7 +231,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                 </Tooltip>
             </TableSortLabel>
             {/* Separate sort handler button */}
-            <Tooltip title={<Typography sx={{fontSize: 10}}>Sort by <b>{columnDef.label}</b></Typography>}>
+            <Tooltip title={<Typography sx={{fontSize: 10}}>{t('dataGrid.sortBy', { label: columnDef.label })}</Typography>}>
                 <IconButton
                     size="small"
                     onClick={(e) => {
@@ -257,6 +259,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
 export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ 
     tableId, rows, tableName, columnDefs, rowCount, virtual }) => {
 
+    const { t } = useTranslation();
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
     const [order, setOrder] = React.useState<'asc' | 'desc'>('asc');
 
@@ -399,7 +402,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                     borderTopRightRadius: '4px'
                 }}>
                     <CircularProgress size={24} sx={{ mr: 1, color: 'lightgray' }} />
-                    <Typography variant="body2" color="text.secondary">Loading ...</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('dataGrid.loading')}</Typography>
                 </Box>
             )}
             <Fade in={!isLoading} timeout={{appear: 300, enter: 300, exit: 2000}}>
@@ -482,10 +485,10 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
                         {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }
-                        {`${rowCount} rows`}
+                        {t('dataGrid.rowCount', { count: rowCount })}
                     </Typography>
                     {virtual && rowCount > 10000 && (
-                        <Tooltip title="view 10000 random rows from this table">
+                        <Tooltip title={t('dataGrid.viewRandomRows')}>
                             <IconButton 
                                 size="small" 
                                 color="primary" 
@@ -503,7 +506,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                             </IconButton>
                         </Tooltip>
                     )}
-                    <Tooltip title="Download as CSV">
+                    <Tooltip title={t('dataGrid.downloadAsCsv')}>
                         <IconButton 
                             size="small" 
                             color="primary" 

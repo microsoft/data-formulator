@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { FC, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next';
 import { useSelector, useDispatch } from 'react-redux'
 import { DataFormulatorState, dfActions, dfSelectors, generateFreshChart } from '../app/dfSlice';
 
@@ -217,6 +218,7 @@ export const TriggerCard: FC<{
 
 
 export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId }) {
+    const { t } = useTranslation();
     const theme = useTheme();
 
     // reference to states
@@ -526,7 +528,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     "timestamp": Date.now(),
                     "component": "chart builder",
                     "type": "success",
-                    "value": `Data formulation for ${fieldNamesStr} succeeded.`
+                    "value": t('encoding.formulationSucceeded', { fields: fieldNamesStr })
                 }));
                 dispatch(dfActions.updateAgentWorkInProgress({
                     actionId, description: displayInstruction || actionDescription, status: 'completed', hidden: false,
@@ -536,7 +538,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             onError: () => {
                 dispatch(dfActions.updateAgentWorkInProgress({
                     actionId, description: actionDescription, status: 'failed', hidden: false,
-                    message: { content: 'Data formulation failed.', role: 'error' }
+                    message: { content: t('encoding.formulationFailed'), role: 'error' }
                 }));
             },
             onFinally: () => {
@@ -591,7 +593,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 inputLabel: { shrink: true },
             }}
             value={prompt}
-            placeholder={"follow up on this chart"}
+            placeholder={t('encoding.followUpChartPlaceholder')}
             fullWidth
             multiline
             minRows={2}
@@ -601,7 +603,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             display: 'flex', flexDirection: 'row', alignItems: 'center',
             justifyContent: 'flex-end',
         }}>
-            <Tooltip title={currentChartIdeas.length > 0 ? "Refresh ideas" : "Get ideas"}>
+            <Tooltip title={currentChartIdeas.length > 0 ? t('encoding.refreshIdeas') : t('encoding.getIdeas')}>
                 <span>
                     <IconButton size="small"
                         disabled={isLoadingIdeas}
@@ -615,7 +617,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 </span>
             </Tooltip>
             {trigger ? 
-                <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
+                <Tooltip title={<Typography sx={{fontSize: 11}}>{t('encoding.formulateAndOverride')} <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
                     <span>
                         <IconButton size="small" color={"warning"} sx={{ p: 0.5 }} onClick={() => { 
                             deriveNewData(trigger!.instruction, 'formulate', trigger!.resultTableId); 
@@ -625,7 +627,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     </span>
                 </Tooltip>
                 : 
-                <Tooltip title={`Formulate`}>
+                <Tooltip title={t('encoding.formulate')}>
                     <span>
                         <IconButton size="small" color={"primary"} sx={{ p: 0.5 }} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
                             <PrecisionManufacturing sx={{
@@ -923,7 +925,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             )}
             {isLoadingIdeas && !thinkingBuffer && (
                 <Box sx={{ padding: '2px 0' }}>
-                    {ThinkingBanner('ideating...')}
+                    {ThinkingBanner(t('encoding.ideating'))}
                 </Box>
             )}
         </Box>

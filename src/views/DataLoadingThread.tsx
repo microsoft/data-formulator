@@ -3,6 +3,7 @@
 
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Box, Button, Card, CardContent, Divider, IconButton, Paper, Stack, TextField, Typography, alpha, useTheme, Dialog, DialogTitle, DialogContent, Tooltip, LinearProgress, CircularProgress, Chip, SxProps, Theme } from '@mui/material';
 import UploadIcon from '@mui/icons-material/Upload';
@@ -120,7 +121,7 @@ const SampleTaskChip: React.FC<{
 };
 
 export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
-
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
     const focusedDataCleanBlockId = useSelector((state: DataFormulatorState) => state.focusedDataCleanBlockId);
@@ -132,7 +133,7 @@ export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
     if (!selectedTable) {
         return <Paper variant="outlined" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, ...sx }}>
             <Typography variant="body2" sx={{ fontSize: '10px', color: 'text.secondary' }}>
-                No data selected
+                {t('dataLoading.noDataSelected')}
             </Typography>
         </Paper>
     }
@@ -166,12 +167,12 @@ export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
     if (selectedTable.content.type === 'image_url') {
         return <Paper variant="outlined" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, ...sx }}>
             <Typography variant="body2" sx={{ fontSize: '10px', color: 'text.secondary' }}>
-                Image URL: {selectedTable.content.value}
+                {t('dataLoading.imageUrlPrefix')}{selectedTable.content.value}
             </Typography>
             <Box
                 component="img"
                 src={selectedTable.content.value}
-                alt={`Image from ${selectedTable.name || 'data source'}`}
+                alt={t('dataLoading.imageAlt', { name: selectedTable.name || 'data source' })}
                 sx={{
                     maxWidth: '100%',
                     maxHeight: '400px',
@@ -187,7 +188,7 @@ export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
     if (selectedTable.content.type === 'web_url') {
         return <Paper variant="outlined" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, ...sx }}>
             <Typography variant="body2" sx={{ fontSize: '12px', color: 'text.primary', fontWeight: 500 }}>
-                Data URL
+                {t('dataLoading.dataUrl')}
             </Typography>
             <Typography variant="body2" sx={{ fontSize: '10px', color: 'text.secondary', wordBreak: 'break-all' }}>
                 {selectedTable.content.value}
@@ -204,6 +205,7 @@ export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
 }
 
 export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLines?: number, onStreamingContentUpdate?: (content: string) => void, abortControllerRef?: React.MutableRefObject<AbortController | null>}>(({maxLines = 4, onStreamingContentUpdate, abortControllerRef}, ref) => {
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
     const activeModel = useSelector(dfSelectors.getActiveModel);
@@ -268,18 +270,18 @@ export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLin
     // Define sample tasks
     const sampleTasks = [
         {
-            text: "Extract top repos from https://github.com/microsoft",
+            text: t('dataLoading.sampleExtractRepos'),
             fullText: "extract the top repos information from https://github.com/microsoft?q=&type=all&language=&sort=stargazers",
             icon: <LanguageIcon sx={{ fontSize: 18 }} />
         },
         {
-            text: "Extract data from this image",
+            text: t('dataLoading.sampleExtractFromImage'),
             fullText: "help me extract data from this image",
             icon: <ImageIcon sx={{ fontSize: 18 }} />,
             image: exampleImageTable
         },
         {
-            text: "Extract growth data from text",
+            text: t('dataLoading.sampleExtractGrowth'),
             fullText: `help me extract sub-segment growth data from this text\n\n\"Revenue in Productivity and Business Processes was $33.1 billion and increased 16% (up 14% in constant currency), with the following business highlights:
 ·        Microsoft 365 Commercial products and cloud services revenue increased 16% (up 15% in constant currency) driven by Microsoft 365 Commercial cloud revenue growth of 18% (up 16% in constant currency)
 ·        Microsoft 365 Consumer products and cloud services revenue increased 21% driven by Microsoft 365 Consumer cloud revenue growth of 20%
@@ -296,7 +298,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
             icon: <TextFieldsIcon sx={{ fontSize: 18 }} />
         },
         {
-            text: "Generate UK dynasty dataset",
+            text: t('dataLoading.sampleGenerateDataset'),
             fullText: "help me generate a dataset about uk dynasty with their years of reign and their monarchs",
             icon: <DatasetIcon sx={{ fontSize: 18 }} />
         }
@@ -304,9 +306,9 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
 
     const placeholder = (existOutputBlocks) 
         ? (selectedTable && selectedTable.content.type === 'image_url' 
-            ? "extract data from this image" 
-            : "follow-up instruction (e.g., fix headers, remove totals, generate 15 rows, etc.)")
-        : "paste the content (website, image, text block, etc.) and ask AI to extract / clean data from it";
+            ? t('dataLoading.extractFromImagePlaceholder') 
+            : t('dataLoading.followUpPlaceholder'))
+        : t('dataLoading.pasteContentPlaceholder');
 
     let additionalImages = (() => {
         if (selectedTable && selectedTable.content.type === 'image_url') {
@@ -490,7 +492,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                         timestamp: Date.now(),
                         type: 'error',
                         component: 'data loader',
-                        value: finalResult?.content || 'Unable to extract tables from response',
+                        value: finalResult?.content || t('dataLoading.unableToExtract'),
                     }));
                     // Clear input fields only after failed completion
                     setPrompt('');
@@ -517,11 +519,11 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                     timestamp: Date.now(),
                     type: 'info',
                     component: 'data loader',
-                    value: 'Generation stopped by user',
+                    value: t('dataLoading.stoppedByUser'),
                 }));
             } else {
                 // Generation failed
-                const errorMessage = `Server error while processing data: ${error.message}`;
+                const errorMessage = t('dataLoading.serverError', { message: error.message });
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     type: 'error',
@@ -594,7 +596,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                             <Box 
                                 component="img"
                                 src={imageUrl}
-                                alt={`Pasted image ${index + 1}`}
+                                alt={t('dataLoading.pastedImageAlt', { index: index + 1 })}
                                 sx={{
                                     maxHeight: existOutputBlocks ? 60 : 600,
                                     maxWidth: inputImages.length > 1 ? '30%' : 600,
@@ -626,7 +628,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                         zIndex: 2
                     }
                 }}
-                placeholder={cleanInProgress ? 'extracting data...' : placeholder}
+                placeholder={cleanInProgress ? t('dataLoading.extractingData') : placeholder}
                 variant="standard"
                 multiline
                 value={prompt}
@@ -644,7 +646,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
                 slotProps={{
                     input: {
                         endAdornment: cleanInProgress ? (
-                            <Tooltip title="Stop generation">
+                            <Tooltip title={t('dataLoading.stopGeneration')}>
                                 <IconButton color='error' size="small" onClick={stopGeneration}>
                                     <StopIcon />
                                 </IconButton>
@@ -664,7 +666,7 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
             {!existOutputBlocks && !cleanInProgress && (
                 <Box sx={{ mt: 2, mb: 1 }}>
                     <Typography sx={{ fontSize: '11px', color: 'text.secondary', mb: 1 }}>
-                        examples
+                        {t('dataLoading.examples')}
                     </Typography>
                     <Box sx={{
                         display: 'flex',
@@ -793,6 +795,7 @@ export const createOrderedThreadBlocks = (dataCleanBlocks: DataCleanBlock[]): Th
 
 
 export const SingleDataCleanThreadView: React.FC<{thread: ThreadBlock, sx?: SxProps}> = ({thread, sx}) => {
+    const { t } = useTranslation();
     const {threadIndex, blocks, leafBlock} = thread;
     const theme = useTheme();
 
@@ -819,7 +822,7 @@ export const SingleDataCleanThreadView: React.FC<{thread: ThreadBlock, sx?: SxPr
                     "&::before, &::after": { borderColor: alpha(theme.palette.divider, 0.2), borderWidth: '2px', width: 60 },
                 }}>
                     <Typography sx={{ fontSize: "10px",   textTransform: 'none' }}>
-                        {`loading - ${threadIndex + 1}`}
+                        {t('dataLoading.loadingThread', { index: threadIndex + 1 })}
                     </Typography>
                 </Divider>
             </Box>
@@ -889,7 +892,7 @@ export const SingleDataCleanThreadView: React.FC<{thread: ThreadBlock, sx?: SxPr
                                                 key={imgIndex}
                                                 component="img"
                                                 src={artifact.value}
-                                                alt={`User uploaded image ${imgIndex + 1}`}
+                                                alt={t('dataLoading.uploadedImageAlt', { index: imgIndex + 1 })}
                                                 sx={{
                                                     width: 'auto',
                                                     height: 40,
@@ -947,7 +950,7 @@ export const SingleDataCleanThreadView: React.FC<{thread: ThreadBlock, sx?: SxPr
                                             }}>
                                                 {table.name}
                                             </Typography>
-                                            {isLastBlock && <Tooltip title="delete table">
+                                            {isLastBlock && <Tooltip title={t('dataLoading.deleteTable')}>
                                                 <IconButton aria-label="share" size="small" sx={{ ml: 'auto', padding: 0.25, '&:hover': {
                                                     transform: 'scale(1.2)',
                                                     transition: 'all 0.2s ease'
