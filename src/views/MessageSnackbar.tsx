@@ -8,9 +8,11 @@ import CloseIcon from '@mui/icons-material/Close';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { Alert, Box, Paper, Tooltip, Typography } from '@mui/material';
-import { shadow, transition } from '../app/tokens';
 import InfoIcon from '@mui/icons-material/Info';
 import DeleteIcon from '@mui/icons-material/Delete';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import WarningIcon from '@mui/icons-material/Warning';
 import { useTranslation } from 'react-i18next';
 
 export interface Message {
@@ -61,6 +63,14 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
     const [expandedMessages, setExpandedMessages] = React.useState<Set<number>>(new Set());
 
     const messagesScrollRef = React.useRef<HTMLDivElement>(null);
+
+    const buttonSeverity: "error" | "warning" | "info" | "success" | "default" = React.useMemo(() => {
+        if (messages.length === 0) return "default";
+        if (messages.some(m => m.type === "error")) return "error";
+        if (messages.some(m => m.type === "warning")) return "warning";
+        if (messages.some(m => m.type === "info")) return "info";
+        return "success";
+    }, [messages]);
 
     React.useEffect(()=>{
         if (displayedMessageIdx < messages.length) {
@@ -120,27 +130,32 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
     }, []);
 
     return (
-        <Box sx={{ '& .snackbar-button': {
-            width: 36,
-            height: 36,
-            zIndex: 10,
-            backgroundColor: 'white',
-            '&:hover': {
-                transform: 'scale(1.1)',
-                backgroundColor: 'white',
-            },
-            border: '1px solid',
-            boxShadow: shadow.xl,
-            transition: transition.slow
-        }}}>
+        <Box>
             <Tooltip placement="left" title={t('messages.viewSystemMessages')}>
                 <IconButton 
-                    className='snackbar-button'
-                    color="warning"
-                    sx={{position: "absolute", bottom: 16, right: 16 }}
+                    color={buttonSeverity === "default" ? "default" : buttonSeverity}
+                    sx={{
+                        position: "absolute", bottom: 16, right: 16,
+                        width: 30,
+                        height: 30,
+                        zIndex: 10,
+                        backgroundColor: 'white',
+                        border: '1px solid',
+                        borderColor: buttonSeverity === "default" ? 'grey.400' : `${buttonSeverity}.main`,
+                        boxShadow: '0 0 6px rgba(0,0,0,0.1)',
+                        opacity: buttonSeverity === "default" ? 0.6 : 1,
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                            transform: 'scale(1.1)',
+                            backgroundColor: 'white',
+                        },
+                    }}
                     onClick={() => setOpenMessages(true)}
                 >
-                    <InfoIcon sx={{fontSize: 32}}/>
+                    {buttonSeverity === "error" ? <ErrorOutlineIcon sx={{fontSize: 20}}/> :
+                     buttonSeverity === "warning" ? <WarningIcon sx={{fontSize: 20}}/> :
+                     buttonSeverity === "success" ? <CheckCircleIcon sx={{fontSize: 20}}/> :
+                     <InfoIcon sx={{fontSize: 20}}/>}
                 </IconButton>
             </Tooltip>
             <Snackbar
