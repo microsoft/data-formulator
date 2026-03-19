@@ -417,6 +417,7 @@
     "getIdeasQuestion": "Get Ideas?",
     "placeholderVisualize": "what do you want to visualize?",
     "placeholderVisualizeEmphasis": "✏️ what do you want to visualize?",
+    "defaultInterestingPromptPlaceholder": "show something interesting about the data",
     "placeholderFormulate": "formulate data",
     "placeholderFormulateEmphasis": "✏️ formulate data",
     "formulateAndOverride": "formulate and override",

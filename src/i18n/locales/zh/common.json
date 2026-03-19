@@ -422,6 +422,7 @@
     "getIdeasQuestion": "获取灵感？",
     "placeholderVisualize": "你想可视化什么？",
     "placeholderVisualizeEmphasis": "✏️ 你想可视化什么？",
+    "defaultInterestingPromptPlaceholder": "帮我找找这份数据里，有什么值得一看的内容",
     "placeholderFormulate": "整理数据",
     "placeholderFormulateEmphasis": "✏️ 整理数据",
     "formulateAndOverride": "整理并覆盖",

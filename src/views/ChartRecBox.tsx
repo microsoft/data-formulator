@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { FC, useEffect, useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next';
 import { transition } from '../app/tokens';
 import { useSelector, useDispatch } from 'react-redux'
 import { DataFormulatorState, dfActions, generateFreshChart } from '../app/dfSlice';
@@ -113,6 +114,7 @@ export const IdeaChip: FC<{
 
 export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolderChartId, sx }) {
     const dispatch = useDispatch<AppDispatch>();
+    const { t } = useTranslation();
     const theme = useTheme();
 
     // reference to states
@@ -147,9 +149,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
     ];
     
-    // Function to get a question from the list with cycling
-    const getQuestion = (): string => {
+    const getDefaultPrompt = (): string => {
         return "show something interesting about the data";
+    };
+
+    const getQuestionPlaceholder = (): string => {
+        return t('chartRec.defaultInterestingPromptPlaceholder');
     };
 
     // Function to get ideas from the interactive explore agent
@@ -176,7 +181,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         if (event.key === 'Tab' && !event.shiftKey) {
             event.preventDefault();
             if (prompt.trim() === "") {
-                setPrompt(getQuestion());
+                setPrompt(getDefaultPrompt());
             }
         } else if (event.key === 'Enter' && prompt.trim() !== "") {
             event.preventDefault();
@@ -321,7 +326,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             inputLabel: { shrink: true },
                             input: {
                                 endAdornment: <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
-                                    <Tooltip title="Generate chart from description">
+                                    <Tooltip title={t('chartRec.generateFromDescription')}>
                                         <span>
                                             <IconButton 
                                                 size="medium"
@@ -347,7 +352,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             }
                         }}
                         value={prompt}
-                        placeholder={`${getQuestion()}`}
+                        placeholder={getQuestionPlaceholder()}
                         fullWidth
                         multiline
                         maxRows={4}
@@ -355,7 +360,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     />
                 </Box>
             </Card>
-            <Tooltip title={ideas.length > 0 ? "Refresh ideas" : "Get ideas"}>
+            <Tooltip title={ideas.length > 0 ? t('chartRec.regenerateIdeas') : t('chartRec.getIdeas')}>
                 <span>
                     <IconButton 
                         size="medium"
