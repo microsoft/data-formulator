@@ -10,12 +10,14 @@ import re
 
 
 def sanitize_table_name(table_name: str) -> str:
-    """Sanitize table name to be used in SQL queries"""
-    # Replace spaces with underscores
-    sanitized_name = table_name.replace(" ", "_")
-    sanitized_name = sanitized_name.replace("-", "_")
-    # Allow alphanumeric, underscore, dot, dash, and dollar sign
-    sanitized_name = re.sub(r'[^a-zA-Z0-9_\.$]', '', sanitized_name)
+    """Sanitize table name to be used in SQL queries."""
+    sanitized_name = (table_name or "").strip().replace(" ", "_").replace("-", "_")
+    sanitized_name = re.sub(r"[^\w\.$]+", "_", sanitized_name, flags=re.UNICODE)
+    sanitized_name = re.sub(r"_+", "_", sanitized_name).strip("_")
+    if not sanitized_name:
+        sanitized_name = "table"
+    if not (sanitized_name[0].isalpha() or sanitized_name[0] == "_"):
+        sanitized_name = f"table_{sanitized_name}"
     return sanitized_name
 
 

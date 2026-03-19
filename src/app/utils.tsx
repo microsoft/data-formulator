@@ -41,6 +41,7 @@ export function getUrls() {
         LIST_TABLES: `/api/tables/list-tables`,
         TABLE_DATA: `/api/tables/get-table`,
         CREATE_TABLE: `/api/tables/create-table`,
+        PARSE_FILE: `/api/tables/parse-file`,
         DELETE_TABLE: `/api/tables/delete-table`,
         GET_COLUMN_STATS: `/api/tables/analyze`,
         SAMPLE_TABLE: `/api/tables/sample-table`,

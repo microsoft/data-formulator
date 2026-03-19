@@ -11,12 +11,12 @@ are consumed by Workspace methods that handle metadata bookkeeping.
 
 import hashlib
 import logging
+import re
 from typing import Any
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from werkzeug.utils import secure_filename
 
 from data_formulator.datalake.metadata import ColumnInfo, make_json_safe
 
@@ -41,11 +41,10 @@ def sanitize_table_name(name: str) -> str:
     """
     Sanitize a string to be a valid table/file name.
 
-    Uses ``werkzeug.utils.secure_filename`` as the first pass to strip
-    path separators, leading dots, and other dangerous components (this
-    is the sanitiser recognised by CodeQL / static-analysis tools).
-    Additional rules are then applied to guarantee the result is a valid,
-    lowercase, Python-identifier-style name.
+    Preserves Unicode letters and digits while normalizing whitespace,
+    separators, and punctuation to underscores. The final result is
+    lowercased for stable ASCII behavior and prefixed when it would
+    otherwise start with an unsafe character.
 
     Args:
         name: Original name
@@ -53,29 +52,16 @@ def sanitize_table_name(name: str) -> str:
     Returns:
         Sanitized name
     """
-    # First pass: werkzeug's secure_filename neutralises path-traversal
-    # components ("../", leading dots, etc.) and keeps only ASCII
-    # alphanumerics plus ".", "_", and "-".
-    name = secure_filename(name)
+    name = (name or "").strip()
+    name = re.sub(r"[/\\]+", "_", name)
+    result = re.sub(r"[^\w]+", "_", name, flags=re.UNICODE)
+    result = re.sub(r"_+", "_", result).strip("_")
 
-    # Second pass: replace any remaining chars that are not alphanumeric
-    # or underscore (e.g. dots and hyphens kept by secure_filename).
-    sanitized = []
-    for char in name:
-        if char.isalnum() or char == '_':
-            sanitized.append(char)
-        else:
-            sanitized.append('_')
-
-    result = ''.join(sanitized)
-
-    # Ensure it starts with a letter or underscore
-    if result and not (result[0].isalpha() or result[0] == '_'):
-        result = '_' + result
-
-    # Ensure it's not empty
     if not result:
-        result = '_unnamed'
+        result = "table"
+
+    if not (result[0].isalpha() or result[0] == "_"):
+        result = f"table_{result}"
 
     return result.lower()
 

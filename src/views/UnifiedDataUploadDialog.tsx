@@ -672,16 +672,42 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     }
 
                     if (isExcelFile) {
-                        try {
-                            const arrayBuffer = await file.arrayBuffer();
-                            const tables = await loadBinaryDataWrapper(uniqueName, arrayBuffer);
-                            if (tables.length > 0) {
-                                previewTables.push(...tables);
-                            } else {
+                        const isLegacyXls = file.name.toLowerCase().endsWith('.xls') && !file.name.toLowerCase().endsWith('.xlsx');
+                        if (isLegacyXls) {
+                            try {
+                                const formData = new FormData();
+                                formData.append('file', file);
+                                const resp = await fetchWithIdentity(getUrls().PARSE_FILE, {
+                                    method: 'POST',
+                                    body: formData,
+                                });
+                                const result = await resp.json();
+                                if (result.status === 'success' && result.sheets?.length > 0) {
+                                    for (const sheet of result.sheets) {
+                                        const sheetTitle = result.sheets.length > 1
+                                            ? `${uniqueName}-${sheet.sheet_name}`
+                                            : uniqueName;
+                                        const table = createTableFromFromObjectArray(sheetTitle, sheet.data, true);
+                                        previewTables.push(table);
+                                    }
+                                } else {
+                                    errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
+                                }
+                            } catch {
                                 errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
                             }
-                        } catch {
-                            errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
+                        } else {
+                            try {
+                                const arrayBuffer = await file.arrayBuffer();
+                                const tables = await loadBinaryDataWrapper(uniqueName, arrayBuffer);
+                                if (tables.length > 0) {
+                                    previewTables.push(...tables);
+                                } else {
+                                    errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
+                                }
+                            } catch {
+                                errors.push(t('upload.errors.failedToParseExcel', { name: file.name }));
+                            }
                         }
                         continue;
                     }

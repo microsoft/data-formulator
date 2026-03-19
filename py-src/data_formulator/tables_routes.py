@@ -464,6 +464,60 @@ def create_table():
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
 
+@tables_bp.route('/parse-file', methods=['POST'])
+def parse_file():
+    """Parse an uploaded file and return data as JSON without saving to workspace.
+
+    Used for client-side preview of formats that the browser cannot parse
+    natively (e.g. legacy .xls).
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "No file provided"}), 400
+
+        file = request.files['file']
+        filename = file.filename or ''
+        if not filename or not is_supported_file(filename):
+            return jsonify({"status": "error", "message": "Unsupported file format"}), 400
+
+        ext = os.path.splitext(filename)[1].lower()
+
+        if ext in ('.xls', '.xlsx'):
+            engine = 'xlrd' if ext == '.xls' else 'openpyxl'
+            xls = pd.ExcelFile(file.stream, engine=engine)
+            sheets = []
+            for sheet_name in xls.sheet_names:
+                df = xls.parse(sheet_name)
+                df = df.where(df.notna(), None)
+                records = df.to_dict(orient='records')
+                sheets.append({
+                    "sheet_name": sheet_name,
+                    "columns": list(df.columns),
+                    "row_count": len(records),
+                    "data": records,
+                })
+            return jsonify({"status": "success", "sheets": sheets})
+        elif ext == '.csv':
+            df = pd.read_csv(file.stream)
+            df = df.where(df.notna(), None)
+            records = df.to_dict(orient='records')
+            return jsonify({
+                "status": "success",
+                "sheets": [{
+                    "sheet_name": "Sheet1",
+                    "columns": list(df.columns),
+                    "row_count": len(records),
+                    "data": records,
+                }],
+            })
+        else:
+            return jsonify({"status": "error", "message": f"Server-side parsing not supported for {ext}"}), 400
+
+    except Exception as e:
+        logger.error(f"Error parsing file: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
 @tables_bp.route('/sync-table-data', methods=['POST'])
 def sync_table_data():
     """Update an existing workspace table's parquet with new row data.
