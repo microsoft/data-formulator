@@ -107,7 +107,7 @@ import {
   ConceptExplCards,
   extractConceptExplanations,
 } from "./ExplComponents";
-import { buildQcDataQuery } from "./DBTableManager";
+import { buildQcDataQuery, toSafeQcTableName } from "./DBTableManager";
 import CodeIcon from "@mui/icons-material/Code";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
@@ -972,6 +972,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     // Clear the live chart tracking from previous chart
     liveChartIdRef.current = undefined;
+    liveTableNameRef.current = undefined;
 
     // Reset prevQcLiveRef so the qcLive effect always gets a clean slate for the
     // new chart. We deliberately do NOT dispatch qcLive=false here: doing so creates
@@ -1000,6 +1001,41 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
   useEffect(() => {
     fetchDisplayRowsRef.current = fetchDisplayRows;
   });
+
+  // Resolve QC params for a specific table and avoid cross-chart contamination.
+  const resolveQcParamsForTable = (
+    targetTable: DictTable | undefined,
+  ): Record<string, string> => {
+    const globalQcParams = dataLoaderConnectParams["QC_Data"] ?? {};
+    if (!targetTable) return { ...globalQcParams };
+
+    const directLoaderParams = targetTable.virtual?.loaderParams;
+    if (directLoaderParams?.["std_param_name"]) {
+      return { ...globalQcParams, ...directLoaderParams };
+    }
+
+    const inferredStdParam =
+      targetTable.rows?.find(
+        (r: any) =>
+          typeof r?.QCSTDPARAMNAME === "string" &&
+          r.QCSTDPARAMNAME.trim().length > 0,
+      )?.QCSTDPARAMNAME ??
+      targetTable.rows?.find(
+        (r: any) =>
+          typeof r?.STDPARAMREPORTNAME === "string" &&
+          r.STDPARAMREPORTNAME.trim().length > 0,
+      )?.STDPARAMREPORTNAME;
+
+    if (typeof inferredStdParam === "string" && inferredStdParam.trim()) {
+      return {
+        ...globalQcParams,
+        ...(directLoaderParams ?? {}),
+        std_param_name: inferredStdParam.trim(),
+      };
+    }
+
+    return { ...globalQcParams, ...(directLoaderParams ?? {}) };
+  };
 
   // QC Live: ref so countdown timer always calls the latest handleQcRefreshNow
   const doQcRefreshRef = useRef<() => Promise<void>>(async () => {});
@@ -1038,21 +1074,23 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     // Turning OFF Data Live: restore original data by re-ingesting without is_live flag
     if (wasOn && !focusedChart.qcLive) {
-      const currentTable = tableRef.current;
-      const globalQcParams = dataLoaderConnectParams["QC_Data"] ?? {};
+      liveTableNameRef.current = undefined;
+      // Look up fresh table using focusedChart.tableRef to avoid stale closure
+      const tableToRestore = focusedChart.tableRef
+        ? tables.find((t) => t.id === focusedChart.tableRef)
+        : undefined;
 
       // Restore original data by re-ingesting from base table (without _live suffix)
-      if (currentTable?.derive?.code) {
+      if (tableToRestore?.derive?.code) {
         // Agent-derived table: restore source virtual tables (orig), then re-execute SQL
-        const allTables = tablesRef.current;
-        const virtualSources = (currentTable.derive.source ?? [])
-          .map((id) => allTables.find((t) => t.id === id))
+        const virtualSources = (tableToRestore.derive.source ?? [])
+          .map((id) => tables.find((t) => t.id === id))
           .filter((t): t is (typeof tables)[0] => !!t?.virtual);
 
         if (virtualSources.length > 0) {
           Promise.all(
             virtualSources.map((srcTable) => {
-              const qcParams = srcTable.virtual?.loaderParams ?? globalQcParams;
+              const qcParams = resolveQcParamsForTable(srcTable);
               // Re-ingest WITHOUT is_live to restore base data
               const built = buildQcDataQuery(qcParams, { is_live: false });
               if (!built) return Promise.resolve();
@@ -1074,22 +1112,18 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
           )
             .then(() => {
               // Modify SQL to use original table names (remove _live suffix)
-              let modifiedSqlCode = currentTable.derive!.code;
-              const allTables = tablesRef.current;
-              const virtualSources = (currentTable.derive!.source ?? [])
-                .map((id) => allTables.find((t) => t.id === id))
+              let modifiedSqlCode = tableToRestore.derive!.code;
+              const virtualSources = (tableToRestore.derive!.source ?? [])
+                .map((id) => tables.find((t) => t.id === id))
                 .filter((t): t is (typeof tables)[0] => !!t?.virtual);
 
               virtualSources.forEach((srcTable) => {
-                const qcParams =
-                  srcTable.virtual?.loaderParams ?? globalQcParams;
+                const qcParams = resolveQcParamsForTable(srcTable);
                 const stdParam = (qcParams["std_param_name"] ?? "")
                   .toString()
                   .trim();
                 if (stdParam) {
-                  const paramName = stdParam
-                    .replace(/'/g, "''")
-                    .replace(" ", "-");
+                  const paramName = toSafeQcTableName(stdParam);
                   const liveTableName = `${paramName}_live`;
                   // Replace _live back to original parameter name
                   const pattern = new RegExp(`\\b${liveTableName}\\b`, "gi");
@@ -1105,7 +1139,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   code: modifiedSqlCode,
-                  name_as: currentTable.id,
+                  name_as: tableToRestore.id,
                 }),
               });
             })
@@ -1113,7 +1147,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             .then((d) => {
               if (d.status === "success" && d.rows?.length > 0) {
                 dispatch(
-                  dfActions.replaceTable({ ...currentTable, rows: d.rows }),
+                  dfActions.replaceTable({ ...tableToRestore!, rows: d.rows }),
                 );
                 const resetRange: [number, number] = [1, 1000];
                 setCurrentSampleRange(resetRange);
@@ -1122,9 +1156,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             })
             .catch((err) => console.error("Data Live restore error:", err));
         }
-      } else if (currentTable?.virtual) {
+      } else if (tableToRestore?.virtual) {
         // Direct virtual table: restore with base table (no is_live suffix)
-        const qcParams = currentTable.virtual.loaderParams ?? globalQcParams;
+        const qcParams = resolveQcParamsForTable(tableToRestore);
         const built = buildQcDataQuery(qcParams, { is_live: false });
         if (built) {
           fetch(getUrls().DATA_LOADER_INGEST_DATA_FROM_QUERY, {
@@ -1143,7 +1177,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 const restoredCount: number = data.row_count ?? 100000;
                 dispatch(
                   dfActions.updateTableVirtualRowCount({
-                    tableId: currentTable.id,
+                    tableId: tableToRestore.id,
                     rowCount: restoredCount,
                   }),
                 );
@@ -1156,7 +1190,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         }
       }
     }
-  }, [focusedChart.qcLive, focusedChartId, dataLoaderConnectParams]);
+  }, [focusedChart.qcLive, focusedChartId, dataLoaderConnectParams, tables]);
 
   // Data Live: countdown timer and auto-refresh
   useEffect(() => {
@@ -1213,19 +1247,26 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     // Capture the chart ID at the time of refresh to prevent cross-chart data updates
     const refreshChartId = focusedChartId;
-    const currentTable = tableRef.current;
 
-    // Safety check: only refresh if still on the same chart
-    // (prevents cross-chart refresh when switching with Data Live enabled)
-    if (!currentTable || currentTable.id !== table.id) {
-      console.warn("🔴 Table mismatch:", {
-        currentTableId: currentTable?.id,
-        tableId: table.id,
+    // CRITICAL FIX: Always look up table FRESH by tableRef ID instead of using captured `table` variable
+    // This avoids closure stale issues when switching between 2+ charts with different tables.
+    // The captured `table` variable might belong to the PREVIOUS chart even though new dependencies caused callback recreation.
+    const getCurrentTable = () => {
+      // Use focusedChart.tableRef to find the CURRENT table for this chart
+      if (!focusedChart.tableRef) return undefined;
+      return tables.find((t) => t.id === focusedChart.tableRef);
+    };
+
+    const currentTable = getCurrentTable();
+    // Safety check: only refresh if table is available
+    if (!currentTable) {
+      console.warn("🔴 Table not available for refresh:", {
+        chartId: focusedChartId,
+        tableRef: focusedChart.tableRef,
       });
       return;
     }
 
-    const globalQcParams = dataLoaderConnectParams["QC_Data"] ?? {};
     const today = new Date();
     const fromDate = new Date(today);
     fromDate.setDate(today.getDate() - qcDaysRange);
@@ -1235,17 +1276,19 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       chartId: focusedChartId,
       tableName: currentTable.id,
       tableDisplayId: currentTable.displayId,
+      hasLoaderParams: !!currentTable.virtual?.loaderParams,
+      stdParamFromTable: currentTable.virtual?.loaderParams?.["std_param_name"],
       qcDaysRange,
       dateRange: `${fmt(fromDate)} to ${fmt(today)}`,
       isDerived: !!currentTable?.derive?.code,
       isVirtual: !!currentTable?.virtual,
+      tableRefLookup: `Found by focusedChart.tableRef: ${focusedChart.tableRef}`,
     });
 
     if (currentTable?.derive?.code && focusedChart.qcLive) {
       // Agent-derived table: re-ingest source virtual tables then re-execute the SQL
-      const allTables = tablesRef.current;
       const virtualSources = (currentTable.derive.source ?? [])
-        .map((id) => allTables.find((t) => t.id === id))
+        .map((id) => tables.find((t) => t.id === id))
         .filter((t): t is (typeof tables)[0] => !!t?.virtual);
 
       try {
@@ -1254,7 +1297,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         await Promise.all(
           virtualSources.map((srcTable) => {
             // Use per-table loaderParams if available, fall back to global QC_Data params
-            const qcParams = srcTable.virtual?.loaderParams ?? globalQcParams;
+            const qcParams = resolveQcParamsForTable(srcTable);
             const built = buildQcDataQuery(qcParams, {
               from_date: fmt(fromDate),
               to_date: fmt(today),
@@ -1329,10 +1372,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
         // Replace source table references with _live versions
         virtualSources.forEach((srcTable) => {
-          const qcParams = srcTable.virtual?.loaderParams ?? globalQcParams;
+          const qcParams = resolveQcParamsForTable(srcTable);
           const stdParam = (qcParams["std_param_name"] ?? "").toString().trim();
           if (stdParam) {
-            const paramName = stdParam.replace(/'/g, "''").replace(" ", "-");
+            const paramName = toSafeQcTableName(stdParam);
             const liveTableName = `${paramName}_live`;
             // Replace source table name with _live version in SQL
             // Using word boundaries to avoid partial replacement
@@ -1396,13 +1439,27 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     } else if (currentTable?.virtual && focusedChart.qcLive) {
       // Direct virtual Data table: re-ingest with a rolling date window
       // Use per-table loaderParams if available, fall back to global QC_Data params
-      const qcParams = currentTable.virtual.loaderParams ?? globalQcParams;
+      const qcParams = resolveQcParamsForTable(currentTable);
+
+      // VALIDATION: Ensure we're using the correct table's parameters
+      const expectedTableId = currentTable.id;
+      const expectedStdParam = qcParams["std_param_name"];
+      console.log("🟡 Direct virtual table refresh validation:", {
+        currentTableId: expectedTableId,
+        tableRefFromChart: focusedChart.tableRef,
+        stdParam: expectedStdParam,
+        hasValidParams: !!expectedStdParam,
+        paramsSourceTable: qcParams["table_name"] || "N/A",
+      });
+
       const built = buildQcDataQuery(qcParams, {
         from_date: fmt(fromDate),
         to_date: fmt(today),
         is_live: true,
       });
       if (built) {
+        // Pin the exact _live table name returned by query builder for this chart.
+        liveTableNameRef.current = built.name_as;
         console.log(
           "🟢 Direct virtual table re-ingest:",
           currentTable.id,
@@ -1492,7 +1549,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     dataLoaderConnectParams,
     qcRefreshInterval,
     qcDaysRange,
-    table.id,
+    table,
+    tables,
   ]);
 
   // Keep doQcRefreshRef in sync so the countdown timer always sees the latest version
@@ -1768,14 +1826,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       const actualIsLive = isLive ?? focusedChart.qcLive;
 
       if (actualIsLive) {
+        if (liveTableNameRef.current) {
+          tableNameToFetch = liveTableNameRef.current;
+        }
         // Check if this is a virtual table or derived from virtual tables
         if (currentTableRef.virtual) {
           // Direct virtual table
-          const qcParams = currentTableRef.virtual.loaderParams ?? {};
+          const qcParams = resolveQcParamsForTable(currentTableRef);
           const stdParam = (qcParams["std_param_name"] ?? "").toString().trim();
 
           if (stdParam) {
-            const paramName = stdParam.replace(/'/g, "''").replace(" ", "-");
+            const paramName = toSafeQcTableName(stdParam);
             tableNameToFetch = `${paramName}_live`;
           } else {
             // Fallback: if no stdParam, use table.id_live

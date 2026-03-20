@@ -268,12 +268,25 @@ export const buildQcDataQuery = (
   if (safeOperation) query += ` AND OPERATIONOID ='${safeOperation}'`;
   query += " ORDER BY LASTUPDATE";
 
-  // Use _live suffix when in Data Live mode, otherwise use base parameter name
-  // Allows storing live data separately from original data without conflicts
-  const paramName = safeParam.replace(" ", "-");
+  // Use _live suffix when in Data Live mode, otherwise use base parameter name.
+  // Name must be a safe SQL identifier (no spaces / hyphens) because backend uses
+  // it in SQL commands like DESCRIBE without quoted identifiers.
+  const paramName = toSafeQcTableName(stdParam);
   const name_as = overrides?.is_live ? `${paramName}_live` : paramName;
 
   return { query, name_as };
+};
+
+export const toSafeQcTableName = (stdParamName: string): string => {
+  const normalized = (stdParamName ?? "")
+    .toString()
+    .trim()
+    .replace(/'+/g, "")
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+
+  return normalized.length > 0 ? normalized : "QC_PARAM";
 };
 
 export const handleDBDownload = async (sessionId: string) => {
@@ -2474,6 +2487,7 @@ export const DataLoaderForm: React.FC<{
 
                     // Get std_param_name (must be chosen from Autocomplete)
                     const stdParam = params["std_param_name"] ?? "";
+                    const tableNameAs = toSafeQcTableName(stdParam);
                     const facode = params["facode_name"] ?? "";
                     const itemGroup = (params["group_item_name"] ?? "")
                       .toString()
@@ -2583,17 +2597,14 @@ export const DataLoaderForm: React.FC<{
                             data_loader_type: dataLoaderType,
                             data_loader_params: params,
                             query: query,
-                            name_as: safeParam.trim().replace(" ", "-"),
+                            name_as: tableNameAs,
                           }),
                         },
                       );
                       const data = await response.json();
                       if (data.status === "success") {
                         // Notify parent with the params used so it can store them per-table
-                        onQcLoadSuccess?.(
-                          safeParam.trim().replace(" ", "-"),
-                          params,
-                        );
+                        onQcLoadSuccess?.(tableNameAs, params);
                         onFinish("success", "QC data loaded successfully");
                         // refresh tables so qc_data appears in DB list (if backend inserts it into main)
                         setTableMetadata({});
