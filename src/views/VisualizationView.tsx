@@ -556,16 +556,26 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         setLocalScaleFactor(1);
     }, [focusedChartId]);
 
-    // Combined useEffect to scroll to exploration components when any of them open
+    // Pin the scroll to the bottom while the Collapse animation runs,
+    // so the viewport smoothly follows the expanding content.
     useEffect(() => {
-        if ((conceptExplanationsOpen || codeViewOpen || insightViewOpen) && explanationComponentsRef.current) {
-            setTimeout(() => {
-                explanationComponentsRef.current?.scrollIntoView({ 
-                    behavior: 'smooth', 
-                    block: 'start' 
-                });
-            }, 200); // Small delay to ensure the component is rendered
-        }
+        if (!(conceptExplanationsOpen || codeViewOpen || insightViewOpen)) return;
+        const scrollable = explanationComponentsRef.current?.closest('.vega-focused') as HTMLElement | null;
+        if (!scrollable) return;
+
+        let rafId: number;
+        const pin = () => {
+            scrollable.scrollTop = scrollable.scrollHeight;
+            rafId = requestAnimationFrame(pin);
+        };
+        rafId = requestAnimationFrame(pin);
+
+        const timer = setTimeout(() => {
+            cancelAnimationFrame(rafId);
+            scrollable.scrollTop = scrollable.scrollHeight;
+        }, 350);
+
+        return () => { cancelAnimationFrame(rafId); clearTimeout(timer); };
     }, [conceptExplanationsOpen, codeViewOpen, insightViewOpen]);
 
     let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
@@ -1060,7 +1070,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Box key="chart-focused-element"  sx={{ width: "100%", minHeight: "calc(100% - 40px)", margin: "auto", mt: 4, mb: 1, display: "flex", flexDirection: "column"}}>
             {focusedElement}
             <Box ref={explanationComponentsRef} sx={{width: "100%", mx: "auto"}}>
-                <Collapse in={conceptExplanationsOpen}>
+                <Collapse in={conceptExplanationsOpen} timeout={300}>
                     <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                         <ConceptExplCards 
                             concepts={extractConceptExplanations(table)}
@@ -1069,7 +1079,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         />
                     </Box>
                 </Collapse>
-                <Collapse in={codeViewOpen}>
+                <Collapse in={codeViewOpen} timeout={300}>
                     <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                         <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
                             <IconButton onClick={() => {
@@ -1095,7 +1105,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </CodeExplanationCard>
                     </Box>
                 </Collapse>
-                <Collapse in={insightViewOpen}>
+                <Collapse in={insightViewOpen} timeout={300}>
                     <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
                         <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
                             <IconButton onClick={() => {
@@ -1165,7 +1175,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const ENCODING_SHELF_WIDTH = 240;
 
     let content = [
-        <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
+        <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
             {focusedComponent}
         </Box>,
         /* Floating encoding shelf panel */
