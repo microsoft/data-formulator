@@ -164,44 +164,132 @@ and are not translated.
 
 ---
 
-## 4. The Tooltip Strategy for Encoding Channel Labels
+## 4. The Tooltip Strategy for Untranslatable UI Labels
+
+### 4.1 Core Principle
+
+Many UI labels **cannot** be translated directly because the underlying
+values participate in computation, spec generation, or data matching (see
+section 3). However, users still need to understand what these labels mean in
+their own language.
+
+The solution is **Tooltip-based localisation**: the display text stays in its
+original (usually English) form, while a MUI `<Tooltip>` provides a
+translated explanation on mouse hover.
+
+**Benefits:**
+
+- **Zero risk** — the original value that drives computation is never
+  modified.
+- **Full localisation** — users see a translated description in their
+  language.
+- **Minimal code change** — only a `<Tooltip>` wrapper is added; no logic
+  or data flow is affected.
+
+**Rules:**
+
+- All tooltips use `placement="left"` for visual consistency.
+- The `<Tooltip>` only provides *additional* context — it never replaces
+  the primary display text.
+- Adding a `<Tooltip>` must not change the DOM structure in a way that
+  breaks existing event handlers, drag-and-drop, or layout.
+- **Data field names** (e.g., `price`, `date`) are user data and should
+  **not** have tooltips — they are displayed as-is.
+
+### 4.2 Encoding Channel Labels
 
 Encoding channel labels (x-axis, y-axis, color, opacity, etc.) are already
 translated via `encoding.channel*` keys. In addition, each channel has a
 **descriptive tooltip** (via `encoding.channel*_tip` keys) that provides a
 brief explanation when the user hovers over the label.
 
-1. **Channel display name** uses `encoding.channelX`, `encoding.channelY`, etc.
-2. **Channel tooltip** uses `encoding.channelX_tip`, `encoding.channelY_tip`, etc.
-3. Both live in `encoding.json`.
+| Key pattern | Purpose | File |
+|---|---|---|
+| `encoding.channelX` | Display name ("x 轴") | `encoding.json` |
+| `encoding.channelX_tip` | Tooltip description ("将数据映射到水平位置") | `encoding.json` |
 
-### Example (simplified)
+**Implementation** (`EncodingBox.tsx`):
 
 ```tsx
-import { Tooltip, Typography, IconButton } from '@mui/material';
-import { useTranslation } from 'react-i18next';
+const channelTipKeyMap: Partial<Record<Channel, string>> = {
+    x: 'encoding.channelX_tip',
+    y: 'encoding.channelY_tip',
+    // ...
+};
 
-function ChannelLabel({ channel }: { channel: string }) {
-    const { t } = useTranslation();
-    const display = t(`encoding.channel${channel}`);
-    const tip = t(`encoding.channel${channel}_tip`);
-    return (
-        <Tooltip title={tip} placement="left" arrow>
-            <IconButton>
-                <Typography variant="caption">{display}</Typography>
-            </IconButton>
-        </Tooltip>
-    );
-}
+// In render:
+<Tooltip title={channelTip} placement="left" arrow>
+    <IconButton>
+        <Typography variant="caption">{channelDisplay}</Typography>
+    </IconButton>
+</Tooltip>
 ```
 
-### Important Notes
+### 4.3 Chart Type Names
 
-- **Data field names** (e.g., `price`, `date`) are user data and should
-  **not** have tooltips — they are displayed as-is.
-- The `<Tooltip>` only provides *additional* context — never replaces.
-- Adding a `<Tooltip>` must not change the DOM structure in a way that
-  breaks existing event handlers, drag-and-drop, or layout.
+Chart type names (e.g., "Bar Chart", "Scatter Plot", "Heatmap") are internal
+identifiers that drive chart assembly and dispatch (see section 3.2). They
+are kept in English, with a tooltip showing the translated name.
+
+| Key pattern | Purpose | File |
+|---|---|---|
+| `chart.templateNames.<key>` | Translated chart name (e.g., "柱状图") | `chart.json` |
+| `chart.chartCategoryTip.<key>` | Translated category name (e.g., "散点和点类图表") | `chart.json` |
+
+**Implementation** (`EncodingShelfCard.tsx`):
+
+A module-level mapping converts chart name strings to i18n keys:
+
+```tsx
+const chartNameToI18nKey: Record<string, string> = {
+    "Bar Chart": "barChart",
+    "Scatter Plot": "scatterPlot",
+    // ... all chart types
+};
+
+const chartCategoryToI18nKey: Record<string, string> = {
+    "Scatter & Point": "scatterAndPoint",
+    "Bar": "bar",
+    // ... all categories
+};
+```
+
+Helper functions (defined inside the component, capturing the i18n `t` via
+closure — important because `t` is shadowed in `.map()` callbacks):
+
+```tsx
+const getChartNameTip = (chartName: string) => {
+    const key = chartNameToI18nKey[chartName];
+    return key ? t(`chart.templateNames.${key}`) : '';
+};
+const getChartCategoryTip = (category: string) => {
+    const key = chartCategoryToI18nKey[category];
+    return key ? t(`chart.chartCategoryTip.${key}`) : '';
+};
+```
+
+Tooltips are applied at three points in the chart-type selector:
+
+1. **Selected value display** (`renderValue`) — shows tooltip for the
+   currently selected chart type.
+2. **Category headers** (`ListSubheader`) — shows tooltip for group names
+   like "Scatter & Point".
+3. **Dropdown items** (`MenuItem`) — shows tooltip for each chart option.
+
+### 4.4 When to Apply This Strategy
+
+Use the tooltip strategy when **all** of these conditions are true:
+
+1. The string is displayed prominently in the UI.
+2. The string participates in computation, matching, or spec generation
+   (i.e., it falls under section 3).
+3. Users who do not read English would benefit from a translated hint.
+
+**Do NOT use tooltips for:**
+
+- User-owned data (field names, table names) — these are always shown as-is.
+- Strings that are already safely translated via `t()`.
+- Strings that are never visible to the user (internal IDs, API payloads).
 
 ---
 
@@ -230,6 +318,8 @@ Files are grouped by **functional domain**, not by page:
    consistent suffixes (e.g., `*.loading`, `*.failed`, `*.success`).
 5. Channel display labels use the `encoding.channel*` prefix.
 6. Channel tooltip descriptions use the `encoding.channel*_tip` prefix.
+7. Chart type translated names use the `chart.templateNames.*` prefix.
+8. Chart category tooltips use the `chart.chartCategoryTip.*` prefix.
 
 ### Avoiding Key Collisions
 
@@ -368,11 +458,13 @@ When adding new translatable text:
 
 | Pitfall | Consequence | Prevention |
 |---|---|---|
-| Translating `field.name` via `t()` | Breaks code generation, matching | Never translate field names — use tooltip |
+| Translating `field.name` via `t()` | Breaks code generation, matching | Never translate field names; data fields do not need tooltips either |
+| Translating `chart.chartType` via `t()` | Breaks chart assembly & dispatch | Keep English display + add tooltip (section 4.3) |
+| Adding tooltips to user data fields | Unnecessary, confusing | User data (field names, table names) is always shown as-is |
 | Adding a key only to `en/` | Missing translation in other languages | Always update all language directories |
 | Using a top-level key that already exists in another file | Silent overwrite at merge time | Search before adding |
 | Hard-coding strings in JSX | Not translatable | Always use `t()` for user-visible text |
-| Variable shadowing `t` in `.map()` callbacks | Cannot access translation `t` function | Use a different loop variable name (e.g., `tmpl`) |
+| Variable shadowing `t` in `.map()` callbacks | Cannot access translation `t` function | Define helper closures before the shadow, or rename loop variable |
 | Translating strings in `useEffect` dependency arrays or memo keys | Causes unnecessary re-renders on language switch | Keep computation keys language-independent |
 | Translating Vega-Lite spec values | Broken chart rendering | Never translate spec values |
 
@@ -385,9 +477,14 @@ To translate a UI label:
   1. Add key to src/i18n/locales/{lang}/{domain}.json
   2. Use t('domain.key') in the component
 
-To add a descriptive tooltip for a channel label:
-  1. Add encoding.channel*_tip key to encoding.json
-  2. Wrap with <Tooltip title={t('encoding.channelX_tip')}>
+To add a tooltip for an untranslatable label (channel / chart type / category):
+  1. Add the tooltip translation key to the appropriate JSON file
+     - Channel labels:  encoding.channel*_tip  → encoding.json
+     - Chart types:     chart.templateNames.*  → chart.json
+     - Chart categories: chart.chartCategoryTip.* → chart.json
+  2. Create a mapping (name → i18n key) if needed
+  3. Wrap with <Tooltip title={...} placement="left" arrow>
+  4. Ensure the original display text is NOT changed
 
 To add a new language:
   1. Copy en/ → {lang}/
