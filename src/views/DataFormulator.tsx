@@ -226,8 +226,8 @@ export const DataFormulatorFC = ({ }) => {
     const CARD_WIDTH = 220;
     const CARD_GAP = 12;
     const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-    const PANEL_PADDING = 32 ;
-    const columnSize = (n: number) => n * COLUMN_WIDTH + 2 * PANEL_PADDING;
+    const PANE_PADDING = 48;
+    const columnSize = (n: number) => n * COLUMN_WIDTH + PANE_PADDING;
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -363,7 +363,6 @@ export const DataFormulatorFC = ({ }) => {
                                 overflow: 'hidden',
                                 alignContent: 'flex-start',
                                 height: '100%',
-                                mr: 0.5,
                             }}/>
                         </Allotment.Pane>
                     ) : null}

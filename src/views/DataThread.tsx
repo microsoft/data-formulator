@@ -2376,12 +2376,13 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const CARD_WIDTH = 220;
     const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
 
-    // Determine how many columns fit in the available container width (1-3)
-    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING) / COLUMN_WIDTH)));
+    // n columns need: n*CARD_WIDTH + (n-1)*CARD_GAP + PANEL_PADDING
+    // Solving for n: n <= (containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH
+    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH)));
     const MAX_COLUMNS = fittableColumns;
     const columnLayout: number[][] = chooseBestColumnLayout(
         allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
-        /* minColumns */ Math.min(fittableColumns, hasMultipleThreads ? 2 : 1)
+        /* minColumns */ fittableColumns
     );
     const actualColumns = columnLayout.length || 1;
 
