@@ -1162,7 +1162,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         </Box>
     ]
     
-    const ENCODING_SHELF_WIDTH = 200;
+    const ENCODING_SHELF_WIDTH = 240;
 
     let content = [
         <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>

@@ -84,7 +84,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
     const encodingShelf = (
         <Box className="encoding-shelf-compact" sx={{height: '100%',
-            width: 236,
+            width: 270,
             overflowY: 'auto',
             transition: 'height 150ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
             display: 'flex',

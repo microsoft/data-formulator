@@ -60,7 +60,6 @@ const channelKeyMap: Partial<Record<Channel, string>> = {
     color: 'encoding.channelColor',
     size: 'encoding.channelSize',
     shape: 'encoding.channelShape',
-    tooltip: 'encoding.channelTooltip',
     opacity: 'encoding.channelOpacity',
     column: 'encoding.channelColumn',
     row: 'encoding.channelRow',
@@ -825,7 +824,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                             aria-label={t('encoding.axisSettings')} component="span"
                             size="small" sx={{
                                 padding: "0px", borderRadius: 0, textAlign: "left", fontSize: "inherit", height: "auto",
-                                position: "relative", borderRight: "1px solid lightgray", width: '64px', 
+                                position: "relative", borderRight: "1px solid lightgray", width: '74px', 
                                 display: "flex", justifyContent: "space-between"
                             }}>
                             <Typography variant="caption" component="span" sx={{ padding: "0px 0px 0px 6px" }}>{channelDisplay}</Typography>
@@ -833,7 +832,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                                 paddingLeft: "2px", transform: editMode ? "rotate(180deg)" : "" }} fontSize="inherit" />
                         </IconButton>
                         <Box sx={{
-                            backgroundColor: backgroundColor, width: "calc(100% - 64px)",
+                            backgroundColor: backgroundColor, width: "calc(100% - 74px)",
                             display: "flex", borderBottom: (editMode ? "1px solid rgba(0, 0, 0, 0.12)" : undefined)
                         }}>
                             {encContent}
