@@ -48,6 +48,38 @@ import { Channel, Chart, FieldItem, Trigger, duplicateChart } from "../component
 
 import _ from 'lodash';
 
+const ConfigSlider: FC<{
+    value: number;
+    propDef: { label: string; min?: number; max?: number; step?: number };
+    onCommit: (value: number) => void;
+}> = ({ value, propDef, onCommit }) => {
+    const [localValue, setLocalValue] = useState(value);
+    useEffect(() => { setLocalValue(value); }, [value]);
+
+    return (
+        <>
+            <Slider
+                size="small"
+                value={localValue}
+                min={propDef.min}
+                max={propDef.max}
+                step={propDef.step}
+                onChange={(_event, newValue) => setLocalValue(newValue as number)}
+                onChangeCommitted={(_event, newValue) => onCommit(newValue as number)}
+                valueLabelDisplay="auto"
+                sx={{
+                    flex: 1, height: 3, mx: 0.5,
+                    '& .MuiSlider-thumb': { width: 10, height: 10 },
+                    '& .MuiSlider-valueLabel': { fontSize: 10, padding: '2px 4px', lineHeight: 1.2 },
+                }}
+            />
+            <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary', minWidth: '20px', textAlign: 'right' }}>
+                {localValue}
+            </Typography>
+        </>
+    );
+};
+
 import '../scss/EncodingShelf.scss';
 import { DictTable } from "../components/ComponentType";
 
@@ -663,7 +695,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 : 
                 <Tooltip title={t('encoding.formulate')}>
                     <span>
-                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
+                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }} disabled={!prompt.trim()} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
                             <PrecisionManufacturing sx={{
                                 fontSize: 20,
                                 ...(isChartAvailable ? {} : {
@@ -817,25 +849,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             }}>
                                                 {propDef.label}
                                             </Typography>
-                                            <Slider
-                                                size="small"
+                                            <ConfigSlider
                                                 value={currentValue}
-                                                min={propDef.min}
-                                                max={propDef.max}
-                                                step={propDef.step}
-                                                onChange={(_event, newValue) => {
-                                                    dispatch(dfActions.updateChartConfig({chartId, key: propDef.key, value: newValue as number}));
-                                                }}
-                                                valueLabelDisplay="auto"
-                                                sx={{
-                                                    flex: 1, height: 3, mx: 0.5,
-                                                    '& .MuiSlider-thumb': { width: 10, height: 10 },
-                                                    '& .MuiSlider-valueLabel': { fontSize: 10, padding: '2px 4px', lineHeight: 1.2 },
-                                                }}
+                                                propDef={propDef}
+                                                onCommit={(newValue) => dispatch(dfActions.updateChartConfig({chartId, key: propDef.key, value: newValue}))}
                                             />
-                                            <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary', minWidth: '20px', textAlign: 'right' }}>
-                                                {currentValue}
-                                            </Typography>
                                         </Box>
                                     );
                                 }

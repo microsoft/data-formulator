@@ -57,9 +57,10 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
             }
         }
 
-        // Randomly sample up to 29 rows for column width calculation
+        // Deterministic sample: take evenly spaced rows so column widths stay stable across re-renders
         const sampleSize = Math.min(29, rowData.length);
-        const sampledRows = _.sampleSize(rowData, sampleSize);
+        const step = rowData.length > sampleSize ? rowData.length / sampleSize : 1;
+        const sampledRows = Array.from({ length: sampleSize }, (_, i) => rowData[Math.floor(i * step)]);
         
         // Calculate appropriate column widths based on content
         const calculateColumnWidth = (name: string) => {
