@@ -865,8 +865,9 @@ export const ReportView: FC = () => {
                             sx={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 1,
-                                p: 1,
+                                gap: 1.25,
+                                px: 2,
+                                py: 1,
                                 borderRadius: 2,
                                 backgroundColor: 'rgba(255, 255, 255, 0.9)',
                                 backdropFilter: 'blur(12px)',
@@ -880,13 +881,12 @@ export const ReportView: FC = () => {
                                     transition: transition.normal
                                 },
                                 '.MuiTypography-root': {
-                                    fontSize: '1rem',
+                                    fontSize: '0.8125rem',
                                 }
-
                             }}
                         >
                             {/* Natural Flow */}
-                            <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
                                 {t('report.createA')}
                             </Typography>
                             
@@ -924,19 +924,21 @@ export const ReportView: FC = () => {
                                         key={option.value}
                                         value={option.value}
                                         sx={{ 
-                                            px: 1,
-                                            py: 0.25,
+                                            px: 1.5,
+                                            py: 0.5,
                                             textTransform: 'none',
-                                            fontSize: '1rem',
+                                            fontSize: '0.8125rem',
+                                            fontWeight: 400,
+                                            lineHeight: 1.5,
                                             minWidth: 'auto'
                                         }}
                                     >
-                                        {option.value === 'live report' ? <StreamIcon sx={{ fontSize: 16, mr: 1 }} /> : <></>} {t(option.labelKey)}
+                                        {option.value === 'live report' ? <StreamIcon sx={{ fontSize: 14, mr: 0.75 }} /> : <></>} {t(option.labelKey)}
                                     </ToggleButton>
                                 ))}
                             </ToggleButtonGroup>
 
-                            <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
                                 {t('report.from')}
                             </Typography>
                             
@@ -945,7 +947,7 @@ export const ReportView: FC = () => {
                                 {selectedChartIds.size}
                             </Typography>
                             
-                            <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
                                 {selectedChartIds.size <= 1 ? t('report.chart') : t('report.charts')}
                             </Typography>
 
@@ -957,15 +959,17 @@ export const ReportView: FC = () => {
                                 size="small"
                                 sx={{
                                     textTransform: 'none',
-                                    ml: 2,
-                                    px: 2,
-                                    py: 0.75,
-                                    borderRadius: 1.5,
+                                    ml: 1.5,
+                                    pl: 1.75,
+                                    pr: 2.5,
+                                    py: 0.625,
+                                    borderRadius: '4px',
                                     fontWeight: 500,
-                                    fontSize: '1rem',
+                                    fontSize: '0.875rem',
+                                    lineHeight: 1.5,
                                     minWidth: 'auto'
                                 }}
-                                startIcon={isGenerating ? <CircularProgress size={14} /> : <EditIcon sx={{ fontSize: 16 }} />}
+                                startIcon={isGenerating ? <CircularProgress size={12} /> : <EditIcon sx={{ fontSize: 14 }} />}
                             >
                                 {isGenerating ? t('report.composing') : t('report.compose')}
                             </Button>
