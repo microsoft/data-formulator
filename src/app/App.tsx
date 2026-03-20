@@ -83,6 +83,7 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import DownloadIcon from "@mui/icons-material/Download";
 import {
   DBTableSelectionDialog,
+  QCDataDialog,
   handleDBDownload,
 } from "../views/DBTableManager";
 import CloudQueueIcon from "@mui/icons-material/CloudQueue";
@@ -469,6 +470,7 @@ const ExampleDataButton: React.FC<{ onClose: () => void }> = ({ onClose }) => (
 const TableMenu: React.FC = () => {
   const [open, setOpen] = useState(false);
   const dbButtonRef = React.useRef<HTMLButtonElement>(null);
+  const qcButtonRef = React.useRef<HTMLButtonElement>(null);
   const cleanDataButtonRef = React.useRef<HTMLButtonElement>(null);
   const uploadButtonRef = React.useRef<HTMLButtonElement>(null);
   const pasteButtonRef = React.useRef<HTMLButtonElement>(null);
@@ -511,6 +513,42 @@ const TableMenu: React.FC = () => {
               alignItems: "flex-start",
             }}
           >
+            <Button
+              variant="outlined"
+              onClick={() => handleOpenDialog(qcButtonRef)}
+              sx={{
+                textTransform: "none",
+                height: "140px",
+                width: "120px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                p: 2,
+              }}
+            >
+              <Box sx={{ fontSize: 40, flexShrink: 0 }}>
+                <CategoryIcon sx={{ fontSize: 40 }} />
+              </Box>
+              <Box
+                sx={{
+                  textAlign: "center",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 0.5,
+                  minHeight: "48px",
+                  justifyContent: "center",
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{ fontWeight: 600, lineHeight: 1.2 }}
+                >
+                  QC Data
+                </Typography>
+              </Box>
+            </Button>
             <Button
               variant="outlined"
               onClick={() => handleOpenDialog(dbButtonRef)}
@@ -719,6 +757,9 @@ const TableMenu: React.FC = () => {
 
       {/* Render dialog components outside the main modal with hidden buttons */}
       <div style={{ display: "none" }}>
+        <QCDataDialog
+          buttonElement={<button ref={qcButtonRef}>Open QC Data Dialog</button>}
+        />
         <DBTableSelectionDialog
           buttonElement={<button ref={dbButtonRef}>Open DB Dialog</button>}
         />

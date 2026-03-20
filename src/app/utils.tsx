@@ -164,23 +164,207 @@ export function extractFieldsFromEncodingMap(
   return { aggregateFields, groupByFields };
 }
 
+// ⚡ Maximum data points to send to Vega-Lite for rendering
+// Beyond this, charts become slow / laggy. Use sampling or aggregation.
+const MAX_VEGA_DATA_POINTS = 50000;
+
+/**
+ * Sanitize data rows to remove Infinity and NaN values that break Vega-Lite rendering.
+ * Replaces problematic values with null to allow Vega's scale calculations to work properly.
+ */
+function sanitizeDataForVega(table: any[]): any[] {
+  return table.map((row) => {
+    const sanitized: any = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (typeof value === "number" && !isFinite(value)) {
+        // Replace Infinity/NaN with null so Vega can handle it
+        sanitized[key] = null;
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  });
+}
+
+/**
+ * Adaptive recursive sampling: when data range has >= threshold points,
+ * continue sampling sub-ranges to capture more detail and accuracy.
+ * This ensures better data representation in large datasets.
+ */
+function adaptiveSampleBucket(
+  bucket: any[],
+  field: string,
+  threshold: number = 10,
+  pointsToTake: any[] = [],
+): any[] {
+  // Base case: if bucket is small, take all points
+  if (bucket.length <= 3) {
+    pointsToTake.push(...bucket);
+    return pointsToTake;
+  }
+
+  const mid = Math.floor(bucket.length / 2);
+
+  // Always take start, mid, end for continuity
+  pointsToTake.push(bucket[0]);
+  pointsToTake.push(bucket[mid]);
+  pointsToTake.push(bucket[bucket.length - 1]);
+
+  // Find extrema (max, min) in this bucket
+  let maxIdx = 0,
+    minIdx = 0;
+  let maxVal = bucket[0][field];
+  let minVal = bucket[0][field];
+
+  for (let i = 1; i < bucket.length; i++) {
+    const val = bucket[i][field];
+    if (val != null && typeof val === "number" && isFinite(val)) {
+      if (val > maxVal) {
+        maxVal = val;
+        maxIdx = i;
+      }
+      if (val < minVal) {
+        minVal = val;
+        minIdx = i;
+      }
+    }
+  }
+
+  // Add extrema if not already included (not at start/end/mid)
+  if (maxIdx !== 0 && maxIdx !== bucket.length - 1 && maxIdx !== mid) {
+    pointsToTake.push(bucket[maxIdx]);
+  }
+  if (minIdx !== 0 && minIdx !== bucket.length - 1 && minIdx !== mid) {
+    pointsToTake.push(bucket[minIdx]);
+  }
+
+  // Recursively sample sub-ranges if they have enough data points
+  const leftRange = bucket.slice(0, mid);
+  const rightRange = bucket.slice(mid);
+
+  if (leftRange.length >= threshold) {
+    adaptiveSampleBucket(leftRange, field, threshold, pointsToTake);
+  }
+  if (rightRange.length >= threshold) {
+    adaptiveSampleBucket(rightRange, field, threshold, pointsToTake);
+  }
+
+  return pointsToTake;
+}
+
 export function prepVisTable(
   table: any[],
   allFields: FieldItem[],
   encodingMap: EncodingMap,
+  chartType: string = "",
 ) {
+  // ✅ Sanitize input data to remove Infinity/NaN values before processing
+  let cleanedTable = sanitizeDataForVega(table);
+
   let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(
     encodingMap,
     allFields,
   );
 
-  let processedTable = [...table];
+  let processedTable = [...cleanedTable];
+
+  // ⚡ OPTIMIZATION: For large datasets without aggregation, return early to avoid expensive processing
+  // ✅ Only apply stratified sampling for "QC Trend Line" charts
+  if (
+    aggregateFields.length === 0 &&
+    processedTable.length > MAX_VEGA_DATA_POINTS &&
+    chartType === "QC Trend Line"
+  ) {
+    // ⚡ OPTIMIZATION: Stratified sampling with peak/valley detection
+    // Divide into buckets and sample multiple points per bucket to capture anomalies
+    const numBuckets = Math.max(1000, MAX_VEGA_DATA_POINTS / 3); // Aim for ~3 points per bucket
+    const bucketSize = Math.ceil(processedTable.length / numBuckets);
+    const sampledTable: any[] = [];
+
+    // ✅ CHECK: Detect if this is QC data by checking for QC-specific columns
+    const firstRow = processedTable[0];
+    const qcColumnNames = ["VALUE", "INDEX"];
+    const isQCData = firstRow && qcColumnNames.every((col) => col in firstRow);
+
+    for (let i = 0; i < numBuckets; i++) {
+      const bucketStart = i * bucketSize;
+      const bucketEnd = Math.min(
+        bucketStart + bucketSize,
+        processedTable.length,
+      );
+
+      if (bucketStart < processedTable.length) {
+        const bucket = processedTable.slice(bucketStart, bucketEnd);
+
+        // If bucket is small, take all points
+        if (bucket.length <= 3) {
+          sampledTable.push(...bucket);
+          continue;
+        }
+
+        // ✅ Use adaptive sampling for larger buckets
+        let pointsToTake: any[] = [];
+        if (isQCData && "VALUE" in bucket[0]) {
+          // Use VALUE field for recursive sampling in QC data
+          pointsToTake = adaptiveSampleBucket(bucket, "VALUE", 10, []);
+        } else {
+          // For non-QC data, use simple 5-point sampling (start, mid, end, max, min)
+          pointsToTake.push(bucket[0]);
+          if (bucket.length > 1) {
+            pointsToTake.push(bucket[Math.floor(bucket.length / 2)]);
+          }
+          if (bucket.length > 2) {
+            pointsToTake.push(bucket[bucket.length - 1]);
+          }
+        }
+
+        // Deduplicate by keeping insertion order
+        const seen = new Set();
+        for (const point of pointsToTake) {
+          const key = JSON.stringify(point);
+          if (!seen.has(key)) {
+            sampledTable.push(point);
+            seen.add(key);
+          }
+        }
+      }
+    }
+
+    // ✅ Deduplicate by INDEX column for QC data (keep only first occurrence)
+    let finalTable = sampledTable;
+    if (isQCData && sampledTable.length > 0) {
+      const seenIndices = new Set<number>();
+      const deduplicatedTable: any[] = [];
+      for (const row of sampledTable) {
+        const index = row.INDEX;
+        if (!seenIndices.has(index)) {
+          seenIndices.add(index);
+          deduplicatedTable.push(row);
+        }
+      }
+      console.log(
+        `[Dedup] Deduplicated by INDEX: ${sampledTable.length} → ${deduplicatedTable.length} rows`,
+      );
+      finalTable = deduplicatedTable;
+    }
+
+    console.log(
+      `[Chart] Large time-series data (${
+        processedTable.length
+      } rows) → stratified${
+        isQCData ? "+peak-detection (QC mode)" : ""
+      } sampled to ${finalTable.length} for visualization`,
+    );
+    return finalTable;
+  }
 
   let result = processedTable;
 
   if (aggregateFields.length > 0) {
-    // Step 2: Group by and aggregate
+    // Step 2: Group by and aggregate (with optimization for large datasets)
     let grouped = [];
+
     if (groupByFields.length > 0) {
       grouped = d3.flatGroup(
         processedTable,
@@ -190,43 +374,89 @@ export function prepVisTable(
       grouped = [["_default", processedTable]];
     }
 
-    result = grouped.map((row) => {
-      // Last element is the array of grouped items, rest are group values
+    // ⚡ OPTIMIZATION: If too many groups, stratified sampling to preserve distribution
+    if (grouped.length > MAX_VEGA_DATA_POINTS) {
+      const numBuckets = MAX_VEGA_DATA_POINTS;
+      const bucketSize = Math.ceil(grouped.length / numBuckets);
+      const subsampledGroups: any[] = [];
 
+      for (let i = 0; i < numBuckets; i++) {
+        const bucketStart = i * bucketSize;
+        const bucketEnd = Math.min(bucketStart + bucketSize, grouped.length);
+
+        if (bucketStart < grouped.length) {
+          const midIndex = Math.floor((bucketStart + bucketEnd) / 2);
+          subsampledGroups.push(grouped[midIndex]);
+        }
+      }
+
+      grouped = subsampledGroups;
+      console.log(
+        `[Chart] Large aggregation (${grouped.length} groups) → stratified sampled for visualization`,
+      );
+    }
+
+    result = grouped.map((row) => {
       const groupValues = row.slice(0, -1);
       const group = row[row.length - 1];
 
-      return {
+      const aggregatedRow: any = {
         // Add group by fields
         ...Object.fromEntries(
           groupByFields.map((field, i) => [field, groupValues[i]]),
         ),
-        // Add aggregations
-        ...(aggregateFields.some(([_, type]) => type === "count")
-          ? { _count: group.length }
-          : {}),
-        ...Object.fromEntries(
-          aggregateFields
-            .filter(([fieldName, aggType]) => aggType !== "count" && fieldName)
-            .map(([fieldName, aggType]) => {
-              const values = group.map((r: any) => r[fieldName!]);
-              const suffix = `_${aggType}`;
-              const aggFunc = {
-                sum: d3.sum,
-                max: d3.max,
-                min: d3.min,
-                mean: d3.mean,
-                median: d3.median,
-                average: d3.mean,
-                mode: d3.mode,
-              }[aggType] as (values: any[]) => number | undefined;
-              return [
-                fieldName + suffix,
-                aggFunc ? aggFunc(values) : undefined,
-              ];
-            }),
-        ),
       };
+
+      // ⚡ OPTIMIZATION: Compute all aggregations in single pass
+      if (aggregateFields.some(([_, type]) => type === "count")) {
+        aggregatedRow._count = group.length;
+      }
+
+      // Batch compute aggregations
+      const nonCountAggs = aggregateFields.filter(
+        ([fieldName, aggType]) => aggType !== "count" && fieldName,
+      );
+
+      for (const [fieldName, aggType] of nonCountAggs) {
+        if (!fieldName) continue;
+        const values = group.map((r: any) => r[fieldName]);
+        const suffix = `_${aggType}`;
+
+        // ⚡ Use simpler aggregations for large groups to avoid d3 overhead
+        let result: any;
+        if (aggType === "sum") {
+          result = values.reduce(
+            (a: number, b: number) => (a || 0) + (b || 0),
+            0,
+          );
+        } else if (aggType === "count") {
+          result = values.length;
+        } else if (aggType === "mean" || aggType === "average") {
+          const sum = values.reduce(
+            (a: number, b: number) => (a || 0) + (b || 0),
+            0,
+          );
+          result =
+            values.filter((v: any) => v != null).length > 0
+              ? sum / values.filter((v: any) => v != null).length
+              : undefined;
+        } else if (aggType === "min") {
+          result = Math.min(...values.filter((v: any) => v != null));
+        } else if (aggType === "max") {
+          result = Math.max(...values.filter((v: any) => v != null));
+        } else {
+          // Fallback to d3 for complex aggregations (median, mode)
+          const aggFunc = {
+            median: d3.median,
+            mode: d3.mode,
+          }[aggType] as (values: any[]) => number | undefined;
+          result = aggFunc ? aggFunc(values) : undefined;
+        }
+
+        aggregatedRow[fieldName + suffix] = result;
+      }
+
+      return aggregatedRow;
     });
   }
 
@@ -254,6 +484,12 @@ export const assembleVegaChart = (
   if (chartType == "Table") {
     return ["Table", undefined];
   }
+
+  // ✅ Sanitize input data to remove Infinity/NaN values before processing
+  const cleanedTable = sanitizeDataForVega(workingTable);
+  const cleanedOriginalTable = originalTable
+    ? sanitizeDataForVega(originalTable)
+    : undefined;
 
   let chartTemplate = getChartTemplate(chartType) as ChartTemplate;
   //console.log(chartTemplate);
@@ -296,7 +532,7 @@ export const assembleVegaChart = (
       if (fieldMetadata != undefined) {
         encodingObj["type"] = getDType(
           fieldMetadata.type,
-          workingTable.map((r) => r[field.name]),
+          cleanedTable.map((r) => r[field.name]),
         );
         if (
           fieldMetadata.semanticType == "Date" ||
@@ -314,7 +550,7 @@ export const assembleVegaChart = (
           ) {
             encodingObj["type"] = "nominal";
           } else if (fieldMetadata.semanticType == "YearMonth") {
-            let sampleValues = workingTable
+            let sampleValues = cleanedTable
               .map((r) => r[field.name])
               .slice(0, 10);
             // Check if values can be parsed as valid temporal dates (Vega-Lite compatible)
@@ -384,7 +620,7 @@ export const assembleVegaChart = (
       }
 
       if (encodingObj["type"] == "nominal" && channel == "color") {
-        let actualDomain = [...new Set(workingTable.map((r) => r[field.name]))];
+        let actualDomain = [...new Set(cleanedTable.map((r) => r[field.name]))];
 
         if (actualDomain.length >= 16) {
           if (encodingObj["legend"] == undefined) {
@@ -487,7 +723,7 @@ export const assembleVegaChart = (
             if (colorFieldMetadata) {
               colorFieldType = getDType(
                 colorFieldMetadata.type,
-                workingTable.map((r) => r[colorField.name]),
+                cleanedTable.map((r) => r[colorField.name]),
               );
             }
           }
@@ -509,7 +745,7 @@ export const assembleVegaChart = (
                 oppositeFieldMetadata &&
                 getDType(
                   oppositeFieldMetadata.type,
-                  workingTable.map((r) => r[oppositeField.name]),
+                  cleanedTable.map((r) => r[oppositeField.name]),
                 ) === "quantitative"
               ) {
                 encodingObj["sort"] = `-${oppositeChannel}`;
@@ -600,12 +836,12 @@ export const assembleVegaChart = (
   // use post processor to handle smart chart instantiation
   if (chartTemplate.postProcessor) {
     // Attach original table to vgObj so postProcessor can access it
-    vgObj._originalTable = originalTable || workingTable;
-    vgObj._workingTable = workingTable;
+    vgObj._originalTable = cleanedOriginalTable || cleanedTable;
+    vgObj._workingTable = cleanedTable;
 
     vgObj = chartTemplate.postProcessor(
       vgObj,
-      workingTable,
+      cleanedTable,
       qcLimitsMode,
       chartWidth || defaultChartWidth,
       chartHeight || defaultChartHeight,
@@ -613,7 +849,7 @@ export const assembleVegaChart = (
   }
 
   // this is the data that will be assembled into the vega chart
-  let values = structuredClone(workingTable);
+  let values = structuredClone(cleanedTable);
   if (values.length > 0) {
     let keys = Object.keys(values[0]);
     let temporalKeys = keys.filter(
@@ -666,7 +902,7 @@ export const assembleVegaChart = (
       const fieldOriginalType = fieldMetadata
         ? getDType(
             fieldMetadata.type,
-            workingTable.map((r) => r[fieldName]),
+            cleanedTable.map((r) => r[fieldName]),
           )
         : "nominal";
 
@@ -755,8 +991,8 @@ export const assembleVegaChart = (
             // Efficient single-pass aggregation + partial sort
             const valueAggregates = new Map<string, number>();
 
-            // Single pass through workingTable to compute aggregates
-            for (const row of workingTable) {
+            // Single pass through cleanedTable to compute aggregates
+            for (const row of cleanedTable) {
               const fieldValue = row[fieldName];
               const sortValue = row[sortField as keyof typeof row] || 0;
 
@@ -936,7 +1172,7 @@ export const assembleVegaChart = (
       // Group data by column values and find max y value for each column
       const columnGroups = new Map<any, number>();
 
-      for (const row of workingTable) {
+      for (const row of cleanedTable) {
         const columnValue = row[columnField];
         const yValue = row[yField];
 

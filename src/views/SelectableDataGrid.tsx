@@ -59,10 +59,10 @@ function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
 
 function getComparator<Key extends keyof any>(
   order: "asc" | "desc",
-  orderBy: Key
+  orderBy: Key,
 ): (
   a: { [key in Key]: number | string },
-  b: { [key in Key]: number | string }
+  b: { [key in Key]: number | string },
 ) => number {
   return order === "desc"
     ? (a, b) => descendingComparator(a, b, orderBy)
@@ -87,10 +87,16 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
   // Initialize as true to cover the initial mount delay
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
 
-  // Clear loading state after first render
+  // Calculate the correct row count (use rows.length for non-virtual, use prop for virtual)
+  const displayRowCount = !virtual ? rows.length : rowCount;
+
+  // Reset state when table changes (tableId change indicates a new table)
   React.useEffect(() => {
+    setRowsToDisplay(rows);
+    setOrderBy(undefined);
+    setOrder("asc");
     setIsLoading(false);
-  }, []);
+  }, [tableId, rows]);
 
   React.useEffect(() => {
     if (orderBy && !isLoading) {
@@ -108,12 +114,12 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
   const VirtualTableHead = React.forwardRef<HTMLTableSectionElement>(
     (props, ref) => (
       <TableHead {...props} ref={ref} className="table-header-container" />
-    )
+    ),
   );
   VirtualTableHead.displayName = "VirtualTableHead";
 
   const VirtualTableBody = React.forwardRef<HTMLTableSectionElement>(
-    (props, ref) => <TableBody {...props} ref={ref} />
+    (props, ref) => <TableBody {...props} ref={ref} />,
   );
   VirtualTableBody.displayName = "VirtualTableBody";
 
@@ -140,7 +146,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
 
   const fetchVirtualData = (
     sortByColumnIds: string[],
-    sortOrder: "asc" | "desc"
+    sortOrder: "asc" | "desc",
   ) => {
     // Set loading to true when starting the fetch
     setIsLoading(true);
@@ -312,7 +318,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                                 if (virtual) {
                                   fetchVirtualData(
                                     newOrderBy ? [newOrderBy] : [],
-                                    newOrder
+                                    newOrder,
                                   );
                                 }
                               }}
@@ -389,10 +395,10 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
             sx={{ display: "flex", alignItems: "center" }}
           >
             {virtual && <CloudQueueIcon sx={{ fontSize: 16, mr: 1 }} />}
-            {`${rowCount} rows`}
+            {`${displayRowCount} rows`}
           </Typography>
-          {virtual && rowCount > 10000 && (
-            <Tooltip title="view 10000 random rows from this table">
+          {virtual && displayRowCount > 1000 && (
+            <Tooltip title="view 1000 random rows from this table">
               <IconButton
                 size="small"
                 color="primary"
@@ -429,9 +435,9 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                           typeof value === "string" &&
                           (value.includes(",") || value.includes('"'))
                             ? `"${value.replace(/"/g, '""')}"`
-                            : value
+                            : value,
                         )
-                        .join(",")
+                        .join(","),
                     ),
                   ].join("\n");
 

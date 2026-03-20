@@ -41,7 +41,7 @@ class QCDataLoader(ExternalDataLoader):
             {
                 "name": "group_item_name",
                 "type": "string",
-                "required": False,
+                "required": True,
                 "default": "",
                 "description": "GROUPITEMNAME"
             },
@@ -55,7 +55,7 @@ class QCDataLoader(ExternalDataLoader):
             {
                 "name": "operation_name",
                 "type": "string",
-                "required": True,
+                "required": False,
                 "default": "",
                 "description": "OPERATIONNAME"
             },

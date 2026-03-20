@@ -1687,13 +1687,14 @@ let customCharts: ChartTemplate[] = [
       chartHeight?: number,
     ) => {
       if (!table || table.length === 0) return vgSpec;
-
       // =========================================================================
       // 1. LẤY KÊNH CHÍNH
       // =========================================================================
       const indexDef = vgSpec.encoding.index;
       const valueDef = vgSpec.encoding.value;
       const colorDef = vgSpec.encoding.color;
+      const qcDateDef = vgSpec.encoding.qcdate;
+      const qcShiftDef = vgSpec.encoding.QCSHIFT;
 
       if (!indexDef || !valueDef) return vgSpec;
 
@@ -1708,16 +1709,42 @@ let customCharts: ChartTemplate[] = [
 
       // Get original full table if available (contains limit columns)
       const fullTable = vgSpec._originalTable || table;
+      //console.log("full table:", fullTable);
       const fullTableColumns =
         fullTable && fullTable.length > 0 ? Object.keys(fullTable[0]) : [];
       // =========================================================================
       // 3. TÌM GIỚI HẠN SỐ → detectedLimits (chỉ dùng vẽ rule ngang)
       // =========================================================================
       // Create local detectedLimits to avoid caching from previous renders
-      let detectedLimits: Record<string, number | undefined> = {};
+
+      // let detectedLimits: Record<string, number | undefined> = {};
+      // const limitFieldNames = ["TARGET", "ARUL", "ARLL", "UL", "LL"];
+
+      // // Try to find limit columns in full table first, then fallback to working table
+      // const sourceTable = fullTableColumns.length > 0 ? fullTable : table;
+      // const columnsToSearch =
+      //   fullTableColumns.length > 0 ? fullTableColumns : tableColumns;
+      // limitFieldNames.forEach((name) => {
+      //   const col = columnsToSearch.find(
+      //     (c: string) => c.toUpperCase() === name,
+      //   );
+      //   if (col) {
+      //     const val = sourceTable.find(
+      //       (r: any) => typeof r[col] === "number",
+      //     )?.[col];
+      //     if (typeof val === "number" && isFinite(val)) {
+      //       detectedLimits[name] = val;
+      //     }
+      //   }
+      // });
+
+      // Collect per-row limit series instead of single scalar
+      let detectedLimitSeries: Record<
+        string,
+        Array<{ index: number; limit: number; limitType: string }>
+      > = {};
       const limitFieldNames = ["TARGET", "ARUL", "ARLL", "UL", "LL"];
 
-      // Try to find limit columns in full table first, then fallback to working table
       const sourceTable = fullTableColumns.length > 0 ? fullTable : table;
       const columnsToSearch =
         fullTableColumns.length > 0 ? fullTableColumns : tableColumns;
@@ -1725,15 +1752,23 @@ let customCharts: ChartTemplate[] = [
         const col = columnsToSearch.find(
           (c: string) => c.toUpperCase() === name,
         );
-        if (col) {
-          const val = sourceTable.find(
-            (r: any) => typeof r[col] === "number",
-          )?.[col];
-          if (typeof val === "number" && isFinite(val)) {
-            detectedLimits[name] = val;
-          }
-        }
+        if (!col) return;
+        const series = sourceTable
+          .map((r: any) => ({ idx: r[indexField], val: r[col] }))
+          .filter(
+            (d: any) =>
+              typeof d.val === "number" &&
+              isFinite(d.val) &&
+              (typeof d.idx === "number" || !isNaN(Number(d.idx))),
+          )
+          .map((d: any) => ({
+            index: Number(d.idx),
+            limit: d.val,
+            limitType: name,
+          }));
+        if (series.length > 0) detectedLimitSeries[name] = series;
       });
+
       // =========================================================================
       // 5. TÍNH DOMAIN Y
       // =========================================================================
@@ -1751,12 +1786,12 @@ let customCharts: ChartTemplate[] = [
       }
 
       // Nếu có ít nhất 1 cận thì tính padding domain dựa trên UL/LL hoặc min/max value
-      const hasAnyLimit = Object.keys(detectedLimits).length > 0;
+      const hasAnyLimit = Object.keys(detectedLimitSeries).length > 0;
       if (hasAnyLimit) {
         const valueMin = finalMin ?? 0;
         const valueMax = finalMax ?? 0;
-        const ul = detectedLimits["UL"];
-        const ll = detectedLimits["LL"];
+        const ul = detectedLimitSeries["UL"]?.[0]?.limit;
+        const ll = detectedLimitSeries["LL"]?.[0]?.limit;
         const upper = ul ?? valueMax;
         const lower = ll ?? valueMin;
         const padding = (upper - lower) * 0.07;
@@ -1769,7 +1804,7 @@ let customCharts: ChartTemplate[] = [
       // =========================================================================
 
       const pointLayer = {
-        mark: { type: "line", interpolate: "monotone" },
+        mark: { type: "line", point: true, interpolate: "monotone" },
         encoding: {
           x: { ...indexDef, type: "quantitative", title: indexDef.field },
           y: {
@@ -1798,66 +1833,111 @@ let customCharts: ChartTemplate[] = [
           tooltip: [
             { field: indexDef.field, title: indexDef.field },
             { field: colorDef.field, title: colorDef.field },
-            { field: valueDef.field, title: "Value", format: ".2f" },
+            { field: valueDef.field, title: "Value" },
+            {
+              field: qcDateDef?.field,
+              title: qcDateDef?.field,
+            },
+            {
+              field: qcShiftDef?.field,
+              title: qcShiftDef?.field,
+            },
           ],
         },
       };
 
       const loessLayer = {
-        transform: [{ loess: valueDef.field, on: indexDef.field }],
-        mark: { type: "line", color: "blue", size: 5 },
+        transform: [
+          {
+            loess: valueDef.field,
+            on: indexDef.field,
+            bandwidth: 0.03, // ✅ Giảm bandwidth (mặc định 0.3) → đường sát dữ liệu hơn, capture biến động nhỏ
+          },
+          // Add a constant field so Vega-Lite can show a legend entry for the LOESS line
+          { calculate: "'Trend Line'", as: "series" },
+        ],
+        mark: {
+          type: "line",
+          size: 5,
+          interpolate: "linear", // ✅ Đường gấp khúc mạnh mẽ, không mượt
+          strokeCap: "square", // ✅ Góc cạnh hơn
+          opacity: 0.9,
+        },
         encoding: {
           x: { field: indexDef.field, type: "quantitative" },
-          y: { field: valueDef.field, type: "quantitative" },
+          y: {
+            field: valueDef.field,
+            type: "quantitative",
+            scale: { zero: false },
+          },
+          color: {
+            field: "series",
+            type: "nominal",
+            legend: { title: "Series" },
+            scale: { domain: ["Trend Line"], range: ["blue"] },
+          },
         },
       };
 
       // 🟢 Gom tất cả rule (TARGET, UL, LL, ARUL, ARLL) vào 1 layer có legend
       let ruleLayers: any[] = [];
+      const limitColors: Record<string, string> = {
+        TARGET: "#00FFFF",
+        UL: "#d62728",
+        LL: "#d62728",
+        ARUL: "#ff7f0e",
+        ARLL: "#ff7f0e",
+      };
+      if (
+        qcLimitsMode === true &&
+        Object.keys(detectedLimitSeries).length > 0
+      ) {
+        // Merge tất cả limit series thành 1 data array
+        const allLimitData: Array<{
+          index: number;
+          limit: number;
+          limitType: string;
+        }> = [];
+        Object.entries(detectedLimitSeries).forEach(([name, series]) => {
+          allLimitData.push(...series);
+        });
 
-      if (qcLimitsMode === true && Object.keys(detectedLimits).length > 0) {
-        const qcLimitNames = ["TARGET", "UL", "LL", "ARUL", "ARLL"];
-        const limitData = Object.entries(detectedLimits)
-          .filter(
-            ([name, value]) =>
-              qcLimitNames.includes(name) &&
-              typeof value === "number" &&
-              isFinite(value),
-          )
-          .map(([name, value]) => ({
-            limitType: `${name} : ${value}`, // hiển thị cả tên + giá trị
-            limit: value,
-          }));
-
-        if (limitData.length > 0) {
-          const ruleLayer = {
-            data: { values: limitData },
+        // Tạo 1 layer duy nhất với tất cả data
+        if (allLimitData.length > 0) {
+          ruleLayers.push({
+            data: { values: allLimitData },
             mark: {
-              type: "rule",
+              type: "line",
               strokeWidth: 1.5,
+              opacity: 0.9,
             },
             encoding: {
+              x: { field: "index", type: "quantitative" },
               y: { field: "limit", type: "quantitative" },
               color: {
                 field: "limitType",
                 type: "nominal",
                 legend: { title: "QC Limited" },
                 scale: {
-                  domain: limitData.map((d) => d.limitType),
-                  range: ["#00FFFF", "red", "red", "orange", "orange"].slice(
-                    0,
-                    limitData.length,
+                  domain: Object.keys(detectedLimitSeries),
+                  range: Object.keys(detectedLimitSeries).map(
+                    (name) => limitColors[name] || "#999",
                   ),
                 },
               },
-
+              strokeDash: {
+                condition: {
+                  test: "datum.limitType === 'TARGET'",
+                  value: [4, 2],
+                },
+                value: [1, 0],
+              },
               tooltip: [
-                { field: "limitType", title: "Limited" },
-                { field: "limit", title: "Value", format: ".2f" },
+                { field: "limitType", title: "Limit" },
+                { field: "limit", title: "Value", format: ".3f" },
               ],
             },
-          };
-          ruleLayers.push(ruleLayer);
+          });
         }
       }
 
@@ -1957,8 +2037,14 @@ let customCharts: ChartTemplate[] = [
             mark: {
               type: "text",
               angle: -90, // 🔹 Nằm dọc
-              dy: -10, // dịch ra khỏi đường một chút
-              dx: finalMax ? finalMax * 2.5 : 0,
+              dy: isNight ? -8 : 8,
+              dx: finalMax
+                ? isNight
+                  ? -(finalMax * 2.5)
+                  : finalMax * 2.5
+                : isNight
+                ? -8
+                : 8, // 🔹 Scale động theo finalMax
               fontSize: 10,
               fontWeight: "bold",
               color,
@@ -2203,17 +2289,16 @@ let customCharts: ChartTemplate[] = [
           y: {
             field: "percent_clamped",
             type: "quantitative",
-            // scale: { domain: [0, 1] }, // đảm bảo y bắt đầu từ 0
             axis: { format: "%", title: "Percent (%)" },
+            scale: { zero: true },
           },
           color: {
             field: colorField,
             type: "nominal",
-            legend: { title: colorField },
-            scale: { range: ["#2664C1", "#C73800", "#2ca02c", "#9467bd"] },
+            legend: null,
+            scale: { range: ["#333333"] },
           },
           tooltip: [
-            { field: colorField, title: "Parameter" },
             { field: "binned_value", title: "Value" },
             {
               field: "percent_clamped",

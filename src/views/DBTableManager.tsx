@@ -1,5 +1,5 @@
 // TableManager.tsx
-import React, { useState, useEffect, FC } from "react";
+import React, { useState, useEffect, useRef, FC } from "react";
 import {
   Card,
   CardContent,
@@ -222,7 +222,7 @@ export const loadItemOptions = async (groupItemId: string) => {
  */
 export const buildQcDataQuery = (
   params: Record<string, string>,
-  overrides?: { from_date?: string; to_date?: string },
+  overrides?: { from_date?: string; to_date?: string; is_live?: boolean },
 ): { query: string; name_as: string } | null => {
   const merged = { ...params, ...overrides };
   const from = (merged["from_date"] ?? "").toString().replace(/-/g, "");
@@ -268,7 +268,12 @@ export const buildQcDataQuery = (
   if (safeOperation) query += ` AND OPERATIONOID ='${safeOperation}'`;
   query += " ORDER BY LASTUPDATE";
 
-  return { query, name_as: safeParam.replace(" ", "-") };
+  // Use _live suffix when in Data Live mode, otherwise use base parameter name
+  // Allows storing live data separately from original data without conflicts
+  const paramName = safeParam.replace(" ", "-");
+  const name_as = overrides?.is_live ? `${paramName}_live` : paramName;
+
+  return { query, name_as };
 };
 
 export const handleDBDownload = async (sessionId: string) => {
@@ -488,6 +493,12 @@ export const DBTableSelectionDialog: React.FC<{
   const [selectedTabKey, setSelectedTabKey] = useState("");
 
   const [isUploading, setIsUploading] = useState<boolean>(false);
+
+  // Maps table name → QC loader params used when that table was ingested.
+  // Used so each virtual table remembers its own query params independently.
+  const pendingLoaderParamsRef = useRef<Record<string, Record<string, string>>>(
+    {},
+  );
 
   let setSystemMessage = (
     content: string,
@@ -916,6 +927,7 @@ export const DBTableSelectionDialog: React.FC<{
       virtual: {
         tableId: dbTable.name,
         rowCount: dbTable.row_count,
+        loaderParams: pendingLoaderParamsRef.current[dbTable.name],
       },
       anchored: true, // by default, db tables are anchored
       createdBy: "user",
@@ -1314,6 +1326,9 @@ export const DBTableSelectionDialog: React.FC<{
                     authInstructions={metadata.auth_instructions}
                     onImport={() => {
                       setIsUploading(true);
+                    }}
+                    onQcLoadSuccess={(tableName, loaderParams) => {
+                      pendingLoaderParamsRef.current[tableName] = loaderParams;
                     }}
                     onFinish={(status, message) => {
                       setIsUploading(false);
@@ -1735,7 +1750,15 @@ export const DataLoaderForm: React.FC<{
   authInstructions: string;
   onImport: () => void;
   onFinish: (status: "success" | "error", message: string) => void;
-}> = ({ dataLoaderType, paramDefs, authInstructions, onImport, onFinish }) => {
+  onQcLoadSuccess?: (tableName: string, params: Record<string, string>) => void;
+}> = ({
+  dataLoaderType,
+  paramDefs,
+  authInstructions,
+  onImport,
+  onFinish,
+  onQcLoadSuccess,
+}) => {
   const dispatch = useDispatch();
   const theme = useTheme();
   const params = useSelector(
@@ -2481,8 +2504,8 @@ export const DataLoaderForm: React.FC<{
                       setIsConnecting(false);
                       return;
                     }
-                    if (!operation) {
-                      onFinish("error", "Please select Operation");
+                    if (!itemGroup) {
+                      onFinish("error", "Please select Item Group");
                       setIsConnecting(false);
                       return;
                     }
@@ -2566,6 +2589,11 @@ export const DataLoaderForm: React.FC<{
                       );
                       const data = await response.json();
                       if (data.status === "success") {
+                        // Notify parent with the params used so it can store them per-table
+                        onQcLoadSuccess?.(
+                          safeParam.trim().replace(" ", "-"),
+                          params,
+                        );
                         onFinish("success", "QC data loaded successfully");
                         // refresh tables so qc_data appears in DB list (if backend inserts it into main)
                         setTableMetadata({});
@@ -2700,6 +2728,785 @@ export const DataLoaderForm: React.FC<{
 
       {Object.keys(tableMetadata).length > 0 && tableMetadataBox}
     </Box>
+  );
+};
+
+// QCDataDialog - Simplified dialog for quick QC Data import
+export const QCDataDialog: React.FC<{
+  buttonElement: any;
+  sx?: SxProps;
+}> = function QCDataDialog({ buttonElement, sx }) {
+  const theme = useTheme();
+  const dispatch = useDispatch<AppDispatch>();
+  const tables = useSelector((state: DataFormulatorState) => state.tables);
+  const serverConfig = useSelector(
+    (state: DataFormulatorState) => state.serverConfig,
+  );
+
+  const [qcDialogOpen, setQcDialogOpen] = useState<boolean>(false);
+  const [dataLoaderMetadata, setDataLoaderMetadata] = useState<
+    Record<
+      string,
+      {
+        params: {
+          name: string;
+          default: string;
+          type: string;
+          required: boolean;
+          description: string;
+        }[];
+        auth_instructions: string;
+      }
+    >
+  >({});
+
+  const [dbTables, setDbTables] = useState<DBTable[]>([]);
+  const [selectedTabKey, setSelectedTabKey] = useState("");
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [tableAnalysisMap, setTableAnalysisMap] = useState<
+    Record<string, ColumnStatistics[] | null>
+  >({});
+  const [pendingTableToSelect, setPendingTableToSelect] = useState<string>("");
+  const pendingLoaderParamsRef = useRef<Record<string, Record<string, string>>>(
+    {},
+  );
+
+  let setSystemMessage = (
+    content: string,
+    severity: "error" | "warning" | "info" | "success",
+  ) => {
+    dispatch(
+      dfActions.addMessages({
+        timestamp: Date.now(),
+        component: "QC Data loader",
+        type: severity,
+        value: content,
+      }),
+    );
+  };
+
+  // Auto-select pending table when dbTables updates
+  useEffect(() => {
+    if (pendingTableToSelect && dbTables.length > 0) {
+      const tableExists = dbTables.some((t) => t.name === pendingTableToSelect);
+      if (tableExists) {
+        setSelectedTabKey(pendingTableToSelect);
+        setPendingTableToSelect("");
+      }
+    }
+  }, [dbTables, pendingTableToSelect]);
+
+  useEffect(() => {
+    if (qcDialogOpen) {
+      fetchDataLoaders();
+      fetchTables();
+    }
+  }, [qcDialogOpen]);
+
+  const fetchDataLoaders = async () => {
+    fetch(getUrls().DATA_LOADER_LIST_DATA_LOADERS, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.status === "success") {
+          setDataLoaderMetadata(data.data_loaders);
+        } else {
+          console.error("Failed to fetch data loader params:", data.error);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to fetch data loader params:", error);
+      });
+  };
+
+  const fetchTables = async () => {
+    if (serverConfig.DISABLE_DATABASE) return;
+    try {
+      const response = await fetch(getUrls().LIST_TABLES);
+      const data = await response.json();
+      if (data.status === "success") {
+        setDbTables(data.tables);
+        return data.tables;
+      }
+    } catch (error) {
+      setSystemMessage("Failed to fetch tables", "error");
+    }
+    return [];
+  };
+
+  const handleQcLoadSuccess = async (
+    tableName: string,
+    loaderParams: Record<string, string>,
+  ) => {
+    pendingLoaderParamsRef.current[tableName] = loaderParams;
+    setPendingTableToSelect(tableName); // Mark table to be selected
+    await fetchTables(); // Fetch tables to update dbTables state
+  };
+
+  const handleAnalyzeData = async (tableName: string) => {
+    if (!tableName) return;
+    if (tableAnalysisMap[tableName]) return;
+
+    try {
+      const response = await fetch(getUrls().GET_COLUMN_STATS, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ table_name: tableName }),
+      });
+      const data = await response.json();
+      if (data.status === "success") {
+        setTableAnalysisMap((prevMap) => ({
+          ...prevMap,
+          [tableName]: data.statistics,
+        }));
+      }
+    } catch (error) {
+      setSystemMessage("Failed to analyze table data", "error");
+    }
+  };
+
+  const toggleAnalysisView = (tableName: string) => {
+    if (tableAnalysisMap[tableName]) {
+      setTableAnalysisMap((prevMap) => {
+        const newMap = { ...prevMap };
+        delete newMap[tableName];
+        return newMap;
+      });
+    } else {
+      handleAnalyzeData(tableName);
+    }
+  };
+
+  const handleAddTableToDF = (dbTable: DBTable) => {
+    const convertSqlTypeToAppType = (sqlType: string): Type => {
+      sqlType = sqlType.toUpperCase();
+      if (
+        sqlType.includes("INT") ||
+        sqlType === "BIGINT" ||
+        sqlType === "SMALLINT" ||
+        sqlType === "TINYINT"
+      ) {
+        return Type.Integer;
+      } else if (
+        sqlType.includes("FLOAT") ||
+        sqlType.includes("DOUBLE") ||
+        sqlType.includes("DECIMAL") ||
+        sqlType.includes("NUMERIC") ||
+        sqlType.includes("REAL")
+      ) {
+        return Type.Number;
+      } else if (sqlType.includes("BOOL")) {
+        return Type.Boolean;
+      } else if (
+        sqlType.includes("DATE") ||
+        sqlType.includes("TIME") ||
+        sqlType.includes("TIMESTAMP")
+      ) {
+        return Type.Date;
+      } else {
+        return Type.String;
+      }
+    };
+
+    const sanitizedRows = dbTable.sample_rows.map((row: any) => {
+      const r = { ...row };
+      if (r.VALUE !== undefined && r.VALUE !== null) {
+        const numValue = Number(r.VALUE);
+        r.VALUE = isNaN(numValue) ? r.VALUE : numValue;
+      }
+      return r;
+    });
+
+    const sanitizedColumns = dbTable.columns.filter(
+      (c: any) => c.name !== "VALUE_NUM" && c.name !== "VALUE_IS_NUM",
+    );
+
+    let table: DictTable = {
+      id: dbTable.name,
+      displayId: dbTable.name,
+      names: sanitizedColumns.map((col: any) => col.name),
+      metadata: sanitizedColumns.reduce(
+        (
+          acc: Record<
+            string,
+            { type: Type; semanticType: string; levels: any[] }
+          >,
+          col: any,
+        ) => ({
+          ...acc,
+          [col.name]: {
+            type: convertSqlTypeToAppType(col.type),
+            semanticType: "",
+            levels: [],
+          },
+        }),
+        {},
+      ),
+      rows: sanitizedRows,
+      virtual: {
+        tableId: dbTable.name,
+        rowCount: dbTable.row_count,
+        loaderParams: pendingLoaderParamsRef.current[dbTable.name],
+      },
+      anchored: true,
+      createdBy: "user",
+      attachedMetadata: "",
+    };
+    dispatch(dfActions.replaceTable(table));
+    dispatch(fetchFieldSemanticType(table));
+    setQcDialogOpen(false);
+  };
+
+  const handleDeleteTable = async (tableName: string) => {
+    try {
+      const response = await fetch(getUrls().DELETE_TABLE, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ table_name: tableName }),
+      });
+      const data = await response.json();
+      if (data.status === "success") {
+        setDbTables((prevTables) =>
+          prevTables.filter((t) => t.name !== tableName),
+        );
+        setTableAnalysisMap((prevMap) => {
+          const newMap = { ...prevMap };
+          delete newMap[tableName];
+          return newMap;
+        });
+        setSelectedTabKey("");
+        setSystemMessage(`Table ${tableName} deleted successfully`, "success");
+      } else {
+        setSystemMessage(data.error || "Failed to delete table", "error");
+      }
+    } catch (error) {
+      setSystemMessage("Failed to delete table", "error");
+    }
+  };
+
+  const handleDownloadTable = async (tableName: string) => {
+    try {
+      const response = await fetch(getUrls().SAMPLE_TABLE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          table: tableName,
+          size: 999999,
+          method: "head",
+          range_start: 0,
+          range_size: 999999,
+        }),
+      });
+      const result = await response.json();
+      if (
+        result.status !== "success" ||
+        !result.rows ||
+        result.rows.length === 0
+      ) {
+        throw new Error("No data available for this table");
+      }
+      const rows = result.rows;
+      if (
+        !Array.isArray(rows) ||
+        rows.length === 0 ||
+        typeof rows[0] !== "object"
+      ) {
+        throw new Error("No valid data to export");
+      }
+
+      // Convert to CSV
+      const headers = Object.keys(rows[0]);
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) =>
+          headers
+            .map((h) => {
+              const value = row[h];
+              if (value === null || value === undefined) {
+                return "";
+              }
+              const stringValue = String(value);
+              if (stringValue.includes(",") || stringValue.includes('"')) {
+                return `"${stringValue.replace(/"/g, '""')}"`;
+              }
+              return stringValue;
+            })
+            .join(","),
+        ),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${tableName}.csv`);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setSystemMessage(`Table ${tableName} downloaded successfully`, "success");
+    } catch (error) {
+      setSystemMessage(`Failed to download table: ${error}`, "error");
+    }
+  };
+
+  let qcDataLoaderPanel = (
+    <Box
+      sx={{
+        p: 1,
+        display: "flex",
+        flexDirection: "column",
+        backgroundColor: alpha(theme.palette.secondary.main, 0.02),
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "center", px: 1, mb: 1 }}>
+        <Typography
+          variant="caption"
+          sx={{
+            color: "text.disabled",
+            fontWeight: "500",
+            flexGrow: 1,
+            fontSize: "0.75rem",
+          }}
+        >
+          Data Connector
+        </Typography>
+      </Box>
+
+      <Button
+        variant="text"
+        size="small"
+        sx={{
+          textTransform: "none",
+          width: 120,
+          justifyContent: "flex-start",
+          textAlign: "left",
+          borderRadius: 0,
+          py: 0.5,
+          px: 2,
+          color: "secondary.main",
+          borderRight: 2,
+          borderColor: "secondary.main",
+        }}
+      >
+        <Typography
+          fontSize="inherit"
+          sx={{
+            textTransform: "none",
+            width: "calc(100% - 4px)",
+            textAlign: "left",
+            textOverflow: "ellipsis",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+          }}
+        >
+          QC_Data
+        </Typography>
+      </Button>
+    </Box>
+  );
+
+  let qcDataTablePanel = (
+    <Box
+      sx={{
+        px: 0.5,
+        pt: 1,
+        display: "flex",
+        flexDirection: "column",
+        backgroundColor: alpha(theme.palette.primary.main, 0.02),
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "center", px: 1, mb: 1 }}>
+        <Typography
+          variant="caption"
+          sx={{
+            color: "text.disabled",
+            fontWeight: "500",
+            flexGrow: 1,
+            fontSize: "0.75rem",
+          }}
+        >
+          Data Tables
+        </Typography>
+        <Tooltip title="refresh the table list">
+          <IconButton
+            size="small"
+            color="primary"
+            sx={{
+              "&:hover": {
+                transform: "rotate(180deg)",
+              },
+              transition: "transform 0.3s ease-in-out",
+            }}
+            onClick={() => {
+              fetchTables();
+            }}
+          >
+            <RefreshIcon sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {dbTables.length == 0 && (
+        <Typography
+          variant="caption"
+          sx={{ color: "lightgray", px: 2, py: 0.5, fontStyle: "italic" }}
+        >
+          no tables available
+        </Typography>
+      )}
+
+      <Button
+        variant="text"
+        size="small"
+        color="primary"
+        onClick={() => {
+          setSelectedTabKey("");
+        }}
+        sx={{
+          textTransform: "none",
+          width: 160,
+          justifyContent: "flex-start",
+          textAlign: "left",
+          borderRadius: 0,
+          py: 0.5,
+          px: 2,
+          color: selectedTabKey === "" ? "primary.main" : "text.secondary",
+          borderRight: selectedTabKey === "" ? 2 : 0,
+        }}
+      >
+        <Typography
+          fontSize="inherit"
+          sx={{
+            width: "calc(100% - 4px)",
+            textAlign: "left",
+            textOverflow: "ellipsis",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+          }}
+        >
+          ← New Query
+        </Typography>
+      </Button>
+
+      {dbTables
+        //.filter((t) => !t.name.endsWith("_live"))
+        .map((t, i) => (
+          <Box
+            key={t.name}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              borderRadius: 0,
+              py: 0.5,
+              px: 0,
+              backgroundColor:
+                selectedTabKey === t.name
+                  ? "rgba(25, 118, 210, 0.08)"
+                  : "transparent",
+              borderRight: selectedTabKey === t.name ? 2 : 0,
+              borderColor: "primary.main",
+            }}
+          >
+            <Button
+              variant="text"
+              size="small"
+              color="primary"
+              onClick={() => {
+                setSelectedTabKey(t.name);
+              }}
+              sx={{
+                textTransform: "none",
+                flex: 1,
+                justifyContent: "flex-start",
+                textAlign: "left",
+                borderRadius: 0,
+                py: 0.5,
+                px: 2,
+                color:
+                  selectedTabKey === t.name ? "primary.main" : "text.secondary",
+              }}
+            >
+              <Typography
+                fontSize="inherit"
+                sx={{
+                  width: "100%",
+                  textAlign: "left",
+                  textOverflow: "ellipsis",
+                  overflow: "hidden",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {t.name}
+              </Typography>
+            </Button>
+            <Tooltip title="delete table">
+              <IconButton
+                size="small"
+                color="error"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteTable(t.name);
+                }}
+                sx={{
+                  py: 0.5,
+                  px: 0.5,
+                  mr: 0.5,
+                }}
+              >
+                <DeleteIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        ))}
+    </Box>
+  );
+
+  let qcDataView = (
+    <Box sx={{ flex: 1, width: 880, overflow: "auto", p: 2 }}>
+      {/* QC Data Loader Form */}
+      {selectedTabKey === "" && dataLoaderMetadata["QC_Data"] && (
+        <Box sx={{ position: "relative", maxWidth: "100%" }}>
+          <DataLoaderForm
+            dataLoaderType="QC_Data"
+            paramDefs={dataLoaderMetadata["QC_Data"].params}
+            authInstructions={dataLoaderMetadata["QC_Data"].auth_instructions}
+            onImport={() => {
+              setIsUploading(true);
+            }}
+            onQcLoadSuccess={(tableName, loaderParams) => {
+              handleQcLoadSuccess(tableName, loaderParams);
+            }}
+            onFinish={(status, message) => {
+              setIsUploading(false);
+              if (status === "success") {
+                setSystemMessage(message, "success");
+              } else {
+                setSystemMessage(message, "error");
+              }
+            }}
+          />
+        </Box>
+      )}
+
+      {/* Table View */}
+      {dbTables
+        .filter((t) => !t.name.endsWith("_live"))
+        .map((t, i) => {
+          if (selectedTabKey !== t.name) return null;
+
+          const currentTable = t;
+          const showingAnalysis =
+            tableAnalysisMap[currentTable.name] !== undefined;
+          return (
+            <Box
+              key={t.name}
+              sx={{
+                maxWidth: "100%",
+                overflowX: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: 1,
+              }}
+            >
+              <Paper variant="outlined">
+                <Box
+                  sx={{
+                    px: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    borderBottom: "1px solid rgba(0,0,0,0.1)",
+                  }}
+                >
+                  <Typography variant="caption">
+                    {showingAnalysis
+                      ? "column stats for "
+                      : "sample data from "}
+                    <Typography
+                      component="span"
+                      sx={{ fontSize: 12, fontWeight: "bold" }}
+                    >
+                      {currentTable.name}
+                    </Typography>
+                    <Typography
+                      component="span"
+                      sx={{ ml: 1, fontSize: 10, color: "text.secondary" }}
+                    >
+                      ({currentTable.columns.length} columns ×{" "}
+                      {currentTable.row_count} rows)
+                    </Typography>
+                  </Typography>
+                  <Box sx={{ marginLeft: "auto", display: "flex", gap: 1 }}>
+                    <Button
+                      size="small"
+                      color={showingAnalysis ? "secondary" : "primary"}
+                      onClick={() => toggleAnalysisView(currentTable.name)}
+                      startIcon={<AnalyticsIcon fontSize="small" />}
+                      sx={{ textTransform: "none" }}
+                    >
+                      {showingAnalysis
+                        ? "show data samples"
+                        : "show column stats"}
+                    </Button>
+                  </Box>
+                </Box>
+                {showingAnalysis ? (
+                  <TableStatisticsView
+                    tableName={currentTable.name}
+                    columnStats={tableAnalysisMap[currentTable.name] ?? []}
+                  />
+                ) : (
+                  <CustomReactTable
+                    rows={currentTable.sample_rows
+                      .map((row: any) => {
+                        const r = { ...row };
+                        if (r.VALUE_NUM !== undefined && r.VALUE_NUM !== null) {
+                          r.VALUE = r.VALUE_NUM;
+                        }
+                        delete r.VALUE_NUM;
+                        delete r.VALUE_IS_NUM;
+
+                        return Object.fromEntries(
+                          Object.entries(r).map(
+                            ([key, value]: [string, any]) => {
+                              return [key, String(value)];
+                            },
+                          ),
+                        );
+                      })
+                      .slice(0, 9)}
+                    columnDefs={currentTable.columns
+                      .filter(
+                        (col) =>
+                          col.name !== "VALUE_NUM" &&
+                          col.name !== "VALUE_IS_NUM",
+                      )
+                      .map((col) => ({
+                        id: col.name,
+                        label: col.name,
+                        minWidth: 60,
+                      }))}
+                    rowsPerPageNum={-1}
+                    compact={false}
+                    isIncompleteTable={currentTable.row_count > 10}
+                  />
+                )}
+              </Paper>
+              <Box sx={{ display: "flex", gap: 1, ml: "auto" }}>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={() => {
+                    setSelectedTabKey("");
+                  }}
+                >
+                  ← New Query
+                </Button>
+                <Tooltip title="download table as csv">
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<DownloadIcon fontSize="small" />}
+                    onClick={() => {
+                      handleDownloadTable(currentTable.name);
+                    }}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Download
+                  </Button>
+                </Tooltip>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={() => {
+                    handleAddTableToDF(currentTable);
+                  }}
+                >
+                  Use Data
+                </Button>
+              </Box>
+            </Box>
+          );
+        })}
+    </Box>
+  );
+
+  return (
+    <>
+      <Tooltip title="QC Data loader">
+        <Box
+          onClick={() => setQcDialogOpen(true)}
+          sx={{
+            cursor: serverConfig.DISABLE_DATABASE ? "not-allowed" : "pointer",
+            display: "inline-block",
+            opacity: serverConfig.DISABLE_DATABASE ? 0.5 : 1,
+            pointerEvents: serverConfig.DISABLE_DATABASE ? "none" : "auto",
+          }}
+        >
+          {buttonElement}
+        </Box>
+      </Tooltip>
+      <Dialog
+        open={qcDialogOpen}
+        onClose={() => setQcDialogOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        sx={{
+          "& .MuiDialog-paper": {
+            maxHeight: 700,
+          },
+        }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center" }}>
+          QC Data Loader
+          <IconButton
+            sx={{ marginLeft: "auto" }}
+            edge="start"
+            size="small"
+            color="inherit"
+            aria-label="close"
+            onClick={() => setQcDialogOpen(false)}
+          >
+            <CloseIcon fontSize="inherit" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0 }}>
+          <Box sx={{ display: "flex", height: "inherit" }}>
+            <Box
+              sx={{
+                width: 170,
+                borderRight: "1px solid rgba(0,0,0,0.1)",
+                overflow: "auto",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              {qcDataLoaderPanel}
+              <Box
+                sx={{
+                  flex: 1,
+                  overflow: "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                {qcDataTablePanel}
+              </Box>
+            </Box>
+            {qcDataView}
+          </Box>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

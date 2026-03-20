@@ -380,7 +380,6 @@ export const fetchCodeExpl = createAsyncThunk(
 export const fetchAvailableModels = createAsyncThunk(
   "dataFormulatorSlice/fetchAvailableModels",
   async () => {
-    console.log(">>> call agent to fetch available models <<<");
     let message = {
       method: "POST",
       headers: { "Content-Type": "application/json" },

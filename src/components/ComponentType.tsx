@@ -109,6 +109,7 @@ export interface DictTable {
   virtual?: {
     tableId: string; // the id of the virtual table in the database
     rowCount: number; // total number of rows in the full table
+    loaderParams?: Record<string, string>; // original data-loader params used to ingest this table
   };
   anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
   createdBy: "user" | "agent"; // whether this table is created by the user or the agent
