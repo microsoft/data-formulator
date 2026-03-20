@@ -76,6 +76,7 @@
     "saveSession": "Save session",
     "openSession": "Open session...",
     "quickResume": "Quick resume",
+    "localFile": "local file",
     "exportToFile": "Export to file",
     "exporting": "Exporting...",
     "sessionExported": "Session exported",

@@ -76,6 +76,7 @@
     "saveSession": "保存会话",
     "openSession": "打开会话...",
     "quickResume": "快速恢复",
+    "localFile": "本地文件",
     "exportToFile": "导出到文件",
     "exporting": "导出中...",
     "sessionExported": "会话已导出",

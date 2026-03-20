@@ -49,9 +49,9 @@ import {
 
 
 import MuiAppBar from '@mui/material/AppBar';
-import { alpha, createTheme, styled, ThemeProvider } from '@mui/material/styles';
+import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
 
-import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
@@ -202,6 +202,7 @@ const TableMenu: React.FC = () => {
     );
 };
 
+
 const SaveSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
     const [sessionName, setSessionName] = useState('');
     const [saving, setSaving] = useState(false);
@@ -334,7 +335,7 @@ const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 {t('session.loadTitle')}
                 <Tooltip title={t('session.refreshList')}>
-                    <IconButton size="small" onClick={fetchSessions} disabled={listLoading}>
+                    <IconButton size="small" onClick={fetchSessions} disabled={listLoading} sx={{ color: 'text.secondary' }}>
                         {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
                     </IconButton>
                 </Tooltip>
@@ -374,7 +375,7 @@ const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open
                                 </Box>
                             ) : (
                                 <Tooltip title={t('session.deleteSession')}>
-                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.name); }}>
+                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.name); }} sx={{ color: 'text.secondary' }}>
                                         <ClearIcon fontSize="small" />
                                     </IconButton>
                                 </Tooltip>
@@ -400,6 +401,8 @@ const SessionMenu: React.FC = () => {
     const open = Boolean(anchorEl);
     const dispatch = useDispatch();
     const { t } = useTranslation();
+    const theme = useTheme();
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
 
@@ -517,56 +520,70 @@ const SessionMenu: React.FC = () => {
                 anchorEl={anchorEl}
                 open={open}
                 onClose={closeMenu}
-                slotProps={{ paper: { sx: { minWidth: 200 } } }}
+                slotProps={{
+                    paper: { sx: { py: '4px', px: '8px', minWidth: 140 } }
+                }}
+                sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
             >
                 <Tooltip title={diskPersistenceDisabled ? t('session.installLocallyHint') : ""} placement="right">
                     <span>
-                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setSaveDialogOpen(true); closeMenu(); }}
-                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <SaveIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> {t('session.saveSession')}
+                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setSaveDialogOpen(true); closeMenu(); }}>
+                            <Button variant="text" startIcon={<SaveIcon />}
+                                sx={{ textTransform: 'none' }}>
+                                {t('session.saveSession')}
+                            </Button>
                         </MenuItem>
                     </span>
                 </Tooltip>
                 <Tooltip title={diskPersistenceDisabled ? t('session.installLocallyHint') : ""} placement="right">
                     <span>
-                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setLoadDialogOpen(true); closeMenu(); }}
-                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <FolderOpenIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> {t('session.openSession')}
+                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setLoadDialogOpen(true); closeMenu(); }}>
+                            <Button variant="text" startIcon={<FolderOpenIcon />}
+                                sx={{ textTransform: 'none' }}>
+                                {t('session.openSession')}
+                            </Button>
                         </MenuItem>
                     </span>
                 </Tooltip>
 
                 {!diskPersistenceDisabled && recentSessions.length > 0 && [
-                    <Divider key="div-recent" />,
-                    <Typography key="label-recent" variant="caption" sx={{ px: 2, py: 0.5, color: 'text.secondary', display: 'block', fontSize: 10 }}>
-                        {t('session.quickResume')}
-                    </Typography>,
+                    <Divider key="div-recent" sx={{ my: 1 }}><Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>{t('session.quickResume')}</Typography></Divider>,
                     ...recentSessions.map(s => (
-                        <MenuItem key={s.name} onClick={() => handleLoadSession(s.name)}
-                            sx={{ pl: 4, py: 0.25, minHeight: 0, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-                            <Typography noWrap sx={{ fontSize: 12 }}>{s.name}</Typography>
-                            <Typography noWrap sx={{ fontSize: 10, color: 'text.secondary', flexShrink: 0 }}>
-                                {new Date(s.saved_at).toLocaleDateString()}
-                            </Typography>
+                        <MenuItem key={s.name} onClick={() => handleLoadSession(s.name)}>
+                            <Button variant="text" sx={{ textTransform: 'none', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                <Typography noWrap sx={{ fontSize: 14 }}>{s.name}</Typography>
+                                <Typography noWrap sx={{ fontSize: 10, color: 'text.secondary', flexShrink: 0, ml: 2 }}>
+                                    {new Date(s.saved_at).toLocaleDateString()}
+                                </Typography>
+                            </Button>
                         </MenuItem>
                     )),
                 ]}
 
-                <Divider />
-                <MenuItem onClick={handleExport} disabled={exporting}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <DownloadIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> {exporting ? t('session.exporting') : t('session.exportToFile')}
+                <Divider sx={{ my: 1 }}><Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>{t('session.localFile')}</Typography></Divider>
+                {tables.some(t => t.virtual) && 
+                    <Typography fontSize="inherit" sx={{ color: theme.palette.warning.main, width: '160px', display: 'flex', alignItems: 'center', gap: 1, fontSize: 9 }}>
+                        {t('session.containsDatabaseWarning')}
+                    </Typography>}
+                <MenuItem onClick={handleExport} disabled={exporting}>
+                    <Button variant="text" startIcon={<DownloadIcon />}
+                        sx={{ textTransform: 'none' }}>
+                        {exporting ? t('session.exporting') : t('session.exportToFile')}
+                    </Button>
                 </MenuItem>
-                <MenuItem onClick={() => importRef.current?.click()}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <UploadFileIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> {t('session.importFromFile')}
-                    <input
-                        type="file"
-                        hidden
-                        accept=".dfsession,.zip"
-                        ref={importRef}
-                        onChange={handleImport}
-                    />
+                <MenuItem onClick={() => importRef.current?.click()}>
+                    <Button variant="text" startIcon={<UploadFileIcon />}
+                        sx={{ textTransform: 'none' }}
+                        component="label">
+                        {t('session.importFromFile')}
+                        <input
+                            type="file"
+                            hidden
+                            accept=".dfsession,.zip"
+                            ref={importRef}
+                            onChange={handleImport}
+                        />
+                    </Button>
                 </MenuItem>
             </Menu>
             <SaveSessionDialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} />
@@ -603,7 +620,7 @@ const ResetDialog: React.FC = () => {
                 variant="text" 
                 sx={{textTransform: 'none'}}
                 onClick={() => setOpen(true)} 
-                endIcon={<PowerSettingsNewIcon />}
+                endIcon={<RestartAltIcon />}
             >
                 {t('session.exitButton')}
             </Button>
@@ -619,7 +636,7 @@ const ResetDialog: React.FC = () => {
                     <Button 
                         disabled={exiting}
                         onClick={handleExit}
-                        endIcon={<PowerSettingsNewIcon />}
+                        endIcon={<RestartAltIcon />}
                     >
                         {t('session.exitAction')}
                     </Button>
@@ -1205,9 +1222,11 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <TableMenu />
                         </Typography>
+                        <Divider orientation="vertical" variant="middle" flexItem />
                         <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <SessionMenu />
                         </Typography>
+                        <Divider orientation="vertical" variant="middle" flexItem />
                         {tables.length > 0 && <ResetDialog />}
                     </Box>
                 )}
