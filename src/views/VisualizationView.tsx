@@ -251,7 +251,7 @@ export let SampleSizeEditor: FC<{
                 horizontal: 'left',
             }}
         >
-            <Box sx={{ p: 2, width: 300 }}>
+            <Box sx={{ p: 2, width: 310 }}>
                 <Typography fontSize="small" gutterBottom>
                     {t('chart.adjustSampleSize', { sampleSize: localSampleSize, totalSize })}
                 </Typography>

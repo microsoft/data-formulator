@@ -652,7 +652,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
 
     let channelComponent = (
-        <Box sx={{ width: "100%", minWidth: "246px", height: '100%', display: "flex", flexDirection: "column", gap: '4px' }}>
+        <Box sx={{ width: "100%", minWidth: "256px", height: '100%', display: "flex", flexDirection: "column", gap: '4px' }}>
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto', display: 'flex', alignItems: 'center' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, flex: 1, margin: "0px 0"}} size="small">
                     <Select

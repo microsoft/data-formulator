@@ -834,7 +834,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                             aria-label={t('encoding.axisSettings')} component="span"
                             size="small" sx={{
                                 padding: "0px", borderRadius: 0, textAlign: "left", fontSize: "inherit", height: "auto",
-                                position: "relative", borderRight: "1px solid lightgray", width: '74px', 
+                                position: "relative", borderRight: "1px solid lightgray", width: '84px', 
                                 display: "flex", justifyContent: "space-between"
                             }}>
                             <Typography variant="caption" component="span" sx={{ padding: "0px 0px 0px 6px" }}>{channelDisplay}</Typography>
@@ -843,7 +843,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         </IconButton>
                         </Tooltip>
                         <Box sx={{
-                            backgroundColor: backgroundColor, width: "calc(100% - 74px)",
+                            backgroundColor: backgroundColor, width: "calc(100% - 84px)",
                             display: "flex", borderBottom: (editMode ? "1px solid rgba(0, 0, 0, 0.12)" : undefined)
                         }}>
                             {encContent}
