@@ -74,7 +74,7 @@ Check if the user's "chart" (chart_type + encodings) is sufficient for their "go
 
 class DataTransformationAgent(object):
 
-    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", max_display_rows=10000):
+    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", language_instruction="", max_display_rows=10000):
         self.client = client
         self.workspace = workspace
         self.max_display_rows = max_display_rows
@@ -88,6 +88,9 @@ class DataTransformationAgent(object):
                 self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should prioritize user instructions.\n\n" + agent_coding_rules.strip()
             else:
                 self.system_prompt = base_prompt
+
+        if language_instruction:
+            self.system_prompt = self.system_prompt + "\n\n" + language_instruction
 
 
     def process_gpt_response(self, response, messages, t_llm=None):

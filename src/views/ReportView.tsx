@@ -39,7 +39,7 @@ import html2canvas from 'html2canvas';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
 import { Message } from './MessageSnackbar';
-import { getUrls, assembleVegaChart, getTriggers, prepVisTable, fetchWithIdentity } from '../app/utils';
+import { getUrls, assembleVegaChart, getTriggers, prepVisTable, fetchWithIdentity, getAgentLanguage } from '../app/utils';
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 import embed from 'vega-embed';
 import { getDataTable } from './VisualizationView';

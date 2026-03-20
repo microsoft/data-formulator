@@ -271,7 +271,7 @@ export const SimpleChartRecBox: FC = function () {
                     attached_metadata: t.attachedMetadata
                 })),
                 exploration_thread: explorationThread,
-                agent_exploration_rules: agentRules.exploration
+                agent_exploration_rules: agentRules.exploration,
             });
 
             const controller = new AbortController();

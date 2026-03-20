@@ -130,8 +130,22 @@ declare module '@mui/material/styles' {
 
 export const toolName = "Data Formulator"
 
+const LANGUAGE_LABELS: Record<string, string> = {
+    en: 'EN',
+    zh: '中文',
+    ja: '日本語',
+    ko: '한국어',
+    fr: 'FR',
+    de: 'DE',
+};
+
 const LanguageSwitcher: React.FC = () => {
     const { i18n } = useTranslation();
+    const availableLanguages = useSelector(
+        (state: DataFormulatorState) => state.serverConfig.AVAILABLE_LANGUAGES
+    );
+
+    if (!availableLanguages || availableLanguages.length <= 1) return null;
 
     return (
         <ToggleButtonGroup
@@ -151,8 +165,11 @@ const LanguageSwitcher: React.FC = () => {
                 },
             }}
         >
-            <ToggleButton value="en">EN</ToggleButton>
-            <ToggleButton value="zh">中文</ToggleButton>
+            {availableLanguages.map(lang => (
+                <ToggleButton key={lang} value={lang}>
+                    {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
+                </ToggleButton>
+            ))}
         </ToggleButtonGroup>
     );
 };

@@ -62,6 +62,9 @@ app.config['CLI_ARGS'] = {
     'azure_blob_connection_string': os.environ.get('AZURE_BLOB_CONNECTION_STRING', None),
     'azure_blob_account_url': os.environ.get('AZURE_BLOB_ACCOUNT_URL', None),
     'azure_blob_container': os.environ.get('AZURE_BLOB_CONTAINER', 'data-formulator'),
+    'available_languages': [
+        lang.strip() for lang in os.environ.get('AVAILABLE_LANGUAGES', 'en,zh').split(',') if lang.strip()
+    ],
 }
 
 # Get logger for this module (logging config moved to run_app function)
@@ -161,6 +164,7 @@ def get_app_config():
         "MAX_DISPLAY_ROWS": args['max_display_rows'],
         "DEV_MODE": args.get('dev', False),
         "WORKSPACE_BACKEND": args.get('workspace_backend', 'local'),
+        "AVAILABLE_LANGUAGES": args.get('available_languages', ['en', 'zh']),
     }
 
     if not args['disable_database']:
@@ -235,6 +239,9 @@ def run_app():
         'azure_blob_connection_string': args.azure_blob_connection_string,
         'azure_blob_account_url': args.azure_blob_account_url,
         'azure_blob_container': args.azure_blob_container,
+        'available_languages': [
+            lang.strip() for lang in os.environ.get('AVAILABLE_LANGUAGES', 'en,zh').split(',') if lang.strip()
+        ],
     }
     
     # Register blueprints (this is where heavy imports happen)

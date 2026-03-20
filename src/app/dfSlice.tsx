@@ -44,6 +44,7 @@ export interface ServerConfig {
     DISABLE_FILE_UPLOAD: boolean;
     PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
+    AVAILABLE_LANGUAGES: string[];
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
     WORKSPACE_BACKEND: string; // 'local' | 'azure_blob'
@@ -178,6 +179,7 @@ const initialState: DataFormulatorState = {
         DISABLE_FILE_UPLOAD: false,
         PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
+        AVAILABLE_LANGUAGES: ['en', 'zh'],
         DEV_MODE: false,
         WORKSPACE_BACKEND: 'local',
     },

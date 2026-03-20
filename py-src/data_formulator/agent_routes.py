@@ -36,9 +36,19 @@ from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
 
 from data_formulator.agents.data_agent import DataAgent
+from data_formulator.agents.agent_language import build_language_instruction
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
+
+
+def get_language_instruction(*, mode: str = "full") -> str:
+    """Read the UI language from the Accept-Language header and build the prompt instruction.
+
+    mode: "full" for text-heavy agents, "compact" for code-generation agents.
+    """
+    lang = request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0].strip().lower()
+    return build_language_instruction(lang, mode=mode)
 
 
 def get_temp_tables(workspace, input_tables: list[dict]) -> list[dict]:
@@ -249,7 +259,8 @@ def process_data_on_load_request():
             temp_data = get_temp_tables(workspace, input_tables)
             
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                agent = DataLoadAgent(client=client, workspace=workspace)
+                language_instruction = get_language_instruction(mode="compact")
+                agent = DataLoadAgent(client=client, workspace=workspace, language_instruction=language_instruction)
                 candidates = agent.run(content["input_data"])
                 candidates = [c['content'] for c in candidates if c['status'] == 'ok']
 
@@ -275,7 +286,8 @@ def clean_data_stream_request():
 
             logger.debug(f" model: {content['model']}")
             
-            agent = DataCleanAgentStream(client=client)
+            language_instruction = get_language_instruction()
+            agent = DataCleanAgentStream(client=client, language_instruction=language_instruction)
 
             try:
                 for chunk in agent.stream(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', [])):
@@ -377,14 +389,16 @@ def derive_data():
             temp_data = get_temp_tables(workspace, input_tables)
             max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
+            language_instruction = get_language_instruction(mode="compact")
+
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
                 if mode == "recommendation":
                     # Use unified Python agent for recommendations
-                    agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
+                    agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows)
                     results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
                 else:
                     # Use unified Python agent that generates Python scripts with DuckDB + pandas
-                    agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
+                    agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows)
                     results = agent.run(input_tables, instruction, prev_messages,
                                         current_visualization=current_visualization, expected_visualization=expected_visualization)
 
@@ -476,6 +490,8 @@ def data_agent_streaming():
             workspace = get_workspace(identity_id)
             temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
+            language_instruction = get_language_instruction(mode="compact")
+
             try:
                 with WorkspaceWithTempData(workspace, temp_data) as ws:
                     agent = DataAgent(
@@ -483,6 +499,7 @@ def data_agent_streaming():
                         workspace=ws,
                         agent_exploration_rules=agent_exploration_rules,
                         agent_coding_rules=agent_coding_rules,
+                        language_instruction=language_instruction,
                         max_iterations=max_iterations,
                         max_repair_attempts=max_repair_attempts,
                     )
@@ -578,9 +595,11 @@ def refine_data():
             temp_data = get_temp_tables(workspace, input_tables)
             max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
+            language_instruction = get_language_instruction(mode="compact")
+
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
                 # Use unified Python agent for followup transformations
-                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
+                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows)
                 results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
                                         current_visualization=current_visualization, expected_visualization=expected_visualization)
 
@@ -628,9 +647,11 @@ def request_code_expl():
         workspace = get_workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
 
+        language_instruction = get_language_instruction()
+
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
             try:
-                code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace)
+                code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace, language_instruction=language_instruction)
                 candidates = code_expl_agent.run(input_tables, code)
 
                 # Return the first candidate's content as JSON
@@ -668,7 +689,8 @@ def request_chart_insight():
 
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
             try:
-                agent = ChartInsightAgent(client=client, workspace=workspace)
+                agent = ChartInsightAgent(client=client, workspace=workspace,
+                                          language_instruction=get_language_instruction())
                 candidates = agent.run(chart_image, chart_type, field_names, input_tables)
 
                 if candidates and len(candidates) > 0:
@@ -715,7 +737,9 @@ def get_recommendation_questions():
             temp_data = get_temp_tables(workspace, all_tables) if all_tables else None
 
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                agent = InteractiveExploreAgent(client=client, workspace=workspace, agent_exploration_rules=agent_exploration_rules)
+                agent = InteractiveExploreAgent(client=client, workspace=workspace,
+                                                agent_exploration_rules=agent_exploration_rules,
+                                                language_instruction=get_language_instruction())
                 try:
                     for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
                         yield chunk
@@ -755,7 +779,8 @@ def generate_report_stream():
             temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                agent = ReportGenAgent(client=client, workspace=workspace)
+                agent = ReportGenAgent(client=client, workspace=workspace,
+                                       language_instruction=get_language_instruction())
                 try:
                     for chunk in agent.stream(input_tables, charts, style):
                         yield chunk

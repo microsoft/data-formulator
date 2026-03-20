@@ -25,9 +25,10 @@ Respond with a JSON object in exactly this format (no markdown fences):
 
 class ChartInsightAgent(object):
 
-    def __init__(self, client, workspace=None):
+    def __init__(self, client, workspace=None, language_instruction=""):
         self.client = client
         self.workspace = workspace
+        self.language_instruction = language_instruction
 
     def run(self, chart_image_base64, chart_type, field_names, input_tables=None, n=1):
         """
@@ -69,8 +70,12 @@ class ChartInsightAgent(object):
             }
         ]
 
+        system_prompt = SYSTEM_PROMPT
+        if self.language_instruction:
+            system_prompt = system_prompt + "\n\n" + self.language_instruction
+
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
         ]
 

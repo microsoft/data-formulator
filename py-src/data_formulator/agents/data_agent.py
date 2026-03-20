@@ -137,6 +137,7 @@ class DataAgent:
         workspace,
         agent_exploration_rules: str = "",
         agent_coding_rules: str = "",
+        language_instruction: str = "",
         max_iterations: int = 5,
         max_repair_attempts: int = 1,
     ):
@@ -144,6 +145,7 @@ class DataAgent:
         self.workspace = workspace
         self.agent_exploration_rules = agent_exploration_rules
         self.agent_coding_rules = agent_coding_rules
+        self.language_instruction = language_instruction
         self.max_iterations = max_iterations
         self.max_repair_attempts = max_repair_attempts
 
@@ -152,6 +154,7 @@ class DataAgent:
             client=client,
             workspace=workspace,
             agent_coding_rules=agent_coding_rules,
+            language_instruction=language_instruction,
         )
 
     # ------------------------------------------------------------------
@@ -351,10 +354,13 @@ class DataAgent:
                 + self.agent_exploration_rules.strip()
                 + "\n\nPlease follow the above rules when exploring data."
             )
-        return SYSTEM_PROMPT.format(
+        prompt = SYSTEM_PROMPT.format(
             max_iterations=self.max_iterations,
             agent_exploration_rules=rules_block,
         )
+        if self.language_instruction:
+            prompt = prompt + "\n\n" + self.language_instruction
+        return prompt
 
     def _build_initial_messages(
         self,

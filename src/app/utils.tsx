@@ -138,6 +138,9 @@ export async function fetchWithIdentity(
         // Always send namespaced identity (fallback for backend)
         const namespacedIdentity = await getCurrentNamespacedIdentity();
         headers.set('X-Identity-Id', namespacedIdentity);
+
+        // Send current UI language so agent prompts can follow it
+        headers.set('Accept-Language', getAgentLanguage());
         
         // Send auth token if available (for custom JWT auth)
         const authToken = getAuthToken();
@@ -149,6 +152,15 @@ export async function fetchWithIdentity(
     }
     
     return fetch(url, options);
+}
+
+import i18n from '../i18n';
+
+/**
+ * Returns the current UI language code (e.g. "zh", "en") for use in agent API requests.
+ */
+export function getAgentLanguage(): string {
+    return i18n.language.split('-')[0];
 }
 
 import * as vm from 'vm-browserify';
