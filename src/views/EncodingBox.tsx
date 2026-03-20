@@ -69,9 +69,29 @@ const channelKeyMap: Partial<Record<Channel, string>> = {
     strokeDash: 'encoding.channelStrokeDash',
 };
 
+const channelTipKeyMap: Partial<Record<Channel, string>> = {
+    x: 'encoding.channelX_tip',
+    y: 'encoding.channelY_tip',
+    color: 'encoding.channelColor_tip',
+    size: 'encoding.channelSize_tip',
+    shape: 'encoding.channelShape_tip',
+    opacity: 'encoding.channelOpacity_tip',
+    column: 'encoding.channelColumn_tip',
+    row: 'encoding.channelRow_tip',
+    detail: 'encoding.channelDetail_tip',
+    group: 'encoding.channelGroup_tip',
+    radius: 'encoding.channelRadius_tip',
+    strokeDash: 'encoding.channelStrokeDash_tip',
+};
+
 let getChannelDisplay = (channel: Channel, t: (key: string) => string) => {
     const key = channelKeyMap[channel];
     return key ? t(key) : channel;
+}
+
+let getChannelTip = (channel: Channel, t: (key: string) => string) => {
+    const key = channelTipKeyMap[channel];
+    return key ? t(key) : '';
 }
 
 export interface LittleConceptCardProps {
@@ -110,39 +130,26 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
     }
 
     const meta = tableMetadata[field.name];
-    const tooltipLines: string[] = [
-        field.name,
-        field.source === 'custom' ? t('fieldTooltip.derivedField') : t('fieldTooltip.originalField'),
-    ];
-    if (meta?.semanticType) tooltipLines.push(t('fieldTooltip.semanticType', { type: meta.semanticType }));
-    tooltipLines.push(t('fieldTooltip.keptRawForComputation'));
 
     return (
-        <Tooltip
-            title={<Typography sx={{ fontSize: 11, whiteSpace: 'pre-line' }}>{tooltipLines.join('\n')}</Typography>}
-            arrow
-            placement="top"
-            enterDelay={400}
-        >
-            <Chip
-                ref={drag}
-                className={`${fieldClass}`}
-                color={'default'}
-                label={field.name}
-                size="small"
-                sx={{
-                    backgroundColor,
-                    opacity: opacity,
-                    cursor: cursorStyle,
-                    ".MuiChip-label":
-                        { /*width: "calc(100% - 36px)", maxWidth: "94px"*/ flexGrow: 1, flexShrink: 1, width: 0 }, ".MuiSvgIcon-root": { fontSize: "inherit" }
-                }}
-                variant="filled"
-                onClick={(event) => {}}
-                onDelete={handleUnbind}
-                icon={getIconFromType(meta?.type || Type.Auto)}
-            />
-        </Tooltip>
+        <Chip
+            ref={drag}
+            className={`${fieldClass}`}
+            color={'default'}
+            label={field.name}
+            size="small"
+            sx={{
+                backgroundColor,
+                opacity: opacity,
+                cursor: cursorStyle,
+                ".MuiChip-label":
+                    { /*width: "calc(100% - 36px)", maxWidth: "94px"*/ flexGrow: 1, flexShrink: 1, width: 0 }, ".MuiSvgIcon-root": { fontSize: "inherit" }
+            }}
+            variant="filled"
+            onClick={(event) => {}}
+            onDelete={handleUnbind}
+            icon={getIconFromType(meta?.type || Type.Auto)}
+        />
     )
 }
 
@@ -255,6 +262,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     // define anchor open
     let channelDisplay = getChannelDisplay(channel, t);
+    let channelTip = getChannelTip(channel, t);
 
     let radioLabel = (label: string | React.ReactNode, value: any, key: string, width: number = 80, disabled: boolean = false, tooltip: string = "") => {
         let comp = <FormControlLabel sx={{ width: width, margin: 0 }} key={key}
@@ -819,7 +827,9 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 component="form" className="channel-shelf-box encoding-item">
                 <Card sx={{ width: "100%" }} variant="outlined">
                     <Box ref={drop} className="channel-encoded-field">
-                        <IconButton //className="encoding-shelf-action-button"
+                        <Tooltip title={channelTip} placement="left" arrow
+                            slotProps={{ tooltip: { sx: { bgcolor: 'rgba(97,97,97,0.92)' } } }}>
+                        <IconButton
                             onClick={() => { setEditMode(!editMode) }} color="default"
                             aria-label={t('encoding.axisSettings')} component="span"
                             size="small" sx={{
@@ -831,6 +841,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                             <ArrowDropDownIcon sx={{ position: "absolute", right: "0", 
                                 paddingLeft: "2px", transform: editMode ? "rotate(180deg)" : "" }} fontSize="inherit" />
                         </IconButton>
+                        </Tooltip>
                         <Box sx={{
                             backgroundColor: backgroundColor, width: "calc(100% - 74px)",
                             display: "flex", borderBottom: (editMode ? "1px solid rgba(0, 0, 0, 0.12)" : undefined)

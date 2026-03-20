@@ -158,20 +158,9 @@ export const TriggerCard: FC<{
                 .filter(([channel, encoding]) => encoding.fieldID != undefined)
                 .map(([channel, encoding], index) => {
                     let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
-                    const sourceLabel = field?.source === 'custom'
-                        ? t('fieldTooltip.derivedField')
-                        : t('fieldTooltip.originalField');
-                    const tip = `${field?.name}\n${sourceLabel}\n${t('fieldTooltip.keptRawForComputation')}`;
                     return <React.Fragment key={`trigger-${channel}-${field?.id}`}>
                         {index > 0 ? <span style={{ margin: '0 2px', opacity: 0.5 }}> × </span> : ''}
-                        <Tooltip
-                            title={<Typography sx={{ fontSize: 11, whiteSpace: 'pre-line' }}>{tip}</Typography>}
-                            arrow
-                            placement="top"
-                            enterDelay={400}
-                        >
-                            <span>{field?.name}</span>
-                        </Tooltip>
+                        <span>{field?.name}</span>
                     </React.Fragment>;
                 })}
         </Typography>

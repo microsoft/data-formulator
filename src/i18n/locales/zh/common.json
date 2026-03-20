@@ -366,13 +366,6 @@
     "failedRefreshDerivedTable": "刷新派生表「{{table}}」失败：{{message}}",
     "errorRefreshingDerivedTable": "刷新派生表「{{table}}」时出错"
   },
-  "fieldTooltip": {
-    "originalField": "原始字段",
-    "derivedField": "派生字段",
-    "semanticType": "语义类型：{{type}}",
-    "unit": "单位：{{unit}}",
-    "keptRawForComputation": "此名称保留原值，以确保计算、字段匹配和代码引用正确。"
-  },
   "dataGrid": {
     "loading": "加载中...",
     "sortBy": "按 {{label}} 排序",
