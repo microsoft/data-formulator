@@ -164,53 +164,41 @@ and are not translated.
 
 ---
 
-## 4. The Tooltip Strategy for Untranslatable Keywords
+## 4. The Tooltip Strategy for Encoding Channel Labels
 
-Some values (like field names or channel keywords) appear prominently in the
-UI but **cannot** be translated directly because they participate in
-computation. For these, we use an **explanatory tooltip** approach:
+Encoding channel labels (x-axis, y-axis, color, opacity, etc.) are already
+translated via `encoding.channel*` keys. In addition, each channel has a
+**descriptive tooltip** (via `encoding.channel*_tip` keys) that provides a
+brief explanation when the user hovers over the label.
 
-1. **Keep the original text** as the primary display — the user always sees
-   the raw, computation-safe value.
-2. **Wrap** the element with a Material-UI `<Tooltip>` whose `title` is
-   built from translated i18n keys.
-3. **Translation keys** live under `fieldTooltip.*` in `common.json` (for
-   generic field explanations) and under `encoding.channel*` in
-   `encoding.json` (for channel display names).
+1. **Channel display name** uses `encoding.channelX`, `encoding.channelY`, etc.
+2. **Channel tooltip** uses `encoding.channelX_tip`, `encoding.channelY_tip`, etc.
+3. Both live in `encoding.json`.
 
 ### Example (simplified)
 
 ```tsx
-import { Tooltip, Typography } from '@mui/material';
+import { Tooltip, Typography, IconButton } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-function FieldChip({ field }: { field: FieldItem }) {
+function ChannelLabel({ channel }: { channel: string }) {
     const { t } = useTranslation();
-    const lines = [
-        field.name,
-        field.source === 'custom'
-            ? t('fieldTooltip.derivedField')
-            : t('fieldTooltip.originalField'),
-        t('fieldTooltip.keptRawForComputation'),
-    ];
+    const display = t(`encoding.channel${channel}`);
+    const tip = t(`encoding.channel${channel}_tip`);
     return (
-        <Tooltip
-            title={
-                <Typography sx={{ fontSize: 11, whiteSpace: 'pre-line' }}>
-                    {lines.join('\n')}
-                </Typography>
-            }
-            arrow placement="top" enterDelay={400}
-        >
-            <Chip label={field.name} />
+        <Tooltip title={tip} placement="left" arrow>
+            <IconButton>
+                <Typography variant="caption">{display}</Typography>
+            </IconButton>
         </Tooltip>
     );
 }
 ```
 
-### Safety Checklist
+### Important Notes
 
-- The `label` of the `<Chip>` (or `<span>`) is **always** the raw value.
+- **Data field names** (e.g., `price`, `date`) are user data and should
+  **not** have tooltips — they are displayed as-is.
 - The `<Tooltip>` only provides *additional* context — never replaces.
 - Adding a `<Tooltip>` must not change the DOM structure in a way that
   breaks existing event handlers, drag-and-drop, or layout.
@@ -225,7 +213,7 @@ Files are grouped by **functional domain**, not by page:
 
 | File | Top-level Key | Content |
 |---|---|---|
-| `common.json` | `app`, `appBar`, `session`, `config`, `landing`, `about`, `footer`, `agentRules`, `refresh`, `report`, `db`, `dataThread`, `dataLoading`, `preview`, `conceptShelf`, `chartRec`, `fieldTooltip`, `dataGrid`, `chatDialog`, `dataView`, `auth`, `supersetPanel`, `supersetDashboard`, `supersetCatalog` | App-wide shared strings |
+| `common.json` | `app`, `appBar`, `session`, `config`, `landing`, `about`, `footer`, `agentRules`, `refresh`, `report`, `db`, `dataThread`, `dataLoading`, `preview`, `conceptShelf`, `chartRec`, `dataGrid`, `chatDialog`, `dataView`, `auth`, `supersetPanel`, `supersetDashboard`, `supersetCatalog` | App-wide shared strings |
 | `chart.json` | `chart` | Chart rendering, gallery, chart-type labels |
 | `encoding.json` | `encoding` | Encoding shelf, channels, data types |
 | `messages.json` | `messages` | Snackbar & system messages |
@@ -240,8 +228,8 @@ Files are grouped by **functional domain**, not by page:
 3. **Interpolation** uses double curly braces: `"{{count}} rows"`.
 4. Keys that represent the **same concept** across files should use
    consistent suffixes (e.g., `*.loading`, `*.failed`, `*.success`).
-5. Tooltip keys for untranslatable fields use the `fieldTooltip.*` prefix.
-6. Channel display labels use the `encoding.channel*` prefix.
+5. Channel display labels use the `encoding.channel*` prefix.
+6. Channel tooltip descriptions use the `encoding.channel*_tip` prefix.
 
 ### Avoiding Key Collisions
 
@@ -397,10 +385,9 @@ To translate a UI label:
   1. Add key to src/i18n/locales/{lang}/{domain}.json
   2. Use t('domain.key') in the component
 
-To explain an untranslatable keyword:
-  1. Keep the raw value as the primary display
-  2. Wrap with <Tooltip title={t('fieldTooltip.xxx')}>
-  3. Add tooltip keys to common.json (or encoding.json)
+To add a descriptive tooltip for a channel label:
+  1. Add encoding.channel*_tip key to encoding.json
+  2. Wrap with <Tooltip title={t('encoding.channelX_tip')}>
 
 To add a new language:
   1. Copy en/ → {lang}/
