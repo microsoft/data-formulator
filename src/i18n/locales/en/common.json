@@ -447,6 +447,13 @@
     "explorationThreadDeriveDescription": "Derive from {{source}} with instruction: {{instruction}}",
     "explorationStepCodeComment": "# Exploration step {{step}}"
   },
+  "fieldTooltip": {
+    "originalField": "Original field",
+    "derivedField": "Derived field",
+    "semanticType": "Semantic type: {{type}}",
+    "unit": "Unit: {{unit}}",
+    "keptRawForComputation": "This name is kept as-is to ensure correct computation, field matching, and code references."
+  },
   "dataGrid": {
     "loading": "Loading ...",
     "sortBy": "Sort by {{label}}",

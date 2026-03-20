@@ -123,6 +123,7 @@ export const TriggerCard: FC<{
     highlighted?: boolean,
     sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, highlighted = false, sx }) {
 
+    const { t } = useTranslation();
     let theme = useTheme();
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -157,9 +158,20 @@ export const TriggerCard: FC<{
                 .filter(([channel, encoding]) => encoding.fieldID != undefined)
                 .map(([channel, encoding], index) => {
                     let field = fieldItems.find(f => f.id == encoding.fieldID) as FieldItem;
+                    const sourceLabel = field?.source === 'custom'
+                        ? t('fieldTooltip.derivedField')
+                        : t('fieldTooltip.originalField');
+                    const tip = `${field?.name}\n${sourceLabel}\n${t('fieldTooltip.keptRawForComputation')}`;
                     return <React.Fragment key={`trigger-${channel}-${field?.id}`}>
                         {index > 0 ? <span style={{ margin: '0 2px', opacity: 0.5 }}> × </span> : ''}
-                        <span>{field?.name}</span>
+                        <Tooltip
+                            title={<Typography sx={{ fontSize: 11, whiteSpace: 'pre-line' }}>{tip}</Typography>}
+                            arrow
+                            placement="top"
+                            enterDelay={400}
+                        >
+                            <span>{field?.name}</span>
+                        </Tooltip>
                     </React.Fragment>;
                 })}
         </Typography>

@@ -54,13 +54,25 @@ import { Type } from '../data/types';
 
 
 
+const channelKeyMap: Partial<Record<Channel, string>> = {
+    x: 'encoding.channelX',
+    y: 'encoding.channelY',
+    color: 'encoding.channelColor',
+    size: 'encoding.channelSize',
+    shape: 'encoding.channelShape',
+    tooltip: 'encoding.channelTooltip',
+    opacity: 'encoding.channelOpacity',
+    column: 'encoding.channelColumn',
+    row: 'encoding.channelRow',
+    detail: 'encoding.channelDetail',
+    group: 'encoding.channelGroup',
+    radius: 'encoding.channelRadius',
+    strokeDash: 'encoding.channelStrokeDash',
+};
+
 let getChannelDisplay = (channel: Channel, t: (key: string) => string) => {
-    if (channel == "x") {
-        return t('encoding.channelX');
-    } else if (channel == "y") {
-        return t('encoding.channelY');
-    }
-    return channel;
+    const key = channelKeyMap[channel];
+    return key ? t(key) : channel;
 }
 
 export interface LittleConceptCardProps {
@@ -72,8 +84,8 @@ export interface LittleConceptCardProps {
 }
 
 export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConceptCard({ channel, field, encoding, handleUnbind, tableMetadata }) {
-    // concept cards are draggable cards that can be dropped into encoding shelf
 
+    const { t } = useTranslation();
     let theme = useTheme();
 
     const [{ isDragging }, drag] = useDrag(() => ({
@@ -98,25 +110,40 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
         backgroundColor = alpha(theme.palette.custom.main, 0.05);
     }
 
+    const meta = tableMetadata[field.name];
+    const tooltipLines: string[] = [
+        field.name,
+        field.source === 'custom' ? t('fieldTooltip.derivedField') : t('fieldTooltip.originalField'),
+    ];
+    if (meta?.semanticType) tooltipLines.push(t('fieldTooltip.semanticType', { type: meta.semanticType }));
+    tooltipLines.push(t('fieldTooltip.keptRawForComputation'));
+
     return (
-        <Chip
-            ref={drag}
-            className={`${fieldClass}`}
-            color={'default'}
-            label={field.name}
-            size="small"
-            sx={{
-                backgroundColor,
-                opacity: opacity,
-                cursor: cursorStyle,
-                ".MuiChip-label":
-                    { /*width: "calc(100% - 36px)", maxWidth: "94px"*/ flexGrow: 1, flexShrink: 1, width: 0 }, ".MuiSvgIcon-root": { fontSize: "inherit" }
-            }}
-            variant="filled"
-            onClick={(event) => {}}
-            onDelete={handleUnbind}
-            icon={getIconFromType(tableMetadata[field.name]?.type || Type.Auto)}
-        />
+        <Tooltip
+            title={<Typography sx={{ fontSize: 11, whiteSpace: 'pre-line' }}>{tooltipLines.join('\n')}</Typography>}
+            arrow
+            placement="top"
+            enterDelay={400}
+        >
+            <Chip
+                ref={drag}
+                className={`${fieldClass}`}
+                color={'default'}
+                label={field.name}
+                size="small"
+                sx={{
+                    backgroundColor,
+                    opacity: opacity,
+                    cursor: cursorStyle,
+                    ".MuiChip-label":
+                        { /*width: "calc(100% - 36px)", maxWidth: "94px"*/ flexGrow: 1, flexShrink: 1, width: 0 }, ".MuiSvgIcon-root": { fontSize: "inherit" }
+                }}
+                variant="filled"
+                onClick={(event) => {}}
+                onDelete={handleUnbind}
+                icon={getIconFromType(meta?.type || Type.Auto)}
+            />
+        </Tooltip>
     )
 }
 
