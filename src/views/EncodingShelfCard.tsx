@@ -56,6 +56,30 @@ import { EncodingBox } from './EncodingBox';
 
 import { channelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, getDataTable } from './VisualizationView';
+
+const chartNameToI18nKey: Record<string, string> = {
+    "Auto": "auto", "Table": "table",
+    "Scatter Plot": "scatterPlot", "Regression": "regression",
+    "Ranged Dot Plot": "rangedDotPlot", "Boxplot": "boxplot", "Strip Plot": "stripPlot",
+    "Bar Chart": "barChart", "Grouped Bar Chart": "groupedBarChart",
+    "Stacked Bar Chart": "stackedBarChart", "Histogram": "histogram",
+    "Lollipop Chart": "lollipopChart", "Pyramid Chart": "pyramidChart",
+    "Line Chart": "lineChart", "Dotted Line Chart": "dottedLineChart",
+    "Bump Chart": "bumpChart", "Area Chart": "areaChart", "Streamgraph": "streamgraph",
+    "Pie Chart": "pieChart", "Rose Chart": "roseChart",
+    "Heatmap": "heatmap", "Waterfall Chart": "waterfallChart",
+    "Density Plot": "densityPlot", "Radar Chart": "radarChart",
+    "Candlestick Chart": "candlestickChart",
+    "US Map": "usMap", "World Map": "worldMap",
+    "Custom Point": "customPoint", "Custom Line": "customLine",
+    "Custom Bar": "customBar", "Custom Rect": "customRect", "Custom Area": "customArea",
+};
+
+const chartCategoryToI18nKey: Record<string, string> = {
+    "Scatter & Point": "scatterAndPoint", "Bar": "bar",
+    "Line & Area": "lineAndArea", "Part-to-Whole": "partToWhole",
+    "Statistical": "statistical", "Map": "map", "Custom": "custom",
+};
 import { TableIcon, AgentIcon as PrecisionManufacturing } from '../icons';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
 import AddIcon from '@mui/icons-material/Add';
@@ -221,6 +245,15 @@ export const TriggerCard: FC<{
 export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId }) {
     const { t } = useTranslation();
     const theme = useTheme();
+
+    const getChartNameTip = (chartName: string) => {
+        const key = chartNameToI18nKey[chartName];
+        return key ? t(`chart.templateNames.${key}`) : '';
+    };
+    const getChartCategoryTip = (category: string) => {
+        const key = chartCategoryToI18nKey[category];
+        return key ? t(`chart.chartCategoryTip.${key}`) : '';
+    };
 
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -685,15 +718,17 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             }
                         }}
                         renderValue={(value: string) => {
-                            const t = getChartTemplate(value);
+                            const tmpl = getChartTemplate(value);
                             return (
+                                <Tooltip title={getChartNameTip(value)} placement="left" arrow>
                                 <div style={{display: 'flex', padding: "0px 0px 0px 4px"}}>
                                     <ListItemIcon sx={{minWidth: "24px"}}>
-                                        {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : 
-                                         <Box sx={{width: "24px", height: "24px"}}>{t?.icon}</Box>}
+                                        {typeof tmpl?.icon == 'string' ? <img height="24px" width="24px" src={tmpl?.icon} alt="" role="presentation" /> : 
+                                         <Box sx={{width: "24px", height: "24px"}}>{tmpl?.icon}</Box>}
                                         </ListItemIcon>
-                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} slotProps={{primary: {fontSize: 12}}}>{t?.chart}</ListItemText>
+                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} slotProps={{primary: {fontSize: 12}}}>{tmpl?.chart}</ListItemText>
                                 </div>
+                                </Tooltip>
                             )
                         }}
                         onChange={(event) => { }}>
@@ -703,8 +738,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     color: "text.secondary", 
                                     lineHeight: 2, 
                                     fontSize: 12,
-                                    gridColumn: '1 / -1' // Make subheader span both columns
-                                }} key={group}>{group}</ListSubheader>,
+                                    gridColumn: '1 / -1'
+                                }} key={group}>
+                                    <Tooltip title={getChartCategoryTip(group)} placement="left" arrow>
+                                        <span>{group}</span>
+                                    </Tooltip>
+                                </ListSubheader>,
                                 ...templates.map((t, i) => (
                                     <MenuItem 
                                         sx={{ 
@@ -718,11 +757,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         key={`${group}-${i}`}
                                         onClick={(e) => {
                                             console.log('MenuItem clicked:', t.chart);
-                                            // Manually trigger the chart type update (this will also close the menu)
                                             handleUpdateChartType(t.chart);
                                         }}
                                     >
-                                        <Box sx={{display: 'flex'}}>
+                                        <Tooltip title={getChartNameTip(t.chart)} placement="left" arrow>
+                                        <Box sx={{display: 'flex', width: '100%'}}>
                                             <ListItemIcon sx={{minWidth: "20px"}}>
                                                 {typeof t?.icon == 'string' ? 
                                                     <img height="20px" width="20px" src={t?.icon} alt="" role="presentation" /> : 
@@ -736,6 +775,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                                 {t.chart}
                                             </ListItemText>
                                         </Box>
+                                        </Tooltip>
                                     </MenuItem>
                                 ))
                             ]
