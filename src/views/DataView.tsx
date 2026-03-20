@@ -49,12 +49,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
 
         let rowData = [];
         if (targetTable) {
-            if (targetTable.virtual) {
-                rowData = targetTable.rows;
-            } else {
-                rowData = targetTable.rows;
-                rowData = rowData.map((r: any, i: number) => ({ ...r, "#rowId": i }));
-            }
+            rowData = targetTable.rows.map((r: any, i: number) => ({ ...r, "#rowId": i + 1 }));
         }
 
         // Deterministic sample: take evenly spaced rows so column widths stay stable across re-renders
@@ -64,7 +59,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
         
         // Calculate appropriate column widths based on content
         const calculateColumnWidth = (name: string) => {
-            if (name === "#rowId") return { minWidth: 10, width: 40 }; // Default for row ID column
+            if (name === "#rowId") return { minWidth: 56, width: 56 };
             
             // Get all values for this column from sampled rows
             const values = sampledRows.map(row => String(row[name] || ''));
@@ -100,9 +95,9 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
             };
         }) : [];
 
-        if (colDefs && !targetTable?.virtual) {
+        if (colDefs) {
             colDefs = [{
-                id: "#rowId", label: "#", minWidth: 10, align: undefined, width: 40,
+                id: "#rowId", label: "#", minWidth: 56, align: undefined, width: 56,
                 format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.65)">{value}</Typography>, 
                 dataType: Type.Number,
                 source: "original", 

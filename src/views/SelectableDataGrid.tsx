@@ -287,9 +287,18 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         Scroller: React.forwardRef<HTMLDivElement>((props, ref) => (
             <TableContainer {...props} ref={ref} />
         )),
-        Table: (props: any) => <Table {...props} />,
+        Table: ({ children, style, ...rest }: any) => (
+            <Table {...rest} style={style} sx={{ tableLayout: 'fixed', width: '100%' }}>
+                <colgroup>
+                    {columnDefs.map(col => (
+                        <col key={col.id} style={col.id === '#rowId' ? { width: 56 } : undefined} />
+                    ))}
+                </colgroup>
+                {children}
+            </Table>
+        ),
         TableHead: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
-            <TableHead {...props} ref={ref} className='table-header-container' />
+            <TableHead {...props} ref={ref} className='table-header-container' style={{ display: 'table-header-group' }} />
         )),
         TableRow: (props: any) => {
             const index = props['data-index'];
@@ -420,33 +429,63 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                                             className='data-view-header-cell'
                                             key={columnDef.id}
                                             align={columnDef.align}
-                                            sx={{p: 0, minWidth: columnDef.minWidth, width: columnDef.width,}}
+                                            sx={{
+                                                p: columnDef.id === '#rowId' ? '0 2px' : 0,
+                                                minWidth: columnDef.minWidth,
+                                                width: columnDef.width,
+                                            }}
                                         >
-                                            <DraggableHeader
-                                                columnDef={columnDef}
-                                                orderBy={orderBy}
-                                                order={order}
-                                                tableId={tableId}
-                                                onSortClick={() => {
-                                                    let newOrder: 'asc' | 'desc' = 'asc';
-                                                    let newOrderBy : string | undefined = columnDef.id;
-                                                    if (orderBy === columnDef.id && order === 'asc') {
-                                                        newOrder = 'desc';
-                                                    } else if (orderBy === columnDef.id && order === 'desc') {
-                                                        newOrder = 'asc';
-                                                        newOrderBy = undefined;
-                                                    } else {
-                                                        newOrder = 'asc';
-                                                    }
+                                            {columnDef.id === '#rowId' ? (
+                                                <Box
+                                                    className="data-view-header-container"
+                                                    sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        borderBottomWidth: '2px',
+                                                        borderBottomStyle: 'solid',
+                                                        borderBottomColor: 'rgba(0,0,0,0.2)',
+                                                        padding: '4px 4px',
+                                                        margin: '0 2px 0 0',
+                                                    }}
+                                                >
+                                                    <Typography
+                                                        sx={{
+                                                            fontSize: 12,
+                                                            color: 'text.secondary',
+                                                            whiteSpace: 'nowrap',
+                                                        }}
+                                                    >
+                                                        {columnDef.label}
+                                                    </Typography>
+                                                </Box>
+                                            ) : (
+                                                <DraggableHeader
+                                                    columnDef={columnDef}
+                                                    orderBy={orderBy}
+                                                    order={order}
+                                                    tableId={tableId}
+                                                    onSortClick={() => {
+                                                        let newOrder: 'asc' | 'desc' = 'asc';
+                                                        let newOrderBy : string | undefined = columnDef.id;
+                                                        if (orderBy === columnDef.id && order === 'asc') {
+                                                            newOrder = 'desc';
+                                                        } else if (orderBy === columnDef.id && order === 'desc') {
+                                                            newOrder = 'asc';
+                                                            newOrderBy = undefined;
+                                                        } else {
+                                                            newOrder = 'asc';
+                                                        }
 
-                                                    setOrder(newOrder);
-                                                    setOrderBy(newOrderBy);
-                                                    
-                                                    if (virtual) {
-                                                        fetchVirtualData(newOrderBy ? [newOrderBy] : [], newOrder);
-                                                    }
-                                                }}
-                                            />
+                                                        setOrder(newOrder);
+                                                        setOrderBy(newOrderBy);
+                                                        
+                                                        if (virtual) {
+                                                            fetchVirtualData(newOrderBy ? [newOrderBy] : [], newOrder);
+                                                        }
+                                                    }}
+                                                />
+                                            )}
                                         </TableCell>
                                     );
                                 })}
