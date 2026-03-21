@@ -689,7 +689,7 @@ class Workspace:
 
         # 2. State JSON
         (sess_dir / "state.json").write_text(
-            json.dumps(state, default=str), encoding="utf-8"
+            json.dumps(state, default=str, ensure_ascii=False), encoding="utf-8"
         )
 
         saved_at = datetime.now(timezone.utc).isoformat()
@@ -748,7 +748,7 @@ class Workspace:
         """Export current state + workspace as a .dfsession zip."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("state.json", json.dumps(state, default=str))
+            zf.writestr("state.json", json.dumps(state, default=str, ensure_ascii=False))
             with tempfile.TemporaryDirectory(prefix="df_session_export_") as tmp_dir:
                 ws_snap = Path(tmp_dir) / "workspace"
                 self.save_workspace_snapshot(ws_snap)

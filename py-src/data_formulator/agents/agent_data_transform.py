@@ -239,9 +239,9 @@ class DataTransformationAgent(object):
         # Build visualization context section
         vis_section = ""
         if current_visualization:
-            vis_section = f"\n\n[CURRENT VISUALIZATION] This is the current visualization the user has:\n\n{json.dumps(current_visualization.get('chart_spec', {}), indent=4)}"
+            vis_section = f"\n\n[CURRENT VISUALIZATION] This is the current visualization the user has:\n\n{json.dumps(current_visualization.get('chart_spec', {}), indent=4, ensure_ascii=False)}"
         elif expected_visualization:
-            vis_section = f"\n\n[EXPECTED VISUALIZATION] This is the visualization expected by the user:\n\n{json.dumps(expected_visualization.get('chart_spec', {}), indent=4)}"
+            vis_section = f"\n\n[EXPECTED VISUALIZATION] This is the visualization expected by the user:\n\n{json.dumps(expected_visualization.get('chart_spec', {}), indent=4, ensure_ascii=False)}"
 
         # Order: context → visualization → goal
         if len(prev_messages) > 0:
@@ -318,9 +318,9 @@ class DataTransformationAgent(object):
         # Build visualization context section
         vis_section = ""
         if current_visualization:
-            vis_section = f"\n\n[CURRENT VISUALIZATION] This is the current visualization the user has:\n\n{json.dumps(current_visualization.get('chart_spec', {}), indent=4)}"
+            vis_section = f"\n\n[CURRENT VISUALIZATION] This is the current visualization the user has:\n\n{json.dumps(current_visualization.get('chart_spec', {}), indent=4, ensure_ascii=False)}"
         elif expected_visualization:
-            vis_section = f"\n\n[EXPECTED VISUALIZATION] This is the visualization expected by the user:\n\n{json.dumps(expected_visualization.get('chart_spec', {}), indent=4)}"
+            vis_section = f"\n\n[EXPECTED VISUALIZATION] This is the visualization expected by the user:\n\n{json.dumps(expected_visualization.get('chart_spec', {}), indent=4, ensure_ascii=False)}"
 
         # Order: data sample → visualization → instruction
         followup_text = f"This is the result from the latest transformation:\n\n{sample_data_str}{vis_section}\n\nUpdate the Python script above based on the following instruction:\n\n{new_instruction}"

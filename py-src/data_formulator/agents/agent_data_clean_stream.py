@@ -237,4 +237,4 @@ class DataCleanAgentStream(object):
         logger.info(f"[DataCleanAgent] run done | status={result.get('status', '?')}")
         
         # add a newline to the beginning of the result to separate it from the previous result     
-        yield '\n' + json.dumps(result) + '\n'
+        yield '\n' + json.dumps(result, ensure_ascii=False) + '\n'

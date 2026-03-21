@@ -178,7 +178,7 @@ def check_available_models():
                     else:
                         logger.error(f"Error testing {provider} model {model} after {max_retries} attempts: {e}")
                 
-    return json.dumps(results)
+    return json.dumps(results, ensure_ascii=False)
 
 def sanitize_model_error(error_message: str) -> str:
     """Sanitize model API error messages before sending to client."""
@@ -234,7 +234,7 @@ def test_model():
     else:
         result = {'status': 'error'}
     
-    return json.dumps(result)
+    return json.dumps(result, ensure_ascii=False)
 
 @agent_bp.route('/process-data-on-load', methods=['GET', 'POST'])
 def process_data_on_load_request():
@@ -306,14 +306,14 @@ def clean_data_stream_request():
                         "status": "error", 
                         "result": 'unable to process data clean request' 
                     }
-                yield '\n' + json.dumps(error_data) + '\n'
+                yield '\n' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
             error_data = { 
                 "token": -1, 
                 "status": "error", 
                 "result": "Invalid request format" 
             }
-            yield '\n' + json.dumps(error_data) + '\n'
+            yield '\n' + json.dumps(error_data, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),
@@ -484,7 +484,7 @@ def data_agent_streaming():
                     "token": token,
                     "status": "error",
                     "result": {"type": "error", "error_message": "Identity ID required"},
-                }) + '\n'
+                }, ensure_ascii=False) + '\n'
                 return
 
             workspace = get_workspace(identity_id)
@@ -526,7 +526,7 @@ def data_agent_streaming():
                             "token": token,
                             "status": "ok",
                             "result": event,
-                        }) + '\n'
+                        }, ensure_ascii=False) + '\n'
 
                         # Stop streaming after terminal events
                         if event.get("type") in ("completion", "clarify"):
@@ -540,7 +540,7 @@ def data_agent_streaming():
                     "status": "error",
                     "result": None,
                     "error_message": sanitize_model_error(str(e)),
-                }) + '\n'
+                }, ensure_ascii=False) + '\n'
 
             logger.setLevel(logging.WARNING)
 
@@ -550,7 +550,7 @@ def data_agent_streaming():
                 "status": "error",
                 "result": None,
                 "error_message": "Invalid request format",
-            }) + '\n'
+            }, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),
@@ -748,12 +748,12 @@ def get_recommendation_questions():
                     error_data = { 
                         "content": "unable to process recommendation questions request" 
                     }
-                    yield 'error: ' + json.dumps(error_data) + '\n'
+                    yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
             error_data = { 
                 "content": "Invalid request format" 
             }
-            yield 'error: ' + json.dumps(error_data) + '\n'
+            yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),
@@ -789,12 +789,12 @@ def generate_report_stream():
                     error_data = { 
                         "content": "unable to process report generation request" 
                     }
-                    yield 'error: ' + json.dumps(error_data) + '\n'
+                    yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
             error_data = { 
                 "content": "Invalid request format" 
             }
-            yield 'error: ' + json.dumps(error_data) + '\n'
+            yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),

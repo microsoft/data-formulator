@@ -610,7 +610,7 @@ class AzureBlobWorkspace(Workspace):
             )
 
         # 2. State JSON
-        state_json = json.dumps(state, default=str)
+        state_json = json.dumps(state, default=str, ensure_ascii=False)
         self._container.upload_blob(
             f"{prefix}state.json", state_json.encode("utf-8"), overwrite=True
         )
@@ -695,7 +695,7 @@ class AzureBlobWorkspace(Workspace):
     def export_session_zip(self, state: dict) -> io.BytesIO:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("state.json", json.dumps(state, default=str))
+            zf.writestr("state.json", json.dumps(state, default=str, ensure_ascii=False))
             for blob in self._container.list_blobs(name_starts_with=self._prefix):
                 rel = blob.name[len(self._prefix):]
                 if not rel:
