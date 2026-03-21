@@ -151,7 +151,7 @@ export const DataPreviewBox: React.FC<{sx?: SxProps}> = ({sx}) => {
                     label: name,
                     minWidth: 60,
                     align: undefined,
-                    format: (v: any) => v,
+                    format: (v: any) => (v != null && typeof v === 'object' ? String(v) : v),
                 }))}
                 maxHeight={600}
             />

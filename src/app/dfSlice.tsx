@@ -1378,7 +1378,7 @@ const selectTriggerCharts = createSelector(
 );
 
 export const dfSelectors = {
-    getActiveModel: (state: DataFormulatorState) : ModelConfig => {
+    getActiveModel: (state: DataFormulatorState) : ModelConfig | undefined => {
         return state.models.find(m => m.id == state.selectedModelId) || state.models[0];
     },
     getEffectiveTableId: (state: DataFormulatorState): string | undefined => {

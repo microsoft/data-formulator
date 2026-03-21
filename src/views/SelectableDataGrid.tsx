@@ -509,7 +509,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                                             sx={{backgroundColor}}
                                             align={column.align || 'left'}
                                         >
-                                            {column.format ? column.format(data[column.id]) : data[column.id]}
+                                            {column.format
+                                                ? column.format(data[column.id])
+                                                : (data[column.id] != null && typeof data[column.id] === 'object'
+                                                    ? String(data[column.id])
+                                                    : data[column.id])}
                                         </TableCell>
                                     )
                                 })}
