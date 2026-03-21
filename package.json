@@ -38,9 +38,9 @@
         "react-animate-height": "^3.0.4",
         "react-animate-on-change": "^2.2.0",
         "react-dnd": "^16.0.1",
-        "react-i18next": "^16.5.4",
         "react-dnd-html5-backend": "^16.0.1",
         "react-dom": "^18.2.0",
+        "react-i18next": "^16.5.4",
         "react-katex": "^3.1.0",
         "react-redux": "^8.0.4",
         "react-router-dom": "^6.22.0",
@@ -60,7 +60,9 @@
     "scripts": {
         "lint": "eslint -c eslint.config.js src/**/*.{ts,tsx} --fix",
         "start": "vite",
-        "build": "vite build"
+        "build": "vite build",
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "browserslist": {
         "production": [
@@ -76,6 +78,9 @@
     },
     "devDependencies": {
         "@eslint/js": "^9.15.0",
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/jest-dom": "^6.9.1",
+        "@testing-library/react": "^16.3.2",
         "@types/d3": "^7.4.3",
         "@types/lodash": "^4.17.7",
         "@types/node": "^20.14.10",
@@ -90,8 +95,10 @@
         "eslint-plugin-jsx-a11y": "^6.10.2",
         "eslint-plugin-react": "^7.37.2",
         "globals": "^15.12.0",
+        "jsdom": "^29.0.1",
         "sass": "^1.77.6",
         "typescript-eslint": "^8.16.0",
-        "vite": "^5.4.21"
+        "vite": "^5.4.21",
+        "vitest": "^4.1.0"
     }
 }

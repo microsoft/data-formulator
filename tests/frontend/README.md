@@ -1,12 +1,34 @@
 # Frontend Tests
 
-This directory is reserved for frontend-related tests that are still driven by `pytest`.
+Frontend unit tests powered by **Vitest** + **@testing-library/react** (jsdom).
 
-Because the frontend is primarily `React + TypeScript`, while this round standardizes on `pytest`,
-the initial focus here is on contract and boundary testing rather than direct component unit tests.
+## Directory Layout
 
-Suggested future coverage:
+```text
+tests/frontend/
+  setup.ts                          # Global test setup (jest-dom matchers)
+  unit/
+    data/
+      coerceDate.test.ts            # Type coercion – Date handling
+      resolveExcelCellValue.test.ts # Excel cell value resolution
+    app/
+      dfSelectors.test.ts           # Redux selectors (getActiveModel)
+    views/
+      safeCellRender.test.tsx       # Component rendering object safety
+```
 
-- preservation of Chinese table names from frontend submission to backend response
-- traceability of Chinese column names in recommendation, derivation, and export flows
-- consistency of API fields such as `table_name`, `displayId`, and `columns`
+## Directory Responsibilities
+
+- `unit/data/` — Pure function tests for `src/data/` modules (type coercion, Excel parsing)
+- `unit/app/` — Redux selector and state logic tests for `src/app/` modules
+- `unit/views/` — Rendering safety and component behavior tests for `src/views/` modules
+
+## Running Tests
+
+```bash
+# Run all frontend tests
+npm test
+
+# Watch mode
+npm run test:watch
+```
