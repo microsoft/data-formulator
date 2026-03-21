@@ -1271,6 +1271,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const fromDate = new Date(today);
     fromDate.setDate(today.getDate() - qcDaysRange);
     const fmt = (d: Date) => d.toISOString().split("T")[0]; // YYYY-MM-DD
+    const fromCompact = fmt(fromDate).replace(/-/g, "");
+    const toCompact = fmt(today).replace(/-/g, "");
 
     console.log("🟢 Data Live Refresh START:", {
       chartId: focusedChartId,
@@ -1377,20 +1379,39 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
           if (stdParam) {
             const paramName = toSafeQcTableName(stdParam);
             const liveTableName = `${paramName}_live`;
+            const escapeRegExp = (text: string) =>
+              text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             // Replace source table name with _live version in SQL
-            // Using word boundaries to avoid partial replacement
-            const pattern = new RegExp(`\\b${stdParam}\\b`, "gi");
-            modifiedSqlCode = modifiedSqlCode.replace(pattern, liveTableName);
-            console.log(`📝 SQL replace: "${stdParam}" → "${liveTableName}"`);
+            // Replace both std parameter name and source table id, since agent SQL
+            // may reference either one (e.g. FROM EP_CHAMFER_ANGLE_OUT).
+            const stdPattern = new RegExp(
+              `\\b${escapeRegExp(stdParam)}\\b`,
+              "gi",
+            );
+            const tableIdPattern = new RegExp(
+              `\\b${escapeRegExp(srcTable.id)}\\b`,
+              "gi",
+            );
+            modifiedSqlCode = modifiedSqlCode
+              .replace(stdPattern, liveTableName)
+              .replace(tableIdPattern, liveTableName);
+            console.log(
+              `📝 SQL replace: "${stdParam}"/"${srcTable.id}" → "${liveTableName}"`,
+            );
           }
         });
 
-        const derivedDuckDbName = currentTable.id;
+        // For agent-derived Data Live, materialize a dedicated derived live table.
+        // Also constrain by QCDATE window to guarantee fresh data by selected range.
+        const filteredDerivedSqlCode = /\bQCDATE\b/i.test(modifiedSqlCode)
+          ? `SELECT * FROM (${modifiedSqlCode}) AS __df_live_base WHERE QCDATE >= '${fromCompact}' AND QCDATE <= '${toCompact}'`
+          : modifiedSqlCode;
+        const derivedDuckDbName = `${currentTable.id}_live`;
         const sqlResp = await fetch(getUrls().EXECUTE_SQL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            code: modifiedSqlCode,
+            code: filteredDerivedSqlCode,
             name_as: derivedDuckDbName,
           }),
         });
@@ -1408,6 +1429,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         } else {
           // 3. Only update if still on the same chart (prevent cross-chart contamination)
           if (focusedChartId === refreshChartId) {
+            // For agent-derived tables, sampling must target the derived table itself.
+            liveTableNameRef.current = derivedDuckDbName;
             // Update Redux with the fresh rows so chart encodings stay correct
             if (sqlData.rows && sqlData.rows.length > 0) {
               dispatch(
@@ -1754,12 +1777,17 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     isLive?: boolean,
     totalRowCount?: number,
   ) {
+    // Use fresh table reference to avoid stale closure values when switching charts
+    // tableRef.current is kept in sync and always points to the correct chart's table
+    const currentTableRef = tableRef.current ?? table;
+
     // Use server-side totalRowCount (from visTableTotalRowCount) to prevent clamping to stale Redux value
     // Explicitly check for undefined/null (not just falsy) to allow 0 as valid value
     const totalRows =
       totalRowCount != null
         ? totalRowCount
-        : totalRowsOverride ?? (table.virtual?.rowCount || table.rows.length);
+        : totalRowsOverride ??
+          (currentTableRef.virtual?.rowCount || currentTableRef.rows.length);
     const sliderMax = totalRows;
     const sliderMin = 1;
 
@@ -1786,19 +1814,23 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     // NOTE: Don't set currentSampleRange yet - wait for server response so we use actual total_row_count
     // This is set inside the response handler after data.total_row_count is known
-    if (table.virtual) {
+    if (currentTableRef.virtual) {
       // Generate unique request ID to track this specific request
-      const requestId = `${focusedChart.id}-${table.id}-${Date.now()}`;
+      const requestId = `${focusedChart.id}-${
+        currentTableRef.id
+      }-${Date.now()}`;
       currentRequestRef.current = requestId;
       console.log("🟠 NEW FETCH REQUEST:", {
         requestId,
         chartId: focusedChart.id,
-        tableId: table.id,
+        tableId: currentTableRef.id,
         isLive: isLive ?? focusedChart.qcLive,
       });
 
       // Track originalTable request separately
-      const originalTableRequestId = `${table.id}-${sampleSize}-${Date.now()}`;
+      const originalTableRequestId = `${
+        currentTableRef.id
+      }-${sampleSize}-${Date.now()}`;
       originalTableRequestRef.current = originalTableRequestId;
 
       let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(
@@ -1819,18 +1851,19 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       const uniqueSelectFields = Array.from(new Set(allSelectFields));
 
       // When Data Live is enabled, fetch from _live table instead of original
-      // IMPORTANT: Use tableRef.current (not closure table) to get the CURRENT chart's table
+      // IMPORTANT: Use currentTableRef (already defined at start of function) to get the CURRENT chart's table
       // This prevents stale table references when switching charts
-      const currentTableRef = tableRef.current ?? table; // Fallback to closure table if ref not available
       let tableNameToFetch = currentTableRef.id;
       const actualIsLive = isLive ?? focusedChart.qcLive;
 
       if (actualIsLive) {
-        if (liveTableNameRef.current) {
+        // Agent-derived tables (e.g., view_xxx) must be sampled from the derived
+        // live table after SQL re-execution, not from source _live tables.
+        if (currentTableRef.derive?.code) {
+          tableNameToFetch = liveTableNameRef.current ?? currentTableRef.id;
+        } else if (liveTableNameRef.current) {
           tableNameToFetch = liveTableNameRef.current;
-        }
-        // Check if this is a virtual table or derived from virtual tables
-        if (currentTableRef.virtual) {
+        } else if (currentTableRef.virtual) {
           // Direct virtual table
           const qcParams = resolveQcParamsForTable(currentTableRef);
           const stdParam = (qcParams["std_param_name"] ?? "").toString().trim();
@@ -1951,10 +1984,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               // ALWAYS update Redux table rowcount when fetching to keep it in sync
               // This ensures DataView/SelectableDataGrid shows correct rowcount
               // whether Data Live is on or off
-              if (table.virtual?.rowCount !== data.total_row_count) {
+              if (currentTableRef.virtual?.rowCount !== data.total_row_count) {
                 dispatch(
                   dfActions.updateTableVirtualRowCount({
-                    tableId: table.id,
+                    tableId: currentTableRef.id,
                     rowCount: data.total_row_count,
                   }),
                 );
@@ -1998,18 +2031,24 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
           }
         });
     } else {
-      // Randomly sample sampleSize rows from table.rows (local table, not virtual)
+      // Randomly sample sampleSize rows from currentTableRef.rows (local table, not virtual)
       // Note: rangeMin is 1-based, so subtract 1 to get 0-based array index
-      const startIdx = Math.min(Math.max(rangeMin - 1, 0), table.rows.length);
-      const endIdx = Math.min(startIdx + sampleSize, table.rows.length);
-      const rowSample = table.rows.slice(startIdx, endIdx);
+      const startIdx = Math.min(
+        Math.max(rangeMin - 1, 0),
+        currentTableRef.rows.length,
+      );
+      const endIdx = Math.min(
+        startIdx + sampleSize,
+        currentTableRef.rows.length,
+      );
+      const rowSample = currentTableRef.rows.slice(startIdx, endIdx);
       const clonedSample = structuredClone(rowSample);
 
       // Preprocess data before saving
       const filteredRows = clonedSample.map((row: any) =>
         Object.fromEntries(
           visFields
-            .filter((f) => table.names.includes(f.name))
+            .filter((f) => currentTableRef.names.includes(f.name))
             .map((f) => [f.name, row[f.name]]),
         ),
       );
@@ -2021,7 +2060,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       );
       setVisTableRows(preprocessedData);
       setDataVersion(
-        `${focusedChart.id}-${table.id}-${sortedVisDataFields.join("_")}`,
+        `${focusedChart.id}-${currentTableRef.id}-${sortedVisDataFields.join(
+          "_",
+        )}`,
       );
 
       // ✅ Also set originalTable for local tables with limit columns
@@ -2059,14 +2100,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     setCurrentSampleRange(undefined);
 
     if (table.virtual && visFields.length > 0 && dataFieldsAllAvailable) {
+      // Pass explicit range [1, 1000] to always reset on chart switch
       // Pass qcLive state so correct table is fetched (_live or original)
-      // Pass visTableTotalRowCount to prevent clamping to stale Redux value
-      fetchDisplayRows(
-        undefined,
-        undefined,
-        focusedChart.qcLive,
-        visTableTotalRowCount,
-      );
+      fetchDisplayRows([1, 1000], 1000, focusedChart.qcLive, undefined);
     }
   }, [
     table.id,
@@ -2088,15 +2124,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     if (visFields.length > 0 && dataFieldsAllAvailable) {
       // table changed, we need to update the rows to display
       if (table.virtual) {
-        // virtual table, we need to sample the table (use default 1000 on table switch)
+        // virtual table, we need to sample the table (use explicit [1, 1000] on table switch)
         // Pass qcLive state so correct table is fetched (_live or original)
-        // Pass visTableTotalRowCount to prevent clamping to stale Redux value
-        fetchDisplayRows(
-          undefined,
-          undefined,
-          focusedChart.qcLive,
-          visTableTotalRowCount,
-        );
+        fetchDisplayRows([1, 1000], 1000, focusedChart.qcLive, undefined);
       } else {
         // non-virtual table, update with processed data
         const newProcessedData = createVisTableRowsLocal(table.rows);

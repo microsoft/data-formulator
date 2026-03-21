@@ -51,7 +51,7 @@ Concretely, you should infer the appropriate data and create a SQL query based o
     "recap": "..." // string, a short summary of the user's goal.
     "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
     "recommendation": "..." // string, explain why this recommendation is made
-    "output_fields": ["INDEX", ...] // string[], Fields that will be in the output. This includes: (1) INDEX (if it exists in input, list it first), (2) ALL original input columns, (3) Any NEW computed/transformed columns you create. output_fields describes the complete output including original + new columns.
+    "output_fields": ["INDEX", ...] // string[], Fields that will be in the output. This includes: (1) INDEX (if it exists in input, list it first), (2) Any NEW computed/transformed columns you create. output_fields describes the complete output including original + new columns.
     "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot", "rolling_average", "radial_plot", "linear_regression", "qc_trend_line", "qc_histogram", "qc_trend_bar", "waterfall", "radar", "pie", "donut", "bubble", "histogram", "pareto", "gauge", "funnel", "treemap", "sankey", "timeline", "pyramid", "threshold". "chart_type" should be inferred from user instruction only if explicitly mentioned; otherwise omit this field and let LLM infer from context.
     "chart_encodings": {
         "x": "",
@@ -92,11 +92,10 @@ Additional rules:
   - User explicitly requests the specific QC chart type AND the dataset contains QC control limit columns (TARGET, LL, UL, ARLL, ARUL)
 - **IMPORTANT: Always respect the user's explicit chart type request**, regardless of data characteristics. If user requests a chart type (e.g., "linear regression", "histogram", "line", "bar") and it's in the supported list, use exactly that chart type without questioning it.
 - To identify QC data, check for the presence of these control limit fields: TARGET (required), LL, UL, ARLL, ARUL. If TARGET column exists along with at least one of (LL, UL, ARLL, ARUL), then it's QC data.
-- If the dataset includes QC-related columns (e.g., TARGET, VALUE, INDEX, LL, UL, QCSTDPARAMNAME, LASTUPDATE, QCDATE, QCSHIFT, ARLL, ARUL), **ALWAYS keep all original columns** AND include the necessary visualization fields:
-  * For "qc_trend_line": Output fields must include INDEX (if exists), QCDATE, QCSHIFT, VALUE, QCSTDPARAMNAME, plus all other original columns. Also include TARGET, LL, UL, ARLL, ARUL for rendering control limit lines (these are used by frontend to display limits, not in chart_encodings).
-  * For "qc_histogram": Output fields must include INDEX (if exists), VALUE, QCSTDPARAMNAME, plus all other original columns. Also include TARGET, LL, UL, ARLL, ARUL.
-  * For "qc_trend_bar": Output fields must include INDEX (if exists), QCDATE, QCSHIFT, VALUE, plus all other original columns. Also include TARGET.
-  * For other chart types with QC data: Keep all original columns, plus any fields used in chart_encodings. Use QCSTDPARAMNAME as default color field if needed.
+  * For "qc_trend_line": Output fields must include INDEX, QCDATE, QCSHIFT, VALUE, QCSTDPARAMNAME. Also include TARGET, LL, UL, ARLL, ARUL for rendering control limit lines (these are used by frontend to display limits, not in chart_encodings).
+  * For "qc_histogram": Output fields must include INDEX, VALUE, QCSTDPARAMNAME. Also include TARGET, LL, UL, ARLL, ARUL.
+  * For "qc_trend_bar": Output fields must include INDEX, QCDATE, QCSHIFT, VALUE. Also include TARGET.
+  * For other chart types with QC data: Keep all fields used in chart_encodings. Use QCSTDPARAMNAME as default color field if needed.
   * **NOTE ON QCDATE vs LASTUPDATE**: QCDATE is the control date, LASTUPDATE is the record timestamp. Always include both if available. Use LASTUPDATE for temporal sorting/ordering when needed.
 - "qc_trend_line" means a quality control trend chart that visualizes values and control limits over time. Only use this when user explicitly requests it.
 - "qc_trend_bar" means a quality control trend bar chart that visualizes categorical values and control limits. Only use this when user explicitly requests it.
@@ -241,7 +240,6 @@ Concretely:
     2. Then, write a SQL query based on the inferred goal. The query input are tables (or multiple tables presented in the [CONTEXT] section) and the output is the transformed data.
 
 **CRITICAL RULE FOR SQL QUERIES:**
-- **ALWAYS include ALL original columns from the input table(s) in your SELECT statement**
 - You can ADD new computed/transformed columns (like averages, ranks, etc.), but NEVER REMOVE original columns
 - The input data typically already has an INDEX column - if it does, just use it directly with `SELECT *, computed_field_1, ... FROM table_name`
 - Do NOT create a new INDEX column (don't use ROW_NUMBER() AS INDEX unless explicitly asked by user)
@@ -268,6 +266,20 @@ note:
     - "output_fields" should include "INDEX" but it typically already exists in the input data
     - Do NOT create a new INDEX column - if INDEX already exists in the input table, just use it directly
     - Only create ROW_NUMBER() AS INDEX if the input table genuinely does NOT have an INDEX column
+    - **EXCEPTION - GROUP BY / AGGREGATION CASE (CRITICAL):**
+      * When the user requests operations that change the row count (GROUP BY, aggregation like SUM/COUNT/AVG, DISTINCT, etc.), the number of output rows WILL DIFFER from input rows
+      * In these cases, you MUST recalculate INDEX for the output using: `ROW_NUMBER() OVER (ORDER BY <sort_key>) AS INDEX`
+      * The sort_key should make logical sense (e.g., ORDER BY the grouped column, or ORDER BY an aggregated measure)
+      * Example: If user asks "Group by QCDATE and calculate the total VALUE for each group":
+        - Input might have 1000 rows with many QCDATE values
+        - Output will have only ~30 rows (one per unique QCDATE)
+        - Use: `ROW_NUMBER() OVER (ORDER BY QCDATE) AS INDEX` (NOT GROUP BY INDEX)
+      * Common patterns requiring INDEX recalculation:
+        - GROUP BY with aggregations (SUM, COUNT, AVG, MIN, MAX)
+        - DISTINCT (removes duplicate rows)
+        - ORDER BY without GROUP BY (if reordering changes logical sequence)
+        - Window functions that partition/reduce row count
+      * Do NOT include the original INDEX in GROUP BY clause - only GROUP BY the grouping columns you want
     - INDEX should NOT be included in chart_encodings (it's a row identifier, not a visualization field)
 
 some notes:
@@ -353,6 +365,69 @@ FROM
     student_exam  
 ORDER BY average_score DESC;
 ```
+
+---
+
+**GROUP BY EXAMPLE** (Showing correct INDEX recalculation):
+
+[CONTEXT]
+
+table_0 (qc_sample_data) fields:
+    INDEX -- type: int64, values: 1, 2, 3, ..., 999, 1000 (original row numbers)
+    QCDATE -- type: object, values: 2026-03-10, 2026-03-11, 2026-03-12, ...
+    VALUE -- type: float64, values: 12.5, 13.2, 11.8, ..., 14.1
+
+table_0 (qc_sample_data) sample:
+```
+|INDEX|QCDATE|VALUE
+0|1|2026-03-10|12.5
+1|2|2026-03-10|13.2
+2|3|2026-03-10|11.8
+3|4|2026-03-11|14.1
+4|5|2026-03-11|15.0
+......
+```
+
+[GOAL]
+
+{"goal": "Group by QCDATE and calculate the total VALUE for each group, then visualize it using a bar chart"}
+
+[OUTPUT]
+
+❌ WRONG: Including original INDEX in GROUP BY (would return 1000 rows - each original row):
+```sql
+SELECT INDEX, QCDATE, SUM(VALUE) AS TOTAL_VALUE
+FROM qc_sample_data
+GROUP BY INDEX, QCDATE  -- WRONG! This defeats the purpose of GROUP BY
+```
+
+✅ CORRECT: Recalculate INDEX for the output (returns ~30 rows - one per QCDATE):
+```json
+{
+    "recap": "Group by QCDATE and calculate total VALUE for each date",
+    "display_instruction": "Calculate total **VALUE** per **QCDATE**",
+    "mode": "infer",
+    "recommendation": "To group by QCDATE and show total VALUE per date, we aggregate the data by date. Since grouping reduces the row count from 1000 to ~30 rows, a new INDEX must be calculated for the output.",
+    "output_fields": ["INDEX", "QCDATE", "TOTAL_VALUE"],
+    "chart_type": "bar",
+    "chart_encodings": {"x": "QCDATE", "y": "TOTAL_VALUE"}
+}
+```
+
+```sql
+SELECT
+    ROW_NUMBER() OVER (ORDER BY QCDATE) AS INDEX,
+    QCDATE,
+    SUM(VALUE) AS TOTAL_VALUE
+FROM qc_sample_data
+GROUP BY QCDATE
+ORDER BY QCDATE;
+```
+
+Key points:
+- Do NOT include original INDEX in the GROUP BY clause
+- Use ROW_NUMBER() OVER (ORDER BY <sort_column>) AS INDEX to create new sequence numbers for the aggregated result
+- The ROW_NUMBER() produces 1, 2, 3... for the output rows (not the input rows)
 """
 
 class SQLDataRecAgent(object):

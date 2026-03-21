@@ -112,11 +112,26 @@ note:
     - if the output field is year, convert it to number, if it is year-month / year-month-day, convert it to string object (e.g., "2020-01" / "2020-01-01").
     - if the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string object (e.g., "10:30", "10:30:45")
     - never return datetime object directly, convert it to either number (if it only contains year) or string so it's readable.
-- **CRITICAL: INDEX field requirement**:
+- **CRITICAL: INDEX field requirement and recalculation for GROUP BY**:
     - The transformed_df MUST always include an "INDEX" column containing row sequence numbers (starting from 1).
     - Add INDEX column in the transformation function using: `transformed_df.insert(0, 'INDEX', range(1, len(transformed_df) + 1))`
     - This applies to ALL transformations, regardless of data type (normal data, QC data, etc.).
     - Do NOT create INDEX in the output_fields JSON only - MUST be added in the actual python code.
+    - **CRITICAL - GROUP BY / AGGREGATION CASE:**
+      * When operations change the row count (groupby, aggregation with sum/count/mean, drop_duplicates, etc.), the transformed_df will have DIFFERENT number of rows
+      * INDEX must be recalculated AFTER these operations, NOT carried from the input data
+      * Example: If user asks "Group by QCDATE and calculate the total VALUE for each group":
+        - Input might be 1000 rows
+        - After groupby and aggregation, output might be 30 rows (one per unique QCDATE)
+        - After aggregation, use: `transformed_df['INDEX'] = range(1, len(transformed_df) + 1)` OR use the insert method AFTER groupby
+      * Pattern: Do groupby/aggregation first, THEN add INDEX field to the result
+        ```python
+        # Do NOT include INDEX in groupby keys
+        result = df.groupby('QCDATE')['VALUE'].sum().reset_index()
+        # Then add INDEX after aggregation
+        result.insert(0, 'INDEX', range(1, len(result) + 1))
+        ```
+      * Do NOT group by the original INDEX - only group by the columns that make logical sense
 
     3. The output must only contain a json object representing the refined goal and a python code block representing the transformation code, do not add any extra text explanation.
 '''
@@ -244,6 +259,71 @@ def transform_data(df):
       
     return transformed_df 
 ```
+
+---
+
+**GROUP BY EXAMPLE** (Showing correct INDEX recalculation):
+
+[CONTEXT]
+
+df1 (qc_sample_data) fields:
+    INDEX -- type: int64, values: 1, 2, 3, ..., 999, 1000
+    QCDATE -- type: object, values: 2026-03-10, 2026-03-11, 2026-03-12, ...
+    VALUE -- type: float64, values: 12.5, 13.2, 11.8, ..., 14.1
+
+df1 (qc_sample_data) sample:
+```
+|INDEX|QCDATE|VALUE
+0|1|2026-03-10|12.5
+1|2|2026-03-10|13.2
+2|3|2026-03-10|11.8
+3|4|2026-03-11|14.1
+4|5|2026-03-11|15.0
+......
+```
+
+[GOAL]
+
+{
+    "instruction": "Group by QCDATE and calculate the total VALUE for each group, then visualize it using a bar chart",
+    "chart_type": "bar",
+    "chart_encodings": {"x": "QCDATE", "y": "TOTAL_VALUE"}
+}
+
+[OUTPUT]
+
+{
+    "detailed_instruction": "Group data by QCDATE and calculate the sum of VALUE for each date. The result will have one row per unique QCDATE with the aggregated total VALUE.",
+    "display_instruction": "Calculate total **VALUE** per **QCDATE**",
+    "output_fields": ["INDEX", "QCDATE", "TOTAL_VALUE"],
+    "chart_encodings": {"x": "QCDATE", "y": "TOTAL_VALUE"},
+    "reason": "To group by QCDATE and show total VALUE per date, we aggregate the data by using groupby. Since grouping reduces the row count from 1000 to ~30 rows (one per QCDATE), INDEX must be recalculated for the aggregated output. The new INDEX will be 1, 2, 3, ... for the grouped results."
+}
+
+```python
+import pandas as pd
+import collections
+import numpy as np
+
+def transform_data(df):
+    # Group by QCDATE and sum the VALUE column
+    # Do NOT include INDEX in the groupby - only group by QCDATE
+    grouped_df = df.groupby('QCDATE')['VALUE'].sum().reset_index()
+    grouped_df.columns = ['QCDATE', 'TOTAL_VALUE']
+    
+    # After grouping, the number of rows has changed (from 1000 to ~30)
+    # So we must recalculate INDEX for the output
+    # Add INDEX AFTER grouping/aggregation is complete
+    grouped_df.insert(0, 'INDEX', range(1, len(grouped_df) + 1))
+    
+    return grouped_df
+```
+
+Key points:
+- Do NOT include the original INDEX in the groupby() parameters
+- Only group by the columns that define your groups (e.g., 'QCDATE')
+- AFTER aggregation is complete, add the INDEX column with new sequence numbers
+- The new INDEX will be 1, 2, 3... for the aggregated output rows (not the input rows)
 '''
 
 class PythonDataTransformationAgent(object):
