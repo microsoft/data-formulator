@@ -109,7 +109,11 @@ SHARED_DUCKDB_NOTES = '''**DuckDB notes:**
 - Escape single quotes with '' (not \\')
 - No Unicode escapes (\\u0400); use character ranges directly: [а-яА-Я]
 - Cast date columns explicitly: `CAST(col AS DATE)`, `CAST(col AS TIMESTAMP)`
-- For complex datetime operations, load data first then use pandas datetime functions'''
+- For complex datetime operations, load data first then use pandas datetime functions
+- Critical identifier quoting rule:
+  * If a table/column name contains non-ASCII characters (e.g., Chinese, Japanese, Korean, Cyrillic, etc.), spaces, or punctuation,
+    you MUST wrap it in double quotes, e.g. SELECT "金额" FROM "客户表".
+  * Never output placeholder identifiers like your_table_name, your_column, your_condition.'''
 
 
 # =============================================================================

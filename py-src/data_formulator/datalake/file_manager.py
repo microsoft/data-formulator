@@ -11,6 +11,7 @@ as-is in the workspace without conversion.
 import hashlib
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO, Union
@@ -70,6 +71,9 @@ def compute_file_hash(content: bytes) -> str:
 def sanitize_table_name(name: str) -> str:
     """
     Sanitize a string to be a valid table name.
+
+    Preserves Unicode letters and digits while normalizing separators
+    and punctuation to underscores.
     
     Args:
         name: Original name
@@ -79,24 +83,17 @@ def sanitize_table_name(name: str) -> str:
     """
     # Remove extension if present
     name = Path(name).stem
-    
-    # Replace invalid characters with underscores
-    sanitized = []
-    for char in name:
-        if char.isalnum() or char == '_':
-            sanitized.append(char)
-        else:
-            sanitized.append('_')
-    
-    result = ''.join(sanitized)
-    
-    # Ensure it starts with a letter or underscore
-    if result and not (result[0].isalpha() or result[0] == '_'):
-        result = '_' + result
+
+    result = re.sub(r"[^\w]+", "_", name, flags=re.UNICODE)
+    result = re.sub(r"_+", "_", result).strip("_")
     
     # Ensure it's not empty
     if not result:
         result = '_unnamed'
+    
+    # Ensure it starts with a letter or underscore
+    if not (result[0].isalpha() or result[0] == '_'):
+        result = '_' + result
     
     return result.lower()
 

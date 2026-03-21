@@ -403,23 +403,38 @@ def derive_data():
                                         current_visualization=current_visualization, expected_visualization=expected_visualization)
 
                 repair_attempts = 0
-                while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
-                    error_message = results[0]['content']
+                while (
+                    isinstance(results, list)
+                    and len(results) > 0
+                    and results[0].get('status') in ('error', 'other error')
+                    and repair_attempts < max_repair_attempts
+                ):
+                    error_message = results[0].get('content', 'Unknown error')
                     logger.warning(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
                     new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
-                    prev_dialog = results[0]['dialog']
+                    prev_dialog = results[0].get('dialog', [])
 
-                    if mode == "transform":
-                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                    if mode == "recommendation":
-                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    try:
+                        if mode == "transform":
+                            results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                        if mode == "recommendation":
+                            results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    except Exception as followup_exc:
+                        logger.exception("derive_data followup failed")
+                        results = [{
+                            "status": "error",
+                            "content": sanitize_model_error(str(followup_exc)),
+                            "code": "",
+                            "dialog": [],
+                        }]
+                        break
 
                     repair_attempts += 1
-                    logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+                    logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
 
                 if repair_attempts > 0:
-                    logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+                    logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
 
             # Sign code in each result so the frontend can send it back
             # for re-execution during data refresh with proof of authenticity.
@@ -604,18 +619,34 @@ def refine_data():
                                         current_visualization=current_visualization, expected_visualization=expected_visualization)
 
                 repair_attempts = 0
-                while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
-                    error_message = results[0]['content']
+                while (
+                    isinstance(results, list)
+                    and len(results) > 0
+                    and results[0].get('status') in ('error', 'other error')
+                    and repair_attempts < max_repair_attempts
+                ):
+                    error_message = results[0].get('content', 'Unknown error')
                     logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
                     new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-                    prev_dialog = results[0]['dialog']
+                    prev_dialog = results[0].get('dialog', [])
 
-                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    try:
+                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    except Exception as followup_exc:
+                        logger.exception("refine_data followup failed")
+                        results = [{
+                            "status": "error",
+                            "content": sanitize_model_error(str(followup_exc)),
+                            "code": "",
+                            "dialog": [],
+                        }]
+                        break
+
                     repair_attempts += 1
-                    logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+                    logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
 
                 if repair_attempts > 0:
-                    logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+                    logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
 
             # Sign code in each result for secure refresh later.
             for r in results:
@@ -744,9 +775,9 @@ def get_recommendation_questions():
                     for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
                         yield chunk
                 except Exception as e:
-                    logger.error(e)
-                    error_data = { 
-                        "content": "unable to process recommendation questions request" 
+                    logger.exception("get-recommendation-questions failed")
+                    error_data = {
+                        "content": sanitize_model_error(str(e))
                     }
                     yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
