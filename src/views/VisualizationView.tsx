@@ -340,7 +340,7 @@ export let SampleSizeEditor: FC<{
   onSampleSizeChange,
 }) {
   const maxSliderSize = totalSize;
-  const minSliderSize = 1;
+  const minSliderSize = 0;
 
   const normalizeRange = (range: [number, number]) => {
     const lower = Math.min(Math.max(range[0], minSliderSize), maxSliderSize);
@@ -1149,7 +1149,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 dispatch(
                   dfActions.replaceTable({ ...tableToRestore!, rows: d.rows }),
                 );
-                const resetRange: [number, number] = [1, 1000];
+                const resetRange: [number, number] = [0, 1000];
                 setCurrentSampleRange(resetRange);
                 fetchDisplayRowsRef.current(resetRange, d.rows.length);
               }
@@ -1181,7 +1181,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     rowCount: restoredCount,
                   }),
                 );
-                const resetRange: [number, number] = [1, 1000];
+                const resetRange: [number, number] = [0, 1000];
                 setCurrentSampleRange(resetRange);
                 fetchDisplayRowsRef.current(resetRange, restoredCount);
               }
@@ -1287,18 +1287,33 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       tableRefLookup: `Found by focusedChart.tableRef: ${focusedChart.tableRef}`,
     });
 
+    // ============================================
+    // MODE 1: AGENT-DERIVED TABLE (with custom SQL)
+    // ============================================
     if (currentTable?.derive?.code && focusedChart.qcLive) {
-      // Agent-derived table: re-ingest source virtual tables then re-execute the SQL
+      // Agent created this table by transforming source data via custom SQL.
+      // We need to:
+      // 1. Re-ingest source tables with fresh date-range data
+      // 2. Replace source table refs with _live versions in agent SQL
+      // 3. Execute the agent SQL on fresh data to get aggregated results
+
       const virtualSources = (currentTable.derive.source ?? [])
         .map((id) => tables.find((t) => t.id === id))
         .filter((t): t is (typeof tables)[0] => !!t?.virtual);
 
       try {
-        // 1. Re-ingest all virtual source tables with rolling date window
-        //    Use virtual.tableId as name_as to match the actual DuckDB table name
+        console.log(
+          "🟢 MODE 1: AGENT-DERIVED TABLE START",
+          currentTable.id,
+          "with",
+          virtualSources.length,
+          "source(s)",
+        );
+
+        // STEP 1: Re-ingest all virtual source tables with rolling date window
+        //         This fills _live tables with fresh data from QC_Data
         await Promise.all(
           virtualSources.map((srcTable) => {
-            // Use per-table loaderParams if available, fall back to global QC_Data params
             const qcParams = resolveQcParamsForTable(srcTable);
             const built = buildQcDataQuery(qcParams, {
               from_date: fmt(fromDate),
@@ -1306,52 +1321,44 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               is_live: true,
             });
             if (!built) return Promise.resolve();
+
             console.log(
-              "🔵 Re-ingesting virtual source:",
+              "🔵 Step1-Ingest source table:",
               srcTable.id,
-              "with date range",
+              "| name_as:",
+              built.name_as,
+              "| date:",
               fmt(fromDate),
-              "to",
+              "→",
               fmt(today),
-              "| Query name_as:",
-              built.name_as,
             );
-            // Use table.id and chart ID as suffix to avoid conflicts when multiple charts use same parameter or same table
-            const requestBody = {
-              data_loader_type: "QC_Data",
-              data_loader_params: qcParams,
-              query: built.query,
-              name_as: built.name_as,
-            };
-            console.log(
-              "🔵 Sending to backend | name_as:",
-              built.name_as,
-              "| std_param:",
-              qcParams["std_param_name"],
-            );
+
             return fetch(getUrls().DATA_LOADER_INGEST_DATA_FROM_QUERY, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(requestBody),
+              body: JSON.stringify({
+                data_loader_type: "QC_Data",
+                data_loader_params: qcParams,
+                query: built.query,
+                name_as: built.name_as,
+              }),
             })
               .then((r) => r.json())
               .then((d) => {
-                console.log(
-                  "🔵 Re-ingest response:",
-                  srcTable.id,
-                  "| name_as:",
-                  built.name_as,
-                  "| status:",
-                  d.status,
-                  "| row_count:",
-                  d.row_count,
-                );
+                console.log("🟠 STEP1 - Source ingest response:", {
+                  status: d.status,
+                  row_count: d.row_count,
+                  hasRows: !!d.rows,
+                  rowsLength: d.rows?.length,
+                  name_as: built.name_as,
+                });
                 if (d.status === "success") {
                   console.log(
-                    "✅ Re-ingest success:",
+                    "✅ Source re-ingest success:",
                     srcTable.id,
-                    "rowCount:",
+                    "→",
                     d.row_count,
+                    "rows",
                   );
                   dispatch(
                     dfActions.updateTableVirtualRowCount({
@@ -1367,12 +1374,19 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
           }),
         );
 
-        // 2. Re-execute the derived SQL and get the fresh rows back
-        // IMPORTANT: Must replace source table names with their _live versions
-        // so SQL reads from the newly re-ingested live data, not the original stale data
+        // STEP 2: Replace source table names with _live versions in agent SQL
+        //         This makes agent SQL read from fresh _live tables, not stale originals
         let modifiedSqlCode = currentTable.derive.code;
 
-        // Replace source table references with _live versions
+        console.log("🔴 DEBUG - ORIGINAL AGENT SQL:\n", modifiedSqlCode);
+        console.log(
+          "🔴 DEBUG - SOURCES TO REPLACE:",
+          virtualSources.map((s) => ({
+            id: s.id,
+            stdParam: resolveQcParamsForTable(s)["std_param_name"],
+          })),
+        );
+
         virtualSources.forEach((srcTable) => {
           const qcParams = resolveQcParamsForTable(srcTable);
           const stdParam = (qcParams["std_param_name"] ?? "").toString().trim();
@@ -1381,9 +1395,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             const liveTableName = `${paramName}_live`;
             const escapeRegExp = (text: string) =>
               text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            // Replace source table name with _live version in SQL
-            // Replace both std parameter name and source table id, since agent SQL
-            // may reference either one (e.g. FROM EP_CHAMFER_ANGLE_OUT).
+
             const stdPattern = new RegExp(
               `\\b${escapeRegExp(stdParam)}\\b`,
               "gi",
@@ -1395,43 +1407,69 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             modifiedSqlCode = modifiedSqlCode
               .replace(stdPattern, liveTableName)
               .replace(tableIdPattern, liveTableName);
-            console.log(
-              `📝 SQL replace: "${stdParam}"/"${srcTable.id}" → "${liveTableName}"`,
-            );
+
+            console.log(`📝 SQL replace: "${paramName}" → "${liveTableName}"`);
+            console.log("🔴 DEBUG - SQL after replacement:\n", modifiedSqlCode);
           }
         });
 
-        // For agent-derived Data Live, materialize a dedicated derived live table.
-        // Also constrain by QCDATE window to guarantee fresh data by selected range.
-        const filteredDerivedSqlCode = /\bQCDATE\b/i.test(modifiedSqlCode)
-          ? `SELECT * FROM (${modifiedSqlCode}) AS __df_live_base WHERE QCDATE >= '${fromCompact}' AND QCDATE <= '${toCompact}'`
-          : modifiedSqlCode;
+        // STEP 3: If agent SQL has QCDATE column in output, apply date filter
+        //         Source _live tables already filtered, but this ensures output is clean
+        let finalSqlCode = modifiedSqlCode;
+
+        // TEST: First execute WITHOUT WHERE filter to see if table exists and has data
+        console.log(
+          "🔵 STEP 3 TEST - Will execute agent SQL WITHOUT date filter first",
+        );
+        // Don't apply filter yet - let's see if the base query has data
+
+        // STEP 4: Execute modified agent SQL to get fresh aggregated/transformed data
         const derivedDuckDbName = `${currentTable.id}_live`;
+        console.log("🟡 Step4-Execute agent SQL: name_as =", derivedDuckDbName);
+        console.log(
+          "🔴 DEBUG - ACTUAL SQL CODE TO EXECUTE (NO FILTER):\n",
+          modifiedSqlCode,
+        );
+
         const sqlResp = await fetch(getUrls().EXECUTE_SQL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            code: filteredDerivedSqlCode,
+            code: modifiedSqlCode,
             name_as: derivedDuckDbName,
           }),
         });
+
         let sqlData: any = {};
         try {
           sqlData = await sqlResp.json();
         } catch {
           sqlData = { status: "error", message: `HTTP ${sqlResp.status}` };
         }
+
+        console.log("🟠 BACKEND RESPONSE - Agent SQL result (NO FILTER):", {
+          status: sqlData.status,
+          row_count: sqlData.row_count,
+          rowsLength: sqlData.rows?.length,
+          firstRow: sqlData.rows?.[0],
+        });
+
         if (sqlData.status !== "success") {
           console.warn(
-            "Data Live SQL re-execute failed:",
+            "🔴 Agent SQL re-execute failed:",
             sqlData.message ?? sqlData.error,
           );
         } else {
-          // 3. Only update if still on the same chart (prevent cross-chart contamination)
+          // STEP 5: Update display if still on same chart (prevent cross-chart contamination)
           if (focusedChartId === refreshChartId) {
-            // For agent-derived tables, sampling must target the derived table itself.
+            console.log(
+              "🟢 Agent SQL result:",
+              sqlData.rows?.length ?? 0,
+              "rows",
+            );
             liveTableNameRef.current = derivedDuckDbName;
-            // Update Redux with the fresh rows so chart encodings stay correct
+
+            // Update Redux
             if (sqlData.rows && sqlData.rows.length > 0) {
               dispatch(
                 dfActions.replaceTable({
@@ -1440,39 +1478,31 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 }),
               );
             }
-            // 4. Refresh visTableRows from DuckDB (which now has the fresh TABLE data)
+
+            // Fetch and display fresh rows (full range for Data Live)
             setCurrentSampleRange(undefined);
-            console.log(
-              "🟡 Calling fetchDisplayRows for derived table with",
-              sqlData.rows?.length ?? 100000,
-              "rows",
-            );
-            fetchDisplayRowsRef.current(
-              [0, sqlData.rows?.length ?? 100000],
-              sqlData.rows?.length ?? 100000,
-              true, // isLive=true, fetch from _live table
-            );
+            const rowCount = sqlData.rows?.length ?? 0;
+            fetchDisplayRowsRef.current([0, rowCount], rowCount, true);
             setQcCountdown(qcRefreshInterval);
           }
           return;
         }
       } catch (err) {
-        console.error("Data Live derived table refresh error:", err);
+        console.error("🔴 Data Live agent table error:", err);
       }
     } else if (currentTable?.virtual && focusedChart.qcLive) {
-      // Direct virtual Data table: re-ingest with a rolling date window
-      // Use per-table loaderParams if available, fall back to global QC_Data params
+      // ============================================
+      // MODE 2: DIRECT VIRTUAL TABLE (manual/QC_Data)
+      // ============================================
+      // Manual table loaded directly from QC_Data connector.
+      // Simply re-ingest with fresh date-range window and update display.
+
       const qcParams = resolveQcParamsForTable(currentTable);
 
-      // VALIDATION: Ensure we're using the correct table's parameters
-      const expectedTableId = currentTable.id;
-      const expectedStdParam = qcParams["std_param_name"];
-      console.log("🟡 Direct virtual table refresh validation:", {
-        currentTableId: expectedTableId,
-        tableRefFromChart: focusedChart.tableRef,
-        stdParam: expectedStdParam,
-        hasValidParams: !!expectedStdParam,
-        paramsSourceTable: qcParams["table_name"] || "N/A",
+      console.log("🟢 MODE 2: DIRECT VIRTUAL TABLE START", currentTable.id);
+      console.log("  Params:", {
+        std_param_name: qcParams["std_param_name"],
+        dateRange: `${fmt(fromDate)} → ${fmt(today)}`,
       });
 
       const built = buildQcDataQuery(qcParams, {
@@ -1480,19 +1510,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         to_date: fmt(today),
         is_live: true,
       });
+
       if (built) {
-        // Pin the exact _live table name returned by query builder for this chart.
         liveTableNameRef.current = built.name_as;
         console.log(
-          "🟢 Direct virtual table re-ingest:",
+          "🟡 Re-ingesting table:",
           currentTable.id,
-          "| name_as:",
+          "→",
           built.name_as,
-          "| std_param:",
-          qcParams["std_param_name"],
-          "| dateRange:",
-          `${fmt(fromDate)} to ${fmt(today)}`,
         );
+
         try {
           const resp = await fetch(
             getUrls().DATA_LOADER_INGEST_DATA_FROM_QUERY,
@@ -1507,63 +1534,52 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               }),
             },
           );
+
           let data: any = {};
           try {
             data = await resp.json();
           } catch {
             data = { status: "error", message: `HTTP ${resp.status}` };
           }
-          console.log(
-            "🟢 Direct virtual response:",
-            currentTable.id,
-            "| name_as:",
-            built.name_as,
-            "| status:",
-            data.status,
-            "| row_count:",
-            data.row_count,
-          );
+
           if (data.status !== "success") {
-            console.warn(
-              "Data Live re-ingest failed:",
-              data.message ?? data.error,
-            );
+            console.warn("🔴 Re-ingest failed:", data.message ?? data.error);
           } else {
-            // Only update if still on the same chart (prevent cross-chart contamination)
+            // Only update if still on the same chart
             if (focusedChartId === refreshChartId) {
               const newRowCount: number = data.row_count ?? 100000;
               console.log(
-                "🟡 Direct virtual table refresh:",
+                "✅ Re-ingest success:",
                 currentTable.id,
-                "newRowCount:",
+                "→",
                 newRowCount,
+                "rows",
               );
+
               dispatch(
                 dfActions.updateTableVirtualRowCount({
                   tableId: currentTable.id,
                   rowCount: newRowCount,
                 }),
               );
+
               setCurrentSampleRange(undefined);
-              console.log(
-                "🟡 Calling fetchDisplayRows for virtual table with range [0,",
-                newRowCount,
-                "]",
-              );
-              fetchDisplayRowsRef.current([0, newRowCount], newRowCount, true); // isLive=true
+              fetchDisplayRowsRef.current([0, newRowCount], newRowCount, true);
               setQcCountdown(qcRefreshInterval);
             }
             return;
           }
         } catch (err) {
-          console.error("Data Live re-ingest error:", err);
+          console.error("🔴 Data Live re-ingest error:", err);
         }
       }
     }
 
-    // Final fallback: only if still on same chart
+    // ============================================
+    // FALLBACK: Reset countdown if Data Live couldn't proceed
+    // ============================================
     if (focusedChartId === refreshChartId) {
-      fetchDisplayRowsRef.current();
+      console.log("🟡 Data Live refresh complete or skipped");
       setQcCountdown(qcRefreshInterval);
     }
   }, [
@@ -1712,7 +1728,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       visTableTotalRowCount != null && visTableTotalRowCount > 0
         ? visTableTotalRowCount
         : table.virtual?.rowCount || table.rows.length;
-    return [1, Math.min(1000, totalRows)];
+    return [0, Math.min(1000, totalRows)];
   }, [visTableTotalRowCount, table.virtual?.rowCount, table.rows.length]);
 
   const [currentSampleRange, setCurrentSampleRange] = useState<
@@ -1789,7 +1805,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         : totalRowsOverride ??
           (currentTableRef.virtual?.rowCount || currentTableRef.rows.length);
     const sliderMax = totalRows;
-    const sliderMin = 1;
+    const sliderMin = 0;
 
     const clampRange = (value: [number, number]): [number, number] => {
       const lower = Math.min(Math.max(value[0], sliderMin), sliderMax);
@@ -1802,10 +1818,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       // User explicitly selected a range via SampleSizeEditor or Resample button
       normalizedRange = clampRange(range);
     } else {
-      // No explicit range passed - use default [1, 1000]
+      // No explicit range passed - use default [0, 1000]
       // IMPORTANT: Don't read currentSampleRange from closure - it's stale after chart switch!
       // When called from fetch effects, this ensures we always get the default for a new chart
-      normalizedRange = [1, Math.min(1000, sliderMax)];
+      normalizedRange = [0, Math.min(1000, sliderMax)];
     }
 
     const [rangeMin, rangeMax] = normalizedRange;
@@ -1820,12 +1836,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         currentTableRef.id
       }-${Date.now()}`;
       currentRequestRef.current = requestId;
-      console.log("🟠 NEW FETCH REQUEST:", {
-        requestId,
-        chartId: focusedChart.id,
-        tableId: currentTableRef.id,
-        isLive: isLive ?? focusedChart.qcLive,
-      });
 
       // Track originalTable request separately
       const originalTableRequestId = `${
@@ -1839,7 +1849,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       );
 
       // For Resample: fetch with limit columns to update originalTable immediately
-      const limitFields = ["TARGET", "LL", "UL", "ARLL", "ARUL"];
+      const limitFields = ["TARGET", "LL", "UL", "ARLL", "ARUL", "SLIPNO"];
       const selectFieldsForOriginal = ["INDEX", ...limitFields];
 
       // Combine visualization fields + limit fields for complete data
@@ -1890,14 +1900,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         }
       }
 
-      console.log("🟡 fetchDisplayRows:", {
-        actualIsLive,
-        currentTableRefId: currentTableRef.id,
-        tableNameToFetch,
-        range,
-        sampleSize,
-      });
-
       fetch(getUrls().SAMPLE_TABLE, {
         method: "POST",
         headers: {
@@ -1914,23 +1916,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         }),
       })
         .then((response) => {
-          console.log("🟣 fetch.SAMPLE_TABLE response:", {
-            tableNameToFetch,
-            status: response.status,
-            requestId,
-            currentRequestId: currentRequestRef.current,
-          });
           return response.json();
         })
         .then((data) => {
-          console.log("🟣 fetch.SAMPLE_TABLE data:", {
-            status: data.status,
-            totalRowCount: data.total_row_count,
-            rowsLength: data.rows?.length,
-            requestId,
-            currentRequestId: currentRequestRef.current,
-            match: currentRequestRef.current === requestId,
-          });
           // Only update if this is still the current request (not stale)
           if (currentRequestRef.current === requestId) {
             const versionId = `${focusedChart.id}-${
@@ -1976,8 +1964,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 // User provided explicit range - use it
                 actualRange = clampRange(range);
               } else {
-                // No explicit range - use default [1, min(1000, actual_server_rowcount)]
-                actualRange = [1, Math.min(1000, data.total_row_count)];
+                // No explicit range - use default [0, min(1000, actual_server_rowcount)]
+                actualRange = [0, Math.min(1000, data.total_row_count)];
               }
               setCurrentSampleRange(actualRange);
 
@@ -2067,7 +2055,15 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
       // ✅ Also set originalTable for local tables with limit columns
       // Extract the sampled rows with limit columns
-      const limitFields = ["INDEX", "TARGET", "LL", "UL", "ARLL", "ARUL"];
+      const limitFields = [
+        "INDEX",
+        "TARGET",
+        "LL",
+        "UL",
+        "ARLL",
+        "ARUL",
+        "SLIPNO",
+      ];
       const originalTableData = rowSample.map((row: any) =>
         Object.fromEntries(
           limitFields
@@ -2100,9 +2096,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     setCurrentSampleRange(undefined);
 
     if (table.virtual && visFields.length > 0 && dataFieldsAllAvailable) {
-      // Pass explicit range [1, 1000] to always reset on chart switch
+      // Pass explicit range [0, 1000] to always reset on chart switch
       // Pass qcLive state so correct table is fetched (_live or original)
-      fetchDisplayRows([1, 1000], 1000, focusedChart.qcLive, undefined);
+      fetchDisplayRows([0, 1000], 1000, focusedChart.qcLive, undefined);
     }
   }, [
     table.id,
@@ -2124,9 +2120,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     if (visFields.length > 0 && dataFieldsAllAvailable) {
       // table changed, we need to update the rows to display
       if (table.virtual) {
-        // virtual table, we need to sample the table (use explicit [1, 1000] on table switch)
+        // virtual table, we need to sample the table (use explicit [0, 1000] on table switch)
         // Pass qcLive state so correct table is fetched (_live or original)
-        fetchDisplayRows([1, 1000], 1000, focusedChart.qcLive, undefined);
+        fetchDisplayRows([0, 1000], 1000, focusedChart.qcLive, undefined);
       } else {
         // non-virtual table, update with processed data
         const newProcessedData = createVisTableRowsLocal(table.rows);
@@ -2257,6 +2253,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                   editor: true,
                 },
                 renderer: "svg",
+                hover: true,
                 downloadFileName: `chart-${focusedChart.id}`,
               },
             ).catch((error) => {
@@ -3228,9 +3225,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         fullScreen
         open={isFullscreen}
         onClose={exitBrowserFullscreen}
+        disableEnforceFocus
+        disableRestoreFocus
+        BackdropProps={{
+          sx: { pointerEvents: "none" },
+        }}
         PaperProps={{
           sx: {
             backgroundColor: "#fafafa",
+            overflow: "visible",
+            pointerEvents: "auto",
           },
         }}
       >
@@ -3240,7 +3244,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             flexDirection: "column",
             height: "100%",
             width: "100%",
-            overflow: "hidden",
+            overflow: "visible",
             p: 2,
             boxSizing: "border-box",
           }}
@@ -3304,7 +3308,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               flexDirection: "column",
               justifyContent: "center",
               alignItems: "center",
-              overflow: "auto",
+              overflow: "visible",
               minHeight: 0,
             }}
           >
@@ -3331,11 +3335,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                   alignItems: "center",
                   justifyContent: "center",
                   position: "relative",
+                  overflow: "visible",
                 }}
               >
                 <Box
                   id={`fullscreen-chart-${focusedChart.id}`}
-                  sx={{ display: "flex" }}
+                  sx={{ display: "flex", overflow: "visible" }}
                 ></Box>
               </Box>
             )}
@@ -3363,6 +3368,11 @@ export const VisualizationViewFC: FC<VisPanelProps> =
     let chartSynthesisInProgress = useSelector(
       (state: DataFormulatorState) => state.chartSynthesisInProgress,
     );
+    // Get tables and dataLoaderConnectParams for QC validation
+    let tables = useSelector(dfSelectors.getTables);
+    let dataLoaderConnectParams = useSelector(
+      (state: DataFormulatorState) => state.dataLoaderConnectParams,
+    );
 
     const dispatch = useDispatch();
 
@@ -3370,6 +3380,33 @@ export const VisualizationViewFC: FC<VisPanelProps> =
     let synthesisRunning = focusedChartId
       ? chartSynthesisInProgress.includes(focusedChartId)
       : false;
+
+    // Helper: Check if a chart type requires QC data
+    const isQcChartType = (chartType: string): boolean => {
+      return (
+        chartType === "QC Trend Line" ||
+        chartType === "QC Histogram" ||
+        chartType === "QC Trend Bar"
+      );
+    };
+
+    // Helper: Check if the focused/selected table is a QC table
+    const isQcTable = (): boolean => {
+      const qcParams = dataLoaderConnectParams["QC_Data"] ?? {};
+      const qcConfigured = Object.keys(qcParams).length > 0;
+      if (!qcConfigured) return false;
+
+      if (focusedTableId) {
+        const selectedTable = tables.find((t) => t.id === focusedTableId);
+        if (selectedTable?.virtual) return true;
+        if (selectedTable?.derive?.source?.length) {
+          return selectedTable.derive.source.some(
+            (srcId) => tables.find((t) => t.id === srcId)?.virtual != null,
+          );
+        }
+      }
+      return false;
+    };
 
     // when there is no result and synthesis is running, just show the waiting panel
     if (!focusedChart || focusedChart?.chartType == "?") {
@@ -3404,6 +3441,20 @@ export const VisualizationViewFC: FC<VisPanelProps> =
                     let focusedChart = allCharts.find(
                       (c) => c.id == focusedChartId,
                     );
+
+                    // Validation: Check if QC-specific chart is selected on non-QC data
+                    if (isQcChartType(t.chart) && !isQcTable()) {
+                      dispatch(
+                        dfActions.addMessages({
+                          timestamp: Date.now(),
+                          component: "Chart Builder",
+                          type: "info",
+                          value: `"${t.chart}" is only available for QC data. Please select a different chart type or use QC data.`,
+                        }),
+                      );
+                      return;
+                    }
+
                     if (focusedChart?.chartType == "?") {
                       dispatch(
                         dfActions.updateChartType({
@@ -3520,7 +3571,15 @@ async function getOriginalTableFromVirtualData(
         table: table.id,
         size: 999999,
         method: "head",
-        select_fields: ["INDEX", "TARGET", "LL", "UL", "ARLL", "ARUL"],
+        select_fields: [
+          "INDEX",
+          "TARGET",
+          "LL",
+          "UL",
+          "ARLL",
+          "ARUL",
+          "SLIPNO",
+        ],
         aggregate_fields_and_functions: [],
         range_start: 1,
         range_size: 999999,

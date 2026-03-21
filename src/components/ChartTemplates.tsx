@@ -1709,34 +1709,10 @@ let customCharts: ChartTemplate[] = [
 
       // Get original full table if available (contains limit columns)
       const fullTable = vgSpec._originalTable || table;
-      //console.log("full table:", fullTable);
+      //   console.log("full table:", fullTable);
+
       const fullTableColumns =
         fullTable && fullTable.length > 0 ? Object.keys(fullTable[0]) : [];
-      // =========================================================================
-      // 3. TÌM GIỚI HẠN SỐ → detectedLimits (chỉ dùng vẽ rule ngang)
-      // =========================================================================
-      // Create local detectedLimits to avoid caching from previous renders
-
-      // let detectedLimits: Record<string, number | undefined> = {};
-      // const limitFieldNames = ["TARGET", "ARUL", "ARLL", "UL", "LL"];
-
-      // // Try to find limit columns in full table first, then fallback to working table
-      // const sourceTable = fullTableColumns.length > 0 ? fullTable : table;
-      // const columnsToSearch =
-      //   fullTableColumns.length > 0 ? fullTableColumns : tableColumns;
-      // limitFieldNames.forEach((name) => {
-      //   const col = columnsToSearch.find(
-      //     (c: string) => c.toUpperCase() === name,
-      //   );
-      //   if (col) {
-      //     const val = sourceTable.find(
-      //       (r: any) => typeof r[col] === "number",
-      //     )?.[col];
-      //     if (typeof val === "number" && isFinite(val)) {
-      //       detectedLimits[name] = val;
-      //     }
-      //   }
-      // });
 
       // Collect per-row limit series instead of single scalar
       let detectedLimitSeries: Record<
@@ -1888,6 +1864,11 @@ let customCharts: ChartTemplate[] = [
         ARUL: "#ff7f0e",
         ARLL: "#ff7f0e",
       };
+
+      // For large datasets, downsample limit points to avoid rendering overhead
+      // Keep limit lines visible but reduce data points sent to Vega-Lite
+      const shouldDownsample = table.length > 10000;
+
       if (
         qcLimitsMode === true &&
         Object.keys(detectedLimitSeries).length > 0
@@ -1898,8 +1879,20 @@ let customCharts: ChartTemplate[] = [
           limit: number;
           limitType: string;
         }> = [];
+
         Object.entries(detectedLimitSeries).forEach(([name, series]) => {
-          allLimitData.push(...series);
+          if (shouldDownsample && series.length > 500) {
+            // For large series, take stratified samples: start, end, and every Nth point
+            const step = Math.ceil(series.length / 500); // Max ~500 points per limit type
+            allLimitData.push(series[0]); // Always include first point
+            for (let i = step; i < series.length - 1; i += step) {
+              allLimitData.push(series[i]);
+            }
+            allLimitData.push(series[series.length - 1]); // Always include last point
+          } else {
+            // Small series: include all points
+            allLimitData.push(...series);
+          }
         });
 
         // Tạo 1 layer duy nhất với tất cả data

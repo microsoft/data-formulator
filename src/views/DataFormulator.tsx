@@ -20,6 +20,7 @@ import {
   Divider,
   useTheme,
   alpha,
+  IconButton,
 } from "@mui/material";
 import {
   FolderOpen as FolderOpenIcon,
@@ -27,6 +28,8 @@ import {
   Category as CategoryIcon,
   CloudQueue as CloudQueueIcon,
   AutoFixNormal as AutoFixNormalIcon,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
 } from "@mui/icons-material";
 
 import { FreeDataViewFC } from "./DataView";
@@ -78,6 +81,7 @@ export const DataFormulatorFC = ({}) => {
   });
 
   const dispatch = useDispatch();
+  const [isThreadCollapsed, setIsThreadCollapsed] = useState(false);
 
   const handleLoadExampleSession = (session: ExampleSession) => {
     dispatch(
@@ -277,11 +281,35 @@ export const DataFormulatorFC = ({}) => {
           backgroundColor: "white",
           display: viewMode === "live" ? "none" : "flex",
           height: "100%",
-          width: "fit-content",
+          width: isThreadCollapsed ? "48px" : "fit-content",
           flexDirection: "column",
+          position: "relative",
         }}
       >
-        {tables.length > 0 ? (
+        {/* Collapse/Expand button (centered vertically on the right edge) */}
+        <Box
+          sx={{
+            position: "absolute",
+            right: 4,
+            top: "50%",
+            transform: "translateY(-50%)",
+            zIndex: 10,
+          }}
+        >
+          <Tooltip title={isThreadCollapsed ? "Show threads" : "Hide threads"}>
+            <IconButton
+              size="small"
+              onClick={() => setIsThreadCollapsed((s) => !s)}
+              aria-label={
+                isThreadCollapsed ? "Expand thread" : "Collapse thread"
+              }
+            >
+              {isThreadCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+            </IconButton>
+          </Tooltip>
+        </Box>
+
+        {tables.length > 0 && !isThreadCollapsed ? (
           <DataThread
             sx={{
               minWidth: 201,

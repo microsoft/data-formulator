@@ -56,4 +56,15 @@ body,
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
 }
 
+/* Ensure Vega/Vega-Lite tooltip overlays dialogs and is interactive */
+.vg-tooltip,
+.vega-tooltip,
+.vg-tooltip > div,
+.vega-tooltip > div {
+    position: fixed !important;
+    z-index: 4000 !important;
+    pointer-events: auto !important;
+}
+
+
 
