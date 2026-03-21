@@ -9,7 +9,6 @@ import {
     DataFormulatorState,
     dfActions,
     dfSelectors,
-    ModelConfig,
 } from '../app/dfSlice'
 
 import _ from 'lodash';
@@ -41,7 +40,6 @@ import { DataThread } from './DataThread';
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
-import { getUrls, fetchWithIdentity } from '../app/utils';
 import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
 import GitHubIcon from '@mui/icons-material/GitHub';
@@ -55,7 +53,7 @@ export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
-    const models = useSelector((state: DataFormulatorState) => state.models);
+    const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
@@ -150,48 +148,13 @@ export const DataFormulatorFC = ({ }) => {
     }, []);
 
     useEffect(() => {
-        const findWorkingModel = async () => {
-            let selectedModel = models.find(m => m.id == selectedModelId);
-            let otherModels = models.filter(m => m.id != selectedModelId);
-
-            let modelsToTest = [selectedModel, ...otherModels].filter(m => m != undefined);
-
-            let testModel = async (model: ModelConfig) => {
-                const message = {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', },
-                    body: JSON.stringify({ model }),
-                };
-                try {
-                    const response = await fetchWithIdentity(getUrls().TEST_MODEL, {...message });
-                    const data = await response.json();
-                    const status = data["status"] || 'error';
-                    return {model, status, message: data["message"] || ""};
-                } catch (error) {
-                    return {model, status: 'error', message: (error as Error).message || 'Failed to test model'};
-                }
-            }
-
-            // Then test unassigned models sequentially until one works
-            for (let model of modelsToTest) {
-                if (!model) continue;
-                let testResult = await testModel(model);
-                dispatch(dfActions.updateModelStatus({
-                    id: model.id, 
-                    status: testResult.status, 
-                    message: testResult.message
-                }));
-                if (testResult.status == 'ok') {
-                    dispatch(dfActions.selectModel(model.id));
-                    return;
-                };
-            }
-        };
-
-        if (models.length > 0) {
-            findWorkingModel();
+        // Auto-select the first available model when none is selected.
+        // No connectivity check on load — errors surface on first use,
+        // and the user can manually test via the model selection dialog.
+        if (selectedModelId === undefined && models.length > 0) {
+            dispatch(dfActions.selectModel(models[0].id));
         }
-    }, []);
+    }, [dispatch, models, selectedModelId]);
 
     const visPaneMain = (
         <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>

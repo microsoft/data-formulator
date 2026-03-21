@@ -19,6 +19,7 @@ export function getUrls() {
         EXAMPLE_DATASETS: `/api/example-datasets`,
 
         // these functions involves ai agents
+        LIST_GLOBAL_MODELS: `/api/agent/list-global-models`,
         CHECK_AVAILABLE_MODELS: `/api/agent/check-available-models`,
         TEST_MODEL: `/api/agent/test-model`,
 

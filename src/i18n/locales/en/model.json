@@ -45,6 +45,12 @@
     "cancel": "cancel",
     "recommendedModelTip": "Models with strong code generation capabilities (e.g., gpt-5.1, claude-sonnet-4-5) provide best experience.",
     "openaiProviderTip": "Use openai provider for OpenAI-compatible APIs.",
-    "loadingModels": "Loading models..."
+    "loadingModels": "Loading models...",
+    "serverManaged": "Server managed",
+    "serverManagedSection": "Server configured models",
+    "serverManagedReadonly": "Read-only",
+    "userManagedSection": "My models",
+    "configured": "Configured",
+    "configuredMessage": "Server configured, click to verify connectivity"
   }
 }

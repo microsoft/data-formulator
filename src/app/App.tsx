@@ -9,7 +9,7 @@ import {
     DataFormulatorState,
     dfActions,
     dfSelectors,
-    fetchAvailableModels,
+    fetchGlobalModelList,
 } from './dfSlice'
 import { getBrowserId } from './identity';
 
@@ -996,7 +996,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     useEffect(() => {
         document.title = toolName;
-        dispatch(fetchAvailableModels());
+        // Load all server-configured models instantly (no connectivity check).
+        // Users can verify connectivity via the "Test" button in the model dialog,
+        // or errors will surface naturally when a model is first used.
+        dispatch(fetchGlobalModelList());
     }, []);
 
     let theme = createTheme({

@@ -136,6 +136,28 @@ class Client(object):
             model_config.get("api_version")
         )
 
+    def ping(self, timeout: int = 10):
+        """Lightweight connectivity check: send a minimal completion with
+        max_tokens=3 and a short timeout.  Raises on any failure."""
+        messages = [{"role": "user", "content": "Reply only 'ok'."}]
+
+        if self.endpoint == "openai":
+            client = openai.OpenAI(
+                base_url=self.params.get("api_base", None),
+                api_key=self.params.get("api_key", ""),
+                timeout=timeout,
+            )
+            client.chat.completions.create(
+                model=self.model, messages=messages, max_tokens=3,
+            )
+        else:
+            params = self.params.copy()
+            params["timeout"] = timeout
+            litellm.completion(
+                model=self.model, messages=messages,
+                max_tokens=3, drop_params=True, **params,
+            )
+
     def get_completion(self, messages, stream=False):
         """
         Returns a LiteLLM client configured for the specified endpoint and model.

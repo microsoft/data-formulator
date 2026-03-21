@@ -45,6 +45,12 @@
     "cancel": "取消",
     "recommendedModelTip": "代码生成能力较强的模型（如 gpt-5.1、claude-sonnet-4-5）体验更好。",
     "openaiProviderTip": "对于兼容 OpenAI 的 API，请将 提供商 设置为 openai 。",
-    "loadingModels": "模型加载中..."
+    "loadingModels": "模型加载中...",
+    "serverManaged": "由服务端管理",
+    "serverManagedSection": "服务端配置的模型",
+    "serverManagedReadonly": "不可删除",
+    "userManagedSection": "我添加的模型",
+    "configured": "已配置",
+    "configuredMessage": "服务端已配置，点击可验证连通性"
   }
 }
