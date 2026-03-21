@@ -48,6 +48,70 @@ class Client(object):
             else:
                 self.model = f"ollama/{model}"
 
+    def _strip_image_blocks(self, content):
+        """Remove image_url blocks from multimodal content arrays."""
+        if isinstance(content, list):
+            sanitized = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "image_url":
+                        continue
+                    sanitized.append(item)
+                else:
+                    sanitized.append(item)
+            return sanitized
+        return content
+
+    def _strip_images_from_messages(self, messages):
+        """Create a copy of messages with image_url blocks removed."""
+        sanitized_messages = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                new_msg = dict(msg)
+                if "content" in new_msg:
+                    new_msg["content"] = self._strip_image_blocks(new_msg["content"])
+                sanitized_messages.append(new_msg)
+            else:
+                sanitized_messages.append(msg)
+        return sanitized_messages
+
+    def _is_image_deserialize_error(self, error_text: str) -> bool:
+        """Detect provider errors caused by image blocks on text-only models."""
+        lowered = error_text.lower()
+        return ("image_url" in lowered and "expected `text`" in lowered) or "unknown variant `image_url`" in lowered
+
+    def _strip_image_blocks(self, content):
+        """Remove image_url blocks from multimodal content arrays."""
+        if isinstance(content, list):
+            sanitized = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "image_url":
+                        continue
+                    sanitized.append(item)
+                else:
+                    sanitized.append(item)
+            return sanitized
+        return content
+
+    def _strip_images_from_messages(self, messages):
+        """Create a copy of messages with image_url blocks removed."""
+        sanitized_messages = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                new_msg = dict(msg)
+                if "content" in new_msg:
+                    new_msg["content"] = self._strip_image_blocks(new_msg["content"])
+                sanitized_messages.append(new_msg)
+            else:
+                sanitized_messages.append(msg)
+        return sanitized_messages
+
+    def _is_image_deserialize_error(self, error_text: str) -> bool:
+        """Detect provider errors caused by image blocks on text-only models."""
+        lowered = error_text.lower()
+        return ("image_url" in lowered and "expected `text`" in lowered) or "unknown variant `image_url`" in lowered
+
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
         """
@@ -93,8 +157,16 @@ class Client(object):
 
             if self.model.startswith("gpt-5") or self.model.startswith("o1") or self.model.startswith("o3"):
                 completion_params["reasoning_effort"] = "low"
-            
-            return client.chat.completions.create(**completion_params, stream=stream)
+
+            try:
+                return client.chat.completions.create(**completion_params, stream=stream)
+            except Exception as e:
+                error_text = str(e)
+                if self._is_image_deserialize_error(error_text):
+                    sanitized_messages = self._strip_images_from_messages(messages)
+                    completion_params["messages"] = sanitized_messages
+                    return client.chat.completions.create(**completion_params, stream=stream)
+                raise
         else:
 
             params = self.params.copy()
@@ -103,13 +175,26 @@ class Client(object):
                 or self.model.startswith("claude-sonnet-4-5") or self.model.startswith("claude-opus-4")):
                 params["reasoning_effort"] = "low"
 
-            return litellm.completion(
-                model=self.model,
-                messages=messages,
-                drop_params=True,
-                stream=stream,
-                **params
-            )
+            try:
+                return litellm.completion(
+                    model=self.model,
+                    messages=messages,
+                    drop_params=True,
+                    stream=stream,
+                    **params
+                )
+            except Exception as e:
+                error_text = str(e)
+                if self._is_image_deserialize_error(error_text):
+                    sanitized_messages = self._strip_images_from_messages(messages)
+                    return litellm.completion(
+                        model=self.model,
+                        messages=sanitized_messages,
+                        drop_params=True,
+                        stream=stream,
+                        **params
+                    )
+                raise
 
         
     def get_response(self, messages: list[dict], tools: list | None = None):

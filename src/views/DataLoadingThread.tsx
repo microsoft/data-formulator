@@ -26,6 +26,11 @@ import StopIcon from '@mui/icons-material/Stop';
 
 import exampleImageTable from "../assets/example-image-table.png";
 
+/** Returns true when the model name suggests it does not support image input. */
+export function checkIsLikelyTextOnlyModel(modelName: string | undefined): boolean {
+    return (modelName || '').toLowerCase().includes('deepseek-chat');
+}
+
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
@@ -219,6 +224,11 @@ export const DataLoadingInputBox = React.forwardRef<(() => void) | null, {maxLin
     const [userImages, setUserImages] = useState<string[]>([]);
     const [prompt, setPrompt] = useState('');
 
+    const isLikelyTextOnlyModel = React.useMemo(
+        () => checkIsLikelyTextOnlyModel(activeModel?.model),
+        [activeModel],
+    );
+
     const existOutputBlocks = dataCleanBlocks.length > 0;
 
     // Reconstruct dialog from Redux state for API compatibility
@@ -382,7 +392,16 @@ Revenue in More Personal Computing was $13.5 billion and increased 9%, with the 
         const hasImageData = imagesToUse.length > 0 || additionalImages.length > 0;
         if (!hasPrompt && !hasImageData) return;
         if (cleanInProgress) return;
-        
+
+        if (hasImageData && isLikelyTextOnlyModel) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'warning',
+                component: 'data loader',
+                value: t('dataLoading.textOnlyModelWarning'),
+            }));
+        }
+
         dispatch(dfActions.setCleanInProgress(true));
         const token = String(Date.now());
 

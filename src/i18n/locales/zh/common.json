@@ -401,7 +401,8 @@
     "sampleExtractRepos": "从 https://github.com/microsoft 提取热门仓库",
     "sampleExtractFromImage": "从此图片中提取数据",
     "sampleExtractGrowth": "从文本中提取增长数据",
-    "sampleGenerateDataset": "生成英国王朝数据集"
+    "sampleGenerateDataset": "生成英国王朝数据集",
+    "textOnlyModelWarning": "当前模型可能不支持图片输入，如有需要将自动切换为纯文本分析。"
   },
   "preview": {
     "preview": "预览",

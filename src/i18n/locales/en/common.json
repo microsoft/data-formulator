@@ -388,7 +388,8 @@
     "sampleExtractRepos": "Extract top repos from https://github.com/microsoft",
     "sampleExtractFromImage": "Extract data from this image",
     "sampleExtractGrowth": "Extract growth data from text",
-    "sampleGenerateDataset": "Generate UK dynasty dataset"
+    "sampleGenerateDataset": "Generate UK dynasty dataset",
+    "textOnlyModelWarning": "Current model may not support image input. We will continue with text-only analysis if needed."
   },
   "preview": {
     "preview": "Preview",
