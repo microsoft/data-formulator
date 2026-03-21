@@ -1714,6 +1714,45 @@ let customCharts: ChartTemplate[] = [
       const fullTableColumns =
         fullTable && fullTable.length > 0 ? Object.keys(fullTable[0]) : [];
 
+      // If full original table contains SLIPNO, merge it into the working `table` rows
+      // Match rows by `INDEX` when available, otherwise fall back to `QCDATE|QCSHIFT` key
+      try {
+        if (
+          fullTable &&
+          fullTable.length > 0 &&
+          fullTableColumns.includes("SLIPNO")
+        ) {
+          const fullMap = new Map<string, any>();
+          for (const fr of fullTable) {
+            let key: string | null = null;
+            if (fr[indexField] !== undefined) {
+              key = String(fr[indexField]);
+            } else if (qcDateDef?.field && fr[qcDateDef.field] !== undefined) {
+              const shiftVal = qcShiftDef?.field ? fr[qcShiftDef.field] : "";
+              key = `${String(fr[qcDateDef.field])}|${String(shiftVal)}`;
+            }
+            if (key != null && fr.SLIPNO !== undefined) {
+              fullMap.set(key, fr.SLIPNO);
+            }
+          }
+
+          for (const r of table) {
+            let key: string | null = null;
+            if (r[indexField] !== undefined) {
+              key = String(r[indexField]);
+            } else if (qcDateDef?.field && r[qcDateDef.field] !== undefined) {
+              const shiftVal = qcShiftDef?.field ? r[qcShiftDef.field] : "";
+              key = `${String(r[qcDateDef.field])}|${String(shiftVal)}`;
+            }
+            if (key != null && fullMap.has(key)) {
+              r.SLIPNO = fullMap.get(key);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to merge SLIPNO from original table:", err);
+      }
+
       // Collect per-row limit series instead of single scalar
       let detectedLimitSeries: Record<
         string,
@@ -1818,6 +1857,7 @@ let customCharts: ChartTemplate[] = [
               field: qcShiftDef?.field,
               title: qcShiftDef?.field,
             },
+            { field: "SLIPNO", title: "SLIPNO" },
           ],
         },
       };
