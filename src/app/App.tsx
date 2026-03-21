@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useCallback, useEffect, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -61,7 +61,10 @@ import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
 import SettingsIcon from '@mui/icons-material/Settings';
 import {
     createBrowserRouter,
+    Link as RouterLink,
+    Outlet,
     RouterProvider,
+    useLocation,
 } from "react-router-dom";
 import { About } from '../views/About';
 import ChartGallery from '../views/ChartGallery';
@@ -108,6 +111,39 @@ const AppBar = styled(MuiAppBar)(({ theme }) => ({
         duration: theme.transitions.duration.leavingScreen,
     }),
 }));
+
+const TopNavButton: FC<{ to: string; label: string; selected: boolean }> = ({ to, label, selected }) => (
+    <Button
+        component={RouterLink}
+        to={to}
+        aria-current={selected ? 'page' : undefined}
+        onClick={(event) => {
+            if (selected) {
+                event.preventDefault();
+            }
+        }}
+        sx={{
+            textDecoration: 'none',
+            textTransform: 'none',
+            fontSize: '13px',
+            fontWeight: 400,
+            border: 'none',
+            borderRadius: 0,
+            px: 1.5,
+            py: 0.5,
+            minWidth: 'auto',
+            cursor: selected ? 'default' : 'pointer',
+            color: selected ? 'text.primary' : 'text.secondary',
+            backgroundColor: selected ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+            '&:hover': {
+                color: 'text.primary',
+                backgroundColor: selected ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+            },
+        }}
+    >
+        {label}
+    </Button>
+);
 
 declare module '@mui/material/styles' {
     interface PaletteColor {
@@ -935,15 +971,234 @@ const ConfigDialog: React.FC = () => {
     );  
 }
 
-export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
-
+const AppShell: FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
+    const location = useLocation();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+
+    const isAboutPage = location.pathname === '/about';
+    const isGalleryPage = location.pathname === '/gallery';
+    const isAppPage = !isAboutPage && !isGalleryPage;
+
+    return (
+        <Box sx={{
+            position: 'absolute',
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            overflow: 'auto',
+            '& > *': {
+                minWidth: '1000px',
+                minHeight: '600px'
+            },
+        }}>
+            <Box sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%',
+                width: '100%',
+                overflow: 'hidden'
+            }}>
+                <AppBar position="static">
+                    <Toolbar variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative' }}>
+                        <Button sx={{
+                            display: "flex", flexDirection: "row", textTransform: "none",
+                            alignItems: 'stretch',
+                            backgroundColor: 'transparent',
+                            "&:hover": {
+                                backgroundColor: "transparent"
+                            }
+                        }} color="inherit">
+                            <Box component="img" sx={{ height: 20, mr: 0.5 }} alt="" src={dfLogo} />
+                            <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
+                                {toolName}
+                            </Typography>
+                        </Button>
+                        <Box
+                            sx={{
+                                ml: 2,
+                                height: '28px',
+                                my: 'auto',
+                                display: 'flex',
+                            }}
+                        >
+                            <TopNavButton to="/about" label={t('appBar.about')} selected={isAboutPage} />
+                            <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
+                            <TopNavButton to="/gallery" label={t('appBar.gallery')} selected={isGalleryPage} />
+                        </Box>
+                        {tables.length === 0 && (
+                            <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.disabled', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                                {t('appBar.microsoftResearch')}
+                            </Typography>
+                        )}
+                        {isAppPage && (
+                            <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
+                                <LanguageSwitcher />
+                                {focusedId !== undefined && <React.Fragment><ToggleButtonGroup
+                                    value={viewMode}
+                                    exclusive
+                                    onChange={(_, newMode) => {
+                                        if (newMode !== null) {
+                                            dispatch(dfActions.setViewMode(newMode));
+                                        }
+                                    }}
+                                    sx={{
+                                        mr: 2,
+                                        height: '28px',
+                                        my: 'auto',
+                                        '& .MuiToggleButton-root': {
+                                            textTransform: 'none',
+                                            fontWeight: 500,
+                                            border: 'none',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                                color: 'text.primary',
+                                            },
+                                        },
+                                    }}
+                                >
+                                    <ToggleButton value="editor">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Box component="span">{t('appBar.explore')}</Box>
+                                        </Box>
+                                    </ToggleButton>
+                                    <ToggleButton value="report">
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Box component="span">
+                                                {generatedReports.length > 0 ? t('appBar.reportsWithCount', { count: generatedReports.length }) : t('appBar.reports')}
+                                            </Box>
+                                        </Box>
+                                    </ToggleButton>
+                                </ToggleButtonGroup>
+                                <ConfigDialog />
+                                <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
+                                <ModelSelectionButton />
+                                <Divider orientation="vertical" variant="middle" flexItem />
+
+                                <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <TableMenu />
+                                </Typography>
+                                <Divider orientation="vertical" variant="middle" flexItem />
+                                <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <SessionMenu />
+                                </Typography>
+                                <Divider orientation="vertical" variant="middle" flexItem />
+                                {tables.length > 0 && <ResetDialog />}
+                            </Box>
+                        )}
+                        {isAboutPage && (
+                            <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
+                                <LanguageSwitcher />
+                                <Tooltip title={t('appBar.watchVideo')}>
+                                    <IconButton
+                                        component="a"
+                                        href="https://youtu.be/3ndlwt0Wi3c"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={t('appBar.watchVideo')}
+                                        sx={{
+                                            color: 'inherit',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <YouTubeIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title={t('appBar.viewOnGitHub')}>
+                                    <IconButton
+                                        component="a"
+                                        href="https://github.com/microsoft/data-formulator"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={t('appBar.viewOnGitHub')}
+                                        sx={{
+                                            color: 'inherit',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <GitHubIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title={t('appBar.pipInstall')}>
+                                    <IconButton
+                                        component="a"
+                                        href="https://pypi.org/project/data-formulator/"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={t('appBar.pipInstall')}
+                                        sx={{
+                                            color: 'inherit',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <Box component="img" src="/pip-logo.svg" sx={{ width: 20, height: 20 }} alt="pip logo" />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title={t('appBar.joinDiscord')}>
+                                    <IconButton
+                                        component="a"
+                                        href="https://discord.gg/mYCZMQKYZb"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={t('appBar.joinDiscord')}
+                                        sx={{
+                                            color: 'inherit',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <DiscordIcon sx={{ fontSize: 20 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                        )}
+                        {isAppPage && (
+                            <Tooltip title={t('appBar.viewOnGitHub')}>
+                                <Button
+                                    component="a"
+                                    href="https://github.com/microsoft/data-formulator"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    sx={{
+                                        minWidth: 'auto',
+                                        color: 'inherit',
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                        }
+                                    }}
+                                >
+                                    <GitHubIcon fontSize="medium" />
+                                </Button>
+                            </Tooltip>
+                        )}
+                    </Toolbar>
+                </AppBar>
+                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', '& > div': { height: '100%' } }}>
+                    <Outlet />
+                </Box>
+                <MessageSnackbar />
+                <ChartRenderService />
+            </Box>
+        </Box>
+    );
+}
+
+export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
+
+    const dispatch = useDispatch<AppDispatch>();
     const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
 
@@ -1074,315 +1329,41 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         },
     });
 
-    // Check if we're on the about page
-    const isAboutPage = window.location.pathname === '/about';
-    const isGalleryPage = window.location.pathname === '/gallery';
-    const isAppPage = !isAboutPage && !isGalleryPage;
-
-    let appBar =  [
-        <AppBar position="static" key="app-bar-main" >
-            <Toolbar variant="dense" sx={{height: 40, minHeight: 36, position: 'relative'}}>
-                <Button sx={{
-                    display: "flex", flexDirection: "row", textTransform: "none",
-                    alignItems: 'stretch',
-                    backgroundColor: 'transparent',
-                    "&:hover": {
-                        backgroundColor: "transparent"
-                    }
-                }} color="inherit">
-                    <Box component="img" sx={{ height: 20, mr: 0.5 }} alt="" src={dfLogo} />
-                    <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
-                        {toolName}
-                    </Typography>
-                </Button>
-                <Box
-                    sx={{ 
-                        ml: 2,
-                        height: '28px', 
-                        my: 'auto',
-                        display: 'flex',
-                    }}
-                >
-                    <Button 
-                        component="a" 
-                        href="/about"
-                        sx={{ 
-                            textDecoration: 'none',
-                            textTransform: 'none',
-                            fontSize: '13px',
-                            fontWeight: 400,
-                            border: 'none',
-                            borderRadius: 0,
-                            px: 1.5,
-                            py: 0.5,
-                            minWidth: 'auto',
-                            color: isAboutPage ? 'text.primary' : 'text.secondary',
-                            backgroundColor: isAboutPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
-                            '&:hover': {
-                                color: 'text.primary',
-                                backgroundColor: isAboutPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
-                            },
-                        }}
-                    >
-                        {t('appBar.about')}
-                    </Button>
-                    <Button 
-                        component="a" 
-                        href="/app"
-                        sx={{ 
-                            textDecoration: 'none',
-                            textTransform: 'none',
-                            fontSize: '13px',
-                            fontWeight: 400,
-                            border: 'none',
-                            borderRadius: 0,
-                            px: 1.5,
-                            py: 0.5,
-                            minWidth: 'auto',
-                            color: isAppPage ? 'text.primary' : 'text.secondary',
-                            backgroundColor: isAppPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
-                            '&:hover': {
-                                color: 'text.primary',
-                                backgroundColor: isAppPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
-                            },
-                        }}
-                    >
-                        {t('appBar.app')}
-                    </Button>
-                    <Button 
-                        component="a" 
-                        href="/gallery"
-                        sx={{ 
-                            textDecoration: 'none',
-                            textTransform: 'none',
-                            fontSize: '13px',
-                            fontWeight: 400,
-                            border: 'none',
-                            borderRadius: 0,
-                            px: 1.5,
-                            py: 0.5,
-                            minWidth: 'auto',
-                            color: isGalleryPage ? 'text.primary' : 'text.secondary',
-                            backgroundColor: isGalleryPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
-                            '&:hover': {
-                                color: 'text.primary',
-                                backgroundColor: isGalleryPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
-                            },
-                        }}
-                    >
-                        {t('appBar.gallery')}
-                    </Button>
-                </Box>
-                {tables.length === 0 && (
-                    <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.disabled', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-                        {t('appBar.microsoftResearch')}
-                    </Typography>
-                )}
-                {isAppPage && (
-                    <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
-                        <LanguageSwitcher />
-                        {focusedId !== undefined && <React.Fragment><ToggleButtonGroup
-                            value={viewMode}
-                            exclusive
-                            onChange={(_, newMode) => {
-                                if (newMode !== null) {
-                                    dispatch(dfActions.setViewMode(newMode));
-                                }
-                            }}
-                            sx={{ 
-                                mr: 2,
-                                height: '28px', 
-                                my: 'auto',
-                                '& .MuiToggleButton-root': {
-                                    textTransform: 'none',
-                                    fontWeight: 500,
-                                    border: 'none',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                        color: 'text.primary',
-                                    },
-                                },
-                            }}
-                        >
-                            <ToggleButton value="editor">
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box component="span">{t('appBar.explore')}</Box>
-                                </Box>
-                            </ToggleButton>
-                            <ToggleButton value="report">
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box component="span">
-                                        {generatedReports.length > 0 ? t('appBar.reportsWithCount', { count: generatedReports.length }) : t('appBar.reports')}
-                                    </Box>
-                                </Box>
-                            </ToggleButton>
-                        </ToggleButtonGroup>
-                        <ConfigDialog />
-                        <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
-                        <ModelSelectionButton />
-                        <Divider orientation="vertical" variant="middle" flexItem />
-                        
-                        <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <TableMenu />
-                        </Typography>
-                        <Divider orientation="vertical" variant="middle" flexItem />
-                        <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <SessionMenu />
-                        </Typography>
-                        <Divider orientation="vertical" variant="middle" flexItem />
-                        {tables.length > 0 && <ResetDialog />}
-                    </Box>
-                )}
-                {isAboutPage && (
-                    <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
-                        <LanguageSwitcher />
-                        <Tooltip title={t('appBar.watchVideo')}>
-                            <IconButton
-                                component="a"
-                                href="https://youtu.be/3ndlwt0Wi3c"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label={t('appBar.watchVideo')}
-                                sx={{ 
-                                    color: 'inherit',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <YouTubeIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title={t('appBar.viewOnGitHub')}>
-                            <IconButton
-                                component="a"
-                                href="https://github.com/microsoft/data-formulator"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label={t('appBar.viewOnGitHub')}
-                                sx={{ 
-                                    color: 'inherit',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <GitHubIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title={t('appBar.pipInstall')}>
-                            <IconButton
-                                component="a"
-                                href="https://pypi.org/project/data-formulator/"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label={t('appBar.pipInstall')}
-                                sx={{ 
-                                    color: 'inherit',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <Box component="img" src="/pip-logo.svg" sx={{ width: 20, height: 20 }} alt="pip logo" />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title={t('appBar.joinDiscord')}>
-                            <IconButton
-                                component="a"
-                                href="https://discord.gg/mYCZMQKYZb"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label={t('appBar.joinDiscord')}
-                                sx={{ 
-                                    color: 'inherit',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <DiscordIcon sx={{ fontSize: 20 }} />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                )}
-                {isAppPage && (
-                    <Tooltip title={t('appBar.viewOnGitHub')}>
-                        <Button
-                            component="a"
-                            href="https://github.com/microsoft/data-formulator"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            sx={{ 
-                                minWidth: 'auto', 
-                                color: 'inherit',
-                                '&:hover': {
-                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                }
-                            }}
-                        >
-                            <GitHubIcon fontSize="medium" />
-                        </Button>
-                    </Tooltip>
-                )}
-            </Toolbar>
-        </AppBar>
-    ];
-
-    let router = createBrowserRouter([
-        {
-            path: "/about",
-            element: <About />,
-        },
-        {
-            path: "/gallery",
-            element: <ChartGallery />,
-        },
+    const router = useMemo(() => createBrowserRouter([
         {
             path: "/",
-            element: <DataFormulatorFC />,
-        }, {
-            path: "*",
-            element: <DataFormulatorFC />,
+            element: <AppShell />,
             errorElement: <Box sx={{ width: "100%", height: "100%", display: "flex" }}>
-                <Typography color="gray" sx={{ margin: "150px auto" }}>An error has occurred, please <Link href="/">refresh the session</Link>. If the problem still exists, click close session.</Typography>
-            </Box>
+                <Typography color="gray" sx={{ margin: "150px auto" }}>An error has occurred, please <Link href="/app">refresh the session</Link>. If the problem still exists, click close session.</Typography>
+            </Box>,
+            children: [
+                {
+                    index: true,
+                    element: <DataFormulatorFC />,
+                },
+                {
+                    path: "app",
+                    element: <DataFormulatorFC />,
+                },
+                {
+                    path: "about",
+                    element: <About />,
+                },
+                {
+                    path: "gallery",
+                    element: <ChartGallery />,
+                },
+                {
+                    path: "*",
+                    element: <DataFormulatorFC />,
+                },
+            ],
         }
-    ]);
-
-    let app =
-        <Box sx={{ 
-            position: 'absolute',
-            backgroundColor: 'rgba(255, 255, 255, 0.3)',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            overflow: 'auto',
-            '& > *': {
-                minWidth: '1000px',
-                minHeight: '600px'
-            },
-        }}>
-            <Box sx={{ 
-                display: 'flex',
-                flexDirection: 'column',
-                height: '100%',
-                width: '100%',
-                overflow: 'hidden'
-            }}>
-                {appBar}
-                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', '& > div': { height: '100%' } }}>
-                    <RouterProvider router={router} />
-                </Box>
-                <MessageSnackbar />
-                <ChartRenderService />
-            </Box>
-        </Box>;
+    ]), []);
 
     return (
         <ThemeProvider theme={theme}>
-            {app}
+            <RouterProvider router={router} />
         </ThemeProvider>
     );
 }
