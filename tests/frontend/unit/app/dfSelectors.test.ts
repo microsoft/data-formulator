@@ -9,10 +9,11 @@ const makeModel = (overrides: Partial<ModelConfig> = {}): ModelConfig => ({
 });
 
 const makeMinimalState = (
-  overrides: Partial<Pick<DataFormulatorState, 'models' | 'selectedModelId'>> = {},
+  overrides: Partial<Pick<DataFormulatorState, 'models' | 'globalModels' | 'selectedModelId'>> = {},
 ): DataFormulatorState => {
   return {
     models: [],
+    globalModels: [],
     selectedModelId: undefined,
     ...overrides,
   } as unknown as DataFormulatorState;
@@ -60,5 +61,57 @@ describe('dfSelectors.getActiveModel', () => {
       selectedModelId: undefined,
     });
     expect(dfSelectors.getActiveModel(state)).toEqual(first);
+  });
+
+  it('should find a model in globalModels by selectedModelId', () => {
+    const globalModel = makeModel({ id: 'global-1' });
+    const state = makeMinimalState({
+      globalModels: [globalModel],
+      models: [],
+      selectedModelId: 'global-1',
+    });
+    expect(dfSelectors.getActiveModel(state)).toEqual(globalModel);
+  });
+
+  it('should prefer exact match in globalModels over first user model', () => {
+    const globalModel = makeModel({ id: 'global-1', model: 'gpt-4' });
+    const userModel = makeModel({ id: 'user-1', model: 'local-llm' });
+    const state = makeMinimalState({
+      globalModels: [globalModel],
+      models: [userModel],
+      selectedModelId: 'global-1',
+    });
+    expect(dfSelectors.getActiveModel(state)).toEqual(globalModel);
+  });
+
+  it('should fall back to first globalModel when no id matches and models is empty', () => {
+    const globalModel = makeModel({ id: 'global-1' });
+    const state = makeMinimalState({
+      globalModels: [globalModel],
+      models: [],
+      selectedModelId: 'non-existent',
+    });
+    expect(dfSelectors.getActiveModel(state)).toEqual(globalModel);
+  });
+
+  it('should fall back to globalModel (first in combined array) over user model', () => {
+    const globalModel = makeModel({ id: 'global-1' });
+    const userModel = makeModel({ id: 'user-1' });
+    const state = makeMinimalState({
+      globalModels: [globalModel],
+      models: [userModel],
+      selectedModelId: 'non-existent',
+    });
+    expect(dfSelectors.getActiveModel(state)).toEqual(globalModel);
+  });
+
+  it('should handle undefined globalModels gracefully', () => {
+    const userModel = makeModel({ id: 'user-1' });
+    const state = {
+      models: [userModel],
+      globalModels: undefined,
+      selectedModelId: 'user-1',
+    } as unknown as DataFormulatorState;
+    expect(dfSelectors.getActiveModel(state)).toEqual(userModel);
   });
 });
