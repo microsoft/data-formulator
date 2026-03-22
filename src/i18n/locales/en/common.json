@@ -366,6 +366,13 @@
     "rowsByColumns": "{{rows}}r \u00d7 {{cols}}c",
     "chartAlt": "{{type}} chart",
     "streamSourceLabel": "stream",
+    "sourceFile": "File",
+    "sourcePaste": "Pasted data",
+    "sourceUrl": "URL",
+    "sourceStream": "Stream",
+    "sourceDatabase": "Database",
+    "sourceExample": "Example",
+    "sourceExtract": "Extracted",
     "failedRefreshDerivedTable": "Failed to refresh derived table \"{{table}}\": {{message}}",
     "errorRefreshingDerivedTable": "Error refreshing derived table \"{{table}}\""
   },

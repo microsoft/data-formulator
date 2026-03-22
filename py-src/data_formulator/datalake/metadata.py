@@ -213,6 +213,7 @@ class TableMetadata:
     last_synced: datetime | None = None
     row_count: int | None = None
     columns: list[ColumnInfo] | None = None
+    original_name: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for YAML serialization."""
@@ -241,6 +242,8 @@ class TableMetadata:
             result["row_count"] = self.row_count
         if self.columns is not None:
             result["columns"] = [col.to_dict() for col in self.columns]
+        if self.original_name is not None:
+            result["original_name"] = self.original_name
         
         return result
 
@@ -274,6 +277,7 @@ class TableMetadata:
             last_synced=last_synced,
             row_count=data.get("row_count"),
             columns=columns,
+            original_name=data.get("original_name"),
         )
 
 

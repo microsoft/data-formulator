@@ -12,13 +12,13 @@ import hashlib
 import io
 import logging
 import os
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO, Union
 
 from data_formulator.datalake.metadata import TableMetadata
 from data_formulator.datalake.parquet_utils import safe_data_filename
+from data_formulator.datalake.table_names import sanitize_upload_stem_table_name
 from data_formulator.datalake.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -158,32 +158,11 @@ def compute_file_hash(content: bytes) -> str:
 
 def sanitize_table_name(name: str) -> str:
     """
-    Sanitize a string to be a valid table name.
+    Derive a table name from an upload filename (stem).
 
-    Preserves Unicode letters and digits while normalizing separators
-    and punctuation to underscores.
-    
-    Args:
-        name: Original name
-        
-    Returns:
-        Sanitized name suitable for use as a table identifier
+    Delegates to :func:`data_formulator.datalake.table_names.sanitize_upload_stem_table_name`.
     """
-    # Remove extension if present
-    name = Path(name).stem
-
-    result = re.sub(r"[^\w]+", "_", name, flags=re.UNICODE)
-    result = re.sub(r"_+", "_", result).strip("_")
-    
-    # Ensure it's not empty
-    if not result:
-        result = '_unnamed'
-    
-    # Ensure it starts with a letter or underscore
-    if not (result[0].isalpha() or result[0] == '_'):
-        result = '_' + result
-    
-    return result.lower()
+    return sanitize_upload_stem_table_name(name)
 
 
 def generate_unique_filename(

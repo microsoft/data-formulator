@@ -105,9 +105,34 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         handleOpenTableMenu, primaryBgColor, t,
     } = props;
 
+    const getOriginalName = (tbl: DictTable | undefined): string | null => {
+        if (!tbl || tbl.derive) return null;
+        const name = tbl.source?.originalTableName;
+        if (!name || name === (tbl.displayId || tbl.id)) return null;
+        return name;
+    };
+
+    const getSourceTooltip = (tbl: DictTable | undefined): string | null => {
+        if (!tbl || tbl.derive) return null;
+        const src = tbl.source;
+        if (!src) return null;
+        switch (src.type) {
+            case 'file': return src.fileName || t('dataThread.sourceFile');
+            case 'paste': return t('dataThread.sourcePaste');
+            case 'url': return src.url || t('dataThread.sourceUrl');
+            case 'stream': return src.url || t('dataThread.sourceStream');
+            case 'database': return src.databaseTable || t('dataThread.sourceDatabase');
+            case 'example': return t('dataThread.sourceExample');
+            case 'extract': return t('dataThread.sourceExtract');
+            default: return null;
+        }
+    };
+
     if (parentTable && tableId == parentTable.id && parentTable.anchored && tableIdList.length > 1) {
         let table = tables.find(t => t.id == tableId);
-        return <Typography sx={{ background: 'transparent', }} >
+        const anchoredOriginalName = getOriginalName(table);
+        const anchoredTooltip = getSourceTooltip(table);
+        const anchoredContent = (
             <Box 
                 sx={{ 
                     margin: '0px', 
@@ -128,17 +153,36 @@ export let buildTableCard = (props: BuildTableCardProps) => {
             >
                 <Stack direction="row" sx={{ marginLeft: 0.25, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
                     <AnchorIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
-                    <Typography fontSize="inherit" sx={{
-                        textAlign: 'center',
-                        color: 'rgba(0,0,0,0.7)', 
-                        maxWidth: '100px',
-                        wordWrap: 'break-word',
-                        whiteSpace: 'normal'
-                    }}>
-                        {table?.displayId || tableId}
-                    </Typography>
+                    <Box>
+                        <Typography fontSize="inherit" sx={{
+                            textAlign: 'center',
+                            color: 'rgba(0,0,0,0.7)', 
+                            maxWidth: '100px',
+                            wordWrap: 'break-word',
+                            whiteSpace: 'normal'
+                        }}>
+                            {table?.displayId || tableId}
+                        </Typography>
+                        {anchoredOriginalName && (
+                            <Typography sx={{
+                                fontSize: 9,
+                                color: 'text.disabled',
+                                lineHeight: 1.2,
+                                mt: 0.5,
+                                wordBreak: 'break-all',
+                                maxWidth: '100px',
+                            }}>
+                                {anchoredOriginalName}
+                            </Typography>
+                        )}
+                    </Box>
                 </Stack>
             </Box>
+        );
+        return <Typography sx={{ background: 'transparent' }}>
+            {anchoredTooltip
+                ? <Tooltip title={anchoredTooltip} placement="right" arrow><span>{anchoredContent}</span></Tooltip>
+                : anchoredContent}
         </Typography>
     }
 
@@ -146,6 +190,8 @@ export let buildTableCard = (props: BuildTableCardProps) => {
     let relevantCharts = chartElements.filter(ce => ce.tableId == tableId && !usedIntermediateTableIds.includes(tableId));
 
     let table = tables.find(t => t.id == tableId);
+    const originalName = getOriginalName(table);
+    const sourceTooltip = getSourceTooltip(table);
 
     let selectedClassName = tableId == focusedTableId ? 'selected-card' : '';
 
@@ -159,6 +205,33 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         </Box>)
 
     const isHighlighted = highlightedTableIds.includes(tableId);
+
+    const tableNameBlock = (
+        <Box sx={{ margin: '4px 8px 4px 2px', minWidth: 0, flex: 1 }}>
+            <Typography fontSize="inherit" sx={{
+                color: 'text.primary', 
+                fontWeight: 500,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                wordBreak: 'break-all',
+            }}>{table?.displayId || tableId}</Typography>
+            {originalName && (
+                <Typography sx={{
+                    fontSize: 10,
+                    color: 'text.disabled',
+                    lineHeight: 1.3,
+                    mt: 0.5,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                }}>
+                    {originalName}
+                </Typography>
+            )}
+        </Box>
+    );
 
     let regularTableBox = <Box key={`regular-table-box-${tableId}`} ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
         sx={{ padding: '0px' }}>
@@ -174,17 +247,9 @@ export let buildTableCard = (props: BuildTableCardProps) => {
             }}>
             <Box sx={{ margin: '0px', display: 'flex', minWidth: 0 }}>
                 <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
-                    <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
-                        <Typography fontSize="inherit" sx={{
-                            color: 'text.primary', 
-                            fontWeight: 500,
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                            wordBreak: 'break-all',
-                        }}>{table?.displayId || tableId}</Typography>
-                    </Box>
+                    {sourceTooltip
+                        ? <Tooltip title={sourceTooltip} placement="top" arrow><span style={{ minWidth: 0, flex: 1 }}>{tableNameBlock}</span></Tooltip>
+                        : tableNameBlock}
                 </Stack>
                 <ButtonGroup aria-label={t('dataThread.tableCardActionsAria')} variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto", flexShrink: 0 }}>
                     <Tooltip key="create-chart-btn-tooltip" title={t('dataThread.createNewChart')}>

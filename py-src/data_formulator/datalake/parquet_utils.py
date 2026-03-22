@@ -20,6 +20,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from data_formulator.datalake.metadata import ColumnInfo, make_json_safe
+from data_formulator.datalake.table_names import sanitize_workspace_parquet_table_name
 
 logger = logging.getLogger(__name__)
 
@@ -67,31 +68,11 @@ def safe_data_filename(filename: str) -> str:
 
 def sanitize_table_name(name: str) -> str:
     """
-    Sanitize a string to be a valid table/file name.
+    Sanitize a string to be a valid workspace / parquet logical table name.
 
-    Preserves Unicode letters and digits while normalizing whitespace,
-    separators, and punctuation to underscores. The final result is
-    lowercased for stable ASCII behavior and prefixed when it would
-    otherwise start with an unsafe character.
-
-    Args:
-        name: Original name
-
-    Returns:
-        Sanitized name
+    Delegates to :func:`data_formulator.datalake.table_names.sanitize_workspace_parquet_table_name`.
     """
-    name = (name or "").strip()
-    name = re.sub(r"[/\\]+", "_", name)
-    result = re.sub(r"[^\w]+", "_", name, flags=re.UNICODE)
-    result = re.sub(r"_+", "_", result).strip("_")
-
-    if not result:
-        result = "table"
-
-    if not (result[0].isalpha() or result[0] == "_"):
-        result = f"table_{result}"
-
-    return result.lower()
+    return sanitize_workspace_parquet_table_name(name)
 
 
 # ---------------------------------------------------------------------------

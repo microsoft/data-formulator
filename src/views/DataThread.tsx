@@ -510,24 +510,32 @@ const WorkspacePanel: FC<{
         return encodings.slice(0, 3).join(', ') + (encodings.length > 3 ? '...' : '');
     };
 
-    const getTableSourceName = (table: DictTable) => {
-        // Get the source file name from table source
-        if (table.source?.type === 'file' && table.source?.fileName) {
-            return table.source.fileName;
-        }
-        if (table.source?.type === 'database' && table.source?.databaseTable) {
-            return table.source.databaseTable;
-        }
-        if (table.source?.type === 'stream' && table.source?.url) {
-            // Extract a meaningful name from URL
-            try {
-                const url = new URL(table.source.url);
-                return url.hostname;
-            } catch {
-                return t('dataThread.streamSourceLabel');
+    const getOriginalTableName = (table: DictTable): string | null => {
+        if (table.derive) return null;
+        const name = table.source?.originalTableName;
+        if (!name || name === (table.displayId || table.id)) return null;
+        return name;
+    };
+
+    const getSourceTooltip = (table: DictTable): string | null => {
+        if (table.derive) return null;
+        const src = table.source;
+        if (!src) return null;
+        switch (src.type) {
+            case 'file': return src.fileName || t('dataThread.sourceFile');
+            case 'paste': return t('dataThread.sourcePaste');
+            case 'url': return src.url || t('dataThread.sourceUrl');
+            case 'stream': {
+                if (src.url) {
+                    try { return new URL(src.url).hostname; } catch { /* fall through */ }
+                }
+                return t('dataThread.sourceStream');
             }
+            case 'database': return src.databaseTable || t('dataThread.sourceDatabase');
+            case 'example': return t('dataThread.sourceExample');
+            case 'extract': return t('dataThread.sourceExtract');
+            default: return null;
         }
-        return null;
     };
 
     return (
@@ -582,7 +590,8 @@ const WorkspacePanel: FC<{
                     {tables.map((table, tableIndex) => {
                         const isTableActive = focusedTableId === table.id;
                         const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
-                        const sourceName = getTableSourceName(table);
+                        const originalName = getOriginalTableName(table);
+                        const sourceTooltipText = getSourceTooltip(table);
                         const isLastTable = tableIndex === tables.length - 1;
 
                         const handleTableClick = () => {
@@ -616,36 +625,42 @@ const WorkspacePanel: FC<{
                                     }
                                 }}
                             >
-                                <Box
-                                    sx={fileItemSx(isTableActive)}
-                                    onClick={handleTableClick}
-                                >
-                                    {getTableIcon(table)}
-                                    <Typography sx={{
-                                        fontSize: 11,
-                                        fontWeight: isTableActive ? 600 : 400,
-                                        color: isTableActive ? 'primary.main' : 'text.primary',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        flex: 1,
-                                        minWidth: 0,
-                                    }}>
-                                        {table.displayId || table.id}
-                                        {sourceName && (
-                                            <Typography component="span" sx={{
-                                                fontSize: 10,
-                                                color: 'text.disabled',
-                                                ml: 0.5,
+                                <Tooltip title={sourceTooltipText || ''} placement="right" arrow disableHoverListener={!sourceTooltipText}>
+                                    <Box
+                                        sx={fileItemSx(isTableActive)}
+                                        onClick={handleTableClick}
+                                    >
+                                        {getTableIcon(table)}
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography sx={{
+                                                fontSize: 11,
+                                                fontWeight: isTableActive ? 600 : 400,
+                                                color: isTableActive ? 'primary.main' : 'text.primary',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
                                             }}>
-                                                ({sourceName})
+                                                {table.displayId || table.id}
                                             </Typography>
+                                            {originalName && (
+                                                <Typography sx={{
+                                                    fontSize: 9,
+                                                    color: 'text.disabled',
+                                                    lineHeight: 1.2,
+                                                    mt: '2px',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                }}>
+                                                    {originalName}
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                        {table.attachedMetadata && (
+                                            <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
                                         )}
-                                    </Typography>
-                                    {table.attachedMetadata && (
-                                        <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
-                                    )}
-                                </Box>
+                                    </Box>
+                                </Tooltip>
 
                                 {/* Show all charts for this table with vertical guide line */}
                                 {tableCharts.length > 0 && (

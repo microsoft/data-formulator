@@ -366,6 +366,13 @@
     "rowsByColumns": "{{rows}}行 \u00d7 {{cols}}列",
     "chartAlt": "{{type}}图表",
     "streamSourceLabel": "流式源",
+    "sourceFile": "文件",
+    "sourcePaste": "粘贴数据",
+    "sourceUrl": "URL",
+    "sourceStream": "流式源",
+    "sourceDatabase": "数据库",
+    "sourceExample": "示例数据",
+    "sourceExtract": "提取数据",
     "failedRefreshDerivedTable": "刷新派生表「{{table}}」失败：{{message}}",
     "errorRefreshingDerivedTable": "刷新派生表「{{table}}」时出错"
   },

@@ -73,6 +73,12 @@ from data_formulator.datalake.parquet_utils import (
     sanitize_table_name,
     DEFAULT_COMPRESSION,
 )
+from data_formulator.datalake.table_names import (
+    sanitize_workspace_parquet_table_name,
+    sanitize_upload_stem_table_name,
+    sanitize_external_loader_table_name,
+    sanitize_duckdb_sql_table_name,
+)
 
 __all__ = [
     # Workspace
@@ -105,4 +111,9 @@ __all__ = [
     "safe_data_filename",
     "sanitize_table_name",
     "DEFAULT_COMPRESSION",
+    # Table name sanitisation (single source of truth in table_names)
+    "sanitize_workspace_parquet_table_name",
+    "sanitize_upload_stem_table_name",
+    "sanitize_external_loader_table_name",
+    "sanitize_duckdb_sql_table_name",
 ]

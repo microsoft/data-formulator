@@ -237,6 +237,9 @@ def list_tables():
                     "sample_rows": sample_rows,
                     "view_source": None,
                     "source_metadata": source_metadata,
+                    "source_type": meta.source_type,
+                    "source_filename": meta.filename,
+                    "original_name": meta.original_name,
                 })
             except Exception as e:
                 logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
@@ -464,6 +467,11 @@ def create_table():
             workspace.write_parquet(df, sanitized_table_name)
             row_count = len(df)
             columns = list(df.columns)
+
+        meta = workspace.get_table_metadata(sanitized_table_name)
+        if meta is not None and meta.original_name is None:
+            meta.original_name = table_name
+            workspace.add_table_metadata(meta)
 
         return jsonify({
             "status": "success",
