@@ -216,7 +216,7 @@
     "styleExecutiveSummary": "executive summary",
     "styleShortNote": "short note",
     "truncationNote": "Note: Some tables were truncated to {{maxRows}} rows for this report. Tables affected: {{list}}.",
-    "truncationTableEntry": "\"{{name}}\" ({{count}} total rows)",
+    "truncationTableEntry": "\"{{name}}\" ({{totalRows}} total rows)",
     "noChartsAvailable": "No charts available. Create some visualizations first.",
     "loadingChartPreviews": "loading chart previews...",
     "noAvailableCharts": "No available charts to display. Charts may still be loading or unavailable.",

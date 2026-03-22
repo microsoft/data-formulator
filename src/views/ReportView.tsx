@@ -333,18 +333,35 @@ export const ReportView: FC = () => {
 
 
 
-    // Update like this:
     const processReport = (rawReport: string): string => {
         const markdownMatch = rawReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
         let processed = markdownMatch ? markdownMatch[1] : rawReport;
-        
+
+        const makeImg = (url: string, width: number, height: number) =>
+            `<img src="${url}" alt="${t('report.chartAlt')}" width="${width}" height="${height}" />`;
+
+        const usedKeys = new Set<string>();
         Object.entries(cachedReportImages).forEach(([chartId, { url, width, height }]) => {
-            processed = processed.replace(
-                new RegExp(`\\[IMAGE\\(${chartId}\\)\\]`, 'g'),
-                `<img src="${url}" alt="${t('report.chartAlt')}" width="${width}" height="${height}" />`
-            );
+            const escaped = chartId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`\\[IMAGE\\(${escaped}\\)\\]`, 'g');
+            if (regex.test(processed)) {
+                usedKeys.add(chartId);
+                processed = processed.replace(regex, makeImg(url, width, height));
+            }
         });
-        
+
+        const unusedEntries = Object.entries(cachedReportImages)
+            .filter(([key]) => !usedKeys.has(key))
+            .map(([, entry]) => entry);
+        let unusedIdx = 0;
+        processed = processed.replace(/\[IMAGE\([^\)]+\)\]/g, () => {
+            if (unusedIdx < unusedEntries.length) {
+                const { url, width, height } = unusedEntries[unusedIdx++];
+                return makeImg(url, width, height);
+            }
+            return '';
+        });
+
         return processed;
     };
 
@@ -355,20 +372,18 @@ export const ReportView: FC = () => {
             setGeneratedReport(report.content);
             setGeneratedStyle(report.style);
 
-            // load / assemble chart images for the report
             report.selectedChartIds.forEach((chartId) => {
                 const chart = charts.find(c => c.id === chartId);
-                if (!chart) return null;
+                if (!chart) return;
 
                 const chartTable = tables.find(t => t.id === chart.tableRef);
-                if (!chartTable) return null;
+                if (!chartTable) return;
 
                 if (chart.chartType === 'Table' || chart.chartType === '?') {
-                    return null;
+                    return;
                 }
                 getChartImageFromVega(chart, chartTable).then(({ blobUrl, width, height }) => {
                     if (blobUrl) {
-                        // Use blob URL for local display and caching
                         updateCachedReportImages(chart.id, blobUrl, width, height);
                     }
                 });
@@ -420,9 +435,7 @@ export const ReportView: FC = () => {
             }
         });
         
-        // If data changed, regenerate chart images for the report
         if (hasChanges) {
-            
             reportChartIds.forEach(chartId => {
                 const chart = charts.find(c => c.id === chartId);
                 if (!chart) return;
@@ -433,7 +446,7 @@ export const ReportView: FC = () => {
                 if (chart.chartType === 'Table' || chart.chartType === '?') {
                     return;
                 }
-                
+
                 getChartImageFromVega(chart, chartTable).then(({ blobUrl, width, height }) => {
                     if (blobUrl) {
                         updateCachedReportImages(chart.id, blobUrl, width, height);
@@ -694,7 +707,7 @@ export const ReportView: FC = () => {
             const truncationList = truncatedTables.map((tbl) =>
                 t('report.truncationTableEntry', {
                     name: tbl.displayId || tbl.id,
-                    count: (tbl.virtual?.rowCount || tbl.rows.length).toLocaleString(),
+                    totalRows: (tbl.virtual?.rowCount || tbl.rows.length).toLocaleString(),
                 })
             ).join(', ');
             const truncationNote = truncatedTables.length > 0
@@ -702,6 +715,8 @@ export const ReportView: FC = () => {
                 : '';
 
 
+            let chartSeqIndex = 0;
+            const seqToActualId: Record<string, string> = {};
             const selectedCharts = await Promise.all(
                 sortedCharts
                 .filter(chart => selectedChartIds.has(chart.id))
@@ -714,21 +729,22 @@ export const ReportView: FC = () => {
                         return null;
                     }
 
+                    const seqKey = `chart${++chartSeqIndex}`;
+                    seqToActualId[seqKey] = chart.id;
                     const { dataUrl, blobUrl, width, height } = await getChartImageFromVega(chart, chartTable);
 
                     if (blobUrl) {
-                        // Use blob URL for local display and caching
                         updateCachedReportImages(chart.id, blobUrl, width, height);
                     }
 
                     return {
-                        chart_id: chart.id,
+                        chart_id: seqKey,
                         code: chartTable.derive?.code || '',
                         chart_data: {
                             name: chartTable.id,
                             rows: chartTable.rows.length > maxRows ? chartTable.rows.slice(0, maxRows) : chartTable.rows
                         },
-                        chart_url: dataUrl // use data_url to send to the agent
+                        chart_url: dataUrl
                     };
                 })
             );
@@ -763,16 +779,26 @@ export const ReportView: FC = () => {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
-                    // Create the report object for saving to Redux
+                    let finalContent = accumulatedReport;
+                    for (const [seqKey, actualId] of Object.entries(seqToActualId)) {
+                        finalContent = finalContent.replace(
+                            new RegExp(`\\[IMAGE\\(${seqKey}\\)\\]`, 'g'),
+                            `[IMAGE(${actualId})]`
+                        );
+                    }
+                    const orderedChartIds = sortedCharts
+                        .filter(c => selectedChartIds.has(c.id))
+                        .map(c => c.id);
                     const report: GeneratedReport = {
                         id: reportId,
-                        content: accumulatedReport,
+                        content: finalContent,
                         style: style,
-                        selectedChartIds: Array.from(selectedChartIds),
+                        selectedChartIds: orderedChartIds,
                         createdAt: Date.now(),
                     };
                     // Save to Redux state
                     dispatch(dfActions.saveGeneratedReport(report));
+                    setGeneratedReport(finalContent);
                     break;
                 };
 

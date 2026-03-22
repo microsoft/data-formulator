@@ -216,7 +216,7 @@
     "styleExecutiveSummary": "高管摘要",
     "styleShortNote": "短笔记",
     "truncationNote": "说明：部分表已截取为最多 {{maxRows}} 行用于本报告。涉及的表：{{list}}。",
-    "truncationTableEntry": "「{{name}}」（共 {{count}} 行）",
+    "truncationTableEntry": "「{{name}}」（共 {{totalRows}} 行）",
     "noChartsAvailable": "暂无可用图表，请先创建一些可视化。",
     "loadingChartPreviews": "正在加载图表预览...",
     "noAvailableCharts": "暂无可显示的图表，图表可能仍在加载中或不可用。",
