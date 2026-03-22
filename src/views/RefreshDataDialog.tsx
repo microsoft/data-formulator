@@ -26,7 +26,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
 import { DictTable } from '../components/ComponentType';
-import { createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
+import { createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { useTranslation } from 'react-i18next';
 
 interface TabPanelProps {
@@ -289,7 +289,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                 return;
             }
 
-            file.text().then((text) => {
+            readFileText(file).then((text) => {
                 let newRows: any[] = [];
                 try {
                     const jsonContent = JSON.parse(text);

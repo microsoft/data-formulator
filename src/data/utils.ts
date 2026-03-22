@@ -9,6 +9,19 @@ import { DictTable } from '../components/ComponentType';
 import { CoerceType, TestType, Type } from './types';
 import { ColumnTable } from './table';
 
+/**
+ * Read a File as text, trying UTF-8 first and falling back to GBK.
+ * Handles CSV/TSV files saved by Chinese-locale Excel (GBK) and similar cases.
+ */
+export const readFileText = async (file: File): Promise<string> => {
+    const buffer = await file.arrayBuffer();
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    } catch {
+        return new TextDecoder('gbk').decode(buffer);
+    }
+};
+
 export const loadTextDataWrapper = (title: string, text: string, fileType: string): DictTable | undefined => {
     
     let tableName = title;

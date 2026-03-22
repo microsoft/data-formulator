@@ -9,6 +9,7 @@ as-is in the workspace without conversion.
 """
 
 import hashlib
+import io
 import logging
 import os
 import re
@@ -22,6 +23,8 @@ from data_formulator.datalake.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
+_TEXT_FILE_TYPES = {'csv', 'txt'}
+
 # Supported file extensions for upload
 SUPPORTED_EXTENSIONS = {
     '.csv': 'csv',
@@ -33,6 +36,50 @@ SUPPORTED_EXTENSIONS = {
     '.json': 'json',
     '.pdf': 'pdf',
 }
+
+
+def normalize_text_encoding(content: bytes, file_type: str) -> bytes:
+    """Detect encoding of text file content and re-encode as UTF-8.
+
+    Only processes text-based file types (csv, txt). Binary formats are
+    returned unchanged. The detection strategy is:
+      1. Strip UTF-8 BOM if present.
+      2. Try strict UTF-8 decode (fast path, zero-copy on success).
+      3. Use charset_normalizer for probabilistic detection.
+      4. Fall back through common CJK / Latin encodings.
+    """
+    if file_type not in _TEXT_FILE_TYPES:
+        return content
+
+    if content.startswith(b'\xef\xbb\xbf'):
+        content = content[3:]
+
+    try:
+        content.decode('utf-8')
+        return content
+    except UnicodeDecodeError:
+        pass
+
+    try:
+        from charset_normalizer import from_bytes
+        result = from_bytes(content).best()
+        if result is not None:
+            detected = str(result).encode('utf-8')
+            logger.info("Detected encoding %s via charset_normalizer", result.encoding)
+            return detected
+    except ImportError:
+        pass
+
+    for enc in ('gbk', 'gb18030', 'shift_jis', 'euc-kr', 'latin-1'):
+        try:
+            decoded = content.decode(enc)
+            logger.info("Decoded text file using fallback encoding %s", enc)
+            return decoded.encode('utf-8')
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            continue
+
+    logger.warning("Could not detect encoding; decoding as UTF-8 with replacement chars")
+    return content.decode('utf-8', errors='replace').encode('utf-8')
 
 
 def is_supported_file(filename: str) -> bool:
@@ -172,6 +219,8 @@ def save_uploaded_file(
         content = file_content.read()
     else:
         content = file_content
+
+    content = normalize_text_encoding(content, file_type)
 
     # Determine the actual filename to use
     if overwrite:

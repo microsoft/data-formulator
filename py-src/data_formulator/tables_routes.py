@@ -17,7 +17,7 @@ from data_formulator.auth import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
 from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename
-from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file
+from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, normalize_text_encoding
 from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
 
 import re
@@ -511,7 +511,9 @@ def parse_file():
                 })
             return jsonify({"status": "success", "sheets": sheets})
         elif ext == '.csv':
-            df = pd.read_csv(file.stream)
+            import io
+            raw = normalize_text_encoding(file.stream.read(), 'csv')
+            df = pd.read_csv(io.BytesIO(raw))
             df = df.where(df.notna(), None)
             records = df.to_dict(orient='records')
             return jsonify({

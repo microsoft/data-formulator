@@ -40,7 +40,7 @@ import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/d
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
-import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
+import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
 import { getUrls, fetchWithIdentity } from '../app/utils';
@@ -655,7 +655,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 if (isTextFile) {
                     try {
-                        const text = await file.text();
+                        const text = await readFileText(file);
                         const table = loadTextDataWrapper(uniqueName, text, file.type);
                         if (table) {
                             previewTables.push(table);
