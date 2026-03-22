@@ -369,6 +369,40 @@ class Workspace:
             counter += 1
         return f"{base}_{counter}"
     
+    def delete_tables_by_source_file(self, source_filename: str) -> list[str]:
+        """Delete all tables whose source filename matches.
+
+        Atomically removes the metadata entries, then deletes the
+        physical file.  Used when re-uploading a file so that sheets
+        removed in the new version don't linger as orphans.
+
+        Returns:
+            Names of the deleted tables.
+        """
+        safe_filename = safe_data_filename(source_filename)
+        deleted: list[str] = []
+
+        def _cleanup(metadata: WorkspaceMetadata) -> None:
+            for name, table in list(metadata.tables.items()):
+                if table.filename == safe_filename:
+                    metadata.remove_table(name)
+                    deleted.append(name)
+
+        self._atomic_update_metadata(_cleanup)
+
+        if deleted:
+            try:
+                file_path = self.get_file_path(safe_filename)
+                if file_path.exists():
+                    file_path.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete source file {safe_filename}: {e}")
+            logger.info(
+                f"Deleted {len(deleted)} table(s) for source file "
+                f"{safe_filename}: {deleted}"
+            )
+        return deleted
+
     def cleanup(self) -> None:
         """ Remove the entire workspace directory. """
         if self._path.exists():

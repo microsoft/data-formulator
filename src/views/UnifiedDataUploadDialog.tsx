@@ -793,14 +793,38 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (!filePreviewTables || filePreviewTables.length === 0) {
             return;
         }
+
+        // When storing on server, remove frontend-only orphans from the same
+        // source files (sheets that existed before but are absent in the new batch).
+        const seenSourceFiles = new Set<string>();
+        if (storeOnServer) {
+            const newTableIds = new Set(filePreviewTables.map(t => t.id));
+            const sourceFileNames = new Set<string>();
+            for (let i = 0; i < filePreviewTables.length; i++) {
+                const fn = filePreviewFiles[i]?.name || filePreviewFiles[0]?.name;
+                if (fn) sourceFileNames.add(fn);
+            }
+            for (const t of existingTables) {
+                if (t.source?.type === 'file' && t.source.fileName && sourceFileNames.has(t.source.fileName) && !newTableIds.has(t.id)) {
+                    dispatch(dfActions.removeTableLocally(t.id));
+                }
+            }
+        }
+
         for (let i = 0; i < filePreviewTables.length; i++) {
             const table = filePreviewTables[i];
-            const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[i]?.name || filePreviewFiles[0]?.name };
+            const fileName = filePreviewFiles[i]?.name || filePreviewFiles[0]?.name;
+            const sourceConfig: DataSourceConfig = { type: 'file', fileName };
             const tableWithSource = { ...table, source: sourceConfig };
+
+            const isFirstForFile = fileName ? !seenSourceFiles.has(fileName) : false;
+            if (fileName) seenSourceFiles.add(fileName);
+
             await dispatch(loadTable({
                 table: tableWithSource,
                 storeOnServer,
                 file: storeOnServer ? filePreviewFiles[i] || filePreviewFiles[0] : undefined,
+                replaceSource: storeOnServer && isFirstForFile,
             }));
         }
         handleClose();

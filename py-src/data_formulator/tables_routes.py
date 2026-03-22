@@ -416,12 +416,8 @@ def create_table():
             return jsonify({"status": "error", "message": "No table name provided"}), 400
 
         workspace = _get_workspace()
-        base_name = parquet_sanitize_table_name(table_name)
-        sanitized_table_name = base_name
-        counter = 1
-        while sanitized_table_name in workspace.list_tables():
-            sanitized_table_name = f"{base_name}_{counter}"
-            counter += 1
+        sanitized_table_name = parquet_sanitize_table_name(table_name)
+        replace_source = request.form.get('replace_source', '').lower() == 'true'
 
         if has_file:
             file = request.files['file']
@@ -431,12 +427,16 @@ def create_table():
                 safe_name = safe_data_filename(file.filename)
             except ValueError:
                 return jsonify({"status": "error", "message": "Invalid filename"}), 400
+
+            if replace_source:
+                workspace.delete_tables_by_source_file(safe_name)
+
             meta = save_uploaded_file(
                 workspace,
                 file.stream,
                 safe_name,
                 table_name=sanitized_table_name,
-                overwrite=False,
+                overwrite=True,
             )
             sanitized_table_name = meta.name
             row_count = meta.row_count
@@ -470,8 +470,6 @@ def create_table():
             "table_name": sanitized_table_name,
             "row_count": row_count,
             "columns": columns,
-            "original_name": base_name,
-            "is_renamed": base_name != sanitized_table_name,
         })
     except Exception as e:
         logger.error(f"Error creating table: {str(e)}")

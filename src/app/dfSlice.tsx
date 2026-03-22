@@ -274,6 +274,47 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
 }
 
+/**
+ * Remove a table from Redux state (tables, conceptShelf, charts, agentActions, focus).
+ * Does NOT send any server-side delete requests — the caller decides whether
+ * server cleanup is needed.
+ */
+let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
+    const tableToDelete = state.tables.find(t => t.id === tableId);
+    if (!tableToDelete) return;
+
+    const directChildren = state.tables.filter(t =>
+        t.derive?.trigger.tableId === tableId ||
+        t.derive?.source.includes(tableId)
+    );
+
+    if (directChildren.length > 0 && tableToDelete.derive) {
+        const parentTriggerId = tableToDelete.derive.trigger.tableId;
+        state.tables = state.tables.map(t => {
+            if (!t.derive || t.derive.trigger.tableId !== tableId) return t;
+            return { ...t, derive: { ...t.derive, trigger: { ...t.derive.trigger, tableId: parentTriggerId } } };
+        });
+    }
+
+    state.tables = state.tables.filter(t => t.id !== tableId);
+    state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef !== tableId);
+
+    const chartIdsToDelete = state.charts.filter(c => c.tableRef === tableId).map(c => c.id);
+    deleteChartsRoutine(state, chartIdsToDelete);
+
+    const survivingTableIds = new Set(state.tables.map(t => t.id));
+    state.agentActions = state.agentActions.filter(a => {
+        if (a.status === 'running') return true;
+        if (a.originTableId !== tableId) return true;
+        const resultTableIds = a.messages?.filter(m => m.resultTableId).map(m => m.resultTableId!) ?? [];
+        return resultTableIds.some(id => survivingTableIds.has(id));
+    });
+
+    if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
+        state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
+    }
+};
+
 export const fetchFieldSemanticType = createAsyncThunk(
     "dataFormulatorSlice/fetchFieldSemanticType",
     async (table: DictTable, { getState }) => {
@@ -579,83 +620,31 @@ export const dataFormulatorSlice = createSlice({
         },
         addTableToStore: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
-            // Compute content hash if not already set
             if (!table.contentHash) {
                 table = { ...table, contentHash: computeContentHash(table.rows, table.names) };
             }
-            state.tables = [...state.tables, table];
+
+            const existingIdx = state.tables.findIndex(t => t.id === table.id);
+            if (existingIdx >= 0) {
+                state.tables[existingIdx] = table;
+                state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef !== table.id);
+            } else {
+                state.tables = [...state.tables, table];
+            }
+
             state.charts = [...state.charts];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
-
             state.focusedId = { type: 'table', tableId: table.id };
         },
         deleteTable: (state, action: PayloadAction<string>) => {
-            let tableId = action.payload;
-            
-            // Find the table to delete
-            let tableToDelete = state.tables.find(t => t.id == tableId);
+            const tableId = action.payload;
+            const tableToDelete = state.tables.find(t => t.id === tableId);
             if (!tableToDelete) return;
-
-            // Clean up virtual table from workspace before removing from state
             cleanupVirtualTablesFromWorkspace([tableToDelete]);
-
-            // Find direct children: tables derived from or triggered by this table
-            let directChildren = state.tables.filter(t => 
-                t.derive?.trigger.tableId === tableId || 
-                t.derive?.source.includes(tableId)
-            );
-
-            // If the deleted table is derived and has children, re-parent their triggers
-            if (directChildren.length > 0 && tableToDelete.derive) {
-                const parentTriggerId = tableToDelete.derive.trigger.tableId;
-
-                state.tables = state.tables.map(t => {
-                    if (!t.derive) return t;
-
-                    // Only update trigger.tableId — derive.source stays as-is
-                    // since each table has its own specific data sources
-                    if (t.derive.trigger.tableId !== tableId) return t;
-
-                    return {
-                        ...t,
-                        derive: {
-                            ...t.derive,
-                            trigger: {
-                                ...t.derive.trigger,
-                                tableId: parentTriggerId,
-                            }
-                        }
-                    };
-                });
-            }
-            
-            // Remove the table
-            state.tables = state.tables.filter(t => t.id != tableId);
-
-            // Clean up concept shelf items referencing this table
-            state.conceptShelfItems = state.conceptShelfItems.filter(f => !(f.tableRef == tableId));
-            
-            // Delete charts that refer to this table
-            let chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
-            deleteChartsRoutine(state, chartIdsToDelete);
-
-            // Clean up agent actions: remove non-running actions whose originTableId is the deleted table
-            // AND whose resultTableIds all point to tables that no longer exist
-            const survivingTableIds = new Set(state.tables.map(t => t.id));
-            state.agentActions = state.agentActions.filter(a => {
-                if (a.status === 'running') return true; // never remove running actions
-                if (a.originTableId !== tableId) return true; // not related to deleted table
-                // Keep if any resultTableId still exists in surviving tables
-                const resultTableIds = a.messages
-                    ?.filter(m => m.resultTableId)
-                    .map(m => m.resultTableId!) ?? [];
-                return resultTableIds.some(id => survivingTableIds.has(id));
-            });
-
-            // If the deleted table was focused, reset focus
-            if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
-                state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
-            }
+            removeTableStateRoutine(state, tableId);
+        },
+        removeTableLocally: (state, action: PayloadAction<string>) => {
+            removeTableStateRoutine(state, action.payload);
         },
         updateTableAnchored: (state, action: PayloadAction<{tableId: string, anchored: boolean}>) => {
             let tableId = action.payload.tableId;
