@@ -17,6 +17,7 @@ scikit-learn
 pyyaml
 pyarrow>=13.0.0
 xlrd
+openpyxl
 yfinance
 
 # Data-loader deps (all included; try/except at import time keeps things safe)
