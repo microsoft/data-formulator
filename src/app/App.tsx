@@ -630,13 +630,12 @@ const SessionMenu: React.FC = () => {
 
 const ResetDialog: React.FC = () => {
     const [open, setOpen] = useState(false);
-    const [exiting, setExiting] = useState(false);
+    const [resetting, setResetting] = useState(false);
     const dispatch = useDispatch();
     const { t } = useTranslation();
 
-    const handleExit = async () => {
-        setExiting(true);
-        // Clear workspace on server first
+    const handleReset = async () => {
+        setResetting(true);
         try {
             await fetchWithIdentity(getUrls().RESET_DB_FILE, { method: 'POST' });
         } catch (e) {
@@ -658,28 +657,28 @@ const ResetDialog: React.FC = () => {
                 onClick={() => setOpen(true)} 
                 endIcon={<RestartAltIcon />}
             >
-                {t('session.exitButton')}
+                {t('session.resetButton')}
             </Button>
-            <Dialog onClose={exiting ? undefined : () => setOpen(false)} open={open} 
+            <Dialog onClose={resetting ? undefined : () => setOpen(false)} open={open} 
                 sx={{ '& .MuiDialog-paper': { position: 'relative', overflow: 'hidden' } }}>
-                <DialogTitle sx={{ display: "flex", alignItems: "center" }}>{t('session.exitTitle')}</DialogTitle>
+                <DialogTitle sx={{ display: "flex", alignItems: "center" }}>{t('session.resetTitle')}</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        {t('session.exitWarning')}
+                        {t('session.resetWarning')}
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
                     <Button 
-                        disabled={exiting}
-                        onClick={handleExit}
+                        disabled={resetting}
+                        onClick={handleReset}
                         endIcon={<RestartAltIcon />}
                     >
-                        {t('session.exitAction')}
+                        {t('session.resetAction')}
                     </Button>
-                    <Button onClick={() => setOpen(false)} disabled={exiting}>{t('app.cancel')}</Button>
+                    <Button onClick={() => setOpen(false)} disabled={resetting}>{t('app.cancel')}</Button>
                 </DialogActions>
                 {/* Cleaning overlay on top of dialog */}
-                {exiting && (
+                {resetting && (
                     <Box sx={{
                         position: 'absolute',
                         top: 0,
@@ -735,7 +734,7 @@ const ConfigDialog: React.FC = () => {
     const config = useSelector((state: DataFormulatorState) => state.config);
 
 
-    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 30);
+    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 60);
 
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
@@ -943,7 +942,7 @@ const ConfigDialog: React.FC = () => {
                 </DialogContent>
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
-                        setFormulateTimeoutSeconds(30);
+                        setFormulateTimeoutSeconds(60);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
                         setMaxStretchFactor(2.0);
