@@ -217,18 +217,40 @@ class Workspace:
     def get_file_path(self, filename: str) -> Path:
         """
         Get the full path for a file in the workspace.
-        
+
+        Uses Unicode-safe sanitisation: extracts the basename to prevent
+        path traversal while preserving non-ASCII characters (Chinese,
+        Japanese, etc.) that ``werkzeug.secure_filename`` would strip.
+
+        For backward compatibility, if the Unicode-named file does not
+        exist on disk, falls back to the legacy ``secure_filename`` name
+        so that workspaces created before this change continue to work.
+
         Args:
             filename: Name of the file
             
         Returns:
             Full path to the file
         """
-        # secure_filename strips path separators and ".." components.
-        safe_filename = secure_filename(filename)
-        if not safe_filename:
+        basename = Path(filename).name
+        if not basename:
             raise ValueError(f"Invalid filename: {filename!r}")
-        return self._path / safe_filename
+        result = self._path / basename
+        try:
+            result.resolve().relative_to(self._path.resolve())
+        except ValueError:
+            raise ValueError(f"Path traversal detected: {filename!r}")
+
+        # Legacy fallback: files saved before Unicode filename support
+        # were written with secure_filename (which strips non-ASCII chars).
+        if not result.exists():
+            legacy_name = secure_filename(filename)
+            if legacy_name and legacy_name != basename:
+                legacy_path = self._path / legacy_name
+                if legacy_path.exists():
+                    return legacy_path
+
+        return result
     
     def file_exists(self, filename: str) -> bool:
         """
