@@ -789,7 +789,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }
     };
 
-    const handleFileLoadAllTables = (): void => {
+    const handleFileLoadAllTables = async (): Promise<void> => {
         if (!filePreviewTables || filePreviewTables.length === 0) {
             return;
         }
@@ -797,7 +797,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             const table = filePreviewTables[i];
             const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[i]?.name || filePreviewFiles[0]?.name };
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(loadTable({
+            await dispatch(loadTable({
                 table: tableWithSource,
                 storeOnServer,
                 file: storeOnServer ? filePreviewFiles[i] || filePreviewFiles[0] : undefined,
@@ -962,7 +962,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }
     };
 
-    const handleURLLoadAllTables = (): void => {
+    const handleURLLoadAllTables = async (): Promise<void> => {
         if (!urlPreviewTables || urlPreviewTables.length === 0) {
             return;
         }
@@ -981,7 +981,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 sourceConfig = { type: 'url', url: tableURL };
             }
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+            await dispatch(loadTable({ table: tableWithSource, storeOnServer }));
         }
         handleClose();
     };

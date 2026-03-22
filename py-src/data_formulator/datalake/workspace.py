@@ -21,7 +21,7 @@ import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import pandas as pd
 import pyarrow as pa
@@ -32,6 +32,7 @@ from data_formulator.datalake.metadata import (
     TableMetadata,
     load_metadata,
     save_metadata,
+    update_metadata,
     metadata_exists,
 )
 from data_formulator.datalake.parquet_utils import (
@@ -280,18 +281,38 @@ class Workspace:
         if table is None:
             return False
         
-        # Delete the file
         file_path = self.get_file_path(table.filename)
         if file_path.exists():
             file_path.unlink()
         
-        # Remove from metadata
-        metadata.remove_table(table_name)
-        self.save_metadata(metadata)
+        removed = [False]
+
+        def _remove(m: WorkspaceMetadata) -> None:
+            removed[0] = m.remove_table(table_name)
+
+        self._atomic_update_metadata(_remove)
         
         logger.info(f"Deleted table {table_name} from workspace {self._safe_id}")
-        return True
-    
+        return removed[0]
+
+    # ── Metadata helpers ─────────────────────────────────────────────
+
+    def _atomic_update_metadata(
+        self,
+        updater: "Callable[[WorkspaceMetadata], None]",
+    ) -> WorkspaceMetadata:
+        """Atomically read → update → write workspace metadata.
+
+        Uses :func:`update_metadata` which holds a **single** file lock
+        across the entire read-modify-write cycle, preventing lost updates
+        when multiple requests modify metadata concurrently.
+
+        Subclasses (e.g. Azure Blob) should override this to provide
+        their own concurrency control.
+        """
+        self._metadata_cache = update_metadata(self._path, updater)
+        return self._metadata_cache
+
     def get_metadata(self) -> WorkspaceMetadata:
         if self._metadata_cache is not None:
             return self._metadata_cache
@@ -300,7 +321,6 @@ class Workspace:
     
     def save_metadata(self, metadata: WorkspaceMetadata) -> None:
         save_metadata(self._path, metadata)
-        # Update the cache with the just-saved metadata
         self._metadata_cache = metadata
 
     def invalidate_metadata_cache(self) -> None:
@@ -308,9 +328,8 @@ class Workspace:
         self._metadata_cache = None
     
     def add_table_metadata(self, table: TableMetadata) -> None:
-        metadata = self.get_metadata()
-        metadata.add_table(table)
-        self.save_metadata(metadata)
+        """Atomically add or update a table entry in workspace metadata."""
+        self._atomic_update_metadata(lambda m: m.add_table(table))
     
     def get_table_metadata(self, table_name: str) -> Optional[TableMetadata]:
         """Look up table metadata, falling back to sanitized name."""

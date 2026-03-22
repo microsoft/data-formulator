@@ -26,11 +26,12 @@ import json
 import logging
 import shutil
 import tempfile
+import threading
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Callable, Optional, TYPE_CHECKING
 
 import pandas as pd
 import pyarrow as pa
@@ -117,6 +118,11 @@ class AzureBlobWorkspace(Workspace):
         # Avoids re-downloading workspace.yaml on every method call.
         # Invalidated automatically by save_metadata() and cleanup().
         self._metadata_cache: Optional[WorkspaceMetadata] = None
+
+        # Per-instance lock for atomic metadata updates (blob storage has no
+        # file-level locking like the local workspace, so we use a threading
+        # lock to serialise in-process read-modify-write cycles).
+        self._metadata_lock = threading.Lock()
 
         # --- blob data cache -------------------------------------------------
         # Caches downloaded blob bytes keyed by filename.  Avoids repeated
@@ -249,6 +255,23 @@ class AzureBlobWorkspace(Workspace):
         """Force the next get_metadata() to re-read from blob storage."""
         self._metadata_cache = None
 
+    def _atomic_update_metadata(
+        self,
+        updater: Callable[[WorkspaceMetadata], None],
+    ) -> WorkspaceMetadata:
+        """Atomically read → update → write blob-backed metadata.
+
+        Uses a per-instance :class:`threading.Lock` to serialise
+        concurrent in-process metadata modifications.  This prevents
+        lost-update races when the frontend sends parallel requests.
+        """
+        with self._metadata_lock:
+            self._metadata_cache = None  # force fresh read from blob
+            metadata = self.get_metadata()
+            updater(metadata)
+            self.save_metadata(metadata)
+            return metadata
+
     # ------------------------------------------------------------------
     # File / table operations
     # ------------------------------------------------------------------
@@ -276,10 +299,14 @@ class AzureBlobWorkspace(Workspace):
         if self._blob_exists(table.filename):
             self._delete_blob(table.filename)
 
-        metadata.remove_table(table_name)
-        self.save_metadata(metadata)
+        removed = [False]
+
+        def _remove(m: WorkspaceMetadata) -> None:
+            removed[0] = m.remove_table(table_name)
+
+        self._atomic_update_metadata(_remove)
         logger.info("Deleted table %s from blob workspace %s", table_name, self._safe_id)
-        return True
+        return removed[0]
 
     def cleanup(self) -> None:
         """Delete **all** blobs under this workspace's prefix."""

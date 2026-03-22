@@ -182,26 +182,16 @@ def save_uploaded_file(
     # Determine table name
     if table_name is None:
         table_name = sanitize_table_name(actual_filename)
-    
-    # Ensure table name is unique in metadata
-    metadata = workspace.get_metadata()
-    if table_name in metadata.tables and not overwrite:
-        # Generate unique table name
-        base_name = table_name
-        counter = 1
-        while table_name in metadata.tables:
-            table_name = f"{base_name}_{counter}"
-            counter += 1
-    
+
     # Write the file
     file_path = workspace.get_file_path(actual_filename)
     with open(file_path, 'wb') as f:
         f.write(content)
-    
+
     # Compute hash and size
     content_hash = compute_file_hash(content)
     file_size = len(content)
-    
+
     # Create metadata
     table_metadata = TableMetadata(
         name=table_name,
@@ -212,15 +202,27 @@ def save_uploaded_file(
         content_hash=content_hash,
         file_size=file_size,
     )
-    
-    # Save metadata
-    workspace.add_table_metadata(table_metadata)
-    
+
+    # Atomically ensure unique name + add metadata in one lock acquisition.
+    # This prevents the lost-update race where two concurrent uploads both
+    # read the same (stale) metadata and the second save overwrites the first.
+    def _add_unique(metadata):
+        name = table_metadata.name
+        if not overwrite and name in metadata.tables:
+            base = name
+            counter = 1
+            while f"{base}_{counter}" in metadata.tables:
+                counter += 1
+            table_metadata.name = f"{base}_{counter}"
+        metadata.add_table(table_metadata)
+
+    workspace._atomic_update_metadata(_add_unique)
+
     logger.info(
-        f"Saved uploaded file {actual_filename} as table {table_name} "
+        f"Saved uploaded file {actual_filename} as table {table_metadata.name} "
         f"({file_size} bytes, hash={content_hash[:8]}...)"
     )
-    
+
     return table_metadata
 
 
