@@ -38,15 +38,45 @@ SUPPORTED_EXTENSIONS = {
 }
 
 
+_TRUSTED_DETECTIONS = frozenset({
+    # CJK multi-byte — highly distinctive byte patterns
+    'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp',
+    'euc-kr', 'cp949', 'iso-2022-kr', 'johab',
+    'big5', 'big5hkscs', 'cp950',
+    'gb2312', 'gbk', 'gb18030', 'hz',
+    # Cyrillic — distinctive character frequency
+    'cp866', 'cp1251', 'windows-1251',
+    'koi8-r', 'koi8-u', 'iso-8859-5', 'maccyrillic',
+    # Common Windows codepages (1250-1258)
+    'cp1250', 'cp1252', 'cp1253', 'cp1254',
+    'cp1255', 'cp1256', 'cp1257', 'cp1258',
+    'windows-1250', 'windows-1252', 'windows-1253', 'windows-1254',
+    'windows-1255', 'windows-1256', 'windows-1257', 'windows-1258',
+    # ISO-8859 standard series
+    'iso-8859-1', 'iso-8859-2', 'iso-8859-5', 'iso-8859-6',
+    'iso-8859-7', 'iso-8859-8', 'iso-8859-9',
+    # Thai
+    'tis-620', 'cp874',
+})
+
+
 def normalize_text_encoding(content: bytes, file_type: str) -> bytes:
     """Detect encoding of text file content and re-encode as UTF-8.
 
     Only processes text-based file types (csv, txt). Binary formats are
-    returned unchanged. The detection strategy is:
+    returned unchanged.  Strategy:
+
       1. Strip UTF-8 BOM if present.
-      2. Try strict UTF-8 decode (fast path, zero-copy on success).
-      3. Use charset_normalizer for probabilistic detection.
-      4. Fall back through common CJK / Latin encodings.
+      2. Try strict UTF-8 decode — fast path for the common case.
+      3. Try GBK — covers the vast majority of non-UTF-8 files
+         produced by Chinese-locale Excel / Windows.  GBK is a strict
+         superset of GB2312 and handles GB18030 BMP characters too.
+      4. Use charset_normalizer for less common encodings (Shift-JIS,
+         EUC-KR, Cyrillic …).  Only trust well-known encodings;
+         legacy DOS/Mac codepages (cp775, cp857, hp_roman8 …) are
+         easily confused with Latin-1 so we fall through instead.
+      5. Manual fallback chain: gb18030, shift_jis, euc-kr.
+      6. Last-resort: latin-1 (never raises, 1:1 byte mapping).
     """
     if file_type not in _TEXT_FILE_TYPES:
         return content
@@ -61,16 +91,28 @@ def normalize_text_encoding(content: bytes, file_type: str) -> bytes:
         pass
 
     try:
+        decoded = content.decode('gbk')
+        logger.info("Decoded text file as GBK")
+        return decoded.encode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+
+    try:
         from charset_normalizer import from_bytes
         result = from_bytes(content).best()
-        if result is not None:
-            detected = str(result).encode('utf-8')
+        if result is not None and result.encoding in _TRUSTED_DETECTIONS:
             logger.info("Detected encoding %s via charset_normalizer", result.encoding)
-            return detected
+            return str(result).encode('utf-8')
+        elif result is not None:
+            logger.debug(
+                "charset_normalizer suggested %s but it is not in the "
+                "trusted set; falling through to manual chain",
+                result.encoding,
+            )
     except ImportError:
         pass
 
-    for enc in ('gbk', 'gb18030', 'shift_jis', 'euc-kr', 'latin-1'):
+    for enc in ('gb18030', 'shift_jis', 'euc-kr'):
         try:
             decoded = content.decode(enc)
             logger.info("Decoded text file using fallback encoding %s", enc)
@@ -78,8 +120,8 @@ def normalize_text_encoding(content: bytes, file_type: str) -> bytes:
         except (UnicodeDecodeError, UnicodeEncodeError):
             continue
 
-    logger.warning("Could not detect encoding; decoding as UTF-8 with replacement chars")
-    return content.decode('utf-8', errors='replace').encode('utf-8')
+    logger.warning("Could not detect encoding; falling back to latin-1")
+    return content.decode('latin-1').encode('utf-8')
 
 
 def is_supported_file(filename: str) -> bool:
