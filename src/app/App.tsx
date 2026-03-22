@@ -45,6 +45,8 @@ import {
     ListItemText,
     CircularProgress,
     LinearProgress,
+    Switch,
+    FormControlLabel,
 } from '@mui/material';
 
 
@@ -735,6 +737,7 @@ const ConfigDialog: React.FC = () => {
 
 
     const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 60);
+    const [autoChartInsight, setAutoChartInsight] = useState(config.autoChartInsight ?? false);
 
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
@@ -744,8 +747,8 @@ const ConfigDialog: React.FC = () => {
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
 
-    // Add check for changes
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
+                      autoChartInsight !== config.autoChartInsight ||
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight ||
                       maxStretchFactor !== config.maxStretchFactor ||
@@ -853,6 +856,24 @@ const ConfigDialog: React.FC = () => {
                                 />
                             </Box>
                         </Box>
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={autoChartInsight}
+                                    onChange={(e) => setAutoChartInsight(e.target.checked)}
+                                    size="small"
+                                />
+                            }
+                            label={
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <Typography sx={{ fontSize: 13 }}>{t('config.autoChartInsight')}</Typography>
+                                    <Tooltip title={t('config.autoChartInsightHint')} arrow placement="top">
+                                        <InfoOutlinedIcon sx={{ fontSize: 15, color: 'text.secondary', cursor: 'help' }} />
+                                    </Tooltip>
+                                </Box>
+                            }
+                            sx={{ ml: 0 }}
+                        />
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
                                 <TextField
@@ -943,6 +964,7 @@ const ConfigDialog: React.FC = () => {
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
                         setFormulateTimeoutSeconds(60);
+                        setAutoChartInsight(false);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
                         setMaxStretchFactor(2.0);
@@ -958,7 +980,7 @@ const ConfigDialog: React.FC = () => {
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, autoChartInsight, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
                             setOpen(false);
                         }}
                     >

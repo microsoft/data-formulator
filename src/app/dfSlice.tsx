@@ -69,6 +69,7 @@ export type FocusedId =
 
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
+    autoChartInsight: boolean;
     defaultChartWidth: number;
     defaultChartHeight: number;
     maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 2.0)
@@ -196,6 +197,7 @@ const initialState: DataFormulatorState = {
 
     config: {
         formulateTimeoutSeconds: 60,
+        autoChartInsight: false,
         defaultChartWidth: 400,
         defaultChartHeight: 300,
         maxStretchFactor: 2.0,
