@@ -3,8 +3,13 @@
 
 import json
 import keyword
+import logging
+import time
+
 import numpy as np
 import re
+
+_logger = logging.getLogger(__name__)
 
 def string_to_py_varname(var_str): 
     var_name = re.sub(r'\W|^(?=\d)', '_', var_str)
@@ -196,6 +201,64 @@ def extract_json_objects(text):
         start_index = end_index + 1  
   
     return json_objects  
+
+
+def supplement_missing_block(client, messages, assistant_content,
+                             parsed_json, code_blocks, prefix="[Agent]"):
+    """When model produces only JSON or only code, request the missing block.
+
+    Returns (parsed_json, code_blocks, supplement_content, elapsed_seconds).
+    supplement_content is None if no supplement was needed or it failed.
+    """
+    has_json = parsed_json is not None
+    has_code = len(code_blocks) > 0
+
+    if has_json == has_code:
+        return parsed_json, code_blocks, None, 0.0
+
+    if has_json:
+        output_var = parsed_json.get('output_variable', 'result_df') or 'result_df'
+        _logger.info(f"{prefix} JSON found but no Python code — requesting supplement")
+        prompt = (
+            "You produced the JSON spec but no Python code block. "
+            "Now write ONLY the ```python``` code block. "
+            f"The final DataFrame must be assigned to `{output_var}`."
+        )
+    else:
+        _logger.info(f"{prefix} Python code found but no JSON spec — requesting supplement")
+        prompt = (
+            "You produced the Python code but no JSON spec. "
+            "Now write ONLY the ```json``` spec block. "
+            "Make sure to include `output_variable` matching the "
+            "variable name used in your code."
+        )
+
+    try:
+        t0 = time.time()
+        supp_resp = client.get_completion(messages=[
+            *messages,
+            {"role": "assistant", "content": assistant_content},
+            {"role": "user", "content": prompt},
+        ])
+        elapsed = time.time() - t0
+        supp_text = supp_resp.choices[0].message.content
+
+        if has_json:
+            supp_codes = extract_code_from_gpt_response(supp_text + "\n", "python")
+            if supp_codes:
+                _logger.info(f"{prefix} Supplement succeeded — got Python code")
+                return parsed_json, supp_codes, supp_text, elapsed
+            _logger.warning(f"{prefix} Supplement did not produce Python code")
+        else:
+            for jb in extract_json_objects(supp_text + "\n"):
+                if isinstance(jb, dict):
+                    _logger.info(f"{prefix} Supplement succeeded — got JSON spec")
+                    return jb, code_blocks, supp_text, elapsed
+            _logger.warning(f"{prefix} Supplement did not produce JSON spec")
+    except Exception as e:
+        _logger.warning(f"{prefix} Supplement call failed: {e}")
+
+    return parsed_json, code_blocks, None, 0.0
 
 
 def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):

@@ -4,7 +4,7 @@
 import json
 import time
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block
 from data_formulator.agents.agent_data_rec import (
     SHARED_ENVIRONMENT,
     SHARED_SEMANTIC_TYPE_REFERENCE,
@@ -136,13 +136,22 @@ class DataTransformationAgent(object):
             logger.debug("=== Python script result ===>")
             logger.debug(choice.message.content + "\n")
 
-            # --- Parse JSON spec ---
+            # --- Parse JSON spec and Python code ---
             json_blocks = extract_json_objects(choice.message.content + "\n")
             refined_goal = None
             for jb in json_blocks:
                 if isinstance(jb, dict):
                     refined_goal = jb
                     break
+            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
+
+            # If only one block was produced, request the missing one
+            refined_goal, code_blocks, _supplement_content, t_supplement = supplement_missing_block(
+                self.client, messages, choice.message.content,
+                refined_goal, code_blocks, prefix="[DataTransformAgent]"
+            )
+
+            # Apply fallbacks for missing JSON
             json_fallback_used = refined_goal is None
             if refined_goal is None:
                 refined_goal = {'chart': {'chart_type': '', 'encodings': {}, 'config': {}}, 'instruction': '', 'reason': '', 'output_variable': 'result_df'}
@@ -152,9 +161,6 @@ class DataTransformationAgent(object):
                 )
             output_variable = refined_goal.get('output_variable', 'result_df') or 'result_df'
             logger.info(f"[DataTransformAgent] extracted output_variable={output_variable!r}")
-
-            # --- Parse code ---
-            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
             import re as _re
             _diag_code = code_blocks[-1] if code_blocks else None
@@ -241,7 +247,10 @@ class DataTransformationAgent(object):
             else:
                 result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
 
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
+            _effective_content = choice.message.content
+            if _supplement_content:
+                _effective_content += "\n\n" + _supplement_content
+            result['dialog'] = [*messages, {"role": choice.message.role, "content": _effective_content}]
             result['agent'] = 'DataTransformationAgent'
             result['refined_goal'] = refined_goal
 
@@ -273,6 +282,7 @@ class DataTransformationAgent(object):
                     "code": _diag_code,
                     "output_variable": output_variable,
                     "output_variable_in_code": _diag_output_var_in_code,
+                    "supplemented": _supplement_content is not None,
                 },
                 "execution": {
                     "sandbox_mode": _diag_sandbox_mode,
@@ -280,6 +290,7 @@ class DataTransformationAgent(object):
                 },
                 "performance": {
                     "llm_seconds": round(t_llm or 0, 3),
+                    "supplement_seconds": round(t_supplement, 3),
                     "exec_seconds": round(t_exec_total, 3),
                     "prompt_tokens": getattr(usage, 'prompt_tokens', None) if usage else None,
                     "completion_tokens": getattr(usage, 'completion_tokens', None) if usage else None,
@@ -303,7 +314,7 @@ class DataTransformationAgent(object):
         usage_str = ""
         if usage:
             usage_str = f" | tokens: in={getattr(usage, 'prompt_tokens', None)}, out={getattr(usage, 'completion_tokens', None)}"
-        logger.info(f"[DataTransformAgent] timing: llm={t_llm_val:.3f}s, exec={t_exec_total:.3f}s, total={t_total + t_llm_val:.3f}s{usage_str}")
+        logger.info(f"[DataTransformAgent] timing: llm={t_llm_val:.3f}s, supplement={t_supplement:.3f}s, exec={t_exec_total:.3f}s, total={t_total + t_llm_val:.3f}s{usage_str}")
         return candidates
 
 
