@@ -340,6 +340,7 @@ export function useFormulateData() {
                     "value": "Data formulation failed, please try again.",
                     "code": data.results[0].code,
                     "detail": data.results[0].content,
+                    "diagnostics": data.results[0].diagnostics,
                 }));
                 onError?.(new Error("All candidates failed"));
                 return;

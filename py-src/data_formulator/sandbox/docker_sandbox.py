@@ -104,9 +104,16 @@ class DockerSandbox(Sandbox):
                 import pandas as _pd
                 _out = {output_variable}
                 if not isinstance(_out, _pd.DataFrame):
+                    _df_vars = [
+                        _k for _k, _v in dict(locals()).items()
+                        if isinstance(_v, _pd.DataFrame) and not _k.startswith('_')
+                    ]
                     raise TypeError(
                         '{output_variable} is not a DataFrame '
-                        f'(type: {{type(_out).__name__}})'
+                        f'(type: {{type(_out).__name__}}). '
+                        f'Available DataFrame variables in code: {{_df_vars}}. '
+                        f'This usually means the JSON spec output_variable '
+                        f'does not match the variable name in the Python code.'
                     )
                 _out.to_parquet('{output_parquet}', index=False)
 

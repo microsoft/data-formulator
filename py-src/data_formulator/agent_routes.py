@@ -411,14 +411,18 @@ def derive_data():
 
             language_instruction = get_language_instruction(mode="compact")
 
+            model_info = {
+                "model": content['model'].get("model", ""),
+                "endpoint": content['model'].get("endpoint", ""),
+                "api_base": content['model'].get("api_base", ""),
+            }
+
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
                 if mode == "recommendation":
-                    # Use unified Python agent for recommendations
-                    agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows)
+                    agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
                     results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
                 else:
-                    # Use unified Python agent that generates Python scripts with DuckDB + pandas
-                    agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows)
+                    agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
                     results = agent.run(input_tables, instruction, prev_messages,
                                         current_visualization=current_visualization, expected_visualization=expected_visualization)
 
@@ -632,9 +636,14 @@ def refine_data():
 
             language_instruction = get_language_instruction(mode="compact")
 
+            model_info = {
+                "model": content['model'].get("model", ""),
+                "endpoint": content['model'].get("endpoint", ""),
+                "api_base": content['model'].get("api_base", ""),
+            }
+
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                # Use unified Python agent for followup transformations
-                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows)
+                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
                 results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
                                         current_visualization=current_visualization, expected_visualization=expected_visualization)
 

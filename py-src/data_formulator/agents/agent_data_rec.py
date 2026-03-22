@@ -36,7 +36,7 @@ SHARED_ENVIRONMENT = '''**About the execution environment:**
 - Only use DuckDB when the dataset is very large and you need efficient SQL aggregations, filtering, joins, or window functions.
 - You can combine both: DuckDB for initial loading/filtering on large files, then pandas for complex operations.
 
-**Code structure:** standalone script (no function wrapper), imports at top, assign final result to a variable (specified in JSON).'''
+**Code structure:** standalone script (no function wrapper), imports at top. **CRITICAL:** The final result DataFrame MUST be assigned to the exact variable name you specified in `"output_variable"` in the JSON spec — the system uses this name to extract the result. For example, if your output_variable is `sales_by_region`, the script must contain `sales_by_region = ...`.'''
 
 
 SHARED_SEMANTIC_TYPE_REFERENCE = '''**[SEMANTIC TYPE REFERENCE]**
@@ -158,7 +158,7 @@ You will produce two outputs: a JSON spec (```json```) and a Python script (```p
 
 {SHARED_STATISTICAL_ANALYSIS}
 
-**Step 2: Python script** — transform input data to produce a DataFrame with all "output_fields". Keep it simple and readable.
+**Step 2: Python script** — transform input data to produce a DataFrame with all "output_fields". Keep it simple and readable. The script MUST assign the final result to the variable named in `"output_variable"` from Step 1.
 
 **Datetime handling:**
 - Year → number. Year-month / year-month-day → string ("2020-01" / "2020-01-01").
@@ -169,15 +169,19 @@ You will produce two outputs: a JSON spec (```json```) and a Python script (```p
 
 class DataRecAgent(object):
 
-    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", language_instruction="", max_display_rows=10000):
+    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", language_instruction="", max_display_rows=10000, model_info=None):
         self.client = client
         self.workspace = workspace
         self.max_display_rows = max_display_rows
+        self._model_info = model_info or {}
+        self._agent_coding_rules = agent_coding_rules
+        self._language_instruction = language_instruction
 
-        # Incorporate agent coding rules into system prompt if provided
         if system_prompt is not None:
+            self._base_prompt = system_prompt
             self.system_prompt = system_prompt
         else:
+            self._base_prompt = SYSTEM_PROMPT
             base_prompt = SYSTEM_PROMPT
             if agent_coding_rules and agent_coding_rules.strip():
                 self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should prioritize user instructions.\n\n" + agent_coding_rules.strip()
@@ -193,7 +197,8 @@ class DataRecAgent(object):
         t_exec_total = 0.0
 
         if isinstance(response, Exception):
-            result = {'status': 'other error', 'content': str(response.body)}
+            result = {'status': 'other error', 'content': str(response.body),
+                      'diagnostics': self._build_diagnostics_stub(messages, error=str(response.body))}
             return [result]
 
         candidates = []
@@ -202,33 +207,56 @@ class DataRecAgent(object):
             logger.debug("\n=== Data recommendation result ===>\n")
             logger.debug(choice.message.content + "\n")
 
+            # --- Parse JSON spec ---
             json_blocks = extract_json_objects(choice.message.content + "\n")
-            # Find the first JSON dict (skip any arrays the model may have emitted)
             refined_goal = None
             for jb in json_blocks:
                 if isinstance(jb, dict):
                     refined_goal = jb
                     break
+            json_fallback_used = refined_goal is None
             if refined_goal is None:
                 refined_goal = {'output_fields': [], 'chart': {'chart_type': "", 'encodings': {}, 'config': {}}, 'output_variable': 'result_df'}
-            output_variable = refined_goal.get('output_variable', 'result_df')
+                logger.warning(
+                    "[DataRecAgent] JSON spec parsing failed — using fallback defaults. "
+                    f"Response snippet: {choice.message.content[:300]!r}"
+                )
+            output_variable = refined_goal.get('output_variable', 'result_df') or 'result_df'
+            logger.info(f"[DataRecAgent] extracted output_variable={output_variable!r}")
 
+            # --- Parse code ---
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
+
+            # Diagnostics tracking
+            import re as _re
+            _diag_code = code_blocks[-1] if code_blocks else None
+            _diag_output_var_in_code = bool(
+                _diag_code and output_variable
+                and _re.search(rf'(?:^|\n)\s*{_re.escape(output_variable)}\s*=(?!=)', _diag_code)
+            )
+            _diag_sandbox_mode = None
+            _diag_exec = {"status": None}
 
             if len(code_blocks) > 0:
                 code = code_blocks[-1]
 
+                if output_variable and not _diag_output_var_in_code:
+                    logger.warning(
+                        f"[DataRecAgent] output_variable {output_variable!r} does not appear "
+                        f"as an assignment target in generated code. "
+                        f"Sandbox will attempt auto-recovery if needed."
+                    )
+
                 try:
                     from data_formulator.sandbox import create_sandbox
 
-                    # Get sandbox setting (with fallback for non-Flask contexts like MCP server)
                     try:
                         from flask import current_app
                         sandbox_mode = current_app.config.get('CLI_ARGS', {}).get('sandbox', 'local')
                     except (ImportError, RuntimeError):
                         sandbox_mode = 'local'
+                    _diag_sandbox_mode = sandbox_mode
 
-                    # Execute the Python script in the appropriate sandbox
                     t_exec_start = time.time()
                     sandbox = create_sandbox(sandbox_mode)
                     execution_result = sandbox.run_python_code(
@@ -238,23 +266,23 @@ class DataRecAgent(object):
                     )
                     t_exec_total += time.time() - t_exec_start
 
+                    _diag_exec = {
+                        "status": execution_result['status'],
+                        "error_message": execution_result.get('content') if execution_result['status'] != 'ok' else None,
+                        "available_dataframes": execution_result.get('df_names', []),
+                    }
+
                     if execution_result['status'] == 'ok':
                         full_df = execution_result['content']
                         row_count = len(full_df)
 
-                        # Generate unique table name for workspace storage
                         output_table_name = self.workspace.get_fresh_name(f"d-{output_variable}")
-
-                        # Write full result to workspace as parquet
                         self.workspace.write_parquet(full_df, output_table_name)
 
-                        # Limit rows for response payload
                         if row_count > self.max_display_rows:
                             query_output = full_df.head(self.max_display_rows)
                         else:
                             query_output = full_df
-
-                        # Remove duplicate columns to avoid orient='records' error
                         query_output = query_output.loc[:, ~query_output.columns.duplicated()]
 
                         result = {
@@ -269,7 +297,6 @@ class DataRecAgent(object):
                             },
                         }
                     else:
-                        # Execution error
                         error_message = execution_result.get('content', execution_result.get('error_message', 'Unknown error'))
                         result = {
                             'status': 'error',
@@ -282,36 +309,90 @@ class DataRecAgent(object):
                     error_message = traceback.format_exc()
                     logger.warning(error_message)
                     result = {'status': 'other error', 'code': code, 'content': f"Unexpected error: {error_message}"}
+                    _diag_exec = {"status": "exception", "error_message": str(e)}
             else:
                 result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
 
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataRecAgent'
             result['refined_goal'] = refined_goal
+
+            # --- Build diagnostics ---
+            usage = getattr(response, 'usage', None)
+            result['diagnostics'] = {
+                "agent": "DataRecAgent",
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "model": self._model_info,
+                "prompt_components": {
+                    "base_system_prompt": self._base_prompt,
+                    "agent_coding_rules": self._agent_coding_rules,
+                    "language_instruction": self._language_instruction,
+                    "assembled_system_prompt": self.system_prompt,
+                },
+                "llm_request": {
+                    "message_count": len(messages),
+                    "messages": messages,
+                },
+                "llm_response": {
+                    "raw_content": choice.message.content,
+                    "finish_reason": getattr(choice, 'finish_reason', None),
+                },
+                "parsing": {
+                    "json_spec_found": not json_fallback_used,
+                    "json_spec": refined_goal,
+                    "json_fallback_used": json_fallback_used,
+                    "code_found": len(code_blocks) > 0,
+                    "code": _diag_code,
+                    "output_variable": output_variable,
+                    "output_variable_in_code": _diag_output_var_in_code,
+                },
+                "execution": {
+                    "sandbox_mode": _diag_sandbox_mode,
+                    **_diag_exec,
+                },
+                "performance": {
+                    "llm_seconds": round(t_llm or 0, 3),
+                    "exec_seconds": round(t_exec_total, 3),
+                    "prompt_tokens": getattr(usage, 'prompt_tokens', None) if usage else None,
+                    "completion_tokens": getattr(usage, 'completion_tokens', None) if usage else None,
+                },
+            }
+
             candidates.append(result)
+
+        t_total = time.time() - t_start
+        t_llm_val = t_llm or 0.0
 
         logger.debug("=== Recommendation Candidates ===>")
         for candidate in candidates:
             for key, value in candidate.items():
-                if key in ['dialog', 'content']:
+                if key in ['dialog', 'content', 'diagnostics']:
                     logger.debug(f"##{key}:\n{str(value)[:1000]}...")
                 else:
                     logger.debug(f"## {key}:\n{value}")
 
-        t_total = time.time() - t_start
-        t_llm_val = t_llm or 0.0
-        t_misc = t_total - t_exec_total
-
-        # Log token usage if available
         usage = getattr(response, 'usage', None)
         usage_str = ""
         if usage:
-            prompt_tok = getattr(usage, 'prompt_tokens', None)
-            completion_tok = getattr(usage, 'completion_tokens', None)
-            usage_str = f" | tokens: in={prompt_tok}, out={completion_tok}"
-
-        logger.info(f"[DataRecAgent] timing: llm={t_llm_val:.3f}s, exec={t_exec_total:.3f}s, misc={t_misc:.3f}s, total={t_total + t_llm_val:.3f}s{usage_str}")
+            usage_str = f" | tokens: in={getattr(usage, 'prompt_tokens', None)}, out={getattr(usage, 'completion_tokens', None)}"
+        logger.info(f"[DataRecAgent] timing: llm={t_llm_val:.3f}s, exec={t_exec_total:.3f}s, total={t_total + t_llm_val:.3f}s{usage_str}")
         return candidates
+
+    def _build_diagnostics_stub(self, messages, error=""):
+        """Minimal diagnostics for connection/exception errors."""
+        return {
+            "agent": "DataRecAgent",
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "model": self._model_info,
+            "prompt_components": {
+                "base_system_prompt": self._base_prompt,
+                "agent_coding_rules": self._agent_coding_rules,
+                "language_instruction": self._language_instruction,
+                "assembled_system_prompt": self.system_prompt,
+            },
+            "llm_request": {"message_count": len(messages), "messages": messages},
+            "error": error,
+        }
 
 
     def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):

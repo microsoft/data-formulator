@@ -13,6 +13,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningIcon from '@mui/icons-material/Warning';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useTranslation } from 'react-i18next';
 
 export interface Message {
@@ -21,7 +22,8 @@ export interface Message {
     timestamp: number,
     value: string,
     detail?: string, // error details
-    code?: string // if this message is related to a code error, include code as well
+    code?: string, // if this message is related to a code error, include code as well
+    diagnostics?: any, // full diagnostic payload from the backend agent pipeline
 }
 
 const TYPE_SYMBOLS: Record<string, string> = {
@@ -47,6 +49,56 @@ const formatTimestamp = (timestamp: number) => {
         hour12: false
     });
 };
+
+const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnostics }) => {
+    const [expanded, setExpanded] = React.useState(false);
+    const [copied, setCopied] = React.useState(false);
+    const jsonStr = React.useMemo(() => JSON.stringify(diagnostics, null, 2), [diagnostics]);
+
+    const handleCopy = React.useCallback(() => {
+        navigator.clipboard.writeText(jsonStr).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        });
+    }, [jsonStr]);
+
+    return (
+        <div style={{ marginTop: 4 }}>
+            <Typography fontSize={10} sx={{ color: '#888', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <span
+                    style={{ color: '#6a1b9a', cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => setExpanded(prev => !prev)}
+                >
+                    {expanded ? '▾' : '▸'} diagnostics
+                </span>
+                {expanded && (
+                    <Tooltip title={copied ? 'Copied!' : 'Copy JSON'} placement="top">
+                        <IconButton size="small" onClick={handleCopy} sx={{ p: 0, ml: 0.5 }}>
+                            <ContentCopyIcon sx={{ fontSize: 12, color: copied ? '#2e7d32' : '#888' }} />
+                        </IconButton>
+                    </Tooltip>
+                )}
+            </Typography>
+            {expanded && (
+                <pre style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 9,
+                    margin: '2px 0',
+                    padding: '6px 8px',
+                    backgroundColor: '#f5f0ff',
+                    border: '1px solid #e0d4f5',
+                    borderRadius: 3,
+                    maxHeight: 400,
+                    overflow: 'auto',
+                    lineHeight: 1.4,
+                }}>
+                    {jsonStr}
+                </pre>
+            )}
+        </div>
+    );
+});
 
 export const MessageSnackbar = React.memo(function MessageSnackbar() {
   
@@ -215,7 +267,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                         {groupedMessages.map((msg, index) => {
                             const color = TYPE_COLORS[msg.type] || '#333';
                             const symbol = TYPE_SYMBOLS[msg.type] || '•';
-                            const hasDetails = !!(msg.detail || msg.code);
+                            const hasDetails = !!(msg.detail || msg.code || msg.diagnostics);
                             const isExpanded = expandedMessages.has(index);
                             return (
                                 <div key={index} style={{ borderBottom: '1px solid #f0f0f0', padding: '2px 0' }}>
@@ -262,6 +314,9 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                                                         {msg.code.split('\n').filter(line => line.trim() !== '').join('\n')}
                                                     </pre>
                                                 </div>
+                                            )}
+                                            {msg.diagnostics && (
+                                                <DiagnosticsViewer diagnostics={msg.diagnostics} />
                                             )}
                                         </div>
                                     )}

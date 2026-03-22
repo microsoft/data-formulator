@@ -152,7 +152,22 @@ def _warm_worker_loop(conn):
             continue
 
         _allowed_workspace[0] = None
-        conn.send({"status": "ok", "allowed_objects": {k: namespace[k] for k in allowed_objects}})
+
+        result_objs = {k: namespace[k] for k in allowed_objects}
+        response_msg = {"status": "ok", "allowed_objects": result_objs}
+
+        # Collect DataFrame variable names for diagnostics.
+        try:
+            _df_names = [
+                k for k, v in namespace.items()
+                if isinstance(v, pandas.DataFrame)
+                and not k.startswith('_') and k not in allowed_objects
+            ]
+            response_msg["df_names"] = _df_names
+        except Exception:
+            pass
+
+        conn.send(response_msg)
 
     conn.close()
 
@@ -284,12 +299,19 @@ class LocalSandbox(Sandbox):
                 if result["status"] == "ok":
                     output_df = result["allowed_objects"][output_variable]
                     if not isinstance(output_df, pd.DataFrame):
+                        df_names = result.get("df_names", [])
                         return {
                             "status": "error",
                             "content": (
                                 f'Output variable "{output_variable}" is not a '
-                                f"DataFrame (type: {type(output_df).__name__})"
+                                f"DataFrame (type: {type(output_df).__name__}). "
+                                f"Available DataFrame variables in code: "
+                                f"{df_names if df_names else 'none'}. "
+                                f"This usually means the JSON spec's "
+                                f"output_variable does not match the variable "
+                                f"name actually used in the Python code."
                             ),
+                            "df_names": df_names,
                         }
                     return {"status": "ok", "content": output_df}
                 else:
