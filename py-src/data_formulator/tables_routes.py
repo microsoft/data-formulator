@@ -12,13 +12,11 @@ import traceback
 from flask import request, jsonify, Blueprint, Response
 import pandas as pd
 from pathlib import Path
-from werkzeug.utils import secure_filename
-
 from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 from data_formulator.auth import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
-from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name
+from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file
 from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
 
@@ -429,8 +427,9 @@ def create_table():
             file = request.files['file']
             if not file.filename or not is_supported_file(file.filename):
                 return jsonify({"status": "error", "message": "Unsupported file format"}), 400
-            safe_name = secure_filename(file.filename)
-            if not safe_name:
+            try:
+                safe_name = safe_data_filename(file.filename)
+            except ValueError:
                 return jsonify({"status": "error", "message": "Invalid filename"}), 400
             meta = save_uploaded_file(
                 workspace,

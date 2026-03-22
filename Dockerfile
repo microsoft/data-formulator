@@ -35,6 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create a non-root user to run the application
 RUN useradd -m -s /bin/bash appuser
 
+# Ensure Unicode filenames work correctly (Chinese, Japanese, etc.)
+ENV LANG=C.UTF-8
+
 # Set the home directory for workspace data to a deterministic path
 ENV DATA_FORMULATOR_HOME=/home/appuser/.data_formulator
 

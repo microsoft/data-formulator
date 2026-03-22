@@ -19,8 +19,8 @@ import tempfile
 import textwrap
 
 import pandas as pd
-from werkzeug.utils import secure_filename
 
+from data_formulator.datalake.parquet_utils import safe_data_filename
 from .base import Sandbox
 
 logger = logging.getLogger(__name__)
@@ -199,8 +199,9 @@ class DockerSandbox(Sandbox):
             # ---- read back output ---------------------------------------------
             # Defensive: ensure the filename stays inside output_dir even if
             # output_variable somehow contains path separators.
-            safe_name = secure_filename(output_variable)
-            if not safe_name:
+            try:
+                safe_name = safe_data_filename(output_variable)
+            except ValueError:
                 self._cleanup(tmpdir)
                 return {
                     "status": "error",

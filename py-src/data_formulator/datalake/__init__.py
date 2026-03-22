@@ -68,6 +68,7 @@ from data_formulator.datalake.file_manager import (
 
 # Parquet utilities (pure helpers, no Workspace dependency)
 from data_formulator.datalake.parquet_utils import (
+    safe_data_filename,
     sanitize_table_name,
     DEFAULT_COMPRESSION,
 )
@@ -99,6 +100,7 @@ __all__ = [
     "get_file_info",
     "SUPPORTED_EXTENSIONS",
     # Parquet utilities
+    "safe_data_filename",
     "sanitize_table_name",
     "DEFAULT_COMPRESSION",
 ]

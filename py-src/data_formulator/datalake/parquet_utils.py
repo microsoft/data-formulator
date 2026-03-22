@@ -12,6 +12,7 @@ are consumed by Workspace methods that handle metadata bookkeeping.
 import hashlib
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -36,6 +37,33 @@ DEFAULT_METADATA_SAMPLE_ROWS = 50
 # ---------------------------------------------------------------------------
 # Name helpers
 # ---------------------------------------------------------------------------
+
+def safe_data_filename(filename: str) -> str:
+    """Unicode-safe filename sanitisation for data files.
+
+    Prevents path traversal by extracting the basename while preserving
+    Unicode characters (Chinese, Japanese, Korean, etc.) that
+    ``werkzeug.secure_filename`` would strip.
+
+    Use this instead of ``secure_filename`` for any path that stores or
+    reads user data files (parquet, csv, xlsx, …).
+
+    Args:
+        filename: Input filename (may contain path components)
+
+    Returns:
+        Sanitised basename (Unicode preserved, no directory components)
+
+    Raises:
+        ValueError: If the result is empty or unsafe
+    """
+    basename = Path(filename).name if filename else ""
+    # Strip control characters (U+0000–U+001F) but keep all Unicode
+    basename = re.sub(r"[\x00-\x1f]", "", basename).strip()
+    if not basename or basename in (".", ".."):
+        raise ValueError(f"Invalid filename: {filename!r}")
+    return basename
+
 
 def sanitize_table_name(name: str) -> str:
     """

@@ -44,6 +44,7 @@ from data_formulator.datalake.metadata import (
 )
 from werkzeug.utils import secure_filename
 from data_formulator.datalake.parquet_utils import (
+    safe_data_filename,
     sanitize_table_name,
     get_arrow_column_info,
     compute_arrow_table_hash,
@@ -261,14 +262,10 @@ class AzureBlobWorkspace(Workspace):
             will not work — use :meth:`read_data_as_df`,
             :meth:`download_file`, or :meth:`_temp_local_copy` instead.
         """
-        safe_filename = secure_filename(filename)
-        if not safe_filename:
-            raise ValueError(f"Invalid filename: {filename!r}")
-        return self._blob_name(safe_filename)
+        return self._blob_name(safe_data_filename(filename))
 
     def file_exists(self, filename: str) -> bool:
-        safe_filename = Path(filename).name
-        return self._blob_exists(safe_filename)
+        return self._blob_exists(safe_data_filename(filename))
 
     def delete_table(self, table_name: str) -> bool:
         metadata = self.get_metadata()
@@ -533,13 +530,11 @@ class AzureBlobWorkspace(Workspace):
 
     def upload_file(self, content: bytes, filename: str) -> None:
         """Upload raw file content to the workspace as a blob."""
-        safe_filename = Path(filename).name
-        self._upload_bytes(safe_filename, content)
+        self._upload_bytes(safe_data_filename(filename), content)
 
     def download_file(self, filename: str) -> bytes:
         """Download raw file content from the workspace blob."""
-        safe_filename = Path(filename).name
-        return self._download_bytes(safe_filename)
+        return self._download_bytes(safe_data_filename(filename))
 
     # ------------------------------------------------------------------
     # Workspace snapshot (session save / restore)

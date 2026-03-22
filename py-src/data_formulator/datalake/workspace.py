@@ -35,6 +35,7 @@ from data_formulator.datalake.metadata import (
     metadata_exists,
 )
 from data_formulator.datalake.parquet_utils import (
+    safe_data_filename,
     sanitize_table_name,
     get_arrow_column_info,
     compute_arrow_table_hash,
@@ -218,9 +219,9 @@ class Workspace:
         """
         Get the full path for a file in the workspace.
 
-        Uses Unicode-safe sanitisation: extracts the basename to prevent
-        path traversal while preserving non-ASCII characters (Chinese,
-        Japanese, etc.) that ``werkzeug.secure_filename`` would strip.
+        Uses :func:`safe_data_filename` for Unicode-safe sanitisation:
+        extracts the basename to prevent path traversal while preserving
+        non-ASCII characters (Chinese, Japanese, etc.).
 
         For backward compatibility, if the Unicode-named file does not
         exist on disk, falls back to the legacy ``secure_filename`` name
@@ -232,9 +233,7 @@ class Workspace:
         Returns:
             Full path to the file
         """
-        basename = Path(filename).name
-        if not basename:
-            raise ValueError(f"Invalid filename: {filename!r}")
+        basename = safe_data_filename(filename)
         result = self._path / basename
         try:
             result.resolve().relative_to(self._path.resolve())
