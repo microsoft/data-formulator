@@ -94,7 +94,16 @@ class DataTransformationAgent(object):
                 self.system_prompt = base_prompt
 
         if language_instruction:
-            self.system_prompt = self.system_prompt + "\n\n" + language_instruction
+            marker = "**About the execution environment:**"
+            idx = self.system_prompt.find(marker)
+            if idx > 0:
+                self.system_prompt = (
+                    self.system_prompt[:idx]
+                    + language_instruction + "\n\n"
+                    + self.system_prompt[idx:]
+                )
+            else:
+                self.system_prompt = self.system_prompt + "\n\n" + language_instruction
 
     def _build_diagnostics_stub(self, messages, error=""):
         """Minimal diagnostics for connection/exception errors."""

@@ -189,7 +189,19 @@ class DataRecAgent(object):
                 self.system_prompt = base_prompt
 
         if language_instruction:
-            self.system_prompt = self.system_prompt + "\n\n" + language_instruction
+            # Insert early (after role definition, before technical sections)
+            # so the LLM's "last impression" remains chart/code rules,
+            # reducing recency-bias interference on chart-type selection.
+            marker = "**About the execution environment:**"
+            idx = self.system_prompt.find(marker)
+            if idx > 0:
+                self.system_prompt = (
+                    self.system_prompt[:idx]
+                    + language_instruction + "\n\n"
+                    + self.system_prompt[idx:]
+                )
+            else:
+                self.system_prompt = self.system_prompt + "\n\n" + language_instruction
 
     def process_gpt_response(self, input_tables, messages, response, t_llm=None):
         """Process GPT response to handle Python code execution"""
