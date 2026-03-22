@@ -44,6 +44,7 @@ import '../scss/VisualizationView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchChartInsight } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
+import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
 
@@ -281,14 +282,11 @@ export let SampleSizeEditor: FC<{
 }
 
 /**
- * Module-level caches that persist across component remounts.
- * - displayRowsCache: avoids re-fetching server data when switching back to a chart
- * - displaySvgCache: avoids re-running toSVG when chart+data haven't changed
+ * Module-level cache: avoids re-fetching server data when switching back to a chart.
  */
 const displayRowsCache = new Map<string, { rows: any[], totalCount: number }>();
-const displaySvgCache = new Map<string, { specKey: string; svg: string; spec: any }>();
 
-// Simple component that only handles Vega chart rendering — now uses headless toSVG()
+/** Main chart uses vega-embed (interactive tooltips). Static toSVG() removes hover behavior. */
 const VegaChartRenderer: FC<{
     chart: Chart;
     conceptShelfItems: FieldItem[];
@@ -301,32 +299,27 @@ const VegaChartRenderer: FC<{
     chartUnavailable: boolean;
     onSpecReady?: (spec: any | null) => void;
 }> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady }) => {
-    
-    // Initialize from display SVG cache for instant display on chart switch
-    const svgCached = displaySvgCache.get(chart.id);
-    const [svgContent, setSvgContent] = useState<string | null>(svgCached?.svg ?? null);
-    const [assembledSpec, setAssembledSpec] = useState<any>(svgCached?.spec ?? null);
+
+    const elementId = `focused-chart-element-${chart.id}`;
 
     useEffect(() => {
-        
+
         if (chart.chartType === "Auto" || chart.chartType === "Table" || chartUnavailable) {
-            setSvgContent(null);
-            setAssembledSpec(null);
+            onSpecReady?.(null);
             return;
         }
 
-        // Skip rendering when we have no data yet (data is being fetched)
         if (visTableRows.length === 0) {
             return;
         }
 
         const spec = assembleVegaChart(
-            chart.chartType, 
-            chart.encodingMap, 
-            conceptShelfItems, 
-            visTableRows, 
-            tableMetadata, 
-            chartWidth, 
+            chart.chartType,
+            chart.encodingMap,
+            conceptShelfItems,
+            visTableRows,
+            tableMetadata,
+            chartWidth,
             chartHeight,
             true,
             chart.config,
@@ -335,111 +328,42 @@ const VegaChartRenderer: FC<{
         );
 
         if (!spec || spec === "Table") {
-            setSvgContent(null);
-            setAssembledSpec(null);
             onSpecReady?.(null);
             return;
         }
 
         spec['background'] = 'white';
-
-        // Check display SVG cache — skip toSVG entirely if spec matches
-        const specKey = JSON.stringify(spec);
-        const cached = displaySvgCache.get(chart.id);
-        if (cached && cached.specKey === specKey) {
-            setSvgContent(cached.svg);
-            setAssembledSpec(cached.spec);
-            onSpecReady?.(cached.spec);
-            return;
-        }
-
-        setAssembledSpec(spec);
         onSpecReady?.(spec);
 
-        // Headless render via Vega: compile VL → parse → View → toSVG()
+        const el = document.getElementById(elementId);
+        if (!el) return;
+
         let cancelled = false;
-        (async () => {
-            try {
-                const { compile: vlCompile } = await import('vega-lite');
-                const vega = await import('vega');
-                const vgSpec = vlCompile(spec as any).spec;
-                const runtime = vega.parse(vgSpec);
-                const view = new vega.View(runtime, { renderer: 'none' });
-                await view.runAsync();
-                const svg = await view.toSVG();
-                view.finalize();
-                if (!cancelled) {
-                    setSvgContent(svg);
-                    // Cache the rendered SVG for instant reuse on revisit
-                    displaySvgCache.set(chart.id, { specKey, svg, spec });
+        const embedResult: { current?: Awaited<ReturnType<typeof embed>> } = {};
+
+        el.innerHTML = '';
+        embed(el, { ...spec }, { actions: true, renderer: 'canvas' })
+            .then((result) => {
+                if (cancelled) {
+                    result.finalize();
+                    return;
                 }
-            } catch (err) {
-                console.warn('VegaChartRenderer: SVG render failed', err);
+                embedResult.current = result;
+            })
+            .catch((err) => {
                 if (!cancelled) {
-                    setSvgContent(null);
+                    console.warn('VegaChartRenderer: embed failed', err);
                 }
-            }
-        })();
+            });
 
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+            embedResult.current?.finalize();
+            embedResult.current = undefined;
+            el.innerHTML = '';
+        };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable]);
-
-    const handleSavePng = useCallback(async () => {
-        if (!assembledSpec) return;
-        try {
-            const { compile: vlCompile } = await import('vega-lite');
-            const vega = await import('vega');
-            const vgSpec = vlCompile(assembledSpec as any).spec;
-            const runtime = vega.parse(vgSpec);
-            const view = new vega.View(runtime, { renderer: 'none' });
-            await view.runAsync();
-            const pngUrl = await view.toImageURL('png', 2);
-            view.finalize();
-
-            // Trigger download
-            const link = document.createElement('a');
-            link.download = `${chart.chartType}-${chart.id}.png`;
-            link.href = pngUrl;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        } catch (err) {
-            console.error('Save PNG failed:', err);
-        }
-    }, [assembledSpec, chart.chartType, chart.id]);
-
-    const handleOpenInVegaEditor = useCallback(() => {
-        if (!assembledSpec) return;
-        // Use postMessage to pass spec to Vega Editor (same approach as vega-embed)
-        const editorUrl = 'https://vega.github.io/editor/';
-        const editor = window.open(editorUrl);
-        if (!editor) return;
-
-        const wait = 10_000;
-        const step = 250;
-        const { origin } = new URL(editorUrl);
-        let count = Math.floor(wait / step);
-
-        function listen(evt: MessageEvent) {
-            if (evt.source === editor) {
-                count = 0;
-                window.removeEventListener('message', listen, false);
-            }
-        }
-        window.addEventListener('message', listen, false);
-
-        function send() {
-            if (count <= 0) return;
-            editor!.postMessage({
-                spec: JSON.stringify(assembledSpec, null, 2),
-                mode: 'vega-lite',
-            }, origin);
-            setTimeout(send, step);
-            count -= 1;
-        }
-        setTimeout(send, step);
-    }, [assembledSpec]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady, elementId]);
 
     if (chart.chartType === "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -462,23 +386,13 @@ const VegaChartRenderer: FC<{
 
     return (
         <Box sx={{ mx: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '100%', overflow: 'hidden' }}>
-            {svgContent ? (
-                <Box 
-                    dangerouslySetInnerHTML={{ __html: svgContent }}
-                    sx={{
-                        maxWidth: '100%',
-                        '& svg': { display: 'block', maxWidth: '100%', height: 'auto' },
-                    }}
-                />
-            ) : (
-                <Box sx={{ 
-                    width: chartWidth, height: chartHeight, 
-                    display: 'flex', alignItems: 'center', justifyContent: 'center' 
-                }}>
-                    {generateChartSkeleton(chartTemplate?.icon, 48, 48, 0.3)}
-                </Box>
-            )}
-
+            <Box
+                id={elementId}
+                sx={{
+                    maxWidth: '100%',
+                    '& .vega-embed': { margin: 'auto' },
+                }}
+            />
         </Box>
     );
 });
