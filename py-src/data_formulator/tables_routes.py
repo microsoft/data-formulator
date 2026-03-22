@@ -530,7 +530,7 @@ def parse_file():
             return jsonify({"status": "error", "message": f"Server-side parsing not supported for {ext}"}), 400
 
     except Exception as e:
-        logger.error(f"Error parsing file: {str(e)}")
+        logger.error("Error parsing file", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 400
 
 
