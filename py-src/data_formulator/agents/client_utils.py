@@ -80,38 +80,6 @@ class Client(object):
         lowered = error_text.lower()
         return ("image_url" in lowered and "expected `text`" in lowered) or "unknown variant `image_url`" in lowered
 
-    def _strip_image_blocks(self, content):
-        """Remove image_url blocks from multimodal content arrays."""
-        if isinstance(content, list):
-            sanitized = []
-            for item in content:
-                if isinstance(item, dict):
-                    if item.get("type") == "image_url":
-                        continue
-                    sanitized.append(item)
-                else:
-                    sanitized.append(item)
-            return sanitized
-        return content
-
-    def _strip_images_from_messages(self, messages):
-        """Create a copy of messages with image_url blocks removed."""
-        sanitized_messages = []
-        for msg in messages:
-            if isinstance(msg, dict):
-                new_msg = dict(msg)
-                if "content" in new_msg:
-                    new_msg["content"] = self._strip_image_blocks(new_msg["content"])
-                sanitized_messages.append(new_msg)
-            else:
-                sanitized_messages.append(msg)
-        return sanitized_messages
-
-    def _is_image_deserialize_error(self, error_text: str) -> bool:
-        """Detect provider errors caused by image blocks on text-only models."""
-        lowered = error_text.lower()
-        return ("image_url" in lowered and "expected `text`" in lowered) or "unknown variant `image_url`" in lowered
-
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
         """
