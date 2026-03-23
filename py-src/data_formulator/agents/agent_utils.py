@@ -207,6 +207,11 @@ def supplement_missing_block(client, messages, assistant_content,
                              parsed_json, code_blocks, prefix="[Agent]"):
     """When model produces only JSON or only code, request the missing block.
 
+    Smaller models often fail to produce both JSON + code in a single
+    response.  Rather than retrying the full prompt (which tends to
+    reproduce the same partial output), we ask for *just* the missing
+    piece in a focused single-task follow-up — much higher success rate.
+
     Returns (parsed_json, code_blocks, supplement_content, elapsed_seconds).
     supplement_content is None if no supplement was needed or it failed.
     """
@@ -386,11 +391,13 @@ def generate_data_summary(
 
 
 def ensure_output_variable_in_code(code: str, output_variable: str) -> tuple[str, bool, str]:
-    """Check if *output_variable* is assigned in *code*.
+    """Zero-cost regex patch: align code's actual output with the JSON-declared variable.
 
-    If the code never assigns to *output_variable*, heuristically detect
-    the likely output variable (last non-library assignment) and append
-    ``output_variable = <detected>``.
+    This is a deterministic local fix (<1ms, 0 tokens) that runs *before*
+    sandbox execution, avoiding an expensive LLM repair round-trip.
+    It scans all top-level assignments (not just the last line, which may
+    be ``print(...)``), picks the last non-library one, and appends an
+    alias ``output_variable = <detected>``.
 
     Returns
     -------
