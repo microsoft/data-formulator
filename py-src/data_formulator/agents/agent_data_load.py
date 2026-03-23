@@ -164,16 +164,16 @@ class DataLoadAgent(object):
         self.workspace = workspace
         self.language_instruction = language_instruction
 
-        system_prompt = SYSTEM_PROMPT
+        self.system_prompt = SYSTEM_PROMPT
         if language_instruction:
-            system_prompt = system_prompt + "\n\n" + language_instruction
+            self.system_prompt = self.system_prompt + "\n\n" + language_instruction
 
         self._diag = AgentDiagnostics(
             agent_name="DataLoadAgent",
             model_info=model_info or {},
             base_system_prompt=SYSTEM_PROMPT,
             language_instruction=language_instruction,
-            assembled_system_prompt=system_prompt,
+            assembled_system_prompt=self.system_prompt,
         )
 
     def run(self, input_data, n=1):
@@ -192,11 +192,7 @@ class DataLoadAgent(object):
         logger.debug(user_query)
         logger.info(f"[DataLoadAgent] run start")
 
-        system_prompt = SYSTEM_PROMPT
-        if self.language_instruction:
-            system_prompt = system_prompt + "\n\n" + self.language_instruction
-
-        messages = [{"role":"system", "content": system_prompt},
+        messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
         response = self.client.get_completion(messages = messages)
