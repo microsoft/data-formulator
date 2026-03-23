@@ -4,7 +4,7 @@
 import json
 import time
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block, ensure_output_variable_in_code
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.agents.agent_data_rec import (
     SHARED_ENVIRONMENT,
@@ -164,16 +164,24 @@ class DataTransformationAgent(object):
             )
             _diag_sandbox_mode = None
             _diag_exec = {"status": None}
+            _diag_code_patched = False
 
             if len(code_blocks) > 0:
                 code = code_blocks[-1]
 
                 if output_variable and not _diag_output_var_in_code:
-                    logger.warning(
-                        f"[DataTransformAgent] output_variable {output_variable!r} does not appear "
-                        f"as an assignment target in generated code. "
-                        f"Sandbox will attempt auto-recovery if needed."
-                    )
+                    code, was_patched, detected_var = ensure_output_variable_in_code(code, output_variable)
+                    _diag_code_patched = was_patched
+                    if was_patched:
+                        logger.info(
+                            f"[DataTransformAgent] output_variable {output_variable!r} not in code — "
+                            f"patched: appended `{output_variable} = {detected_var}`"
+                        )
+                    else:
+                        logger.warning(
+                            f"[DataTransformAgent] output_variable {output_variable!r} not in code "
+                            f"and auto-patch found no candidate variable."
+                        )
 
                 try:
                     from data_formulator.sandbox import create_sandbox
@@ -260,6 +268,7 @@ class DataTransformationAgent(object):
                 code=_diag_code,
                 output_variable=output_variable,
                 output_variable_in_code=_diag_output_var_in_code,
+                code_patched=_diag_code_patched,
                 supplemented=_supplement_content is not None,
                 sandbox_mode=_diag_sandbox_mode,
                 exec_status=_diag_exec.get("status"),
