@@ -4,6 +4,7 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.agents.semantic_types import (
     generate_semantic_types_prompt,
 )
@@ -158,10 +159,22 @@ table_0 (weather_seattle_atlanta) sample:
 
 class DataLoadAgent(object):
 
-    def __init__(self, client, workspace, language_instruction=""):
+    def __init__(self, client, workspace, language_instruction="", model_info=None):
         self.client = client
         self.workspace = workspace
         self.language_instruction = language_instruction
+
+        system_prompt = SYSTEM_PROMPT
+        if language_instruction:
+            system_prompt = system_prompt + "\n\n" + language_instruction
+
+        self._diag = AgentDiagnostics(
+            agent_name="DataLoadAgent",
+            model_info=model_info or {},
+            base_system_prompt=SYSTEM_PROMPT,
+            language_instruction=language_instruction,
+            assembled_system_prompt=system_prompt,
+        )
 
     def run(self, input_data, n=1):
 
@@ -209,6 +222,11 @@ class DataLoadAgent(object):
             # individual dialog for the agent
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataLoadAgent'
+            result['diagnostics'] = self._diag.for_json_only(
+                messages,
+                raw_content=choice.message.content,
+                finish_reason=getattr(choice, 'finish_reason', None),
+            )
 
             candidates.append(result)
 

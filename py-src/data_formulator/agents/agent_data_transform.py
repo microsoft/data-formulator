@@ -5,6 +5,7 @@ import json
 import time
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block
+from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.agents.agent_data_rec import (
     SHARED_ENVIRONMENT,
     SHARED_SEMANTIC_TYPE_REFERENCE,
@@ -105,21 +106,14 @@ class DataTransformationAgent(object):
             else:
                 self.system_prompt = self.system_prompt + "\n\n" + language_instruction
 
-    def _build_diagnostics_stub(self, messages, error=""):
-        """Minimal diagnostics for connection/exception errors."""
-        return {
-            "agent": "DataTransformationAgent",
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "model": self._model_info,
-            "prompt_components": {
-                "base_system_prompt": self._base_prompt,
-                "agent_coding_rules": self._agent_coding_rules,
-                "language_instruction": self._language_instruction,
-                "assembled_system_prompt": self.system_prompt,
-            },
-            "llm_request": {"message_count": len(messages), "messages": messages},
-            "error": error,
-        }
+        self._diag = AgentDiagnostics(
+            agent_name="DataTransformationAgent",
+            model_info=self._model_info,
+            base_system_prompt=self._base_prompt,
+            agent_coding_rules=self._agent_coding_rules,
+            language_instruction=self._language_instruction,
+            assembled_system_prompt=self.system_prompt,
+        )
 
     def process_gpt_response(self, response, messages, t_llm=None):
         """Process GPT response to handle Python code execution"""
@@ -128,7 +122,7 @@ class DataTransformationAgent(object):
 
         if isinstance(response, Exception):
             result = {'status': 'other error', 'content': str(response.body),
-                      'diagnostics': self._build_diagnostics_stub(messages, error=str(response.body))}
+                      'diagnostics': self._diag.for_error(messages, error=str(response.body))}
             return [result]
 
         candidates = []
@@ -256,46 +250,27 @@ class DataTransformationAgent(object):
 
             # --- Build diagnostics ---
             usage = getattr(response, 'usage', None)
-            result['diagnostics'] = {
-                "agent": "DataTransformationAgent",
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "model": self._model_info,
-                "prompt_components": {
-                    "base_system_prompt": self._base_prompt,
-                    "agent_coding_rules": self._agent_coding_rules,
-                    "language_instruction": self._language_instruction,
-                    "assembled_system_prompt": self.system_prompt,
-                },
-                "llm_request": {
-                    "message_count": len(messages),
-                    "messages": messages,
-                },
-                "llm_response": {
-                    "raw_content": choice.message.content,
-                    "finish_reason": getattr(choice, 'finish_reason', None),
-                },
-                "parsing": {
-                    "json_spec_found": not json_fallback_used,
-                    "json_spec": refined_goal,
-                    "json_fallback_used": json_fallback_used,
-                    "code_found": len(code_blocks) > 0,
-                    "code": _diag_code,
-                    "output_variable": output_variable,
-                    "output_variable_in_code": _diag_output_var_in_code,
-                    "supplemented": _supplement_content is not None,
-                },
-                "execution": {
-                    "sandbox_mode": _diag_sandbox_mode,
-                    **_diag_exec,
-                },
-                "performance": {
-                    "llm_seconds": round(t_llm or 0, 3),
-                    "supplement_seconds": round(t_supplement, 3),
-                    "exec_seconds": round(t_exec_total, 3),
-                    "prompt_tokens": getattr(usage, 'prompt_tokens', None) if usage else None,
-                    "completion_tokens": getattr(usage, 'completion_tokens', None) if usage else None,
-                },
-            }
+            result['diagnostics'] = self._diag.for_response(
+                messages,
+                raw_content=choice.message.content,
+                finish_reason=getattr(choice, 'finish_reason', None),
+                json_spec=refined_goal,
+                json_fallback_used=json_fallback_used,
+                code_found=len(code_blocks) > 0,
+                code=_diag_code,
+                output_variable=output_variable,
+                output_variable_in_code=_diag_output_var_in_code,
+                supplemented=_supplement_content is not None,
+                sandbox_mode=_diag_sandbox_mode,
+                exec_status=_diag_exec.get("status"),
+                exec_error=_diag_exec.get("error_message"),
+                exec_df_names=_diag_exec.get("available_dataframes"),
+                t_llm=t_llm or 0,
+                t_supplement=t_supplement,
+                t_exec=t_exec_total,
+                prompt_tokens=getattr(usage, 'prompt_tokens', None) if usage else None,
+                completion_tokens=getattr(usage, 'completion_tokens', None) if usage else None,
+            )
 
             candidates.append(result)
 
