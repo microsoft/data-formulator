@@ -848,7 +848,7 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, maxWidth: 900,
+                p: 2, mb: 2,
                 border: '1px solid #e0e0e0',
             }}
         >
