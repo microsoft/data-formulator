@@ -47,6 +47,10 @@ class Client(object):
                 self.model = model
             else:
                 self.model = f"ollama/{model}"
+        elif self.endpoint == "novita":
+            # Novita AI - OpenAI-compatible endpoint
+            self.params["api_base"] = api_base if api_base else "https://api.novita.ai/openai"
+
 
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
@@ -79,7 +83,7 @@ class Client(object):
         """
         # Configure LiteLLM 
 
-        if self.endpoint == "openai":
+        if self.endpoint == "openai" or self.endpoint == "novita":
             client = openai.OpenAI(
                 base_url=self.params.get("api_base", None),
                 api_key=self.params.get("api_key", ""),
@@ -116,7 +120,7 @@ class Client(object):
         """
         Returns a response using OpenAI's Response API approach.
         """
-        if self.endpoint == "openai":
+        if self.endpoint == "openai" or self.endpoint == "novita":
             client = openai.OpenAI(
                 base_url=self.params.get("api_base", None),
                 api_key=self.params.get("api_key", ""),

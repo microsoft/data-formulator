@@ -90,7 +90,7 @@ def check_available_models():
     results = []
     
     # Define configurations for different providers
-    providers = ['openai', 'azure', 'anthropic', 'gemini', 'ollama']
+    providers = ['openai', 'azure', 'anthropic', 'gemini', 'ollama', 'novita']
 
     for provider in providers:
         # Skip if provider is not enabled
