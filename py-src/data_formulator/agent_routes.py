@@ -529,7 +529,8 @@ def data_agent_streaming():
             workspace = get_workspace(identity_id)
             temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
-            language_instruction = get_language_instruction(mode="compact")
+            language_instruction = get_language_instruction(mode="full")
+            rec_language_instruction = get_language_instruction(mode="compact")
 
             try:
                 with WorkspaceWithTempData(workspace, temp_data) as ws:
@@ -539,6 +540,7 @@ def data_agent_streaming():
                         agent_exploration_rules=agent_exploration_rules,
                         agent_coding_rules=agent_coding_rules,
                         language_instruction=language_instruction,
+                        rec_language_instruction=rec_language_instruction,
                         max_iterations=max_iterations,
                         max_repair_attempts=max_repair_attempts,
                     )

@@ -12,10 +12,10 @@ Two modes are provided:
 
 - **"full"** — detailed field-by-field rules for text-heavy agents
   (ChartInsight, InteractiveExplore, ReportGen, CodeExplanation,
-  DataClean).
+  DataClean, DataAgent).
 - **"compact"** — a short 3-sentence instruction for code-generation
-  agents (DataRec, DataTransformation, DataLoad, DataAgent) so that
-  the extra text does not distract the model from writing correct code.
+  agents (DataRec, DataTransformation, DataLoad) so that the extra
+  text does not distract the model from writing correct code.
 
 Usage:
     from data_formulator.agents.agent_language import build_language_instruction
