@@ -9,18 +9,21 @@ as-is in the workspace without conversion.
 """
 
 import hashlib
+import io
 import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO, Union
 
-from werkzeug.utils import secure_filename
-
 from data_formulator.datalake.metadata import TableMetadata
+from data_formulator.datalake.parquet_utils import safe_data_filename
+from data_formulator.datalake.table_names import sanitize_upload_stem_table_name
 from data_formulator.datalake.workspace import Workspace
 
 logger = logging.getLogger(__name__)
+
+_TEXT_FILE_TYPES = {'csv', 'txt'}
 
 # Supported file extensions for upload
 SUPPORTED_EXTENSIONS = {
@@ -33,6 +36,92 @@ SUPPORTED_EXTENSIONS = {
     '.json': 'json',
     '.pdf': 'pdf',
 }
+
+
+_TRUSTED_DETECTIONS = frozenset({
+    # CJK multi-byte — highly distinctive byte patterns
+    'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp',
+    'euc-kr', 'cp949', 'iso-2022-kr', 'johab',
+    'big5', 'big5hkscs', 'cp950',
+    'gb2312', 'gbk', 'gb18030', 'hz',
+    # Cyrillic — distinctive character frequency
+    'cp866', 'cp1251', 'windows-1251',
+    'koi8-r', 'koi8-u', 'iso-8859-5', 'maccyrillic',
+    # Common Windows codepages (1250-1258)
+    'cp1250', 'cp1252', 'cp1253', 'cp1254',
+    'cp1255', 'cp1256', 'cp1257', 'cp1258',
+    'windows-1250', 'windows-1252', 'windows-1253', 'windows-1254',
+    'windows-1255', 'windows-1256', 'windows-1257', 'windows-1258',
+    # ISO-8859 standard series
+    'iso-8859-1', 'iso-8859-2', 'iso-8859-5', 'iso-8859-6',
+    'iso-8859-7', 'iso-8859-8', 'iso-8859-9',
+    # Thai
+    'tis-620', 'cp874',
+})
+
+
+def normalize_text_encoding(content: bytes, file_type: str) -> bytes:
+    """Detect encoding of text file content and re-encode as UTF-8.
+
+    Only processes text-based file types (csv, txt). Binary formats are
+    returned unchanged.  Strategy:
+
+      1. Strip UTF-8 BOM if present.
+      2. Try strict UTF-8 decode — fast path for the common case.
+      3. Try GBK — covers the vast majority of non-UTF-8 files
+         produced by Chinese-locale Excel / Windows.  GBK is a strict
+         superset of GB2312 and handles GB18030 BMP characters too.
+      4. Use charset_normalizer for less common encodings (Shift-JIS,
+         EUC-KR, Cyrillic …).  Only trust well-known encodings;
+         legacy DOS/Mac codepages (cp775, cp857, hp_roman8 …) are
+         easily confused with Latin-1 so we fall through instead.
+      5. Manual fallback chain: gb18030, shift_jis, euc-kr.
+      6. Last-resort: latin-1 (never raises, 1:1 byte mapping).
+    """
+    if file_type not in _TEXT_FILE_TYPES:
+        return content
+
+    if content.startswith(b'\xef\xbb\xbf'):
+        content = content[3:]
+
+    try:
+        content.decode('utf-8')
+        return content
+    except UnicodeDecodeError:
+        pass
+
+    try:
+        decoded = content.decode('gbk')
+        logger.info("Decoded text file as GBK")
+        return decoded.encode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+
+    try:
+        from charset_normalizer import from_bytes
+        result = from_bytes(content).best()
+        if result is not None and result.encoding in _TRUSTED_DETECTIONS:
+            logger.info("Detected encoding %s via charset_normalizer", result.encoding)
+            return str(result).encode('utf-8')
+        elif result is not None:
+            logger.debug(
+                "charset_normalizer suggested %s but it is not in the "
+                "trusted set; falling through to manual chain",
+                result.encoding,
+            )
+    except ImportError:
+        pass
+
+    for enc in ('gb18030', 'shift_jis', 'euc-kr'):
+        try:
+            decoded = content.decode(enc)
+            logger.info("Decoded text file using fallback encoding %s", enc)
+            return decoded.encode('utf-8')
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            continue
+
+    logger.warning("Could not detect encoding; falling back to latin-1")
+    return content.decode('latin-1').encode('utf-8')
 
 
 def is_supported_file(filename: str) -> bool:
@@ -69,36 +158,11 @@ def compute_file_hash(content: bytes) -> str:
 
 def sanitize_table_name(name: str) -> str:
     """
-    Sanitize a string to be a valid table name.
-    
-    Args:
-        name: Original name
-        
-    Returns:
-        Sanitized name suitable for use as a table identifier
+    Derive a table name from an upload filename (stem).
+
+    Delegates to :func:`data_formulator.datalake.table_names.sanitize_upload_stem_table_name`.
     """
-    # Remove extension if present
-    name = Path(name).stem
-    
-    # Replace invalid characters with underscores
-    sanitized = []
-    for char in name:
-        if char.isalnum() or char == '_':
-            sanitized.append(char)
-        else:
-            sanitized.append('_')
-    
-    result = ''.join(sanitized)
-    
-    # Ensure it starts with a letter or underscore
-    if result and not (result[0].isalpha() or result[0] == '_'):
-        result = '_' + result
-    
-    # Ensure it's not empty
-    if not result:
-        result = '_unnamed'
-    
-    return result.lower()
+    return sanitize_upload_stem_table_name(name)
 
 
 def generate_unique_filename(
@@ -161,9 +225,7 @@ def save_uploaded_file(
         ValueError: If file type is not supported
     """
     # Sanitize filename to prevent path traversal (defence-in-depth)
-    filename = secure_filename(filename)
-    if not filename:
-        raise ValueError("Invalid filename after sanitization")
+    filename = safe_data_filename(filename)
 
     # Validate file type
     file_type = get_file_type(filename)
@@ -179,6 +241,8 @@ def save_uploaded_file(
     else:
         content = file_content
 
+    content = normalize_text_encoding(content, file_type)
+
     # Determine the actual filename to use
     if overwrite:
         actual_filename = filename
@@ -188,26 +252,16 @@ def save_uploaded_file(
     # Determine table name
     if table_name is None:
         table_name = sanitize_table_name(actual_filename)
-    
-    # Ensure table name is unique in metadata
-    metadata = workspace.get_metadata()
-    if table_name in metadata.tables and not overwrite:
-        # Generate unique table name
-        base_name = table_name
-        counter = 1
-        while table_name in metadata.tables:
-            table_name = f"{base_name}_{counter}"
-            counter += 1
-    
+
     # Write the file
     file_path = workspace.get_file_path(actual_filename)
     with open(file_path, 'wb') as f:
         f.write(content)
-    
+
     # Compute hash and size
     content_hash = compute_file_hash(content)
     file_size = len(content)
-    
+
     # Create metadata
     table_metadata = TableMetadata(
         name=table_name,
@@ -218,15 +272,27 @@ def save_uploaded_file(
         content_hash=content_hash,
         file_size=file_size,
     )
-    
-    # Save metadata
-    workspace.add_table_metadata(table_metadata)
-    
+
+    # Atomically ensure unique name + add metadata in one lock acquisition.
+    # This prevents the lost-update race where two concurrent uploads both
+    # read the same (stale) metadata and the second save overwrites the first.
+    def _add_unique(metadata):
+        name = table_metadata.name
+        if not overwrite and name in metadata.tables:
+            base = name
+            counter = 1
+            while f"{base}_{counter}" in metadata.tables:
+                counter += 1
+            table_metadata.name = f"{base}_{counter}"
+        metadata.add_table(table_metadata)
+
+    workspace._atomic_update_metadata(_add_unique)
+
     logger.info(
-        f"Saved uploaded file {actual_filename} as table {table_name} "
+        f"Saved uploaded file {actual_filename} as table {table_metadata.name} "
         f"({file_size} bytes, hash={content_hash[:8]}...)"
     )
-    
+
     return table_metadata
 
 

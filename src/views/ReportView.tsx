@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useState, useRef, useEffect, memo, useMemo } from 'react';
+import React, { FC, useState, useRef, useEffect, useMemo } from 'react';
 import { borderColor, shadow, transition, radius } from '../app/tokens';
 import {
     Box,
@@ -32,8 +32,6 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CreateChartifact from '@mui/icons-material/Description';
 import EditIcon from '@mui/icons-material/Edit';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import HistoryIcon from '@mui/icons-material/History';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ShareIcon from '@mui/icons-material/Share';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -41,7 +39,7 @@ import html2canvas from 'html2canvas';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
 import { Message } from './MessageSnackbar';
-import { getUrls, assembleVegaChart, getTriggers, prepVisTable, fetchWithIdentity } from '../app/utils';
+import { getUrls, assembleVegaChart, getTriggers, prepVisTable, fetchWithIdentity, getAgentLanguage } from '../app/utils';
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 import embed from 'vega-embed';
 import { getDataTable } from './VisualizationView';
@@ -52,6 +50,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { convertToChartifact, openChartifactViewer } from './ChartifactDialog';
 import { StreamIcon } from '../icons';
+import { useTranslation } from 'react-i18next';
 
 // Typography constants
 const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
@@ -219,8 +218,7 @@ export const ReportView: FC = () => {
 
     const charts = useSelector((state: DataFormulatorState) => state.charts);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
-    const models = useSelector((state: DataFormulatorState) => state.models);
+    const activeModel = useSelector(dfSelectors.getActiveModel);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
@@ -228,6 +226,19 @@ export const ReportView: FC = () => {
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const theme = useTheme();
+    const { t } = useTranslation();
+
+    const reportStyleDisplayLabel = (styleKey: string) => {
+        const map: Record<string, string> = {
+            'live report': 'report.styleLiveReport',
+            'blog post': 'report.styleBlogPost',
+            'social post': 'report.styleSocialPost',
+            'executive summary': 'report.styleExecutiveSummary',
+            'short note': 'report.styleShortNote',
+        };
+        const labelKey = map[styleKey];
+        return labelKey ? t(labelKey) : styleKey;
+    };
 
     const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(new Set(focusedChartId ? [focusedChartId] : []));
     const [previewImages, setPreviewImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
@@ -256,7 +267,7 @@ export const ReportView: FC = () => {
     const showMessage = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
         const msg: Message = {
             type,
-            component: 'ReportView',
+            component: t('messages.report.component'),
             timestamp: Date.now(),
             value: message
         };
@@ -271,7 +282,7 @@ export const ReportView: FC = () => {
             // Find the report content element
             const reportElement = document.querySelector('[data-report-content]') as HTMLElement;
             if (!reportElement) {
-                showMessage('Could not find report content to capture', 'error');
+                showMessage(t('report.couldNotFindContent'), 'error');
                 return;
             }
 
@@ -292,7 +303,7 @@ export const ReportView: FC = () => {
             // Convert canvas to blob
             canvas.toBlob((blob: Blob | null) => {
                 if (!blob) {
-                    showMessage('Failed to generate image', 'error');
+                    showMessage(t('report.failedToGenerateImage'), 'error');
                     return;
                 }
 
@@ -303,37 +314,54 @@ export const ReportView: FC = () => {
                             'image/png': blob
                         })
                     ]).then(() => {
-                        showMessage('Report image copied to clipboard! You can now paste it anywhere to share.');
+                        showMessage(t('report.imageCopied'));
                         setShareButtonSuccess(true);
                         setTimeout(() => setShareButtonSuccess(false), 2000);
                     }).catch(() => {
-                        showMessage('Failed to copy to clipboard. Your browser may not support this feature.', 'error');
+                        showMessage(t('report.failedToCopyClipboard'), 'error');
                     });
                 } else {
-                    showMessage('Clipboard API not supported in your browser. Please use a modern browser.', 'error');
+                    showMessage(t('report.clipboardNotSupported'), 'error');
                 }
             }, 'image/png', 0.95);
 
         } catch (error) {
             console.error('Error generating report image:', error);
-            showMessage('Failed to generate report image. Please try again.', 'error');
+            showMessage(t('report.failedToGenerateReportImage'), 'error');
         }
     };
 
 
 
-    // Update like this:
     const processReport = (rawReport: string): string => {
         const markdownMatch = rawReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
         let processed = markdownMatch ? markdownMatch[1] : rawReport;
-        
+
+        const makeImg = (url: string, width: number, height: number) =>
+            `<img src="${url}" alt="${t('report.chartAlt')}" width="${width}" height="${height}" />`;
+
+        const usedKeys = new Set<string>();
         Object.entries(cachedReportImages).forEach(([chartId, { url, width, height }]) => {
-            processed = processed.replace(
-                new RegExp(`\\[IMAGE\\(${chartId}\\)\\]`, 'g'),
-                `<img src="${url}" alt="Chart" width="${width}" height="${height}" />`
-            );
+            const escaped = chartId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`\\[IMAGE\\(${escaped}\\)\\]`, 'g');
+            if (regex.test(processed)) {
+                usedKeys.add(chartId);
+                processed = processed.replace(regex, makeImg(url, width, height));
+            }
         });
-        
+
+        const unusedEntries = Object.entries(cachedReportImages)
+            .filter(([key]) => !usedKeys.has(key))
+            .map(([, entry]) => entry);
+        let unusedIdx = 0;
+        processed = processed.replace(/\[IMAGE\([^\)]+\)\]/g, () => {
+            if (unusedIdx < unusedEntries.length) {
+                const { url, width, height } = unusedEntries[unusedIdx++];
+                return makeImg(url, width, height);
+            }
+            return '';
+        });
+
         return processed;
     };
 
@@ -344,20 +372,18 @@ export const ReportView: FC = () => {
             setGeneratedReport(report.content);
             setGeneratedStyle(report.style);
 
-            // load / assemble chart images for the report
             report.selectedChartIds.forEach((chartId) => {
                 const chart = charts.find(c => c.id === chartId);
-                if (!chart) return null;
+                if (!chart) return;
 
                 const chartTable = tables.find(t => t.id === chart.tableRef);
-                if (!chartTable) return null;
+                if (!chartTable) return;
 
                 if (chart.chartType === 'Table' || chart.chartType === '?') {
-                    return null;
+                    return;
                 }
                 getChartImageFromVega(chart, chartTable).then(({ blobUrl, width, height }) => {
                     if (blobUrl) {
-                        // Use blob URL for local display and caching
                         updateCachedReportImages(chart.id, blobUrl, width, height);
                     }
                 });
@@ -409,9 +435,7 @@ export const ReportView: FC = () => {
             }
         });
         
-        // If data changed, regenerate chart images for the report
         if (hasChanges) {
-            
             reportChartIds.forEach(chartId => {
                 const chart = charts.find(c => c.id === chartId);
                 if (!chart) return;
@@ -422,7 +446,7 @@ export const ReportView: FC = () => {
                 if (chart.chartType === 'Table' || chart.chartType === '?') {
                     return;
                 }
-                
+
                 getChartImageFromVega(chart, chartTable).then(({ blobUrl, width, height }) => {
                     if (blobUrl) {
                         updateCachedReportImages(chart.id, blobUrl, width, height);
@@ -582,7 +606,7 @@ export const ReportView: FC = () => {
                 const svgElement = svgDoc.querySelector('svg');
                 
                 if (!svgElement) {
-                    throw new Error('Could not parse SVG');
+                    throw new Error(t('report.couldNotParseSvg'));
                 }
                 
                 // Get original dimensions
@@ -594,7 +618,7 @@ export const ReportView: FC = () => {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     if (!ctx) {
-                        reject(new Error('Could not get canvas context'));
+                        reject(new Error(t('report.couldNotGetCanvasContext')));
                         return;
                     }
 
@@ -645,7 +669,7 @@ export const ReportView: FC = () => {
 
     const generateReport = async () => {
         if (selectedChartIds.size === 0) {
-            setError('Please select at least one chart');
+            setError(t('report.pleaseSelectChart'));
             return;
         }
 
@@ -658,10 +682,10 @@ export const ReportView: FC = () => {
         const reportId = `report-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
         try {
-            let model = models.find(m => m.id == selectedModelId);
+            let model = activeModel;
 
             if (!model) {
-                throw new Error('No model selected');
+                throw new Error(t('report.noModelSelected'));
             }
 
             const maxRows = serverConfig.MAX_DISPLAY_ROWS;
@@ -680,12 +704,19 @@ export const ReportView: FC = () => {
                 const totalRows = t.virtual?.rowCount || t.rows.length;
                 return totalRows > maxRows;
             });
+            const truncationList = truncatedTables.map((tbl) =>
+                t('report.truncationTableEntry', {
+                    name: tbl.displayId || tbl.id,
+                    totalRows: (tbl.virtual?.rowCount || tbl.rows.length).toLocaleString(),
+                })
+            ).join(', ');
             const truncationNote = truncatedTables.length > 0
-                ? `\n\nNote: Some tables were truncated to ${maxRows.toLocaleString()} rows for this report. ` +
-                  `Tables affected: ${truncatedTables.map(t => `"${t.displayId || t.id}" (${(t.virtual?.rowCount || t.rows.length).toLocaleString()} total rows)`).join(', ')}.`
+                ? `\n\n${t('report.truncationNote', { maxRows: maxRows.toLocaleString(), list: truncationList })}`
                 : '';
 
 
+            let chartSeqIndex = 0;
+            const seqToActualId: Record<string, string> = {};
             const selectedCharts = await Promise.all(
                 sortedCharts
                 .filter(chart => selectedChartIds.has(chart.id))
@@ -698,21 +729,22 @@ export const ReportView: FC = () => {
                         return null;
                     }
 
+                    const seqKey = `chart${++chartSeqIndex}`;
+                    seqToActualId[seqKey] = chart.id;
                     const { dataUrl, blobUrl, width, height } = await getChartImageFromVega(chart, chartTable);
 
                     if (blobUrl) {
-                        // Use blob URL for local display and caching
                         updateCachedReportImages(chart.id, blobUrl, width, height);
                     }
 
                     return {
-                        chart_id: chart.id,
+                        chart_id: seqKey,
                         code: chartTable.derive?.code || '',
                         chart_data: {
                             name: chartTable.id,
                             rows: chartTable.rows.length > maxRows ? chartTable.rows.slice(0, maxRows) : chartTable.rows
                         },
-                        chart_url: dataUrl // use data_url to send to the agent
+                        chart_url: dataUrl
                     };
                 })
             );
@@ -733,12 +765,12 @@ export const ReportView: FC = () => {
             });
 
             if (!response.ok) {
-                throw new Error('Failed to generate report');
+                throw new Error(t('report.failedToGenerateReport'));
             }
 
             const reader = response.body?.getReader();
             if (!reader) {
-                throw new Error('No response body');
+                throw new Error(t('report.noResponseBody'));
             }
 
             const decoder = new TextDecoder();
@@ -747,16 +779,26 @@ export const ReportView: FC = () => {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
-                    // Create the report object for saving to Redux
+                    let finalContent = accumulatedReport;
+                    for (const [seqKey, actualId] of Object.entries(seqToActualId)) {
+                        finalContent = finalContent.replace(
+                            new RegExp(`\\[IMAGE\\(${seqKey}\\)\\]`, 'g'),
+                            `[IMAGE(${actualId})]`
+                        );
+                    }
+                    const orderedChartIds = sortedCharts
+                        .filter(c => selectedChartIds.has(c.id))
+                        .map(c => c.id);
                     const report: GeneratedReport = {
                         id: reportId,
-                        content: accumulatedReport,
+                        content: finalContent,
                         style: style,
-                        selectedChartIds: Array.from(selectedChartIds),
+                        selectedChartIds: orderedChartIds,
                         createdAt: Date.now(),
                     };
                     // Save to Redux state
                     dispatch(dfActions.saveGeneratedReport(report));
+                    setGeneratedReport(finalContent);
                     break;
                 };
 
@@ -764,7 +806,7 @@ export const ReportView: FC = () => {
                 
                 if (chunk.startsWith('error:')) {
                     const errorData = JSON.parse(chunk.substring(6));
-                    throw new Error(errorData.content || 'Error generating report');
+                    throw new Error(errorData.content || t('report.errorGeneratingReport'));
                 }
 
                 accumulatedReport += chunk;
@@ -779,7 +821,7 @@ export const ReportView: FC = () => {
             }
 
         } catch (err) {
-            setError((err as Error).message || 'Failed to generate report');
+            setError((err as Error).message || t('report.failedToGenerateReport'));
         } finally {
             setIsGenerating(false);
         }
@@ -823,7 +865,7 @@ export const ReportView: FC = () => {
                             sx={{ textTransform: 'none' }}
                             startIcon={<ArrowBackIcon />}
                         >
-                            back to explore
+                            {t('report.backToExplore')}
                         </Button>
                         <Divider orientation="vertical" sx={{ mx: 1 }} flexItem />
                         <Button
@@ -834,7 +876,7 @@ export const ReportView: FC = () => {
                             sx={{ textTransform: 'none' }}
                             endIcon={<ArrowForwardIcon />}
                         >
-                            view reports
+                            {t('report.viewReports')}
                         </Button>
                     </Box>
                     {/* Centered Top Bar */}
@@ -848,8 +890,9 @@ export const ReportView: FC = () => {
                             sx={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 1,
-                                p: 1,
+                                gap: 1.25,
+                                px: 2,
+                                py: 1,
                                 borderRadius: 2,
                                 backgroundColor: 'rgba(255, 255, 255, 0.9)',
                                 backdropFilter: 'blur(12px)',
@@ -863,14 +906,13 @@ export const ReportView: FC = () => {
                                     transition: transition.normal
                                 },
                                 '.MuiTypography-root': {
-                                    fontSize: '1rem',
+                                    fontSize: '0.8125rem',
                                 }
-
                             }}
                         >
                             {/* Natural Flow */}
-                            <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
-                                Create a
+                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
+                                {t('report.createA')}
                             </Typography>
                             
                             <ToggleButtonGroup
@@ -898,29 +940,31 @@ export const ReportView: FC = () => {
                                 }}
                             >
                                 {[
-                                    { value: 'live report', label: 'live report' },
-                                    { value: 'blog post', label: 'blog post' },
-                                    { value: 'social post', label: 'social post' },
-                                    { value: 'executive summary', label: 'executive summary' },
+                                    { value: 'live report', labelKey: 'report.styleLiveReport' },
+                                    { value: 'blog post', labelKey: 'report.styleBlogPost' },
+                                    { value: 'social post', labelKey: 'report.styleSocialPost' },
+                                    { value: 'executive summary', labelKey: 'report.styleExecutiveSummary' },
                                 ].map((option) => (
                                     <ToggleButton 
                                         key={option.value}
                                         value={option.value}
                                         sx={{ 
-                                            px: 1,
-                                            py: 0.25,
+                                            px: 1.5,
+                                            py: 0.5,
                                             textTransform: 'none',
-                                            fontSize: '1rem',
+                                            fontSize: '0.8125rem',
+                                            fontWeight: 400,
+                                            lineHeight: 1.5,
                                             minWidth: 'auto'
                                         }}
                                     >
-                                        {option.value === 'live report' ? <StreamIcon sx={{ fontSize: 16, mr: 1 }} /> : <></>} {option.label}
+                                        {option.value === 'live report' ? <StreamIcon sx={{ fontSize: 14, mr: 0.75 }} /> : <></>} {t(option.labelKey)}
                                     </ToggleButton>
                                 ))}
                             </ToggleButtonGroup>
 
-                            <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
-                                from
+                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
+                                {t('report.from')}
                             </Typography>
                             
                             <Typography variant="body2" 
@@ -928,8 +972,8 @@ export const ReportView: FC = () => {
                                 {selectedChartIds.size}
                             </Typography>
                             
-                            <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
-                                {selectedChartIds.size <= 1 ? 'chart' : 'charts'}
+                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
+                                {selectedChartIds.size <= 1 ? t('report.chart') : t('report.charts')}
                             </Typography>
 
                             {/* Generate Button */}
@@ -940,17 +984,19 @@ export const ReportView: FC = () => {
                                 size="small"
                                 sx={{
                                     textTransform: 'none',
-                                    ml: 2,
-                                    px: 2,
-                                    py: 0.75,
-                                    borderRadius: 1.5,
+                                    ml: 1.5,
+                                    pl: 1.75,
+                                    pr: 2.5,
+                                    py: 0.625,
+                                    borderRadius: '4px',
                                     fontWeight: 500,
-                                    fontSize: '1rem',
+                                    fontSize: '0.875rem',
+                                    lineHeight: 1.5,
                                     minWidth: 'auto'
                                 }}
-                                startIcon={isGenerating ? <CircularProgress size={14} /> : <EditIcon sx={{ fontSize: 16 }} />}
+                                startIcon={isGenerating ? <CircularProgress size={12} /> : <EditIcon sx={{ fontSize: 14 }} />}
                             >
-                                {isGenerating ? 'composing...' : 'compose'}
+                                {isGenerating ? t('report.composing') : t('report.compose')}
                             </Button>
                         </Paper>
                     </Box>
@@ -964,13 +1010,13 @@ export const ReportView: FC = () => {
 
                         {sortedCharts.length === 0 ? (
                             <Typography color="text.secondary">
-                                No charts available. Create some visualizations first.
+                                {t('report.noChartsAvailable')}
                             </Typography>
                         ) : isLoadingPreviews ? (
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 4 }}>
                                 <CircularProgress size={18} sx={{ color: 'text.secondary' }} />
                                 <Typography sx={{ ml: 2 }} color="text.secondary">
-                                    loading chart previews...
+                                    {t('report.loadingChartPreviews')}
                                 </Typography>
                             </Box>
                         ) : (() => {
@@ -986,7 +1032,7 @@ export const ReportView: FC = () => {
                             if (availableCharts.length === 0) {
                                 return (
                                     <Typography color="text.secondary">
-                                        No available charts to display. Charts may still be loading or unavailable.
+                                        {t('report.noAvailableCharts')}
                                     </Typography>
                                 );
                             }
@@ -1027,7 +1073,7 @@ export const ReportView: FC = () => {
                                                 <Box
                                                     component="img"
                                                     src={previewImage!.url}
-                                                    alt={chart.chartType}
+                                                    alt={t('dataThread.chartAlt', { type: chart.chartType })}
                                                     sx={{ p: 1, width: `calc(100% - 16px)`, height: 'auto', maxHeight: config.defaultChartHeight, display: 'block', objectFit: 'contain', backgroundColor: 'white' }}
                                                 />
                                             </Box>
@@ -1066,10 +1112,10 @@ export const ReportView: FC = () => {
                             sx={{ textTransform: 'none' }}
                             onClick={() => setMode('compose')}
                         >
-                            create a new report
+                            {t('report.createNewReport')}
                         </Button>
                         <Typography variant="body2" color="text.secondary">
-                            AI generated the post from the selected charts, and it could be inaccurate!
+                            {t('report.aiDisclaimer')}
                         </Typography>
                     </Box>
                     <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
@@ -1100,7 +1146,7 @@ export const ReportView: FC = () => {
                                     px: 2,
                                 }}>
                                     {hideTableOfContents ? <ExpandMoreIcon sx={{ fontSize: 16, mr: 1 }} /> 
-                                    : <ExpandLessIcon sx={{ fontSize: 16, mr: 1 }} /> } {hideTableOfContents ? 'show all reports' : 'reports'}
+                                    : <ExpandLessIcon sx={{ fontSize: 16, mr: 1 }} /> } {hideTableOfContents ? t('report.showAllReports') : t('report.reports')}
                                 </Button> 
                                 <Collapse in={!hideTableOfContents}>{allGeneratedReports.map((report) => (
                                     <Box key={report.id} sx={{ position: 'relative' }}>
@@ -1143,11 +1189,11 @@ export const ReportView: FC = () => {
                                                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
                                                     }}
                                                 >
-                                                    {new Date(report.createdAt).toLocaleDateString()} • {report.style}
+                                                    {new Date(report.createdAt).toLocaleDateString()} • {reportStyleDisplayLabel(report.style)}
                                                 </Typography>
                                             </Box>
                                         </Button>
-                                        <Tooltip title="Delete report">
+                                        <Tooltip title={t('report.deleteReport')}>
                                             <IconButton
                                                 size="small"
                                                 disabled={isGenerating}
@@ -1179,7 +1225,7 @@ export const ReportView: FC = () => {
                             {/* Action Buttons */}
                             {currentReportId && (
                                 <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: 1 }}>
-                                    <Tooltip title="Create Chartifact report">
+                                    <Tooltip title={t('report.createChartifactReport')}>
                                         <Button
                                             variant="contained"
                                             size="small"
@@ -1205,10 +1251,10 @@ export const ReportView: FC = () => {
                                             }}
                                             startIcon={<CreateChartifact />}
                                         >
-                                            Create Chartifact
+                                            {t('report.createChartifact')}
                                         </Button>
                                     </Tooltip>
-                                    <Tooltip title="Share report as image">
+                                    <Tooltip title={t('report.shareReportAsImage')}>
                                         <Button
                                             variant="contained"
                                             size="small"
@@ -1234,7 +1280,7 @@ export const ReportView: FC = () => {
                                                 },
                                             }}
                                         >
-                                            {shareButtonSuccess ? 'Copied!' : 'Share Image'}
+                                            {shareButtonSuccess ? t('report.copied') : t('report.shareImage')}
                                         </Button>
                                     </Tooltip>
                                 </Box>
@@ -1303,7 +1349,7 @@ export const ReportView: FC = () => {
                                         fontSize: '0.75rem',
                                         color: '#666'
                                     }}>
-                                        created with AI using{' '}
+                                        {t('report.createdWithAI')}{' '}
                                         <Link 
                                             href="https://github.com/microsoft/data-formulator" 
                                             target="_blank" 

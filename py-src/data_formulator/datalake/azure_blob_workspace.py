@@ -26,11 +26,12 @@ import json
 import logging
 import shutil
 import tempfile
+import threading
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Callable, Optional, TYPE_CHECKING
 
 import pandas as pd
 import pyarrow as pa
@@ -44,6 +45,7 @@ from data_formulator.datalake.metadata import (
 )
 from werkzeug.utils import secure_filename
 from data_formulator.datalake.parquet_utils import (
+    safe_data_filename,
     sanitize_table_name,
     get_arrow_column_info,
     compute_arrow_table_hash,
@@ -116,6 +118,11 @@ class AzureBlobWorkspace(Workspace):
         # Avoids re-downloading workspace.yaml on every method call.
         # Invalidated automatically by save_metadata() and cleanup().
         self._metadata_cache: Optional[WorkspaceMetadata] = None
+
+        # Per-instance lock for atomic metadata updates (blob storage has no
+        # file-level locking like the local workspace, so we use a threading
+        # lock to serialise in-process read-modify-write cycles).
+        self._metadata_lock = threading.Lock()
 
         # --- blob data cache -------------------------------------------------
         # Caches downloaded blob bytes keyed by filename.  Avoids repeated
@@ -248,6 +255,23 @@ class AzureBlobWorkspace(Workspace):
         """Force the next get_metadata() to re-read from blob storage."""
         self._metadata_cache = None
 
+    def _atomic_update_metadata(
+        self,
+        updater: Callable[[WorkspaceMetadata], None],
+    ) -> WorkspaceMetadata:
+        """Atomically read → update → write blob-backed metadata.
+
+        Uses a per-instance :class:`threading.Lock` to serialise
+        concurrent in-process metadata modifications.  This prevents
+        lost-update races when the frontend sends parallel requests.
+        """
+        with self._metadata_lock:
+            self._metadata_cache = None  # force fresh read from blob
+            metadata = self.get_metadata()
+            updater(metadata)
+            self.save_metadata(metadata)
+            return metadata
+
     # ------------------------------------------------------------------
     # File / table operations
     # ------------------------------------------------------------------
@@ -261,14 +285,10 @@ class AzureBlobWorkspace(Workspace):
             will not work — use :meth:`read_data_as_df`,
             :meth:`download_file`, or :meth:`_temp_local_copy` instead.
         """
-        safe_filename = secure_filename(filename)
-        if not safe_filename:
-            raise ValueError(f"Invalid filename: {filename!r}")
-        return self._blob_name(safe_filename)
+        return self._blob_name(safe_data_filename(filename))
 
     def file_exists(self, filename: str) -> bool:
-        safe_filename = Path(filename).name
-        return self._blob_exists(safe_filename)
+        return self._blob_exists(safe_data_filename(filename))
 
     def delete_table(self, table_name: str) -> bool:
         metadata = self.get_metadata()
@@ -279,10 +299,37 @@ class AzureBlobWorkspace(Workspace):
         if self._blob_exists(table.filename):
             self._delete_blob(table.filename)
 
-        metadata.remove_table(table_name)
-        self.save_metadata(metadata)
+        removed = [False]
+
+        def _remove(m: WorkspaceMetadata) -> None:
+            removed[0] = m.remove_table(table_name)
+
+        self._atomic_update_metadata(_remove)
         logger.info("Deleted table %s from blob workspace %s", table_name, self._safe_id)
-        return True
+        return removed[0]
+
+    def delete_tables_by_source_file(self, source_filename: str) -> list[str]:
+        safe_filename = safe_data_filename(source_filename)
+        deleted: list[str] = []
+
+        def _cleanup(m: WorkspaceMetadata) -> None:
+            for name, table in list(m.tables.items()):
+                if table.filename == safe_filename:
+                    m.remove_table(name)
+                    deleted.append(name)
+
+        self._atomic_update_metadata(_cleanup)
+
+        if deleted and self._blob_exists(safe_filename):
+            try:
+                self._delete_blob(safe_filename)
+            except Exception as e:
+                logger.warning("Failed to delete source blob %s: %s", safe_filename, e)
+            logger.info(
+                "Deleted %d table(s) for source file %s: %s",
+                len(deleted), safe_filename, deleted,
+            )
+        return deleted
 
     def cleanup(self) -> None:
         """Delete **all** blobs under this workspace's prefix."""
@@ -533,13 +580,11 @@ class AzureBlobWorkspace(Workspace):
 
     def upload_file(self, content: bytes, filename: str) -> None:
         """Upload raw file content to the workspace as a blob."""
-        safe_filename = Path(filename).name
-        self._upload_bytes(safe_filename, content)
+        self._upload_bytes(safe_data_filename(filename), content)
 
     def download_file(self, filename: str) -> bytes:
         """Download raw file content from the workspace blob."""
-        safe_filename = Path(filename).name
-        return self._download_bytes(safe_filename)
+        return self._download_bytes(safe_data_filename(filename))
 
     # ------------------------------------------------------------------
     # Workspace snapshot (session save / restore)
@@ -610,7 +655,7 @@ class AzureBlobWorkspace(Workspace):
             )
 
         # 2. State JSON
-        state_json = json.dumps(state, default=str)
+        state_json = json.dumps(state, default=str, ensure_ascii=False)
         self._container.upload_blob(
             f"{prefix}state.json", state_json.encode("utf-8"), overwrite=True
         )
@@ -695,7 +740,7 @@ class AzureBlobWorkspace(Workspace):
     def export_session_zip(self, state: dict) -> io.BytesIO:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("state.json", json.dumps(state, default=str))
+            zf.writestr("state.json", json.dumps(state, default=str, ensure_ascii=False))
             for blob in self._container.list_blobs(name_starts_with=self._prefix):
                 rel = blob.name[len(self._prefix):]
                 if not rel:

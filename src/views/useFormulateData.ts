@@ -435,8 +435,7 @@ export function useFormulateData() {
             // Delegate chart creation to the caller
             const focusedChartId = createChart({ candidateTable, refinedGoal, currentConcepts });
 
-            // Auto-generate chart insight after rendering
-            if (focusedChartId) {
+            if (focusedChartId && config.autoChartInsight) {
                 const chartIdForInsight = focusedChartId;
                 setTimeout(() => {
                     dispatch(fetchChartInsight({ chartId: chartIdForInsight, tableId: candidateTable.id }) as any);

@@ -310,6 +310,7 @@ export function useFormulateData() {
                     "type": "error",
                     "value": `Data formulation failed: ${data.error_message}`,
                 }));
+                onError?.(new Error(data.error_message));
                 return;
             }
 
@@ -320,10 +321,14 @@ export function useFormulateData() {
                     "type": "error",
                     "value": "No result is returned from the data formulation agent. Please try again.",
                 }));
+                onError?.(new Error("No results returned"));
                 return;
             }
 
-            if (data["token"] !== token) return;
+            if (data["token"] !== token) {
+                onError?.(new Error("Token mismatch"));
+                return;
+            }
 
             const candidates = data["results"].filter((item: any) => item["status"] === "ok");
 
@@ -335,7 +340,9 @@ export function useFormulateData() {
                     "value": "Data formulation failed, please try again.",
                     "code": data.results[0].code,
                     "detail": data.results[0].content,
+                    "diagnostics": data.results[0].diagnostics,
                 }));
+                onError?.(new Error("All candidates failed"));
                 return;
             }
 
@@ -435,8 +442,7 @@ export function useFormulateData() {
             // Delegate chart creation to the caller
             const focusedChartId = createChart({ candidateTable, refinedGoal, currentConcepts });
 
-            // Auto-generate chart insight after rendering
-            if (focusedChartId) {
+            if (focusedChartId && config.autoChartInsight) {
                 const chartIdForInsight = focusedChartId;
                 setTimeout(() => {
                     dispatch(fetchChartInsight({ chartId: chartIdForInsight, tableId: candidateTable.id }) as any);

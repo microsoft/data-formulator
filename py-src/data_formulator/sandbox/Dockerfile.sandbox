@@ -11,6 +11,9 @@
 
 FROM python:3.11-slim
 
+# Ensure Unicode filenames work correctly (Chinese, Japanese, etc.)
+ENV LANG=C.UTF-8
+
 RUN pip install --no-cache-dir \
     pandas \
     numpy \

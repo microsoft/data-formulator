@@ -19,6 +19,7 @@ export function getUrls() {
         EXAMPLE_DATASETS: `/api/example-datasets`,
 
         // these functions involves ai agents
+        LIST_GLOBAL_MODELS: `/api/agent/list-global-models`,
         CHECK_AVAILABLE_MODELS: `/api/agent/check-available-models`,
         TEST_MODEL: `/api/agent/test-model`,
 
@@ -41,6 +42,7 @@ export function getUrls() {
         LIST_TABLES: `/api/tables/list-tables`,
         TABLE_DATA: `/api/tables/get-table`,
         CREATE_TABLE: `/api/tables/create-table`,
+        PARSE_FILE: `/api/tables/parse-file`,
         DELETE_TABLE: `/api/tables/delete-table`,
         GET_COLUMN_STATS: `/api/tables/analyze`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
@@ -137,6 +139,9 @@ export async function fetchWithIdentity(
         // Always send namespaced identity (fallback for backend)
         const namespacedIdentity = await getCurrentNamespacedIdentity();
         headers.set('X-Identity-Id', namespacedIdentity);
+
+        // Send current UI language so agent prompts can follow it
+        headers.set('Accept-Language', getAgentLanguage());
         
         // Send auth token if available (for custom JWT auth)
         const authToken = getAuthToken();
@@ -148,6 +153,15 @@ export async function fetchWithIdentity(
     }
     
     return fetch(url, options);
+}
+
+import i18n from '../i18n';
+
+/**
+ * Returns the current UI language code (e.g. "zh", "en") for use in agent API requests.
+ */
+export function getAgentLanguage(): string {
+    return i18n.language.split('-')[0];
 }
 
 import * as vm from 'vm-browserify';

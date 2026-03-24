@@ -19,8 +19,8 @@ import tempfile
 import textwrap
 
 import pandas as pd
-from werkzeug.utils import secure_filename
 
+from data_formulator.datalake.parquet_utils import safe_data_filename
 from .base import Sandbox
 
 logger = logging.getLogger(__name__)
@@ -104,9 +104,16 @@ class DockerSandbox(Sandbox):
                 import pandas as _pd
                 _out = {output_variable}
                 if not isinstance(_out, _pd.DataFrame):
+                    _df_vars = [
+                        _k for _k, _v in dict(locals()).items()
+                        if isinstance(_v, _pd.DataFrame) and not _k.startswith('_')
+                    ]
                     raise TypeError(
                         '{output_variable} is not a DataFrame '
-                        f'(type: {{type(_out).__name__}})'
+                        f'(type: {{type(_out).__name__}}). '
+                        f'Available DataFrame variables in code: {{_df_vars}}. '
+                        f'This usually means the JSON spec output_variable '
+                        f'does not match the variable name in the Python code.'
                     )
                 _out.to_parquet('{output_parquet}', index=False)
 
@@ -192,8 +199,9 @@ class DockerSandbox(Sandbox):
             # ---- read back output ---------------------------------------------
             # Defensive: ensure the filename stays inside output_dir even if
             # output_variable somehow contains path separators.
-            safe_name = secure_filename(output_variable)
-            if not safe_name:
+            try:
+                safe_name = safe_data_filename(output_variable)
+            except ValueError:
                 self._cleanup(tmpdir)
                 return {
                     "status": "error",

@@ -139,8 +139,9 @@ Totals (7 entries)	5	5	5	15
 
 class DataCleanAgentStream(object):
 
-    def __init__(self, client):
+    def __init__(self, client, language_instruction=""):
         self.client = client
+        self.language_instruction = language_instruction
 
     def stream(self, prompt, artifacts=[], dialog=[]):
         """derive a new concept based on the raw input data
@@ -186,9 +187,13 @@ class DataCleanAgentStream(object):
         logger.debug(user_prompt)
         logger.info(f"[DataCleanAgent] run start (streaming)")
 
+        prompt_text = SYSTEM_PROMPT
+        if self.language_instruction:
+            prompt_text = prompt_text + "\n\n" + self.language_instruction
+
         system_message = {
             'role': 'system',
-            'content': [ {'type': 'text', 'text': SYSTEM_PROMPT}]
+            'content': [ {'type': 'text', 'text': prompt_text}]
         }
 
         messages = [
@@ -232,4 +237,4 @@ class DataCleanAgentStream(object):
         logger.info(f"[DataCleanAgent] run done | status={result.get('status', '?')}")
         
         # add a newline to the beginning of the result to separate it from the previous result     
-        yield '\n' + json.dumps(result) + '\n'
+        yield '\n' + json.dumps(result, ensure_ascii=False) + '\n'

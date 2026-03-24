@@ -8,7 +8,6 @@ import {
     Typography,
     Card,
     CircularProgress,
-    Divider,
     useTheme,
 } from '@mui/material';
 
@@ -24,6 +23,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { renderTextWithEmphasis } from './EncodingShelfCard';
 import { ThinkingBufferEffect } from '../components/FunComponents';
+import { useTranslation } from 'react-i18next';
 
 type ThreadItem = {
     content: string;
@@ -63,6 +63,7 @@ export const ChatThreadView: FC = function () {
     const agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
 
     const theme = useTheme();
+    const { t } = useTranslation();
     const dispatch = useDispatch();
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -107,8 +108,8 @@ export const ChatThreadView: FC = function () {
         );
 
         // Each orphan root table gets its own thread entry
-        for (const t of orphanRootTables) {
-            threads.push({ kind: 'orphan-table', tableId: t.id });
+        for (const orphan of orphanRootTables) {
+            threads.push({ kind: 'orphan-table', tableId: orphan.id });
         }
 
         // Each non-hidden agentAction becomes a conversation thread
@@ -135,7 +136,7 @@ export const ChatThreadView: FC = function () {
                 const lastMsg = action.messages?.[action.messages.length - 1];
                 if (!lastMsg || lastMsg.content !== action.description) {
                     messages.push({
-                        content: action.description || 'thinking...',
+                        content: action.description || t('dataThread.thinking'),
                         role: 'thinking',
                         timestamp: action.lastUpdate,
                         actionId: action.actionId,
@@ -157,9 +158,9 @@ export const ChatThreadView: FC = function () {
         // Build a map from resultTableId → thread index for action threads
         const resultTableToThread = new Map<string, number>();
         for (let i = 0; i < threads.length; i++) {
-            const t = threads[i];
-            if (t.kind === 'action') {
-                for (const m of t.messages) {
+            const th = threads[i];
+            if (th.kind === 'action') {
+                for (const m of th.messages) {
                     if (m.resultTableId) {
                         resultTableToThread.set(m.resultTableId, i);
                     }
@@ -170,9 +171,9 @@ export const ChatThreadView: FC = function () {
         // For each action thread, find its parent (the thread whose result is this thread's origin)
         const parentOf = new Map<number, number>(); // child index → parent index
         for (let i = 0; i < threads.length; i++) {
-            const t = threads[i];
-            if (t.kind === 'action' && t.originTableId) {
-                const parentIdx = resultTableToThread.get(t.originTableId);
+            const th = threads[i];
+            if (th.kind === 'action' && th.originTableId) {
+                const parentIdx = resultTableToThread.get(th.originTableId);
                 if (parentIdx !== undefined && parentIdx !== i) {
                     parentOf.set(i, parentIdx);
                 }
@@ -218,7 +219,7 @@ export const ChatThreadView: FC = function () {
         }
 
         return groups;
-    }, [agentActions, tables]);
+    }, [agentActions, tables, t]);
 
     // Auto-scroll to bottom when threads change
     useEffect(() => {
@@ -280,7 +281,7 @@ export const ChatThreadView: FC = function () {
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {table.displayId || tableId}
                     <Typography component="span" sx={{ fontSize: 10, color: theme.palette.text.disabled, ml: 0.5 }}>
-                        {rowCount}r &times; {table.names.length}c
+                        {t('dataThread.rowsByColumns', { rows: rowCount, cols: table.names.length })}
                     </Typography>
                 </Typography>
             </Card>
@@ -311,7 +312,7 @@ export const ChatThreadView: FC = function () {
                         >
                             <img
                                 src={chart.thumbnail}
-                                alt={`${chart.chartType} chart`}
+                                alt={t('dataThread.chartAlt', { type: chart.chartType })}
                                 style={{ minWidth: 80, maxWidth: 120, maxHeight: 80, objectFit: 'contain' }}
                             />
                         </Box>
@@ -332,7 +333,7 @@ export const ChatThreadView: FC = function () {
         const fs = 12;
         const fsStr = '12px';
         if (msg.isRunning) {
-            return <ThinkingBufferEffect text={msg.content || 'thinking...'} sx={{ width: '100%' }} />;
+            return <ThinkingBufferEffect text={msg.content || t('dataThread.thinking')} sx={{ width: '100%' }} />;
         }
 
         // Collapsed: single-line truncated summary with role-appropriate color
@@ -448,6 +449,8 @@ export const ChatThreadView: FC = function () {
             isFirst: boolean; isLast: boolean;
             bgColor?: string; lineColor?: string; bottomLineColor?: string;
             onClick?: (e: React.MouseEvent) => void;  // optional click handler for the row
+            rowAriaLabel?: string;
+            rowAriaExpanded?: boolean;
         }
     ) => {
         const lc = opts.lineColor || 'rgba(0,0,0,0.12)';
@@ -457,6 +460,16 @@ export const ChatThreadView: FC = function () {
         return (
             <Box
                 onClick={opts.onClick}
+                role={clickable ? 'button' : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                aria-label={clickable ? opts.rowAriaLabel : undefined}
+                aria-expanded={clickable && opts.rowAriaExpanded !== undefined ? opts.rowAriaExpanded : undefined}
+                onKeyDown={clickable && opts.onClick ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        opts.onClick?.(e as unknown as React.MouseEvent);
+                    }
+                } : undefined}
                 sx={{
                     display: 'flex', flexDirection: 'row', position: 'relative',
                     ...(clickable ? { cursor: 'pointer' } : {}),
@@ -517,15 +530,19 @@ export const ChatThreadView: FC = function () {
                         ? <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
                             width: 18, height: 18, borderRadius: '50%', border: `1px solid ${alpha(theme.palette.text.secondary, 0.4)}`,
                             cursor: 'pointer', '&:hover': { backgroundColor: alpha(theme.palette.action.hover, 0.12) } }}>
-                            <ChevronRightIcon sx={{ fontSize: 13, color: theme.palette.text.secondary }} />
+                            <ChevronRightIcon sx={{ fontSize: 13, color: theme.palette.text.secondary }} aria-hidden />
                           </Box>
                         : <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
                             width: 18, height: 18, borderRadius: '50%', border: `1px solid ${alpha(theme.palette.text.secondary, 0.4)}`,
                             cursor: 'pointer', '&:hover': { backgroundColor: alpha(theme.palette.action.hover, 0.12) } }}>
-                            <ExpandMoreIcon sx={{ fontSize: 13, color: theme.palette.text.secondary }} />
+                            <ExpandMoreIcon sx={{ fontSize: 13, color: theme.palette.text.secondary }} aria-hidden />
                           </Box>,
-                    { isFirst: true, isLast: totalRows <= 1,
-                      onClick: (e) => { e.stopPropagation(); toggleThread(thread.actionId); } },
+                    {
+                        isFirst: true, isLast: totalRows <= 1,
+                        onClick: (e) => { e.stopPropagation(); toggleThread(thread.actionId); },
+                        rowAriaLabel: isCollapsed ? t('dataThread.expandChatThread') : t('dataThread.collapseChatThread'),
+                        rowAriaExpanded: !isCollapsed,
+                    },
                 )}
                 {/* Messages — condensed to single-line summaries when collapsed */}
                 {thread.messages.map((msg, idx) => {
@@ -551,7 +568,7 @@ export const ChatThreadView: FC = function () {
                 {/* Extra running indicator when thread is running but last message isn't already a running row */}
                 {needsRunningRow && renderTimelineRow(
                     <Typography variant="body2" sx={{ fontSize: 11, color: customColor, fontStyle: 'italic' }}>
-                        working...
+                        {t('dataThread.working')}
                     </Typography>,
                     <CircularProgress size={14} thickness={5} sx={{ color: customColor }} />,
                     { isFirst: totalRows <= 1, isLast: true },
@@ -580,7 +597,7 @@ export const ChatThreadView: FC = function () {
         return (
             <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
                 <Typography variant="caption" sx={{ color: theme.palette.text.disabled, fontSize: 11 }}>
-                    Start a conversation to explore your data.
+                    {t('dataThread.startConversation')}
                 </Typography>
             </Box>
         );

@@ -1,5 +1,6 @@
 // TableManager.tsx
 import React, { useState, useEffect, useCallback, FC, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   Card, 
   CardContent, 
@@ -128,7 +129,7 @@ export const DBManagerPane: React.FC<{
     onClose?: () => void;
     storeOnServer?: boolean;
 }> = function DBManagerPane({ onClose, storeOnServer = true }) {
-    
+    const { t } = useTranslation();
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
@@ -185,7 +186,7 @@ export const DBManagerPane: React.FC<{
                 return data.tables;
             }
         } catch (error) {
-            setSystemMessage('Failed to fetch tables, please check if the server is running', "error");
+            setSystemMessage(t('db.failedFetchTables'), "error");
         }
         return undefined;
     };
@@ -254,7 +255,7 @@ export const DBManagerPane: React.FC<{
         {Object.entries(disabledLoaders).map(([loaderName, { install_hint }]) => (
             <Tooltip
                 key={`disabled-${loaderName}`}
-                title={`Not installed. Run: ${install_hint}`}
+                title={t('db.notInstalledHint', { hint: install_hint })}
                 placement="right"
                 arrow
             >
@@ -294,7 +295,7 @@ export const DBManagerPane: React.FC<{
         {selectedDataLoader === '' && (
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'text.disabled' }}>
                 <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
-                    Select a data loader from the left panel
+                    {t('db.selectDataLoader')}
                 </Typography>
             </Box>
         )}
@@ -375,7 +376,7 @@ export const DBManagerPane: React.FC<{
                 }}>
                     <CircularProgress size={60} thickness={5} />
                     <Typography variant="body2" color="text.secondary">
-                        Uploading data...
+                        {t('db.uploadingData')}
                     </Typography>
                     <Button
                         variant="text"
@@ -383,7 +384,7 @@ export const DBManagerPane: React.FC<{
                         onClick={() => setIsUploading(false)}
                         sx={{ mt: 1, textTransform: 'none', color: 'text.secondary' }}
                     >
-                        Cancel
+                        {t('app.cancel')}
                     </Button>
                 </Box>
             )}
@@ -401,7 +402,7 @@ export const DataLoaderForm: React.FC<{
     onImport: () => void,
     onFinish: (status: "success" | "error", message: string, importedTables?: string[]) => void
 }> = ({dataLoaderType, paramDefs, authInstructions, storeOnServer = true, onImport, onFinish}) => {
-
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
@@ -556,9 +557,9 @@ export const DataLoaderForm: React.FC<{
                         </Card>
                         <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
                             {tableMetadata[selectedPreviewTable]?.row_count > 0 
-                                ? `${tableMetadata[selectedPreviewTable].row_count.toLocaleString()} rows` 
-                                : `${previewTable.rows.length} sample rows`
-                            } × {previewTable.names.length} columns
+                                ? t('db.rowsCount', { count: tableMetadata[selectedPreviewTable].row_count.toLocaleString() })
+                                : t('db.sampleRowsCount', { count: previewTable.rows.length })
+                            } × {previewTable.names.length} {t('db.columns')}
                         </Typography>
 
                         {/* Load controls */}
@@ -574,14 +575,14 @@ export const DataLoaderForm: React.FC<{
                                 <Typography variant="body2" sx={{ fontSize: 12, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
                                     onClick={() => setImportMode(importMode === 'subset' ? 'full' : 'subset')}
                                 >
-                                    Load a subset
+                                    {t('db.loadSubset')}
                                 </Typography>
                                 {importMode === 'subset' && selectedPreviewTable && tableMetadata[selectedPreviewTable] && (() => {
                                     const metadata = tableMetadata[selectedPreviewTable];
                                     return (
                                         <>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-                                                <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>Rows:</Typography>
+                                                <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>{t('db.rowsLabel')}</Typography>
                                                 <TextField
                                                     size="small"
                                                     type="number"
@@ -597,7 +598,7 @@ export const DataLoaderForm: React.FC<{
                                                 <Typography variant="caption" sx={{ fontSize: 10, color: 'text.disabled', whiteSpace: 'nowrap' }}>/ {(metadata.row_count || '?').toLocaleString()}</Typography>
                                             </Box>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, maxWidth: 400 }}>
-                                                <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>Sort:</Typography>
+                                                <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>{t('app.sort')}:</Typography>
                                                 <Autocomplete
                                                     multiple
                                                     size="small"
@@ -605,7 +606,7 @@ export const DataLoaderForm: React.FC<{
                                                     value={subsetConfig.sortColumns}
                                                     onChange={(_, newValue) => setSubsetConfig(prev => ({ ...prev, sortColumns: newValue }))}
                                                     renderInput={(params) => (
-                                                        <TextField {...params} placeholder="columns..." size="small" sx={{ minWidth: 120, '& .MuiInputBase-root': { fontSize: 11, minHeight: 26, py: 0 } }} />
+                                                        <TextField {...params} placeholder={t('db.selectColumns')} size="small" sx={{ minWidth: 120, '& .MuiInputBase-root': { fontSize: 11, minHeight: 26, py: 0 } }} />
                                                     )}
                                                     renderTags={(value, getTagProps) =>
                                                         value.map((option, index) => (
@@ -645,7 +646,7 @@ export const DataLoaderForm: React.FC<{
                                         '&.Mui-disabled': { color: 'success.main', borderColor: 'success.main', opacity: 0.8 },
                                     }}
                                 >
-                                    {effectiveLoadedTables[selectedPreviewTable] === 'subset' ? 'Subset loaded' : 'Loaded'}
+                                    {effectiveLoadedTables[selectedPreviewTable] === 'subset' ? t('db.subsetLoaded') : t('db.loaded')}
                                 </Button>
                                 <Button
                                     variant="text"
@@ -667,7 +668,7 @@ export const DataLoaderForm: React.FC<{
                                         '&:hover': { color: 'error.main', backgroundColor: 'rgba(211,47,47,0.04)' },
                                     }}
                                 >
-                                    Unload
+                                    {t('db.unload')}
                                 </Button>
                             </Box>
                             ) : (
@@ -730,7 +731,7 @@ export const DataLoaderForm: React.FC<{
                                         });
                                 }}
                             >
-                                {importMode === 'subset' ? 'Load Table Subset' : 'Load Table'}
+                                {importMode === 'subset' ? t('db.loadTableSubset') : t('db.loadTableBtn')}
                             </Button>
                             )}
                         </Box>
@@ -768,7 +769,7 @@ export const DataLoaderForm: React.FC<{
                                         {paramDef.name}:
                                     </Typography>
                                     <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.primary', fontWeight: 500, mr: 0.5}}>
-                                        {params[paramDef.name] || '(empty)'}
+                                        {params[paramDef.name] || t('db.emptyValue')}
                                     </Typography>
                                     {index < paramDefs.filter((p) => params[p.name]).length - 1 && (
                                         <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.disabled', mr: 0.5}}>·</Typography>
@@ -779,7 +780,7 @@ export const DataLoaderForm: React.FC<{
                         <Box sx={{display: "flex", flexDirection: "row", alignItems: "flex-end", gap: 1.5}}>
                             <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, flex: 1, maxWidth: 300 }}>
                                 <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'text.secondary', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <SearchIcon sx={{ fontSize: 11 }} /> table filter
+                                    <SearchIcon sx={{ fontSize: 11 }} /> {t('db.tableFilter')}
                                 </Typography>
                                 <TextField
                                     sx={{
@@ -794,7 +795,7 @@ export const DataLoaderForm: React.FC<{
                                     size="small"
                                     fullWidth
                                     autoComplete="off"
-                                    placeholder="filter tables by keyword"
+                                    placeholder={t('db.tableFilterPlaceholder')}
                                     value={tableFilter}
                                     onChange={(event) => setTableFilter(event.target.value)}
                                 />
@@ -824,17 +825,17 @@ export const DataLoaderForm: React.FC<{
                                         })));
                                     } else {
                                         console.error('Failed to fetch data loader tables: {}', data.message);
-                                        onFinish("error", `Failed to fetch data loader tables: ${data.message}`);
+                                        onFinish("error", t('db.failedFetchLoaderTables', { message: data.message }));
                                     }
                                     setIsConnecting(false);
                                 })
                                 .catch((error: any) => {
-                                    onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
+                                    onFinish("error", t('db.failedFetchLoaderTablesServer'));
                                     setIsConnecting(false);
                                 });
                                 }}
                             >
-                                Refresh
+                                {t('db.refresh')}
                             </Button>
                             <Button
                                 variant="outlined"
@@ -845,7 +846,7 @@ export const DataLoaderForm: React.FC<{
                                     setTableFilter("");
                                 }}
                             >
-                                Disconnect
+                                {t('db.disconnect')}
                             </Button>
                         </Box>
                     </Box>
@@ -904,7 +905,7 @@ export const DataLoaderForm: React.FC<{
                     <Box sx={{ display: "flex", flexDirection: "row", alignItems: "flex-end", gap: 1.5, mt: 2 }}>
                         <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, flex: 1, maxWidth: 300 }}>
                             <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'text.secondary', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <SearchIcon sx={{ fontSize: 11 }} /> table filter
+                                <SearchIcon sx={{ fontSize: 11 }} /> {t('db.tableFilter')}
                             </Typography>
                             <TextField
                                 sx={{
@@ -919,7 +920,7 @@ export const DataLoaderForm: React.FC<{
                                 size="small"
                                 fullWidth
                                 autoComplete="off"
-                                placeholder="filter tables by keyword"
+                                placeholder={t('db.tableFilterPlaceholder')}
                                 value={tableFilter}
                                 onChange={(event) => setTableFilter(event.target.value)}
                             />
@@ -951,16 +952,16 @@ export const DataLoaderForm: React.FC<{
                                         })));
                                     } else {
                                         console.error('Failed to fetch data loader tables: {}', data.message);
-                                        onFinish("error", `Failed to fetch data loader tables: ${data.message}`);
+                                        onFinish("error", t('db.failedFetchLoaderTables', { message: data.message }));
                                     }
                                     setIsConnecting(false);
                                 })
                                 .catch((error: any) => {
-                                    onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
+                                    onFinish("error", t('db.failedFetchLoaderTablesServer'));
                                     setIsConnecting(false);
                                 });
                             }}>
-                                Connect{tableFilter.trim() ? " with filter" : ""}
+                                {t('db.connect', { suffix: tableFilter.trim() ? t('db.withFilter') : '' })}
                             </Button>}
                     </Box>
                     {authInstructions.trim() && (

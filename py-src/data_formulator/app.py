@@ -62,6 +62,9 @@ app.config['CLI_ARGS'] = {
     'azure_blob_connection_string': os.environ.get('AZURE_BLOB_CONNECTION_STRING', None),
     'azure_blob_account_url': os.environ.get('AZURE_BLOB_ACCOUNT_URL', None),
     'azure_blob_container': os.environ.get('AZURE_BLOB_CONTAINER', 'data-formulator'),
+    'available_languages': [
+        lang.strip() for lang in os.environ.get('AVAILABLE_LANGUAGES', 'en,zh').split(',') if lang.strip()
+    ],
 }
 
 # Get logger for this module (logging config moved to run_app function)
@@ -69,23 +72,26 @@ logger = logging.getLogger(__name__)
 
 def configure_logging():
     """Configure logging for the Flask application."""
+    log_level_str = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+    app_log_level = getattr(logging, log_level_str, logging.INFO)
+
     logging.basicConfig(
-        level=logging.ERROR,
+        level=logging.WARNING,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[logging.StreamHandler(sys.stdout)]
     )
-    
-    # Enable INFO for agent modules so timing logs are visible
-    logging.getLogger('data_formulator.agents').setLevel(logging.INFO)
 
-    # Suppress verbose logging from third-party libraries
+    logging.getLogger('data_formulator').setLevel(app_log_level)
+
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('litellm').setLevel(logging.WARNING)
     logging.getLogger('openai').setLevel(logging.WARNING)
-    
+
     app.logger.handlers = []
     for handler in logging.getLogger().handlers:
         app.logger.addHandler(handler)
+
+    logging.getLogger('data_formulator').info(f"Log level: {log_level_str}")
 
 
 _blueprints_registered = False
@@ -161,6 +167,7 @@ def get_app_config():
         "MAX_DISPLAY_ROWS": args['max_display_rows'],
         "DEV_MODE": args.get('dev', False),
         "WORKSPACE_BACKEND": args.get('workspace_backend', 'local'),
+        "AVAILABLE_LANGUAGES": args.get('available_languages', ['en', 'zh']),
     }
 
     if not args['disable_database']:
@@ -235,6 +242,9 @@ def run_app():
         'azure_blob_connection_string': args.azure_blob_connection_string,
         'azure_blob_account_url': args.azure_blob_account_url,
         'azure_blob_container': args.azure_blob_container,
+        'available_languages': [
+            lang.strip() for lang in os.environ.get('AVAILABLE_LANGUAGES', 'en,zh').split(',') if lang.strip()
+        ],
     }
     
     # Register blueprints (this is where heavy imports happen)

@@ -6,17 +6,12 @@ SQL-related utility functions for agents.
 These functions are used across multiple agents for DuckDB operations and SQL data summaries.
 """
 
-import re
+from data_formulator.datalake.table_names import sanitize_duckdb_sql_table_name
 
 
 def sanitize_table_name(table_name: str) -> str:
-    """Sanitize table name to be used in SQL queries"""
-    # Replace spaces with underscores
-    sanitized_name = table_name.replace(" ", "_")
-    sanitized_name = sanitized_name.replace("-", "_")
-    # Allow alphanumeric, underscore, dot, dash, and dollar sign
-    sanitized_name = re.sub(r'[^a-zA-Z0-9_\.$]', '', sanitized_name)
-    return sanitized_name
+    """Sanitize table name for DuckDB views; see :func:`sanitize_duckdb_sql_table_name`."""
+    return sanitize_duckdb_sql_table_name(table_name)
 
 
 def create_duckdb_conn_with_parquet_views(workspace, input_tables: list[dict]):

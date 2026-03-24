@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { FC, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next';
 import { useSelector, useDispatch } from 'react-redux'
 import { DataFormulatorState, dfActions, dfSelectors, generateFreshChart } from '../app/dfSlice';
 
@@ -47,6 +48,38 @@ import { Channel, Chart, FieldItem, Trigger, duplicateChart } from "../component
 
 import _ from 'lodash';
 
+const ConfigSlider: FC<{
+    value: number;
+    propDef: { label: string; min?: number; max?: number; step?: number };
+    onCommit: (value: number) => void;
+}> = ({ value, propDef, onCommit }) => {
+    const [localValue, setLocalValue] = useState(value);
+    useEffect(() => { setLocalValue(value); }, [value]);
+
+    return (
+        <>
+            <Slider
+                size="small"
+                value={localValue}
+                min={propDef.min}
+                max={propDef.max}
+                step={propDef.step}
+                onChange={(_event, newValue) => setLocalValue(newValue as number)}
+                onChangeCommitted={(_event, newValue) => onCommit(newValue as number)}
+                valueLabelDisplay="auto"
+                sx={{
+                    flex: 1, height: 3, mx: 0.5,
+                    '& .MuiSlider-thumb': { width: 10, height: 10 },
+                    '& .MuiSlider-valueLabel': { fontSize: 10, padding: '2px 4px', lineHeight: 1.2 },
+                }}
+            />
+            <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary', minWidth: '20px', textAlign: 'right' }}>
+                {localValue}
+            </Typography>
+        </>
+    );
+};
+
 import '../scss/EncodingShelf.scss';
 import { DictTable } from "../components/ComponentType";
 
@@ -55,6 +88,30 @@ import { EncodingBox } from './EncodingBox';
 
 import { channelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
 import { checkChartAvailability, getDataTable } from './VisualizationView';
+
+const chartNameToI18nKey: Record<string, string> = {
+    "Auto": "auto", "Table": "table",
+    "Scatter Plot": "scatterPlot", "Regression": "regression",
+    "Ranged Dot Plot": "rangedDotPlot", "Boxplot": "boxplot", "Strip Plot": "stripPlot",
+    "Bar Chart": "barChart", "Grouped Bar Chart": "groupedBarChart",
+    "Stacked Bar Chart": "stackedBarChart", "Histogram": "histogram",
+    "Lollipop Chart": "lollipopChart", "Pyramid Chart": "pyramidChart",
+    "Line Chart": "lineChart", "Dotted Line Chart": "dottedLineChart",
+    "Bump Chart": "bumpChart", "Area Chart": "areaChart", "Streamgraph": "streamgraph",
+    "Pie Chart": "pieChart", "Rose Chart": "roseChart",
+    "Heatmap": "heatmap", "Waterfall Chart": "waterfallChart",
+    "Density Plot": "densityPlot", "Radar Chart": "radarChart",
+    "Candlestick Chart": "candlestickChart",
+    "US Map": "usMap", "World Map": "worldMap",
+    "Custom Point": "customPoint", "Custom Line": "customLine",
+    "Custom Bar": "customBar", "Custom Rect": "customRect", "Custom Area": "customArea",
+};
+
+const chartCategoryToI18nKey: Record<string, string> = {
+    "Scatter & Point": "scatterAndPoint", "Bar": "bar",
+    "Line & Area": "lineAndArea", "Part-to-Whole": "partToWhole",
+    "Statistical": "statistical", "Map": "map", "Custom": "custom",
+};
 import { TableIcon, AgentIcon as PrecisionManufacturing } from '../icons';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';
 import AddIcon from '@mui/icons-material/Add';
@@ -122,6 +179,7 @@ export const TriggerCard: FC<{
     highlighted?: boolean,
     sx?: SxProps<Theme>}> = function ({ className, trigger, hideFields, mini = false, highlighted = false, sx }) {
 
+    const { t } = useTranslation();
     let theme = useTheme();
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -217,7 +275,17 @@ export const TriggerCard: FC<{
 
 
 export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId }) {
+    const { t } = useTranslation();
     const theme = useTheme();
+
+    const getChartNameTip = (chartName: string) => {
+        const key = chartNameToI18nKey[chartName];
+        return key ? t(`chart.templateNames.${key}`) : '';
+    };
+    const getChartCategoryTip = (category: string) => {
+        const key = chartCategoryToI18nKey[category];
+        return key ? t(`chart.chartCategoryTip.${key}`) : '';
+    };
 
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -526,7 +594,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     "timestamp": Date.now(),
                     "component": "chart builder",
                     "type": "success",
-                    "value": `Data formulation for ${fieldNamesStr} succeeded.`
+                    "value": t('encoding.formulationSucceeded', { fields: fieldNamesStr })
                 }));
                 dispatch(dfActions.updateAgentWorkInProgress({
                     actionId, description: displayInstruction || actionDescription, status: 'completed', hidden: false,
@@ -536,7 +604,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             onError: () => {
                 dispatch(dfActions.updateAgentWorkInProgress({
                     actionId, description: actionDescription, status: 'failed', hidden: false,
-                    message: { content: 'Data formulation failed.', role: 'error' }
+                    message: { content: t('encoding.formulationFailed'), role: 'error' }
                 }));
             },
             onFinally: () => {
@@ -591,7 +659,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 inputLabel: { shrink: true },
             }}
             value={prompt}
-            placeholder={"follow up on this chart"}
+            placeholder={t('encoding.followUpChartPlaceholder')}
             fullWidth
             multiline
             minRows={2}
@@ -601,7 +669,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             display: 'flex', flexDirection: 'row', alignItems: 'center',
             justifyContent: 'flex-end',
         }}>
-            <Tooltip title={currentChartIdeas.length > 0 ? "Refresh ideas" : "Get ideas"}>
+            <Tooltip title={currentChartIdeas.length > 0 ? t('encoding.refreshIdeas') : t('encoding.getIdeas')}>
                 <span>
                     <IconButton size="small"
                         disabled={isLoadingIdeas}
@@ -615,7 +683,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 </span>
             </Tooltip>
             {trigger ? 
-                <Tooltip title={<Typography sx={{fontSize: 11}}>formulate and override <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
+                <Tooltip title={<Typography sx={{fontSize: 11}}>{t('encoding.formulateAndOverride')} <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
                     <span>
                         <IconButton size="small" color={"warning"} sx={{ p: 0.5 }} onClick={() => { 
                             deriveNewData(trigger!.instruction, 'formulate', trigger!.resultTableId); 
@@ -625,9 +693,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     </span>
                 </Tooltip>
                 : 
-                <Tooltip title={`Formulate`}>
+                <Tooltip title={t('encoding.formulate')}>
                     <span>
-                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
+                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }} disabled={!prompt.trim()} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
                             <PrecisionManufacturing sx={{
                                 fontSize: 20,
                                 ...(isChartAvailable ? {} : {
@@ -649,7 +717,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
 
     let channelComponent = (
-        <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column", gap: '4px' }}>
+        <Box sx={{ width: "100%", minWidth: "256px", height: '100%', display: "flex", flexDirection: "column", gap: '4px' }}>
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto', display: 'flex', alignItems: 'center' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, flex: 1, margin: "0px 0"}} size="small">
                     <Select
@@ -682,15 +750,17 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                             }
                         }}
                         renderValue={(value: string) => {
-                            const t = getChartTemplate(value);
+                            const tmpl = getChartTemplate(value);
                             return (
+                                <Tooltip title={getChartNameTip(value)} placement="left" arrow>
                                 <div style={{display: 'flex', padding: "0px 0px 0px 4px"}}>
                                     <ListItemIcon sx={{minWidth: "24px"}}>
-                                        {typeof t?.icon == 'string' ? <img height="24px" width="24px" src={t?.icon} alt="" role="presentation" /> : 
-                                         <Box sx={{width: "24px", height: "24px"}}>{t?.icon}</Box>}
+                                        {typeof tmpl?.icon == 'string' ? <img height="24px" width="24px" src={tmpl?.icon} alt="" role="presentation" /> : 
+                                         <Box sx={{width: "24px", height: "24px"}}>{tmpl?.icon}</Box>}
                                         </ListItemIcon>
-                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} slotProps={{primary: {fontSize: 12}}}>{t?.chart}</ListItemText>
+                                    <ListItemText sx={{marginLeft: "2px", whiteSpace: "initial"}} slotProps={{primary: {fontSize: 12}}}>{tmpl?.chart}</ListItemText>
                                 </div>
+                                </Tooltip>
                             )
                         }}
                         onChange={(event) => { }}>
@@ -700,8 +770,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                     color: "text.secondary", 
                                     lineHeight: 2, 
                                     fontSize: 12,
-                                    gridColumn: '1 / -1' // Make subheader span both columns
-                                }} key={group}>{group}</ListSubheader>,
+                                    gridColumn: '1 / -1'
+                                }} key={group}>
+                                    <Tooltip title={getChartCategoryTip(group)} placement="left" arrow>
+                                        <span>{group}</span>
+                                    </Tooltip>
+                                </ListSubheader>,
                                 ...templates.map((t, i) => (
                                     <MenuItem 
                                         sx={{ 
@@ -715,11 +789,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                         key={`${group}-${i}`}
                                         onClick={(e) => {
                                             console.log('MenuItem clicked:', t.chart);
-                                            // Manually trigger the chart type update (this will also close the menu)
                                             handleUpdateChartType(t.chart);
                                         }}
                                     >
-                                        <Box sx={{display: 'flex'}}>
+                                        <Tooltip title={getChartNameTip(t.chart)} placement="left" arrow>
+                                        <Box sx={{display: 'flex', width: '100%'}}>
                                             <ListItemIcon sx={{minWidth: "20px"}}>
                                                 {typeof t?.icon == 'string' ? 
                                                     <img height="20px" width="20px" src={t?.icon} alt="" role="presentation" /> : 
@@ -733,6 +807,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                                 {t.chart}
                                             </ListItemText>
                                         </Box>
+                                        </Tooltip>
                                     </MenuItem>
                                 ))
                             ]
@@ -774,25 +849,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                                             }}>
                                                 {propDef.label}
                                             </Typography>
-                                            <Slider
-                                                size="small"
+                                            <ConfigSlider
                                                 value={currentValue}
-                                                min={propDef.min}
-                                                max={propDef.max}
-                                                step={propDef.step}
-                                                onChange={(_event, newValue) => {
-                                                    dispatch(dfActions.updateChartConfig({chartId, key: propDef.key, value: newValue as number}));
-                                                }}
-                                                valueLabelDisplay="auto"
-                                                sx={{
-                                                    flex: 1, height: 3, mx: 0.5,
-                                                    '& .MuiSlider-thumb': { width: 10, height: 10 },
-                                                    '& .MuiSlider-valueLabel': { fontSize: 10, padding: '2px 4px', lineHeight: 1.2 },
-                                                }}
+                                                propDef={propDef}
+                                                onCommit={(newValue) => dispatch(dfActions.updateChartConfig({chartId, key: propDef.key, value: newValue}))}
                                             />
-                                            <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary', minWidth: '20px', textAlign: 'right' }}>
-                                                {currentValue}
-                                            </Typography>
                                         </Box>
                                     );
                                 }
@@ -923,7 +984,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             )}
             {isLoadingIdeas && !thinkingBuffer && (
                 <Box sx={{ padding: '2px 0' }}>
-                    {ThinkingBanner('ideating...')}
+                    {ThinkingBanner(t('encoding.ideating'))}
                 </Box>
             )}
         </Box>

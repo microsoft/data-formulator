@@ -13,7 +13,9 @@ const persistConfig = {
     key: 'root',
     //storage,
     storage: localforage,
-    blacklist: ['serverConfig'],  // Always fetch fresh from /api/app-config
+    // globalModels are always fetched fresh from the server on each app start,
+    // so there is no need (and it would cause stale-data issues) to persist them.
+    blacklist: ['serverConfig', 'globalModels'],
 }
 
 const persistedReducer = persistReducer(persistConfig, dataFormulatorReducer)

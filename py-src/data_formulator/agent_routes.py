@@ -34,11 +34,22 @@ from data_formulator.agents.agent_chart_insight import ChartInsightAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
+from data_formulator.model_registry import model_registry
 
 from data_formulator.agents.data_agent import DataAgent
+from data_formulator.agents.agent_language import build_language_instruction
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
+
+
+def get_language_instruction(*, mode: str = "full") -> str:
+    """Read the UI language from the Accept-Language header and build the prompt instruction.
+
+    mode: "full" for text-heavy agents, "compact" for code-generation agents.
+    """
+    lang = request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0].strip().lower()
+    return build_language_instruction(lang, mode=mode)
 
 
 def get_temp_tables(workspace, input_tables: list[dict]) -> list[dict]:
@@ -92,83 +103,101 @@ def handle_agent_error(e):
     return response, 500
 
 def get_client(model_config):
+    # For global models, resolve real credentials from the server-side registry.
+    # The frontend only knows the model id; the api_key never leaves the server.
+    if model_config.get("is_global"):
+        real_config = model_registry.get_config(model_config["id"])
+        if real_config:
+            model_config = real_config
+
     for key in model_config:
-        model_config[key] = model_config[key].strip()
+        if isinstance(model_config[key], str):
+            model_config[key] = model_config[key].strip()
 
     client = Client(
         model_config["endpoint"],
         model_config["model"],
-        model_config["api_key"] if "api_key" in model_config else None,
-        html.escape(model_config["api_base"]) if "api_base" in model_config else None,
-        model_config["api_version"] if "api_version" in model_config else None)
+        model_config.get("api_key") or None,
+        html.escape(model_config["api_base"]) if model_config.get("api_base") else None,
+        model_config.get("api_version") or None,
+    )
 
     return client
 
 
+@agent_bp.route('/list-global-models', methods=['GET', 'POST'])
+def list_global_models():
+    """Return all globally configured models instantly, without connectivity checks.
+
+    The frontend calls this first to render the model list immediately (with a
+    'checking' status), then calls /check-available-models to get real statuses.
+    """
+    public_models = model_registry.list_public()
+    return json.dumps(public_models, ensure_ascii=False)
+
+
 @agent_bp.route('/check-available-models', methods=['GET', 'POST'])
 def check_available_models():
+    """
+    Return all globally configured models with their connectivity status.
+
+    Connectivity checks run in parallel (ThreadPoolExecutor) so the total
+    wall-clock time equals the slowest single model, not the sum of all.
+    Sensitive credentials (api_key) are never sent to the client.
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    all_public = model_registry.list_public()
+    logger.info("=" * 60)
+    logger.info(f"[check-available-models] Checking {len(all_public)} global models")
+    for p in all_public:
+        logger.info(f"  -> {p['id']}  (endpoint={p['endpoint']}, model={p['model']}, api_base={p['api_base']})")
+    overall_start = time.time()
+
+    def _check_one(public_info: dict) -> dict:
+        model_id = public_info["id"]
+        t0 = time.time()
+        full_config = model_registry.get_config(model_id)
+        status = "disconnected"
+        error = None
+
+        try:
+            client = get_client(full_config)
+            logger.info(f"  [{model_id}] Sending connectivity ping (max_tokens=3)...")
+            client.ping(timeout=10)
+            status = "connected"
+            logger.info(f"  [{model_id}] Connected ({time.time() - t0:.1f}s)")
+        except Exception as e:
+            elapsed = time.time() - t0
+            logger.warning(f"  [{model_id}] Failed ({elapsed:.1f}s): {type(e).__name__}: {e}")
+            raw_err = str(e)
+            error = sanitize_model_error(raw_err) if raw_err else "Connection failed, please check server configuration"
+
+        return {**public_info, "status": status, "error": error}
+
     results = []
-    
-    # Define configurations for different providers
-    providers = ['openai', 'azure', 'anthropic', 'gemini', 'ollama']
-
-    for provider in providers:
-        # Skip if provider is not enabled
-        if not os.getenv(f"{provider.upper()}_ENABLED", "").lower() == "true":
-            continue
-        
-        api_key = os.getenv(f"{provider.upper()}_API_KEY", "")
-        api_base = os.getenv(f"{provider.upper()}_API_BASE", "")
-        api_version = os.getenv(f"{provider.upper()}_API_VERSION", "")
-        models = os.getenv(f"{provider.upper()}_MODELS", "")
-
-        if not (api_key or api_base):
-            continue
-
-        if not models:
-            continue
-
-        # Build config for each model
-        for model in models.split(","):
-            model = model.strip()
-            if not model:
-                continue
-
-            model_config = {
-                "id": f"{provider}-{model}-{api_key}-{api_base}-{api_version}",
-                "endpoint": provider,
-                "model": model,
-                "api_key": api_key,
-                "api_base": api_base,
-                "api_version": api_version
-            }
-            
-            # Retry with backoff — DefaultAzureCredential and other providers
-            # may need a moment to initialize on cold start.
-            max_retries = 3
-            for attempt in range(max_retries):
+    if all_public:
+        with ThreadPoolExecutor(max_workers=min(len(all_public), 8)) as executor:
+            futures = {executor.submit(_check_one, p): p["id"] for p in all_public}
+            for future in as_completed(futures):
                 try:
-                    client = get_client(model_config)
-                    response = client.get_completion(
-                        messages=[
-                            {"role": "system", "content": "You are a helpful assistant."},
-                            {"role": "user", "content": "Respond 'I can hear you.' if you can hear me."},
-                        ]
-                    )
-                    
-                    if "I can hear you." in response.choices[0].message.content:
-                        results.append(model_config)
-                    break  # success or non-matching response — don't retry
+                    results.append(future.result())
                 except Exception as e:
-                    if attempt < max_retries - 1:
-                        import time
-                        wait = 2 ** attempt  # 1s, 2s
-                        logger.warning(f"Retrying {provider}/{model} in {wait}s (attempt {attempt+1}/{max_retries}): {e}")
-                        time.sleep(wait)
-                    else:
-                        logger.error(f"Error testing {provider} model {model} after {max_retries} attempts: {e}")
-                
-    return json.dumps(results)
+                    model_id = futures[future]
+                    logger.error(f"  [{model_id}] Thread exception: {e}")
+                    pub = next(p for p in all_public if p["id"] == model_id)
+                    results.append({**pub, "status": "disconnected", "error": "Check thread exception"})
+
+    id_order = [p["id"] for p in all_public]
+    results.sort(key=lambda r: id_order.index(r["id"]))
+
+    total_elapsed = time.time() - overall_start
+    connected = sum(1 for r in results if r["status"] == "connected")
+    logger.info(f"[check-available-models] Done: {connected}/{len(results)} connected, total {total_elapsed:.1f}s")
+    logger.info("=" * 60)
+
+    return json.dumps(results, ensure_ascii=False)
 
 def sanitize_model_error(error_message: str) -> str:
     """Sanitize model API error messages before sending to client."""
@@ -214,17 +243,18 @@ def test_model():
                     "message": ""
                 }
         except Exception as e:
-            print(f"Error: {e}")
-            logger.info(f"Error: {e}")
+            logger.warning(f"Error testing model {content['model'].get('id', '')}: {e}")
+            is_global = content['model'].get('is_global', False)
             result = {
                 "model": content['model'],
                 "status": 'error',
-                "message": sanitize_model_error(str(e)),
+                "message": "Connection failed, please check server configuration" if is_global
+                           else sanitize_model_error(str(e)),
             }
     else:
         result = {'status': 'error'}
     
-    return json.dumps(result)
+    return json.dumps(result, ensure_ascii=False)
 
 @agent_bp.route('/process-data-on-load', methods=['GET', 'POST'])
 def process_data_on_load_request():
@@ -249,7 +279,8 @@ def process_data_on_load_request():
             temp_data = get_temp_tables(workspace, input_tables)
             
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                agent = DataLoadAgent(client=client, workspace=workspace)
+                language_instruction = get_language_instruction(mode="compact")
+                agent = DataLoadAgent(client=client, workspace=workspace, language_instruction=language_instruction)
                 candidates = agent.run(content["input_data"])
                 candidates = [c['content'] for c in candidates if c['status'] == 'ok']
 
@@ -275,7 +306,8 @@ def clean_data_stream_request():
 
             logger.debug(f" model: {content['model']}")
             
-            agent = DataCleanAgentStream(client=client)
+            language_instruction = get_language_instruction()
+            agent = DataCleanAgentStream(client=client, language_instruction=language_instruction)
 
             try:
                 for chunk in agent.stream(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', [])):
@@ -294,14 +326,14 @@ def clean_data_stream_request():
                         "status": "error", 
                         "result": 'unable to process data clean request' 
                     }
-                yield '\n' + json.dumps(error_data) + '\n'
+                yield '\n' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
             error_data = { 
                 "token": -1, 
                 "status": "error", 
                 "result": "Invalid request format" 
             }
-            yield '\n' + json.dumps(error_data) + '\n'
+            yield '\n' + json.dumps(error_data, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),
@@ -377,35 +409,56 @@ def derive_data():
             temp_data = get_temp_tables(workspace, input_tables)
             max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
+            language_instruction = get_language_instruction(mode="compact")
+
+            model_info = {
+                "model": content['model'].get("model", ""),
+                "endpoint": content['model'].get("endpoint", ""),
+                "api_base": content['model'].get("api_base", ""),
+            }
+
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
                 if mode == "recommendation":
-                    # Use unified Python agent for recommendations
-                    agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
+                    agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
                     results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
                 else:
-                    # Use unified Python agent that generates Python scripts with DuckDB + pandas
-                    agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
+                    agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
                     results = agent.run(input_tables, instruction, prev_messages,
                                         current_visualization=current_visualization, expected_visualization=expected_visualization)
 
                 repair_attempts = 0
-                while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
-                    error_message = results[0]['content']
+                while (
+                    isinstance(results, list)
+                    and len(results) > 0
+                    and results[0].get('status') in ('error', 'other error')
+                    and repair_attempts < max_repair_attempts
+                ):
+                    error_message = results[0].get('content', 'Unknown error')
                     logger.warning(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
                     new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
-                    prev_dialog = results[0]['dialog']
+                    prev_dialog = results[0].get('dialog', [])
 
-                    if mode == "transform":
-                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                    if mode == "recommendation":
-                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    try:
+                        if mode == "transform":
+                            results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                        if mode == "recommendation":
+                            results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    except Exception as followup_exc:
+                        logger.exception("derive_data followup failed")
+                        results = [{
+                            "status": "error",
+                            "content": sanitize_model_error(str(followup_exc)),
+                            "code": "",
+                            "dialog": [],
+                        }]
+                        break
 
                     repair_attempts += 1
-                    logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+                    logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
 
                 if repair_attempts > 0:
-                    logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+                    logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
 
             # Sign code in each result so the frontend can send it back
             # for re-execution during data refresh with proof of authenticity.
@@ -470,11 +523,13 @@ def data_agent_streaming():
                     "token": token,
                     "status": "error",
                     "result": {"type": "error", "error_message": "Identity ID required"},
-                }) + '\n'
+                }, ensure_ascii=False) + '\n'
                 return
 
             workspace = get_workspace(identity_id)
             temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
+
+            language_instruction = get_language_instruction(mode="compact")
 
             try:
                 with WorkspaceWithTempData(workspace, temp_data) as ws:
@@ -483,6 +538,7 @@ def data_agent_streaming():
                         workspace=ws,
                         agent_exploration_rules=agent_exploration_rules,
                         agent_coding_rules=agent_coding_rules,
+                        language_instruction=language_instruction,
                         max_iterations=max_iterations,
                         max_repair_attempts=max_repair_attempts,
                     )
@@ -509,7 +565,7 @@ def data_agent_streaming():
                             "token": token,
                             "status": "ok",
                             "result": event,
-                        }) + '\n'
+                        }, ensure_ascii=False) + '\n'
 
                         # Stop streaming after terminal events
                         if event.get("type") in ("completion", "clarify"):
@@ -523,7 +579,7 @@ def data_agent_streaming():
                     "status": "error",
                     "result": None,
                     "error_message": sanitize_model_error(str(e)),
-                }) + '\n'
+                }, ensure_ascii=False) + '\n'
 
             logger.setLevel(logging.WARNING)
 
@@ -533,7 +589,7 @@ def data_agent_streaming():
                 "status": "error",
                 "result": None,
                 "error_message": "Invalid request format",
-            }) + '\n'
+            }, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),
@@ -578,25 +634,48 @@ def refine_data():
             temp_data = get_temp_tables(workspace, input_tables)
             max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
+            language_instruction = get_language_instruction(mode="compact")
+
+            model_info = {
+                "model": content['model'].get("model", ""),
+                "endpoint": content['model'].get("endpoint", ""),
+                "api_base": content['model'].get("api_base", ""),
+            }
+
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                # Use unified Python agent for followup transformations
-                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, max_display_rows=max_display_rows)
+                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
                 results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
                                         current_visualization=current_visualization, expected_visualization=expected_visualization)
 
                 repair_attempts = 0
-                while results[0]['status'] == 'error' and repair_attempts < max_repair_attempts:
-                    error_message = results[0]['content']
+                while (
+                    isinstance(results, list)
+                    and len(results) > 0
+                    and results[0].get('status') in ('error', 'other error')
+                    and repair_attempts < max_repair_attempts
+                ):
+                    error_message = results[0].get('content', 'Unknown error')
                     logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
                     new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-                    prev_dialog = results[0]['dialog']
+                    prev_dialog = results[0].get('dialog', [])
 
-                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    try:
+                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    except Exception as followup_exc:
+                        logger.exception("refine_data followup failed")
+                        results = [{
+                            "status": "error",
+                            "content": sanitize_model_error(str(followup_exc)),
+                            "code": "",
+                            "dialog": [],
+                        }]
+                        break
+
                     repair_attempts += 1
-                    logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0]['status']}")
+                    logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
 
                 if repair_attempts > 0:
-                    logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0]['status']}")
+                    logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
 
             # Sign code in each result for secure refresh later.
             for r in results:
@@ -628,9 +707,11 @@ def request_code_expl():
         workspace = get_workspace(identity_id)
         temp_data = get_temp_tables(workspace, input_tables)
 
+        language_instruction = get_language_instruction()
+
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
             try:
-                code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace)
+                code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace, language_instruction=language_instruction)
                 candidates = code_expl_agent.run(input_tables, code)
 
                 # Return the first candidate's content as JSON
@@ -668,7 +749,8 @@ def request_chart_insight():
 
         with WorkspaceWithTempData(workspace, temp_data) as workspace:
             try:
-                agent = ChartInsightAgent(client=client, workspace=workspace)
+                agent = ChartInsightAgent(client=client, workspace=workspace,
+                                          language_instruction=get_language_instruction())
                 candidates = agent.run(chart_image, chart_type, field_names, input_tables)
 
                 if candidates and len(candidates) > 0:
@@ -715,21 +797,23 @@ def get_recommendation_questions():
             temp_data = get_temp_tables(workspace, all_tables) if all_tables else None
 
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                agent = InteractiveExploreAgent(client=client, workspace=workspace, agent_exploration_rules=agent_exploration_rules)
+                agent = InteractiveExploreAgent(client=client, workspace=workspace,
+                                                agent_exploration_rules=agent_exploration_rules,
+                                                language_instruction=get_language_instruction())
                 try:
                     for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
                         yield chunk
                 except Exception as e:
-                    logger.error(e)
-                    error_data = { 
-                        "content": "unable to process recommendation questions request" 
+                    logger.exception("get-recommendation-questions failed")
+                    error_data = {
+                        "content": sanitize_model_error(str(e))
                     }
-                    yield 'error: ' + json.dumps(error_data) + '\n'
+                    yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
             error_data = { 
                 "content": "Invalid request format" 
             }
-            yield 'error: ' + json.dumps(error_data) + '\n'
+            yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),
@@ -755,7 +839,8 @@ def generate_report_stream():
             temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                agent = ReportGenAgent(client=client, workspace=workspace)
+                agent = ReportGenAgent(client=client, workspace=workspace,
+                                       language_instruction=get_language_instruction())
                 try:
                     for chunk in agent.stream(input_tables, charts, style):
                         yield chunk
@@ -764,12 +849,12 @@ def generate_report_stream():
                     error_data = { 
                         "content": "unable to process report generation request" 
                     }
-                    yield 'error: ' + json.dumps(error_data) + '\n'
+                    yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
             error_data = { 
                 "content": "Invalid request format" 
             }
-            yield 'error: ' + json.dumps(error_data) + '\n'
+            yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),

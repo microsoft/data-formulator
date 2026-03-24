@@ -51,6 +51,7 @@ from data_formulator.datalake.metadata import (
     WorkspaceMetadata,
     load_metadata,
     save_metadata,
+    update_metadata,
     metadata_exists,
     METADATA_VERSION,
     METADATA_FILENAME,
@@ -68,8 +69,15 @@ from data_formulator.datalake.file_manager import (
 
 # Parquet utilities (pure helpers, no Workspace dependency)
 from data_formulator.datalake.parquet_utils import (
+    safe_data_filename,
     sanitize_table_name,
     DEFAULT_COMPRESSION,
+)
+from data_formulator.datalake.table_names import (
+    sanitize_workspace_parquet_table_name,
+    sanitize_upload_stem_table_name,
+    sanitize_external_loader_table_name,
+    sanitize_duckdb_sql_table_name,
 )
 
 __all__ = [
@@ -87,6 +95,7 @@ __all__ = [
     "WorkspaceMetadata",
     "load_metadata",
     "save_metadata",
+    "update_metadata",
     "metadata_exists",
     "METADATA_VERSION",
     "METADATA_FILENAME",
@@ -99,6 +108,12 @@ __all__ = [
     "get_file_info",
     "SUPPORTED_EXTENSIONS",
     # Parquet utilities
+    "safe_data_filename",
     "sanitize_table_name",
     "DEFAULT_COMPRESSION",
+    # Table name sanitisation (single source of truth in table_names)
+    "sanitize_workspace_parquet_table_name",
+    "sanitize_upload_stem_table_name",
+    "sanitize_external_loader_table_name",
+    "sanitize_duckdb_sql_table_name",
 ]

@@ -44,6 +44,7 @@ export interface ServerConfig {
     DISABLE_FILE_UPLOAD: boolean;
     PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
+    AVAILABLE_LANGUAGES: string[];
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
     WORKSPACE_BACKEND: string; // 'local' | 'azure_blob'
@@ -56,6 +57,8 @@ export interface ModelConfig {
     api_key?: string;
     api_base?: string;
     api_version?: string;
+    /** True for models configured server-side via .env. Their credentials never leave the server. */
+    is_global?: boolean;
 }
 
 
@@ -66,6 +69,7 @@ export type FocusedId =
 
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
+    autoChartInsight: boolean;
     defaultChartWidth: number;
     defaultChartHeight: number;
     maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 2.0)
@@ -91,9 +95,16 @@ export interface DataFormulatorState {
     // Identity management: user identity (if logged in) or browser identity (localStorage-based)
     // Always initialized with browser identity, updated to user identity if logged in
     identity: Identity;
+    /**
+     * Server-managed global models loaded from the backend on every app start.
+     * These are NOT persisted by redux-persist (blacklisted in store.ts) so they
+     * are always refreshed from the latest server configuration.
+     */
+    globalModels: ModelConfig[];
+    /** User-added models, persisted across browser sessions. */
     models: ModelConfig[];
     selectedModelId: string | undefined;
-    testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
+    testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}[];
 
     tables : DictTable[];
     charts: Chart[];
@@ -152,6 +163,7 @@ const initialState: DataFormulatorState = {
     },
 
     identity: { type: 'browser', id: getBrowserId() },
+    globalModels: [],
     models: [],
     selectedModelId: undefined,
     testedModels: [],
@@ -178,12 +190,14 @@ const initialState: DataFormulatorState = {
         DISABLE_FILE_UPLOAD: false,
         PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
+        AVAILABLE_LANGUAGES: ['en', 'zh'],
         DEV_MODE: false,
         WORKSPACE_BACKEND: 'local',
     },
 
     config: {
         formulateTimeoutSeconds: 60,
+        autoChartInsight: false,
         defaultChartWidth: 400,
         defaultChartHeight: 300,
         maxStretchFactor: 2.0,
@@ -259,6 +273,47 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
 
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
 }
+
+/**
+ * Remove a table from Redux state (tables, conceptShelf, charts, agentActions, focus).
+ * Does NOT send any server-side delete requests — the caller decides whether
+ * server cleanup is needed.
+ */
+let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
+    const tableToDelete = state.tables.find(t => t.id === tableId);
+    if (!tableToDelete) return;
+
+    const directChildren = state.tables.filter(t =>
+        t.derive?.trigger.tableId === tableId ||
+        t.derive?.source.includes(tableId)
+    );
+
+    if (directChildren.length > 0 && tableToDelete.derive) {
+        const parentTriggerId = tableToDelete.derive.trigger.tableId;
+        state.tables = state.tables.map(t => {
+            if (!t.derive || t.derive.trigger.tableId !== tableId) return t;
+            return { ...t, derive: { ...t.derive, trigger: { ...t.derive.trigger, tableId: parentTriggerId } } };
+        });
+    }
+
+    state.tables = state.tables.filter(t => t.id !== tableId);
+    state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef !== tableId);
+
+    const chartIdsToDelete = state.charts.filter(c => c.tableRef === tableId).map(c => c.id);
+    deleteChartsRoutine(state, chartIdsToDelete);
+
+    const survivingTableIds = new Set(state.tables.map(t => t.id));
+    state.agentActions = state.agentActions.filter(a => {
+        if (a.status === 'running') return true;
+        if (a.originTableId !== tableId) return true;
+        const resultTableIds = a.messages?.filter(m => m.resultTableId).map(m => m.resultTableId!) ?? [];
+        return resultTableIds.some(id => survivingTableIds.has(id));
+    });
+
+    if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
+        state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
+    }
+};
 
 export const fetchFieldSemanticType = createAsyncThunk(
     "dataFormulatorSlice/fetchFieldSemanticType",
@@ -385,10 +440,22 @@ export const fetchChartInsight = createAsyncThunk(
     }
 );
 
+/** Fast fetch: returns the list of server-configured models instantly (no
+ *  connectivity check).  The UI renders them immediately with a "testing"
+ *  spinner so the admin can see every configured model right away. */
+export const fetchGlobalModelList = createAsyncThunk(
+    "dataFormulatorSlice/fetchGlobalModelList",
+    async () => {
+        const response = await fetchWithIdentity(getUrls().LIST_GLOBAL_MODELS);
+        return response.json();
+    }
+);
+
+/** Slow fetch: runs parallel connectivity checks on all server-configured
+ *  models and returns each model's connected / disconnected status. */
 export const fetchAvailableModels = createAsyncThunk(
     "dataFormulatorSlice/fetchAvailableModels",
     async () => {
-        console.log(">>> call agent to fetch available models <<<")
         let message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
@@ -397,9 +464,10 @@ export const fetchAvailableModels = createAsyncThunk(
             }),
         };
 
-        // timeout the request after 20 seconds
+        // Backend checks run in parallel with max_tokens=3 + 10s timeout per
+        // model, so total wall-clock ≈ slowest single model (~10s worst case).
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 20000)
+        const timeoutId = setTimeout(() => controller.abort(), 30000)
 
         let response = await fetchWithIdentity(getUrls().CHECK_AVAILABLE_MODELS, {...message, signal: controller.signal })
 
@@ -461,6 +529,7 @@ export const dataFormulatorSlice = createSlice({
                 // Preserve local-only / sensitive fields from current state
                 identity: state.identity,
                 agentRules: state.agentRules || initialState.agentRules,
+                globalModels: state.globalModels || [],
                 models: state.models || [],
                 selectedModelId: state.selectedModelId || undefined,
                 testedModels: state.testedModels || [],
@@ -539,7 +608,7 @@ export const dataFormulatorSlice = createSlice({
                 state.selectedModelId = undefined;
             }
         },
-        updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}>) => {
+        updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}>) => {
             let id = action.payload.id;
             let status = action.payload.status;
             let message = action.payload.message;
@@ -551,83 +620,31 @@ export const dataFormulatorSlice = createSlice({
         },
         addTableToStore: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
-            // Compute content hash if not already set
             if (!table.contentHash) {
                 table = { ...table, contentHash: computeContentHash(table.rows, table.names) };
             }
-            state.tables = [...state.tables, table];
+
+            const existingIdx = state.tables.findIndex(t => t.id === table.id);
+            if (existingIdx >= 0) {
+                state.tables[existingIdx] = table;
+                state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef !== table.id);
+            } else {
+                state.tables = [...state.tables, table];
+            }
+
             state.charts = [...state.charts];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
-
             state.focusedId = { type: 'table', tableId: table.id };
         },
         deleteTable: (state, action: PayloadAction<string>) => {
-            let tableId = action.payload;
-            
-            // Find the table to delete
-            let tableToDelete = state.tables.find(t => t.id == tableId);
+            const tableId = action.payload;
+            const tableToDelete = state.tables.find(t => t.id === tableId);
             if (!tableToDelete) return;
-
-            // Clean up virtual table from workspace before removing from state
             cleanupVirtualTablesFromWorkspace([tableToDelete]);
-
-            // Find direct children: tables derived from or triggered by this table
-            let directChildren = state.tables.filter(t => 
-                t.derive?.trigger.tableId === tableId || 
-                t.derive?.source.includes(tableId)
-            );
-
-            // If the deleted table is derived and has children, re-parent their triggers
-            if (directChildren.length > 0 && tableToDelete.derive) {
-                const parentTriggerId = tableToDelete.derive.trigger.tableId;
-
-                state.tables = state.tables.map(t => {
-                    if (!t.derive) return t;
-
-                    // Only update trigger.tableId — derive.source stays as-is
-                    // since each table has its own specific data sources
-                    if (t.derive.trigger.tableId !== tableId) return t;
-
-                    return {
-                        ...t,
-                        derive: {
-                            ...t.derive,
-                            trigger: {
-                                ...t.derive.trigger,
-                                tableId: parentTriggerId,
-                            }
-                        }
-                    };
-                });
-            }
-            
-            // Remove the table
-            state.tables = state.tables.filter(t => t.id != tableId);
-
-            // Clean up concept shelf items referencing this table
-            state.conceptShelfItems = state.conceptShelfItems.filter(f => !(f.tableRef == tableId));
-            
-            // Delete charts that refer to this table
-            let chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
-            deleteChartsRoutine(state, chartIdsToDelete);
-
-            // Clean up agent actions: remove non-running actions whose originTableId is the deleted table
-            // AND whose resultTableIds all point to tables that no longer exist
-            const survivingTableIds = new Set(state.tables.map(t => t.id));
-            state.agentActions = state.agentActions.filter(a => {
-                if (a.status === 'running') return true; // never remove running actions
-                if (a.originTableId !== tableId) return true; // not related to deleted table
-                // Keep if any resultTableId still exists in surviving tables
-                const resultTableIds = a.messages
-                    ?.filter(m => m.resultTableId)
-                    .map(m => m.resultTableId!) ?? [];
-                return resultTableIds.some(id => survivingTableIds.has(id));
-            });
-
-            // If the deleted table was focused, reset focus
-            if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
-                state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
-            }
+            removeTableStateRoutine(state, tableId);
+        },
+        removeTableLocally: (state, action: PayloadAction<string>) => {
+            removeTableStateRoutine(state, action.payload);
         },
         updateTableAnchored: (state, action: PayloadAction<{tableId: string, anchored: boolean}>) => {
             let tableId = action.payload.tableId;
@@ -1236,28 +1253,55 @@ export const dataFormulatorSlice = createSlice({
                 }
             }
         })
-        .addCase(fetchAvailableModels.fulfilled, (state, action) => {
-            let defaultModels = action.payload;
+        .addCase(fetchGlobalModelList.fulfilled, (state, action) => {
+            // Populate globalModels so the UI renders every configured model
+            // immediately.  Status starts as "unknown"; the user can click
+            // "Test" to verify connectivity, or errors surface on first use.
+            const models: ModelConfig[] = action.payload;
+            state.globalModels = models;
 
-            state.models = [
-                ...defaultModels, 
-                ...state.models.filter(e => !defaultModels.some((m: ModelConfig) => 
-                    m.endpoint === e.endpoint && m.model === e.model && 
-                    m.api_base === e.api_base && m.api_version === e.api_version
-                ))
+            // Reset all global model statuses to "configured" on every app start.
+            // "configured" means: admin has set this up in .env, ready to use,
+            // but connectivity has not been verified this session.
+            // testedModels is persisted by redux-persist, so without this reset
+            // stale "ok" statuses from a previous session would linger.
+            // User-added model test results are preserved.
+            const globalIds = new Set(models.map(m => m.id));
+            state.testedModels = [
+                ...models.map(m => ({ id: m.id, status: 'configured' as const, message: '' })),
+                ...state.testedModels.filter(t => !globalIds.has(t.id)),
             ];
-            
-            state.testedModels = [ 
-                ...defaultModels.map((m: ModelConfig) => {return {id: m.id, status: 'ok'}}) ,
-                ...state.testedModels.filter(t => !defaultModels.map((m: ModelConfig) => m.id).includes(t.id))
-            ]
 
-            if (defaultModels.length > 0 && state.selectedModelId == undefined) {
-                state.selectedModelId = defaultModels[0].id;
+            // Auto-select the first global model when nothing is selected.
+            if (state.selectedModelId == undefined && models.length > 0) {
+                state.selectedModelId = models[0].id;
             }
+        })
+        .addCase(fetchAvailableModels.fulfilled, (state, action) => {
+            // Phase 2 (after connectivity checks): update statuses for each model.
+            const serverModels: (ModelConfig & { status: string; error: string | null })[] = action.payload;
 
-            // console.log("load model complete");
-            // console.log("state.models", state.models);
+            // Update globalModels with the full response (may include extra fields).
+            state.globalModels = serverModels;
+
+            // Replace global model entries in testedModels with real statuses,
+            // preserving user-model test results.
+            state.testedModels = [
+                ...serverModels.map(m => ({
+                    id: m.id,
+                    status: (m.status === 'connected' ? 'ok' : 'error') as 'ok' | 'error' | 'testing' | 'unknown' | 'configured',
+                    message: m.error ?? '',
+                })),
+                ...state.testedModels.filter(t => !serverModels.some(m => m.id === t.id)),
+            ];
+
+            // Auto-select the first connected global model when nothing is selected.
+            if (state.selectedModelId == undefined) {
+                const firstConnected = serverModels.find(m => m.status === 'connected');
+                if (firstConnected) {
+                    state.selectedModelId = firstConnected.id;
+                }
+            }
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
             let codeExplResponse = action.payload;
@@ -1376,8 +1420,13 @@ const selectTriggerCharts = createSelector(
 );
 
 export const dfSelectors = {
-    getActiveModel: (state: DataFormulatorState) : ModelConfig => {
-        return state.models.find(m => m.id == state.selectedModelId) || state.models[0];
+    /** All models visible in the UI: global (server-managed) first, then user-added. */
+    getAllModels: (state: DataFormulatorState): ModelConfig[] => {
+        return [...(state.globalModels ?? []), ...state.models];
+    },
+    getActiveModel: (state: DataFormulatorState): ModelConfig | undefined => {
+        const all = [...(state.globalModels ?? []), ...state.models];
+        return all.find(m => m.id == state.selectedModelId) ?? all[0];
     },
     getEffectiveTableId: (state: DataFormulatorState): string | undefined => {
         if (!state.focusedId) return undefined;

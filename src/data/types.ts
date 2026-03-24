@@ -17,9 +17,8 @@ export const TypeList = [Type.Auto, Type.Number, Type.Date, Type.String]; //[Typ
 const coerceBoolean = (v: any): boolean | null => (v == null || v === '' ? null : v === 'false' ? false : !!v);
 const coerceNumber = (v: any): number | null => (v == null || v === '' ? null : +v);
 const coerceDate = (v: any, format?: any) => {
-    // const d = format ? format : Date;
-    //return v == null || v === '' ? null : new Date(v);
-    //TODO: follow the standard date
+    if (v == null || v === '') return null;
+    if (v instanceof Date) return v.toISOString();
     return v;
 };
 const coerceString = (v: any) => (v == null || v === '' ? null : v);

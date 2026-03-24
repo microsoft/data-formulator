@@ -2,8 +2,9 @@ from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 import pandas as pd
 import pyarrow as pa
-import re
 import logging
+
+from data_formulator.datalake.table_names import sanitize_external_loader_table_name
 
 if TYPE_CHECKING:
     from data_formulator.datalake.workspace import Workspace
@@ -16,38 +17,9 @@ SENSITIVE_PARAMS = {'password', 'api_key', 'secret', 'token', 'access_key', 'sec
 
 
 def sanitize_table_name(name_as: str) -> str:
-    if not name_as:
-        raise ValueError("Table name cannot be empty")
-    
-    # Remove any SQL injection attempts
-    name_as = name_as.replace(";", "").replace("--", "").replace("/*", "").replace("*/", "")
-    
-    # Replace invalid characters with underscores
-    # This includes special characters, spaces, dots, dashes, and other non-alphanumeric chars
-    sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', name_as)
-    
-    # Ensure the name starts with a letter or underscore
-    if not sanitized[0].isalpha() and sanitized[0] != '_':
-        sanitized = '_' + sanitized
-    
-    # Ensure the name is not a SQL keyword
-    sql_keywords = {
-        'SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT',
-        'OFFSET', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'ON',
-        'AND', 'OR', 'NOT', 'NULL', 'TRUE', 'FALSE', 'UNION', 'ALL', 'DISTINCT',
-        'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'TABLE', 'VIEW', 'INDEX',
-        'ALTER', 'ADD', 'COLUMN', 'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES',
-        'CONSTRAINT', 'DEFAULT', 'CHECK', 'UNIQUE', 'CASCADE', 'RESTRICT'
-    }
-    
-    if sanitized.upper() in sql_keywords:
-        sanitized = '_' + sanitized
-    
-    # Ensure the name is not too long (common SQL limit is 63 characters)
-    if len(sanitized) > 63:
-        sanitized = sanitized[:63]
-    
-    return sanitized
+    """Backward-compatible alias; see :func:`sanitize_external_loader_table_name`."""
+    return sanitize_external_loader_table_name(name_as)
+
 
 class ExternalDataLoader(ABC):
     """

@@ -38,6 +38,8 @@ dependencies = [
     "scikit-learn",
     "pyyaml",
     "pyarrow>=13.0.0",
+    "xlrd",
+    "openpyxl>=3.1.0",
     "yfinance",
     # Data-loader deps (all included by default; try/except keeps things safe)
     "pymongo",                  # mongodb
@@ -69,4 +71,5 @@ data_formulator = "data_formulator:run_app"
 [tool.uv]
 dev-dependencies = [
     "build",
+    "pytest",
 ]

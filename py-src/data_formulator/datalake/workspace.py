@@ -21,7 +21,7 @@ import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import pandas as pd
 import pyarrow as pa
@@ -32,9 +32,11 @@ from data_formulator.datalake.metadata import (
     TableMetadata,
     load_metadata,
     save_metadata,
+    update_metadata,
     metadata_exists,
 )
 from data_formulator.datalake.parquet_utils import (
+    safe_data_filename,
     sanitize_table_name,
     get_arrow_column_info,
     compute_arrow_table_hash,
@@ -217,18 +219,38 @@ class Workspace:
     def get_file_path(self, filename: str) -> Path:
         """
         Get the full path for a file in the workspace.
-        
+
+        Uses :func:`safe_data_filename` for Unicode-safe sanitisation:
+        extracts the basename to prevent path traversal while preserving
+        non-ASCII characters (Chinese, Japanese, etc.).
+
+        For backward compatibility, if the Unicode-named file does not
+        exist on disk, falls back to the legacy ``secure_filename`` name
+        so that workspaces created before this change continue to work.
+
         Args:
             filename: Name of the file
             
         Returns:
             Full path to the file
         """
-        # secure_filename strips path separators and ".." components.
-        safe_filename = secure_filename(filename)
-        if not safe_filename:
-            raise ValueError(f"Invalid filename: {filename!r}")
-        return self._path / safe_filename
+        basename = safe_data_filename(filename)
+        result = self._path / basename
+        try:
+            result.resolve().relative_to(self._path.resolve())
+        except ValueError:
+            raise ValueError(f"Path traversal detected: {filename!r}")
+
+        # Legacy fallback: files saved before Unicode filename support
+        # were written with secure_filename (which strips non-ASCII chars).
+        if not result.exists():
+            legacy_name = secure_filename(filename)
+            if legacy_name and legacy_name != basename:
+                legacy_path = self._path / legacy_name
+                if legacy_path.exists():
+                    return legacy_path
+
+        return result
     
     def file_exists(self, filename: str) -> bool:
         """
@@ -259,18 +281,38 @@ class Workspace:
         if table is None:
             return False
         
-        # Delete the file
         file_path = self.get_file_path(table.filename)
         if file_path.exists():
             file_path.unlink()
         
-        # Remove from metadata
-        metadata.remove_table(table_name)
-        self.save_metadata(metadata)
+        removed = [False]
+
+        def _remove(m: WorkspaceMetadata) -> None:
+            removed[0] = m.remove_table(table_name)
+
+        self._atomic_update_metadata(_remove)
         
         logger.info(f"Deleted table {table_name} from workspace {self._safe_id}")
-        return True
-    
+        return removed[0]
+
+    # ── Metadata helpers ─────────────────────────────────────────────
+
+    def _atomic_update_metadata(
+        self,
+        updater: "Callable[[WorkspaceMetadata], None]",
+    ) -> WorkspaceMetadata:
+        """Atomically read → update → write workspace metadata.
+
+        Uses :func:`update_metadata` which holds a **single** file lock
+        across the entire read-modify-write cycle, preventing lost updates
+        when multiple requests modify metadata concurrently.
+
+        Subclasses (e.g. Azure Blob) should override this to provide
+        their own concurrency control.
+        """
+        self._metadata_cache = update_metadata(self._path, updater)
+        return self._metadata_cache
+
     def get_metadata(self) -> WorkspaceMetadata:
         if self._metadata_cache is not None:
             return self._metadata_cache
@@ -279,7 +321,6 @@ class Workspace:
     
     def save_metadata(self, metadata: WorkspaceMetadata) -> None:
         save_metadata(self._path, metadata)
-        # Update the cache with the just-saved metadata
         self._metadata_cache = metadata
 
     def invalidate_metadata_cache(self) -> None:
@@ -287,9 +328,8 @@ class Workspace:
         self._metadata_cache = None
     
     def add_table_metadata(self, table: TableMetadata) -> None:
-        metadata = self.get_metadata()
-        metadata.add_table(table)
-        self.save_metadata(metadata)
+        """Atomically add or update a table entry in workspace metadata."""
+        self._atomic_update_metadata(lambda m: m.add_table(table))
     
     def get_table_metadata(self, table_name: str) -> Optional[TableMetadata]:
         """Look up table metadata, falling back to sanitized name."""
@@ -329,6 +369,40 @@ class Workspace:
             counter += 1
         return f"{base}_{counter}"
     
+    def delete_tables_by_source_file(self, source_filename: str) -> list[str]:
+        """Delete all tables whose source filename matches.
+
+        Atomically removes the metadata entries, then deletes the
+        physical file.  Used when re-uploading a file so that sheets
+        removed in the new version don't linger as orphans.
+
+        Returns:
+            Names of the deleted tables.
+        """
+        safe_filename = safe_data_filename(source_filename)
+        deleted: list[str] = []
+
+        def _cleanup(metadata: WorkspaceMetadata) -> None:
+            for name, table in list(metadata.tables.items()):
+                if table.filename == safe_filename:
+                    metadata.remove_table(name)
+                    deleted.append(name)
+
+        self._atomic_update_metadata(_cleanup)
+
+        if deleted:
+            try:
+                file_path = self.get_file_path(safe_filename)
+                if file_path.exists():
+                    file_path.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete source file {safe_filename}: {e}")
+            logger.info(
+                f"Deleted {len(deleted)} table(s) for source file "
+                f"{safe_filename}: {deleted}"
+            )
+        return deleted
+
     def cleanup(self) -> None:
         """ Remove the entire workspace directory. """
         if self._path.exists():
@@ -689,7 +763,7 @@ class Workspace:
 
         # 2. State JSON
         (sess_dir / "state.json").write_text(
-            json.dumps(state, default=str), encoding="utf-8"
+            json.dumps(state, default=str, ensure_ascii=False), encoding="utf-8"
         )
 
         saved_at = datetime.now(timezone.utc).isoformat()
@@ -748,7 +822,7 @@ class Workspace:
         """Export current state + workspace as a .dfsession zip."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("state.json", json.dumps(state, default=str))
+            zf.writestr("state.json", json.dumps(state, default=str, ensure_ascii=False))
             with tempfile.TemporaryDirectory(prefix="df_session_export_") as tmp_dir:
                 ws_snap = Path(tmp_dir) / "workspace"
                 self.save_workspace_snapshot(ws_snap)

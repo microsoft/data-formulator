@@ -5,6 +5,7 @@ import { Chart, DictTable, FieldItem } from '../components/ComponentType';
 import { assembleVegaChart, prepVisTable } from '../app/utils';
 import { exportTableToDsv } from '../data/utils';
 import { ClientConfig } from '../app/dfSlice';
+import i18n from '../i18n';
 
 // Function to generate CSS styling based on report type
 const generateStyleCSS = (style: string): string => {
@@ -213,7 +214,7 @@ ${JSON.stringify(modifiedSpec, null, 2)}
             result = result.replace(original, specReplacement);
         }
 
-        result += '\n\n---\ncreated with AI using [Data Formulator](https://github.com/microsoft/data-formulator)\n\n';
+        result += `\n\n---\n${i18n.t('report.createdWithAI')} [${i18n.t('app.name')}](https://github.com/microsoft/data-formulator)\n\n`;
 
         // Prepend CSS styling based on report type
         const cssStyles = generateStyleCSS(reportStyle);
@@ -268,7 +269,7 @@ export const openChartifactViewer = async (chartifactMarkdown: string) => {
                     interactiveDocument?: any;
                 } = {
                     type: 'hostRenderRequest',
-                    title: 'Data Formulator Report',
+                    title: `${i18n.t('app.name')} ${i18n.t('report.reports')}`,
                     markdown: chartifactMarkdown
                 };
 

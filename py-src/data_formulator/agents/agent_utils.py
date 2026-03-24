@@ -3,8 +3,13 @@
 
 import json
 import keyword
+import logging
+import time
+
 import numpy as np
 import re
+
+_logger = logging.getLogger(__name__)
 
 def string_to_py_varname(var_str): 
     var_name = re.sub(r'\W|^(?=\d)', '_', var_str)
@@ -106,6 +111,57 @@ def find_matching_bracket(text, start_index, bracket_type='curly'):
                 return index  
     return -1  
   
+def _strip_json_comments(s: str) -> str:
+    """Remove single-line ``//`` comments from a JSON-like string.
+
+    Correctly skips ``//`` that appears inside quoted strings.
+    """
+    result: list[str] = []
+    in_string = False
+    escape_next = False
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+            i += 1
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            result.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_string = not in_string
+            result.append(ch)
+            i += 1
+            continue
+        if not in_string and s[i:i + 2] == '//':
+            while i < len(s) and s[i] != '\n':
+                i += 1
+            continue
+        result.append(ch)
+        i += 1
+    return ''.join(result)
+
+
+def _fix_json_trailing_commas(s: str) -> str:
+    """Remove trailing commas before ``}`` or ``]``."""
+    return re.sub(r',\s*([}\]])', r'\1', s)
+
+
+def _lenient_json_loads(json_str: str):
+    """Try ``json.loads`` first; on failure, strip comments / trailing commas
+    and retry.  Returns the parsed object or raises ``ValueError``.
+    """
+    try:
+        return json.loads(json_str)
+    except ValueError:
+        cleaned = _fix_json_trailing_commas(_strip_json_comments(json_str))
+        return json.loads(cleaned)
+
+
 def extract_json_objects(text):  
     """Extracts JSON objects and arrays from a text string.  
     Returns a list of parsed JSON objects and arrays.  
@@ -137,7 +193,7 @@ def extract_json_objects(text):
           
         json_str = text[start_index:end_index + 1]  
         try:  
-            json_obj = json.loads(json_str)  
+            json_obj = _lenient_json_loads(json_str)
             json_objects.append(json_obj)  
         except ValueError:  
             pass  
@@ -145,6 +201,69 @@ def extract_json_objects(text):
         start_index = end_index + 1  
   
     return json_objects  
+
+
+def supplement_missing_block(client, messages, assistant_content,
+                             parsed_json, code_blocks, prefix="[Agent]"):
+    """When model produces only JSON or only code, request the missing block.
+
+    Smaller models often fail to produce both JSON + code in a single
+    response.  Rather than retrying the full prompt (which tends to
+    reproduce the same partial output), we ask for *just* the missing
+    piece in a focused single-task follow-up — much higher success rate.
+
+    Returns (parsed_json, code_blocks, supplement_content, elapsed_seconds).
+    supplement_content is None if no supplement was needed or it failed.
+    """
+    has_json = parsed_json is not None
+    has_code = len(code_blocks) > 0
+
+    if has_json == has_code:
+        return parsed_json, code_blocks, None, 0.0
+
+    if has_json:
+        output_var = parsed_json.get('output_variable', 'result_df') or 'result_df'
+        _logger.info(f"{prefix} JSON found but no Python code — requesting supplement")
+        prompt = (
+            "You produced the JSON spec but no Python code block. "
+            "Now write ONLY the ```python``` code block. "
+            f"The final DataFrame must be assigned to `{output_var}`."
+        )
+    else:
+        _logger.info(f"{prefix} Python code found but no JSON spec — requesting supplement")
+        prompt = (
+            "You produced the Python code but no JSON spec. "
+            "Now write ONLY the ```json``` spec block. "
+            "Make sure to include `output_variable` matching the "
+            "variable name used in your code."
+        )
+
+    try:
+        t0 = time.time()
+        supp_resp = client.get_completion(messages=[
+            *messages,
+            {"role": "assistant", "content": assistant_content},
+            {"role": "user", "content": prompt},
+        ])
+        elapsed = time.time() - t0
+        supp_text = supp_resp.choices[0].message.content
+
+        if has_json:
+            supp_codes = extract_code_from_gpt_response(supp_text + "\n", "python")
+            if supp_codes:
+                _logger.info(f"{prefix} Supplement succeeded — got Python code")
+                return parsed_json, supp_codes, supp_text, elapsed
+            _logger.warning(f"{prefix} Supplement did not produce Python code")
+        else:
+            for jb in extract_json_objects(supp_text + "\n"):
+                if isinstance(jb, dict):
+                    _logger.info(f"{prefix} Supplement succeeded — got JSON spec")
+                    return jb, code_blocks, supp_text, elapsed
+            _logger.warning(f"{prefix} Supplement did not produce JSON spec")
+    except Exception as e:
+        _logger.warning(f"{prefix} Supplement call failed: {e}")
+
+    return parsed_json, code_blocks, None, 0.0
 
 
 def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
@@ -269,5 +388,49 @@ def generate_data_summary(
     # Join with visual separators
     separator = "\n" + "─" * 60 + "\n\n"
     return separator.join(table_summaries)
+
+
+def ensure_output_variable_in_code(code: str, output_variable: str) -> tuple[str, bool, str]:
+    """Zero-cost regex patch: align code's actual output with the JSON-declared variable.
+
+    This is a deterministic local fix (<1ms, 0 tokens) that runs *before*
+    sandbox execution, avoiding an expensive LLM repair round-trip.
+    It scans all top-level assignments (not just the last line, which may
+    be ``print(...)``), picks the last non-library one, and appends an
+    alias ``output_variable = <detected>``.
+
+    Returns
+    -------
+    (patched_code, was_patched, detected_variable_name)
+    """
+    if not output_variable or not code:
+        return code, False, ""
+
+    # Check if output_variable appears as an assignment target (= but not ==, !=, <=, >=)
+    pattern = rf'(?:^|\n)\s*{re.escape(output_variable)}\s*=(?!=)'
+    if re.search(pattern, code):
+        return code, False, ""
+
+    # output_variable not assigned — find the likely actual output variable.
+    all_assignments = re.findall(r'^([a-zA-Z_]\w*)\s*=(?!=)', code, re.MULTILINE)
+    if not all_assignments:
+        return code, False, ""
+
+    LIBRARY_NAMES = frozenset({
+        'pd', 'np', 'duckdb', 'conn', 'cursor', 'engine', 'warnings',
+        'math', 'json', 're', 'datetime', 'os', 'sys', 'random', 'time',
+        'itertools', 'functools', 'operator', 'collections', 'statistics',
+    })
+
+    candidates = [v for v in all_assignments
+                  if v not in LIBRARY_NAMES and not v.startswith('_')]
+
+    if candidates:
+        best = candidates[-1]
+    else:
+        best = all_assignments[-1]
+
+    patched_code = code.rstrip() + f"\n{output_variable} = {best}\n"
+    return patched_code, True, best
 
 

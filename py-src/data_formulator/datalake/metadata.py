@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, date, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal, Any
+from typing import Callable, Literal, Any
 import yaml
 import logging
 import tempfile
@@ -213,6 +213,7 @@ class TableMetadata:
     last_synced: datetime | None = None
     row_count: int | None = None
     columns: list[ColumnInfo] | None = None
+    original_name: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for YAML serialization."""
@@ -241,6 +242,8 @@ class TableMetadata:
             result["row_count"] = self.row_count
         if self.columns is not None:
             result["columns"] = [col.to_dict() for col in self.columns]
+        if self.original_name is not None:
+            result["original_name"] = self.original_name
         
         return result
 
@@ -274,6 +277,7 @@ class TableMetadata:
             last_synced=last_synced,
             row_count=data.get("row_count"),
             columns=columns,
+            original_name=data.get("original_name"),
         )
 
 
@@ -354,99 +358,94 @@ class WorkspaceMetadata:
         )
 
 
-def load_metadata(workspace_path: Path) -> WorkspaceMetadata:
-    """
-    Load workspace metadata from YAML file with file locking.
+# ── Internal helpers (no locking — caller must hold WorkspaceLock) ─────
 
-    Args:
-        workspace_path: Path to the workspace directory
-
-    Returns:
-        WorkspaceMetadata object
-
-    Raises:
-        FileNotFoundError: If metadata file doesn't exist
-        ValueError: If metadata file is invalid
-    """
+def _read_metadata_file(workspace_path: Path) -> WorkspaceMetadata:
+    """Read and parse workspace.yaml.  **Caller must already hold the lock.**"""
     metadata_file = workspace_path / METADATA_FILENAME
-
     if not metadata_file.exists():
         raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
+    try:
+        with open(metadata_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        if not content or not content.strip():
+            raise ValueError(
+                f"Empty metadata file — possible concurrent write conflict. "
+                f"File: {metadata_file}"
+            )
+        data = yaml.safe_load(content)
+        if data is None:
+            raise ValueError("Metadata file parsed to None")
+        return WorkspaceMetadata.from_dict(data)
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in metadata file: {e}")
 
-    # Acquire shared lock for reading
-    with WorkspaceLock(workspace_path):
+
+def _write_metadata_file(workspace_path: Path, metadata: WorkspaceMetadata) -> None:
+    """Atomically write workspace.yaml.  **Caller must already hold the lock.**"""
+    metadata_file = workspace_path / METADATA_FILENAME
+    metadata.updated_at = datetime.now(timezone.utc)
+    workspace_path.mkdir(parents=True, exist_ok=True)
+
+    temp_fd, temp_path = tempfile.mkstemp(
+        dir=workspace_path,
+        prefix=".workspace_",
+        suffix=".yaml.tmp",
+        text=True,
+    )
+    try:
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+            yaml.dump(
+                metadata.to_dict(),
+                f,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            )
+        os.replace(temp_path, metadata_file)
+        logger.debug(f"Saved metadata to {metadata_file}")
+    except Exception:
         try:
-            with open(metadata_file, "r", encoding="utf-8") as f:
-                content = f.read()
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
 
-            # Check for empty file (can happen during concurrent writes)
-            if not content or not content.strip():
-                raise ValueError(
-                    f"Empty metadata file - this may indicate a concurrent write conflict. "
-                    f"File: {metadata_file}"
-                )
 
-            data = yaml.safe_load(content)
+# ── Public API (with locking) ────────────────────────────────────────
 
-            if data is None:
-                raise ValueError("Metadata file parsed to None")
-
-            return WorkspaceMetadata.from_dict(data)
-
-        except yaml.YAMLError as e:
-            raise ValueError(f"Invalid YAML in metadata file: {e}")
+def load_metadata(workspace_path: Path) -> WorkspaceMetadata:
+    """Load workspace metadata from YAML file with file locking."""
+    with WorkspaceLock(workspace_path):
+        return _read_metadata_file(workspace_path)
 
 
 def save_metadata(workspace_path: Path, metadata: WorkspaceMetadata) -> None:
-    """
-    Save workspace metadata to YAML file with atomic writes and file locking.
-
-    Uses atomic write (write to temp file + rename) to prevent partial writes
-    and file locking to prevent concurrent modifications.
-
-    Args:
-        workspace_path: Path to the workspace directory
-        metadata: WorkspaceMetadata object to save
-    """
-    metadata_file = workspace_path / METADATA_FILENAME
-
-    # Update the updated_at timestamp
-    metadata.updated_at = datetime.now(timezone.utc)
-
-    # Ensure directory exists
-    workspace_path.mkdir(parents=True, exist_ok=True)
-
-    # Acquire exclusive lock for writing
+    """Save workspace metadata to YAML file with atomic write and file locking."""
     with WorkspaceLock(workspace_path):
-        # Write to temporary file first (atomic operation)
-        temp_fd, temp_path = tempfile.mkstemp(
-            dir=workspace_path,
-            prefix=".workspace_",
-            suffix=".yaml.tmp",
-            text=True
-        )
+        _write_metadata_file(workspace_path, metadata)
 
-        try:
-            with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
-                yaml.dump(
-                    metadata.to_dict(),
-                    f,
-                    default_flow_style=False,
-                    allow_unicode=True,
-                    sort_keys=False,
-                )
 
-            # Atomic rename - replaces old file
-            os.replace(temp_path, metadata_file)
-            logger.debug(f"Saved metadata to {metadata_file}")
+def update_metadata(
+    workspace_path: Path,
+    updater: Callable[[WorkspaceMetadata], None],
+) -> WorkspaceMetadata:
+    """Atomically read → update → write workspace metadata.
 
-        except Exception as e:
-            # Clean up temp file on error
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
-            raise e
+    The *updater* callback receives the current :class:`WorkspaceMetadata`
+    and should mutate it in place.  The entire read-modify-write is
+    protected by a **single** lock acquisition, preventing the
+    lost-update race condition that occurs when ``load_metadata`` and
+    ``save_metadata`` each acquire their own independent lock.
+
+    Returns:
+        The updated :class:`WorkspaceMetadata` (useful for refreshing caches).
+    """
+    with WorkspaceLock(workspace_path):
+        metadata = _read_metadata_file(workspace_path)
+        updater(metadata)
+        _write_metadata_file(workspace_path, metadata)
+        return metadata
 
 
 def metadata_exists(workspace_path: Path) -> bool:

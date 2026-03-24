@@ -12,15 +12,13 @@ import traceback
 from flask import request, jsonify, Blueprint, Response
 import pandas as pd
 from pathlib import Path
-from werkzeug.utils import secure_filename
-
 from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
 from data_formulator.auth import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
-from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name
-from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file
-from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata
+from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename
+from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, normalize_text_encoding
+from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
 
 import re
 
@@ -200,6 +198,12 @@ def list_tables():
                         columns = [{"name": c["name"], "type": c["type"]} for c in schema_info.get("columns", [])]
                     except Exception:
                         pass
+                if not columns:
+                    try:
+                        df = workspace.read_data_as_df(table_name)
+                        columns = [{"name": str(c), "type": str(df[c].dtype)} for c in df.columns]
+                    except Exception:
+                        pass
                 row_count = meta.row_count
                 if row_count is None and meta.file_type == "parquet":
                     try:
@@ -208,7 +212,11 @@ def list_tables():
                     except Exception:
                         row_count = 0
                 if row_count is None:
-                    row_count = 0
+                    try:
+                        df = workspace.read_data_as_df(table_name)
+                        row_count = len(df)
+                    except Exception:
+                        row_count = 0
                 sample_rows = []
                 if row_count > 0:
                     try:
@@ -229,6 +237,9 @@ def list_tables():
                     "sample_rows": sample_rows,
                     "view_source": None,
                     "source_metadata": source_metadata,
+                    "source_type": meta.source_type,
+                    "source_filename": meta.filename,
+                    "original_name": meta.original_name,
                 })
             except Exception as e:
                 logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
@@ -408,26 +419,27 @@ def create_table():
             return jsonify({"status": "error", "message": "No table name provided"}), 400
 
         workspace = _get_workspace()
-        base_name = parquet_sanitize_table_name(table_name)
-        sanitized_table_name = base_name
-        counter = 1
-        while sanitized_table_name in workspace.list_tables():
-            sanitized_table_name = f"{base_name}_{counter}"
-            counter += 1
+        sanitized_table_name = parquet_sanitize_table_name(table_name)
+        replace_source = request.form.get('replace_source', '').lower() == 'true'
 
         if has_file:
             file = request.files['file']
             if not file.filename or not is_supported_file(file.filename):
                 return jsonify({"status": "error", "message": "Unsupported file format"}), 400
-            safe_name = secure_filename(file.filename)
-            if not safe_name:
+            try:
+                safe_name = safe_data_filename(file.filename)
+            except ValueError:
                 return jsonify({"status": "error", "message": "Invalid filename"}), 400
+
+            if replace_source:
+                workspace.delete_tables_by_source_file(safe_name)
+
             meta = save_uploaded_file(
                 workspace,
                 file.stream,
                 safe_name,
                 table_name=sanitized_table_name,
-                overwrite=False,
+                overwrite=True,
             )
             sanitized_table_name = meta.name
             row_count = meta.row_count
@@ -436,6 +448,12 @@ def create_table():
                 df = workspace.read_data_as_df(sanitized_table_name)
                 row_count = len(df)
                 columns = list(df.columns)
+                meta.row_count = row_count
+                meta.columns = [
+                    ColumnInfo(name=str(c), dtype=str(df[c].dtype))
+                    for c in df.columns
+                ]
+                workspace.add_table_metadata(meta)
         else:
             # raw_data can come as a file upload (Blob) or as a form field
             if 'raw_data' in request.files:
@@ -450,18 +468,77 @@ def create_table():
             row_count = len(df)
             columns = list(df.columns)
 
+        meta = workspace.get_table_metadata(sanitized_table_name)
+        if meta is not None and meta.original_name is None:
+            meta.original_name = table_name
+            workspace.add_table_metadata(meta)
+
         return jsonify({
             "status": "success",
             "table_name": sanitized_table_name,
             "row_count": row_count,
             "columns": columns,
-            "original_name": base_name,
-            "is_renamed": base_name != sanitized_table_name,
         })
     except Exception as e:
         logger.error(f"Error creating table: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
+
+
+@tables_bp.route('/parse-file', methods=['POST'])
+def parse_file():
+    """Parse an uploaded file and return data as JSON without saving to workspace.
+
+    Used for client-side preview of formats that the browser cannot parse
+    natively (e.g. legacy .xls).
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "No file provided"}), 400
+
+        file = request.files['file']
+        filename = file.filename or ''
+        if not filename or not is_supported_file(filename):
+            return jsonify({"status": "error", "message": "Unsupported file format"}), 400
+
+        ext = os.path.splitext(filename)[1].lower()
+
+        if ext in ('.xls', '.xlsx'):
+            engine = 'xlrd' if ext == '.xls' else 'openpyxl'
+            xls = pd.ExcelFile(file.stream, engine=engine)
+            sheets = []
+            for sheet_name in xls.sheet_names:
+                df = xls.parse(sheet_name)
+                df = df.where(df.notna(), None)
+                records = df.to_dict(orient='records')
+                sheets.append({
+                    "sheet_name": sheet_name,
+                    "columns": list(df.columns),
+                    "row_count": len(records),
+                    "data": records,
+                })
+            return jsonify({"status": "success", "sheets": sheets})
+        elif ext == '.csv':
+            import io
+            raw = normalize_text_encoding(file.stream.read(), 'csv')
+            df = pd.read_csv(io.BytesIO(raw))
+            df = df.where(df.notna(), None)
+            records = df.to_dict(orient='records')
+            return jsonify({
+                "status": "success",
+                "sheets": [{
+                    "sheet_name": "Sheet1",
+                    "columns": list(df.columns),
+                    "row_count": len(records),
+                    "data": records,
+                }],
+            })
+        else:
+            return jsonify({"status": "error", "message": f"Server-side parsing not supported for {ext}"}), 400
+
+    except Exception as e:
+        logger.error("Error parsing file", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 400
 
 
 @tables_bp.route('/sync-table-data', methods=['POST'])

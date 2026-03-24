@@ -70,6 +70,26 @@ def _warm_worker_loop(conn):
             _allowed_lib_prefixes.add(_rp)
     _allowed_lib_prefixes = tuple(_allowed_lib_prefixes)  # tuple for fast startswith()
 
+    # Pre-import heavy libraries BEFORE audit hooks so that libraries
+    # needing ctypes/dlopen (e.g., scipy/sklearn -> BLAS) can load freely.
+    # These stay in sys.modules for the lifetime of the worker.
+    try:
+        import numpy  # noqa: F401
+        import pandas  # noqa: F401
+        import duckdb  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        import scipy  # noqa: F401
+        from sklearn import (  # noqa: F401
+            linear_model, cluster, tree, ensemble,
+            svm, neighbors, decomposition, preprocessing,
+        )
+    except ImportError:
+        pass
+
+    import sys as _sys
+
     # Install audit hooks once -- they persist for the process lifetime.
     def block_mischief(event, arg):
         if type(event) != str:
@@ -96,26 +116,21 @@ def _warm_worker_loop(conn):
         # Block ctypes / dynamic library loading (could bypass audit hooks)
         if event in ("ctypes.dlopen", "ctypes.dlsym", "ctypes.set_errno"):
             raise IOError("ctypes access forbidden in sandbox")
-        # Block import of dangerous modules
+        # Block import of dangerous modules (allow re-import of ctypes
+        # since scipy/sklearn pre-loaded it for BLAS access).
         if event == "import" and type(arg[0]) == str:
             _blocked_modules = ("subprocess", "shutil", "socket", "http",
                                 "urllib", "requests", "ctypes", "multiprocessing",
                                 "signal", "resource")
             mod_name = arg[0].split(".")[0]
             if mod_name in _blocked_modules:
-                raise ImportError(f"import of '{mod_name}' is forbidden in sandbox")
+                if mod_name == "ctypes" and "ctypes" in _sys.modules:
+                    pass
+                else:
+                    raise ImportError(f"import of '{mod_name}' is forbidden in sandbox")
 
     addaudithook(block_mischief)
     del block_mischief
-
-    # Pre-import heavy libraries so first call is fast.
-    # These stay in sys.modules for the lifetime of the worker.
-    try:
-        import numpy  # noqa: F401
-        import pandas  # noqa: F401
-        import duckdb  # noqa: F401
-    except ImportError:
-        pass
 
     while True:
         try:
@@ -152,7 +167,22 @@ def _warm_worker_loop(conn):
             continue
 
         _allowed_workspace[0] = None
-        conn.send({"status": "ok", "allowed_objects": {k: namespace[k] for k in allowed_objects}})
+
+        result_objs = {k: namespace[k] for k in allowed_objects}
+        response_msg = {"status": "ok", "allowed_objects": result_objs}
+
+        # Collect DataFrame variable names for diagnostics.
+        try:
+            _df_names = [
+                k for k, v in namespace.items()
+                if isinstance(v, pandas.DataFrame)
+                and not k.startswith('_') and k not in allowed_objects
+            ]
+            response_msg["df_names"] = _df_names
+        except Exception:
+            pass
+
+        conn.send(response_msg)
 
     conn.close()
 
@@ -284,12 +314,19 @@ class LocalSandbox(Sandbox):
                 if result["status"] == "ok":
                     output_df = result["allowed_objects"][output_variable]
                     if not isinstance(output_df, pd.DataFrame):
+                        df_names = result.get("df_names", [])
                         return {
                             "status": "error",
                             "content": (
                                 f'Output variable "{output_variable}" is not a '
-                                f"DataFrame (type: {type(output_df).__name__})"
+                                f"DataFrame (type: {type(output_df).__name__}). "
+                                f"Available DataFrame variables in code: "
+                                f"{df_names if df_names else 'none'}. "
+                                f"This usually means the JSON spec's "
+                                f"output_variable does not match the variable "
+                                f"name actually used in the Python code."
                             ),
+                            "df_names": df_names,
                         }
                     return {"status": "ok", "content": output_df}
                 else:

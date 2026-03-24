@@ -29,6 +29,11 @@ export interface LoadTablePayload {
     // For file uploads to server: the raw File object
     file?: File;
     
+    // When true, the backend deletes all existing tables from the same source
+    // file before creating the new table.  Used by "Load All" to clean up
+    // orphaned sheets when re-uploading a file.
+    replaceSource?: boolean;
+
     // For database sources loaded via external data loader:
     dataLoaderType?: string;
     dataLoaderParams?: Record<string, string>;
@@ -66,52 +71,55 @@ export const loadTable = createAsyncThunk<
 >(
     'dataFormulator/loadTable',
     async (payload, { dispatch, getState }) => {
-        const { table, storeOnServer, file, dataLoaderType, dataLoaderParams, sourceTableName, importOptions } = payload;
+        const { table, storeOnServer, file, replaceSource, dataLoaderType, dataLoaderParams, sourceTableName, importOptions } = payload;
         const state = getState();
         const frontendRowLimit = state.config?.frontendRowLimit ?? 50000;
         const existingTables = state.tables;
 
         // === DUPLICATE CHECK ===
-        // Check if a table with the same id already exists locally
-        const existingById = existingTables.find(t => t.id === table.id);
-        if (existingById) {
-            // Table with same id already loaded — just focus it
-            dispatch(dfActions.setFocused({ type: 'table', tableId: existingById.id }));
-            return { table: existingById, duplicate: true };
-        }
+        // Skip when replaceSource is true — the user explicitly wants to
+        // refresh / replace data, so we must reach the server to trigger
+        // the source-file cleanup even if hashes match.
+        if (!replaceSource) {
+            const existingById = existingTables.find(t => t.id === table.id);
+            if (existingById) {
+                dispatch(dfActions.setFocused({ type: 'table', tableId: existingById.id }));
+                return { table: existingById, duplicate: true };
+            }
 
-        // Check by content hash — avoid loading identical data under a different name
-        const incomingHash = table.contentHash || computeContentHash(table.rows, table.names);
-        const existingByContent = existingTables.find(t => {
-            if (!t.contentHash) return false;
-            return t.contentHash === incomingHash;
-        });
-        if (existingByContent) {
-            dispatch(dfActions.setFocused({ type: 'table', tableId: existingByContent.id }));
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'warning',
-                component: 'data loader',
-                value: `This data is identical to the already-loaded table "${existingByContent.displayId}". Skipped duplicate load.`,
-            }));
-            return { table: existingByContent, duplicate: true };
-        }
+            const incomingHash = table.contentHash || computeContentHash(table.rows, table.names);
+            const existingByContent = existingTables.find(t => {
+                if (!t.contentHash) return false;
+                return t.contentHash === incomingHash;
+            });
+            if (existingByContent) {
+                dispatch(dfActions.setFocused({ type: 'table', tableId: existingByContent.id }));
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'warning',
+                    component: 'data loader',
+                    value: `This data is identical to the already-loaded table "${existingByContent.displayId}". Skipped duplicate load.`,
+                }));
+                return { table: existingByContent, duplicate: true };
+            }
 
-        // For workspace / virtual tables loaded from the DB manager, also check if the
-        // same workspace table (by virtual tableId) is already in the frontend.
-        if (table.virtual) {
-            const existingByVirtual = existingTables.find(t => t.virtual?.tableId === table.virtual?.tableId);
-            if (existingByVirtual) {
-                dispatch(dfActions.setFocused({ type: 'table', tableId: existingByVirtual.id }));
-                return { table: existingByVirtual, duplicate: true };
+            if (table.virtual) {
+                const existingByVirtual = existingTables.find(t => t.virtual?.tableId === table.virtual?.tableId);
+                if (existingByVirtual) {
+                    dispatch(dfActions.setFocused({ type: 'table', tableId: existingByVirtual.id }));
+                    return { table: existingByVirtual, duplicate: true };
+                }
             }
         }
         
-        let finalTable: DictTable = { ...table };
         let truncated = false;
         let originalRowCount = 0;
 
         const sourceType = table.source?.type;
+        const enrichedSource: DataSourceConfig | undefined = table.source
+            ? { ...table.source, originalTableName: table.source.originalTableName || table.displayId || table.id }
+            : undefined;
+        let finalTable: DictTable = { ...table, source: enrichedSource || table.source };
 
         if (storeOnServer) {
             // === STORE ON SERVER PATH ===
@@ -136,7 +144,7 @@ export const loadTable = createAsyncThunk<
                         if (listData.status === 'success') {
                             const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
                             if (wsTable) {
-                                finalTable = buildDictTableFromWorkspace(wsTable, table.source);
+                                finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
                             }
                         }
                     } else {
@@ -152,6 +160,9 @@ export const loadTable = createAsyncThunk<
                     const formData = new FormData();
                     formData.append('file', file);
                     formData.append('table_name', table.id);
+                    if (replaceSource) {
+                        formData.append('replace_source', 'true');
+                    }
                     
                     const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {
                         method: 'POST',
@@ -165,7 +176,7 @@ export const loadTable = createAsyncThunk<
                         if (listData.status === 'success') {
                             const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
                             if (wsTable) {
-                                finalTable = buildDictTableFromWorkspace(wsTable, table.source);
+                                finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
                             }
                         }
                     } else {
@@ -177,7 +188,7 @@ export const loadTable = createAsyncThunk<
                 }
             } else if (table.virtual) {
                 // Table already exists in workspace (e.g., loaded from DB table manager)
-                finalTable = { ...table };
+                finalTable = { ...table, source: enrichedSource || table.source };
             } else {
                 // Other sources (paste/url/example/extract): upload raw data to workspace
                 try {
@@ -195,6 +206,7 @@ export const loadTable = createAsyncThunk<
                         // Set virtual info from the response — virtual indicates server storage
                         finalTable = {
                             ...table,
+                            source: enrichedSource || table.source,
                             virtual: {
                                 tableId: data.table_name,
                                 rowCount: data.row_count,
@@ -237,6 +249,7 @@ export const loadTable = createAsyncThunk<
                         
                         finalTable = {
                             ...table,
+                            source: enrichedSource || table.source,
                             id: table.id,
                             displayId: table.displayId || table.id,
                             names,
@@ -266,10 +279,11 @@ export const loadTable = createAsyncThunk<
                     truncated = true;
                     finalTable = {
                         ...table,
+                        source: enrichedSource || table.source,
                         rows: table.rows.slice(0, frontendRowLimit),
                     };
                 } else {
-                    finalTable = { ...table };
+                    finalTable = { ...table, source: enrichedSource || table.source };
                 }
             }
         }
@@ -321,14 +335,31 @@ function buildDictTableFromWorkspace(
         }
     };
 
-    // Build source config for database tables
     const sourceMeta = wsTable.source_metadata;
-    const sourceConfig: DataSourceConfig = source || {
-        type: 'database',
-        databaseTable: wsTable.name,
-        canRefresh: sourceMeta != null,
-        lastRefreshed: Date.now(),
-    };
+    const backendOriginalName: string | undefined = wsTable.original_name || undefined;
+    let sourceConfig: DataSourceConfig;
+    if (source) {
+        sourceConfig = {
+            ...source,
+            originalTableName: source.originalTableName || backendOriginalName,
+        };
+    } else if (wsTable.source_type === 'upload' && wsTable.source_filename) {
+        const fn = wsTable.source_filename;
+        const dotIdx = fn.lastIndexOf('.');
+        sourceConfig = {
+            type: 'file',
+            fileName: fn,
+            originalTableName: backendOriginalName || (dotIdx > 0 ? fn.substring(0, dotIdx) : fn),
+        };
+    } else {
+        sourceConfig = {
+            type: 'database',
+            databaseTable: wsTable.name,
+            canRefresh: sourceMeta != null,
+            lastRefreshed: Date.now(),
+            originalTableName: backendOriginalName,
+        };
+    }
 
     return {
         id: wsTable.name,
