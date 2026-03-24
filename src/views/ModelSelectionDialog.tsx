@@ -91,7 +91,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         'azure': [],
         'anthropic': [],
         'gemini': [],
-        'ollama': []
+        'ollama': [],
+        'novita': []
     });
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
@@ -123,7 +124,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     'azure': [],
                     'anthropic': [],
                     'gemini': [],
-                    'ollama': []
+                    'ollama': [],
+                    'novita': []
                 };
                 
                 data.forEach((modelConfig: any) => {
@@ -197,7 +199,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         setNewApiVersion("2024-02-15");
                     }
                 }}
-                options={['openai', 'azure', 'ollama', 'anthropic', 'gemini']}
+                options={['openai', 'azure', 'ollama', 'anthropic', 'gemini', 'novita']}
                 renderOption={(props, option) => (
                     <Typography {...props} onClick={() => setNewEndpoint(option)} sx={{fontSize: "0.875rem"}}>
                         {option}
