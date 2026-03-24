@@ -540,7 +540,7 @@ export const SimpleChartRecBox: FC = function () {
                 dispatch(fetchFieldSemanticType(candidateTable));
                 dispatch(fetchCodeExpl(candidateTable));
 
-                if (createdCharts.length > 0) {
+                if (createdCharts.length > 0 && config.autoChartInsight) {
                     const lastChart = createdCharts[createdCharts.length - 1];
                     setTimeout(() => {
                         dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
