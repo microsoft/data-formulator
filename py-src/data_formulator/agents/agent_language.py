@@ -30,10 +30,24 @@ Usage:
 LANGUAGE_DISPLAY_NAMES: dict[str, str] = {
     "en": "English",
     "zh": "Simplified Chinese (简体中文)",
-    # "ja": "Japanese (日本語)",
-    # "ko": "Korean (한국어)",
-    # "fr": "French (Français)",
-    # "de": "German (Deutsch)",
+    "ja": "Japanese (日本語)",
+    "ko": "Korean (한국어)",
+    "fr": "French (Français)",
+    "de": "German (Deutsch)",
+    "es": "Spanish (Español)",
+    "pt": "Portuguese (Português)",
+    "ru": "Russian (Русский)",
+    "ar": "Arabic (العربية)",
+    "hi": "Hindi (हिन्दी)",
+    "th": "Thai (ไทย)",
+    "vi": "Vietnamese (Tiếng Việt)",
+    "it": "Italian (Italiano)",
+    "nl": "Dutch (Nederlands)",
+    "pl": "Polish (Polski)",
+    "tr": "Turkish (Türkçe)",
+    "id": "Indonesian (Bahasa Indonesia)",
+    "ms": "Malay (Bahasa Melayu)",
+    "sv": "Swedish (Svenska)",
 }
 
 # ── Per-language extra rules ────────────────────────────────
@@ -45,10 +59,10 @@ LANGUAGE_EXTRA_RULES: dict[str, str] = {
         "- Keep technical terms natural: prefer widely-used Chinese equivalents "
         "(e.g., 销售额, 利润率) over awkward literal translations."
     ),
-    # "ja": (
-    #     "\n\nAdditional rules for Japanese:\n"
-    #     "- Use polite form (です/ます体) in all user-facing text."
-    # ),
+    "ja": (
+        "\n\nAdditional rules for Japanese:\n"
+        "- Use polite form (です/ます体) in all user-facing text."
+    ),
 }
 
 DEFAULT_LANGUAGE = "en"
