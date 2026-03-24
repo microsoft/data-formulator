@@ -717,6 +717,7 @@ export const ReportView: FC = () => {
 
             let chartSeqIndex = 0;
             const seqToActualId: Record<string, string> = {};
+            const capturedImages: Record<string, { blobUrl: string; width: number; height: number }> = {};
             const selectedCharts = await Promise.all(
                 sortedCharts
                 .filter(chart => selectedChartIds.has(chart.id))
@@ -734,6 +735,7 @@ export const ReportView: FC = () => {
                     const { dataUrl, blobUrl, width, height } = await getChartImageFromVega(chart, chartTable);
 
                     if (blobUrl) {
+                        capturedImages[chart.id] = { blobUrl, width, height };
                         updateCachedReportImages(chart.id, blobUrl, width, height);
                     }
 
@@ -796,7 +798,11 @@ export const ReportView: FC = () => {
                         selectedChartIds: orderedChartIds,
                         createdAt: Date.now(),
                     };
-                    // Save to Redux state
+                    // Re-apply captured images so React 18 batches them
+                    // with the final content update in a single render
+                    for (const [chartId, { blobUrl, width, height }] of Object.entries(capturedImages)) {
+                        updateCachedReportImages(chartId, blobUrl, width, height);
+                    }
                     dispatch(dfActions.saveGeneratedReport(report));
                     setGeneratedReport(finalContent);
                     break;
