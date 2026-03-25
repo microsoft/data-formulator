@@ -32,6 +32,7 @@ APP_ROOT = Path(Path(__file__).parent).absolute()
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)
 app.json.sort_keys = False
+app.json.ensure_ascii = False
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
 
 class CustomJSONEncoder(json.JSONEncoder):
