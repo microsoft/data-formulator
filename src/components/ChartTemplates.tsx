@@ -1817,7 +1817,6 @@ let customCharts: ChartTemplate[] = [
       // =========================================================================
       // 6. LAYER: ĐIỂM + LOESS + GIỚI HẠN (CHỈ DỪNG TẠI detectedLimits)
       // =========================================================================
-
       const pointLayer = {
         mark: { type: "line", point: true, interpolate: "monotone" },
         encoding: {
@@ -1874,7 +1873,7 @@ let customCharts: ChartTemplate[] = [
         ],
         mark: {
           type: "line",
-          size: 5,
+          size: 3,
           interpolate: "linear", // ✅ Đường gấp khúc mạnh mẽ, không mượt
           strokeCap: "square", // ✅ Góc cạnh hơn
           opacity: 0.9,

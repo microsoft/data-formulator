@@ -656,17 +656,23 @@ export const ReportView: FC = () => {
   const conceptShelfItems = useSelector(dfSelectors.getConceptShelfItems);
   const config = useSelector((state: DataFormulatorState) => state.config);
   const chartSampleData = useSelector(dfSelectors.getChartSampleData);
+  const chartSampleReady = useSelector(dfSelectors.getChartSampleReady);
+  const chartOriginalTables = useSelector(dfSelectors.getChartOriginalTables);
   const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
   const focusedChartId = useSelector(
     (state: DataFormulatorState) => state.focusedChartId,
   );
   const theme = useTheme();
+  const viewMode = useSelector(dfSelectors.getViewMode);
 
   const [selectedChartIds, setSelectedChartIds] = useState<Set<string>>(
     new Set(focusedChartId ? [focusedChartId] : []),
   );
   const [previewImages, setPreviewImages] = useState<
-    Map<string, { url: string; width: number; height: number }>
+    Map<
+      string,
+      { url: string; width: number; height: number; dataVersion?: number }
+    >
   >(new Map());
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string>("");
@@ -682,7 +688,10 @@ export const ReportView: FC = () => {
   const [generatedReport, setGeneratedReport] = useState<string>("");
   const [generatedStyle, setGeneratedStyle] = useState<string>("short note");
   const [cachedReportImages, setCachedReportImages] = useState<
-    Record<string, { url: string; width: number; height: number }>
+    Record<
+      string,
+      { url: string; width: number; height: number; dataVersion?: number }
+    >
   >({});
   const [shareButtonSuccess, setShareButtonSuccess] = useState(false);
   const [hideTableOfContents, setHideTableOfContents] = useState(false);
@@ -733,10 +742,11 @@ export const ReportView: FC = () => {
     blobUrl: string,
     width: number,
     height: number,
+    dataVersion?: number,
   ) => {
     setCachedReportImages((prev) => ({
       ...prev,
-      [chartId]: { url: blobUrl, width, height },
+      [chartId]: { url: blobUrl, width, height, dataVersion },
     }));
   };
 
@@ -1297,51 +1307,219 @@ export const ReportView: FC = () => {
     return processed;
   };
 
-  const loadReport = (reportId: string) => {
+  const loadReport = async (
+    reportId: string,
+    forceRegenerate: boolean = false,
+  ) => {
     const report = allGeneratedReports.find((r) => r.id === reportId);
-    if (report) {
-      setCurrentReportId(reportId);
-      setGeneratedReport(report.content);
-      setGeneratedStyle(report.style);
+    if (!report) return;
 
-      // Load chart images for the report - use cached preview images when available
-      report.selectedChartIds.forEach((chartId) => {
-        const chart = charts.find((c) => c.id === chartId);
-        if (!chart) return;
+    setCurrentReportId(reportId);
+    setGeneratedReport(report.content);
+    setGeneratedStyle(report.style);
 
-        const chartTable = tables.find((t) => t.id === chart.tableRef);
-        if (!chartTable) return;
+    // Load chart images for the report - prefer cached preview images but
+    // regenerate synchronously for selected charts to ensure freshness when
+    // the report is opened immediately after a resample in VisualizationView.
+    for (const chartId of report.selectedChartIds) {
+      const chart = charts.find((c) => c.id === chartId);
+      if (!chart) continue;
 
-        if (chart.chartType === "Table" || chart.chartType === "?") {
-          return;
-        }
+      const chartTable = tables.find((t) => t.id === chart.tableRef);
+      if (!chartTable) continue;
 
-        // Try to use cached preview image first for consistency
-        if (chartPreviewImages[chart.id] && chartPreviewImages[chart.id].url) {
-          // Use cached preview image
-          const { url, width, height } = chartPreviewImages[chart.id];
-          updateCachedReportImages(chart.id, url, width, height);
+      if (chart.chartType === "Table" || chart.chartType === "?") continue;
+
+      try {
+        // If there is a cached preview in Redux and the URL exists AND it matches
+        // the chart's current data version, use it first. Otherwise generate
+        // synchronously so report shows up-to-date image.
+        const cached = chartPreviewImages[chart.id];
+        const cachedVersion = cached?.dataVersion ?? -1;
+        const currentVersion = chart.dataVersion || 0;
+        console.debug("ReportView: loadReport decision inputs", {
+          chartId: chart.id,
+          cachedExists: !!cached?.url,
+          cachedVersion,
+          currentVersion,
+          hasSample: Boolean(chartSampleData[chart.id]),
+        });
+        // If there is a cached preview that matches the chart's version AND
+        // we don't currently have fresh sample data for the chart, it's safe
+        // to use it. If `chartSampleData` exists (recent resample occurred),
+        // prefer regenerating synchronously so ReportView matches
+        // VisualizationView immediately.
+        const hasSample = Boolean(chartSampleData[chart.id]);
+        if (
+          cached &&
+          cached.url &&
+          cachedVersion === currentVersion &&
+          !hasSample &&
+          !forceRegenerate
+        ) {
+          updateCachedReportImages(
+            chart.id,
+            cached.url,
+            cached.width,
+            cached.height,
+            cached.dataVersion,
+          );
+          console.debug(`ReportView: using cached preview for ${chart.id}`);
+          // Still regenerate in background to ensure freshness, but do not block UI
+          (async () => {
+            try {
+              // Wait briefly for latest originalTable and sampleData if they're being populated
+              const original =
+                chartOriginalTables[chart.id] ||
+                (await waitForOriginalTable(chart.id, 800));
+              // Prefer immediate sample data; otherwise wait for Visualization to mark sample ready
+              const sample =
+                chartSampleData[chart.id] ||
+                ((await waitForChartSampleReady(chart.id, 800)) &&
+                  chartSampleDataRef.current[chart.id]);
+              console.log(
+                "ReportView: calling getChartImageFromVega (background)",
+                {
+                  chartId: chart.id,
+                  hasSample: !!sample,
+                  hasOriginal: !!original,
+                  dataVersion: chart.dataVersion,
+                  ts: Date.now(),
+                },
+              );
+              const generated = await getChartImageFromVega(
+                chart,
+                chartTable,
+                sample,
+                original,
+              );
+              if (generated.dataUrl) {
+                updateCachedReportImages(
+                  chart.id,
+                  generated.dataUrl,
+                  generated.width,
+                  generated.height,
+                  chart.dataVersion || 0,
+                );
+                dispatch(
+                  dfActions.updateChartPreviewImage({
+                    chartId: chart.id,
+                    url: generated.dataUrl,
+                    width: generated.width,
+                    height: generated.height,
+                    dataVersion: chart.dataVersion || 0,
+                  }),
+                );
+                console.debug(
+                  `ReportView: background refreshed preview for ${chart.id}`,
+                  {
+                    dataVersion: chart.dataVersion || 0,
+                  },
+                );
+              }
+            } catch (e) {
+              console.warn(
+                `Background refresh failed for chart ${chart.id}:`,
+                e,
+              );
+            }
+          })();
         } else {
-          // Fall back to regenerating if no cached preview
-          getChartImageFromVega(
+          // Cached preview is missing or stale — generate synchronously so report shows up-to-date image
+          const original =
+            chartOriginalTables[chart.id] ||
+            (await waitForOriginalTable(chart.id, 800));
+          const sample =
+            chartSampleData[chart.id] ||
+            ((await waitForChartSampleReady(chart.id, 800)) &&
+              chartSampleDataRef.current[chart.id]);
+          console.log("ReportView: calling getChartImageFromVega (sync)", {
+            chartId: chart.id,
+            hasSample: !!sample,
+            hasOriginal: !!original,
+            dataVersion: chart.dataVersion,
+            ts: Date.now(),
+          });
+          const generated = await getChartImageFromVega(
             chart,
             chartTable,
-            chartSampleData[chart.id],
-          ).then(({ dataUrl, width, height }) => {
-            if (dataUrl) {
-              updateCachedReportImages(chart.id, dataUrl, width, height);
-            }
-          });
+            sample,
+            original,
+          );
+          if (generated.dataUrl) {
+            updateCachedReportImages(
+              chart.id,
+              generated.dataUrl,
+              generated.width,
+              generated.height,
+              chart.dataVersion || 0,
+            );
+            dispatch(
+              dfActions.updateChartPreviewImage({
+                chartId: chart.id,
+                url: generated.dataUrl,
+                width: generated.width,
+                height: generated.height,
+                dataVersion: chart.dataVersion || 0,
+              }),
+            );
+            console.debug(
+              `ReportView: synchronously generated preview for ${chart.id}`,
+              {
+                dataVersion: chart.dataVersion || 0,
+              },
+            );
+          }
         }
-      });
+      } catch (e) {
+        console.warn(
+          `Failed to load/generate preview for chart ${chart.id}:`,
+          e,
+        );
+      }
     }
   };
 
   useEffect(() => {
     if (currentReportId === undefined && allGeneratedReports.length > 0) {
-      loadReport(allGeneratedReports[0].id);
+      (async () => {
+        await loadReport(allGeneratedReports[0].id);
+      })();
     }
   }, [currentReportId]);
+
+  // When the app switches to Report view, ensure previews for the currently
+  // loaded report are refreshed immediately so the user sees the latest charts
+  useEffect(() => {
+    if (viewMode === "report" && currentReportId) {
+      (async () => {
+        // Clear Redux cached previews for charts in this report so we force
+        // synchronous regeneration and avoid stale blob usage on first open.
+        try {
+          const report = allGeneratedReports.find(
+            (r) => r.id === currentReportId,
+          );
+          if (report) {
+            for (const cid of report.selectedChartIds) {
+              dispatch(
+                dfActions.updateChartPreviewImage({
+                  chartId: cid,
+                  url: "",
+                  width: 0,
+                  height: 0,
+                  dataVersion: -1,
+                }),
+              );
+            }
+          }
+        } catch (e) {
+          console.warn("ReportView: failed to clear cached previews", e);
+        }
+
+        await loadReport(currentReportId, true);
+      })();
+    }
+  }, [viewMode, currentReportId]);
 
   // Sort charts based on data thread ordering
   const sortedCharts = useMemo(() => {
@@ -1397,6 +1575,85 @@ export const ReportView: FC = () => {
   // Get cached preview images from Redux
   const chartPreviewImages = useSelector(dfSelectors.getChartPreviewImages);
 
+  // Keep a ref to the latest chartOriginalTables so async functions can poll it
+  const chartOriginalTablesRef =
+    useRef<Record<string, any[]>>(chartOriginalTables);
+  useEffect(() => {
+    chartOriginalTablesRef.current = chartOriginalTables;
+  }, [chartOriginalTables]);
+
+  // Keep a ref to the latest chartSampleData so async functions can poll it
+  const chartSampleDataRef = useRef<Record<string, any[]>>(chartSampleData);
+  useEffect(() => {
+    chartSampleDataRef.current = chartSampleData;
+  }, [chartSampleData]);
+
+  // Keep a ref to the latest chartSampleReady timestamps so async funcs can poll it
+  const chartSampleReadyRef = useRef<Record<string, number>>(chartSampleReady);
+  useEffect(() => {
+    chartSampleReadyRef.current = chartSampleReady;
+  }, [chartSampleReady]);
+
+  // Wait for original table to appear in Redux (small polling) to avoid race
+  const waitForOriginalTable = async (
+    chartId: string,
+    timeoutMs: number = 5000,
+  ): Promise<any[] | undefined> => {
+    // Enforce a reasonable minimum so callers that pass short timeouts
+    // (e.g. 800ms) don't race with Visualization updates under load.
+    timeoutMs = Math.max(timeoutMs, 5000);
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const val = chartOriginalTablesRef.current?.[chartId];
+      if (val) return val;
+      // small pause
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    console.debug(
+      `waitForOriginalTable: timed out waiting for originalTable for ${chartId}`,
+    );
+    return undefined;
+  };
+
+  // Wait for chart sample data to appear in Redux (small polling) to avoid race
+  const waitForChartSampleData = async (
+    chartId: string,
+    timeoutMs: number = 5000,
+  ): Promise<any[] | undefined> => {
+    // Enforce minimum polling duration to avoid premature timeouts
+    timeoutMs = Math.max(timeoutMs, 5000);
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const val = chartSampleDataRef.current?.[chartId];
+      if (val) return val;
+      // small pause
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    console.debug(
+      `waitForChartSampleData: timed out waiting for sampleData for ${chartId}`,
+    );
+    return undefined;
+  };
+
+  // Wait for chart sample-ready timestamp (set by Visualization when it updates)
+  const waitForChartSampleReady = async (
+    chartId: string,
+    timeoutMs: number = 5000,
+  ): Promise<number | undefined> => {
+    // Enforce minimum polling duration to avoid premature timeouts
+    timeoutMs = Math.max(timeoutMs, 5000);
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const ts = chartSampleReadyRef.current?.[chartId];
+      if (ts) return ts;
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    console.debug(
+      `waitForChartSampleReady: timed out waiting for sampleReady for ${chartId}`,
+    );
+    return undefined;
+  };
+
   // Sync cached preview images from Redux to local preview state
   useEffect(() => {
     const newPreviewImages = new Map(previewImages);
@@ -1418,11 +1675,12 @@ export const ReportView: FC = () => {
   useEffect(() => {
     let isMounted = true;
 
-    const generateMissingPreviews = async () => {
+    const refreshPreviewsInBackground = async () => {
+      // Regenerate previews in background to ensure ReportView images match VisualizationView.
+      // Run sequentially to avoid CPU spikes.
       for (const chart of sortedCharts) {
         if (!isMounted) break;
 
-        // Skip non-chart types
         if (
           chart.chartType === "Table" ||
           chart.chartType === "?" ||
@@ -1431,48 +1689,54 @@ export const ReportView: FC = () => {
           continue;
         }
 
-        // Skip if already cached in Redux
-        if (chartPreviewImages[chart.id]) {
-          continue;
-        }
-
         const chartTable = tables.find((t) => t.id === chart.tableRef);
         if (!chartTable) continue;
 
         try {
+          const original =
+            chartOriginalTables[chart.id] ||
+            (await waitForOriginalTable(chart.id, 5000));
+          const sample =
+            chartSampleData[chart.id] ||
+            ((await waitForChartSampleReady(chart.id, 5000)) &&
+              chartSampleDataRef.current[chart.id]);
           const { dataUrl, width, height } = await getChartImageFromVega(
             chart,
             chartTable,
-            chartSampleData[chart.id],
+            sample,
+            original,
           );
 
           if (isMounted && dataUrl) {
-            // Cache dataUrl (base64 string) in Redux - this is persistent and won't be revoked
             dispatch(
               dfActions.updateChartPreviewImage({
                 chartId: chart.id,
                 url: dataUrl,
                 width,
                 height,
+                dataVersion: chart.dataVersion || 0,
               }),
             );
           }
+
+          // small pause between charts to keep UI snappy
+          await new Promise((r) => setTimeout(r, 120));
         } catch (error) {
           console.warn(
-            `Failed to generate preview for chart ${chart.id}:`,
+            `Failed to refresh preview for chart ${chart.id}:`,
             error,
           );
         }
       }
     };
 
-    // Run on-demand generation
-    generateMissingPreviews();
+    // Start background refresh (don't await)
+    refreshPreviewsInBackground();
 
     return () => {
       isMounted = false;
     };
-  }, [sortedCharts, tables, chartSampleData, dispatch]);
+  }, [sortedCharts, tables, chartSampleData, chartOriginalTables, dispatch]);
 
   const toggleChartSelection = (chartId: string) => {
     const newSelection = new Set(selectedChartIds);
@@ -1507,6 +1771,7 @@ export const ReportView: FC = () => {
     chart: any,
     chartTable: any,
     chartSampleDataForChart?: any[],
+    originalTableFromRedux?: any[],
   ): Promise<{
     dataUrl: string;
     blobUrl: string;
@@ -1514,6 +1779,15 @@ export const ReportView: FC = () => {
     height: number;
   }> => {
     try {
+      try {
+        console.debug("ReportView.getChartImageFromVega:start", {
+          chartId: chart?.id,
+          hasSampleParam: !!chartSampleDataForChart,
+          hasOriginalParam: !!originalTableFromRedux,
+          chartDataVersion: chart?.dataVersion,
+          ts: Date.now(),
+        });
+      } catch (e) {}
       // Use sample data from Redux if available, otherwise use table rows
       const dataToUse = chartSampleDataForChart || chartTable.rows;
 
@@ -1538,15 +1812,19 @@ export const ReportView: FC = () => {
         conceptShelfItems,
         processedRows,
         chartTable.metadata,
-        30,
+        24,
         true,
-        config.defaultChartWidth,
-        config.defaultChartHeight,
+        // prefer chart's configured size when available so preview matches VisualizationView
+        chart.chartWidth || config.defaultChartWidth,
+        chart.chartHeight || config.defaultChartHeight,
         true,
         chart.qcLimitsMode || false,
         undefined,
         undefined,
-        chartTable.rows,
+        // Prefer originalTable from Redux (set by VisualizationView) so QC limit
+        // columns (LL/UL/SLIPNO/etc.) are available to chart postProcessors the
+        // same way VisualizationView uses them.
+        originalTableFromRedux || chartTable.rows,
       );
 
       // Create a temporary container for embedding
@@ -1704,10 +1982,28 @@ export const ReportView: FC = () => {
               height = chartPreviewImages[chart.id].height;
             } else {
               // Fall back to generating if no cached preview
+              const original =
+                chartOriginalTables[chart.id] ||
+                (await waitForOriginalTable(chart.id, 800));
+              const sample =
+                chartSampleData[chart.id] ||
+                ((await waitForChartSampleReady(chart.id, 800)) &&
+                  chartSampleDataRef.current[chart.id]);
+              console.log(
+                "ReportView: calling getChartImageFromVega (generateReport fallback)",
+                {
+                  chartId: chart.id,
+                  hasSample: !!sample,
+                  hasOriginal: !!original,
+                  dataVersion: chart.dataVersion,
+                  ts: Date.now(),
+                },
+              );
               const generated = await getChartImageFromVega(
                 chart,
                 chartTable,
-                chartSampleData[chart.id],
+                sample,
+                original,
               );
               dataUrl = generated.dataUrl;
               width = generated.width;
@@ -1716,7 +2012,13 @@ export const ReportView: FC = () => {
 
             if (dataUrl) {
               // Cache dataUrl (base64 string) - this is persistent and won't be revoked
-              updateCachedReportImages(chart.id, dataUrl, width, height);
+              updateCachedReportImages(
+                chart.id,
+                dataUrl,
+                width,
+                height,
+                chart.dataVersion || 0,
+              );
             }
 
             return {

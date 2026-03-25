@@ -1407,6 +1407,8 @@ const MemoizedChartObject = memo<{
     onChartClick,
     onDelete,
   }) => {
+    // read original tables (QC limits / SLIPNO) for thumbnails
+    const chartOriginalTables = useSelector(dfSelectors.getChartOriginalTables);
     // Use chartSampleData from Redux if available, otherwise fallback to table.rows
     const dataSource = chartSampleData || table.rows;
 
@@ -1571,13 +1573,14 @@ const MemoizedChartObject = memo<{
       table.metadata,
       20,
       true,
-      800,
-      400,
+      // prefer the chart's configured size so thumbnail uses same layout rules
+      chart.chartWidth || 800,
+      chart.chartHeight || 400,
       true,
       chart.qcLimitsMode || false,
       undefined,
       undefined,
-      table.rows,
+      chartOriginalTables[chart.id] || table.rows,
     );
 
     // Check if assembledChart is valid (not a fallback array)
@@ -1697,6 +1700,11 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
   const conceptShelfItems = useSelector(dfSelectors.getConceptShelfItems);
 
   const chartSampleData = useSelector(dfSelectors.getChartSampleData);
+  const chartOriginalTables = useSelector(dfSelectors.getChartOriginalTables);
+  // simple key derived from charts' dataVersion to force updates when samples change
+  const chartDataVersionsKey = useSelector((state: DataFormulatorState) =>
+    state.charts.map((c) => c.dataVersion || 0).join(","),
+  );
 
   let [threadDrawerOpen, setThreadDrawerOpen] = useState<boolean>(false);
 
@@ -1775,6 +1783,7 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
     conceptShelfItems,
     chartSynthesisInProgress,
     chartSampleData,
+    chartDataVersionsKey,
   ]);
 
   // anchors are considered leaf tables to simplify the view

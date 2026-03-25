@@ -683,6 +683,7 @@ const VegaChartRenderer: FC<{
                         url: dataUrl,
                         width: Math.round(width),
                         height: Math.round(height),
+                        dataVersion: chart.dataVersion || 0,
                       }),
                     );
                   } catch (error) {
@@ -1955,6 +1956,31 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               setVisTableTotalRowCount(data.total_row_count);
               setOriginalTable(originalTableData);
 
+              // Persist originalTable into Redux so other views (ReportView, DataThread)
+              // can access QC limit columns immediately when generating previews.
+              dispatch(
+                dfActions.updateChartOriginalTable({
+                  chartId: focusedChart.id,
+                  originalTable: originalTableData,
+                }),
+              );
+
+              // Persist preprocessed sample data immediately so other views
+              // can use it deterministically (avoid race when switching to ReportView)
+              dispatch(
+                dfActions.updateChartSampleData({
+                  chartId: focusedChart.id,
+                  sampleData: preprocessedData,
+                }),
+              );
+              console.debug(
+                "Visualization: dispatched originalTable+sampleData",
+                {
+                  chartId: focusedChart.id,
+                  timestamp: Date.now(),
+                },
+              );
+
               setDataVersion(versionId);
 
               // NOW update currentSampleRange based on ACTUAL server data.total_row_count
@@ -1985,12 +2011,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               dispatch(
                 dfActions.updateChartDataVersion({ chartId: focusedChart.id }),
               );
-              dispatch(
-                dfActions.updateChartSampleData({
-                  chartId: focusedChart.id,
-                  sampleData: preprocessedData,
-                }),
-              );
             } else {
               console.error("❌ Data Live response ERROR:", data.message);
               setVisTableRows([]);
@@ -1999,10 +2019,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               setSystemMessage(data.message, "error");
             }
           } else {
-            console.warn("⚠️ STALE response ignored:", {
-              expectedRequestId: currentRequestRef.current,
-              receivedRequestId: requestId,
-            });
+            console.debug(
+              `STALE response ignored for request ${requestId} (expected ${currentRequestRef.current})`,
+            );
             // This response is stale, ignore it
           }
         })
@@ -2079,14 +2098,23 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       );
       setOriginalTable(originalTableData);
 
-      // Invalidate cached preview images in ReportView and update DataThread
-      dispatch(dfActions.updateChartDataVersion({ chartId: focusedChart.id }));
+      // Persist originalTable into Redux for thumbnails/previews
+      dispatch(
+        dfActions.updateChartOriginalTable({
+          chartId: focusedChart.id,
+          originalTable: originalTableData,
+        }),
+      );
+
+      // Update sample data first, then invalidate cache
       dispatch(
         dfActions.updateChartSampleData({
           chartId: focusedChart.id,
           sampleData: preprocessedData,
         }),
       );
+      // Invalidate cached preview images in ReportView and update DataThread
+      dispatch(dfActions.updateChartDataVersion({ chartId: focusedChart.id }));
     }
   }
 
@@ -2129,15 +2157,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         setVisTableRows(newProcessedData);
         setVisTableTotalRowCount(table.rows.length);
         setDataVersion(versionId);
-        // Invalidate cached preview images in ReportView and update DataThread
-        dispatch(
-          dfActions.updateChartDataVersion({ chartId: focusedChart.id }),
-        );
+        // Update sample data first, then invalidate cache
         dispatch(
           dfActions.updateChartSampleData({
             chartId: focusedChart.id,
             sampleData: newProcessedData,
           }),
+        );
+        // Invalidate cached preview images in ReportView and update DataThread
+        dispatch(
+          dfActions.updateChartDataVersion({ chartId: focusedChart.id }),
         );
       }
     } else {
@@ -2151,15 +2180,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
       // stale-data flash cycle when the fields resolve on the next render.
       if (visFieldIds.length === 0) {
         setDataVersion(versionId);
-        // Invalidate cached preview images in ReportView and update DataThread
-        dispatch(
-          dfActions.updateChartDataVersion({ chartId: focusedChart.id }),
-        );
+        // Update sample data first, then invalidate cache
         dispatch(
           dfActions.updateChartSampleData({
             chartId: focusedChart.id,
             sampleData: table.rows,
           }),
+        );
+        // Invalidate cached preview images in ReportView and update DataThread
+        dispatch(
+          dfActions.updateChartDataVersion({ chartId: focusedChart.id }),
         );
       }
     }
@@ -2218,6 +2248,14 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
               table,
               activeVisTableRows,
             );
+            if (originalTable) {
+              dispatch(
+                dfActions.updateChartOriginalTable({
+                  chartId: focusedChart.id,
+                  originalTable,
+                }),
+              );
+            }
             console.log(
               "Rendering fullscreen chart with table:",
               originalTable,

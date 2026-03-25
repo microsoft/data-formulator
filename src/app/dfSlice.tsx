@@ -181,8 +181,10 @@ export interface DataFormulatorState {
   chartSampleData: Record<string, any[]>; // Sample data for each chart to display in DataThread
   chartPreviewImages: Record<
     string,
-    { url: string; width: number; height: number }
-  >; // Cached preview images for reports
+    { url: string; width: number; height: number; dataVersion?: number }
+  >; // Cached preview images for reports (includes chart `dataVersion` for staleness checks)
+  chartOriginalTables: Record<string, any[]>; // Original raw table rows (QC limits / SLIPNO) per chart
+  chartSampleReady: Record<string, number>; // timestamp when sampleData was last set for chart
 }
 
 // Define the initial state using that type
@@ -241,6 +243,8 @@ const initialState: DataFormulatorState = {
   generatedReports: [],
   chartSampleData: {},
   chartPreviewImages: {},
+  chartOriginalTables: {},
+  chartSampleReady: {},
 };
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -907,6 +911,8 @@ export const dataFormulatorSlice = createSlice({
       if (chart) {
         chart.dataVersion = (chart.dataVersion || 0) + 1;
       }
+      // Clear cached preview images to force regeneration in ReportView
+      delete state.chartPreviewImages[chartId];
     },
 
     updateChartSampleData: (
@@ -915,6 +921,15 @@ export const dataFormulatorSlice = createSlice({
     ) => {
       let { chartId, sampleData } = action.payload;
       state.chartSampleData[chartId] = sampleData;
+      // mark sample ready timestamp
+      try {
+        state.chartSampleReady[chartId] = Date.now();
+      } catch (e) {
+        state.chartSampleReady = {
+          ...(state.chartSampleReady || {}),
+          [chartId]: Date.now(),
+        };
+      }
     },
 
     updateChartPreviewImage: (
@@ -924,10 +939,19 @@ export const dataFormulatorSlice = createSlice({
         url: string;
         width: number;
         height: number;
+        dataVersion?: number;
       }>,
     ) => {
-      let { chartId, url, width, height } = action.payload;
-      state.chartPreviewImages[chartId] = { url, width, height };
+      let { chartId, url, width, height, dataVersion } = action.payload;
+      state.chartPreviewImages[chartId] = { url, width, height, dataVersion };
+    },
+
+    updateChartOriginalTable: (
+      state,
+      action: PayloadAction<{ chartId: string; originalTable: any[] }>,
+    ) => {
+      const { chartId, originalTable } = action.payload;
+      state.chartOriginalTables[chartId] = originalTable;
     },
 
     updateChartDataSampleRange: (
@@ -1616,10 +1640,22 @@ export const dfSelectors = {
     (data) => data,
   ),
 
+  // Memoized selector for chart sample ready timestamps
+  getChartSampleReady: createSelector(
+    [(state: DataFormulatorState) => state.chartSampleReady],
+    (data) => data,
+  ),
+
   // Memoized selector for chart preview images
   getChartPreviewImages: createSelector(
     [(state: DataFormulatorState) => state.chartPreviewImages],
     (images) => images,
+  ),
+
+  // Memoized selector for chart original tables (QC limits, SLIPNO, etc.)
+  getChartOriginalTables: createSelector(
+    [(state: DataFormulatorState) => state.chartOriginalTables],
+    (tables) => tables,
   ),
 
   // Memoized selector for models
