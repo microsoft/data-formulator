@@ -414,3 +414,6 @@ tmp-docs/
 
 \.\NUL
 NUL
+
+# Package manager lock files (using yarn)
+package-lock.json
