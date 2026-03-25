@@ -38,6 +38,7 @@ from data_formulator.model_registry import model_registry
 
 from data_formulator.agents.data_agent import DataAgent
 from data_formulator.agents.agent_language import build_language_instruction
+from data_formulator.sanitize import sanitize_error_message
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -133,7 +134,7 @@ def list_global_models():
     'checking' status), then calls /check-available-models to get real statuses.
     """
     public_models = model_registry.list_public()
-    return json.dumps(public_models, ensure_ascii=False)
+    return jsonify(public_models)
 
 
 @agent_bp.route('/check-available-models', methods=['GET', 'POST'])
@@ -197,21 +198,11 @@ def check_available_models():
     logger.info(f"[check-available-models] Done: {connected}/{len(results)} connected, total {total_elapsed:.1f}s")
     logger.info("=" * 60)
 
-    return json.dumps(results, ensure_ascii=False)
+    return jsonify(results)
 
 def sanitize_model_error(error_message: str) -> str:
-    """Sanitize model API error messages before sending to client."""
-    # HTML escape the message
-    message = html.escape(error_message)
-    
-    # Remove any potential API keys that might be in the error
-    message = re.sub(r'(api[-_]?key|api[-_]?token)[=:]\s*[^\s&]+', r'\1=<redacted>', message, flags=re.IGNORECASE)
-    
-    # Keep only the essential error info
-    if len(message) > 500:  # Truncate very long messages
-        message = message[:500] + "..."
-
-    return message
+    """Backward-compatible alias — delegates to the shared sanitizer."""
+    return sanitize_error_message(error_message)
 
 @agent_bp.route('/test-model', methods=['GET', 'POST'])
 def test_model():
@@ -254,7 +245,7 @@ def test_model():
     else:
         result = {'status': 'error'}
     
-    return json.dumps(result, ensure_ascii=False)
+    return jsonify(result)
 
 @agent_bp.route('/process-data-on-load', methods=['GET', 'POST'])
 def process_data_on_load_request():
@@ -1034,5 +1025,5 @@ def refresh_derived_data():
         logger.error(traceback.format_exc())
         return jsonify({
             "status": "error",
-            "message": str(e)
+            "message": sanitize_model_error(str(e))
         }), 400

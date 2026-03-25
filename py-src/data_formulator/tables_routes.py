@@ -19,6 +19,7 @@ from data_formulator.workspace_factory import get_workspace as _create_workspace
 from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, normalize_text_encoding
 from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
+from data_formulator.sanitize import sanitize_error_message
 
 import re
 
@@ -177,7 +178,7 @@ def open_workspace():
         return jsonify(status="ok", path=home_path)
     except Exception as e:
         logger.error(f"Failed to open workspace: {e}")
-        return jsonify(status="error", message=str(e)), 500
+        return jsonify(status="error", message=sanitize_error_message(str(e))), 500
 
 
 @tables_bp.route('/list-tables', methods=['GET'])
@@ -463,7 +464,7 @@ def create_table():
             try:
                 df = pd.DataFrame(json.loads(raw_data))
             except Exception as e:
-                return jsonify({"status": "error", "message": f"Invalid JSON data: {str(e)}, it must be a list of dictionaries"}), 400
+                return jsonify({"status": "error", "message": f"Invalid JSON data: {sanitize_error_message(str(e))}, it must be a list of dictionaries"}), 400
             workspace.write_parquet(df, sanitized_table_name)
             row_count = len(df)
             columns = list(df.columns)
@@ -538,7 +539,7 @@ def parse_file():
 
     except Exception as e:
         logger.error("Error parsing file", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 400
+        return jsonify({"status": "error", "message": sanitize_error_message(str(e))}), 400
 
 
 @tables_bp.route('/sync-table-data', methods=['POST'])
