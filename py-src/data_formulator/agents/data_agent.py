@@ -138,6 +138,7 @@ class DataAgent:
         agent_exploration_rules: str = "",
         agent_coding_rules: str = "",
         language_instruction: str = "",
+        rec_language_instruction: str | None = None,
         max_iterations: int = 5,
         max_repair_attempts: int = 1,
     ):
@@ -149,12 +150,14 @@ class DataAgent:
         self.max_iterations = max_iterations
         self.max_repair_attempts = max_repair_attempts
 
-        # Sub-agent for data transformation + chart recommendation
+        # Sub-agent for data transformation + chart recommendation.
+        # Uses a separate (compact) language instruction so the code-gen
+        # model is not distracted by field-level rules irrelevant to it.
         self.rec_agent = DataRecAgent(
             client=client,
             workspace=workspace,
             agent_coding_rules=agent_coding_rules,
-            language_instruction=language_instruction,
+            language_instruction=rec_language_instruction if rec_language_instruction is not None else language_instruction,
         )
 
     # ------------------------------------------------------------------

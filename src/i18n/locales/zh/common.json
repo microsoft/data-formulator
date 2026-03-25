@@ -461,7 +461,8 @@
     "explorationStep": "探索步骤 {{step}}：{{question}}",
     "threadExplorePrompt": "请根据当前这条数据线程，给我一些可行的探索方向建议。",
     "explorationThreadDeriveDescription": "从 {{source}} 派生，指令：{{instruction}}",
-    "explorationStepCodeComment": "# 探索步骤 {{step}}"
+    "explorationStepCodeComment": "# 探索步骤 {{step}}",
+    "maxIterationsReached": "已达到最大探索步数。"
   },
   "auth": {
     "loginTitle": "登录 Data Formulator",

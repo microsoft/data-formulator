@@ -456,7 +456,8 @@
     "explorationStep": "Exploration step {{step}}: {{question}}",
     "threadExplorePrompt": "Help me suggest some exploration directions based on this thread.",
     "explorationThreadDeriveDescription": "Derive from {{source}} with instruction: {{instruction}}",
-    "explorationStepCodeComment": "# Exploration step {{step}}"
+    "explorationStepCodeComment": "# Exploration step {{step}}",
+    "maxIterationsReached": "Reached the maximum number of exploration steps."
   },
   "dataGrid": {
     "loading": "Loading ...",

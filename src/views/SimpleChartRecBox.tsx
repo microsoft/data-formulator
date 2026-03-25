@@ -540,7 +540,7 @@ export const SimpleChartRecBox: FC = function () {
                 dispatch(fetchFieldSemanticType(candidateTable));
                 dispatch(fetchCodeExpl(candidateTable));
 
-                if (createdCharts.length > 0) {
+                if (createdCharts.length > 0 && config.autoChartInsight) {
                     const lastChart = createdCharts[createdCharts.length - 1];
                     setTimeout(() => {
                         dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
@@ -575,7 +575,9 @@ export const SimpleChartRecBox: FC = function () {
 
             const completionResult = allResults.find((r: any) => r.type === "completion");
             if (completionResult) {
-                const summary = completionResult.content.summary || completionResult.content.message || "";
+                const summary = completionResult.status === "max_iterations"
+                    ? t('chartRec.maxIterationsReached')
+                    : (completionResult.content.summary || completionResult.content.message || "");
                 const status: "completed" | "warning" = completionResult.status === "success" ? "completed" : "warning";
                 dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: summary, status, hidden: false,
                     message: { content: summary, role: 'completion' } }));
