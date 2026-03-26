@@ -1709,8 +1709,6 @@ let customCharts: ChartTemplate[] = [
 
       // Get original full table if available (contains limit columns)
       const fullTable = vgSpec._originalTable || table;
-      //   console.log("full table:", fullTable);
-
       const fullTableColumns =
         fullTable && fullTable.length > 0 ? Object.keys(fullTable[0]) : [];
 

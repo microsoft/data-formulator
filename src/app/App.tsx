@@ -940,6 +940,71 @@ const ResetDialog: React.FC = () => {
   const [open, setOpen] = useState(false);
   const dispatch = useDispatch();
 
+  const handleCompleteReset = async () => {
+    try {
+      // 1. Call backend API to reset database and drop all tables
+      const resetResponse = await fetch("/api/tables/reset-db-file", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!resetResponse.ok) {
+        const errorData = await resetResponse.json();
+        console.error("Backend reset error:", errorData);
+        // Continue with client-side reset even if backend fails
+      } else {
+        const successData = await resetResponse.json();
+        console.log("Backend reset success:", successData);
+      }
+    } catch (error) {
+      console.error("Error calling reset API:", error);
+      // Continue with client-side reset even if API call fails
+    }
+
+    // 2. Clear Redux state
+    dispatch(dfActions.resetState());
+    dispatch(dfActions.clearChatHistory());
+
+    // 3. Clear localStorage
+    localStorage.clear();
+
+    // 4. Clear sessionStorage
+    sessionStorage.clear();
+
+    // 5. Clear all cookies
+    document.cookie.split(";").forEach((c) => {
+      const cookieName = c.split("=")[0].trim();
+      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+    });
+
+    // 6. Clear IndexedDB
+    if (window.indexedDB) {
+      const databases = (await window.indexedDB.databases?.()) || [];
+      databases.forEach((db) => {
+        window.indexedDB.deleteDatabase(db.name ?? ""); // Delete each database by name
+      });
+    }
+
+    // 7. Clear Service Worker cache
+    if ("caches" in window) {
+      caches.keys().then((names) => {
+        names.forEach((name) => {
+          caches.delete(name);
+        });
+      });
+    }
+
+    setOpen(false);
+
+    // Add a delay to ensure everything is cleared before reloading
+    setTimeout(() => {
+      window.location.reload();
+    }, 500); // 500ms to allow async operations to complete
+  };
+
   return (
     <>
       <Button
@@ -957,21 +1022,13 @@ const ResetDialog: React.FC = () => {
         <DialogContent>
           <DialogContentText>
             All unexported content (charts, derived data, concepts) will be lost
-            upon reset.
+            upon reset. This will also clear all cookies, cache, and stored
+            data.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button
-            onClick={() => {
-              dispatch(dfActions.resetState());
-              dispatch(dfActions.clearChatHistory());
-              setOpen(false);
-
-              // Add a delay to ensure the state has been reset before reloading
-              setTimeout(() => {
-                window.location.reload();
-              }, 250); // 250ms should be enough for state update
-            }}
+            onClick={handleCompleteReset}
             endIcon={<PowerSettingsNewIcon />}
           >
             reset session

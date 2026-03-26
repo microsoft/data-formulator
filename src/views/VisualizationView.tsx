@@ -621,7 +621,7 @@ const VegaChartRenderer: FC<{
             embed(
               container as any,
               { ...assembledChart },
-              { actions: true, renderer: "svg" },
+              { actions: true, renderer: "canvas" },
             )
               .then(function (result) {
                 // Store the Vega view for later finalization
@@ -1018,14 +1018,14 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const inferredStdParam =
       targetTable.rows?.find(
         (r: any) =>
-          typeof r?.QCSTDPARAMNAME === "string" &&
-          r.QCSTDPARAMNAME.trim().length > 0,
-      )?.QCSTDPARAMNAME ??
-      targetTable.rows?.find(
-        (r: any) =>
           typeof r?.STDPARAMREPORTNAME === "string" &&
           r.STDPARAMREPORTNAME.trim().length > 0,
-      )?.STDPARAMREPORTNAME;
+      )?.STDPARAMREPORTNAME ??
+      targetTable.rows?.find(
+        (r: any) =>
+          typeof r?.QCSTDPARAMNAME === "string" &&
+          r.QCSTDPARAMNAME.trim().length > 0,
+      )?.QCSTDPARAMNAME;
 
     if (typeof inferredStdParam === "string" && inferredStdParam.trim()) {
       return {
@@ -1919,7 +1919,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         .then((response) => {
           return response.json();
         })
-        .then((data) => {
+        .then(async (data) => {
           // Only update if this is still the current request (not stale)
           if (currentRequestRef.current === requestId) {
             const versionId = `${focusedChart.id}-${
@@ -1950,11 +1950,20 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 focusedChart.encodingMap,
                 focusedChart.chartType,
               );
+              // If Data Live is active, prefer live table name (backend may provide live table name)
+              const effectiveOriginalTableName = focusedChart.qcLive
+                ? liveTableNameRef.current ?? `${table.id}_live`
+                : undefined;
 
+              const originalTable = await getOriginalTableFromVirtualData(
+                table,
+                preprocessedData,
+                effectiveOriginalTableName,
+              );
               // Set all state updates together
               setVisTableRows(preprocessedData);
               setVisTableTotalRowCount(data.total_row_count);
-              setOriginalTable(originalTableData);
+              setOriginalTable(originalTable);
 
               // Persist originalTable into Redux so other views (ReportView, DataThread)
               // can access QC limit columns immediately when generating previews.
@@ -2218,6 +2227,53 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     return !(dataFieldsAllAvailable && table.rows.length > 0);
   }, [focusedChart.chartType, dataFieldsAllAvailable, table.rows.length]);
 
+  // Fetch original table data for main chart view
+  // Call getOriginalTableFromVirtualData to get the full original data from virtual tables
+  useEffect(() => {
+    if (
+      !isDataStale &&
+      activeVisTableRows.length > 0 &&
+      !chartUnavailable &&
+      focusedChart.chartType !== "Auto" &&
+      focusedChart.chartType !== "Table"
+    ) {
+      (async () => {
+        // 🔧 Generate unique request ID to track this specific request
+        const currentRequestId = `main-${focusedChart.id}-${table.id}-${activeVisTableRows.length}`;
+        originalTableRequestRef.current = currentRequestId;
+
+        const effectiveOriginalTableName = focusedChart.qcLive
+          ? liveTableNameRef.current ?? `${table.id}_live`
+          : undefined;
+
+        const originalTableData = await getOriginalTableFromVirtualData(
+          table,
+          activeVisTableRows,
+          effectiveOriginalTableName,
+        );
+
+        // ✅ Check if this is still the latest request before updating state
+        if (originalTableRequestRef.current !== currentRequestId) {
+          console.warn(
+            `⚠️ Ignoring stale originalTable request for main chart (${currentRequestId} → ${originalTableRequestRef.current})`,
+          );
+          return;
+        }
+
+        if (originalTableData) {
+          setOriginalTable(originalTableData);
+        }
+      })();
+    }
+  }, [
+    focusedChart.id,
+    table.id,
+    activeVisTableRows.length,
+    isDataStale,
+    chartUnavailable,
+    focusedChart.chartType,
+  ]);
+
   // Render fullscreen chart when dialog opens
   useEffect(() => {
     if (
@@ -2244,17 +2300,32 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
           const fsWidth = Math.round(window.innerWidth * 0.8);
           const fsHeight = Math.round(window.innerHeight * 0.68);
           (async () => {
+            // 🔧 Generate unique request ID to track this specific request
+            // Prevents stale results from overlapping async calls
+            const currentRequestId = `${focusedChart.id}-${table.id}-${activeVisTableRows.length}`;
+            originalTableRequestRef.current = currentRequestId;
+
+            const effectiveOriginalTableNameFS = focusedChart.qcLive
+              ? liveTableNameRef.current ?? `${table.id}_live`
+              : undefined;
+
             const originalTable = await getOriginalTableFromVirtualData(
               table,
               activeVisTableRows,
+              effectiveOriginalTableNameFS,
             );
-            if (originalTable) {
-              dispatch(
-                dfActions.updateChartOriginalTable({
-                  chartId: focusedChart.id,
-                  originalTable,
-                }),
+
+            // ✅ Check if this is still the latest request before updating state
+            // If a newer request came in while we were fetching, ignore old result
+            if (originalTableRequestRef.current !== currentRequestId) {
+              console.warn(
+                `⚠️ Ignoring stale originalTable request (${currentRequestId} → ${originalTableRequestRef.current})`,
               );
+              return;
+            }
+
+            if (originalTable) {
+              setOriginalTable(originalTable);
             }
             console.log(
               "Rendering fullscreen chart with table:",
@@ -2290,7 +2361,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                   source: true,
                   editor: true,
                 },
-                renderer: "svg",
+                renderer: "canvas",
                 hover: true,
                 downloadFileName: `chart-${focusedChart.id}`,
               },
@@ -3586,6 +3657,7 @@ export const VisualizationViewFC: FC<VisPanelProps> =
 async function getOriginalTableFromVirtualData(
   table: any,
   activeVisRows: any[],
+  tableNameOverride?: string,
 ): Promise<any[] | undefined> {
   if (!table || !table.rows || table.rows.length === 0)
     return table?.rows || [];
@@ -3600,13 +3672,16 @@ async function getOriginalTableFromVirtualData(
   const indexSet = new Set(activeVisRows.map((r) => r[indexKey]));
 
   try {
+    const tableNameToFetch =
+      tableNameOverride ?? (typeof table === "string" ? table : table.id);
+
     const resp = await fetch(getUrls().SAMPLE_TABLE, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        table: table.id,
+        table: tableNameToFetch,
         size: 999999,
         method: "head",
         select_fields: [

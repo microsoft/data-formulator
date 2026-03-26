@@ -254,7 +254,8 @@ export const buildQcDataQuery = (
                     LASTUPDATE,
                     SPITEMNAME as ITEMNAME,
                     OPERATIONNAME as OPERATION,
-                    FACODE
+                    FACODE,
+                    STDPARAMREPORTNAME
                     FROM gcdb.DPD_QC_INFO
                     WHERE QCDATE >= '${from}' AND QCDATE <= '${to}'
                     AND ISMAXQCROUND = '1'
@@ -2551,7 +2552,8 @@ export const DataLoaderForm: React.FC<{
                                 LASTUPDATE,
                                 SPITEMNAME as ITEMNAME,
                                 OPERATIONNAME as OPERATION,
-                                FACODE
+                                FACODE,
+                                STDPARAMREPORTNAME
                                 FROM gcdb.DPD_QC_INFO
                                 WHERE QCDATE >= '${from}' AND QCDATE <= '${to}'
                                 AND ISMAXQCROUND = '1'

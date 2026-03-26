@@ -30,8 +30,9 @@ let store = configureStore({
         getDefaultMiddleware({
             serializableCheck: false,
             immutableCheck: {
-                // Increase threshold from 32ms to 1 second since state is large
-                warnAfter: 1000,
+                // Disable in development to avoid slowdown with large state (base64 images)
+                // Only check in production builds
+                warnAfter: process.env.NODE_ENV === 'production' ? 1000 : Infinity,
                 ignoredActions: ['persist/PERSIST', 'persist/REHYDRATE'],
             },
     }),
