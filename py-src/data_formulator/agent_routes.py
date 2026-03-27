@@ -234,7 +234,7 @@ def test_model():
                     "message": ""
                 }
         except Exception as e:
-            logger.warning(f"Error testing model {content['model'].get('id', '')}: {e}")
+            logger.exception(f"Error testing model {content['model'].get('id', '')}")
             is_global = content['model'].get('is_global', False)
             result = {
                 "model": content['model'],
