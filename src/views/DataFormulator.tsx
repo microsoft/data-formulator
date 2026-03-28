@@ -29,7 +29,7 @@ import {
 } from '@mui/material';
 import { borderColor, shadow, radius } from '../app/tokens';
 
-import { FreeDataViewFC } from './DataView';
+
 import { VisualizationViewFC } from './VisualizationView';
 
 import { DndProvider } from 'react-dnd'
@@ -157,27 +157,11 @@ export const DataFormulatorFC = ({ }) => {
     }, [dispatch, models, selectedModelId]);
 
     const visPaneMain = (
-        <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+        <Box sx={{ width: "100%", height: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
             <VisualizationViewFC />
         </Box>);
 
-    const visPane = (
-        <Box className="inner-allotment" sx={{width: '100%', height: '100%', 
-            "& .split-view-view:first-of-type": {
-                display: 'flex',
-                overflow: 'hidden',
-        }}}>
-            <Allotment vertical>
-                <Allotment.Pane minSize={200} >
-                {visPaneMain}
-                </Allotment.Pane>
-                <Allotment.Pane minSize={0} preferredSize={180}>
-                    <Box className="table-box">
-                        <FreeDataViewFC />
-                    </Box>
-                </Allotment.Pane>
-            </Allotment>
-        </Box>);
+    const visPane = visPaneMain;
 
     let borderBoxStyle = {
         border: `1px solid ${borderColor.view}`, 
