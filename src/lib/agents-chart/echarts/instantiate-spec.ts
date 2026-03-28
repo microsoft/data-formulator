@@ -522,12 +522,16 @@ export function ecApplyLayoutToSpec(
             const step = catAxis === 'x' ? layout.xStep : layout.yStep;
             const stepUnit = catAxis === 'x' ? layout.xStepUnit : layout.yStepUnit;
             const isStacked = barSeries.some((s: any) => s.stack != null);
+            // Pyramid: two mirrored horizontal bars must fully overlap per category
+            // (barGap: '-100%'), not grouped-bar side-by-side layout.
+            const isPyramidMirror =
+                context.chartType === 'Pyramid Chart' && barSeries.length === 2 && !isStacked;
 
             if (step > 0) {
                 const bandPadding = layout.stepPadding;
                 const catGapPct = `${Math.round(bandPadding * 100)}%`;
 
-                if (!isStacked && (stepUnit === 'group' || barSeries.length > 1)) {
+                if (!isStacked && (stepUnit === 'group' || barSeries.length > 1) && !isPyramidMirror) {
                     // Grouped: each bar gets an equal share of the usable band.
                     // Use (seriesCount + 1) so total bar width stays strictly inside the slot and bars不会互相挤压重叠.
                     const usableStep = step * (1 - bandPadding);
@@ -543,6 +547,11 @@ export function ecApplyLayoutToSpec(
                     // reserved for inter-category gap.
                     for (const s of barSeries) {
                         s.barCategoryGap = catGapPct;
+                    }
+                    if (isPyramidMirror) {
+                        for (const s of barSeries) {
+                            s.barGap = '-100%';
+                        }
                     }
                 }
             }
@@ -828,9 +837,10 @@ export function ecApplyLayoutToSpec(
                 }
             });
         } else {
-            // Pie / Rose / Streamgraph：颜色按 data 项或 stream 由 option.color[i] 分配，不要给 series 设 itemStyle.color，否则整图会变成一种颜色。
+            // Pie / Rose / Streamgraph / Sunburst：颜色在 data（或树节点）上，不要给 series 设 itemStyle.color，否则整图会变成一种颜色。
             const colorByDataItem = context.chartType === 'Pie Chart' || context.chartType === 'Rose Chart'
-                || context.chartType === 'Streamgraph';
+                || context.chartType === 'Streamgraph'
+                || context.chartType === 'Sunburst Chart';
             if (colorByDataItem) {
                 // option.color 已在上面设为 effectivePalette，ECharts 会按索引给每个扇区上色，无需再处理 series。
             } else if (context.chartType === 'Radar Chart') {

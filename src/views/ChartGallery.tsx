@@ -738,6 +738,7 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
 // ============================================================================
 
 const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+    const sharedSpec = useMemo(() => buildSharedInputSpec(testCase), [testCase]);
     return (
         <Paper
             elevation={1}
@@ -758,6 +759,14 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
                         sx={{ fontSize: 10, height: 20 }} />
                 ))}
             </Box>
+            <details style={{ marginBottom: 12 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 11, color: '#666', fontWeight: 600 }}>
+                    Spec
+                </summary>
+                <pre style={{ fontSize: 10, maxHeight: 220, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4, marginTop: 4 }}>
+                    {sharedSpec.compact}
+                </pre>
+            </details>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                 <VegaChartInline testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
                 <EChartsChart testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
@@ -933,6 +942,8 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string; sectionLabel?: string }
     }, [chartGroup]);
 
     const isChartJsGroup = chartGroup.startsWith('Chart.js:');
+    const isGallerySurveyGroup = chartGroup.startsWith('Gallery:');
+    const isOmniVizGroup = chartGroup.startsWith('Omni:');
     const isGoFishGroup = chartGroup.startsWith('GoFish');
     const isEChartsSection = sectionLabel === 'ECharts Backend';
 
@@ -949,7 +960,7 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string; sectionLabel?: string }
             {tests.map((tc, i) =>
                 isGoFishGroup
                     ? <QuadChart key={`${chartGroup}-${i}`} testCase={tc} />
-                    : isChartJsGroup
+                    : isChartJsGroup || isGallerySurveyGroup || isOmniVizGroup
                         ? <TripleChart key={`${chartGroup}-${i}`} testCase={tc} />
                         : isEChartsSection
                             ? <DualChart key={`${chartGroup}-${i}`} testCase={tc} />

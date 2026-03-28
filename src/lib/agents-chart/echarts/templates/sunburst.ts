@@ -15,22 +15,69 @@
  *
  * If only color + size: single-ring sunburst (same as pie but styled differently).
  * If color + size + detail: two-ring sunburst (color = inner, detail = outer).
+ *   Hues follow inner palette; inner opacity 100%, outer 80%.
+ * If color + size + detail + group: three-ring (inner → middle → outer).
+ *   Same base hue per inner branch: 100% / 80% / 60% opacity by depth.
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, DEFAULT_COLORS, computeCircumferencePressure, computeEffectiveBarCount } from './utils';
 import { getPaletteForScheme } from '../colormap';
 
+function collectSunburstLeafValues(nodes: any[]): number[] {
+    return nodes.flatMap((d: any) => {
+        if (d.children?.length) {
+            return collectSunburstLeafValues(d.children);
+        }
+        return [Number(d.value) || 0];
+    });
+}
+
+/** Inner ring = 100%, middle = 80%, outer = 60% — same hue as inner (palette base). */
+const SUNBURST_OPACITY_L1 = 1;
+const SUNBURST_OPACITY_L2 = 0.8;
+const SUNBURST_OPACITY_L3 = 0.6;
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    const s = hex.trim();
+    let m = /^#?([0-9a-f]{6})$/i.exec(s);
+    if (m) {
+        const intVal = parseInt(m[1], 16);
+        return { r: (intVal >> 16) & 255, g: (intVal >> 8) & 255, b: intVal & 255 };
+    }
+    m = /^#?([0-9a-f]{3})$/i.exec(s);
+    if (m) {
+        const x = m[1];
+        const full = x.split('').map(c => c + c).join('');
+        const intVal = parseInt(full, 16);
+        return { r: (intVal >> 16) & 255, g: (intVal >> 8) & 255, b: intVal & 255 };
+    }
+    return null;
+}
+
+function sunburstColorWithOpacity(baseColor: string, alpha: number): string {
+    const rgb = hexToRgb(baseColor);
+    if (rgb) {
+        return `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+    }
+    const rgbaM = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(baseColor.trim());
+    if (rgbaM) {
+        return `rgba(${rgbaM[1]},${rgbaM[2]},${rgbaM[3]},${alpha})`;
+    }
+    return baseColor;
+}
+
 export const ecSunburstDef: ChartTemplateDef = {
     chart: 'Sunburst Chart',
     template: { mark: 'arc', encoding: {} },
-    channels: ['color', 'size', 'detail'],
+    channels: ['color', 'size', 'detail', 'group'],
     markCognitiveChannel: 'area',
     instantiate: (spec, ctx) => {
         const { channelSemantics, table, chartProperties, colorDecisions } = ctx;
         const catField = channelSemantics.color?.field;
         const valField = channelSemantics.size?.field;
         const subCatField = channelSemantics.detail?.field;
+        const leafField = channelSemantics.group?.field;
 
         if (!catField) return;
 
@@ -55,9 +102,47 @@ export const ecSunburstDef: ChartTemplateDef = {
         // Build sunburst data (hierarchical tree structure)
         let sunburstData: any[];
 
-        if (subCatField) {
-            // Two-level hierarchy: color (inner ring) → detail (outer ring)
+        if (subCatField && leafField) {
+            // Three-level: inner = color channel (100%), detail (80%), group leaves (60%)
             sunburstData = categories.map((cat, catIdx) => {
+                const base = palette![catIdx % palette!.length];
+                const catRows = table.filter(r => String(r[catField]) === cat);
+                const subCats = extractCategories(catRows, subCatField);
+
+                const children = subCats.map(sub => {
+                    const subRows = catRows.filter(r => String(r[subCatField]) === sub);
+                    const leaves = extractCategories(subRows, leafField);
+                    const grandchildren = leaves.map(leaf => {
+                        const leafRows = subRows.filter(r => String(r[leafField]) === leaf);
+                        let value: number;
+                        if (valField) {
+                            value = leafRows.reduce((sum, r) => sum + (Number(r[valField]) || 0), 0);
+                        } else {
+                            value = leafRows.length;
+                        }
+                        return {
+                            name: leaf,
+                            value,
+                            itemStyle: { color: sunburstColorWithOpacity(base, SUNBURST_OPACITY_L3) },
+                        };
+                    });
+                    return {
+                        name: sub,
+                        children: grandchildren,
+                        itemStyle: { color: sunburstColorWithOpacity(base, SUNBURST_OPACITY_L2) },
+                    };
+                });
+
+                return {
+                    name: cat,
+                    children,
+                    itemStyle: { color: sunburstColorWithOpacity(base, SUNBURST_OPACITY_L1) },
+                };
+            });
+        } else if (subCatField) {
+            // Two-level: inner 100%, outer 80%
+            sunburstData = categories.map((cat, catIdx) => {
+                const base = palette![catIdx % palette!.length];
                 const catRows = table.filter(r => String(r[catField]) === cat);
                 const subCats = extractCategories(catRows, subCatField);
 
@@ -69,13 +154,17 @@ export const ecSunburstDef: ChartTemplateDef = {
                     } else {
                         value = subRows.length;
                     }
-                    return { name: sub, value };
+                    return {
+                        name: sub,
+                        value,
+                        itemStyle: { color: sunburstColorWithOpacity(base, SUNBURST_OPACITY_L2) },
+                    };
                 });
 
                 return {
                     name: cat,
                     children,
-                    itemStyle: { color: palette![catIdx % palette!.length] },
+                    itemStyle: { color: sunburstColorWithOpacity(base, SUNBURST_OPACITY_L1) },
                 };
             });
         } else {
@@ -107,9 +196,7 @@ export const ecSunburstDef: ChartTemplateDef = {
         // For flat: use slice values directly.
         let outerValues: number[];
         if (subCatField) {
-            // Outer ring: collect all leaf values
-            outerValues = sunburstData.flatMap(
-                d => d.children?.map((c: any) => c.value as number) ?? []);
+            outerValues = collectSunburstLeafValues(sunburstData);
         } else {
             outerValues = sunburstData.map((d: any) => d.value as number);
         }
@@ -124,6 +211,10 @@ export const ecSunburstDef: ChartTemplateDef = {
 
         const outerRadius = Math.max(80, Math.round(Math.min(pressureRadius, (Math.min(canvasW, canvasH) / 2 - 20))));
         const innerRadius = chartProperties?.innerRadius ?? Math.round(outerRadius * 0.15);
+        const span = outerRadius - innerRadius;
+        const ringThird1 = innerRadius + Math.round(span / 3);
+        const ringThird2 = innerRadius + Math.round((2 * span) / 3);
+        const ringHalf = Math.round(innerRadius + span * 0.5);
 
         const option: any = {
             tooltip: {
@@ -145,30 +236,52 @@ export const ecSunburstDef: ChartTemplateDef = {
                     show: true,
                     rotate: chartProperties?.labelRotate ?? 'radial',
                     fontSize: 11,
+                    color: '#000000',
                 },
                 emphasis: {
                     focus: 'ancestor',
+                    label: { color: '#000000' },
                 },
-                levels: subCatField ? [
+                levels: subCatField && leafField ? [
+                    {},
+                    {
+                        r0: `${innerRadius}px`,
+                        r: `${ringThird1}px`,
+                        label: { fontSize: 11, fontWeight: 'bold', color: '#000000' },
+                        itemStyle: { borderWidth: 2, borderColor: '#fff' },
+                    },
+                    {
+                        r0: `${ringThird1}px`,
+                        r: `${ringThird2}px`,
+                        label: { fontSize: 10, color: '#000000' },
+                        itemStyle: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)' },
+                    },
+                    {
+                        r0: `${ringThird2}px`,
+                        r: `${outerRadius}px`,
+                        label: { fontSize: 9, color: '#000000' },
+                        itemStyle: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
+                    },
+                ] : subCatField ? [
                     {}, // root
                     {
                         // Inner ring (top-level categories)
                         r0: `${innerRadius}px`,
-                        r: `${Math.round(innerRadius + (outerRadius - innerRadius) * 0.5)}px`,
-                        label: { fontSize: 12, fontWeight: 'bold' },
+                        r: `${ringHalf}px`,
+                        label: { fontSize: 12, fontWeight: 'bold', color: '#000000' },
                         itemStyle: { borderWidth: 2, borderColor: '#fff' },
                     },
                     {
                         // Outer ring (sub-categories)
-                        r0: `${Math.round(innerRadius + (outerRadius - innerRadius) * 0.5)}px`,
+                        r0: `${ringHalf}px`,
                         r: `${outerRadius}px`,
-                        label: { fontSize: 10 },
+                        label: { fontSize: 10, color: '#000000' },
                         itemStyle: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' },
                     },
                 ] : [
                     {}, // root
                     {
-                        label: { fontSize: 12 },
+                        label: { fontSize: 12, color: '#000000' },
                         itemStyle: { borderWidth: 2, borderColor: '#fff' },
                     },
                 ],

@@ -38,6 +38,30 @@ export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
 export { genSemanticContextTests, genSnapToBoundTests } from './semantic-tests';
 export { genDebugTests } from './debug-tests';
+export {
+    OMNI_VIZ_ROWS,
+    OMNI_VIZ_LEVELS,
+    OMNI_VIZ_PRODUCT_ORDER,
+    OMNI_VIZ_DIVISION_ORDER,
+    OMNI_VIZ_QUARTER_PERIOD_START,
+    omniVizDetailTable,
+    omniVizLineTable,
+    omniVizPyramidLongTable,
+    omniVizRoseTable,
+    omniVizSunburstTable,
+    omniVizWaterfallTable,
+    type OmniVizRow,
+} from './omni-viz-dataset';
+export {
+    genOmniVizGroupedBarTests,
+    genOmniVizScatterTests,
+    genOmniVizLineTests,
+    genOmniVizPyramidTests,
+    genOmniVizRoseTests,
+    genOmniVizSunburstTests,
+    genOmniVizWaterfallTests,
+    GALLERY_OMNI_VIZ_GENERATOR_KEYS,
+} from './omni-viz-tests';
 
 // ---------------------------------------------------------------------------
 // Master map & gallery sections
@@ -66,6 +90,29 @@ import { genDebugTests } from './debug-tests';
 import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests, genEChartsGaugeTests, genEChartsFunnelTests, genEChartsTreemapTests, genEChartsSunburstTests, genEChartsSankeyTests, genEChartsUniqueStressTests } from './echarts-tests';
 import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
 import { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
+import {
+    genGalleryRegionalSurveyScatterTests,
+    genGalleryRegionalSurveyLineTests,
+    genGalleryRegionalSurveyBarTests,
+    genGalleryRegionalSurveyStackedBarTests,
+    genGalleryRegionalSurveyGroupedBarTests,
+    genGalleryRegionalSurveyAreaTests,
+    genGalleryRegionalSurveyPieTests,
+    genGalleryRegionalSurveyHistogramTests,
+    genGalleryRegionalSurveyRadarTests,
+    genGalleryRegionalSurveyRoseTests,
+} from '../gallery/regional-survey-tests';
+import { GALLERY_REGIONAL_SURVEY_GENERATOR_KEYS } from '../gallery';
+import {
+    genOmniVizGroupedBarTests,
+    genOmniVizScatterTests,
+    genOmniVizLineTests,
+    genOmniVizPyramidTests,
+    genOmniVizRoseTests,
+    genOmniVizSunburstTests,
+    genOmniVizWaterfallTests,
+    GALLERY_OMNI_VIZ_GENERATOR_KEYS,
+} from './omni-viz-tests';
 
 /** All test generators mapped by chart group */
 export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
@@ -152,6 +199,23 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Chart.js: Radar': genChartJsRadarTests,
     'Chart.js: Rose': genChartJsRoseTests,
     'Chart.js: Stress Tests': genChartJsStressTests,
+    'Gallery: Scatter': genGalleryRegionalSurveyScatterTests,
+    'Gallery: Line': genGalleryRegionalSurveyLineTests,
+    'Gallery: Bar': genGalleryRegionalSurveyBarTests,
+    'Gallery: Stacked Bar': genGalleryRegionalSurveyStackedBarTests,
+    'Gallery: Grouped Bar': genGalleryRegionalSurveyGroupedBarTests,
+    'Gallery: Area': genGalleryRegionalSurveyAreaTests,
+    'Gallery: Pie': genGalleryRegionalSurveyPieTests,
+    'Gallery: Histogram': genGalleryRegionalSurveyHistogramTests,
+    'Gallery: Radar': genGalleryRegionalSurveyRadarTests,
+    'Gallery: Rose': genGalleryRegionalSurveyRoseTests,
+    'Omni: Grouped Bar': genOmniVizGroupedBarTests,
+    'Omni: Scatter': genOmniVizScatterTests,
+    'Omni: Line': genOmniVizLineTests,
+    'Omni: Pyramid': genOmniVizPyramidTests,
+    'Omni: Rose': genOmniVizRoseTests,
+    'Omni: Sunburst': genOmniVizSunburstTests,
+    'Omni: Waterfall': genOmniVizWaterfallTests,
     'GoFish Basic': () => [
         ...genGoFishScatterTests(),
         ...genGoFishLineTests(),
@@ -257,6 +321,16 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'Chart.js: Rose',
             'Chart.js: Stress Tests',
         ],
+    },
+    {
+        label: 'Regional Survey (Gallery)',
+        description: 'Fixed season/region/city panel — same encodings rendered with Vega-Lite, ECharts, and Chart.js',
+        entries: [...GALLERY_REGIONAL_SURVEY_GENERATOR_KEYS],
+    },
+    {
+        label: 'Omni Viz (Gallery)',
+        description: 'Single catalog (unix quarter starts + 8 products): grouped bar, scatter, line, pyramid, rose, sunburst, waterfall',
+        entries: [...GALLERY_OMNI_VIZ_GENERATOR_KEYS],
     },
     {
         label: 'GoFish Basic',
