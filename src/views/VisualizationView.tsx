@@ -1014,21 +1014,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const ENCODING_SHELF_WIDTH = 240;
 
     let content = [
-        <Box key='focused-box' className="vega-focused" sx={{
-            display: "flex", overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable',
-            flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px`,
-            '&::-webkit-scrollbar': { width: '6px' },
-            '&::-webkit-scrollbar-track': { background: 'transparent' },
-            '&::-webkit-scrollbar-thumb': {
-                background: 'rgba(0,0,0,0.08)',
-                borderRadius: '3px',
-                transition: 'background 0.2s',
-            },
-            '&:hover::-webkit-scrollbar-thumb': { background: 'rgba(0,0,0,0.2)' },
-            '&::-webkit-scrollbar-thumb:hover': { background: 'rgba(0,0,0,0.35)' },
-            scrollbarWidth: 'thin',
-            scrollbarColor: 'rgba(0,0,0,0.08) transparent',
-        }}>
+        <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
             {focusedComponent}
         </Box>,
         /* Floating encoding shelf panel */
@@ -1107,6 +1093,8 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     const dispatch = useDispatch();
 
+    let tables = useSelector((state: DataFormulatorState) => state.tables);
+
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
 
@@ -1146,14 +1134,63 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
             }
         </Box>
         return (
-            <Box sx={{  margin: "auto" }}>
-                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
-                <Divider sx={{my: 3}} textAlign='left'>
-                    <Typography sx={{fontSize: 12, color: "text.secondary"}}>
-                        {t('chart.orStartWithChartType')}
-                    </Typography>
-                </Divider>
-                {chartSelectionBox}
+            <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+                <Box sx={{ overflow: "hidden", display: 'flex', flex: 1 }}>
+                    <Box sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', flexDirection: 'column', flex: 1 }}>
+                        <Box sx={{ minHeight: 'min(75vh, 600px)', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                            <Box sx={{ margin: 'auto' }}>
+                                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
+                                <Divider sx={{my: 3}} textAlign='left'>
+                                    <Typography sx={{fontSize: 12, color: "text.secondary"}}>
+                                        {t('chart.orStartWithChartType')}
+                                    </Typography>
+                                </Divider>
+                                {chartSelectionBox}
+                            </Box>
+                        </Box>
+                        {focusedId?.type === 'table' && focusedTableId && (() => {
+                            const focusedTable = tables.find(t => t.id === focusedTableId);
+                            if (!focusedTable) return null;
+                            const ROW_HEIGHT = 25;
+                            const HEADER_HEIGHT = 32;
+                            const FOOTER_HEIGHT = 32;
+                            const MIN_TABLE_HEIGHT = 150;
+                            const MAX_TABLE_HEIGHT = 400;
+                            const MIN_TABLE_WIDTH = 300;
+                            const MAX_TABLE_WIDTH = 900;
+                            const rowCount = focusedTable.virtual?.rowCount || focusedTable.rows?.length || 0;
+                            const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + FOOTER_HEIGHT;
+                            const adaptiveHeight = Math.max(MIN_TABLE_HEIGHT, Math.min(MAX_TABLE_HEIGHT, contentHeight));
+                            const ROW_ID_COL_WIDTH = 56;
+                            const sampleSize = Math.min(29, focusedTable.rows.length);
+                            const step = focusedTable.rows.length > sampleSize ? focusedTable.rows.length / sampleSize : 1;
+                            const sampledRows = Array.from({ length: sampleSize }, (_, i) => focusedTable.rows[Math.floor(i * step)]);
+                            const totalColWidth = focusedTable.names.reduce((sum, name) => {
+                                const values = sampledRows.map(row => String(row[name] || ''));
+                                const avgLen = values.length > 0 ? values.reduce((s, v) => s + v.length, 0) / values.length : 0;
+                                const nameSegs = name.split(/[\s-]+/);
+                                const maxNameSegLen = nameSegs.reduce((m, seg) => Math.max(m, seg.length), 0);
+                                const contentLen = Math.max(maxNameSegLen, avgLen);
+                                return sum + Math.max(80, Math.min(280, contentLen * 10)) + 60;
+                            }, ROW_ID_COL_WIDTH);
+                            const SCROLLBAR_WIDTH = 17;
+                            const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16));
+                            return (
+                                <Box sx={{
+                                    margin: '8px auto 24px auto', padding: 0,
+                                    height: adaptiveHeight, width: adaptiveWidth,
+                                    borderRadius: '8px',
+                                    border: `1px solid ${borderColor.divider}`,
+                                    transition: 'box-shadow 0.2s ease',
+                                    '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
+                                    overflow: 'hidden', flexShrink: 0,
+                                }}>
+                                    <FreeDataViewFC />
+                                </Box>
+                            );
+                        })()}
+                    </Box>
+                </Box>
             </Box>
         )
     }
