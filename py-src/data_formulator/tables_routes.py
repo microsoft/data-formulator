@@ -8,6 +8,7 @@ import mimetypes
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 import json
+import gzip
 import traceback
 from flask import request, jsonify, Blueprint, Response
 import pandas as pd
@@ -458,7 +459,12 @@ def create_table():
         else:
             # raw_data can come as a file upload (Blob) or as a form field
             if 'raw_data' in request.files:
-                raw_data = request.files['raw_data'].read().decode('utf-8')
+                raw_bytes = request.files['raw_data'].read()
+                # Auto-detect gzip (magic bytes 0x1f 0x8b)
+                if raw_bytes[:2] == b'\x1f\x8b':
+                    raw_data = gzip.decompress(raw_bytes).decode('utf-8')
+                else:
+                    raw_data = raw_bytes.decode('utf-8')
             else:
                 raw_data = request.form.get('raw_data')
             try:
@@ -550,7 +556,12 @@ def sync_table_data():
     and needs to sync it so sandbox code reads the latest data.
     """
     try:
-        data = request.get_json()
+        # Auto-detect gzip-compressed request body
+        raw_bytes = request.get_data()
+        if raw_bytes[:2] == b'\x1f\x8b':
+            data = json.loads(gzip.decompress(raw_bytes).decode('utf-8'))
+        else:
+            data = request.get_json()
         table_name = data.get('table_name')
         rows = data.get('rows')
 

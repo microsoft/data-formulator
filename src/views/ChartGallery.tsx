@@ -451,6 +451,7 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
     const [error, setError] = useState<string | null>(null);
     const [warnings, setWarnings] = useState<ChartWarning[]>([]);
     const [specJson, setSpecJson] = useState<string>('');
+    const [inputSpec, setInputSpec] = useState<string>('');
     const [inferredSize, setInferredSize] = useState<string>('');
     const { t } = useTranslation();
 
@@ -458,7 +459,9 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
         if (!containerRef.current) return;
 
         try {
-            const ecOption = assembleECharts(testCaseToEChartsInput(testCase, canvasSize));
+            const ecInput = testCaseToEChartsInput(testCase, canvasSize);
+            setInputSpec(buildSharedInputSpec(testCase).compact);
+            const ecOption = assembleECharts(ecInput);
 
             if (!ecOption) {
                 setError(t('chart.gallery.noOption', { assembler: 'assembleECharts' }));
@@ -536,6 +539,16 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
                         </Typography>
                     ))}
                 </Box>
+            )}
+            {inputSpec && (
+                <details style={{ marginTop: 8, width: 0, minWidth: '100%', overflow: 'hidden' }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
+                        {t('chart.gallery.spec')}
+                    </summary>
+                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4 }}>
+                        {inputSpec}
+                    </pre>
+                </details>
             )}
             {specJson && (
                 <details style={{ marginTop: 8 }}>
