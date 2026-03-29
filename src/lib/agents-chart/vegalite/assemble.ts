@@ -662,9 +662,14 @@ function buildVLEncodings(
         }
         delete resolvedEncodings.group;
 
-        // Create offset encoding for position subdivision
+        // Create offset encoding for position subdivision.
+        // Coordinate sort with color so bar order matches legend order.
         if (!resolvedEncodings[offsetChannel]) {
-            resolvedEncodings[offsetChannel] = { field: groupCS.field, type: 'nominal' };
+            const offsetEnc: any = { field: groupCS.field, type: 'nominal' };
+            if (resolvedEncodings.color?.sort !== undefined) {
+                offsetEnc.sort = resolvedEncodings.color.sort;
+            }
+            resolvedEncodings[offsetChannel] = offsetEnc;
         }
     }
 

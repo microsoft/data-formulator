@@ -76,12 +76,9 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     // Constants for content size limits
     const MAX_DISPLAY_LINES = 20;
     const LARGE_CONTENT_THRESHOLD = 50000;
-    const MAX_CONTENT_SIZE = 2 * 1024 * 1024; // 2MB
-
     const [displayContent, setDisplayContent] = useState('');
     const [isLargeContent, setIsLargeContent] = useState(false);
     const [showFullContent, setShowFullContent] = useState(false);
-    const [isOverSizeLimit, setIsOverSizeLimit] = useState(false);
 
     const validateColumns = (newRows: any[]): { valid: boolean; message: string } => {
         if (!newRows || newRows.length === 0) {
@@ -135,7 +132,6 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
         setIsLoading(false);
         setIsLargeContent(false);
         setShowFullContent(false);
-        setIsOverSizeLimit(false);
         onClose();
     };
 
@@ -149,9 +145,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
         const newContent = event.target.value;
         setPasteContent(newContent);
 
-        const contentSizeBytes = new Blob([newContent]).size;
-        const isOverLimit = contentSizeBytes > MAX_CONTENT_SIZE;
-        setIsOverSizeLimit(isOverLimit);
+
 
         const isLarge = newContent.length > LARGE_CONTENT_THRESHOLD;
         setIsLargeContent(isLarge);
@@ -282,13 +276,6 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             file.name.endsWith('.tsv') ||
             file.name.endsWith('.json')) {
 
-            const MAX_FILE_SIZE = 5 * 1024 * 1024;
-            if (file.size > MAX_FILE_SIZE) {
-                setError(t('refresh.errorFileTooLarge', { size: (file.size / (1024 * 1024)).toFixed(2) }));
-                setIsLoading(false);
-                return;
-            }
-
             readFileText(file).then((text) => {
                 let newRows: any[] = [];
                 try {
@@ -414,21 +401,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
 
                 <TabPanel value={tabValue} index={0}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                        {isOverSizeLimit && (
-                            <Box 
-                                sx={{ 
-                                    p: 1,
-                                    backgroundColor: alpha(theme.palette.error.main, 0.06),
-                                    borderLeft: `3px solid ${theme.palette.error.main}`,
-                                    borderRadius: '4px',
-                                }}
-                            >
-                                <Typography variant="caption" sx={{ color: 'error.main', fontSize: '0.75rem', lineHeight: 1.5 }}>
-                                    {t('refresh.contentExceedsLimit', { limit: (MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0), size: (new Blob([pasteContent]).size / (1024 * 1024)).toFixed(2) })}
-                                </Typography>
-                            </Box>
-                        )}
-                        {isLargeContent && !isOverSizeLimit && (
+                        {isLargeContent && (
                             <Box sx={{ 
                                 display: 'flex', 
                                 alignItems: 'center', 
@@ -581,7 +554,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                     <Button
                         variant="contained"
                         onClick={handlePasteSubmit}
-                        disabled={isLoading || !pasteContent.trim() || isOverSizeLimit}
+                        disabled={isLoading || !pasteContent.trim()}
                         sx={{ textTransform: 'none' }}
                     >
                         {t('refresh.refreshData')}

@@ -15,7 +15,8 @@ const persistConfig = {
     storage: localforage,
     // globalModels are always fetched fresh from the server on each app start,
     // so there is no need (and it would cause stale-data issues) to persist them.
-    blacklist: ['serverConfig', 'globalModels'],
+    // In-progress flags are transient and should not survive page refreshes.
+    blacklist: ['serverConfig', 'globalModels', 'chartSynthesisInProgress', 'chartInsightInProgress'],
 }
 
 const persistedReducer = persistReducer(persistConfig, dataFormulatorReducer)

@@ -479,7 +479,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [pasteContent, setPasteContent] = useState<string>("");
     const [isLargeContent, setIsLargeContent] = useState<boolean>(false);
     const [showFullContent, setShowFullContent] = useState<boolean>(false);
-    const [isOverSizeLimit, setIsOverSizeLimit] = useState<boolean>(false);
     
     // File preview state
     const [filePreviewTables, setFilePreviewTables] = useState<DictTable[] | null>(null);
@@ -511,7 +510,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     // Constants
     const MAX_DISPLAY_LINES = 20;
     const LARGE_CONTENT_THRESHOLD = 50000;
-    const MAX_CONTENT_SIZE = 2 * 1024 * 1024;
 
     // Update active tab when initialTab changes
     useEffect(() => {
@@ -605,7 +603,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         // Reset state when closing
         setPasteContent("");
         setIsLargeContent(false);
-        setIsOverSizeLimit(false);
         setShowFullContent(false);
         setFilePreviewTables(null);
         setFilePreviewLoading(false);
@@ -630,7 +627,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setFilePreviewTables(null);
         setFilePreviewLoading(true);
 
-        const MAX_FILE_SIZE = 5 * 1024 * 1024;
         const previewTables: DictTable[] = [];
         const errors: string[] = [];
 
@@ -647,11 +643,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     file.type === 'application/vnd.ms-excel' ||
                     file.name.endsWith('.xlsx') || 
                     file.name.endsWith('.xls');
-
-                if (file.size > MAX_FILE_SIZE && isTextFile) {
-                    errors.push(t('upload.errors.fileTooLarge', { name: file.name, size: (file.size / (1024 * 1024)).toFixed(2) }));
-                    continue;
-                }
 
                 if (isTextFile) {
                     try {
@@ -842,10 +833,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const handleContentChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         const newContent = event.target.value;
         setPasteContent(newContent);
-        
-        const contentSizeBytes = new Blob([newContent]).size;
-        const isOverLimit = contentSizeBytes > MAX_CONTENT_SIZE;
-        setIsOverSizeLimit(isOverLimit);
         
         const isLarge = newContent.length > LARGE_CONTENT_THRESHOLD;
         setIsLargeContent(isLarge);
@@ -1517,26 +1504,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         justifyContent: hasPasteContent ? 'flex-start' : 'center',
                         alignItems: hasPasteContent ? 'stretch' : 'center',
                     }}>
-                        {isOverSizeLimit && (
-                            <Box sx={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                mb: 1, 
-                                p: 1, 
-                                backgroundColor: 'rgba(244, 67, 54, 0.1)', 
-                                borderRadius: 1, 
-                                border: '1px solid rgba(244, 67, 54, 0.3)' 
-                            }}>
-                                <Typography variant="caption" sx={{ flex: 1, color: 'error.main', fontWeight: 500 }}>
-                                    {t('upload.contentExceedsSizeLimit', {
-                                        limit: (MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0),
-                                        size: (new Blob([pasteContent]).size / (1024 * 1024)).toFixed(2)
-                                    })}
-                                </Typography>
-                            </Box>
-                        )}
-                        
-                        {isLargeContent && !isOverSizeLimit && (
+                        {isLargeContent && (
                             <Box sx={{ 
                                 display: 'flex', 
                                 alignItems: 'center', 
@@ -1609,7 +1577,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             <Button
                                 variant="contained"
                                 onClick={handlePasteSubmit}
-                                disabled={(pasteContent || '').trim() === '' || isOverSizeLimit}
+                                disabled={(pasteContent || '').trim() === ''}
                                 sx={{ textTransform: 'none' }}
                             >
                                 {t('upload.uploadData')}

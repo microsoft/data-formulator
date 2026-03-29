@@ -231,7 +231,7 @@ class TableMetadata:
         if self.loader_type is not None:
             result["loader_type"] = self.loader_type
         if self.loader_params is not None:
-            result["loader_params"] = self.loader_params
+            result["loader_params"] = make_json_safe(self.loader_params)
         if self.source_table is not None:
             result["source_table"] = self.source_table
         if self.source_query is not None:
@@ -395,7 +395,7 @@ def _write_metadata_file(workspace_path: Path, metadata: WorkspaceMetadata) -> N
     )
     try:
         with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
-            yaml.dump(
+            yaml.safe_dump(
                 metadata.to_dict(),
                 f,
                 default_flow_style=False,

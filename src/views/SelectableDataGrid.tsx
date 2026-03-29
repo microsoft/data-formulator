@@ -297,12 +297,12 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 {children}
             </Table>
         ),
-        TableHead: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
-            <TableHead {...props} ref={ref} className='table-header-container' style={{ display: 'table-header-group' }} />
+        TableHead: React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>((props, ref) => (
+            <TableHead {...props} ref={ref} className='table-header-container' style={{ ...props.style, display: 'table-header-group' }} />
         )),
         TableRow: (props: any) => {
             const index = props['data-index'];
-            return <TableRow {...props} style={{backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
+            return <TableRow {...props} style={{...props.style, backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
         },
         TableBody: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
             <TableBody {...props} ref={ref} />

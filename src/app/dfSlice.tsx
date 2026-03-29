@@ -381,62 +381,72 @@ export const fetchChartInsight = createAsyncThunk(
     async (args: { chartId: string; tableId: string }, { getState }) => {
         console.log(">>> call agent to generate chart insight <<<");
 
-        let state = getState() as DataFormulatorState;
-        let chart = dfSelectors.getAllCharts(state).find(c => c.id === args.chartId);
-        if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
+        // Wrap entire thunk body in a race with a timeout to prevent indefinite stalls
+        const INSIGHT_TIMEOUT_MS = 60_000;
+        const result = await Promise.race([
+            (async () => {
+                let state = getState() as DataFormulatorState;
+                let chart = dfSelectors.getAllCharts(state).find(c => c.id === args.chartId);
+                if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
 
-        // Get high-res PNG from the rendered chart
-        let chartImage = await getChartPngDataUrl(args.chartId);
-        if (!chartImage) throw new Error(`No rendered chart image for: ${args.chartId}`);
+                // Get high-res PNG from the rendered chart
+                let chartImage = await getChartPngDataUrl(args.chartId);
+                if (!chartImage) throw new Error(`No rendered chart image for: ${args.chartId}`);
 
-        // Strip the data:image/png;base64, prefix for the backend
-        const base64Prefix = 'data:image/png;base64,';
-        if (chartImage.startsWith(base64Prefix)) {
-            chartImage = chartImage.substring(base64Prefix.length);
-        }
+                // Strip the data:image/png;base64, prefix for the backend
+                const base64Prefix = 'data:image/png;base64,';
+                if (chartImage.startsWith(base64Prefix)) {
+                    chartImage = chartImage.substring(base64Prefix.length);
+                }
 
-        // Collect field names from the encoding map
-        let fieldNames = Object.values(chart.encodingMap)
-            .map(enc => enc.fieldID)
-            .filter((id): id is string => !!id)
-            .map(id => {
-                let field = state.conceptShelfItems.find(f => f.id === id);
-                return field?.name || id;
-            });
+                // Collect field names from the encoding map
+                let fieldNames = Object.values(chart.encodingMap)
+                    .map(enc => enc.fieldID)
+                    .filter((id): id is string => !!id)
+                    .map(id => {
+                        let field = state.conceptShelfItems.find(f => f.id === id);
+                        return field?.name || id;
+                    });
 
-        // Collect input table info (include source tables for derived tables)
-        let table = state.tables.find(t => t.id === args.tableId);
-        let tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
-        let inputTables = [...new Set(tableIds)]
-            .map(tId => state.tables.find(t => t.id === tId))
-            .filter((t): t is DictTable => !!t)
-            .map(t => ({
-                name: t.id,
-                rows: t.rows,
-                attached_metadata: t.attachedMetadata,
-            }));
+                // Collect input table info (include source tables for derived tables)
+                let table = state.tables.find(t => t.id === args.tableId);
+                let tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
+                let inputTables = [...new Set(tableIds)]
+                    .map(tId => state.tables.find(t => t.id === tId))
+                    .filter((t): t is DictTable => !!t)
+                    .map(t => ({
+                        name: t.id,
+                        rows: t.rows,
+                        attached_metadata: t.attachedMetadata,
+                    }));
 
-        let message = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                token: Date.now(),
-                chart_image: chartImage,
-                chart_type: chart.chartType,
-                field_names: fieldNames,
-                input_tables: inputTables,
-                model: dfSelectors.getActiveModel(state),
-            }),
-        };
+                let message = {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token: Date.now(),
+                        chart_image: chartImage,
+                        chart_type: chart.chartType,
+                        field_names: fieldNames,
+                        input_tables: inputTables,
+                        model: dfSelectors.getActiveModel(state),
+                    }),
+                };
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        let response = await fetchWithIdentity(getUrls().CHART_INSIGHT_URL, { ...message, signal: controller.signal });
-        clearTimeout(timeoutId);
+                let response = await fetchWithIdentity(getUrls().CHART_INSIGHT_URL, { ...message, signal: controller.signal });
+                clearTimeout(timeoutId);
 
-        let result = await response.json();
-        return { ...result, chartId: args.chartId, insightKey: computeInsightKey(chart) };
+                let result = await response.json();
+                return { ...result, chartId: args.chartId, insightKey: computeInsightKey(chart) };
+            })(),
+            new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Chart insight timed out')), INSIGHT_TIMEOUT_MS)
+            ),
+        ]);
+        return result;
     }
 );
 
@@ -504,6 +514,7 @@ export const dataFormulatorSlice = createSlice({
             state.viewMode = 'editor';
 
             state.chartSynthesisInProgress = [];
+            state.chartInsightInProgress = [];
 
             state.serverConfig = initialState.serverConfig;
 

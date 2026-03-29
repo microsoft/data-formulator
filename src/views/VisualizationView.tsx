@@ -28,7 +28,6 @@ import {
     Popover,
     Snackbar,
     Alert,
-    Collapse,
     Fade,
     Grow,
 } from '@mui/material';
@@ -41,6 +40,7 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 
 
 import '../scss/VisualizationView.scss';
+import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchChartInsight } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
@@ -54,11 +54,10 @@ import StarIcon from '@mui/icons-material/Star';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
-import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import InfoIcon from '@mui/icons-material/Info';
+import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import CasinoIcon from '@mui/icons-material/Casino';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -78,6 +77,9 @@ import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
 import { InsightIcon } from '../icons';
+import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
+import { FreeDataViewFC } from './DataView';
+
 
 import { dfSelectors } from '../app/dfSlice';
 import { ChartRecBox } from './ChartRecBox';
@@ -406,7 +408,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const componentRef = useRef<HTMLHeadingElement>(null);
 
     // Add ref for the container box that holds all exploration components
-    const explanationComponentsRef = useRef<HTMLDivElement>(null);
+
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     
@@ -454,43 +456,18 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    const [codeViewOpen, setCodeViewOpen] = useState<boolean>(false);
-    const [conceptExplanationsOpen, setConceptExplanationsOpen] = useState<boolean>(false);
-    const [insightViewOpen, setInsightViewOpen] = useState<boolean>(false);
-    
-    const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
+    const [bottomTab, setBottomTab] = useState<string>('data');
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
+    const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
 
     // Reset local UI state when focused chart changes
     useEffect(() => {
-        setCodeViewOpen(false);
-        setConceptExplanationsOpen(false);
-        setInsightViewOpen(false);
-        setChatDialogOpen(false);
+        setBottomTab('data');
         setLocalScaleFactor(1);
+        setChatDialogOpen(false);
     }, [focusedChartId]);
 
-    // Pin the scroll to the bottom while the Collapse animation runs,
-    // so the viewport smoothly follows the expanding content.
-    useEffect(() => {
-        if (!(conceptExplanationsOpen || codeViewOpen || insightViewOpen)) return;
-        const scrollable = explanationComponentsRef.current?.closest('.vega-focused') as HTMLElement | null;
-        if (!scrollable) return;
 
-        let rafId: number;
-        const pin = () => {
-            scrollable.scrollTop = scrollable.scrollHeight;
-            rafId = requestAnimationFrame(pin);
-        };
-        rafId = requestAnimationFrame(pin);
-
-        const timer = setTimeout(() => {
-            cancelAnimationFrame(rafId);
-            scrollable.scrollTop = scrollable.scrollHeight;
-        }, 350);
-
-        return () => { cancelAnimationFrame(rafId); clearTimeout(timer); };
-    }, [conceptExplanationsOpen, codeViewOpen, insightViewOpen]);
 
     let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
 
@@ -733,152 +710,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // Check if concepts are available
     const availableConcepts = extractConceptExplanations(table);
     const hasConcepts = availableConcepts.length > 0;
+    const hasDerived = !!(resultTable?.derive || table.derive);
 
-    let derivedTableItems = (resultTable?.derive || table.derive) ? [
-        <Box key="explanation-toggle-group" sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            mx: 0.5,
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderRadius: 1,
-            padding: '2px',
-            border: `1px solid ${borderColor.component}`
-        }}>
-            <ButtonGroup
-                key="explanation-button-group"
-                size="small"
-                sx={{
-                    '& .MuiButton-root': {
-                        textTransform: 'none',
-                        fontSize: '0.7rem',
-                        fontWeight: 500,
-                        border: 'none',
-                        borderRadius: '3px',
-                        padding: '2px 6px',
-                        minWidth: 'auto',
-                        color: 'text.secondary',
-                        '&:hover': {
-                            backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                        }
-                    }
-                }}
-            >
-                <Button 
-                    key="chat-dialog-btn"
-                    onClick={() => { setChatDialogOpen(!chatDialogOpen) }}
-                    sx={{
-                        backgroundColor: chatDialogOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                        color: chatDialogOpen ? 'primary.main' : 'text.secondary',
-                        fontWeight: chatDialogOpen ? 600 : 500,
-                        '&:hover': {
-                            backgroundColor: chatDialogOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                        },
-                    }}
-                >
-                    <QuestionAnswerIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                    {t('chart.log')}
-                </Button>
-                <Button 
-                    key="code-btn"
-                    onClick={() => {
-                        if (codeViewOpen) {
-                            setCodeViewOpen(false);
-                        } else {
-                            setCodeViewOpen(true);
-                            setConceptExplanationsOpen(false);
-                            setInsightViewOpen(false);
-                        }
-                    }}
-                    sx={{
-                        backgroundColor: codeViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                        color: codeViewOpen ? 'primary.main' : 'text.secondary',
-                        fontWeight: codeViewOpen ? 600 : 500,
-                        '&:hover': {
-                            backgroundColor: codeViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                        }
-                    }}
-                >
-                    <TerminalIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                    {t('chart.code')}
-                </Button>
-                {hasConcepts && (
-                    <Button 
-                        key="concepts-btn"
-                        onClick={() => {
-                            if (conceptExplanationsOpen) {
-                                setConceptExplanationsOpen(false);
-                            } else {
-                                setConceptExplanationsOpen(true);
-                                setCodeViewOpen(false);
-                                setInsightViewOpen(false);
-                            }
-                        }}
-                        sx={{
-                            backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                            color: conceptExplanationsOpen ? 'primary.main' : 'text.secondary',
-                            fontWeight: conceptExplanationsOpen ? 600 : 500,
-                            '&:hover': {
-                                backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                            }
-                        }}
-                    >
-                        <InfoIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                        {t('chart.concepts')}
-                    </Button>
-                )}
-            </ButtonGroup>
-        </Box>,
-        <ChatDialog key="chat-dialog-button" open={chatDialogOpen} 
-                    handleCloseDialog={() => { setChatDialogOpen(false) }}
-                    code={transformCode}
-                    dialog={resultTable?.derive?.dialog || table.derive?.dialog as any[]} />
-    ] : [];
-
-    let insightButton = !chartUnavailable && focusedChart.chartType !== "Table" ? (
-        <Box key="insight-toggle-group" sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            mx: 0.5,
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderRadius: 1,
-            padding: '2px',
-            border: `1px solid ${borderColor.component}`
-        }}>
-            <Button 
-                key="insight-btn"
-                size="small"
-                onClick={() => {
-                    if (insightViewOpen) {
-                        setInsightViewOpen(false);
-                    } else {
-                        setInsightViewOpen(true);
-                        setCodeViewOpen(false);
-                        setConceptExplanationsOpen(false);
-                        if (!insightFresh && !insightLoading) {
-                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
-                        }
-                    }
-                }}
-                sx={{
-                    textTransform: 'none',
-                    fontSize: '0.7rem',
-                    fontWeight: insightViewOpen ? 600 : 500,
-                    minWidth: 'auto',
-                    padding: '2px 6px',
-                    borderRadius: '3px',
-                    backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                    color: insightViewOpen ? 'primary.main' : 'text.secondary',
-                    '&:hover': {
-                        backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                    }
-                }}
-            >
-                <InsightIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                {insightLoading ? <CircularProgress size={10} sx={{ ml: 0.5 }} /> : t('chart.insight')}
-            </Button>
-        </Box>
-    ) : null;
-    
     let vegaEditorButton = (
         <Tooltip key="vega-editor-tooltip" title={t('chart.openInVegaEditor')}>
             <span>
@@ -891,11 +724,84 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         </Tooltip>
     );
 
+    // Toggle buttons for bottom-panel content (icon + text label)
+    const toggleBtnSx = (active: boolean) => ({
+        textTransform: 'none' as const,
+        fontSize: '0.7rem',
+        padding: '2px 8px',
+        borderRadius: '6px',
+        color: active ? 'primary.main' : 'text.secondary',
+        backgroundColor: active ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
+        transition: 'all 0.15s ease',
+        minWidth: 'auto',
+        '&:hover': {
+            backgroundColor: 'rgba(25, 118, 210, 0.08)',
+            color: 'primary.main',
+        },
+    });
+
+    let dataButton = (
+        <Button key="data-btn" size="small"
+            sx={toggleBtnSx(bottomTab === 'data')}
+            startIcon={<TableChartOutlinedIcon sx={{ fontSize: 14 }} />}
+            onClick={() => setBottomTab(prev => prev === 'data' ? '' : 'data')}>
+            {t('chart.data')}
+        </Button>
+    );
+
+    let derivedTableItems = hasDerived ? [
+        <Button key="code-btn" size="small"
+            sx={toggleBtnSx(bottomTab === 'code')}
+            startIcon={<TerminalIcon sx={{ fontSize: 14 }} />}
+            onClick={() => setBottomTab(prev => prev === 'code' ? '' : 'code')}>
+            {t('chart.code')}
+        </Button>,
+        ...(hasConcepts ? [
+            <Button key="concepts-btn" size="small"
+                sx={toggleBtnSx(bottomTab === 'concepts')}
+                startIcon={<AutoStoriesIcon sx={{ fontSize: 14 }} />}
+                onClick={() => setBottomTab(prev => prev === 'concepts' ? '' : 'concepts')}>
+                {t('chart.concepts')}
+            </Button>
+        ] : []),
+    ] : [];
+
+    let logButton = hasDerived ? (
+        <Tooltip key="log-btn-tooltip" title={t('chart.log')}>
+            <span>
+                <IconButton key="log-btn" size="small" sx={actionBtnSx}
+                    onClick={() => setChatDialogOpen(true)}>
+                    <QuestionAnswerIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+            </span>
+        </Tooltip>
+    ) : null;
+
+    let insightButton = (!chartUnavailable && focusedChart.chartType !== "Table") ? (
+        <Button key="insight-btn" size="small"
+            sx={toggleBtnSx(bottomTab === 'insight')}
+            startIcon={insightLoading ? <CircularProgress size={12} /> : <InsightIcon sx={{ fontSize: 14 }} />}
+            onClick={() => {
+                setBottomTab(prev => {
+                    if (prev === 'insight') return '';
+                    if (!insightFresh && !insightLoading) {
+                        dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
+                    }
+                    return 'insight';
+                });
+            }}>
+            {t('chart.insight')}
+        </Button>
+    ) : null;
+
     let chartActionButtons = [
-        ...derivedTableItems,
+        dataButton,
         insightButton,
+        ...derivedTableItems,
+        <Divider key="action-divider" orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />,
+        logButton,
         saveButton,
-        vegaEditorButton,
+        // vegaEditorButton,
         deleteButton,
     ]
 
@@ -952,7 +858,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
                             in={!isDataStale} timeout={600}>    
-                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%'}} className="chart-box">
+                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%', mt: 'max(120px, 4vh)', mb: 'max(120px, 4vh)'}} className="chart-box">
                                 {insightFresh && focusedChart.insight?.title && (
                                     <Typography fontSize="small" sx={{
                                         fontWeight: (focusedChart.encodingMap.column?.fieldID || focusedChart.encodingMap.row?.fieldID) ? 400 : 600,
@@ -961,7 +867,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         {focusedChart.insight.title}
                                     </Typography>
                                 )}
-                                <Box sx={{m: 'auto', minHeight: 240, maxWidth: '100%', overflow: 'hidden'}}>
+                                <Box sx={{minHeight: 240, maxWidth: '100%', overflow: 'hidden'}}>
                                     <VegaChartRenderer
                                         key={focusedChart.id}
                                         chart={focusedChart}
@@ -981,75 +887,95 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </Fade>;
 
     focusedComponent = [
-        <Box key="chart-focused-element"  sx={{ width: "100%", minHeight: "calc(100% - 40px)", margin: "auto", mt: 4, mb: 1, display: "flex", flexDirection: "column"}}>
+        <Box key="chart-focused-element" className="chart-focused-box"  sx={{ minHeight: 'min(75vh, 800px)', width: "100%", m: "auto", display: "flex", flexDirection: "column", flex: 1, justifyContent: 'center'}}>
             {focusedElement}
-            <Box ref={explanationComponentsRef} sx={{width: "100%", mx: "auto"}}>
-                <Collapse in={conceptExplanationsOpen} timeout={300}>
-                    <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
-                        <ConceptExplCards 
-                            concepts={extractConceptExplanations(table)}
-                            title={t('chart.derivedConcepts')}
-                            maxCards={8}
-                        />
-                    </Box>
-                </Collapse>
-                <Collapse in={codeViewOpen} timeout={300}>
-                    <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
-                        <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
-                            <IconButton onClick={() => {
-                                setCodeViewOpen(false);
-                            }}  color='primary' aria-label={t('app.close')}>
-                                <CloseIcon />
-                            </IconButton>
-                        </ButtonGroup>
-                        {/* <Typography fontSize="small" sx={{color: 'gray'}}>{table.derive?.source} → {table.id}</Typography> */}
-                        <CodeExplanationCard
-                            title={t('chart.dataTransformCode')}
-                            icon={<CodeIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
-                        >
-                            <Box sx={{
-                                    maxHeight: '400px', 
-                                    overflow: 'auto', 
-                                    width: '100%', 
-                                    p: 0.5
-                                }}
-                            >   
+            <Box key='chart-action-buttons' sx={{ 
+                display: 'flex', flexShrink: 0, flexDirection: "row", alignItems: 'center',
+                mx: "auto", py: 0.5, gap: 0.25,
+            }}>
+                {chartActionButtons}
+            </Box>
+        </Box>,
+        <React.Fragment key="bottom-panels">
+            {(() => {
+                const panelBoxSx = {
+                    margin: '8px auto 24px auto', padding: '8px', borderRadius: '8px',
+                    border: `1px solid ${borderColor.divider}`,
+                    transition: 'box-shadow 0.2s ease',
+                    '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
+                };
+                return <>
+                    {bottomTab === 'data' && (() => {
+                        const ROW_HEIGHT = 25;
+                        const HEADER_HEIGHT = 32;
+                        const FOOTER_HEIGHT = 32;
+                        const MIN_TABLE_HEIGHT = 150;
+                        const MAX_TABLE_HEIGHT = 400;
+                        const MIN_TABLE_WIDTH = 300;
+                        const MAX_TABLE_WIDTH = 900;
+                        const rowCount = table.virtual?.rowCount || table.rows?.length || 0;
+                        const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + FOOTER_HEIGHT;
+                        const adaptiveHeight = Math.max(MIN_TABLE_HEIGHT, Math.min(MAX_TABLE_HEIGHT, contentHeight));
+
+                        // Estimate total width from columns (generous: account for type icons, sort arrows, padding)
+                        const ROW_ID_COL_WIDTH = 56;
+                        const sampleSize = Math.min(29, table.rows.length);
+                        const step = table.rows.length > sampleSize ? table.rows.length / sampleSize : 1;
+                        const sampledRows = Array.from({ length: sampleSize }, (_, i) => table.rows[Math.floor(i * step)]);
+                        const totalColWidth = table.names.reduce((sum, name) => {
+                            const values = sampledRows.map(row => String(row[name] || ''));
+                            const avgLen = values.length > 0
+                                ? values.reduce((s, v) => s + v.length, 0) / values.length
+                                : 0;
+                            const nameSegs = name.split(/[\s-]+/);
+                            const maxNameSegLen = nameSegs.reduce((m, seg) => Math.max(m, seg.length), 0);
+                            const contentLen = Math.max(maxNameSegLen, avgLen);
+                            return sum + Math.max(80, Math.min(280, contentLen * 10)) + 60;
+                        }, ROW_ID_COL_WIDTH);
+                        const SCROLLBAR_WIDTH = 17;
+                        const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16));
+
+                        return (
+                            <Box sx={{ ...panelBoxSx, padding: 0, height: adaptiveHeight, width: adaptiveWidth, overflow: 'hidden', flexShrink: 0 }}>
+                                <FreeDataViewFC />
+                            </Box>
+                        );
+                    })()}
+                    {bottomTab === 'code' && hasDerived && (
+                        <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
+                            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
                                 <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
                             </Box>
-                        </CodeExplanationCard>
-                    </Box>
-                </Collapse>
-                <Collapse in={insightViewOpen} timeout={300}>
-                    <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
-                        <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
-                            <IconButton onClick={() => {
-                                setInsightViewOpen(false);
-                            }}  color='primary' aria-label={t('app.close')}>
-                                <CloseIcon />
-                            </IconButton>
-                        </ButtonGroup>
-                        <CodeExplanationCard
-                            title={t('chart.chartInsight')}
-                            icon={<InsightIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
-                        >
+                        </Box>
+                    )}
+                    {bottomTab === 'concepts' && hasConcepts && (
+                        <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
+                            <ConceptExplCards
+                                concepts={extractConceptExplanations(table)}
+                                title={t('chart.derivedConcepts')}
+                                maxCards={8}
+                            />
+                        </Box>
+                    )}
+                    {bottomTab === 'insight' && (
+                        <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
                             {insightLoading ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2 }}>
                                     <CircularProgress size={16} />
                                     <Typography fontSize="small" color="text.secondary">{t('chart.analyzingChart')}</Typography>
                                 </Box>
                             ) : insightFresh && focusedChart.insight ? (
-                                <Box sx={{ p: 0.5 }}>
-                                    <Typography fontSize="small" sx={{ fontWeight: 600, mb: 0.5 }}>
-                                        {focusedChart.insight.title}
-                                    </Typography>
-                                    {(focusedChart.insight.takeaways || []).map((t, i) => (
-                                        <Typography key={i} fontSize="small" color="text.secondary" sx={{ mb: 0.25, display: 'flex', alignItems: 'baseline' }}>
-                                            <span style={{ marginRight: 4, flexShrink: 0 }}>•</span>{t}
-                                        </Typography>
-                                    ))}
-                                    <Button 
-                                        size="small" 
-                                        sx={{ mt: 1, textTransform: 'none', fontSize: '0.7rem' }}
+                                <Box sx={{ p: 1.5 }}>
+                                    <Box component="ul" sx={{ m: 0, pl: 2.5, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                                        {(focusedChart.insight.takeaways || []).map((takeaway, i) => (
+                                            <Typography component="li" key={i} fontSize="0.8rem" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+                                                {takeaway}
+                                            </Typography>
+                                        ))}
+                                    </Box>
+                                    <Button
+                                        size="small"
+                                        sx={{ mt: 1.5, textTransform: 'none', fontSize: '0.7rem' }}
                                         onClick={() => {
                                             dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
                                         }}
@@ -1058,12 +984,12 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                     </Button>
                                 </Box>
                             ) : (
-                                <Box sx={{ p: 0.5 }}>
+                                <Box sx={{ p: 1.5 }}>
                                     <Typography fontSize="small" color="text.secondary">
                                         {t('chart.noInsightAvailable')}
                                     </Typography>
-                                    <Button 
-                                        size="small" 
+                                    <Button
+                                        size="small"
                                         sx={{ mt: 0.5, textTransform: 'none', fontSize: '0.7rem' }}
                                         onClick={() => {
                                             dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
@@ -1073,17 +999,16 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                     </Button>
                                 </Box>
                             )}
-                        </CodeExplanationCard>
-                    </Box>
-                </Collapse>
-            </Box>
-            <Box key='chart-action-buttons' sx={{ 
-                display: 'flex', flexShrink: 0, flexDirection: "row", alignItems: 'center',
-                mx: "auto", py: 0.5, gap: 0.25,
-            }}>
-                {chartActionButtons}
-            </Box>
-        </Box>
+                        </Box>
+                    )}
+                </>;
+            })()}
+        </React.Fragment>,
+        <Box key="bottom-spacer" sx={{ flexShrink: 0, height: 16 }} />,
+        hasDerived ? <ChatDialog key="chat-dialog-overlay" open={chatDialogOpen}
+            handleCloseDialog={() => setChatDialogOpen(false)}
+            code={transformCode}
+            dialog={resultTable?.derive?.dialog || table.derive?.dialog as any[]} /> : null,
     ]
     
     const ENCODING_SHELF_WIDTH = 240;
@@ -1168,6 +1093,8 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     const dispatch = useDispatch();
 
+    let tables = useSelector((state: DataFormulatorState) => state.tables);
+
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
 
@@ -1207,14 +1134,63 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
             }
         </Box>
         return (
-            <Box sx={{  margin: "auto" }}>
-                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
-                <Divider sx={{my: 3}} textAlign='left'>
-                    <Typography sx={{fontSize: 12, color: "text.secondary"}}>
-                        {t('chart.orStartWithChartType')}
-                    </Typography>
-                </Divider>
-                {chartSelectionBox}
+            <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+                <Box sx={{ overflow: "hidden", display: 'flex', flex: 1 }}>
+                    <Box sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', flexDirection: 'column', flex: 1 }}>
+                        <Box sx={{ minHeight: 'min(75vh, 600px)', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                            <Box sx={{ margin: 'auto' }}>
+                                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
+                                <Divider sx={{my: 3}} textAlign='left'>
+                                    <Typography sx={{fontSize: 12, color: "text.secondary"}}>
+                                        {t('chart.orStartWithChartType')}
+                                    </Typography>
+                                </Divider>
+                                {chartSelectionBox}
+                            </Box>
+                        </Box>
+                        {focusedId?.type === 'table' && focusedTableId && (() => {
+                            const focusedTable = tables.find(t => t.id === focusedTableId);
+                            if (!focusedTable) return null;
+                            const ROW_HEIGHT = 25;
+                            const HEADER_HEIGHT = 32;
+                            const FOOTER_HEIGHT = 32;
+                            const MIN_TABLE_HEIGHT = 150;
+                            const MAX_TABLE_HEIGHT = 400;
+                            const MIN_TABLE_WIDTH = 300;
+                            const MAX_TABLE_WIDTH = 900;
+                            const rowCount = focusedTable.virtual?.rowCount || focusedTable.rows?.length || 0;
+                            const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + FOOTER_HEIGHT;
+                            const adaptiveHeight = Math.max(MIN_TABLE_HEIGHT, Math.min(MAX_TABLE_HEIGHT, contentHeight));
+                            const ROW_ID_COL_WIDTH = 56;
+                            const sampleSize = Math.min(29, focusedTable.rows.length);
+                            const step = focusedTable.rows.length > sampleSize ? focusedTable.rows.length / sampleSize : 1;
+                            const sampledRows = Array.from({ length: sampleSize }, (_, i) => focusedTable.rows[Math.floor(i * step)]);
+                            const totalColWidth = focusedTable.names.reduce((sum, name) => {
+                                const values = sampledRows.map(row => String(row[name] || ''));
+                                const avgLen = values.length > 0 ? values.reduce((s, v) => s + v.length, 0) / values.length : 0;
+                                const nameSegs = name.split(/[\s-]+/);
+                                const maxNameSegLen = nameSegs.reduce((m, seg) => Math.max(m, seg.length), 0);
+                                const contentLen = Math.max(maxNameSegLen, avgLen);
+                                return sum + Math.max(80, Math.min(280, contentLen * 10)) + 60;
+                            }, ROW_ID_COL_WIDTH);
+                            const SCROLLBAR_WIDTH = 17;
+                            const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16));
+                            return (
+                                <Box sx={{
+                                    margin: '8px auto 24px auto', padding: 0,
+                                    height: adaptiveHeight, width: adaptiveWidth,
+                                    borderRadius: '8px',
+                                    border: `1px solid ${borderColor.divider}`,
+                                    transition: 'box-shadow 0.2s ease',
+                                    '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
+                                    overflow: 'hidden', flexShrink: 0,
+                                }}>
+                                    <FreeDataViewFC />
+                                </Box>
+                            );
+                        })()}
+                    </Box>
+                </Box>
             </Box>
         )
     }

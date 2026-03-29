@@ -19,6 +19,14 @@ import { inferTypeFromValueArray } from '../data/utils';
 import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
 
+/** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
+async function compressBlob(data: string): Promise<Blob> {
+    const blob = new Blob([new TextEncoder().encode(data)]);
+    const cs = new CompressionStream('gzip');
+    const compressedStream = blob.stream().pipeThrough(cs);
+    return new Response(compressedStream).blob();
+}
+
 export interface LoadTablePayload {
     // The table data (already parsed into rows/names/metadata on the frontend)
     table: DictTable;
@@ -193,8 +201,8 @@ export const loadTable = createAsyncThunk<
                 // Other sources (paste/url/example/extract): upload raw data to workspace
                 try {
                     const formData = new FormData();
-                    const jsonBlob = new Blob([JSON.stringify(table.rows)], { type: 'application/json' });
-                    formData.append('raw_data', jsonBlob, 'data.json');
+                    const compressedBlob = await compressBlob(JSON.stringify(table.rows));
+                    formData.append('raw_data', compressedBlob, 'data.json.gz');
                     formData.append('table_name', table.id);
                     
                     const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {
