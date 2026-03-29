@@ -13,7 +13,9 @@
      - 3.9.6~3.9.7 Login Gateway（SAML / LDAP / CAS）、通用登出
      - 3.9.8 auth.py 更新（provider_registry + gateway 注册）
      - 3.9.9 前端适配（统一登录入口 + /api/auth/methods + /api/auth/whoami）
-     - 3.9.10~3.9.14 完整链图、Token 透传差异、协议选择指南、依赖、优先级
+     - 3.9.10~3.9.11 完整链图、Token 透传差异
+     - 3.9.12 B 类协议 + 非密码认证（IC 卡/智能卡/PKI 证书）— OBO、服务账号委派、前端直连
+     - 3.9.13~3.9.16 协议选择指南、依赖、优先级
 4. [Layer 2：数据源插件系统 (DataSourcePlugin)](#4-layer-2数据源插件系统-datasourceplugin)
 5. [Layer 3：凭证保险箱 (CredentialVault)](#5-layer-3凭证保险箱-credentialvault)
 6. [SSO Token 透传机制](#6-sso-token-透传机制)
@@ -1722,7 +1724,445 @@ AUTH_PROVIDERS=azure_easyauth,oidc,proxy_header,session
 
 这也是为什么 **Layer 3 CredentialVault 是整个架构不可缺少的一层** —— 它为无法 token 透传的认证协议提供了凭证存储的兜底方案。同时这也说明 **OIDC 是首选协议**（P0 优先级），因为它是唯一能同时解决"身份识别"和"下游透传"两个问题的方案。
 
-#### 3.9.12 协议选择指南
+#### 3.9.12 B 类协议 + 非密码认证（IC 卡 / 智能卡 / PKI 证书）
+
+##### 问题场景
+
+上述"设计应对"的 CredentialVault 路线有一个隐含假设：**用户在下游系统有可存储的软件凭证（密码 / API Key）**。但在高安全等级的企业环境中，用户可能通过 IC 卡（智能卡 / USB Key）进行认证，这类方式具有以下特征：
+
+| 特征 | 说明 |
+|------|------|
+| **无密码** | 用户从未持有传统密码，无法在 CredentialVault 中存储 |
+| **硬件绑定** | 私钥存储在 IC 卡芯片中，TPM 保护，无法导出 |
+| **证书认证** | 基于 PKI / X.509 证书，非对称加密 |
+| **物理交互** | 每次签名需要插卡 + 可能需输入 PIN 码 |
+| **不可代理** | DF 后端无法代替用户完成IC 卡的签名操作 |
+
+这意味着：
+- CredentialVault 无用（没有可存储的软件凭证）
+- Token 直接透传无用（B 类协议没有产出 access_token）
+- 后端无法代替用户触发 IC 卡签名（私钥不可导出、需物理交互）
+
+##### 解决方案矩阵
+
+根据 IdP 和下游系统的能力组合，有以下四种解决路径：
+
+```
+用户通过 IC 卡登录 DF（SAML/CAS/证书认证）
+  │
+  ├─ IdP 支持 OAuth2 / OIDC？
+  │   │
+  │   ├─ 是 → 方案 1: IdP 代理委派 (OBO / Token Exchange)  ★ 最优
+  │   │        用户 IC 卡登录 → IdP 签发 OAuth2 token → DF 用 OBO 换取下游 token
+  │   │
+  │   └─ 否 → IdP 只有 SAML/证书
+  │       │
+  │       ├─ 下游系统支持被 impersonation？
+  │       │   │
+  │       │   ├─ 是 → 方案 2: 服务账号 + 身份委派 (Impersonation)
+  │       │   │        DF 用自己的服务账号连接下游，传递用户身份让下游做 RLS
+  │       │   │
+  │       │   └─ 否 → 下游只接受用户直接认证
+  │       │       │
+  │       │       ├─ 下游是 Web 应用？
+  │       │       │   ├─ 是 → 方案 3: 前端直连 (Browser-side Passthrough)
+  │       │       │   │        前端直接调用下游 API（浏览器已有IC卡会话/证书）
+  │       │       │   │
+  │       │       │   └─ 否 → 方案 4: 离线导入 / 手动上传
+  │       │       │            用户在下游系统导出数据，手动上传到 DF
+  │       │       │
+  │       │       └─ 下游支持 API Key？
+  │       │            └─ 是 → CredentialVault 存 API Key（回退到原方案）
+  │       │
+  └───────────────────────────────────────────────
+```
+
+##### 方案 1: IdP 代理委派 (OBO / Token Exchange) — 推荐
+
+**原理**：绝大多数企业 IdP（ADFS、Keycloak、PingFederate、Azure AD）即使在 IC 卡 / 证书认证场景下，也会签发一个 **"身份证明" token**（SAML Assertion 或 OAuth2 token）。DF 以此身份证明向 IdP 请求一个面向下游系统的委派 token。
+
+```
+┌──────────┐       ┌──────────┐       ┌──────────┐       ┌──────────┐
+│ 用户     │       │ IdP      │       │ DF       │       │ Superset │
+│ (IC 卡)  │       │ (ADFS等) │       │ 后端     │       │ API      │
+└────┬─────┘       └────┬─────┘       └────┬─────┘       └────┬─────┘
+     │  1. IC卡+证书认证  │                  │                  │
+     │ ──────────────→   │                  │                  │
+     │  2. SAML Assertion │                  │                  │
+     │    (或 auth code)  │                  │                  │
+     │ ←──────────────   │                  │                  │
+     │          3. Assertion/code 发给 DF    │                  │
+     │ ─────────────────────────────────→   │                  │
+     │                   │  4. Token Exchange│                  │
+     │                   │    (RFC 8693) 或  │                  │
+     │                   │    OBO (RFC 7523) │                  │
+     │                   │ ←────────────────│                  │
+     │                   │  5. 委派 token    │                  │
+     │                   │    (audience=     │                  │
+     │                   │     superset)     │                  │
+     │                   │ ──────────────→  │                  │
+     │                   │                  │  6. Bearer token  │
+     │                   │                  │ ──────────────→  │
+     │                   │                  │  7. 数据返回      │
+     │                   │                  │ ←──────────────  │
+```
+
+**Login Gateway 增强（以 SAML + Token Exchange 为例）**：
+
+```python
+# saml_gateway.py — saml_acs() 增强
+
+@saml_bp.route("/acs", methods=["POST"])
+def saml_acs():
+    auth = _get_saml_auth()
+    auth.process_response()
+    # ... 现有 SAML 验证逻辑 ...
+
+    # 如果 IdP 同时支持 OAuth2 Token Exchange，
+    # 在 SAML 登录成功后立即获取一个 OAuth2 access_token
+    raw_token = None
+    token_exchange_url = os.environ.get("IDP_TOKEN_ENDPOINT")  # IdP 的 OAuth2 token endpoint
+    df_client_id = os.environ.get("IDP_DF_CLIENT_ID")
+    df_client_secret = os.environ.get("IDP_DF_CLIENT_SECRET")
+
+    if token_exchange_url and df_client_id:
+        try:
+            import requests as http_requests
+            # RFC 8693 Token Exchange: 用 SAML Assertion 换 OAuth2 token
+            resp = http_requests.post(token_exchange_url, data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+                "subject_token": auth.get_last_response_xml(),    # SAML Response
+                "subject_token_type": "urn:ietf:params:oauth:token-type:saml2",
+                "client_id": df_client_id,
+                "client_secret": df_client_secret,
+                "scope": "openid profile email",
+            }, timeout=10)
+
+            if resp.ok:
+                raw_token = resp.json().get("access_token")
+                logger.info("Token Exchange succeeded for user %s", user_id)
+            else:
+                logger.warning("Token Exchange failed: %s", resp.text)
+        except Exception as e:
+            logger.warning("Token Exchange error: %s (SAML login still valid)", e)
+
+    result = AuthResult(
+        user_id=user_id,
+        # ... 其他字段 ...
+        raw_token=raw_token,  # 如果 Token Exchange 成功，则持有可透传的 access_token
+        auth_protocol="saml",
+        extra={
+            "name_id": auth.get_nameid(),
+            "session_index": auth.get_session_index(),
+            "has_delegated_token": raw_token is not None,
+        },
+    )
+
+    session["df_user"] = result.to_session_dict()
+    # 如果获得了 access_token，也存入 CredentialVault 以便后续刷新
+    if raw_token:
+        vault = get_credential_vault()
+        if vault:
+            vault.store(user_id, "__idp_delegated_token__", {
+                "access_token": raw_token,
+                "obtained_at": time.time(),
+            })
+
+    return redirect(relay_state)
+```
+
+**关键**：用户全程只接触 IC 卡，DF 后端通过 IdP 的 Token Exchange 把 SAML Assertion "转换" 为 OAuth2 access_token。对用户透明，对下游系统来说就是一个普通的 Bearer token。
+
+**IdP 配置要求**：
+
+| IdP | 支持的委派机制 | 配置方式 |
+|-----|-------------|---------|
+| **ADFS** | OAuth2 On-Behalf-Of | 在 ADFS 中注册 DF 为 Web API，配置 OBO 权限 |
+| **Azure AD / Entra ID** | OBO flow + Token Exchange | 在 App Registration 中配置 API permissions |
+| **Keycloak** | Token Exchange (内置) | 在 Realm 中启用 token-exchange，配置 fine-grained permissions |
+| **PingFederate** | Token Exchange | 配置 Access Token Mapping 和 Grant Type |
+| **Okta** | Token Exchange (预览) | 配置 Authorization Server 的 grant types |
+
+##### 方案 2: 服务账号 + 身份委派 (Impersonation)
+
+**适用场景**：IdP 不支持 Token Exchange，但下游系统支持"以服务账号访问 + 指定用户身份"。
+
+```
+┌──────────┐       ┌──────────┐       ┌──────────┐
+│ DF 后端  │       │ Superset │       │ 数据仓库 │
+│          │       │ API      │       │          │
+└────┬─────┘       └────┬─────┘       └────┬─────┘
+     │ 1. 服务账号登录    │                  │
+     │    + 身份委派:     │                  │
+     │    X-Impersonate:  │                  │
+     │    alice@corp.com  │                  │
+     │ ──────────────→   │                  │
+     │                   │ 2. RLS 按 alice   │
+     │                   │    过滤数据       │
+     │                   │ ──────────────→  │
+     │ 3. 返回 alice      │                  │
+     │    可见的数据      │                  │
+     │ ←──────────────   │                  │
+```
+
+**在 DataSourcePlugin 中实现**：
+
+```python
+class SupersetPlugin(DataSourcePlugin):
+    def _get_downstream_auth(self, user_id: str) -> dict:
+        """获取下游认证方式 — 优先 token 透传，其次服务账号委派。"""
+
+        # 优先级 1: 用户自己的 access_token（来自 OIDC 或 Token Exchange）
+        token = get_sso_token()
+        if token:
+            return {"headers": {"Authorization": f"Bearer {token}"}}
+
+        # 优先级 2: 用户在 Vault 中存储的凭证（密码 / API Key）
+        vault = get_credential_vault()
+        if vault:
+            creds = vault.retrieve(user_id, "superset")
+            if creds:
+                return {"headers": {"Authorization": f"Bearer {creds['api_key']}"}}
+
+        # 优先级 3: 服务账号 + 身份委派
+        svc_user = os.environ.get("SUPERSET_SERVICE_ACCOUNT")
+        svc_pass = os.environ.get("SUPERSET_SERVICE_PASSWORD")
+        if svc_user and svc_pass:
+            svc_token = self._login_service_account(svc_user, svc_pass)
+            return {
+                "headers": {
+                    "Authorization": f"Bearer {svc_token}",
+                    # Superset 的 impersonation 机制（具体 header 因系统而异）
+                    "X-Superset-Impersonate": user_id,
+                },
+            }
+
+        raise AuthenticationError("No credentials available for downstream system")
+```
+
+**下游系统的 Impersonation 支持情况**：
+
+| 系统 | 支持 Impersonation？ | 机制 |
+|------|:---:|------|
+| **Superset** | 部分 | Row Level Security (RLS) 基于 `current_user`；需开发 impersonation 中间件 |
+| **Metabase** | 否 | 无原生 impersonation，需服务账号 + 手动过滤 |
+| **Power BI Embedded** | 是 | Effective Identity 参数 |
+| **Grafana** | 是 | `X-WEBAUTH-USER` header + Auth Proxy 模式 |
+| **BigQuery** | 是 | Service Account + `impersonated_credentials` |
+| **Azure SQL** | 是 | `EXECUTE AS USER` |
+
+##### 方案 3: 前端直连 (Browser-side Passthrough)
+
+**适用场景**：下游系统是 Web 应用，且用户浏览器已通过 IC 卡建立了与下游系统的认证会话（如同一个 IdP 的 SSO），可以让前端直接调用下游 API，绕过 DF 后端。
+
+```
+┌──────────┐       ┌──────────┐       ┌──────────┐
+│ 浏览器   │       │ DF 后端  │       │ Superset │
+│ (IC 卡   │       │          │       │ API      │
+│  已认证) │       │          │       │          │
+└────┬─────┘       └────┬─────┘       └────┬─────┘
+     │                  │                  │
+     │ 1. 前端直接调用   │                  │
+     │    Superset API   │                  │
+     │    (浏览器自带    │                  │
+     │     SSO cookie    │                  │
+     │     或证书)       │                  │
+     │ ─────────────────────────────────→  │
+     │                  │                  │
+     │ 2. 数据返回       │                  │
+     │ ←─────────────────────────────────  │
+     │                  │                  │
+     │ 3. 数据交给 DF   │                  │
+     │    前端处理       │                  │
+     │ ──────────────→  │                  │
+```
+
+**Plugin 前端组件实现**：
+
+```typescript
+// plugins/superset/SupersetPanel.tsx — 前端直连模式
+
+async function fetchViaFrontend(apiUrl: string): Promise<any> {
+    // 浏览器直接调用下游 API — 依赖浏览器已有的 SSO session / 证书
+    const resp = await fetch(apiUrl, {
+        credentials: "include",    // 携带 cookie
+        // 如果下游要求 mTLS，浏览器会自动弹出证书选择对话框
+    });
+    if (!resp.ok) throw new Error(`Downstream API error: ${resp.status}`);
+    return resp.json();
+}
+
+// 在 Plugin 的 manifest 中声明支持前端直连
+export const manifest: PluginManifest = {
+    id: "superset",
+    // ...
+    capabilities: ["datasets", "browser_passthrough"],   // ← 新增能力标识
+    auth_modes: [
+        { mode: "sso_passthrough", label: "SSO Token 透传" },
+        { mode: "credentials", label: "用户名/密码" },
+        { mode: "service_account", label: "服务账号委派" },
+        { mode: "browser_passthrough", label: "浏览器直连 (IC 卡/证书)" },   // ← 新增
+    ],
+};
+```
+
+**局限性**：
+- 需要处理 CORS（下游系统必须允许 DF 域名的跨域请求）
+- 数据在前端中转，不经过 DF 后端，无法利用后端的缓存和转换能力
+- 不适合大数据量场景
+
+##### 方案对比与推荐
+
+| 维度 | 方案 1: OBO/Token Exchange | 方案 2: 服务账号委派 | 方案 3: 前端直连 |
+|------|:---:|:---:|:---:|
+| **用户体验** | 最优（完全透明） | 较好（透明但依赖配置） | 一般（可能弹证书对话框） |
+| **安全性** | 最高（最小权限，用户级 token） | 中等（服务账号权限较大） | 高（用户自身权限） |
+| **配置复杂度** | 高（IdP 需支持 Token Exchange） | 中（需配置服务账号 + 权限） | 低（仅 CORS 配置） |
+| **IdP 要求** | 必须支持 OAuth2 + 委派 | 无特殊要求 | 无特殊要求 |
+| **下游系统要求** | 接受 Bearer token | 支持 impersonation 或 RLS | 允许 CORS + 浏览器认证 |
+| **数据量** | 不限 | 不限 | 受浏览器限制 |
+| **离线/批量** | 支持 | 支持 | 不支持 |
+
+**推荐策略**：
+
+```
+IC 卡 / 证书认证用户访问下游系统
+  │
+  ├─ IdP 支持 OAuth2 Token Exchange？
+  │   └─ 是 → ★ 方案 1: OBO/Token Exchange（首选，零感知最优体验）
+  │
+  ├─ 下游系统支持服务账号 + impersonation？
+  │   └─ 是 → 方案 2: 服务账号委派（次选，运维可控）
+  │
+  ├─ 下游系统是 Web 应用且允许 CORS？
+  │   └─ 是 → 方案 3: 前端直连（兜底，数据量小时可用）
+  │
+  └─ 以上都不行
+      └─ 方案 4: 用户在下游系统导出数据，手动上传到 DF（终极兜底）
+```
+
+##### 架构层面的适配
+
+为支持上述多种下游认证策略，`DataSourcePlugin` 基类需要新增 **认证策略协商** 能力：
+
+```python
+# plugins/base.py — 扩展
+
+class DownstreamAuthMode(str, Enum):
+    """下游系统认证策略。"""
+    SSO_PASSTHROUGH = "sso_passthrough"       # A: OAuth2/OIDC token 直接透传
+    TOKEN_EXCHANGE = "token_exchange"          # B: IdP 代理委派 (OBO/Token Exchange)
+    CREDENTIALS = "credentials"               # C: 用户名/密码 (CredentialVault)
+    API_KEY = "api_key"                        # D: API Key (CredentialVault)
+    SERVICE_ACCOUNT = "service_account"        # E: 服务账号 + Impersonation
+    BROWSER_PASSTHROUGH = "browser_passthrough" # F: 前端直连 (浏览器自身认证)
+
+class DataSourcePlugin(ABC):
+
+    @staticmethod
+    def supported_auth_modes() -> list[dict]:
+        """声明此插件支持的下游认证策略（按优先级排序）。
+        
+        框架会根据当前用户的认证状态自动选择最优策略：
+        - 有 access_token → sso_passthrough
+        - 有 IdP token endpoint → token_exchange
+        - 有 Vault 凭证 → credentials / api_key
+        - 有服务账号配置 → service_account
+        - 以上都没有 → browser_passthrough
+        """
+        return [
+            {"mode": "sso_passthrough", "label": "SSO Token 透传", "priority": 1},
+            {"mode": "credentials", "label": "用户名/密码", "priority": 2},
+        ]
+
+    def resolve_downstream_auth(self, user_id: str) -> dict:
+        """自动协商最优的下游认证方式。
+
+        按 supported_auth_modes 的优先级逐个尝试，
+        返回第一个当前环境下可用的认证 headers/params。
+        子类可以 override 此方法实现自定义逻辑。
+        """
+        for mode_spec in sorted(self.supported_auth_modes(), key=lambda m: m.get("priority", 99)):
+            mode = mode_spec["mode"]
+
+            if mode == "sso_passthrough":
+                token = get_sso_token()
+                if token:
+                    return {"mode": mode, "headers": {"Authorization": f"Bearer {token}"}}
+
+            elif mode == "token_exchange":
+                token = self._try_token_exchange(user_id)
+                if token:
+                    return {"mode": mode, "headers": {"Authorization": f"Bearer {token}"}}
+
+            elif mode in ("credentials", "api_key"):
+                vault = get_credential_vault()
+                if vault:
+                    creds = vault.retrieve(user_id, self.manifest()["id"])
+                    if creds:
+                        return {"mode": mode, "credentials": creds}
+
+            elif mode == "service_account":
+                svc_config = self._get_service_account_config()
+                if svc_config:
+                    return {"mode": mode, "service_account": svc_config, "impersonate_user": user_id}
+
+            elif mode == "browser_passthrough":
+                return {"mode": mode, "client_side": True}
+
+        return {"mode": "none", "error": "No authentication method available"}
+
+    def _try_token_exchange(self, user_id: str) -> Optional[str]:
+        """尝试通过 IdP Token Exchange 获取面向本插件下游系统的委派 token。"""
+        token_endpoint = os.environ.get("IDP_TOKEN_ENDPOINT")
+        client_id = os.environ.get("IDP_DF_CLIENT_ID")
+        client_secret = os.environ.get("IDP_DF_CLIENT_SECRET")
+        target_audience = self.manifest().get("token_exchange_audience")
+
+        if not all([token_endpoint, client_id, target_audience]):
+            return None
+
+        # 需要当前用户的原始 token 作为 subject_token
+        auth_result = get_auth_result()
+        if not auth_result or not auth_result.raw_token:
+            return None
+
+        try:
+            import requests as http_requests
+            resp = http_requests.post(token_endpoint, data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+                "subject_token": auth_result.raw_token,
+                "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+                "audience": target_audience,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }, timeout=10)
+
+            if resp.ok:
+                return resp.json().get("access_token")
+        except Exception as e:
+            logger.warning("Token exchange failed for plugin '%s': %s", self.manifest()["id"], e)
+
+        return None
+```
+
+**前端配合**：当 `resolve_downstream_auth` 返回 `{"mode": "browser_passthrough", "client_side": True}` 时，框架通知前端插件组件切换到直连模式：
+
+```typescript
+// plugins/registry.ts — 自动认证模式协商
+
+interface ResolvedAuth {
+    mode: string;
+    client_side?: boolean;
+    error?: string;
+}
+
+// 插件加载时，后端返回当前用户的可用认证模式
+// GET /api/plugins/{plugin_id}/auth-mode → ResolvedAuth
+// 前端据此决定是走后端 proxy 还是浏览器直连
+```
+
+#### 3.9.13 协议选择指南
 
 为方便运维人员选择，提供以下决策树：
 
@@ -1739,6 +2179,10 @@ AUTH_PROVIDERS=azure_easyauth,oidc,proxy_header,session
   │   ├─ 能配 OIDC 吗？ → 优先 oidc (ADFS/Ping 一般都支持)
   │   └─ 只有 SAML → 用 saml (session 模式)
   │
+  ├─ IC 卡 / 智能卡 / PKI 证书
+  │   ├─ IdP 能签发 OAuth2 token？ → 用 oidc/saml + Token Exchange (见 3.9.12)
+  │   └─ 否 → 服务账号委派 或 前端直连 (见 3.9.12)
+  │
   ├─ Authelia / Authentik / nginx / Traefik (反向代理已认证)
   │   └─ 用 proxy_header
   │
@@ -1752,7 +2196,7 @@ AUTH_PROVIDERS=azure_easyauth,oidc,proxy_header,session
       └─ 默认 Browser UUID (匿名模式)
 ```
 
-#### 3.9.13 新增依赖说明
+#### 3.9.14 新增依赖说明
 
 各协议的 Python 依赖作为 **可选依赖** 安装，基础安装不引入：
 
@@ -1768,7 +2212,7 @@ cas  = []  # 纯标准库实现，无额外依赖
 auth-all = ["PyJWT>=2.8", "cryptography>=41.0", "python3-saml>=1.16", "ldap3>=2.9"]
 ```
 
-#### 3.9.14 优先级建议
+#### 3.9.15 优先级建议
 
 | 优先级 | 协议 | 理由 |
 |:---:|------|------|
