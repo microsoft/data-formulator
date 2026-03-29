@@ -695,7 +695,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 : 
                 <Tooltip title={t('encoding.formulate')}>
                     <span>
-                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }} disabled={!prompt.trim()} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
+                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }} disabled={!prompt.trim() && activeCustomFields.length === 0} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
                             <PrecisionManufacturing sx={{
                                 fontSize: 20,
                                 ...(isChartAvailable ? {} : {

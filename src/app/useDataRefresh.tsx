@@ -9,6 +9,14 @@ import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
 
+/** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
+async function compressBlob(data: string): Promise<Blob> {
+    const blob = new Blob([new TextEncoder().encode(data)]);
+    const cs = new CompressionStream('gzip');
+    const compressedStream = blob.stream().pipeThrough(cs);
+    return new Response(compressedStream).blob();
+}
+
 interface RefreshResult {
     tableId: string;
     success: boolean;
@@ -230,13 +238,14 @@ export function useDataRefresh() {
                         // Database sources don't need this — their backend refresh already updates workspace.
                         if (table.source?.type === 'stream' && table.virtual?.tableId) {
                             try {
+                                const compressedBody = await compressBlob(JSON.stringify({
+                                    table_name: table.virtual.tableId,
+                                    rows: result.newRows
+                                }));
                                 await fetchWithIdentity(getUrls().SYNC_TABLE_DATA, {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        table_name: table.virtual.tableId,
-                                        rows: result.newRows
-                                    })
+                                    headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip' },
+                                    body: compressedBody
                                 });
                                 console.log(`[DataRefresh] Synced stream data for "${table.virtual.tableId}" to workspace`);
                             } catch (syncError) {

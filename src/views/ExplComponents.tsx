@@ -122,22 +122,16 @@ const renderWithMath = (text: string) => {
 };
 
 // Styled components for the concept explanation cards
-const ConceptExplanationCard = styled(Card, {
+const ConceptExplanationCard = styled(Box, {
     shouldForwardProp: (prop) => prop !== 'secondary',
-})<{ secondary: boolean }>(({ theme, secondary}) => ({
-    minWidth: 360,  // Increased from 300
-    maxWidth: 480,  // Increased from 360
-    margin: '4px',
-
-    borderRadius: '6px',
-    border: `1px solid ${borderColor.divider}`,
-    boxShadow: shadow.sm,
+})<{ secondary: boolean }>(({ theme, secondary }) => ({
+    padding: '8px 12px',
+    borderLeft: `3px solid ${secondary ? theme.palette.secondary.main : theme.palette.primary.light}`,
+    borderRadius: '2px',
+    backgroundColor: alpha(theme.palette.background.paper, 0.5),
     transition: transition.normal,
-    backgroundColor: alpha(theme.palette.background.paper, 0.9),
     '&:hover': {
-        boxShadow: shadow.lg,
-        borderColor: !secondary ? theme.palette.primary.light : theme.palette.secondary.light, 
-        transform: 'translateY(-1px)',
+        backgroundColor: alpha(theme.palette.primary.main, 0.04),
     },
 }));
 
@@ -158,7 +152,6 @@ const ConceptExplanation = styled(Typography)(({ theme }) => ({
     lineHeight: 1.4,
     overflow: 'auto',
     color: theme.palette.text.primary,
-    fontStyle: 'italic',
     '& .katex': {
         fontSize: '12px',
         lineHeight: 1.2,
@@ -198,7 +191,7 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
             {/* Concepts Grid */}
             <Box sx={{ 
                     display: 'grid', 
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',  // Increased from 180px
+                    gridTemplateColumns: 'repeat(2, 1fr)',
                     gap: 1,
                     overflow: 'hidden',
                 }}>
@@ -206,14 +199,12 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
                         let secondary = concept.field == "Statistical Analysis";
                         return (
                         <ConceptExplanationCard key={`${concept.field}-${index}`} secondary={secondary}>
-                            <CardContent sx={{ padding: '6px !important' }}>
-                                <ConceptName secondary={secondary}>
-                                    {concept.field}
-                                </ConceptName>
-                                <ConceptExplanation>
-                                    {renderWithMath(concept.explanation)}
-                                </ConceptExplanation>
-                            </CardContent>
+                            <ConceptName secondary={secondary}>
+                                {concept.field}
+                            </ConceptName>
+                            <ConceptExplanation>
+                                {renderWithMath(concept.explanation)}
+                            </ConceptExplanation>
                         </ConceptExplanationCard>
                     )})}
                 </Box>

@@ -233,7 +233,12 @@ class AzureBlobWorkspace(Workspace):
         if self._metadata_cache is not None:
             return self._metadata_cache
         raw = self._download_bytes(METADATA_FILENAME)
-        parsed = yaml.safe_load(raw)
+        try:
+            parsed = yaml.safe_load(raw)
+        except yaml.YAMLError as e:
+            raise ValueError(
+                f"Corrupted workspace metadata YAML in blob storage: {e}"
+            ) from e
         if parsed is None:
             raise ValueError("Metadata blob parsed to None")
         self._metadata_cache = WorkspaceMetadata.from_dict(parsed)
@@ -241,7 +246,7 @@ class AzureBlobWorkspace(Workspace):
 
     def save_metadata(self, metadata: WorkspaceMetadata) -> None:
         metadata.updated_at = datetime.now(timezone.utc)
-        content = yaml.dump(
+        content = yaml.safe_dump(
             metadata.to_dict(),
             default_flow_style=False,
             allow_unicode=True,

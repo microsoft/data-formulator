@@ -72,7 +72,7 @@
     "sortOrderLabel": "排序顺序：",
     "autoSortFailed": "无法执行自动排序。",
     "autoSortServerError": "服务器问题导致无法执行自动排序。",
-    "followUpChartPlaceholder": "在此图表上继续操作",
+    "followUpChartPlaceholder": "基于此图表快速跟进",
     "refreshIdeas": "刷新想法",
     "formulationSucceeded": "{{fields}} 的数据构建成功。",
     "formulationFailed": "数据构建失败。"

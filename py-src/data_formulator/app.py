@@ -33,7 +33,7 @@ app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "
 app.secret_key = secrets.token_hex(16)
 app.json.sort_keys = False
 app.json.ensure_ascii = False
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
 
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -147,6 +147,10 @@ def get_sample_datasets():
 def index_alt(path):
     logger.info(app.static_folder)
     return send_from_directory(app.static_folder, "index.html")
+
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    return flask.jsonify({"status": "error", "message": "File too large. Maximum upload size is 500 MB."}), 413
 
 @app.errorhandler(404)
 def page_not_found(e):
