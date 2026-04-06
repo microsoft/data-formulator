@@ -24,7 +24,7 @@ from typing import Any, Generator
 from data_formulator.agents.agent_data_rec import DataRecAgent
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
 from data_formulator.agents.client_utils import Client
-from data_formulator.code_signing import sign_result
+from data_formulator.security.code_signing import sign_result
 from data_formulator.workflows.create_vl_plots import (
     assemble_vegailte_chart,
     coerce_field_type,

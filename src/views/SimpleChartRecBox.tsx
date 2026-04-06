@@ -672,15 +672,21 @@ export const SimpleChartRecBox: FC = function () {
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
             display: 'flex', flexDirection: 'column',
-            mx: 1, mb: 1, mt: 0.5,
+            mx: 1.5, mb: 1.5, mt: 0.5,
             px: 1, pt: 0.5, pb: 0.25,
-            borderRadius: '8px',
+            borderRadius: '12px',
             border: 'none',
             outline: 'none',
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
-            transition: 'box-shadow 0.2s ease, background-color 0.2s ease',
+            transition: 'box-shadow 0.25s ease, background-color 0.2s ease',
+            boxShadow: `0 2px 12px ${alpha(theme.palette.common.black, 0.08)}, 0 0 0 1px ${alpha(theme.palette.divider, 0.12)}`,
+            backdropFilter: 'blur(12px)',
+            backgroundColor: alpha(theme.palette.background.paper, 0.92),
+            '&:focus-within': {
+                boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.10)}, 0 2px 12px ${alpha(theme.palette.common.black, 0.08)}`,
+            },
             ...(isChatFormulating ? { backgroundColor: alpha(theme.palette.action.disabledBackground, 0.06) } : {}),
             // Gradient border via pseudo-element (works with border-radius)
             '&::before': {

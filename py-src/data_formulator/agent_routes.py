@@ -23,8 +23,8 @@ from data_formulator.agents.agent_data_transform import DataTransformationAgent
 from data_formulator.agents.agent_data_rec import DataRecAgent
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
-from data_formulator.auth import get_identity_id
-from data_formulator.code_signing import sign_result, verify_code, MAX_CODE_SIZE
+from data_formulator.security.auth import get_identity_id
+from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
 from data_formulator.datalake.workspace import Workspace, WorkspaceWithTempData
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
@@ -38,7 +38,7 @@ from data_formulator.model_registry import model_registry
 
 from data_formulator.agents.data_agent import DataAgent
 from data_formulator.agents.agent_language import build_language_instruction
-from data_formulator.sanitize import sanitize_error_message
+from data_formulator.security.sanitize import sanitize_error_message
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -114,6 +114,12 @@ def get_client(model_config):
     for key in model_config:
         if isinstance(model_config[key], str):
             model_config[key] = model_config[key].strip()
+
+    # Validate user-provided api_base against the allowlist (SSRF protection).
+    # Global models are trusted (their api_base comes from server env vars).
+    if not model_config.get("is_global"):
+        from data_formulator.security.url_allowlist import validate_api_base
+        validate_api_base(model_config.get("api_base"))
 
     client = Client(
         model_config["endpoint"],

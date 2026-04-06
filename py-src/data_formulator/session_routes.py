@@ -15,7 +15,7 @@ from datetime import datetime
 
 from flask import Blueprint, request, jsonify, send_file, current_app
 
-from data_formulator.auth import get_identity_id
+from data_formulator.security.auth import get_identity_id
 from data_formulator.workspace_factory import get_workspace
 
 logger = logging.getLogger(__name__)

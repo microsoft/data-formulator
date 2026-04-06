@@ -53,7 +53,6 @@ import { checkChartAvailability, generateChartSkeleton, getDataTable } from './V
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -75,13 +74,11 @@ import { buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps }
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
 import RuleIcon from '@mui/icons-material/Rule';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
 import { SimpleChartRecBox } from './SimpleChartRecBox';
-import { ChatThreadView } from './ChatThreadView';
 
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
@@ -751,7 +748,7 @@ const WorkspacePanel: FC<{
 
 /** A status message that collapses to a single line on click, and expands back on click. */
 const CollapsibleStatusMessage: FC<{ text: string; color: string }> = ({ text, color }) => {
-    const [collapsed, setCollapsed] = useState(true);
+    const [collapsed, setCollapsed] = useState(false);
     return (
         <Typography
             variant="body2"
@@ -2037,9 +2034,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
     const [chatboxFocused, setChatboxFocused] = useState(false);
-    const [chatMode, setChatMode] = useState(false);
-
-    // Re-attach ResizeObserver whenever chatMode changes (containerRef moves to a different element)
+    // Re-attach ResizeObserver when containerRef changes
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
@@ -2050,7 +2045,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         });
         ro.observe(el);
         return () => ro.disconnect();
-    }, [chatMode]);
+    }, []);
 
     const theme = useTheme();
 
@@ -2399,7 +2394,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
         /* minColumns */ fittableColumns
     );
-    const actualColumns = columnLayout.length || 1;
 
     let renderThreadEntry = (entry: ThreadEntry) => {
         let usedTableIds = entry.usedTableIds || [];
@@ -2490,37 +2484,15 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     return (
         <Box className="data-thread" sx={{ ...sx, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-            {/* Mode toggle button — floats on top-right corner */}
-            <Box sx={{ position: 'absolute', top: 4, right: 16, zIndex: 5 }}>
-                <Tooltip title={chatMode ? t('dataThread.switchToThreadView') : t('dataThread.switchToChatView')}>
-                    <IconButton
-                        size="small"
-                        aria-label={chatMode ? t('dataThread.switchToThreadView') : t('dataThread.switchToChatView')}
-                        onClick={() => setChatMode(m => !m)}
-                        sx={{ p: 0.5, color: theme.palette.text.secondary,
-                            backgroundColor: alpha(theme.palette.action.selected, 0.04),
-                            borderRadius: '6px',
-                            '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.08) } }}
-                    >
-                        {chatMode ? <AccountTreeIcon sx={{ fontSize: 18 }} /> : <ForumOutlinedIcon sx={{ fontSize: 18 }} />}
-                    </IconButton>
-                </Tooltip>
+            <Box ref={containerRef} sx={{
+                    overflow: 'hidden', 
+                    direction: 'rtl', 
+                    display: 'block', 
+                    flex: 1,
+                    minHeight: 0,
+                }}>
+                {view}
             </Box>
-            {chatMode ? (
-                <Box ref={containerRef} sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <ChatThreadView />
-                </Box>
-            ) : (
-                <Box ref={containerRef} sx={{
-                        overflow: 'hidden', 
-                        direction: 'rtl', 
-                        display: 'block', 
-                        flex: 1,
-                        minHeight: 0,
-                    }}>
-                    {view}
-                </Box>
-            )}
             <SimpleChartRecBox />
         </Box>
     );
