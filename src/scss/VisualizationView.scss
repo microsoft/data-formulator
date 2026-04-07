@@ -1,6 +1,31 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+// Near-invisible scrollbar that appears on hover — reusable class
+.vis-scroll {
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    &::-webkit-scrollbar-thumb {
+        background: transparent;
+        border-radius: 3px;
+    }
+    &:hover::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.15);
+    }
+    &:hover::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 0, 0, 0.3);
+    }
+    scrollbar-color: transparent transparent;
+    &:hover {
+        scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+    }
+    transition: linear 0.1s;
+}
+
 .visualization-gallery {
     padding: 0; //0px 10px 10px 10px;
     overflow: hidden;
@@ -203,7 +228,6 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 
 .data-thread {
     
-
     .thread-view-animation {
         transform-origin: bottom left;
         animation: appear 0.5s ease-out

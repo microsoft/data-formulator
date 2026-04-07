@@ -222,18 +222,35 @@ export const TriggerCard: FC<{
         </Typography>
     }
 
-    let prompt: string = trigger.displayInstruction;
-    if (trigger.instruction == '' && encFields.length > 0) {
-        prompt = '';
-    } else if (!trigger.displayInstruction || (trigger.instruction != '' && trigger.instruction.length <= trigger.displayInstruction.replace(/\*\*/g, '').length)) {
-        prompt = trigger.instruction;
+    // Derive prompt text from interaction log (preferred) or legacy fields
+    let prompt: string;
+    const interaction = trigger.interaction;
+    if (interaction && interaction.length > 0) {
+        const lastInstruction = [...interaction].reverse().find(e => e.role === 'instruction');
+        prompt = lastInstruction?.displayContent || lastInstruction?.content || trigger.displayInstruction || trigger.instruction || '';
+    } else {
+        prompt = trigger.displayInstruction;
+        if (trigger.instruction == '' && encFields.length > 0) {
+            prompt = '';
+        } else if (!trigger.displayInstruction || (trigger.instruction != '' && trigger.instruction.length <= trigger.displayInstruction.replace(/\*\*/g, '').length)) {
+            prompt = trigger.instruction;
+        }
     }
+
+    // Determine color palette based on who sent the instruction:
+    // user → custom (orange), agent → derived (gold)
+    let isFromUser = true;
+    if (interaction && interaction.length > 0) {
+        const lastInstruction = [...interaction].reverse().find(e => e.role === 'instruction');
+        isFromUser = lastInstruction ? lastInstruction.from === 'user' : interaction[0]?.from === 'user';
+    }
+    const triggerPalette = isFromUser ? theme.palette.custom : theme.palette.secondary;
 
     // Process the prompt to highlight content in ** **
     const processedPrompt = renderTextWithEmphasis(prompt, {
         fontSize: mini ? 10 : 11, padding: '1px 4px',
         borderRadius: radius.sm,
-        background: alpha(theme.palette.custom.main, 0.08), 
+        background: alpha(triggerPalette.main, 0.08), 
     });
 
     if (mini) {
@@ -247,8 +264,7 @@ export const TriggerCard: FC<{
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
             ...sx,
         }} onClick={handleClick}>
-            {processedPrompt} 
-            {hideFields ? "" : encodingComp}
+            {processedPrompt}{hideFields ? "" : encodingComp}
         </Typography> 
     }
 
@@ -261,15 +277,14 @@ export const TriggerCard: FC<{
             py: 0.5,
             px: 1,
             borderRadius: radius.sm,
-            backgroundColor: theme.palette.custom.bgcolor,
+            backgroundColor: triggerPalette.bgcolor,
             border: `1px solid ${borderColor.component}`,
-            ...(highlighted ? { borderLeft: `2px solid ${theme.palette.custom.main}` } : {}),
+            ...(highlighted ? { borderLeft: `2px solid ${triggerPalette.main}` } : {}),
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
             ...sx,
         }} 
         onClick={handleClick}>
-            {processedPrompt}
-            {hideFields ? "" : <>{" "}{encodingComp}</>}
+            {processedPrompt}{hideFields ? "" : <>{" "}{encodingComp}</>}
     </Typography>
 }
 
@@ -494,10 +509,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         const actionId = `deriveNewData_${String(Date.now())}`;
         const originTableId = focusedTableId || currentTable.id;
         const actionDescription = instruction || `Derive ${fieldNamesStr}`;
-        dispatch(dfActions.updateAgentWorkInProgress({
-            actionId, originTableId, description: actionDescription, status: 'running', hidden: false,
-            message: { content: actionDescription, role: 'user', observeTableId: originTableId }
-        }));
 
         // Build chart visualization context
         let chartComplete = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
@@ -596,16 +607,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     "type": "success",
                     "value": t('encoding.formulationSucceeded', { fields: fieldNamesStr })
                 }));
-                dispatch(dfActions.updateAgentWorkInProgress({
-                    actionId, description: displayInstruction || actionDescription, status: 'completed', hidden: false,
-                    message: { content: displayInstruction || actionDescription, role: 'action', resultTableId: candidateTable.id }
-                }));
             },
             onError: () => {
-                dispatch(dfActions.updateAgentWorkInProgress({
-                    actionId, description: actionDescription, status: 'failed', hidden: false,
-                    message: { content: t('encoding.formulationFailed'), role: 'error' }
-                }));
             },
             onFinally: () => {
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));

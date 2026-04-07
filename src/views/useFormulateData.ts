@@ -365,6 +365,14 @@ export function useFormulateData() {
                 displayInstruction,
                 chart: triggerChart,
                 resultTableId: candidateTableId,
+                interaction: [{
+                    from: 'user' as const,
+                    to: 'datarec-agent' as const,
+                    role: 'instruction' as const,
+                    content: instruction,
+                    displayContent: displayInstruction,
+                    timestamp: Date.now(),
+                }],
             };
 
             // Create candidate table with derive info

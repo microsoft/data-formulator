@@ -370,6 +370,7 @@ function buildDictTableFromWorkspace(
     }
 
     return {
+        kind: 'table' as const,
         id: wsTable.name,
         displayId: wsTable.name,
         names: wsTable.columns.map((col: any) => col.name),
@@ -387,7 +388,6 @@ function buildDictTableFromWorkspace(
             rowCount: wsTable.row_count,
         },
         anchored: true,
-        createdBy: 'user',
         attachedMetadata: '',
         source: sourceConfig,
     };

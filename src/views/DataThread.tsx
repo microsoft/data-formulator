@@ -34,10 +34,11 @@ import { useTranslation } from 'react-i18next';
 import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
-import { Chart, DictTable, Trigger } from "../components/ComponentType";
+import { Chart, DictTable, Trigger, InteractionEntry } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import StarIcon from '@mui/icons-material/Star';
+import PersonIcon from '@mui/icons-material/Person';
 import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
 
@@ -76,6 +77,9 @@ import { AgentRulesDialog } from './AgentRulesDialog';
 import RuleIcon from '@mui/icons-material/Rule';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 
 import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
 import { SimpleChartRecBox } from './SimpleChartRecBox';
@@ -116,6 +120,29 @@ export const ThinkingBanner = (message: string, sx?: SxProps) => (
         </Typography>
     </Box>
 );
+
+// ── Interaction dot: small inline entries for non-instruction interaction steps ──
+
+const InteractionDot: React.FC<{ entry: InteractionEntry }> = memo(({ entry }) => {
+    const theme = useTheme();
+    // Color based on actor: user → custom (orange), agent → derived (gold)
+    const isFromUser = entry.from === 'user';
+    const color = isFromUser ? theme.palette.custom.main : theme.palette.secondary.main;
+    const text = entry.displayContent || entry.content;
+    const maxLen = entry.role === 'thought' ? 120 : 200;
+    const display = text.length > maxLen ? text.slice(0, maxLen) + '…' : text;
+
+    return (
+        <Typography component="div" sx={{
+            fontSize: '10px',
+            color,
+            py: '1px',
+            ...(entry.role === 'thought' ? { fontStyle: 'italic', opacity: 0.75 } : {}),
+        }}>
+            {display}
+        </Typography>
+    );
+});
 
 /** Seconds options for stream/database auto-refresh interval (labels in i18n: dataThread.refreshInterval.*). */
 const STREAM_REFRESH_INTERVAL_SECONDS = [1, 10, 30, 60, 300, 600, 1800, 3600, 86400] as const;
@@ -830,49 +857,30 @@ let SingleThreadGroupView: FC<{
         const chart = charts.find(c => c.id === chartId);
         return chart?.tableRef;
     }, [focusedId, charts]);
-    let agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
+    let draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
 
-    // Pre-index running agent table IDs for O(1) lookup
+    // Pre-index running/clarifying/completed status from DraftNodes
     const runningAgentTableIds = useMemo(() => {
-        const ids = new Map<string, typeof agentActions[0]>();
-        for (const a of agentActions) {
-            if (!a.hidden && a.status === 'running') {
-                // Find the last table created in the chain so far
-                const lastResultTableId = a.messages
-                    ?.filter(m => m.resultTableId)
-                    .pop()?.resultTableId;
-                ids.set(lastResultTableId || a.originTableId, a);
+        const ids = new Map<string, { description: string }>();
+        for (const d of draftNodes) {
+            if (d.derive?.status === 'running') {
+                const lastThought = d.derive.trigger.interaction?.filter(e => e.role === 'thought').pop();
+                ids.set(d.derive.trigger.tableId, { description: lastThought?.content || '' });
             }
         }
         return ids;
-    }, [agentActions]);
+    }, [draftNodes]);
 
-    // Pre-index tables with pending clarification
     const clarifyAgentTableIds = useMemo(() => {
-        const ids = new Map<string, typeof agentActions[0]>();
-        for (const a of agentActions) {
-            if (!a.hidden && a.pendingClarification) {
-                const lastResultTableId = a.pendingClarification.lastCreatedTableId
-                    || a.messages?.filter(m => m.resultTableId).pop()?.resultTableId;
-                ids.set(lastResultTableId || a.originTableId, a);
+        const ids = new Map<string, { question: string }>();
+        for (const d of draftNodes) {
+            if (d.derive?.status === 'clarifying') {
+                const clarifyEntry = d.derive.trigger.interaction?.filter(e => e.role === 'clarify').pop();
+                ids.set(d.derive.trigger.tableId, { question: clarifyEntry?.content || '' });
             }
         }
         return ids;
-    }, [agentActions]);
-
-    // Pre-index tables with completed agent actions
-    const completedAgentTableIds = useMemo(() => {
-        const ids = new Map<string, typeof agentActions[0]>();
-        for (const a of agentActions) {
-            if (!a.hidden && (a.status === 'completed' || a.status === 'warning' || a.status === 'failed') && !a.pendingClarification) {
-                const lastResultTableId = a.messages
-                    ?.filter(m => m.resultTableId)
-                    .pop()?.resultTableId;
-                ids.set(lastResultTableId || a.originTableId, a);
-            }
-        }
-        return ids;
-    }, [agentActions]);
+    }, [draftNodes]);
 
     // Metadata popup state
     const [metadataPopupOpen, setMetadataPopupOpen] = useState(false);
@@ -1146,7 +1154,7 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean }[] = [];
+    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry }[] = [];
 
     // Add used (shared) tables at the top
     // Only show the immediate parent + "..." for further ancestors
@@ -1194,16 +1202,48 @@ let SingleThreadGroupView: FC<{
         const trigger = newTriggers.find(t => t.resultTableId === tableId);
         const isHighlighted = highlightedTableIds.includes(tableId);
 
-        // Add trigger card if exists
+        // Add trigger card (or interaction log entries) if exists
         if (trigger) {
-            const triggerCard = triggerCards[newTriggers.indexOf(trigger)];
-            if (triggerCard) {
-                timelineItems.push({
-                    key: triggerCard?.key || `woven-trigger-${tableId}`,
-                    type: 'trigger',
-                    highlighted: isHighlighted,
-                    element: triggerCard,
+            const interaction = trigger.interaction;
+            if (interaction && interaction.length > 0) {
+                // Split interaction entries into timeline items:
+                // - 'instruction' entries → rendered as the trigger card
+                // - all other entries → rendered as small context dots
+                interaction.forEach((entry, ei) => {
+                    if (entry.role === 'instruction') {
+                        // Render as the trigger card (main instruction)
+                        const triggerCard = triggerCards[newTriggers.indexOf(trigger)];
+                        if (triggerCard) {
+                            timelineItems.push({
+                                key: `interaction-instruction-${tableId}-${ei}`,
+                                type: 'trigger',
+                                highlighted: isHighlighted,
+                                element: triggerCard,
+                                interactionEntry: entry,
+                            });
+                        }
+                    } else {
+                        // Render as a small context entry in the timeline
+                        timelineItems.push({
+                            key: `interaction-${entry.role}-${tableId}-${ei}`,
+                            type: 'trigger',
+                            highlighted: isHighlighted,
+                            element: <InteractionDot entry={entry} />,
+                            interactionEntry: entry,
+                        });
+                    }
                 });
+            } else {
+                // Legacy: no interaction log, use old trigger card
+                const triggerCard = triggerCards[newTriggers.indexOf(trigger)];
+                if (triggerCard) {
+                    timelineItems.push({
+                        key: triggerCard?.key || `woven-trigger-${tableId}`,
+                        type: 'trigger',
+                        highlighted: isHighlighted,
+                        element: triggerCard,
+                    });
+                }
             }
         }
 
@@ -1253,19 +1293,6 @@ let SingleThreadGroupView: FC<{
                 isClarifying: true,
                 element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
             });
-        } else if (completedAgentTableIds.has(tableId)) {
-            const completedAction = completedAgentTableIds.get(tableId);
-            const completionMsg = completedAction?.messages?.filter(m => m.role === 'completion').pop();
-            if (completionMsg) {
-                const color = completedAction?.status === 'failed' ? theme.palette.error.main : theme.palette.success.main;
-                timelineItems.push({
-                    key: `agent-completed-${tableId}`,
-                    type: 'chart',
-                    highlighted: isHighlighted,
-                    isCompleted: true,
-                    element: <CollapsibleStatusMessage text={typeof completionMsg.content === 'string' ? completionMsg.content : String(completionMsg.content)} color={color} />,
-                });
-            }
         }
     });
 
@@ -1273,12 +1300,36 @@ let SingleThreadGroupView: FC<{
     leafTables.forEach((lt, i) => {
         let leafTrigger = lt.derive?.trigger;
         if (leafTrigger) {
-            timelineItems.push({
-                key: `leaf-trigger-${lt.id}`,
-                type: 'leaf-trigger',
-                highlighted: highlightedTableIds.includes(lt.id),
-                element: _buildTriggerCard(leafTrigger, highlightedTableIds.includes(lt.id)),
-            });
+            const isHL = highlightedTableIds.includes(lt.id);
+            const interaction = leafTrigger.interaction;
+            if (interaction && interaction.length > 0) {
+                interaction.forEach((entry, ei) => {
+                    if (entry.role === 'instruction') {
+                        timelineItems.push({
+                            key: `leaf-trigger-instruction-${lt.id}-${ei}`,
+                            type: 'leaf-trigger',
+                            highlighted: isHL,
+                            element: _buildTriggerCard(leafTrigger!, isHL),
+                            interactionEntry: entry,
+                        });
+                    } else {
+                        timelineItems.push({
+                            key: `leaf-interaction-${entry.role}-${lt.id}-${ei}`,
+                            type: 'leaf-trigger',
+                            highlighted: isHL,
+                            element: <InteractionDot entry={entry} />,
+                            interactionEntry: entry,
+                        });
+                    }
+                });
+            } else {
+                timelineItems.push({
+                    key: `leaf-trigger-${lt.id}`,
+                    type: 'leaf-trigger',
+                    highlighted: isHL,
+                    element: _buildTriggerCard(leafTrigger, isHL),
+                });
+            }
         }
         let leafCards = _buildTableCard(lt.id);
         if (Array.isArray(leafCards)) {
@@ -1324,19 +1375,6 @@ let SingleThreadGroupView: FC<{
                 isClarifying: true,
                 element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
             });
-        } else if (completedAgentTableIds.has(lt.id)) {
-            const completedAction = completedAgentTableIds.get(lt.id);
-            const completionMsg = completedAction?.messages?.filter(m => m.role === 'completion').pop();
-            if (completionMsg) {
-                const color = completedAction?.status === 'failed' ? theme.palette.error.main : theme.palette.success.main;
-                timelineItems.push({
-                    key: `agent-completed-${lt.id}`,
-                    type: 'chart',
-                    highlighted: highlightedTableIds.includes(lt.id),
-                    isCompleted: true,
-                    element: <CollapsibleStatusMessage text={typeof completionMsg.content === 'string' ? completionMsg.content : String(completionMsg.content)} color={color} />,
-                });
-            }
         }
     });
 
@@ -1436,14 +1474,30 @@ let SingleThreadGroupView: FC<{
         const bottomDashedColor = bottomHighlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
         const bottomDashedWidth = bottomHighlighted ? '2px' : '1px';
         const bottomDashedStyle = 'solid';
-        const triggerColor = item.highlighted 
-            ? theme.palette.custom.main
-            : 'rgba(0,0,0,0.15)';
         // Dim non-highlighted cards when chatbox is focused
         const rowHighlightSx = (chatboxFocused && hasHighlighting && !item.highlighted) ? { opacity: 0.35 } : {};
 
-        // Triggers: agent icon on the timeline
+        // Triggers: icon based on interaction entry's `from` actor
         if (isTrigger) {
+            const entry = item.interactionEntry;
+            const isFromUser = entry ? entry.from === 'user' : false;
+            // User → custom (orange), Agent → derived (gold/yellow)
+            const iconColor = item.highlighted
+                ? (isFromUser ? theme.palette.custom.main : theme.palette.secondary.main)
+                : 'rgba(0,0,0,0.15)';
+            let gutterIcon: React.ReactNode;
+            if (entry) {
+                if (entry.from === 'user') {
+                    gutterIcon = <PersonIcon sx={{ width: 14, height: 14, color: iconColor }} />;
+                } else if (entry.role === 'thought') {
+                    gutterIcon = <PsychologyIcon sx={{ width: 14, height: 14, color: iconColor }} />;
+                } else {
+                    gutterIcon = <SmartToyOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />;
+                }
+            } else {
+                gutterIcon = <AgentIcon sx={{ width: 14, height: 14, color: iconColor }} />;
+            }
+
             return (
                 <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
                     <Box sx={{ 
@@ -1452,7 +1506,7 @@ let SingleThreadGroupView: FC<{
                     }}>
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <AgentIcon sx={{ width: 14, height: 14, color: triggerColor }} />
+                            {gutterIcon}
                         </Box>
                         {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}

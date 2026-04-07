@@ -1014,7 +1014,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const ENCODING_SHELF_WIDTH = 240;
 
     let content = [
-        <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
+        <Box key='focused-box' className="vega-focused vis-scroll" sx={{ display: "flex", overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
             {focusedComponent}
         </Box>,
         /* Floating encoding shelf panel */
@@ -1136,7 +1136,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
         return (
             <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
                 <Box sx={{ overflow: "hidden", display: 'flex', flex: 1 }}>
-                    <Box sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', flexDirection: 'column', flex: 1 }}>
+                    <Box className="vis-scroll" sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', flex: 1 }}>
                         <Box sx={{ minHeight: 'min(75vh, 600px)', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                             <Box sx={{ margin: 'auto' }}>
                                 {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
