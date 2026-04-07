@@ -8,7 +8,7 @@ import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
-import { getDataTable } from '../views/VisualizationView';
+import { getDataTable } from '../views/ChartUtils';
 import { getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
 import { getChartPngDataUrl } from './chartCache';
 import { Type } from '../data/types';
@@ -65,6 +65,7 @@ export interface ModelConfig {
 export type FocusedId = 
     | { type: 'table'; tableId: string }
     | { type: 'chart'; chartId: string }
+    | { type: 'report'; reportId: string }
     | undefined;
 
 export interface ClientConfig {
@@ -83,6 +84,12 @@ export interface GeneratedReport {
     style: string;
     selectedChartIds: string[];
     createdAt: number;
+    title?: string;
+    updatedAt?: number;
+    anchorChartId?: string;
+    contentSnapshotHash?: string;
+    prompt?: string;
+    status?: 'generating' | 'completed' | 'error';
 }
 
 export interface DataFormulatorState {
@@ -1103,6 +1110,12 @@ export const dataFormulatorSlice = createSlice({
                 ];
             }
         },
+        updateDraftRunningPlan: (state, action: PayloadAction<{ draftId: string; plan: string }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
+            if (draft?.derive) {
+                draft.derive.runningPlan = action.payload.plan;
+            }
+        },
         updateDeriveStatus: (state, action: PayloadAction<{ nodeId: string; status: DeriveStatus }>) => {
             const draft = state.draftNodes.find(d => d.id === action.payload.nodeId);
             if (draft?.derive) {
@@ -1209,6 +1222,9 @@ export const dataFormulatorSlice = createSlice({
             if (action.payload?.type === 'chart' && state.viewMode == 'report') {
                 state.viewMode = 'editor';
             }
+            if (action.payload?.type === 'report') {
+                state.viewMode = 'report';
+            }
         },
         setFocusedDataCleanBlockId: (state, action: PayloadAction<{blockId: string, itemId: number} | undefined>) => {
             state.focusedDataCleanBlockId = action.payload;
@@ -1269,6 +1285,10 @@ export const dataFormulatorSlice = createSlice({
         // Generated reports actions
         saveGeneratedReport: (state, action: PayloadAction<GeneratedReport>) => {
             const report = action.payload;
+            // Auto-set anchorChartId to the last selected chart if not provided
+            if (!report.anchorChartId && report.selectedChartIds.length > 0) {
+                report.anchorChartId = report.selectedChartIds[report.selectedChartIds.length - 1];
+            }
             // Check if report with same ID already exists and update it, otherwise add new
             const existingIndex = state.generatedReports.findIndex(r => r.id === report.id);
             if (existingIndex >= 0) {
@@ -1282,6 +1302,16 @@ export const dataFormulatorSlice = createSlice({
             const reportId = action.payload;
             state.generatedReports = state.generatedReports.filter(r => r.id !== reportId);
             // Redux Persist will handle persistence automatically
+        },
+        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string }>) => {
+            const { id, content, status, title } = action.payload;
+            const report = state.generatedReports.find(r => r.id === id);
+            if (report) {
+                report.content = content;
+                if (title) report.title = title;
+                if (status) report.status = status;
+                report.updatedAt = Date.now();
+            }
         },
         clearGeneratedReports: (state) => {
             state.generatedReports = [];

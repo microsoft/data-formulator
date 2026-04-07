@@ -230,7 +230,8 @@
     "copied": "Copied!",
     "shareImage": "Share Image",
     "createdWithAI": "created with AI using",
-    "chartAlt": "Chart"
+    "chartAlt": "Chart",
+    "untitled": "Untitled Report"
   },
   "db": {
     "manager": "DB manager",

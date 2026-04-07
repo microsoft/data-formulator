@@ -42,9 +42,11 @@ export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-age
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
-    role: 'prompt' | 'thought' | 'clarify' | 'instruction' | 'summary' | 'error';
+    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error';
+    plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
+    options?: string[]; // for clarification questions, the list of options presented to the user
     timestamp?: number;
 }
 
@@ -59,6 +61,7 @@ export interface DraftNode {
         source: string[];
         trigger: Trigger;
         status: DeriveStatus;
+        runningPlan?: string; // live agent thought text while running
         code?: string;
         codeSignature?: string;
         outputVariable?: string;

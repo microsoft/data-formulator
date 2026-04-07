@@ -78,7 +78,8 @@ reasonable interpretations, or critical information is missing.
 {{
     "action": "clarify",
     "thought": "<why you need clarification>",
-    "message": "<a polite, concise clarification question for the user>"
+    "message": "<a polite, concise clarification question for the user>",
+    "options": ["<option 1>", "<option 2>", "<option 3>"]
 }}
 ```
 
@@ -86,6 +87,8 @@ Guidelines:
 - Only clarify when genuinely necessary; prefer making a reasonable
   assumption and proceeding.
 - Ask at most one question per turn.
+- Provide 2-4 short options that cover the most likely interpretations.
+- Options should describe broad, high-level exploration directions.
 
 ### 3. `present`
 Use this when you believe you have sufficiently answered the user's
@@ -95,13 +98,12 @@ question and can summarize findings.
 {{
     "action": "present",
     "thought": "<why you are done>",
-    "summary": "<concise bullet-point summary of key findings>"
+    "summary": "<one short sentence summarizing the key finding>"
 }}
 ```
 
 Guidelines:
-- The summary should reference the visualizations you created.
-- Keep it to 3-5 bullet points, each ≤ 25 words.
+- The summary should be a single concise sentence (≤ 25 words).
 - Present after at most {max_iterations} visualization steps, even if
   there is more to explore.
 
@@ -224,6 +226,7 @@ class DataAgent:
                     "iteration": iteration,
                     "thought": action.get("thought", ""),
                     "message": action.get("message", ""),
+                    "options": action.get("options", []),
                     "trajectory": self._strip_images(trajectory),
                     "completed_step_count": len(completed_steps),
                 }

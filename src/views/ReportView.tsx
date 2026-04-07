@@ -42,7 +42,7 @@ import { Message } from './MessageSnackbar';
 import { getUrls, assembleVegaChart, getTriggers, prepVisTable, fetchWithIdentity, getAgentLanguage } from '../app/utils';
 import { MuiMarkdown, getOverrides } from 'mui-markdown';
 import embed from 'vega-embed';
-import { getDataTable } from './VisualizationView';
+import { getDataTable } from './ChartUtils';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from '../app/store';
 import { Collapse } from '@mui/material';
@@ -397,6 +397,24 @@ export const ReportView: FC = () => {
         }
     }, [currentReportId]);
 
+    // Derive focused report ID from Redux state
+    const focusedReportId = focusedId?.type === 'report' ? focusedId.reportId : undefined;
+
+    // When focused report is cleared (e.g. user clicked compose button), switch to compose mode
+    useEffect(() => {
+        if (!focusedReportId && !isGenerating) {
+            setMode('compose');
+        }
+    }, [focusedReportId]);
+
+    // When a report is focused via the thread, load it automatically
+    useEffect(() => {
+        if (focusedReportId && focusedReportId !== currentReportId) {
+            loadReport(focusedReportId);
+            setMode('post');
+        }
+    }, [focusedReportId]);
+
     // Auto-refresh chart images when underlying table data changes
     // This enables real-time chart updates in reports when data is streaming
     const tableRowSignaturesRef = useRef<Map<string, string>>(new Map());
@@ -681,6 +699,25 @@ export const ReportView: FC = () => {
         // Create a new report ID
         const reportId = `report-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
+        // Save an in-progress report to Redux immediately so it appears in the thread
+        const orderedChartIds = sortedCharts
+            .filter(c => selectedChartIds.has(c.id))
+            .map(c => c.id);
+        const inProgressReport: GeneratedReport = {
+            id: reportId,
+            content: '',
+            style: style,
+            selectedChartIds: orderedChartIds,
+            createdAt: Date.now(),
+            status: 'generating',
+        };
+        dispatch(dfActions.saveGeneratedReport(inProgressReport));
+        dispatch(dfActions.setFocused({ type: 'report', reportId }));
+        setCurrentReportId(reportId);
+        if (mode === 'compose') {
+            setMode('post');
+        }
+
         try {
             let model = activeModel;
 
@@ -788,15 +825,18 @@ export const ReportView: FC = () => {
                             `[IMAGE(${actualId})]`
                         );
                     }
-                    const orderedChartIds = sortedCharts
-                        .filter(c => selectedChartIds.has(c.id))
-                        .map(c => c.id);
+                    // Extract title from first markdown # heading
+                    const finalTitleMatch = finalContent.match(/^#\s+(.+)$/m);
+                    const finalTitle = finalTitleMatch ? finalTitleMatch[1].trim() : undefined;
+
                     const report: GeneratedReport = {
                         id: reportId,
                         content: finalContent,
                         style: style,
                         selectedChartIds: orderedChartIds,
-                        createdAt: Date.now(),
+                        createdAt: inProgressReport.createdAt,
+                        status: 'completed',
+                        title: finalTitle,
                     };
                     // Re-apply captured images so React 18 batches them
                     // with the final content update in a single render
@@ -817,17 +857,19 @@ export const ReportView: FC = () => {
 
                 accumulatedReport += chunk;
 
-                // Update local state
+                // Extract title from first markdown # heading
+                const titleMatch = accumulatedReport.match(/^#\s+(.+)$/m);
+                const extractedTitle = titleMatch ? titleMatch[1].trim() : undefined;
+
+                // Update both local state and Redux for thread card preview
                 setGeneratedReport(accumulatedReport);
-                setCurrentReportId(reportId);
-                
-                if (mode === 'compose') {
-                    setMode('post');
-                }
+                dispatch(dfActions.updateGeneratedReportContent({ id: reportId, content: accumulatedReport, title: extractedTitle }));
             }
 
         } catch (err) {
             setError((err as Error).message || t('report.failedToGenerateReport'));
+            // Mark the in-progress report as errored (if it was created)
+            dispatch(dfActions.updateGeneratedReportContent({ id: reportId, content: '', status: 'error' }));
         } finally {
             setIsGenerating(false);
         }
@@ -863,17 +905,6 @@ export const ReportView: FC = () => {
             {mode === 'compose' ? (
                 <Box sx={{ overflowY: 'auto', position: 'relative', height: '100%' }}>
                     <Box sx={{ p: 2, pb: 0, display: 'flex' }}>
-                        <Button
-                            variant="text"
-                            size="small"
-                            color='secondary'
-                            onClick={() => dispatch(dfActions.setViewMode('editor'))}
-                            sx={{ textTransform: 'none' }}
-                            startIcon={<ArrowBackIcon />}
-                        >
-                            {t('report.backToExplore')}
-                        </Button>
-                        <Divider orientation="vertical" sx={{ mx: 1 }} flexItem />
                         <Button
                             variant="text"
                             disabled={allGeneratedReports.length === 0}
@@ -1125,107 +1156,6 @@ export const ReportView: FC = () => {
                         </Typography>
                     </Box>
                     <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-                        {/* Table of Contents Sidebar */}
-                        {allGeneratedReports.length > 0 && (
-                            <Box sx={{ 
-                                position: 'absolute',
-                                top: 0,
-                                left: 8,
-                                zIndex: 1,
-                                width: 200,
-                                display: 'flex',
-                                overflowY: 'auto',
-                                flexDirection: 'column',
-                                borderRight: `1px solid ${borderColor.view}`,
-                                height: 'fit-content',
-                                background: alpha(theme.palette.background.paper, 0.9),
-                            }}>
-                                <Button size='small' color='primary' onClick={() => setHideTableOfContents(!hideTableOfContents)}
-                                sx={{
-                                    width: '100%',
-                                    justifyContent: 'flex-start',
-                                    textAlign: 'left',
-                                    borderRadius: 0,
-                                    textTransform: 'none',
-                                    fontSize: 12,
-                                    py: 1,
-                                    px: 2,
-                                }}>
-                                    {hideTableOfContents ? <ExpandMoreIcon sx={{ fontSize: 16, mr: 1 }} /> 
-                                    : <ExpandLessIcon sx={{ fontSize: 16, mr: 1 }} /> } {hideTableOfContents ? t('report.showAllReports') : t('report.reports')}
-                                </Button> 
-                                <Collapse in={!hideTableOfContents}>{allGeneratedReports.map((report) => (
-                                    <Box key={report.id} sx={{ position: 'relative' }}>
-                                        <Button
-                                            variant="text"
-                                            size="small"
-                                            color='primary'
-                                            onClick={() => loadReport(report.id)}
-                                            sx={{
-                                                fontSize: 12,
-                                                textTransform: "none",
-                                                width: '100%',
-                                                justifyContent: 'flex-start',
-                                                textAlign: 'left',
-                                                borderRadius: 0,
-                                                py: 1,
-                                                px: 2,
-                                                color: currentReportId === report.id ? 'primary.main' : 'text.secondary',
-                                                borderRight: currentReportId === report.id ? 2 : 0,
-                                                borderColor: 'primary.main',
-                                            }}
-                                        >
-                                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                <Typography 
-                                                    variant="body2" 
-                                                    sx={{ 
-                                                        fontSize: 'inherit',
-                                                        fontWeight: 500, 
-                                                        mb: 0.25
-                                                    }}
-                                                >
-                                                    {report.content.split('\n')[0]}
-                                                </Typography>
-                                                <Typography 
-                                                    variant="caption" 
-                                                    color="text.secondary"
-                                                    sx={{ 
-                                                        fontSize: 10,
-                                                        display: 'block',
-                                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                                    }}
-                                                >
-                                                    {new Date(report.createdAt).toLocaleDateString()} • {reportStyleDisplayLabel(report.style)}
-                                                </Typography>
-                                            </Box>
-                                        </Button>
-                                        <Tooltip title={t('report.deleteReport')}>
-                                            <IconButton
-                                                size="small"
-                                                disabled={isGenerating}
-                                                color='warning'
-                                                onClick={(e) => deleteReport(report.id, e)}
-                                                sx={{ 
-                                                    position: 'absolute',
-                                                    right: 4,
-                                                    top: '50%',
-                                                    transform: 'translateY(-50%)',
-                                                    width: 20,
-                                                    height: 20,
-                                                    '&:hover': { 
-                                                        transform: 'translateY(-50%) scale(1.2)', transition: 'all 0.2s ease-in-out'
-                                                    }
-                                                }}
-                                            >
-                                                <DeleteIcon sx={{ fontSize: 14 }} />
-                                            </IconButton>
-                                        </Tooltip>
-                                    </Box>
-                                ))}
-                                </Collapse>
-                            </Box>
-                        )}
-                        
                         {/* Main Content Area */}
                         <Box sx={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
                             {/* Action Buttons */}

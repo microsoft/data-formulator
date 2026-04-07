@@ -230,7 +230,8 @@
     "copied": "已复制！",
     "shareImage": "分享图片",
     "createdWithAI": "由 AI 生成，使用",
-    "chartAlt": "图表"
+    "chartAlt": "图表",
+    "untitled": "无标题报告"
   },
   "db": {
     "manager": "数据库管理",
