@@ -20,7 +20,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers } from '../app/utils';
-import { Chart, DictTable, FieldItem, createDictTable } from "../components/ComponentType";
+import { Chart, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
 
 import { alpha } from '@mui/material/styles';
 import SendIcon from '@mui/icons-material/Send';
@@ -38,10 +38,9 @@ import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 
-const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCancel?: () => void }> = ({ relevantAgentActions, theme, onCancel }) => {
+const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () => void }> = ({ message, theme, onCancel }) => {
     const { t } = useTranslation();
-    const runningAction = relevantAgentActions.find(a => a.status === 'running');
-    const latestMessage = runningAction?.description || t('dataThread.thinking');
+    const latestMessage = message || t('dataThread.thinking');
     return (
         <Box sx={{
             position: 'absolute',
@@ -112,7 +111,7 @@ export const SimpleChartRecBox: FC = function () {
     const config = useSelector((state: DataFormulatorState) => state.config);
     const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const activeModel = useSelector(dfSelectors.getActiveModel);
-    const agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
+    const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -130,25 +129,7 @@ export const SimpleChartRecBox: FC = function () {
     // pendingClarification is now derived from Redux (stored on the agentAction itself)
     // so it persists when user clicks away and comes back.
 
-    // On mount, clean up any stale "running" agent actions left over from a page refresh.
-    // The streaming connection is lost on refresh, so these will never complete.
-    // Only mark actions whose lastUpdate predates the current page load as stale.
-    useEffect(() => {
-        const pageLoadTime = performance.timeOrigin; // ms timestamp of when the page was loaded
-        const staleRunning = agentActions.filter(a => a.status === 'running' && a.lastUpdate < pageLoadTime);
-        if (staleRunning.length === 0) return;
-        // The last stale action gets the visible message; others are silently marked warning
-        const lastStale = staleRunning[staleRunning.length - 1];
-        for (const action of staleRunning) {
-            dispatch(dfActions.updateAgentWorkInProgress({
-                actionId: action.actionId,
-                description: action === lastStale ? t('chartRec.interruptedByRefresh') : action.description,
-                status: 'warning',
-                hidden: false,
-                ...(action === lastStale ? { message: { content: t('chartRec.interruptedByRefresh'), role: 'clarify' } } : {}),
-            }));
-        }
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Stale draft detection is handled by loadState in dfSlice (marks running/clarifying drafts as interrupted)
 
     const inputCardRef = useRef<HTMLDivElement>(null);
 
@@ -201,43 +182,27 @@ export const SimpleChartRecBox: FC = function () {
     // Agent actions relevant to all tables in this thread, sorted by creation time
     // Agent actions relevant to the focused table's thread.
     // An action is relevant if:
-    //  - its originTableId is in the ancestor chain, AND
-    //  - it produced a table in the ancestor chain (resultTableId ∈ threadTableIds),
-    //    OR is still running, OR the focused table is the originTableId itself.
-    const relevantAgentActions = React.useMemo(() => {
-        if (threadTableIds.size === 0) return [];
-        return agentActions
-            .filter(a => {
-                if (a.hidden) return false;
-                if (!threadTableIds.has(a.originTableId)) return false;
-                // Include if still running or waiting for clarification (live progress)
-                if (a.status === 'running' || a.status === 'warning') return true;
-                // Include if any message produced a table in the ancestor chain
-                if (a.messages?.some(m => m.resultTableId && threadTableIds.has(m.resultTableId))) return true;
-                // Include if the focused table IS the origin (user is at the starting table)
-                if (focusedTableId === a.originTableId) return true;
-                return false;
-            })
-            .sort((a, b) => (a.messages?.[0]?.timestamp || a.lastUpdate) - (b.messages?.[0]?.timestamp || b.lastUpdate));
-    }, [agentActions, threadTableIds, focusedTableId]);
+    const hasRunningAgent = draftNodes.some(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId));
 
-    const hasRunningAgent = relevantAgentActions.some(a => a.status === 'running');
-
-    // Derive pending clarification from the current thread's relevant actions (stored in Redux)
+    // Derive pending clarification from DraftNodes
     const pendingClarification = React.useMemo(() => {
-        const action = relevantAgentActions.find(a => a.pendingClarification);
-        if (!action || !action.pendingClarification) return null;
-        return { ...action.pendingClarification, actionId: action.actionId };
-    }, [relevantAgentActions]);
+        const clarifyingDraft = draftNodes.find(d =>
+            d.derive?.status === 'clarifying' && d.derive?.pendingClarification &&
+            threadTableIds.has(d.derive.trigger.tableId)
+        );
+        if (clarifyingDraft?.derive?.pendingClarification) {
+            return { ...clarifyingDraft.derive.pendingClarification, actionId: clarifyingDraft.actionId || '', draftId: clarifyingDraft.id };
+        }
+        return null;
+    }, [draftNodes, threadTableIds]);
 
-    // Extract the clarification question text from the last 'clarify' message
+    // Extract the clarification question text from DraftNode interaction log
     const clarificationQuestion = React.useMemo(() => {
-        if (!pendingClarification) return null;
-        const action = agentActions.find(a => a.actionId === pendingClarification.actionId);
-        if (!action?.messages) return null;
-        const clarifyMsgs = action.messages.filter(m => m.role === 'clarify');
-        return clarifyMsgs.length > 0 ? clarifyMsgs[clarifyMsgs.length - 1].content : null;
-    }, [pendingClarification, agentActions]);
+        if (!pendingClarification?.draftId) return null;
+        const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
+        const clarifyEntries = draft?.derive?.trigger?.interaction?.filter(e => e.role === 'clarify');
+        return clarifyEntries && clarifyEntries.length > 0 ? clarifyEntries[clarifyEntries.length - 1].content : null;
+    }, [pendingClarification, draftNodes]);
 
     const getIdeasFromAgent = useCallback(async () => {
         if (!currentTable || isLoadingIdeas) return;
@@ -251,14 +216,17 @@ export const SimpleChartRecBox: FC = function () {
 
             if (currentTable.derive && !currentTable.anchored) {
                 const triggers = getTriggers(currentTable, tables);
-                explorationThread = triggers.map(trigger => ({
-                    name: trigger.resultTableId,
-                    rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                    description: t('chartRec.explorationThreadDeriveDescription', {
-                        source: String(tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source ?? ''),
-                        instruction: trigger.instruction,
-                    }),
-                }));
+                explorationThread = triggers.map((trigger) => {
+                    const tt = tables.find(t2 => t2.id === trigger.resultTableId);
+                    return {
+                        name: trigger.resultTableId,
+                        rows: tt?.rows,
+                        description: t('chartRec.explorationThreadDeriveDescription', {
+                            source: String(tt?.derive?.source ?? ''),
+                            instruction: trigger.interaction?.find((e: any) => e.role === 'instruction')?.content || '',
+                        }),
+                    };
+                });
             }
 
             const messageBody = JSON.stringify({
@@ -354,30 +322,37 @@ export const SimpleChartRecBox: FC = function () {
 
         setIsChatFormulating(true);
 
-        if (isResume) {
-            // Show user's clarification reply in the thread; clear pendingClarification in Redux
-            dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: prompt, status: 'running', hidden: false,
-                    message: { content: prompt, role: 'user' }, pendingClarification: null }));
-        } else {
-            // User instruction with source table context
-            dispatch(dfActions.updateAgentWorkInProgress({ actionId, originTableId: focusedTableId, description: prompt, status: 'running', hidden: false,
-                message: { content: prompt, role: 'user' } }));
+        // DraftNode handles status
+        // If resuming from clarification, reuse the old draft (append reply, clear clarification)
+        if (isResume && pendingClarification?.draftId) {
+            dispatch(dfActions.appendDraftInteraction({ draftId: pendingClarification.draftId, entry: {
+                from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now()
+            }}));
+            dispatch(dfActions.updateDraftClarification({ draftId: pendingClarification.draftId, pendingClarification: null }));
+            dispatch(dfActions.updateDeriveStatus({ nodeId: pendingClarification.draftId, status: 'running' }));
         }
 
-        // Collect previous conversation messages for context (only for fresh starts)
+        // Collect previous conversation from trigger interaction chains
         let conversationHistory: { role: string; content: string }[] | undefined = undefined;
         if (!isResume) {
             const history: { role: string; content: string }[] = [];
-            for (const action of relevantAgentActions) {
-                if (action.messages) {
-                    for (const m of action.messages) {
-                        if (m.role === 'user') {
-                            history.push({ role: 'user', content: m.content });
-                        } else if (m.role === 'thinking' || m.role === 'completion') {
-                            history.push({ role: 'assistant', content: m.content });
+            // Walk the ancestor chain from the focused table, collecting interaction entries
+            let walkTable = tables.find(t => t.id === focusedTableId);
+            const visited = new Set<string>();
+            while (walkTable?.derive?.trigger) {
+                if (visited.has(walkTable.id)) break;
+                visited.add(walkTable.id);
+                const interaction = walkTable.derive.trigger.interaction;
+                if (interaction && interaction.length > 0) {
+                    for (const entry of interaction) {
+                        if (entry.role === 'prompt') {
+                            history.unshift({ role: 'user', content: entry.content });
+                        } else if (entry.role === 'thought' || entry.role === 'summary') {
+                            history.unshift({ role: 'assistant', content: entry.content });
                         }
                     }
                 }
+                walkTable = tables.find(t => t.id === walkTable!.derive!.trigger.tableId);
             }
             if (history.length > 0) conversationHistory = history;
         }
@@ -419,6 +394,43 @@ export const SimpleChartRecBox: FC = function () {
         let isCompleted = false;
         let lastCreatedTableId: string | null = isResume ? clarificationContext!.lastCreatedTableId : null;
 
+        // ── DraftNode tracking ──
+        // Local accumulator mirrors the DraftNode's interaction (avoids stale closure reads)
+        let currentDraftInteraction: InteractionEntry[] = [];
+        let currentDraftId: string | null = null;
+        const createNextDraft = (parentTableId: string, initialInteraction: InteractionEntry[]) => {
+            const draftId = `draft-${actionId}-${Date.now()}`;
+            dispatch(dfActions.createDraftNode({
+                id: draftId,
+                displayId: draftId,
+                parentTableId,
+                source: selectedTableIds,
+                interaction: initialInteraction,
+                actionId,
+            }));
+            currentDraftId = draftId;
+            currentDraftInteraction = [...initialInteraction];
+            return draftId;
+        };
+
+        // Create the initial draft (or reuse existing for clarification resume)
+        if (isResume && pendingClarification?.draftId) {
+            currentDraftId = pendingClarification.draftId;
+            // Seed local accumulator from the existing draft's interaction (fresh at this point)
+            const existingDraft = draftNodes.find(d => d.id === pendingClarification.draftId);
+            currentDraftInteraction = [...(existingDraft?.derive?.trigger?.interaction || [])];
+            // The user reply was already appended above, add to local accumulator too
+            currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now() });
+        } else {
+            const initialEntries: InteractionEntry[] = [
+                { from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now() }
+            ];
+            createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
+        }
+
+        // Track the last agent thought (from "action" events) to include in the trigger
+        let lastAgentThought: string | null = null;
+
         const genTableId = () => {
             let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
             let tId = `table-${tableSuffix}`;
@@ -433,9 +445,13 @@ export const SimpleChartRecBox: FC = function () {
             // Agent thinking / choosing next action
             if (result.type === "action" && result.action === "visualize") {
                 const thinkingMsg = result.thought || t('dataThread.thinking');
-                const currentObserveId = lastCreatedTableId || focusedTableId;
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: thinkingMsg, status: 'running', hidden: false,
-                    message: { content: thinkingMsg, role: 'thinking', observeTableId: currentObserveId } }));
+                lastAgentThought = result.thought || null;
+                // Append thought to current draft
+                if (currentDraftId) {
+                    const thoughtEntry: InteractionEntry = { from: 'data-agent', to: 'data-agent', role: 'thought', content: thinkingMsg, timestamp: Date.now() };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: thoughtEntry }));
+                    currentDraftInteraction.push(thoughtEntry);
+                }
             }
             // Visualization result (same shape as old data_transformation)
             if (result.type === "result" && result.status === "success") {
@@ -465,12 +481,23 @@ export const SimpleChartRecBox: FC = function () {
                     dialog: dialog || [],
                     trigger: {
                         tableId: triggerTableId,
-                        instruction: question,
-                        displayInstruction,
+                        resultTableId: candidateTableId,
                         chart: undefined,
-                        resultTableId: candidateTableId
+                        // Use the full interaction log accumulated in the DraftNode,
+                        // plus the instruction entry for this step
+                        interaction: [
+                            // Use the local accumulator (avoids stale closure)
+                            ...currentDraftInteraction,
+                            // The instruction to the sub-agent
+                            {
+                                from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
+                                content: question || displayInstruction,
+                                timestamp: Date.now(),
+                            },
+                        ],
                     }
                 };
+                lastAgentThought = null; // consumed
                 if (transformedData.virtual) {
                     candidateTable.virtual = { tableId: transformedData.virtual.table_name, rowCount: transformedData.virtual.row_count };
                 }
@@ -500,11 +527,7 @@ export const SimpleChartRecBox: FC = function () {
                 }
 
                 createdTables.push(candidateTable);
-                const observedTableId = lastCreatedTableId || focusedTableId; // table the agent was looking at before this step
                 lastCreatedTableId = candidateTableId;
-
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: displayInstruction, status: 'running', hidden: false,
-                    message: { content: displayInstruction, role: 'action', observeTableId: observedTableId, resultTableId: candidateTableId } }));
 
                 const names = candidateTable.names;
                 const missingNames = names.filter(name =>
@@ -540,6 +563,21 @@ export const SimpleChartRecBox: FC = function () {
                 dispatch(fetchFieldSemanticType(candidateTable));
                 dispatch(fetchCodeExpl(candidateTable));
 
+                // ── DraftNode: append instruction, remove draft, create next ──
+                if (currentDraftId) {
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
+                        from: 'data-agent', to: 'datarec-agent', role: 'instruction',
+                        content: question || displayInstruction,
+                        displayContent: displayInstruction,
+                        timestamp: Date.now(),
+                    }}));
+                    // Remove the draft — the table was already inserted via insertDerivedTables
+                    dispatch(dfActions.removeDraftNode(currentDraftId));
+                    currentDraftId = null;
+                }
+                // Create a new draft for the next potential step, chained from this table
+                createNextDraft(candidateTableId, []);
+
                 if (createdCharts.length > 0 && config.autoChartInsight) {
                     const lastChart = createdCharts[createdCharts.length - 1];
                     setTimeout(() => {
@@ -550,19 +588,47 @@ export const SimpleChartRecBox: FC = function () {
             // Agent asks for clarification — pause and let user respond
             if (result.type === "clarify") {
                 const clarifyMsg = result.message || t('chartRec.couldYouClarify');
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: clarifyMsg, status: 'warning', hidden: false,
-                    message: { content: clarifyMsg, role: 'clarify' },
-                    pendingClarification: {
+                // Append thought + clarify entries to draft
+                if (currentDraftId) {
+                    if (result.thought) {
+                        const thoughtEntry: InteractionEntry = { from: 'data-agent', to: 'data-agent', role: 'thought', content: result.thought, timestamp: Date.now() };
+                        dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: thoughtEntry }));
+                        currentDraftInteraction.push(thoughtEntry);
+                    }
+                    const clarifyEntry: InteractionEntry = { from: 'data-agent', to: 'user', role: 'clarify', content: clarifyMsg, timestamp: Date.now() };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: clarifyEntry }));
+                    currentDraftInteraction.push(clarifyEntry);
+                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
+                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
                         trajectory: result.trajectory || [],
                         completedStepCount: result.completed_step_count || 0,
                         lastCreatedTableId,
-                    }
-                }));
+                    }}));
+                }
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
                 clearTimeout(timeoutId);
                 setChatPrompt("");
                 isCompleted = true; // prevent handleCompletion from firing
+            }
+
+            // ── Capture completion thought + summary on the last created table's trigger ──
+            if (result.type === "completion") {
+                if (lastCreatedTableId) {
+                    const entries: InteractionEntry[] = [];
+                    if (result.content?.thought) {
+                        entries.push({ from: 'data-agent', to: 'data-agent', role: 'thought', content: result.content.thought, timestamp: Date.now() });
+                    }
+                    const summary = result.status === "max_iterations"
+                        ? t('chartRec.maxIterationsReached')
+                        : (result.content?.summary || result.content?.message || "");
+                    if (summary) {
+                        entries.push({ from: 'data-agent', to: 'user', role: 'summary', content: summary, timestamp: Date.now() });
+                    }
+                    if (entries.length > 0) {
+                        dispatch(dfActions.appendTriggerInteraction({ tableId: lastCreatedTableId, entries }));
+                    }
+                }
             }
         };
 
@@ -573,18 +639,15 @@ export const SimpleChartRecBox: FC = function () {
             agentAbortRef.current = null;
             clearTimeout(timeoutId);
 
+            // Clean up any remaining draft (the last step created a new draft that was never filled)
+            if (currentDraftId) {
+                dispatch(dfActions.removeDraftNode(currentDraftId));
+                currentDraftId = null;
+            }
+
             const completionResult = allResults.find((r: any) => r.type === "completion");
             if (completionResult) {
-                const summary = completionResult.status === "max_iterations"
-                    ? t('chartRec.maxIterationsReached')
-                    : (completionResult.content.summary || completionResult.content.message || "");
-                const status: "completed" | "warning" = completionResult.status === "success" ? "completed" : "warning";
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: summary, status, hidden: false,
-                    message: { content: summary, role: 'completion' } }));
                 setChatPrompt("");
-            } else {
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: t('chartRec.agentLost'), status: 'warning', hidden: false,
-                    message: { content: t('chartRec.agentLost'), role: 'clarify' } }));
             }
         };
 
@@ -622,8 +685,16 @@ export const SimpleChartRecBox: FC = function () {
                                     } else if (data.status === "error") {
                                         setIsChatFormulating(false);
                                         clearTimeout(timeoutId);
-                                        dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: data.error_message || t('chartRec.errorDuringExploration'), status: 'failed', hidden: false,
-                                            message: { content: data.error_message || t('chartRec.errorDuringExploration'), role: 'error' } }));
+                                        // Mark draft as error
+                                        if (currentDraftId) {
+                                            dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
+                                                from: 'data-agent', to: 'user', role: 'error',
+                                                content: data.error_message || t('chartRec.errorDuringExploration'),
+                                                timestamp: Date.now(),
+                                            }}));
+                                            dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                                            currentDraftId = null;
+                                        }
                                         return;
                                     }
                                 }
@@ -643,26 +714,29 @@ export const SimpleChartRecBox: FC = function () {
             clearTimeout(timeoutId);
             const isCancelled = error.name === 'AbortError' && !isCompleted;
             const errorMessage = isCancelled ? t('chartRec.explorationCancelled') : error.name === 'AbortError' ? t('chartRec.explorationTimedOut') : t('chartRec.explorationFailed', { message: error.message });
-            dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessage, status: isCancelled ? 'warning' : 'failed', hidden: false,
-                    message: { content: errorMessage, role: isCancelled ? 'clarify' : 'error' } }));
+            // Clean up draft on error/cancel
+            if (currentDraftId) {
+                if (isCancelled) {
+                    dispatch(dfActions.removeDraftNode(currentDraftId));
+                } else {
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
+                        from: 'data-agent', to: 'user', role: 'error', content: errorMessage, timestamp: Date.now(),
+                    }}));
+                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                }
+                currentDraftId = null;
+            }
         });
-    }, [focusedTableId, tables, activeModel, agentRules, config, conceptShelfItems, dispatch, relevantAgentActions, t]);
+    }, [focusedTableId, tables, draftNodes, activeModel, agentRules, config, conceptShelfItems, dispatch, t]);
 
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
             agentAbortRef.current.abort();
             agentAbortRef.current = null;
         }
-        // Also dismiss any pending clarification
-        if (pendingClarification) {
-            dispatch(dfActions.updateAgentWorkInProgress({
-                actionId: pendingClarification.actionId,
-                description: t('chartRec.conversationEnded'),
-                status: 'completed',
-                hidden: false,
-                message: { content: t('chartRec.conversationEnded'), role: 'completion' },
-                pendingClarification: null,
-            }));
+        // Also dismiss any pending clarification draft
+        if (pendingClarification?.draftId) {
+            dispatch(dfActions.removeDraftNode(pendingClarification.draftId));
         }
     }, [pendingClarification, dispatch, t]);
 
@@ -680,7 +754,10 @@ export const SimpleChartRecBox: FC = function () {
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
-            transition: 'box-shadow 0.2s ease, background-color 0.2s ease',
+            transition: 'box-shadow 0.25s ease, background-color 0.2s ease',
+            '&:focus-within': {
+                boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.10)}`,
+            },
             ...(isChatFormulating ? { backgroundColor: alpha(theme.palette.action.disabledBackground, 0.06) } : {}),
             // Gradient border via pseudo-element (works with border-radius)
             '&::before': {
@@ -910,9 +987,10 @@ export const SimpleChartRecBox: FC = function () {
             {/* Agent working overlay */}
             {(isChatFormulating || isLoadingIdeas) && (
                 <AgentWorkingOverlay 
-                    relevantAgentActions={isLoadingIdeas && !isChatFormulating 
-                        ? [{ status: 'running', description: t('chartRec.generatingIdeas') }] 
-                        : relevantAgentActions}
+                    message={isLoadingIdeas && !isChatFormulating 
+                        ? t('chartRec.generatingIdeas')
+                        : draftNodes.find(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId))
+                            ?.derive?.trigger?.interaction?.filter(e => e.role === 'thought').pop()?.content}
                     theme={theme}
                     onCancel={isLoadingIdeas && !isChatFormulating ? () => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); } : cancelAgent}
                 />

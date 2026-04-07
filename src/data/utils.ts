@@ -139,6 +139,7 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
     let columnTable = new ColumnTable(columns, cleanNames);
 
     return  {
+        kind: 'table' as const,
         id: title,
         displayId: `${title}`,
         names: columnTable.names(),
@@ -153,7 +154,6 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
         rows: columnTable.objects(),
         derive: derive,
         anchored: anchored,
-        createdBy: "user",
         attachedMetadata: context || ''
     }
 };

@@ -7,9 +7,24 @@ Good candidates for this layer:
 - Flask route tests
 - table create / ingest / refresh flows
 - real workspace and datalake interactions
+- sandbox execution (local and Docker)
 
-Recommended first scenarios:
+Data loader tests (MySQL, MongoDB, PostgreSQL, BigQuery) live in
+`tests/plugin/` — see that directory's README for setup instructions.
 
-1. Create a table using a Chinese table name.
-2. Verify the returned `table_name` after creation.
-3. Verify that Chinese column names are preserved across stats, preview, and refresh flows.
+## Running
+
+```bash
+# All integration tests
+pytest tests/backend/integration/ -v
+
+# Sandbox tests only
+pytest tests/backend/integration/test_sandbox.py -v
+```
+
+# Start + run all loader tests in one shot
+./tests/run_test_dbs.sh test
+
+# Tear down
+./tests/run_test_dbs.sh stop
+```

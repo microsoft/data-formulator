@@ -26,7 +26,6 @@ import { useTranslation } from 'react-i18next';
 
 const GALLERY_SECTION_LABEL_KEYS: Record<string, string> = {
     'Semantic Context': 'chart.gallery.sectionLabels.semanticContext',
-    'Debug Cases': 'chart.gallery.sectionLabels.debugCases',
     VegaLite: 'chart.gallery.sectionLabels.vegaLite',
     Facets: 'chart.gallery.sectionLabels.facets',
     'Stress Tests': 'chart.gallery.sectionLabels.stressTests',
@@ -37,7 +36,6 @@ const GALLERY_SECTION_LABEL_KEYS: Record<string, string> = {
 
 const GALLERY_SECTION_DESCRIPTION_KEYS: Record<string, string> = {
     'Demonstrates how semantic type annotations improve chart output: formatting, domain constraints, axis reversal, scale type, and interpolation': 'chart.gallery.sectionDescriptions.semanticContext',
-    'Regression tests from evaluation failures: log+bin+zeros, temporal+bin, single-point line': 'chart.gallery.sectionDescriptions.debugCases',
     'Demos for every supported chart type': 'chart.gallery.sectionDescriptions.vegaLite',
     'Faceting modes and feature combinations': 'chart.gallery.sectionDescriptions.facets',
     'Overflow, elasticity, and temporal format stress tests': 'chart.gallery.sectionDescriptions.stressTests',
@@ -49,7 +47,6 @@ const GALLERY_SECTION_DESCRIPTION_KEYS: Record<string, string> = {
 const GALLERY_ENTRY_LABEL_KEYS: Record<string, string> = {
     'Semantic Context': 'chart.gallery.entryLabels.semanticContext',
     'Snap-to-Bound': 'chart.gallery.entryLabels.snapToBound',
-    'Debug Cases': 'chart.gallery.entryLabels.debugCases',
     'Scatter Plot': 'chart.gallery.entryLabels.scatterPlot',
     Regression: 'chart.gallery.entryLabels.regression',
     'Bar Chart': 'chart.gallery.entryLabels.barChart',

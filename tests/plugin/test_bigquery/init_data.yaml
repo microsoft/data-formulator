@@ -1,0 +1,272 @@
+# BigQuery Emulator Initialization Data
+# This file creates sample datasets, tables, and data for testing.
+#
+# Note: Timestamp-like columns use STRING (ISO8601) instead of TIMESTAMP because
+# the goccy bigquery-emulator serializes TIMESTAMP in query results as float
+# strings (e.g. "1704103200.0"), which the Google BigQuery Python client rejects
+# (it expects integer and calls int(value)). Using STRING avoids this mismatch.
+
+projects:
+  - id: test-project
+    datasets:
+      - id: sample
+        tables:
+          - id: products
+            columns:
+              - name: id
+                type: INT64
+              - name: name
+                type: STRING
+              - name: category
+                type: STRING
+              - name: price
+                type: FLOAT64
+              - name: stock_quantity
+                type: INT64
+              - name: created_at
+                type: STRING
+            data:
+              - id: 1
+                name: "Laptop Pro 15"
+                category: "Electronics"
+                price: 1299.99
+                stock_quantity: 50
+                created_at: "2024-01-01T10:00:00Z"
+              - id: 2
+                name: "Wireless Mouse"
+                category: "Electronics"
+                price: 29.99
+                stock_quantity: 200
+                created_at: "2024-01-02T10:00:00Z"
+              - id: 3
+                name: "USB-C Hub"
+                category: "Electronics"
+                price: 49.99
+                stock_quantity: 150
+                created_at: "2024-01-03T10:00:00Z"
+              - id: 4
+                name: "Mechanical Keyboard"
+                category: "Electronics"
+                price: 149.99
+                stock_quantity: 75
+                created_at: "2024-01-04T10:00:00Z"
+              - id: 5
+                name: "Monitor 27inch"
+                category: "Electronics"
+                price: 399.99
+                stock_quantity: 30
+                created_at: "2024-01-05T10:00:00Z"
+              - id: 6
+                name: "Office Chair"
+                category: "Furniture"
+                price: 299.99
+                stock_quantity: 40
+                created_at: "2024-01-06T10:00:00Z"
+              - id: 7
+                name: "Standing Desk"
+                category: "Furniture"
+                price: 599.99
+                stock_quantity: 25
+                created_at: "2024-01-07T10:00:00Z"
+              - id: 8
+                name: "Desk Lamp"
+                category: "Furniture"
+                price: 39.99
+                stock_quantity: 100
+                created_at: "2024-01-08T10:00:00Z"
+              - id: 9
+                name: "Notebook Pack"
+                category: "Supplies"
+                price: 12.99
+                stock_quantity: 500
+                created_at: "2024-01-09T10:00:00Z"
+              - id: 10
+                name: "Pen Set"
+                category: "Supplies"
+                price: 8.99
+                stock_quantity: 300
+                created_at: "2024-01-10T10:00:00Z"
+
+          - id: customers
+            columns:
+              - name: id
+                type: INT64
+              - name: first_name
+                type: STRING
+              - name: last_name
+                type: STRING
+              - name: email
+                type: STRING
+              - name: city
+                type: STRING
+              - name: country
+                type: STRING
+              - name: signup_date
+                type: DATE
+            data:
+              - id: 1
+                first_name: "John"
+                last_name: "Doe"
+                email: "john.doe@email.com"
+                city: "New York"
+                country: "USA"
+                signup_date: "2024-01-15"
+              - id: 2
+                first_name: "Jane"
+                last_name: "Smith"
+                email: "jane.smith@email.com"
+                city: "Los Angeles"
+                country: "USA"
+                signup_date: "2024-01-16"
+              - id: 3
+                first_name: "Bob"
+                last_name: "Johnson"
+                email: "bob.j@email.com"
+                city: "Chicago"
+                country: "USA"
+                signup_date: "2024-01-17"
+              - id: 4
+                first_name: "Alice"
+                last_name: "Williams"
+                email: "alice.w@email.com"
+                city: "London"
+                country: "UK"
+                signup_date: "2024-01-18"
+              - id: 5
+                first_name: "Charlie"
+                last_name: "Brown"
+                email: "charlie.b@email.com"
+                city: "Paris"
+                country: "France"
+                signup_date: "2024-01-19"
+
+          - id: orders
+            columns:
+              - name: id
+                type: INT64
+              - name: customer_id
+                type: INT64
+              - name: order_date
+                type: STRING
+              - name: total_amount
+                type: FLOAT64
+              - name: status
+                type: STRING
+            data:
+              - id: 1
+                customer_id: 1
+                order_date: "2024-01-20T10:30:00Z"
+                total_amount: 1349.98
+                status: "completed"
+              - id: 2
+                customer_id: 2
+                order_date: "2024-01-21T14:20:00Z"
+                total_amount: 449.98
+                status: "completed"
+              - id: 3
+                customer_id: 3
+                order_date: "2024-01-22T09:15:00Z"
+                total_amount: 299.99
+                status: "completed"
+              - id: 4
+                customer_id: 1
+                order_date: "2024-01-23T16:45:00Z"
+                total_amount: 79.98
+                status: "shipped"
+              - id: 5
+                customer_id: 4
+                order_date: "2024-01-24T11:00:00Z"
+                total_amount: 1699.98
+                status: "pending"
+
+          - id: nested_events
+            columns:
+              - name: event_id
+                type: INT64
+              - name: event_name
+                type: STRING
+              - name: user_info
+                type: RECORD
+                fields:
+                  - name: user_id
+                    type: INT64
+                  - name: username
+                    type: STRING
+                  - name: preferences
+                    type: RECORD
+                    fields:
+                      - name: theme
+                        type: STRING
+                      - name: notifications
+                        type: BOOL
+              - name: event_timestamp
+                type: STRING
+            data:
+              - event_id: 1
+                event_name: "login"
+                user_info:
+                  user_id: 101
+                  username: "alice"
+                  preferences:
+                    theme: "dark"
+                    notifications: true
+                event_timestamp: "2024-01-20T08:00:00Z"
+              - event_id: 2
+                event_name: "purchase"
+                user_info:
+                  user_id: 102
+                  username: "bob"
+                  preferences:
+                    theme: "light"
+                    notifications: false
+                event_timestamp: "2024-01-20T09:30:00Z"
+              - event_id: 3
+                event_name: "logout"
+                user_info:
+                  user_id: 101
+                  username: "alice"
+                  preferences:
+                    theme: "dark"
+                    notifications: true
+                event_timestamp: "2024-01-20T17:00:00Z"
+
+      - id: analytics
+        tables:
+          - id: page_views
+            columns:
+              - name: id
+                type: INT64
+              - name: page_url
+                type: STRING
+              - name: visitor_id
+                type: STRING
+              - name: view_timestamp
+                type: STRING
+              - name: duration_seconds
+                type: INT64
+            data:
+              - id: 1
+                page_url: "/home"
+                visitor_id: "v001"
+                view_timestamp: "2024-01-20T10:00:00Z"
+                duration_seconds: 45
+              - id: 2
+                page_url: "/products"
+                visitor_id: "v001"
+                view_timestamp: "2024-01-20T10:01:00Z"
+                duration_seconds: 120
+              - id: 3
+                page_url: "/checkout"
+                visitor_id: "v001"
+                view_timestamp: "2024-01-20T10:03:00Z"
+                duration_seconds: 300
+              - id: 4
+                page_url: "/home"
+                visitor_id: "v002"
+                view_timestamp: "2024-01-20T11:00:00Z"
+                duration_seconds: 30
+              - id: 5
+                page_url: "/about"
+                visitor_id: "v002"
+                view_timestamp: "2024-01-20T11:01:00Z"
+                duration_seconds: 60

@@ -123,7 +123,6 @@
       "backendError": "{{backend}} 错误：{{message}}",
       "sectionLabels": {
         "semanticContext": "语义上下文",
-        "debugCases": "调试案例",
         "vegaLite": "VegaLite",
         "facets": "分面",
         "stressTests": "压力测试",
@@ -133,7 +132,6 @@
       },
       "sectionDescriptions": {
         "semanticContext": "展示语义类型标注如何改进图表输出：格式化、取值域约束、坐标轴反转、比例尺类型与插值方式",
-        "debugCases": "来自评测失败样例的回归测试：log+bin+zeros、temporal+bin、单点折线",
         "vegaLite": "每种受支持图表类型的演示",
         "facets": "分面模式与功能组合",
         "stressTests": "溢出、弹性拉伸与时间格式压力测试",
@@ -144,7 +142,6 @@
       "entryLabels": {
         "semanticContext": "语义上下文",
         "snapToBound": "边界吸附",
-        "debugCases": "调试案例",
         "scatterPlot": "散点图",
         "regression": "回归",
         "barChart": "柱状图",

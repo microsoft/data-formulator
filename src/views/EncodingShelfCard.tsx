@@ -183,11 +183,18 @@ export const TriggerCard: FC<{
     let theme = useTheme();
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    let charts = useSelector((state: DataFormulatorState) => state.charts);
+    let tables = useSelector((state: DataFormulatorState) => state.tables);
 
     const dispatch = useDispatch<AppDispatch>();
 
     let handleClick = () => {
-        if (trigger.chart) {
+        // Find the actual chart for the table that owns this trigger
+        const ownerTable = tables.find(t => t.derive?.trigger === trigger);
+        const realChart = ownerTable ? charts.find(c => c.tableRef === ownerTable.id && c.source === 'user') : null;
+        if (realChart) {
+            dispatch(dfActions.setFocused({ type: 'chart', chartId: realChart.id }));
+        } else if (trigger.chart) {
             dispatch(dfActions.setFocused({ type: 'chart', chartId: trigger.chart.id }));
         }
     }
@@ -222,18 +229,24 @@ export const TriggerCard: FC<{
         </Typography>
     }
 
-    let prompt: string = trigger.displayInstruction;
-    if (trigger.instruction == '' && encFields.length > 0) {
-        prompt = '';
-    } else if (!trigger.displayInstruction || (trigger.instruction != '' && trigger.instruction.length <= trigger.displayInstruction.replace(/\*\*/g, '').length)) {
-        prompt = trigger.instruction;
+    // Derive prompt text from interaction log — show user's own entry
+    let prompt: string = '';
+    const interaction = trigger.interaction;
+    if (interaction && interaction.length > 0) {
+        // For user-initiated (single entry: user→subagent instruction), use that entry
+        // For agent sessions, this card is rendered for the user prompt entry
+        const userEntry = interaction.find(e => e.from === 'user');
+        prompt = userEntry?.content || '';
     }
+
+    // Card always uses custom (orange) palette — only user entries are rendered as cards
+    const triggerPalette = theme.palette.custom;
 
     // Process the prompt to highlight content in ** **
     const processedPrompt = renderTextWithEmphasis(prompt, {
         fontSize: mini ? 10 : 11, padding: '1px 4px',
         borderRadius: radius.sm,
-        background: alpha(theme.palette.custom.main, 0.08), 
+        background: alpha(triggerPalette.main, 0.08), 
     });
 
     if (mini) {
@@ -247,8 +260,7 @@ export const TriggerCard: FC<{
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
             ...sx,
         }} onClick={handleClick}>
-            {processedPrompt} 
-            {hideFields ? "" : encodingComp}
+            {processedPrompt}{hideFields ? "" : encodingComp}
         </Typography> 
     }
 
@@ -261,15 +273,14 @@ export const TriggerCard: FC<{
             py: 0.5,
             px: 1,
             borderRadius: radius.sm,
-            backgroundColor: theme.palette.custom.bgcolor,
+            backgroundColor: triggerPalette.bgcolor,
             border: `1px solid ${borderColor.component}`,
-            ...(highlighted ? { borderLeft: `2px solid ${theme.palette.custom.main}` } : {}),
+            ...(highlighted ? { borderLeft: `2px solid ${triggerPalette.main}` } : {}),
             '& .MuiChip-label': { px: 0.5, fontSize: "10px"},
             ...sx,
         }} 
         onClick={handleClick}>
-            {processedPrompt}
-            {hideFields ? "" : <>{" "}{encodingComp}</>}
+            {processedPrompt}{hideFields ? "" : <>{" "}{encodingComp}</>}
     </Typography>
 }
 
@@ -307,10 +318,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let chart = allCharts.find(c => c.id == chartId) as Chart;
     let trigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
 
-    let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
+    const triggerPrompt = trigger?.interaction?.find(e => e.role === 'instruction')?.content || '';
+    let [prompt, setPrompt] = useState<string>(triggerPrompt);
 
     useEffect(() => {
-        setPrompt(trigger?.instruction || "");
+        setPrompt(triggerPrompt);
     }, [chartId]);
 
     let encodingMap = chart?.encodingMap;
@@ -494,10 +506,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         const actionId = `deriveNewData_${String(Date.now())}`;
         const originTableId = focusedTableId || currentTable.id;
         const actionDescription = instruction || `Derive ${fieldNamesStr}`;
-        dispatch(dfActions.updateAgentWorkInProgress({
-            actionId, originTableId, description: actionDescription, status: 'running', hidden: false,
-            message: { content: actionDescription, role: 'user', observeTableId: originTableId }
-        }));
 
         // Build chart visualization context
         let chartComplete = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
@@ -596,16 +604,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     "type": "success",
                     "value": t('encoding.formulationSucceeded', { fields: fieldNamesStr })
                 }));
-                dispatch(dfActions.updateAgentWorkInProgress({
-                    actionId, description: displayInstruction || actionDescription, status: 'completed', hidden: false,
-                    message: { content: displayInstruction || actionDescription, role: 'action', resultTableId: candidateTable.id }
-                }));
             },
             onError: () => {
-                dispatch(dfActions.updateAgentWorkInProgress({
-                    actionId, description: actionDescription, status: 'failed', hidden: false,
-                    message: { content: t('encoding.formulationFailed'), role: 'error' }
-                }));
             },
             onFinally: () => {
                 dispatch(dfActions.changeChartRunningStatus({chartId, status: false}));
@@ -682,16 +682,19 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     </IconButton>
                 </span>
             </Tooltip>
-            {trigger ? 
-                <Tooltip title={<Typography sx={{fontSize: 11}}>{t('encoding.formulateAndOverride')} <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
+            {trigger ? (() => {
+                const overrideTableId = tables.find(t => t.derive?.trigger === trigger)?.id;
+                return overrideTableId ? (
+                <Tooltip title={<Typography sx={{fontSize: 11}}>{t('encoding.formulateAndOverride')} <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{overrideTableId}</Typography>}>
                     <span>
                         <IconButton size="small" color={"warning"} sx={{ p: 0.5 }} onClick={() => { 
-                            deriveNewData(trigger!.instruction, 'formulate', trigger!.resultTableId); 
+                            deriveNewData(trigger!.interaction?.find(e => e.role === 'instruction')?.content || '', 'formulate', overrideTableId); 
                         }}>
                             <ChangeCircleOutlinedIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                     </span>
-                </Tooltip>
+                </Tooltip>) : null;
+            })()
                 : 
                 <Tooltip title={t('encoding.formulate')}>
                     <span>

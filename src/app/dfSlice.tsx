@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, DraftNode, InteractionEntry, DeriveStatus } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -107,6 +107,7 @@ export interface DataFormulatorState {
     testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}[];
 
     tables : DictTable[];
+    draftNodes: DraftNode[];
     charts: Chart[];
     
     conceptShelfItems: FieldItem[];
@@ -129,18 +130,6 @@ export interface DataFormulatorState {
     config: ClientConfig;
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
-    
-    // which table is the agent working on
-    agentActions: {
-        actionId: string, 
-        originTableId: string, // the table the user was focused on when they triggered this action sequence
-        description: string, 
-        status: 'running' | 'completed' | 'warning' | 'failed',
-        lastUpdate: number, // the time the action is last updated
-        hidden: boolean, // whether the action is hidden
-        messages: { content: string, role: 'user' | 'thinking' | 'action' | 'completion' | 'error' | 'clarify', observeTableId?: string, resultTableId?: string, timestamp: number }[], // accumulated messages from this action
-        pendingClarification?: { trajectory: any[], completedStepCount: number, lastCreatedTableId: string | null } | null, // stored when agent asks for clarification, cleared on resume/cancel
-    }[];
 
     // Data cleaning dialog state
     dataCleanBlocks: DataCleanBlock[];
@@ -169,6 +158,7 @@ const initialState: DataFormulatorState = {
     testedModels: [],
 
     tables: [],
+    draftNodes: [],
     charts: [],
 
     conceptShelfItems: [],
@@ -206,8 +196,6 @@ const initialState: DataFormulatorState = {
     },
 
     dataLoaderConnectParams: {},
-    
-    agentActions: [],
 
     dataCleanBlocks: [],
     cleanInProgress: false,
@@ -275,7 +263,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
 }
 
 /**
- * Remove a table from Redux state (tables, conceptShelf, charts, agentActions, focus).
+ * Remove a table from Redux state (tables, conceptShelf, charts, draftNodes, focus).
  * Does NOT send any server-side delete requests — the caller decides whether
  * server cleanup is needed.
  */
@@ -302,13 +290,8 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
     const chartIdsToDelete = state.charts.filter(c => c.tableRef === tableId).map(c => c.id);
     deleteChartsRoutine(state, chartIdsToDelete);
 
-    const survivingTableIds = new Set(state.tables.map(t => t.id));
-    state.agentActions = state.agentActions.filter(a => {
-        if (a.status === 'running') return true;
-        if (a.originTableId !== tableId) return true;
-        const resultTableIds = a.messages?.filter(m => m.resultTableId).map(m => m.resultTableId!) ?? [];
-        return resultTableIds.some(id => survivingTableIds.has(id));
-    });
+    // Also clean up any draft nodes that were chained from this table
+    state.draftNodes = state.draftNodes.filter(d => d.derive?.trigger.tableId !== tableId);
 
     if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
         state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
@@ -500,6 +483,7 @@ export const dataFormulatorSlice = createSlice({
             //           config, dataLoaderConnectParams, identity
 
             state.tables = [];
+            state.draftNodes = [];
             state.charts = [];
 
             state.conceptShelfItems = [];
@@ -520,8 +504,6 @@ export const dataFormulatorSlice = createSlice({
 
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
-
-            state.agentActions = [];
 
             state.generatedReports = [];
             // Redux Persist will handle persistence automatically
@@ -549,6 +531,28 @@ export const dataFormulatorSlice = createSlice({
 
                 // Restore from saved payload
                 tables: saved.tables || [],
+                draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
+                    // Mark any running/clarifying drafts as interrupted (SSE connection lost)
+                    if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
+                        return {
+                            ...node,
+                            derive: {
+                                ...node.derive,
+                                status: 'interrupted' as const,
+                                trigger: {
+                                    ...node.derive.trigger,
+                                    interaction: [
+                                        ...(node.derive.trigger.interaction || []),
+                                        { from: 'data-agent' as const, to: 'user' as const, role: 'error' as const,
+                                          content: 'Interrupted by page refresh. You can retry or delete this step.',
+                                          timestamp: Date.now() }
+                                    ]
+                                }
+                            }
+                        };
+                    }
+                    return node;
+                }),
                 charts: saved.charts || [],
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
@@ -560,7 +564,6 @@ export const dataFormulatorSlice = createSlice({
                 ),
                 config: { ...initialState.config, ...(saved.config || {}) },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
-                agentActions: saved.agentActions || [],
                 generatedReports: saved.generatedReports || [],
 
                 // Reset transient fields
@@ -573,27 +576,6 @@ export const dataFormulatorSlice = createSlice({
                 sessionLoading: false,
                 sessionLoadingLabel: '',
             };
-        },
-        updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, originTableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean, message?: { content: string, role: 'user' | 'thinking' | 'action' | 'completion' | 'error' | 'clarify', observeTableId?: string, resultTableId?: string }, pendingClarification?: { trajectory: any[], completedStepCount: number, lastCreatedTableId: string | null } | null }>) => {
-            const now = Date.now();
-            if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {
-                state.agentActions = state.agentActions.map(a => {
-                    if (a.actionId != action.payload.actionId) return a;
-                    const updated = {...a, ...action.payload, lastUpdate: now};
-                    if (action.payload.message) {
-                        updated.messages = [...(a.messages || []), { ...action.payload.message, timestamp: now }];
-                    }
-                    return updated;
-                });
-            } else {
-                const messages = action.payload.message 
-                    ? [{ ...action.payload.message, timestamp: now }] 
-                    : [];
-                state.agentActions = [...state.agentActions, {...action.payload, originTableId: action.payload.originTableId || "", lastUpdate: now, hidden: action.payload.hidden, messages}];
-            }
-        },
-        deleteAgentWorkInProgress: (state, action: PayloadAction<string>) => {
-            state.agentActions = state.agentActions.filter(a => a.actionId != action.payload);
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
             state.serverConfig = action.payload;
@@ -1089,6 +1071,89 @@ export const dataFormulatorSlice = createSlice({
         },
         insertDerivedTables: (state, action: PayloadAction<DictTable>) => {
             state.tables = [...state.tables, action.payload];
+        },
+        // ── Draft node reducers ──────────────────────────────────
+        createDraftNode: (state, action: PayloadAction<{ id: string; displayId: string; parentTableId: string; source: string[]; interaction: InteractionEntry[]; chart?: Chart; actionId?: string }>) => {
+            const { id, displayId, parentTableId, source, interaction, chart, actionId } = action.payload;
+            const draft: DraftNode = {
+                kind: 'draft',
+                id,
+                displayId,
+                anchored: false,
+                derive: {
+                    source,
+                    trigger: {
+                        tableId: parentTableId,
+                        resultTableId: id,
+                        chart,
+                        interaction,
+                    },
+                    status: 'running',
+                },
+                actionId,
+            };
+            state.draftNodes = [...state.draftNodes, draft];
+        },
+        appendDraftInteraction: (state, action: PayloadAction<{ draftId: string; entry: InteractionEntry }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
+            if (draft?.derive?.trigger) {
+                draft.derive.trigger.interaction = [
+                    ...(draft.derive.trigger.interaction || []),
+                    action.payload.entry,
+                ];
+            }
+        },
+        updateDeriveStatus: (state, action: PayloadAction<{ nodeId: string; status: DeriveStatus }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.nodeId);
+            if (draft?.derive) {
+                draft.derive.status = action.payload.status;
+            }
+        },
+        updateDraftClarification: (state, action: PayloadAction<{ draftId: string; pendingClarification: { trajectory: any[]; completedStepCount: number; lastCreatedTableId: string | null } | null }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
+            if (draft?.derive) {
+                draft.derive.pendingClarification = action.payload.pendingClarification;
+            }
+        },
+        promoteDraft: (state, action: PayloadAction<{ draftId: string; rows: any[]; names: string[]; metadata: any; code: string; codeSignature?: string; outputVariable?: string; dialog?: any[]; explanation?: any; virtual?: { tableId: string; rowCount: number }; attachedMetadata?: string; source?: DataSourceConfig }>) => {
+            const { draftId, rows, names, metadata, code, codeSignature, outputVariable, dialog, explanation, virtual, attachedMetadata, source } = action.payload;
+            const draft = state.draftNodes.find(d => d.id === draftId);
+            if (!draft) return;
+            const table: DictTable = {
+                kind: 'table',
+                id: draft.id,
+                displayId: draft.displayId,
+                anchored: draft.anchored,
+                derive: {
+                    ...draft.derive,
+                    status: 'completed' as const,
+                    code,
+                    codeSignature,
+                    outputVariable: outputVariable || 'result_df',
+                    dialog: dialog || [],
+                    explanation,
+                },
+                rows,
+                names,
+                metadata,
+                virtual,
+                attachedMetadata: attachedMetadata || '',
+                source,
+            };
+            state.tables = [...state.tables, table];
+            state.draftNodes = state.draftNodes.filter(d => d.id !== draftId);
+        },
+        removeDraftNode: (state, action: PayloadAction<string>) => {
+            state.draftNodes = state.draftNodes.filter(d => d.id !== action.payload);
+        },
+        appendTriggerInteraction: (state, action: PayloadAction<{ tableId: string; entries: InteractionEntry[] }>) => {
+            const table = state.tables.find(t => t.id === action.payload.tableId);
+            if (table?.derive?.trigger) {
+                table.derive.trigger.interaction = [
+                    ...(table.derive.trigger.interaction || []),
+                    ...action.payload.entries,
+                ];
+            }
         },
         overrideDerivedTables: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;

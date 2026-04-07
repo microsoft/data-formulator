@@ -123,7 +123,6 @@
       "backendError": "{{backend}} error: {{message}}",
       "sectionLabels": {
         "semanticContext": "Semantic Context",
-        "debugCases": "Debug Cases",
         "vegaLite": "VegaLite",
         "facets": "Facets",
         "stressTests": "Stress Tests",
@@ -133,7 +132,6 @@
       },
       "sectionDescriptions": {
         "semanticContext": "Demonstrates how semantic type annotations improve chart output: formatting, domain constraints, axis reversal, scale type, and interpolation",
-        "debugCases": "Regression tests from evaluation failures: log+bin+zeros, temporal+bin, single-point line",
         "vegaLite": "Demos for every supported chart type",
         "facets": "Faceting modes and feature combinations",
         "stressTests": "Overflow, elasticity, and temporal format stress tests",
@@ -144,7 +142,6 @@
       "entryLabels": {
         "semanticContext": "Semantic Context",
         "snapToBound": "Snap-to-Bound",
-        "debugCases": "Debug Cases",
         "scatterPlot": "Scatter Plot",
         "regression": "Regression",
         "barChart": "Bar Chart",

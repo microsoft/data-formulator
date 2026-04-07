@@ -108,6 +108,18 @@ def _warm_worker_loop(conn):
         _blocked_prefixes = ("subprocess", "shutil", "winreg", "webbrowser")
         if event.split(".")[0] in _blocked_prefixes:
             raise IOError("potentially dangerous, filesystem-accessing functions forbidden")
+        # Block dangerous os operations (process execution, signals,
+        # environment manipulation).  We intentionally do NOT add "os"
+        # to _blocked_prefixes because libraries like pandas/numpy rely
+        # on safe os.* audit events (os.listdir, os.scandir, os.stat)
+        # that share the same prefix.
+        _blocked_os_events = frozenset({
+            "os.system", "os.exec", "os.spawn", "os.fork",
+            "os.kill", "os.killpg", "os.startfile",
+            "os.putenv", "os.unsetenv",
+        })
+        if event in _blocked_os_events:
+            raise IOError("dangerous os operation forbidden in sandbox")
         # Block network access — code should only transform data, not
         # make outbound connections (prevents data exfiltration).
         if event in ("socket.connect", "socket.bind", "socket.sendto",
@@ -152,6 +164,12 @@ def _warm_worker_loop(conn):
             _allowed_workspace[0] = _ws
         else:
             _allowed_workspace[0] = None
+
+        # Change working directory to workspace before executing user
+        # code.  Done here (not via a code preamble) so that ``import os``
+        # is never injected into the exec namespace.
+        if workspace_path:
+            os.chdir(workspace_path)
 
         namespace = {**allowed_objects}
         try:
@@ -302,14 +320,9 @@ class LocalSandbox(Sandbox):
                 logger.info(f"[LocalSandbox] files in workspace ({len(ws_files)}): {ws_files}")
             except Exception as e:
                 logger.warning(f"[LocalSandbox] failed to list workspace dir: {e}")
-            # Prepend a chdir so the script runs inside the workspace directory.
-            ws_escaped = workspace_path.replace("\\", "\\\\").replace("'", "\\'")
-            chdir_preamble = f"import os as _sandbox_os; _sandbox_os.chdir('{ws_escaped}')\n"
-            code_with_chdir = chdir_preamble + code
-
             try:
                 allowed_objects = {output_variable: None}
-                result = self._run_in_warm_subprocess(code_with_chdir, allowed_objects, workspace_path)
+                result = self._run_in_warm_subprocess(code, allowed_objects, workspace_path)
 
                 if result["status"] == "ok":
                     output_df = result["allowed_objects"][output_variable]

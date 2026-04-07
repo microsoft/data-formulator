@@ -464,6 +464,7 @@ export const DataLoaderForm: React.FC<{
         const columns = metadata.columns || [];
         const names = columns.map((c: any) => c.name);
         return {
+            kind: 'table' as const,
             id: selectedPreviewTable,
             displayId: selectedPreviewTable,
             names,
@@ -473,7 +474,6 @@ export const DataLoaderForm: React.FC<{
                 [name]: { type: 'string' as any, semanticType: '', levels: [] }
             }), {}),
             anchored: true,
-            createdBy: 'user' as const,
             attachedMetadata: '',
         };
     }, [selectedPreviewTable, tableMetadata]);
@@ -693,6 +693,7 @@ export const DataLoaderForm: React.FC<{
                                     const sampleRows = metadata.sample_rows || [];
                                     const columns = metadata.columns || [];
                                     const tableObj: DictTable = {
+                                        kind: 'table' as const,
                                         id: tableName.split('.').pop() || tableName,
                                         displayId: tableName,
                                         names: columns.map((c: any) => c.name),
@@ -702,7 +703,6 @@ export const DataLoaderForm: React.FC<{
                                         }), {}),
                                         rows: sampleRows,
                                         anchored: true,
-                                        createdBy: 'user' as const,
                                         attachedMetadata: '',
                                         source: {
                                             type: 'database' as const,

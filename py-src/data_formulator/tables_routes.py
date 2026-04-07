@@ -14,13 +14,13 @@ from flask import request, jsonify, Blueprint, Response
 import pandas as pd
 from pathlib import Path
 from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
-from data_formulator.auth import get_identity_id
+from data_formulator.security.auth import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
 from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, normalize_text_encoding
 from data_formulator.datalake.metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
-from data_formulator.sanitize import sanitize_error_message
+from data_formulator.security.sanitize import sanitize_error_message
 
 import re
 

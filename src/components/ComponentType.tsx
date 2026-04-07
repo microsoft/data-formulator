@@ -28,11 +28,51 @@ export interface Trigger {
     tableId: string, // on which table this action is triggered
 
     chart?: Chart, // what's the intented chart from the user when running formulation
-    instruction: string,
-    displayInstruction: string, // the short instruction that will be displayed to the user
 
-    resultTableId: string,
+    resultTableId: string, // the table produced by this trigger (=== owning table's id)
+
+    // Rich interaction log
+    interaction?: InteractionEntry[];
 }
+
+// ── New interaction types ────────────────────────────────────
+
+export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-agent';
+
+export interface InteractionEntry {
+    from: Actor;
+    to: Actor;
+    role: 'prompt' | 'thought' | 'clarify' | 'instruction' | 'summary' | 'error';
+    content: string;
+    displayContent?: string;
+    timestamp?: number;
+}
+
+export type DeriveStatus = 'running' | 'clarifying' | 'completed' | 'error' | 'interrupted';
+
+export interface DraftNode {
+    kind: 'draft';
+    id: string;
+    displayId: string;
+    anchored: boolean;
+    derive: {
+        source: string[];
+        trigger: Trigger;
+        status: DeriveStatus;
+        code?: string;
+        codeSignature?: string;
+        outputVariable?: string;
+        dialog?: any[];
+        pendingClarification?: {
+            trajectory: any[];
+            completedStepCount: number;
+            lastCreatedTableId: string | null;
+        } | null;
+    };
+    actionId?: string;
+}
+
+export type ThreadNode = DraftNode | DictTable;
 
 // Define data cleaning message types
 export type DataCleanTableOutput = {
@@ -95,6 +135,7 @@ export interface DataSourceConfig {
 }
 
 export interface DictTable {
+    kind: 'table'; // discriminant for ThreadNode union
     id: string; // name/id of the table
     displayId: string; // display id of the table 
     
@@ -121,18 +162,14 @@ export interface DictTable {
             }[]
         },
         dialog: any[], // the log of how the data is derived with LLM (the LLM conversation log)
-        // tracks how this derivation is triggered, as we as user instruction used to do the formulation,
-        // there is a subtle difference between trigger and source, trigger identifies the occasion when the derivision is called,
-        // source specifies how the deriviation is done from the source tables, they may be the same, but not necessarily
-        // in fact, right now dict tables are all triggered from charts
         trigger: Trigger,
+        status?: DeriveStatus, // lifecycle state (new — completed tables may omit for backward compat)
     };
     virtual?: {
         tableId: string; // the id of the virtual table in the database
         rowCount: number; // total number of rows in the full table
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
-    createdBy: 'user' | 'agent'; // whether this table is created by the user or the agent
     attachedMetadata: string; // a string of attached metadata explaining what the table is about (used for prompt)
     
     // New field: tracks the source of the data and refresh configuration
@@ -156,7 +193,6 @@ export function createDictTable(
         } | undefined = undefined,
     virtual: {tableId: string, rowCount: number} | undefined = undefined,
     anchored: boolean = false,
-    createdBy: 'user' | 'agent' = 'user', // by default, all tables are created by the user
     attachedMetadata: string = '',
     source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
@@ -164,6 +200,7 @@ export function createDictTable(
     let names = Object.keys(rows[0])
 
     return {
+        kind: 'table' as const,
         id,
         displayId: `${id}`,
         names, 
@@ -179,7 +216,6 @@ export function createDictTable(
         derive,
         virtual,
         anchored,
-        createdBy,
         attachedMetadata,
         source,
     }

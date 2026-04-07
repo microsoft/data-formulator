@@ -140,8 +140,8 @@ export interface FieldSemantics {
     defaultVisType: VisCategory;
 
     // --- Formatting ---
-    /** Number format derived from data type and unit */
-    format: FormatSpec;
+    /** Number format derived from data type and unit (only set when confident) */
+    format?: FormatSpec;
     /** Tooltip format (typically higher precision than axis format) */
     tooltipFormat?: FormatSpec;
 
@@ -306,7 +306,7 @@ export function resolveFormat(
     semanticType: string,
     annotation: SemanticAnnotation,
     values: any[],
-): { format: FormatSpec; tooltipFormat?: FormatSpec } {
+): { format?: FormatSpec; tooltipFormat?: FormatSpec } {
     const entry = getRegistryEntry(semanticType);
     const unit = annotation.unit;
 
@@ -319,129 +319,73 @@ export function resolveFormat(
 
     const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
 
+    // ─── Policy: only override axis format when the raw number would be
+    // genuinely misleading.  Two cases qualify:
+    //   1. Percent with 0–1 data + intrinsicDomain → representation transform
+    //   2. Currency with a known unit → add currency symbol
+    // Everything else: let VL handle axis formatting natively.
+    // Tooltip format is lower-stakes (transient hover) so we're more liberal.
+
     switch (entry.formatClass) {
         case 'currency': {
-            const pfx = currencyPrefix ?? '$';
-            // Price always shows cents; other currency uses data precision (min 0 for axis)
-            const axisPattern = semanticType === 'Price' ? ',.2f' : precisionFormat(nums);
-            return {
-                format:  { pattern: axisPattern, prefix: pfx, abbreviate: true },
-                tooltipFormat: { pattern: ',.2f', prefix: pfx },
-            };
-        }
-
-        case 'signed-currency': {
-            const pfx = currencyPrefix ?? '$';
-            return {
-                format:  { pattern: precisionFormat(nums, true, '+'), prefix: pfx, abbreviate: true },
-                tooltipFormat: { pattern: '+,.2f', prefix: pfx },
-            };
+            const pfx = currencyPrefix;
+            // Only override axis when we have a known currency symbol;
+            // without it the axis is better left to VL defaults.
+            if (pfx) {
+                const axisPattern = semanticType === 'Price' ? ',.2f' : precisionFormat(nums);
+                return {
+                    format: { pattern: axisPattern, prefix: pfx },
+                    tooltipFormat: { pattern: ',.2f', prefix: pfx },
+                };
+            }
+            return { tooltipFormat: { pattern: ',.2f' } };
         }
 
         case 'percent': {
-            // Without an explicit intrinsicDomain we cannot reliably tell
-            // whether values are fractional 0-1 or whole-number 0-100, so
-            // fall back to plain formatting to avoid misinterpretation.
+            // Without intrinsicDomain we can't reliably distinguish 0–1
+            // from 0–100, so defer to VL.
             if (!annotation.intrinsicDomain) {
-                return {
-                    format:  {},
-                    tooltipFormat: { pattern: precisionFormat(nums) },
-                };
+                return { tooltipFormat: { pattern: precisionFormat(nums) } };
             }
             const rep = detectPercentageRepresentation(nums);
             if (rep === '0-1') {
-                // d3's .% format multiplies by 100 automatically.
-                // Use ~ (trim trailing zeros) so VL-generated axis ticks like
-                // 0.2 → "20%" rather than "20.00%" with a fixed .2% pattern.
+                // 0–1 fractional → axis must transform (0.45 → "45%")
                 const p = detectPrecision(nums);
                 const axisP = Math.max(0, p - 2);
                 const tipP  = Math.min(axisP + 1, 4);
                 return {
-                    format:  { pattern: `.${axisP}~%` },
+                    format: { pattern: `.${axisP}~%` },
                     tooltipFormat: { pattern: `.${tipP}%` },
                 };
             }
-            // Whole-number percentage (0–100).
-            // Axis: ~ trims zeros so clean ticks (20) show as "20%" not "20.0%".
-            // Tooltip: full data precision.
-            const p = detectPrecision(nums);
+            // Whole-number 0–100: raw numbers are readable as-is.
+            // Axis title conveys "percentage"; tooltip adds suffix for clarity.
             return {
-                format:  { pattern: `.${p}~f`, suffix: '%' },
                 tooltipFormat: { pattern: precisionFormat(nums, false), suffix: '%' },
             };
         }
 
-        case 'signed-percent': {
-            // Axis labels don't need explicit + sign — VL shows - on negatives
-            // naturally.  Forcing + on positives is visual noise and fragile
-            // (e.g. +~g breaks with certain Vega/d3-format versions for larger
-            // values → scientific notation like +1.2e2).
-            // Mirror the unsigned `percent` paths for axis; keep + only in tooltip.
-            if (!annotation.intrinsicDomain) {
-                return {
-                    format:  {},
-                    tooltipFormat: { pattern: precisionFormat(nums, true, '+') },
-                };
-            }
-            const rep = detectPercentageRepresentation(nums);
-            if (rep === '0-1') {
-                const p = detectPrecision(nums);
-                const axisP = Math.max(0, p - 2);
-                const tipP  = Math.min(axisP + 1, 4);
-                return {
-                    format:  { pattern: `.${axisP}~%` },
-                    tooltipFormat: { pattern: `+.${tipP}%` },
-                };
-            }
-            // Whole-number: axis same as unsigned percent, tooltip adds +.
-            const p = detectPrecision(nums);
+        case 'unit-suffix':
             return {
-                format:  { pattern: `.${p}~f`, suffix: '%' },
-                tooltipFormat: { pattern: precisionFormat(nums, false, '+'), suffix: '%' },
+                tooltipFormat: unitSuffix
+                    ? { pattern: precisionFormat(nums), suffix: unitSuffix }
+                    : { pattern: precisionFormat(nums) },
             };
-        }
-
-        case 'signed-decimal': {
-            // Axis ticks don't need + sign — VL shows - on negatives naturally.
-            // Defer entirely to VL default (same as `decimal`), which adapts
-            // precision and avoids scientific notation for typical ranges.
-            // Only the tooltip (showing actual data values) gets signed precision.
-            return {
-                format:  {},
-                tooltipFormat: { pattern: precisionFormat(nums, false, '+') },
-            };
-        }
-
-        case 'unit-suffix': {
-            const sfx = unitSuffix ?? '';
-            return {
-                format:  { pattern: precisionFormat(nums), suffix: sfx, abbreviate: true },
-                tooltipFormat: { pattern: precisionFormat(nums), suffix: sfx },
-            };
-        }
 
         case 'integer':
-            if (semanticType === 'Year') {
-                return { format: { pattern: 'd' } };
+            // Year/Decade: no comma — '2,024' is wrong for a year.
+            // Other integers (Count, Rank, Hour): comma separator aids readability.
+            if (semanticType === 'Year' || semanticType === 'Decade') {
+                return {};
             }
-            return {
-                format:  { pattern: ',d' },
-                tooltipFormat: { pattern: ',d' },
-            };
+            return { tooltipFormat: { pattern: ',d' } };
 
         case 'decimal':
-            // Don't override axis format — VL's native formatting is superior
-            // for generic decimals (it adapts precision and uses ~s notation
-            // for large values). We only keep a tooltipFormat so tooltip
-            // pop-ups show clean precision rather than raw floats.
-            return {
-                format:  {},
-                tooltipFormat: { pattern: precisionFormat(nums) },
-            };
+            return { tooltipFormat: { pattern: precisionFormat(nums) } };
 
         case 'plain':
         default:
-            return { format: {} };
+            return {};
     }
 }
 
