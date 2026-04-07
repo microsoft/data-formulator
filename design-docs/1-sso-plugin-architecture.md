@@ -2409,28 +2409,16 @@ export interface PluginManifest {
     capabilities: string[];
 }
 
-export interface PluginPanelProps {
-    pluginId: string;
-    config: Record<string, any>;
-    ssoToken: string | null;    // 用户的 SSO token (如果有)，插件可用于透传
-    onDataLoaded: (result: {
-        tableName: string;
-        rowCount: number;
-        columns: string[];
-        source: "workspace" | "json";
-        rows?: any[];
-    }) => void;
-}
-
-export interface DataSourcePluginModule {
-    manifest: PluginManifest;
-    PanelComponent: React.ComponentType<PluginPanelProps>;
-    LoginComponent?: React.ComponentType<{
-        config: Record<string, any>;
-        ssoToken: string | null;
-        onLoginSuccess: () => void;
-    }>;
-}
+// PluginPanelProps、DataProvenance、DataSourcePluginModule 的完整定义
+// 见 1-data-source-plugin-architecture.md § 7.1
+//
+// 要点：
+//   - 前端组件不接收 ssoToken prop。SSO token 由插件后端通过
+//     auth.get_sso_token() 从 Flask session 获取，前端无需感知。
+//   - onDataLoaded 回调必须包含 DataProvenance（数据溯源），
+//     以支持"用同样的参数刷新"和 UI 显示数据来源。
+//   - onPreviewLoaded（可选）支持"先预览再加载"的交互。
+//   - LoginComponent 不接收 ssoToken，认证流程走插件自身后端。
 ```
 
 前端插件注册使用 `import.meta.glob` 自动扫描（详见 4.4.7 节），此处不再重复。新增插件只需在 `src/plugins/` 下创建子目录并导出 `index.ts`，无需手动维护注册表。
