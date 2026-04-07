@@ -653,7 +653,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         return !(dataFieldsAllAvailable && table.rows.length > 0);
     }, [focusedChart.chartType, dataFieldsAllAvailable, table.rows.length]);
 
-    let resultTable = tables.find(t => t.id == trigger?.resultTableId);
+    let triggerTable = tables.find(t => t.derive?.trigger?.chart?.id == focusedChart?.id);
 
     // Chart insight
     const chartInsightInProgress = useSelector((state: DataFormulatorState) => state.chartInsightInProgress) || [];
@@ -710,7 +710,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // Check if concepts are available
     const availableConcepts = extractConceptExplanations(table);
     const hasConcepts = availableConcepts.length > 0;
-    const hasDerived = !!(resultTable?.derive || table.derive);
+    const hasDerived = !!(triggerTable?.derive || table.derive);
 
     let vegaEditorButton = (
         <Tooltip key="vega-editor-tooltip" title={t('chart.openInVegaEditor')}>
@@ -1008,7 +1008,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         hasDerived ? <ChatDialog key="chat-dialog-overlay" open={chatDialogOpen}
             handleCloseDialog={() => setChatDialogOpen(false)}
             code={transformCode}
-            dialog={resultTable?.derive?.dialog || table.derive?.dialog as any[]} /> : null,
+            dialog={triggerTable?.derive?.dialog || table.derive?.dialog as any[]} /> : null,
     ]
     
     const ENCODING_SHELF_WIDTH = 240;

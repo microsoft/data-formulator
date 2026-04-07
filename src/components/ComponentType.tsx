@@ -28,12 +28,10 @@ export interface Trigger {
     tableId: string, // on which table this action is triggered
 
     chart?: Chart, // what's the intented chart from the user when running formulation
-    instruction: string,
-    displayInstruction: string, // the short instruction that will be displayed to the user
 
-    resultTableId: string,
+    resultTableId: string, // the table produced by this trigger (=== owning table's id)
 
-    // Rich interaction log (replaces triggeredBy — the from/to fields determine origin)
+    // Rich interaction log
     interaction?: InteractionEntry[];
 }
 

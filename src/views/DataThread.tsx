@@ -79,7 +79,7 @@ import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import PsychologyIcon from '@mui/icons-material/Psychology';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 
 import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
 import { SimpleChartRecBox } from './SimpleChartRecBox';
@@ -123,23 +123,60 @@ export const ThinkingBanner = (message: string, sx?: SxProps) => (
 
 // ── Interaction dot: small inline entries for non-instruction interaction steps ──
 
-const InteractionDot: React.FC<{ entry: InteractionEntry }> = memo(({ entry }) => {
+const InteractionDot: React.FC<{ entry: InteractionEntry; highlighted?: boolean }> = memo(({ entry, highlighted = false }) => {
     const theme = useTheme();
-    // Color based on actor: user → custom (orange), agent → derived (gold)
-    const isFromUser = entry.from === 'user';
-    const color = isFromUser ? theme.palette.custom.main : theme.palette.secondary.main;
-    const text = entry.displayContent || entry.content;
-    const maxLen = entry.role === 'thought' ? 120 : 200;
-    const display = text.length > maxLen ? text.slice(0, maxLen) + '…' : text;
+    const text = entry.content;
+
+    // User prompts and user instructions get a card-style box
+    if (entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')) {
+        const palette = theme.palette.custom;
+        return (
+            <Typography component="div" sx={{
+                fontSize: '11px',
+                color: 'rgba(0,0,0,0.75)',
+                py: 0.5, px: 1,
+                borderRadius: radius.sm,
+                backgroundColor: palette.bgcolor,
+                border: `1px solid ${borderColor.component}`,
+                ...(highlighted ? { borderLeft: `2px solid ${palette.main}` } : {}),
+            }}>
+                {text}
+            </Typography>
+        );
+    }
+
+    // Pick color based on role
+    let color: string;
+    let extraSx: any = {};
+    switch (entry.role) {
+        case 'thought':
+            color = theme.palette.text.disabled; // light gray
+            extraSx = { fontStyle: 'italic' };
+            break;
+        case 'instruction':
+            color = 'rgba(0,0,0,0.75)'; // same as user trigger text
+            break;
+        case 'summary':
+            color = theme.palette.success.main; // green
+            break;
+        case 'error':
+            color = theme.palette.error.main; // red
+            break;
+        case 'clarify':
+            color = theme.palette.warning.main; // orange/amber
+            break;
+        default:
+            color = theme.palette.text.secondary;
+    }
 
     return (
         <Typography component="div" sx={{
             fontSize: '10px',
             color,
             py: '1px',
-            ...(entry.role === 'thought' ? { fontStyle: 'italic', opacity: 0.75 } : {}),
+            ...extraSx,
         }}>
-            {display}
+            {text}
         </Typography>
     );
 });
@@ -839,7 +876,7 @@ let SingleThreadGroupView: FC<{
     const isAncestorThread = !threadHighlighted && globalHighlightedTableIds.length > 0
         && leafTables.some(lt => {
             const trigs = getTriggers(lt, tables);
-            const chainIds = [...trigs.map(t => t.tableId), lt.id];
+            const chainIds = [...trigs.map(tp => tp.tableId), lt.id];
             const ownedIds = chainIds.filter(id => !usedIntermediateTableIds.includes(id));
             return ownedIds.some(id => globalHighlightedTableIds.includes(id));
         });
@@ -1119,12 +1156,12 @@ let SingleThreadGroupView: FC<{
 
     const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
     
-    let triggers = parentTable ? getTriggers(parentTable, tables) : [];
-    let tableIdList = parentTable ? [...triggers.map((trigger) => trigger.tableId), parentTable.id] : [];
+    let triggerPairs = parentTable ? getTriggers(parentTable, tables) : [];
+    let tableIdList = parentTable ? [...triggerPairs.map((tp) => tp.tableId), parentTable.id] : [];
 
     let usedTableIdsInThread = tableIdList.filter(id => usedIntermediateTableIds.includes(id));
     let newTableIds = tableIdList.filter(id => !usedTableIdsInThread.includes(id));
-    let newTriggers = triggers.filter(tg => newTableIds.includes(tg.resultTableId));
+    let newTriggerPairs = triggerPairs.filter(tp => newTableIds.includes(tp.resultTableId));
 
     // Use the global highlighted table IDs (computed at DataThread level from the focused table's full ancestor chain)
     let highlightedTableIds = globalHighlightedTableIds;
@@ -1147,10 +1184,9 @@ let SingleThreadGroupView: FC<{
     }
 
     let tableElementList = newTableIds.map((tableId, i) => _buildTableCard(tableId));
-    let triggerCards = newTriggers.map((trigger) => {
-        const triggerTableId = trigger.resultTableId;
-        const isHL = triggerTableId ? highlightedTableIds.includes(triggerTableId) : false;
-        return _buildTriggerCard(trigger, isHL);
+    let triggerCards = newTriggerPairs.map((tp) => {
+        const isHL = highlightedTableIds.includes(tp.resultTableId);
+        return _buildTriggerCard(tp, isHL);
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
@@ -1198,44 +1234,33 @@ let SingleThreadGroupView: FC<{
     });
 
     // Interleave triggers and tables for the main thread body
+    const afterTableMap = new Map<string, InteractionEntry[]>();
     newTableIds.forEach((tableId, i) => {
-        const trigger = newTriggers.find(t => t.resultTableId === tableId);
+        const triggerPair = newTriggerPairs.find(tp => tp.resultTableId === tableId);
         const isHighlighted = highlightedTableIds.includes(tableId);
 
         // Add trigger card (or interaction log entries) if exists
-        if (trigger) {
-            const interaction = trigger.interaction;
+        if (triggerPair) {
+            const interaction = triggerPair.interaction;
             if (interaction && interaction.length > 0) {
-                // Split interaction entries into timeline items:
-                // - 'instruction' entries → rendered as the trigger card
-                // - all other entries → rendered as small context dots
-                interaction.forEach((entry, ei) => {
-                    if (entry.role === 'instruction') {
-                        // Render as the trigger card (main instruction)
-                        const triggerCard = triggerCards[newTriggers.indexOf(trigger)];
-                        if (triggerCard) {
-                            timelineItems.push({
-                                key: `interaction-instruction-${tableId}-${ei}`,
-                                type: 'trigger',
-                                highlighted: isHighlighted,
-                                element: triggerCard,
-                                interactionEntry: entry,
-                            });
-                        }
-                    } else {
-                        // Render as a small context entry in the timeline
-                        timelineItems.push({
-                            key: `interaction-${entry.role}-${tableId}-${ei}`,
-                            type: 'trigger',
-                            highlighted: isHighlighted,
-                            element: <InteractionDot entry={entry} />,
-                            interactionEntry: entry,
-                        });
-                    }
+                // Split at the last instruction: before → rendered before table, after → rendered after table
+                const lastInstrIdx = (() => { for (let i = interaction.length - 1; i >= 0; i--) { if (interaction[i].role === 'instruction') return i; } return -1; })();
+                const beforeTable = interaction.slice(0, lastInstrIdx + 1);
+                const afterTable = lastInstrIdx >= 0 ? interaction.slice(lastInstrIdx + 1) : [];
+
+                beforeTable.forEach((entry, ei) => {
+                    timelineItems.push({
+                        key: `interaction-${entry.role}-${tableId}-${ei}`,
+                        type: 'trigger',
+                        highlighted: isHighlighted,
+                        element: <InteractionDot entry={entry} highlighted={isHighlighted} />,
+                        interactionEntry: entry,
+                    });
                 });
+                if (afterTable.length > 0) afterTableMap.set(tableId, afterTable);
             } else {
-                // Legacy: no interaction log, use old trigger card
-                const triggerCard = triggerCards[newTriggers.indexOf(trigger)];
+                // No interaction log, use trigger card directly
+                const triggerCard = triggerCards[newTriggerPairs.indexOf(triggerPair)];
                 if (triggerCard) {
                     timelineItems.push({
                         key: triggerCard?.key || `woven-trigger-${tableId}`,
@@ -1274,54 +1299,110 @@ let SingleThreadGroupView: FC<{
             });
         }
 
-        // If an agent is running on this table, add a "working..." indicator
+        // Render after-table entries (completion thought + summary)
+        const afterTable = afterTableMap.get(tableId);
+        if (afterTable && afterTable.length > 0) {
+            afterTable.forEach((entry, si) => {
+                timelineItems.push({
+                    key: `interaction-after-${entry.role}-${tableId}-${si}`,
+                    type: 'trigger',
+                    highlighted: isHighlighted,
+                    element: <InteractionDot entry={entry} highlighted={isHighlighted} />,
+                    interactionEntry: entry,
+                });
+            });
+        }
+
+        // If an agent is running on this table, show the draft's interaction log
         if (runningAgentTableIds.has(tableId)) {
-            const runningAction = runningAgentTableIds.get(tableId);
-            const message = runningAction?.description || t('dataThread.working');
-            timelineItems.push({
-                key: `agent-running-${tableId}`,
-                type: 'chart',
-                highlighted: isHighlighted,
-                isRunning: true,
-                element: ThinkingBanner(message, { px: 1, py: 0.5 }),
-            });
+            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
+            const draftInteraction = runningDraft?.derive?.trigger?.interaction;
+            if (draftInteraction && draftInteraction.length > 0) {
+                draftInteraction.forEach((entry, ei) => {
+                    const isLast = ei === draftInteraction.length - 1;
+                    // All entries render as static InteractionDots
+                    timelineItems.push({
+                        key: `agent-running-entry-${tableId}-${ei}`,
+                        type: 'trigger',
+                        highlighted: isHighlighted,
+                        isRunning: false,
+                        element: isLast && entry.from !== 'user'
+                            ? ThinkingBanner(entry.content, { px: 1, py: 0.5 })
+                            : <InteractionDot entry={entry} highlighted={isHighlighted} />,
+                        interactionEntry: entry,
+                    });
+                });
+                // If the last entry is from the user (they just submitted), add a "thinking..." shimmer
+                const lastEntry = draftInteraction[draftInteraction.length - 1];
+                if (lastEntry.from === 'user') {
+                    timelineItems.push({
+                        key: `agent-thinking-placeholder-${tableId}`,
+                        type: 'trigger',
+                        highlighted: isHighlighted,
+                        isRunning: true,
+                        element: ThinkingBanner(t('dataThread.thinking'), { px: 1, py: 0.5 }),
+                    });
+                }
+            } else {
+                const runningAction = runningAgentTableIds.get(tableId);
+                const message = runningAction?.description || t('dataThread.working');
+                timelineItems.push({
+                    key: `agent-running-${tableId}`,
+                    type: 'chart',
+                    highlighted: isHighlighted,
+                    isRunning: true,
+                    element: ThinkingBanner(message, { px: 1, py: 0.5 }),
+                });
+            }
         } else if (clarifyAgentTableIds.has(tableId)) {
-            timelineItems.push({
-                key: `agent-clarify-${tableId}`,
-                type: 'chart',
-                highlighted: isHighlighted,
-                isClarifying: true,
-                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
-            });
+            // Render the clarifying DraftNode's interaction log inline
+            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
+            const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
+            if (clarifyInteraction && clarifyInteraction.length > 0) {
+                clarifyInteraction.forEach((entry, ei) => {
+                    timelineItems.push({
+                        key: `agent-clarify-entry-${tableId}-${ei}`,
+                        type: 'trigger',
+                        highlighted: isHighlighted,
+                        isClarifying: entry.role === 'clarify',
+                        element: <InteractionDot entry={entry} highlighted={isHighlighted} />,
+                        interactionEntry: entry,
+                    });
+                });
+            } else {
+                timelineItems.push({
+                    key: `agent-clarify-${tableId}`,
+                    type: 'chart',
+                    highlighted: isHighlighted,
+                    isClarifying: true,
+                    element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
+                });
+            }
         }
     });
 
     // Add leaf table components
+    const leafAfterTableMap = new Map<string, InteractionEntry[]>();
     leafTables.forEach((lt, i) => {
         let leafTrigger = lt.derive?.trigger;
         if (leafTrigger) {
             const isHL = highlightedTableIds.includes(lt.id);
             const interaction = leafTrigger.interaction;
             if (interaction && interaction.length > 0) {
-                interaction.forEach((entry, ei) => {
-                    if (entry.role === 'instruction') {
-                        timelineItems.push({
-                            key: `leaf-trigger-instruction-${lt.id}-${ei}`,
-                            type: 'leaf-trigger',
-                            highlighted: isHL,
-                            element: _buildTriggerCard(leafTrigger!, isHL),
-                            interactionEntry: entry,
-                        });
-                    } else {
-                        timelineItems.push({
-                            key: `leaf-interaction-${entry.role}-${lt.id}-${ei}`,
-                            type: 'leaf-trigger',
-                            highlighted: isHL,
-                            element: <InteractionDot entry={entry} />,
-                            interactionEntry: entry,
-                        });
-                    }
+                const lastInstrIdx = (() => { for (let i = interaction.length - 1; i >= 0; i--) { if (interaction[i].role === 'instruction') return i; } return -1; })();
+                const leafBefore = interaction.slice(0, lastInstrIdx + 1);
+                const leafAfter = lastInstrIdx >= 0 ? interaction.slice(lastInstrIdx + 1) : [];
+
+                leafBefore.forEach((entry, ei) => {
+                    timelineItems.push({
+                        key: `leaf-interaction-${entry.role}-${lt.id}-${ei}`,
+                        type: 'leaf-trigger',
+                        highlighted: isHL,
+                        element: <InteractionDot entry={entry} highlighted={isHL} />,
+                        interactionEntry: entry,
+                    });
                 });
+                if (leafAfter.length > 0) leafAfterTableMap.set(lt.id, leafAfter);
             } else {
                 timelineItems.push({
                     key: `leaf-trigger-${lt.id}`,
@@ -1356,25 +1437,83 @@ let SingleThreadGroupView: FC<{
             });
         }
 
-        // If an agent is running on this leaf table, add a "working..." indicator
+        // Render after-table entries for leaf (completion thought + summary)
+        const leafAfterEntries = leafAfterTableMap.get(lt.id);
+        if (leafAfterEntries && leafAfterEntries.length > 0) {
+            leafAfterEntries.forEach((entry, si) => {
+                timelineItems.push({
+                    key: `leaf-after-${entry.role}-${lt.id}-${si}`,
+                    type: 'leaf-trigger',
+                    highlighted: highlightedTableIds.includes(lt.id),
+                    element: <InteractionDot entry={entry} highlighted={highlightedTableIds.includes(lt.id)} />,
+                    interactionEntry: entry,
+                });
+            });
+        }
+
+        // If an agent is running on this leaf table, show the draft's interaction log
         if (runningAgentTableIds.has(lt.id)) {
-            const runningAction = runningAgentTableIds.get(lt.id);
-            const message = runningAction?.description || t('dataThread.working');
-            timelineItems.push({
-                key: `agent-running-${lt.id}`,
-                type: 'chart',
-                highlighted: highlightedTableIds.includes(lt.id),
-                isRunning: true,
-                element: ThinkingBanner(message, { px: 1, py: 0.5 }),
-            });
+            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === lt.id);
+            const draftInteraction = runningDraft?.derive?.trigger?.interaction;
+            if (draftInteraction && draftInteraction.length > 0) {
+                const ltHL = highlightedTableIds.includes(lt.id);
+                draftInteraction.forEach((entry, ei) => {
+                    const isLast = ei === draftInteraction.length - 1;
+                    timelineItems.push({
+                        key: `agent-running-entry-${lt.id}-${ei}`,
+                        type: 'leaf-trigger',
+                        highlighted: ltHL,
+                        isRunning: false,
+                        element: isLast && entry.from !== 'user'
+                            ? ThinkingBanner(entry.content, { px: 1, py: 0.5 })
+                            : <InteractionDot entry={entry} highlighted={ltHL} />,
+                        interactionEntry: entry,
+                    });
+                });
+                const lastEntry = draftInteraction[draftInteraction.length - 1];
+                if (lastEntry.from === 'user') {
+                    timelineItems.push({
+                        key: `agent-thinking-placeholder-${lt.id}`,
+                        type: 'leaf-trigger',
+                        highlighted: ltHL,
+                        isRunning: true,
+                        element: ThinkingBanner(t('dataThread.thinking'), { px: 1, py: 0.5 }),
+                    });
+                }
+            } else {
+                const runningAction = runningAgentTableIds.get(lt.id);
+                const message = runningAction?.description || t('dataThread.working');
+                timelineItems.push({
+                    key: `agent-running-${lt.id}`,
+                    type: 'chart',
+                    highlighted: highlightedTableIds.includes(lt.id),
+                    isRunning: true,
+                    element: ThinkingBanner(message, { px: 1, py: 0.5 }),
+                });
+            }
         } else if (clarifyAgentTableIds.has(lt.id)) {
-            timelineItems.push({
-                key: `agent-clarify-${lt.id}`,
-                type: 'chart',
-                highlighted: highlightedTableIds.includes(lt.id),
-                isClarifying: true,
-                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
-            });
+            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === lt.id);
+            const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
+            if (clarifyInteraction && clarifyInteraction.length > 0) {
+                clarifyInteraction.forEach((entry, ei) => {
+                    timelineItems.push({
+                        key: `leaf-clarify-entry-${lt.id}-${ei}`,
+                        type: 'leaf-trigger',
+                        highlighted: highlightedTableIds.includes(lt.id),
+                        isClarifying: entry.role === 'clarify',
+                        element: <InteractionDot entry={entry} highlighted={highlightedTableIds.includes(lt.id)} />,
+                        interactionEntry: entry,
+                    });
+                });
+            } else {
+                timelineItems.push({
+                    key: `agent-clarify-${lt.id}`,
+                    type: 'chart',
+                    highlighted: highlightedTableIds.includes(lt.id),
+                    isClarifying: true,
+                    element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
+                });
+            }
         }
     });
 
@@ -1481,16 +1620,16 @@ let SingleThreadGroupView: FC<{
         if (isTrigger) {
             const entry = item.interactionEntry;
             const isFromUser = entry ? entry.from === 'user' : false;
-            // User → custom (orange), Agent → derived (gold/yellow)
+            // User → custom (orange), Agent → muted gray (supporting role)
             const iconColor = item.highlighted
-                ? (isFromUser ? theme.palette.custom.main : theme.palette.secondary.main)
+                ? (isFromUser ? theme.palette.custom.main : theme.palette.text.disabled)
                 : 'rgba(0,0,0,0.15)';
             let gutterIcon: React.ReactNode;
             if (entry) {
                 if (entry.from === 'user') {
                     gutterIcon = <PersonIcon sx={{ width: 14, height: 14, color: iconColor }} />;
                 } else if (entry.role === 'thought') {
-                    gutterIcon = <PsychologyIcon sx={{ width: 14, height: 14, color: iconColor }} />;
+                    gutterIcon = <AutoAwesomeIcon sx={{ width: 14, height: 14, color: iconColor }} />;
                 } else {
                     gutterIcon = <SmartToyOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />;
                 }
@@ -2209,14 +2348,14 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const extraLeaves: DictTable[] = [];
     for (const lt of leafTables) {
         const triggers = getCachedTriggers(lt);
-        const allChainIds = [lt.id, ...triggers.map(t => t.tableId)];
+        const allChainIds = [lt.id, ...triggers.map(t => t.resultTableId)];
         // Tables not yet claimed by an earlier chain count as owned
         const ownedIds = allChainIds.filter(id => !claimedForSplit.has(id));
         if (ownedIds.length > MAX_CHAIN_TABLES) {
             // Walk only owned (unclaimed) triggers for split positions
-            const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.tableId));
+            const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.resultTableId));
             for (let pos = MAX_CHAIN_TABLES - 1; pos < ownedTriggers.length; pos += MAX_CHAIN_TABLES) {
-                const midId = ownedTriggers[pos].tableId;
+                const midId = ownedTriggers[pos].resultTableId;
                 const midTable = tableById.get(midId);
                 if (midTable && !leafTables.includes(midTable) && !extraLeaves.includes(midTable)) {
                     extraLeaves.push(midTable);
@@ -2236,7 +2375,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index + (table.anchored ? 1 : 0) * tables.length]));
     let getAncestorOrders = (leafTable: DictTable) => {
         let triggers = getCachedTriggers(leafTable);
-        return [...triggers.map(t => tableOrder[t.tableId]), tableOrder[leafTable.id]];
+        return [...triggers.map(t => tableOrder[t.resultTableId]), tableOrder[leafTable.id]];
     }
 
     leafTables.sort((a, b) => {
@@ -2281,7 +2420,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         // Otherwise, find the leaf table whose ancestor chain includes the focused table
         for (const lt of leafTables) {
             const triggers = getCachedTriggers(lt);
-            const chainIds = [...triggers.map(t => t.tableId), lt.id];
+            const chainIds = [...triggers.map(t => t.resultTableId), lt.id];
             if (chainIds.includes(focusedTableId)) {
                 return lt.id;
             }
@@ -2337,7 +2476,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         if (!extraLeafIds.has(lt.id)) {
             // This is a real leaf — find all extra leaves that are ancestors of it
             const triggers = getCachedTriggers(lt);
-            const chainIds = triggers.map(t => t.tableId);
+            const chainIds = triggers.map(t => t.resultTableId);
             const myExtras: string[] = [];
             for (const extraId of extraLeafIds) {
                 if (chainIds.includes(extraId)) {
@@ -2362,13 +2501,13 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
         // Collect all table IDs in this thread's chain
         let threadTableIds = new Set<string>();
-        triggers.forEach(t => threadTableIds.add(t.tableId));
+        triggers.forEach(t => threadTableIds.add(t.resultTableId));
         threadTableIds.add(lt.id);
 
         // Only new (unclaimed) tables contribute to this thread's height
         let newTableIds = [...threadTableIds].filter(id => !claimedTableIds.has(id));
 
-        let newTriggerCount = triggers.filter(t => newTableIds.includes(t.resultTableId)).length;
+        let newTriggerCount = triggers.filter(tp => newTableIds.includes(tp.resultTableId)).length;
         let chartCount = newTableIds.reduce((sum, tid) => sum + chartElements.filter(ce => ce.tableId === tid).length, 0);
 
         // +1 table and +1 trigger for the leaf table itself
@@ -2426,7 +2565,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             entry.usedTableIds = [...accumulated];
             for (const lt of entry.leafTables) {
                 const triggers = getCachedTriggers(lt);
-                accumulated.push(...triggers.map(t => t.tableId), lt.id);
+                accumulated.push(...triggers.map(t => t.resultTableId), lt.id);
             }
         }
     }

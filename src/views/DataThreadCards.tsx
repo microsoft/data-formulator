@@ -59,7 +59,7 @@ export let buildTriggerCard = (
     let triggerCard = <div key={'thread-card-trigger-box'}>
         <Box sx={{ flex: 1 }} >
             <TriggerCard className={selectedClassName} trigger={trigger} 
-                hideFields={trigger.instruction != ""} 
+                hideFields={!!(trigger.interaction && trigger.interaction.length > 0)} 
                 highlighted={highlighted}
                 sx={{
                     '& .MuiBox-root': { mx: 0.5, my: 0.25 },

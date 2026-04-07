@@ -183,11 +183,18 @@ export const TriggerCard: FC<{
     let theme = useTheme();
 
     let fieldItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    let charts = useSelector((state: DataFormulatorState) => state.charts);
+    let tables = useSelector((state: DataFormulatorState) => state.tables);
 
     const dispatch = useDispatch<AppDispatch>();
 
     let handleClick = () => {
-        if (trigger.chart) {
+        // Find the actual chart for the table that owns this trigger
+        const ownerTable = tables.find(t => t.derive?.trigger === trigger);
+        const realChart = ownerTable ? charts.find(c => c.tableRef === ownerTable.id && c.source === 'user') : null;
+        if (realChart) {
+            dispatch(dfActions.setFocused({ type: 'chart', chartId: realChart.id }));
+        } else if (trigger.chart) {
             dispatch(dfActions.setFocused({ type: 'chart', chartId: trigger.chart.id }));
         }
     }
@@ -222,29 +229,18 @@ export const TriggerCard: FC<{
         </Typography>
     }
 
-    // Derive prompt text from interaction log (preferred) or legacy fields
-    let prompt: string;
+    // Derive prompt text from interaction log — show user's own entry
+    let prompt: string = '';
     const interaction = trigger.interaction;
     if (interaction && interaction.length > 0) {
-        const lastInstruction = [...interaction].reverse().find(e => e.role === 'instruction');
-        prompt = lastInstruction?.displayContent || lastInstruction?.content || trigger.displayInstruction || trigger.instruction || '';
-    } else {
-        prompt = trigger.displayInstruction;
-        if (trigger.instruction == '' && encFields.length > 0) {
-            prompt = '';
-        } else if (!trigger.displayInstruction || (trigger.instruction != '' && trigger.instruction.length <= trigger.displayInstruction.replace(/\*\*/g, '').length)) {
-            prompt = trigger.instruction;
-        }
+        // For user-initiated (single entry: user→subagent instruction), use that entry
+        // For agent sessions, this card is rendered for the user prompt entry
+        const userEntry = interaction.find(e => e.from === 'user');
+        prompt = userEntry?.content || '';
     }
 
-    // Determine color palette based on who sent the instruction:
-    // user → custom (orange), agent → derived (gold)
-    let isFromUser = true;
-    if (interaction && interaction.length > 0) {
-        const lastInstruction = [...interaction].reverse().find(e => e.role === 'instruction');
-        isFromUser = lastInstruction ? lastInstruction.from === 'user' : interaction[0]?.from === 'user';
-    }
-    const triggerPalette = isFromUser ? theme.palette.custom : theme.palette.secondary;
+    // Card always uses custom (orange) palette — only user entries are rendered as cards
+    const triggerPalette = theme.palette.custom;
 
     // Process the prompt to highlight content in ** **
     const processedPrompt = renderTextWithEmphasis(prompt, {
@@ -322,10 +318,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let chart = allCharts.find(c => c.id == chartId) as Chart;
     let trigger = chart.source == "trigger" ? tables.find(t => t.derive?.trigger?.chart?.id == chartId)?.derive?.trigger : undefined;
 
-    let [prompt, setPrompt] = useState<string>(trigger?.instruction || "");
+    const triggerPrompt = trigger?.interaction?.find(e => e.role === 'instruction')?.content || '';
+    let [prompt, setPrompt] = useState<string>(triggerPrompt);
 
     useEffect(() => {
-        setPrompt(trigger?.instruction || "");
+        setPrompt(triggerPrompt);
     }, [chartId]);
 
     let encodingMap = chart?.encodingMap;
@@ -685,16 +682,19 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     </IconButton>
                 </span>
             </Tooltip>
-            {trigger ? 
-                <Tooltip title={<Typography sx={{fontSize: 11}}>{t('encoding.formulateAndOverride')} <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{trigger.resultTableId}</Typography>}>
+            {trigger ? (() => {
+                const overrideTableId = tables.find(t => t.derive?.trigger === trigger)?.id;
+                return overrideTableId ? (
+                <Tooltip title={<Typography sx={{fontSize: 11}}>{t('encoding.formulateAndOverride')} <TableIcon sx={{width: 10, height: 10, marginBottom: '-1px'}}/>{overrideTableId}</Typography>}>
                     <span>
                         <IconButton size="small" color={"warning"} sx={{ p: 0.5 }} onClick={() => { 
-                            deriveNewData(trigger!.instruction, 'formulate', trigger!.resultTableId); 
+                            deriveNewData(trigger!.interaction?.find(e => e.role === 'instruction')?.content || '', 'formulate', overrideTableId); 
                         }}>
                             <ChangeCircleOutlinedIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                     </span>
-                </Tooltip>
+                </Tooltip>) : null;
+            })()
                 : 
                 <Tooltip title={t('encoding.formulate')}>
                     <span>

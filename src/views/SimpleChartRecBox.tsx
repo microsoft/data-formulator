@@ -216,14 +216,17 @@ export const SimpleChartRecBox: FC = function () {
 
             if (currentTable.derive && !currentTable.anchored) {
                 const triggers = getTriggers(currentTable, tables);
-                explorationThread = triggers.map(trigger => ({
-                    name: trigger.resultTableId,
-                    rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                    description: t('chartRec.explorationThreadDeriveDescription', {
-                        source: String(tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source ?? ''),
-                        instruction: trigger.instruction,
-                    }),
-                }));
+                explorationThread = triggers.map((trigger) => {
+                    const tt = tables.find(t2 => t2.id === trigger.resultTableId);
+                    return {
+                        name: trigger.resultTableId,
+                        rows: tt?.rows,
+                        description: t('chartRec.explorationThreadDeriveDescription', {
+                            source: String(tt?.derive?.source ?? ''),
+                            instruction: trigger.interaction?.find((e: any) => e.role === 'instruction')?.content || '',
+                        }),
+                    };
+                });
             }
 
             const messageBody = JSON.stringify({
@@ -320,9 +323,13 @@ export const SimpleChartRecBox: FC = function () {
         setIsChatFormulating(true);
 
         // DraftNode handles status
-        // If resuming from clarification, remove the old clarifying draft
+        // If resuming from clarification, reuse the old draft (append reply, clear clarification)
         if (isResume && pendingClarification?.draftId) {
-            dispatch(dfActions.removeDraftNode(pendingClarification.draftId));
+            dispatch(dfActions.appendDraftInteraction({ draftId: pendingClarification.draftId, entry: {
+                from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now()
+            }}));
+            dispatch(dfActions.updateDraftClarification({ draftId: pendingClarification.draftId, pendingClarification: null }));
+            dispatch(dfActions.updateDeriveStatus({ nodeId: pendingClarification.draftId, status: 'running' }));
         }
 
         // Collect previous conversation from trigger interaction chains
@@ -388,7 +395,8 @@ export const SimpleChartRecBox: FC = function () {
         let lastCreatedTableId: string | null = isResume ? clarificationContext!.lastCreatedTableId : null;
 
         // ── DraftNode tracking ──
-        // Create a draft for the first (or next) step; promoted on each "result" event
+        // Local accumulator mirrors the DraftNode's interaction (avoids stale closure reads)
+        let currentDraftInteraction: InteractionEntry[] = [];
         let currentDraftId: string | null = null;
         const createNextDraft = (parentTableId: string, initialInteraction: InteractionEntry[]) => {
             const draftId = `draft-${actionId}-${Date.now()}`;
@@ -401,17 +409,24 @@ export const SimpleChartRecBox: FC = function () {
                 actionId,
             }));
             currentDraftId = draftId;
+            currentDraftInteraction = [...initialInteraction];
             return draftId;
         };
 
-        // Create the initial draft
-        const initialEntries: InteractionEntry[] = [];
-        if (!isResume) {
-            initialEntries.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now() });
+        // Create the initial draft (or reuse existing for clarification resume)
+        if (isResume && pendingClarification?.draftId) {
+            currentDraftId = pendingClarification.draftId;
+            // Seed local accumulator from the existing draft's interaction (fresh at this point)
+            const existingDraft = draftNodes.find(d => d.id === pendingClarification.draftId);
+            currentDraftInteraction = [...(existingDraft?.derive?.trigger?.interaction || [])];
+            // The user reply was already appended above, add to local accumulator too
+            currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now() });
         } else {
-            initialEntries.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now() });
+            const initialEntries: InteractionEntry[] = [
+                { from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now() }
+            ];
+            createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
         }
-        createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
 
         // Track the last agent thought (from "action" events) to include in the trigger
         let lastAgentThought: string | null = null;
@@ -433,9 +448,9 @@ export const SimpleChartRecBox: FC = function () {
                 lastAgentThought = result.thought || null;
                 // Append thought to current draft
                 if (currentDraftId) {
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
-                        from: 'data-agent', to: 'data-agent', role: 'thought', content: thinkingMsg, timestamp: Date.now()
-                    }}));
+                    const thoughtEntry: InteractionEntry = { from: 'data-agent', to: 'data-agent', role: 'thought', content: thinkingMsg, timestamp: Date.now() };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: thoughtEntry }));
+                    currentDraftInteraction.push(thoughtEntry);
                 }
             }
             // Visualization result (same shape as old data_transformation)
@@ -466,26 +481,18 @@ export const SimpleChartRecBox: FC = function () {
                     dialog: dialog || [],
                     trigger: {
                         tableId: triggerTableId,
-                        instruction: question,
-                        displayInstruction,
-                        chart: undefined,
                         resultTableId: candidateTableId,
+                        chart: undefined,
+                        // Use the full interaction log accumulated in the DraftNode,
+                        // plus the instruction entry for this step
                         interaction: [
-                            // For step 1, include the user prompt; for continuations, start with thought
-                            ...(createdTables.length === 0 ? [{
-                                from: 'user' as const, to: 'data-agent' as const, role: 'prompt' as const,
-                                content: prompt, timestamp: Date.now(),
-                            }] : []),
-                            // Agent's thought (from the preceding "action" event)
-                            ...(lastAgentThought ? [{
-                                from: 'data-agent' as const, to: 'data-agent' as const, role: 'thought' as const,
-                                content: lastAgentThought as string, timestamp: Date.now(),
-                            }] : []),
+                            // Use the local accumulator (avoids stale closure)
+                            ...currentDraftInteraction,
                             // The instruction to the sub-agent
                             {
                                 from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
                                 content: question || displayInstruction,
-                                displayContent: displayInstruction, timestamp: Date.now(),
+                                timestamp: Date.now(),
                             },
                         ],
                     }
@@ -584,13 +591,13 @@ export const SimpleChartRecBox: FC = function () {
                 // Append thought + clarify entries to draft
                 if (currentDraftId) {
                     if (result.thought) {
-                        dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
-                            from: 'data-agent', to: 'data-agent', role: 'thought', content: result.thought, timestamp: Date.now()
-                        }}));
+                        const thoughtEntry: InteractionEntry = { from: 'data-agent', to: 'data-agent', role: 'thought', content: result.thought, timestamp: Date.now() };
+                        dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: thoughtEntry }));
+                        currentDraftInteraction.push(thoughtEntry);
                     }
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
-                        from: 'data-agent', to: 'user', role: 'clarify', content: clarifyMsg, timestamp: Date.now()
-                    }}));
+                    const clarifyEntry: InteractionEntry = { from: 'data-agent', to: 'user', role: 'clarify', content: clarifyMsg, timestamp: Date.now() };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: clarifyEntry }));
+                    currentDraftInteraction.push(clarifyEntry);
                     dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
                     dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
                         trajectory: result.trajectory || [],

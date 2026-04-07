@@ -1084,10 +1084,8 @@ export const dataFormulatorSlice = createSlice({
                     source,
                     trigger: {
                         tableId: parentTableId,
-                        chart,
-                        instruction: '',
-                        displayInstruction: '',
                         resultTableId: id,
+                        chart,
                         interaction,
                     },
                     status: 'running',

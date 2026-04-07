@@ -492,7 +492,7 @@ export const assembleVegaChart = (
 // resolveRecommendedChart & resolveChartFields remain in app layer (need generateFreshChart, Chart)
 export { resolveRecommendedChart, resolveChartFields } from './chartRecommendation';
 
-export let getTriggers = (leafTable: DictTable, tables: DictTable[]) => {
+export let getTriggers = (leafTable: DictTable, tables: DictTable[]): Trigger[] => {
     // recursively find triggers that ends in leafTable (if the leaf table is anchored, we will find till the previous table is anchored)
     let triggers : Trigger[] = [];
     let t = leafTable;
