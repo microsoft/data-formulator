@@ -868,7 +868,71 @@ def load_dataset_batched():
     )
 ```
 
-#### 5.2.4 两种写入路径对比
+#### 5.2.4 数据溯源描述：结构化条件 + 模板拼接
+
+从外部系统加载数据时，用户通常会选择筛选条件（如地区、日期范围）。这些信息需要记录到数据上，以便后续明确"这份数据到底包含什么"。
+
+**设计决策：不用 AI 生成描述，用模板拼接。**
+
+| | AI 生成描述 | 模板拼接 + 原始条件 |
+|--|-----------|---------------------|
+| 准确性 | 可能编造细节 | 100% 准确 |
+| 成本 | 每次加载消耗 token | 零成本 |
+| 可刷新 | 描述是文本，无法回放 | `loadParams` 原样回传即可刷新 |
+
+数据写入时**两层信息同时存储**，各司其职：
+
+```
+loader_metadata
+├── loadParams          ← 原始筛选条件（机器用：精确刷新）
+│   {"filters": [{"col":"region","op":"==","val":"Asia"}], "row_limit": 50000}
+│
+└── description         ← 模板拼接的可读摘要（人/AI 用：理解数据内容）
+    "来源: superset · sales_data\n筛选: region = Asia, order_date >= 2025-01-01\n行数: 12,345"
+```
+
+`description` 会流向前端 `attachedMetadata`，AI Agent 分析数据时自动进入 prompt，帮助 AI 理解数据的子集范围。
+
+**实现位置：`PluginDataWriter.write_dataframe()` 内部自动生成**，所有插件无需额外代码：
+
+```python
+# plugins/data_writer.py — write_dataframe 内部
+
+def _build_description(self, source_metadata: dict) -> str:
+    """从 source_metadata 模板拼接可读描述。"""
+    parts = [f"来源: {self.plugin_id} · {source_metadata.get('source_name', '')}"]
+    
+    load_params = source_metadata.get("load_params", {})
+    
+    # 筛选条件（各插件格式不同，尝试通用提取）
+    filters = load_params.get("filters", [])
+    if filters:
+        filter_strs = []
+        for f in filters:
+            if isinstance(f, dict) and "col" in f:
+                filter_strs.append(f"{f['col']} {f.get('op', '=')} {f['val']}")
+        if filter_strs:
+            parts.append(f"筛选: {', '.join(filter_strs)}")
+    
+    # 时间范围（常见于仪表盘数据）
+    time_range = load_params.get("time_range")
+    if time_range:
+        parts.append(f"时间范围: {time_range}")
+    
+    row_limit = load_params.get("row_limit")
+    if row_limit:
+        parts.append(f"行限制: {row_limit}")
+    
+    return "\n".join(parts)
+```
+
+调用时机：`write_dataframe()` / `write_arrow()` 在写入 Parquet 后，自动调用 `_build_description()` 将结果存入 `loader_metadata["description"]`。插件也可通过参数覆盖自动生成的描述。此描述与外部系统自带的表/列描述（[§ 7.7](#77-外部系统元数据拉取) 中的 `table_description`、`column_metadata`）互不覆盖——前者记录"加载时用了什么条件"，后者记录"这张表/列本身是什么含义"，两者并存于 metadata 中。
+
+> **各平台的 `filters` 格式差异很大**（见 [§ 7.5 各 BI 平台查询参数兼容性分析](#75-各-bi-平台查询参数兼容性分析)）。
+> `_build_description()` 只做"尽力提取"：能解析的条件拼成可读文本，无法解析的保留在 `loadParams` 中。
+> 插件也可覆盖 `_build_description()` 来提供更精确的描述。
+
+#### 5.2.5 两种写入路径对比
 
 | | 直接写入 Workspace（推荐） | 返回 JSON 由前端处理 |
 |---|---|---|
