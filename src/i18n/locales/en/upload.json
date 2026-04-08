@@ -55,6 +55,7 @@
     "useLoadFromUrl": "Use \"Load from URL\" to load data from a remote source.",
     "selectFileToPreview": "Select a file to preview.",
     "loadTable": "Load Table",
+    "loadingTable": "Loading...",
     "loadAllTables": "Load All Tables",
     "preview": "Preview",
     "urlFormatHint": "The URL must point to data in CSV, JSON, or JSONL format",

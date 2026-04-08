@@ -124,6 +124,9 @@ def _build_parquet_sample_sql(
         return main_sql, count_sql
 
     count_sql = "SELECT COUNT(*) FROM {parquet} AS t"
+    # Wrap the base table with a ROW_NUMBER() so the original row position
+    # is preserved even after sorting / sampling.
+    base = "(SELECT ROW_NUMBER() OVER () AS \"#rowId\", t.* FROM {parquet} AS t) AS t"
     if method == "random":
         order_by = " ORDER BY RANDOM()"
     elif method == "head" and valid_order:
@@ -133,10 +136,10 @@ def _build_parquet_sample_sql(
     else:
         order_by = ""
     if valid_select:
-        select_list = ", ".join(f"t.{_quote_duckdb(c)}" for c in valid_select)
-        main_sql = f"SELECT {select_list} FROM {{parquet}} AS t{order_by} LIMIT {sample_size}"
+        select_list = "t.\"#rowId\", " + ", ".join(f"t.{_quote_duckdb(c)}" for c in valid_select)
+        main_sql = f"SELECT {select_list} FROM {base}{order_by} LIMIT {sample_size}"
     else:
-        main_sql = f"SELECT * FROM {{parquet}} AS t{order_by} LIMIT {sample_size}"
+        main_sql = f"SELECT * FROM {base}{order_by} LIMIT {sample_size}"
     return main_sql, count_sql
 
 
@@ -303,6 +306,8 @@ def _apply_aggregation_and_sample(
         total_row_count = len(df)
         work = df[valid_select].copy() if valid_select else df.copy()
 
+    # Attach original 1-based row position before sorting/sampling
+    work.insert(0, '#rowId', range(1, len(work) + 1))
     if method == "random":
         work = work.sample(n=min(sample_size, len(work)), random_state=None)
     elif method == "head":

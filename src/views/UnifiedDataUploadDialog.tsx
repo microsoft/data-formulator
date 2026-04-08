@@ -507,6 +507,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     // Sample datasets state
     const [datasetPreviews, setDatasetPreviews] = useState<DatasetMetadata[]>([]);
 
+    // Loading state for table loading (file/URL/paste)
+    const [tableLoading, setTableLoading] = useState<boolean>(false);
+
     // Loading state for dataset loading
     const [datasetLoading, setDatasetLoading] = useState<boolean>(false);
     const [datasetLoadingLabel, setDatasetLoadingLabel] = useState<string>('');
@@ -767,7 +770,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }
     }, [filePreviewTables, filePreviewActiveIndex]);
 
-    const handleFileLoadSingleTable = (): void => {
+    const handleFileLoadSingleTable = async (): Promise<void> => {
         if (!filePreviewTables || filePreviewTables.length === 0) {
             return;
         }
@@ -775,11 +778,16 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (table) {
             const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[0]?.name };
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(loadTable({
-                table: tableWithSource,
-                storeOnServer,
-                file: storeOnServer ? filePreviewFiles[filePreviewActiveIndex] || filePreviewFiles[0] : undefined,
-            }));
+            setTableLoading(true);
+            try {
+                await dispatch(loadTable({
+                    table: tableWithSource,
+                    storeOnServer,
+                    file: storeOnServer ? filePreviewFiles[filePreviewActiveIndex] || filePreviewFiles[0] : undefined,
+                }));
+            } finally {
+                setTableLoading(false);
+            }
             handleClose();
         }
     };
@@ -789,38 +797,43 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             return;
         }
 
-        // When storing on server, remove frontend-only orphans from the same
-        // source files (sheets that existed before but are absent in the new batch).
-        const seenSourceFiles = new Set<string>();
-        if (storeOnServer) {
-            const newTableIds = new Set(filePreviewTables.map(t => t.id));
-            const sourceFileNames = new Set<string>();
-            for (let i = 0; i < filePreviewTables.length; i++) {
-                const fn = filePreviewFiles[i]?.name || filePreviewFiles[0]?.name;
-                if (fn) sourceFileNames.add(fn);
-            }
-            for (const t of existingTables) {
-                if (t.source?.type === 'file' && t.source.fileName && sourceFileNames.has(t.source.fileName) && !newTableIds.has(t.id)) {
-                    dispatch(dfActions.removeTableLocally(t.id));
+        setTableLoading(true);
+        try {
+            // When storing on server, remove frontend-only orphans from the same
+            // source files (sheets that existed before but are absent in the new batch).
+            const seenSourceFiles = new Set<string>();
+            if (storeOnServer) {
+                const newTableIds = new Set(filePreviewTables.map(t => t.id));
+                const sourceFileNames = new Set<string>();
+                for (let i = 0; i < filePreviewTables.length; i++) {
+                    const fn = filePreviewFiles[i]?.name || filePreviewFiles[0]?.name;
+                    if (fn) sourceFileNames.add(fn);
+                }
+                for (const t of existingTables) {
+                    if (t.source?.type === 'file' && t.source.fileName && sourceFileNames.has(t.source.fileName) && !newTableIds.has(t.id)) {
+                        dispatch(dfActions.removeTableLocally(t.id));
+                    }
                 }
             }
-        }
 
-        for (let i = 0; i < filePreviewTables.length; i++) {
-            const table = filePreviewTables[i];
-            const fileName = filePreviewFiles[i]?.name || filePreviewFiles[0]?.name;
-            const sourceConfig: DataSourceConfig = { type: 'file', fileName };
-            const tableWithSource = { ...table, source: sourceConfig };
+            for (let i = 0; i < filePreviewTables.length; i++) {
+                const table = filePreviewTables[i];
+                const fileName = filePreviewFiles[i]?.name || filePreviewFiles[0]?.name;
+                const sourceConfig: DataSourceConfig = { type: 'file', fileName };
+                const tableWithSource = { ...table, source: sourceConfig };
 
-            const isFirstForFile = fileName ? !seenSourceFiles.has(fileName) : false;
-            if (fileName) seenSourceFiles.add(fileName);
+                const isFirstForFile = fileName ? !seenSourceFiles.has(fileName) : false;
+                if (fileName) seenSourceFiles.add(fileName);
 
-            await dispatch(loadTable({
-                table: tableWithSource,
-                storeOnServer,
-                file: storeOnServer ? filePreviewFiles[i] || filePreviewFiles[0] : undefined,
-                replaceSource: storeOnServer && isFirstForFile,
-            }));
+                await dispatch(loadTable({
+                    table: tableWithSource,
+                    storeOnServer,
+                    file: storeOnServer ? filePreviewFiles[i] || filePreviewFiles[0] : undefined,
+                    replaceSource: storeOnServer && isFirstForFile,
+                }));
+            }
+        } finally {
+            setTableLoading(false);
         }
         handleClose();
     };
@@ -851,7 +864,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setShowFullContent(!showFullContent);
     }, [showFullContent]);
 
-    const handlePasteSubmit = (): void => {
+    const handlePasteSubmit = async (): Promise<void> => {
         let table: undefined | DictTable = undefined;
         
         const defaultName = (() => {
@@ -874,7 +887,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (table) {
             // Add source info for paste data
             const tableWithSource = { ...table, source: { type: 'paste' as const } };
-            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+            setTableLoading(true);
+            try {
+                await dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+            } finally {
+                setTableLoading(false);
+            }
             handleClose();
         }
     };
@@ -953,7 +971,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
 
     // URL tab load handlers
-    const handleURLLoadSingleTable = (): void => {
+    const handleURLLoadSingleTable = async (): Promise<void> => {
         if (!urlPreviewTables || urlPreviewTables.length === 0) {
             return;
         }
@@ -972,7 +990,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 sourceConfig = { type: 'url', url: tableURL };
             }
             const tableWithSource = { ...table, source: sourceConfig };
-            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+            setTableLoading(true);
+            try {
+                await dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+            } finally {
+                setTableLoading(false);
+            }
             handleClose();
         }
     };
@@ -981,22 +1004,27 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (!urlPreviewTables || urlPreviewTables.length === 0) {
             return;
         }
-        for (let i = 0; i < urlPreviewTables.length; i++) {
-            const table = urlPreviewTables[i];
-            let sourceConfig: DataSourceConfig;
-            if (urlAutoRefresh) {
-                sourceConfig = { 
-                    type: 'stream', 
-                    url: tableURL,
-                    autoRefresh: true,
-                    refreshIntervalSeconds: urlRefreshInterval,
-                    lastRefreshed: Date.now()
-                };
-            } else {
-                sourceConfig = { type: 'url', url: tableURL };
+        setTableLoading(true);
+        try {
+            for (let i = 0; i < urlPreviewTables.length; i++) {
+                const table = urlPreviewTables[i];
+                let sourceConfig: DataSourceConfig;
+                if (urlAutoRefresh) {
+                    sourceConfig = { 
+                        type: 'stream', 
+                        url: tableURL,
+                        autoRefresh: true,
+                        refreshIntervalSeconds: urlRefreshInterval,
+                        lastRefreshed: Date.now()
+                    };
+                } else {
+                    sourceConfig = { type: 'url', url: tableURL };
+                }
+                const tableWithSource = { ...table, source: sourceConfig };
+                await dispatch(loadTable({ table: tableWithSource, storeOnServer }));
             }
-            const tableWithSource = { ...table, source: sourceConfig };
-            await dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+        } finally {
+            setTableLoading(false);
         }
         handleClose();
     };
@@ -1243,19 +1271,21 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 <Button
                                     variant="outlined"
                                     onClick={handleFileLoadSingleTable}
-                                    disabled={filePreviewLoading}
+                                    disabled={filePreviewLoading || tableLoading}
+                                    startIcon={tableLoading ? <CircularProgress size={16} /> : undefined}
                                     sx={{ textTransform: 'none', width: 240 }}
                                 >
-                                    {t('upload.loadTable')}
+                                    {tableLoading ? t('upload.loadingTable') : t('upload.loadTable')}
                                 </Button>
                                 {hasMultipleFileTables && (
                                     <Button
                                         variant="contained"
                                         onClick={handleFileLoadAllTables}
-                                        disabled={filePreviewLoading}
+                                        disabled={filePreviewLoading || tableLoading}
+                                        startIcon={tableLoading ? <CircularProgress size={16} color="inherit" /> : undefined}
                                         sx={{ textTransform: 'none', width: 240 }}
                                     >
-                                        {t('upload.loadAllTables')}
+                                        {tableLoading ? t('upload.loadingTable') : t('upload.loadAllTables')}
                                     </Button>
                                 )}
                             </Box>
@@ -1477,20 +1507,22 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 <Button
                                     variant="contained"
                                     onClick={handleURLLoadSingleTable}
-                                    disabled={urlPreviewLoading}
+                                    disabled={urlPreviewLoading || tableLoading}
+                                    startIcon={tableLoading ? <CircularProgress size={16} color="inherit" /> : undefined}
                                     sx={{ textTransform: 'none', width: 240 }}
                                 >
-                                    {t('upload.loadTable')}
+                                    {tableLoading ? t('upload.loadingTable') : t('upload.loadTable')}
                                 </Button>
                                 {hasMultipleUrlTables && (
                                     <Button
                                         variant="contained"
                                         size="small"
                                         onClick={handleURLLoadAllTables}
-                                        disabled={urlPreviewLoading}
+                                        disabled={urlPreviewLoading || tableLoading}
+                                        startIcon={tableLoading ? <CircularProgress size={16} color="inherit" /> : undefined}
                                         sx={{ textTransform: 'none' }}
                                     >
-                                        {t('upload.loadAllTables')}
+                                        {tableLoading ? t('upload.loadingTable') : t('upload.loadAllTables')}
                                     </Button>
                                 )}
                             </Box>
@@ -1582,10 +1614,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             <Button
                                 variant="contained"
                                 onClick={handlePasteSubmit}
-                                disabled={(pasteContent || '').trim() === ''}
+                                disabled={(pasteContent || '').trim() === '' || tableLoading}
+                                startIcon={tableLoading ? <CircularProgress size={16} color="inherit" /> : undefined}
                                 sx={{ textTransform: 'none' }}
                             >
-                                {t('upload.uploadData')}
+                                {tableLoading ? t('upload.loadingTable') : t('upload.uploadData')}
                             </Button>
                         </Box>
                     </Box>
