@@ -409,6 +409,8 @@ tests/backend/fixtures/superset/
 
 **关键改动**：`data_routes.py` 从 0.6 的 DuckDB 写入改为 0.7 的 Workspace Parquet 写入（[Plugin § 10.2](1-data-source-plugin-architecture.md#102-核心改动)）。
 
+> **注**：0.6 Superset 集成代码在独立的定制分支中（`data-formulator-0.6`），0.7 上游代码库不含任何 Superset 残留。此处是将 0.6 代码**迁入**0.7 插件框架，无需清理。
+
 ### Step 2.3 前端插件框架
 
 | 任务 | 产出文件 | 参考 |
@@ -432,11 +434,7 @@ tests/backend/fixtures/superset/
 | 迁移 SupersetLogin | `src/plugins/superset/SupersetLogin.tsx` | 同上 |
 | API 封装 | `src/plugins/superset/api.ts` | 同上 |
 
-### Step 2.5 清理 0.6 核心代码残留
-
-0.6 集成对核心代码的改动（[Plugin § 4.4](1-data-source-plugin-architecture.md#44-对核心代码的改动)）在插件化完成后应移除或替换为通用的插件钩子。
-
-### Step 2.6 验证
+### Step 2.5 验证
 
 - [ ] 设置 `SUPERSET_URL` → 前端自动出现 Superset Tab
 - [ ] 手动登录 Superset → 浏览数据集 → 加载数据到 Workspace
@@ -708,3 +706,20 @@ tests/
 ```
 
 > 参考：[SSO 文档 § 10](1-sso-plugin-architecture.md#10-目录结构)
+
+---
+
+## 文档交付要求
+
+每个 Phase 完成时，除代码和测试外，还需交付或更新以下文档：
+
+| Phase | 必须交付的文档 | 说明 |
+|-------|-------------|------|
+| Phase 1 | `auth_providers/README.md` | 如何新增一个 AuthProvider：基类契约、环境变量约定、`get_auth_info()` 返回格式、测试方法 |
+| Phase 2 | `plugins/README.md` | **插件开发指南**：目录约定、`plugin_class` 暴露方式、manifest 字段说明、路由前缀规则、PluginDataWriter 用法、前端 `index.ts` 导出规范、fixture 录制方法 |
+| Phase 2 | `.env.template` 更新 | 新增 `SUPERSET_URL` 等插件环境变量的说明 |
+| Phase 3 | `credential_vault/README.md` | Vault 配置方式、密钥生成命令、插件如何调用 Vault API |
+| Phase 4 | `plugins/README.md` 更新 | 用 Metabase 插件作为实际案例补充到指南中，验证文档的可操作性 |
+| 每个 Phase | `CHANGELOG.md` 追加 | 简要记录本阶段新增的能力和配置变更 |
+
+**核心原则**：文档写给"下一个要开发新插件的人"看。如果按照 `plugins/README.md` 的步骤无法从零完成一个新插件，说明文档不合格。Phase 4（Metabase）就是对这份文档的实战验证。
