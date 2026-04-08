@@ -30,11 +30,12 @@ import {
     Alert,
     Fade,
     Grow,
+    alpha,
 } from '@mui/material';
 
 import _ from 'lodash';
 
-import { borderColor } from '../app/tokens';
+import { borderColor, transition } from '../app/tokens';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
@@ -913,11 +914,27 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                 </Box>
                             ) : insightFresh && focusedChart.insight ? (
                                 <Box sx={{ p: 1.5 }}>
-                                    <Box component="ul" sx={{ m: 0, pl: 2.5, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                                    <Box sx={{ 
+                                        display: 'grid', 
+                                        gridTemplateColumns: 'repeat(2, 1fr)',
+                                        gap: 1,
+                                    }}>
                                         {(focusedChart.insight.takeaways || []).map((takeaway, i) => (
-                                            <Typography component="li" key={i} fontSize="0.8rem" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-                                                {takeaway}
-                                            </Typography>
+                                            <Box key={i} sx={{
+                                                padding: '8px 12px',
+                                                borderLeft: '3px solid',
+                                                borderLeftColor: 'primary.light',
+                                                borderRadius: '2px',
+                                                backgroundColor: (theme) => alpha(theme.palette.background.paper, 0.5),
+                                                transition: transition.normal,
+                                                '&:hover': {
+                                                    backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.04),
+                                                },
+                                            }}>
+                                                <Typography sx={{ fontSize: '12px', lineHeight: 1.5, color: 'text.primary' }}>
+                                                    {takeaway}
+                                                </Typography>
+                                            </Box>
                                         ))}
                                     </Box>
                                     <Button
