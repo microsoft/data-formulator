@@ -34,7 +34,7 @@ export default defineConfig({
           'vendor-d3': ['d3'],
           'vendor-utils': ['lodash', 'localforage', 'dompurify', 'validator'],
           'vendor-editor': ['prismjs', 'prism-react-renderer', 'react-simple-code-editor', 'prettier'],
-          'vendor-markdown': ['markdown-to-jsx', 'mui-markdown', 'katex', 'react-katex'],
+          'vendor-markdown': ['markdown-to-jsx', 'katex', 'react-katex'],
           'vendor-misc': ['exceljs', 'html2canvas', 'allotment', 'react-dnd', 'react-dnd-html5-backend', 'react-virtuoso'],
         }
       }

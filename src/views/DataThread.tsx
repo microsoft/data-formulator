@@ -32,7 +32,7 @@ import {
 import '../scss/VisualizationView.scss';
 import { useTranslation } from 'react-i18next';
 import { batch, useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, SSEMessage } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
 import { Chart, DictTable, Trigger, InteractionEntry } from "../components/ComponentType";
 
@@ -49,7 +49,7 @@ import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
-import { checkChartAvailability, generateChartSkeleton, getDataTable } from './VisualizationView';
+import { checkChartAvailability, generateChartSkeleton, getDataTable } from './ChartUtils';
 
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import EditIcon from '@mui/icons-material/Edit';
@@ -61,29 +61,25 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { alpha } from '@mui/material/styles';
 
 import { RefreshDataDialog } from './RefreshDataDialog';
-import { AppDispatch } from '../app/store';
-import StopIcon from '@mui/icons-material/Stop';
-import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
-import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import { useDataRefresh } from '../app/useDataRefresh';
-import { buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
+import { buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
-import RuleIcon from '@mui/icons-material/Rule';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import ArticleIcon from '@mui/icons-material/Article';
 
-import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
+import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
 import { SimpleChartRecBox } from './SimpleChartRecBox';
-
+import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon } from './InteractionEntryCard';
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
     <Box sx={{ 
@@ -116,70 +112,12 @@ export const ThinkingBanner = (message: string, sx?: SxProps) => (
             fontSize: 10, 
             color: 'rgba(0, 0, 0, 0.7) !important'
         }}>
-            {message}
+            💭 {message}
         </Typography>
     </Box>
 );
 
-// ── Interaction dot: small inline entries for non-instruction interaction steps ──
 
-const InteractionDot: React.FC<{ entry: InteractionEntry; highlighted?: boolean }> = memo(({ entry, highlighted = false }) => {
-    const theme = useTheme();
-    const text = entry.content;
-
-    // User prompts and user instructions get a card-style box
-    if (entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')) {
-        const palette = theme.palette.custom;
-        return (
-            <Typography component="div" sx={{
-                fontSize: '11px',
-                color: 'rgba(0,0,0,0.75)',
-                py: 0.5, px: 1,
-                borderRadius: radius.sm,
-                backgroundColor: palette.bgcolor,
-                border: `1px solid ${borderColor.component}`,
-                ...(highlighted ? { borderLeft: `2px solid ${palette.main}` } : {}),
-            }}>
-                {text}
-            </Typography>
-        );
-    }
-
-    // Pick color based on role
-    let color: string;
-    let extraSx: any = {};
-    switch (entry.role) {
-        case 'thought':
-            color = theme.palette.text.disabled; // light gray
-            extraSx = { fontStyle: 'italic' };
-            break;
-        case 'instruction':
-            color = 'rgba(0,0,0,0.75)'; // same as user trigger text
-            break;
-        case 'summary':
-            color = theme.palette.success.main; // green
-            break;
-        case 'error':
-            color = theme.palette.error.main; // red
-            break;
-        case 'clarify':
-            color = theme.palette.warning.main; // orange/amber
-            break;
-        default:
-            color = theme.palette.text.secondary;
-    }
-
-    return (
-        <Typography component="div" sx={{
-            fontSize: '10px',
-            color,
-            py: '1px',
-            ...extraSx,
-        }}>
-            {text}
-        </Typography>
-    );
-});
 
 /** Seconds options for stream/database auto-refresh interval (labels in i18n: dataThread.refreshInterval.*). */
 const STREAM_REFRESH_INTERVAL_SECONDS = [1, 10, 30, 60, 300, 600, 1800, 3600, 86400] as const;
@@ -512,9 +450,11 @@ const WorkspacePanel: FC<{
     const focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        return undefined;
     }, [focusedId, charts]);
     const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -810,29 +750,6 @@ const WorkspacePanel: FC<{
     );
 };
 
-/** A status message that collapses to a single line on click, and expands back on click. */
-const CollapsibleStatusMessage: FC<{ text: string; color: string }> = ({ text, color }) => {
-    const [collapsed, setCollapsed] = useState(false);
-    return (
-        <Typography
-            variant="body2"
-            onClick={(e) => { e.stopPropagation(); setCollapsed(prev => !prev); }}
-            sx={{
-                fontSize: 10, color, px: 1, py: 0.5, cursor: 'pointer',
-                '&:hover': { textDecoration: 'underline', textDecorationStyle: 'dotted' },
-                ...(collapsed ? {
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    maxWidth: '100%',
-                } : {
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }),
-            }}
-        >
-            {text}
-        </Typography>
-    );
-};
-
 let SingleThreadGroupView: FC<{
     scrollRef: any,
     threadIdx: number,
@@ -890,19 +807,34 @@ let SingleThreadGroupView: FC<{
     let focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        return undefined;
     }, [focusedId, charts]);
     let draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+    let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
+
+    // Build a map from chartId → reports anchored at that chart
+    const reportsByAnchorChart = useMemo(() => {
+        const map = new Map<string, GeneratedReport[]>();
+        for (const report of generatedReports) {
+            const anchor = report.anchorChartId;
+            if (!anchor) continue;
+            const list = map.get(anchor) || [];
+            list.push(report);
+            map.set(anchor, list);
+        }
+        return map;
+    }, [generatedReports]);
 
     // Pre-index running/clarifying/completed status from DraftNodes
     const runningAgentTableIds = useMemo(() => {
         const ids = new Map<string, { description: string }>();
         for (const d of draftNodes) {
             if (d.derive?.status === 'running') {
-                const lastThought = d.derive.trigger.interaction?.filter(e => e.role === 'thought').pop();
-                ids.set(d.derive.trigger.tableId, { description: lastThought?.content || '' });
+                ids.set(d.derive.trigger.tableId, { description: d.derive.runningPlan || '' });
             }
         }
         return ids;
@@ -1190,7 +1122,185 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry }[] = [];
+    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string };
+    let timelineItems: TimelineItem[] = [];
+
+    // ── Shared helpers for building timeline items from interaction entries ──
+
+    /** Push visible interaction entries as timeline items. */
+    const pushInteractionEntries = (
+        entries: InteractionEntry[],
+        tableId: string,
+        triggerType: 'trigger' | 'leaf-trigger',
+        highlighted: boolean,
+        keyPrefix: string,
+        extraProps?: Partial<TimelineItem>,
+    ) => {
+        entries.forEach((entry, ei) => {
+            // A clarify entry is resolved if a user prompt follows it in the same entries array
+            const isResolved = entry.role === 'clarify' && entries.slice(ei + 1).some(e => e.from === 'user');
+            timelineItems.push({
+                key: `${keyPrefix}-${entry.role}-${tableId}-${ei}`,
+                type: triggerType,
+                highlighted,
+                element: <InteractionEntryCard entry={entry} highlighted={highlighted} resolved={isResolved} />,
+                interactionEntry: entry,
+                ...extraProps,
+            });
+        });
+    };
+
+    /** Split interaction at the last instruction boundary: entries before → rendered before table, after → rendered after. */
+    const splitAtLastInstruction = (interaction: InteractionEntry[]): [InteractionEntry[], InteractionEntry[]] => {
+        const lastInstrIdx = (() => { for (let i = interaction.length - 1; i >= 0; i--) { if (interaction[i].role === 'instruction') return i; } return -1; })();
+        return [
+            interaction.slice(0, lastInstrIdx + 1),
+            lastInstrIdx >= 0 ? interaction.slice(lastInstrIdx + 1) : [],
+        ];
+    };
+
+    /** Append timeline items for a running or clarifying agent draft. */
+    const pushAgentDraftItems = (
+        tableId: string,
+        triggerType: 'trigger' | 'leaf-trigger',
+        highlighted: boolean,
+    ) => {
+        if (runningAgentTableIds.has(tableId)) {
+            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
+            const draftInteraction = runningDraft?.derive?.trigger?.interaction;
+            if (draftInteraction && draftInteraction.length > 0) {
+                pushInteractionEntries(draftInteraction, tableId, triggerType, highlighted, 'agent-running-entry');
+                const runningPlan = runningDraft?.derive?.runningPlan;
+                timelineItems.push({
+                    key: `agent-thinking-placeholder-${tableId}`,
+                    type: triggerType,
+                    highlighted,
+                    isRunning: true,
+                    element: ThinkingBanner(runningPlan || t('dataThread.thinking'), { px: 1, py: 0.5 }),
+                });
+            } else {
+                const runningAction = runningAgentTableIds.get(tableId);
+                const message = runningAction?.description || t('dataThread.working');
+                timelineItems.push({
+                    key: `agent-running-${tableId}`,
+                    type: 'chart',
+                    highlighted,
+                    isRunning: true,
+                    element: ThinkingBanner(message, { px: 1, py: 0.5 }),
+                });
+            }
+        } else if (clarifyAgentTableIds.has(tableId)) {
+            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
+            const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
+            if (clarifyInteraction && clarifyInteraction.length > 0) {
+                pushInteractionEntries(clarifyInteraction, tableId, triggerType, highlighted, 'agent-clarify-entry', { isClarifying: false });
+                // Mark the last clarify entry with isClarifying so the gutter shows the hourglass
+                const lastItem = timelineItems[timelineItems.length - 1];
+                if (lastItem?.interactionEntry?.role === 'clarify') lastItem.isClarifying = true;
+            } else {
+                timelineItems.push({
+                    key: `agent-clarify-${tableId}`,
+                    type: 'chart',
+                    highlighted,
+                    isClarifying: true,
+                    element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
+                });
+            }
+        }
+    };
+
+    /** Push table card and its chart elements as timeline items. */
+    const pushTableAndChartItems = (
+        tableId: string,
+        tableCard: any,
+        tableType: 'table' | 'leaf-table',
+        highlighted: boolean,
+    ) => {
+        if (Array.isArray(tableCard)) {
+            tableCard.forEach((subItem: any, j: number) => {
+                if (!subItem) return;
+                const subKey = subItem?.key || `card-${tableId}-${j}`;
+                const isChart = subKey.includes('chart');
+                let itemChartType: string | undefined;
+                if (isChart) {
+                    const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
+                    if (cIdMatch) {
+                        const cObj = charts.find(c => c.id === cIdMatch[1]);
+                        itemChartType = cObj?.chartType;
+                    }
+                }
+                timelineItems.push({
+                    key: subKey,
+                    type: isChart ? 'chart' : tableType,
+                    tableId: isChart ? undefined : tableId,
+                    chartType: itemChartType,
+                    highlighted,
+                    element: subItem,
+                });
+            });
+        }
+    };
+
+    // Push report cards anchored to charts of the given table
+    const pushReportItems = (tableId: string, highlighted: boolean) => {
+        const tableCharts = charts.filter(c => c.tableRef === tableId);
+        for (const chart of tableCharts) {
+            const reports = reportsByAnchorChart.get(chart.id);
+            if (!reports) continue;
+            for (const report of reports) {
+                const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
+                const isGenerating = report.status === 'generating';
+                const selectedClassName = isFocused ? 'selected-report-card' : '';
+                timelineItems.push({
+                    key: `report-${report.id}`,
+                    type: 'report',
+                    reportId: report.id,
+                    highlighted: highlighted || isFocused,
+                    element: (
+                        <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
+                            sx={{
+                                width: '100%',
+                                backgroundColor: theme.palette.secondary.bgcolor,
+                                ...ComponentBorderStyle,
+                                ...(highlighted ? { borderLeft: '2px solid', borderLeftColor: 'secondary.main' } : {}),
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                            }}
+                            onClick={() => {
+                                dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
+                            }}
+                        >
+                            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0 }}>
+                                <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
+                                    <Typography sx={{
+                                        fontSize: 11,
+                                        fontWeight: 500,
+                                        color: 'text.primary',
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: 'vertical',
+                                        overflow: 'hidden',
+                                        wordBreak: 'break-all',
+                                    }}>
+                                        {report.title || report.style || t('report.untitled')}
+                                    </Typography>
+                                    <Typography sx={{
+                                        fontSize: 9,
+                                        color: 'text.disabled',
+                                        lineHeight: 1.3,
+                                        mt: 0.25,
+                                    }}>
+                                        {report.style}
+                                        {isGenerating && ` · ${t('report.composing')}`}
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        </Card>
+                    ),
+                });
+            }
+        }
+    };
 
     // Add used (shared) tables at the top
     // Only show the immediate parent + "..." for further ancestors
@@ -1243,20 +1353,8 @@ let SingleThreadGroupView: FC<{
         if (triggerPair) {
             const interaction = triggerPair.interaction;
             if (interaction && interaction.length > 0) {
-                // Split at the last instruction: before → rendered before table, after → rendered after table
-                const lastInstrIdx = (() => { for (let i = interaction.length - 1; i >= 0; i--) { if (interaction[i].role === 'instruction') return i; } return -1; })();
-                const beforeTable = interaction.slice(0, lastInstrIdx + 1);
-                const afterTable = lastInstrIdx >= 0 ? interaction.slice(lastInstrIdx + 1) : [];
-
-                beforeTable.forEach((entry, ei) => {
-                    timelineItems.push({
-                        key: `interaction-${entry.role}-${tableId}-${ei}`,
-                        type: 'trigger',
-                        highlighted: isHighlighted,
-                        element: <InteractionDot entry={entry} highlighted={isHighlighted} />,
-                        interactionEntry: entry,
-                    });
-                });
+                const [beforeTable, afterTable] = splitAtLastInstruction(interaction);
+                pushInteractionEntries(beforeTable, tableId, 'trigger', isHighlighted, 'interaction');
                 if (afterTable.length > 0) afterTableMap.set(tableId, afterTable);
             } else {
                 // No interaction log, use trigger card directly
@@ -1273,135 +1371,32 @@ let SingleThreadGroupView: FC<{
         }
 
         // Add table card and its charts
-        const tableCard = tableElementList[i];
-        if (Array.isArray(tableCard)) {
-            tableCard.forEach((subItem: any, j: number) => {
-                if (!subItem) return;
-                const subKey = subItem?.key || `woven-${tableId}-${j}`;
-                const isChart = subKey.includes('chart');
-                // Extract chartType from the key (pattern: 'relevant-chart-{chartId}')
-                let itemChartType: string | undefined;
-                if (isChart) {
-                    const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
-                    if (cIdMatch) {
-                        const cObj = charts.find(c => c.id === cIdMatch[1]);
-                        itemChartType = cObj?.chartType;
-                    }
-                }
-                timelineItems.push({
-                    key: subKey,
-                    type: isChart ? 'chart' : 'table',
-                    tableId: isChart ? undefined : tableId,
-                    chartType: itemChartType,
-                    highlighted: isHighlighted,
-                    element: subItem,
-                });
-            });
-        }
+        pushTableAndChartItems(tableId, tableElementList[i], 'table', isHighlighted);
 
-        // Render after-table entries (completion thought + summary)
+        // Add report cards anchored to charts of this table
+        pushReportItems(tableId, isHighlighted);
+
+        // After-table entries (e.g. summary)
         const afterTable = afterTableMap.get(tableId);
         if (afterTable && afterTable.length > 0) {
-            afterTable.forEach((entry, si) => {
-                timelineItems.push({
-                    key: `interaction-after-${entry.role}-${tableId}-${si}`,
-                    type: 'trigger',
-                    highlighted: isHighlighted,
-                    element: <InteractionDot entry={entry} highlighted={isHighlighted} />,
-                    interactionEntry: entry,
-                });
-            });
+            pushInteractionEntries(afterTable, tableId, 'trigger', isHighlighted, 'interaction-after');
         }
 
-        // If an agent is running on this table, show the draft's interaction log
-        if (runningAgentTableIds.has(tableId)) {
-            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
-            const draftInteraction = runningDraft?.derive?.trigger?.interaction;
-            if (draftInteraction && draftInteraction.length > 0) {
-                draftInteraction.forEach((entry, ei) => {
-                    const isLast = ei === draftInteraction.length - 1;
-                    // All entries render as static InteractionDots
-                    timelineItems.push({
-                        key: `agent-running-entry-${tableId}-${ei}`,
-                        type: 'trigger',
-                        highlighted: isHighlighted,
-                        isRunning: false,
-                        element: isLast && entry.from !== 'user'
-                            ? ThinkingBanner(entry.content, { px: 1, py: 0.5 })
-                            : <InteractionDot entry={entry} highlighted={isHighlighted} />,
-                        interactionEntry: entry,
-                    });
-                });
-                // If the last entry is from the user (they just submitted), add a "thinking..." shimmer
-                const lastEntry = draftInteraction[draftInteraction.length - 1];
-                if (lastEntry.from === 'user') {
-                    timelineItems.push({
-                        key: `agent-thinking-placeholder-${tableId}`,
-                        type: 'trigger',
-                        highlighted: isHighlighted,
-                        isRunning: true,
-                        element: ThinkingBanner(t('dataThread.thinking'), { px: 1, py: 0.5 }),
-                    });
-                }
-            } else {
-                const runningAction = runningAgentTableIds.get(tableId);
-                const message = runningAction?.description || t('dataThread.working');
-                timelineItems.push({
-                    key: `agent-running-${tableId}`,
-                    type: 'chart',
-                    highlighted: isHighlighted,
-                    isRunning: true,
-                    element: ThinkingBanner(message, { px: 1, py: 0.5 }),
-                });
-            }
-        } else if (clarifyAgentTableIds.has(tableId)) {
-            // Render the clarifying DraftNode's interaction log inline
-            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
-            const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
-            if (clarifyInteraction && clarifyInteraction.length > 0) {
-                clarifyInteraction.forEach((entry, ei) => {
-                    timelineItems.push({
-                        key: `agent-clarify-entry-${tableId}-${ei}`,
-                        type: 'trigger',
-                        highlighted: isHighlighted,
-                        isClarifying: entry.role === 'clarify',
-                        element: <InteractionDot entry={entry} highlighted={isHighlighted} />,
-                        interactionEntry: entry,
-                    });
-                });
-            } else {
-                timelineItems.push({
-                    key: `agent-clarify-${tableId}`,
-                    type: 'chart',
-                    highlighted: isHighlighted,
-                    isClarifying: true,
-                    element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
-                });
-            }
-        }
+        // Running or clarifying agent state
+        pushAgentDraftItems(tableId, 'trigger', isHighlighted);
     });
 
     // Add leaf table components
     const leafAfterTableMap = new Map<string, InteractionEntry[]>();
     leafTables.forEach((lt, i) => {
         let leafTrigger = lt.derive?.trigger;
+        const isHL = highlightedTableIds.includes(lt.id);
+
         if (leafTrigger) {
-            const isHL = highlightedTableIds.includes(lt.id);
             const interaction = leafTrigger.interaction;
             if (interaction && interaction.length > 0) {
-                const lastInstrIdx = (() => { for (let i = interaction.length - 1; i >= 0; i--) { if (interaction[i].role === 'instruction') return i; } return -1; })();
-                const leafBefore = interaction.slice(0, lastInstrIdx + 1);
-                const leafAfter = lastInstrIdx >= 0 ? interaction.slice(lastInstrIdx + 1) : [];
-
-                leafBefore.forEach((entry, ei) => {
-                    timelineItems.push({
-                        key: `leaf-interaction-${entry.role}-${lt.id}-${ei}`,
-                        type: 'leaf-trigger',
-                        highlighted: isHL,
-                        element: <InteractionDot entry={entry} highlighted={isHL} />,
-                        interactionEntry: entry,
-                    });
-                });
+                const [leafBefore, leafAfter] = splitAtLastInstruction(interaction);
+                pushInteractionEntries(leafBefore, lt.id, 'leaf-trigger', isHL, 'leaf-interaction');
                 if (leafAfter.length > 0) leafAfterTableMap.set(lt.id, leafAfter);
             } else {
                 timelineItems.push({
@@ -1412,109 +1407,20 @@ let SingleThreadGroupView: FC<{
                 });
             }
         }
-        let leafCards = _buildTableCard(lt.id);
-        if (Array.isArray(leafCards)) {
-            leafCards.forEach((subItem: any, j: number) => {
-                if (!subItem) return;
-                const subKey = subItem?.key || `leaf-card-${lt.id}-${j}`;
-                const isChart = subKey.includes('chart');
-                let leafChartType: string | undefined;
-                if (isChart) {
-                    const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
-                    if (cIdMatch) {
-                        const cObj = charts.find(c => c.id === cIdMatch[1]);
-                        leafChartType = cObj?.chartType;
-                    }
-                }
-                timelineItems.push({
-                    key: subKey,
-                    type: isChart ? 'chart' : 'leaf-table',
-                    tableId: isChart ? undefined : lt.id,
-                    chartType: leafChartType,
-                    highlighted: highlightedTableIds.includes(lt.id),
-                    element: subItem,
-                });
-            });
-        }
 
-        // Render after-table entries for leaf (completion thought + summary)
+        pushTableAndChartItems(lt.id, _buildTableCard(lt.id), 'leaf-table', isHL);
+
+        // Add report cards anchored to charts of this leaf table
+        pushReportItems(lt.id, isHL);
+
+        // After-table entries (e.g. summary)
         const leafAfterEntries = leafAfterTableMap.get(lt.id);
         if (leafAfterEntries && leafAfterEntries.length > 0) {
-            leafAfterEntries.forEach((entry, si) => {
-                timelineItems.push({
-                    key: `leaf-after-${entry.role}-${lt.id}-${si}`,
-                    type: 'leaf-trigger',
-                    highlighted: highlightedTableIds.includes(lt.id),
-                    element: <InteractionDot entry={entry} highlighted={highlightedTableIds.includes(lt.id)} />,
-                    interactionEntry: entry,
-                });
-            });
+            pushInteractionEntries(leafAfterEntries, lt.id, 'leaf-trigger', isHL, 'leaf-after');
         }
 
-        // If an agent is running on this leaf table, show the draft's interaction log
-        if (runningAgentTableIds.has(lt.id)) {
-            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === lt.id);
-            const draftInteraction = runningDraft?.derive?.trigger?.interaction;
-            if (draftInteraction && draftInteraction.length > 0) {
-                const ltHL = highlightedTableIds.includes(lt.id);
-                draftInteraction.forEach((entry, ei) => {
-                    const isLast = ei === draftInteraction.length - 1;
-                    timelineItems.push({
-                        key: `agent-running-entry-${lt.id}-${ei}`,
-                        type: 'leaf-trigger',
-                        highlighted: ltHL,
-                        isRunning: false,
-                        element: isLast && entry.from !== 'user'
-                            ? ThinkingBanner(entry.content, { px: 1, py: 0.5 })
-                            : <InteractionDot entry={entry} highlighted={ltHL} />,
-                        interactionEntry: entry,
-                    });
-                });
-                const lastEntry = draftInteraction[draftInteraction.length - 1];
-                if (lastEntry.from === 'user') {
-                    timelineItems.push({
-                        key: `agent-thinking-placeholder-${lt.id}`,
-                        type: 'leaf-trigger',
-                        highlighted: ltHL,
-                        isRunning: true,
-                        element: ThinkingBanner(t('dataThread.thinking'), { px: 1, py: 0.5 }),
-                    });
-                }
-            } else {
-                const runningAction = runningAgentTableIds.get(lt.id);
-                const message = runningAction?.description || t('dataThread.working');
-                timelineItems.push({
-                    key: `agent-running-${lt.id}`,
-                    type: 'chart',
-                    highlighted: highlightedTableIds.includes(lt.id),
-                    isRunning: true,
-                    element: ThinkingBanner(message, { px: 1, py: 0.5 }),
-                });
-            }
-        } else if (clarifyAgentTableIds.has(lt.id)) {
-            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === lt.id);
-            const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
-            if (clarifyInteraction && clarifyInteraction.length > 0) {
-                clarifyInteraction.forEach((entry, ei) => {
-                    timelineItems.push({
-                        key: `leaf-clarify-entry-${lt.id}-${ei}`,
-                        type: 'leaf-trigger',
-                        highlighted: highlightedTableIds.includes(lt.id),
-                        isClarifying: entry.role === 'clarify',
-                        element: <InteractionDot entry={entry} highlighted={highlightedTableIds.includes(lt.id)} />,
-                        interactionEntry: entry,
-                    });
-                });
-            } else {
-                timelineItems.push({
-                    key: `agent-clarify-${lt.id}`,
-                    type: 'chart',
-                    highlighted: highlightedTableIds.includes(lt.id),
-                    isClarifying: true,
-                    element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
-                });
-            }
-        }
+        // Running or clarifying agent state
+        pushAgentDraftItems(lt.id, 'leaf-trigger', isHL);
     });
 
     // Timeline rendering helper
@@ -1529,6 +1435,15 @@ let SingleThreadGroupView: FC<{
             ? theme.palette.primary.main
             : 'rgba(0,0,0,0.15)';
 
+        // For report items, show an article icon or spinner if generating
+        if (item.type === 'report') {
+            const report = item.reportId ? generatedReports.find(r => r.id === item.reportId) : undefined;
+            if (report?.status === 'generating') {
+                return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />;
+            }
+            return <ArticleIcon sx={{ width: 14, height: 14, color: item.highlighted ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
+        }
+
         // For running agent items, show a spinner instead of a dot
         if (item.isRunning) {
             return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />;
@@ -1536,7 +1451,7 @@ let SingleThreadGroupView: FC<{
 
         // For clarification items, show an hourglass icon
         if (item.isClarifying) {
-            return <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main }} />;
+            return <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main, animation: 'spin 2s ease-in-out infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />;
         }
 
         // For completed items, show a checkmark icon
@@ -1606,12 +1521,12 @@ let SingleThreadGroupView: FC<{
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const isChart = item.type === 'chart';
         const dashedColor = item.highlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-        const dashedWidth = item.highlighted ? '2px' : '1px';
+        const dashedWidth = '2px';
         const dashedStyle = 'solid';
         // Bottom connector uses unhighlighted style if next item isn't highlighted
         const bottomHighlighted = item.highlighted && nextHighlighted;
         const bottomDashedColor = bottomHighlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-        const bottomDashedWidth = bottomHighlighted ? '2px' : '1px';
+        const bottomDashedWidth = '2px';
         const bottomDashedStyle = 'solid';
         // Dim non-highlighted cards when chatbox is focused
         const rowHighlightSx = (chatboxFocused && hasHighlighting && !item.highlighted) ? { opacity: 0.35 } : {};
@@ -1624,18 +1539,13 @@ let SingleThreadGroupView: FC<{
             const iconColor = item.highlighted
                 ? (isFromUser ? theme.palette.custom.main : theme.palette.text.disabled)
                 : 'rgba(0,0,0,0.15)';
-            let gutterIcon: React.ReactNode;
-            if (entry) {
-                if (entry.from === 'user') {
-                    gutterIcon = <PersonIcon sx={{ width: 14, height: 14, color: iconColor }} />;
-                } else if (entry.role === 'thought') {
-                    gutterIcon = <AutoAwesomeIcon sx={{ width: 14, height: 14, color: iconColor }} />;
-                } else {
-                    gutterIcon = <SmartToyOutlinedIcon sx={{ width: 14, height: 14, color: iconColor }} />;
-                }
-            } else {
-                gutterIcon = <AgentIcon sx={{ width: 14, height: 14, color: iconColor }} />;
-            }
+            const gutterIcon = item.isRunning
+                ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
+                : item.isClarifying
+                    ? <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main, animation: 'spin 2s ease-in-out infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
+                    : entry
+                        ? getEntryGutterIcon(entry, iconColor)
+                        : getDefaultGutterIcon(iconColor);
 
             return (
                 <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
@@ -1692,7 +1602,7 @@ let SingleThreadGroupView: FC<{
                         // When connecting to the header (index 0, label visible), match the header's highlight state
                         const useHeader = index === 0 && !hideLabel;
                         const topColor = useHeader ? (headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)') : dashedColor;
-                        const topWidth = useHeader ? (headerHL ? '2px' : '1px') : dashedWidth;
+                        const topWidth = '2px';
                         const topStyle = 'solid';
                         return <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${topWidth} ${topStyle} ${topColor}` }} />;
                     })()}
@@ -1721,6 +1631,11 @@ let SingleThreadGroupView: FC<{
                 borderColor: 'transparent',
                 margin: '1px 0',
             },
+            '& .selected-report-card': { 
+                boxShadow: `0 0 0 2px ${theme.palette.secondary.light}`,
+                borderColor: 'transparent',
+                margin: '1px 0',
+            },
             padding: '6px',
             ...(chatboxFocused && focusedThreadLeafId && !shouldHighlightThread ? { opacity: 0.35 } : {}),
         }}
@@ -1730,7 +1645,7 @@ let SingleThreadGroupView: FC<{
                 const hlColor = theme.palette.primary.main;
                 const nhColor = 'rgba(0,0,0,0.35)';
                 const connColor = headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-                const connWidth = headerHL ? '2px' : '1px';
+                const connWidth = '2px';
                 const connStyle = 'solid';
                 return (
                 <Box sx={{ display: 'flex', flexDirection: 'row', ...(chatboxFocused && hasHighlighting && !headerHL ? { opacity: 0.35 } : {}) }}>
@@ -1918,15 +1833,14 @@ const ChartThumbnail: FC<{
 }> = ({ chart, table, status, onChartClick, onDelete }) => {
     const { t } = useTranslation();
 
-    let deleteButton = <Box className='data-thread-chart-card-action-button'
-        sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-        <Tooltip title={t('dataThread.deleteChart')}>
-            <IconButton size="small" color="warning" aria-label={t('dataThread.deleteChart')} onClick={(event) => {
-                event.stopPropagation();
-                onDelete(chart.id);
-            }}><DeleteIcon fontSize="small" /></IconButton>
-        </Tooltip>
-    </Box>
+    let deleteButton = <Tooltip title={t('dataThread.deleteChart')}>
+        <IconButton className='data-thread-chart-card-action-button' size="small" color="warning"
+            aria-label={t('dataThread.deleteChart')}
+            sx={{ zIndex: 10, position: "absolute", right: 1, }}
+            onClick={(event) => { event.stopPropagation(); onDelete(chart.id); }}>
+            <DeleteIcon fontSize="small" />
+        </IconButton>
+    </Tooltip>
 
     const pendingOverlay = status == 'pending' ? <Box sx={{
         position: "absolute", top: 0, left: -8, right: -8, bottom: 0, zIndex: 20,
@@ -2030,17 +1944,17 @@ const ChartThumbnail: FC<{
 
 // Height estimation constants (px) – per-type heights + py:4px (8px) gap per row
 const LAYOUT_TABLE_HEIGHT = 28 + 8;     // table card + row padding
-const LAYOUT_TRIGGER_HEIGHT = 43 + 8;   // trigger card (2 lines) + row padding
+const LAYOUT_ENTRY_HEIGHT = 55 + 8;     // interaction entry (plan/summary text typically wraps 2-4 lines) + row padding
 const LAYOUT_CHART_HEIGHT = 90 + 8;     // chart card (~70-110) + row padding
 const LAYOUT_THREAD_OVERHEAD = 52;      // header divider + thread padding
 const LAYOUT_THREAD_GAP = 8;            // my: 0.5 = 4px top + 4px bottom between threads
 
 function estimateThreadHeight(
-    tableCount: number, triggerCount: number, chartCount: number
+    tableCount: number, entryCount: number, chartCount: number
 ): number {
     return LAYOUT_THREAD_OVERHEAD
         + tableCount * LAYOUT_TABLE_HEIGHT
-        + triggerCount * LAYOUT_TRIGGER_HEIGHT
+        + entryCount * LAYOUT_ENTRY_HEIGHT
         + chartCount * LAYOUT_CHART_HEIGHT;
 }
 
@@ -2208,14 +2122,25 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let charts = useSelector(dfSelectors.getAllCharts);
 
+    let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
+
     // Derive focusedTableId from focusedId for scroll/highlight logic
     let focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
-    }, [focusedId, charts]);
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        if (focusedId.type === 'report') {
+            const report = generatedReports.find(r => r.id === focusedId.reportId);
+            if (report?.anchorChartId) {
+                const chart = charts.find(c => c.id === report.anchorChartId);
+                return chart?.tableRef;
+            }
+        }
+        return undefined;
+    }, [focusedId, charts, generatedReports]);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
@@ -2333,36 +2258,37 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let leafTables = [ ...tables.filter(t => isLeafTable(t)) ];
 
     // Split long derivation chains by promoting intermediate tables as additional "leaves".
-    // If a chain has more than MAX_CHAIN_TABLES tables, we add a split point every
-    // MAX_CHAIN_TABLES steps. The sort (shorter chains first) ensures the intermediate
-    // leaf is processed before the real leaf, so its tables get claimed — making the
-    // real leaf's thread show only the remaining (new) tables.
-    // When counting chain length, exclude "used" tables (already claimed by an earlier
-    // chain) so that shared ancestors don't inflate the count. The first chain to
-    // contain a table still counts it as owned.
-    const MAX_CHAIN_TABLES = 5;
+    // Compute effective max chain length from container height using per-table height estimates.
+    const containerH = containerRef.current?.clientHeight ?? 600;
+    const maxChainHeight = containerH; // split before exceeding the viewport
 
-    // Process leaves in order, tracking claimed tables to simulate the later claim loop.
-    // A table is "used" for a chain only if a *previous* chain already claimed it.
+    // Estimate height for a single table node (its entries + table card + charts)
+    const estimateSingleTableH = (tableId: string): number => {
+        const table = tableById.get(tableId);
+        const entryCount = table?.derive?.trigger?.interaction?.length || 1;
+        const chartCount = chartElements.filter(ce => ce.tableId === tableId).length;
+        return LAYOUT_TABLE_HEIGHT + entryCount * LAYOUT_ENTRY_HEIGHT + Math.max(1, chartCount) * LAYOUT_CHART_HEIGHT;
+    };
+
     const claimedForSplit = new Set<string>();
     const extraLeaves: DictTable[] = [];
     for (const lt of leafTables) {
         const triggers = getCachedTriggers(lt);
         const allChainIds = [lt.id, ...triggers.map(t => t.resultTableId)];
-        // Tables not yet claimed by an earlier chain count as owned
-        const ownedIds = allChainIds.filter(id => !claimedForSplit.has(id));
-        if (ownedIds.length > MAX_CHAIN_TABLES) {
-            // Walk only owned (unclaimed) triggers for split positions
-            const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.resultTableId));
-            for (let pos = MAX_CHAIN_TABLES - 1; pos < ownedTriggers.length; pos += MAX_CHAIN_TABLES) {
-                const midId = ownedTriggers[pos].resultTableId;
-                const midTable = tableById.get(midId);
+        const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.resultTableId));
+
+        // Walk owned triggers, accumulating height and inserting split points
+        let accHeight = 0;
+        for (const tp of ownedTriggers) {
+            accHeight += estimateSingleTableH(tp.resultTableId);
+            if (accHeight >= maxChainHeight) {
+                const midTable = tableById.get(tp.resultTableId);
                 if (midTable && !leafTables.includes(midTable) && !extraLeaves.includes(midTable)) {
                     extraLeaves.push(midTable);
                 }
+                accHeight = 0;
             }
         }
-        // Claim all tables in this chain for subsequent chains
         allChainIds.forEach(id => claimedForSplit.add(id));
     }
     if (extraLeaves.length > 0) {
@@ -2507,12 +2433,16 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         // Only new (unclaimed) tables contribute to this thread's height
         let newTableIds = [...threadTableIds].filter(id => !claimedTableIds.has(id));
 
-        let newTriggerCount = triggers.filter(tp => newTableIds.includes(tp.resultTableId)).length;
+        let newTriggerPairs = triggers.filter(tp => newTableIds.includes(tp.resultTableId));
         let chartCount = newTableIds.reduce((sum, tid) => sum + chartElements.filter(ce => ce.tableId === tid).length, 0);
 
-        // +1 table and +1 trigger for the leaf table itself
+        // Count actual interaction entries across all triggers (for height estimation)
+        let entryCount = newTriggerPairs.reduce((sum, tp) => sum + (tp.interaction?.length || 1), 0);
+        // +1 for the leaf table's own trigger
+        entryCount += lt.derive?.trigger?.interaction?.length || 1;
+
+        // +1 table for the leaf table itself
         let totalTables = newTableIds.length + 1;
-        let totalTriggers = newTriggerCount + 1;
 
         // Claim this thread's tables for subsequent threads
         threadTableIds.forEach(id => claimedTableIds.add(id));
@@ -2554,8 +2484,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             threadIdx: threadIdxForEntry,
             threadLabel,
             isSplitThread: isContinuation,
+            hideLabel: isContinuation,
         });
-        allThreadHeights.push(estimateThreadHeight(totalTables, totalTriggers, chartCount));
+        allThreadHeights.push(estimateThreadHeight(totalTables, entryCount, chartCount));
     });
 
     // Pre-compute usedTableIds for each entry (avoids quadratic recomputation in renderThreadEntry)
@@ -2565,7 +2496,11 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             entry.usedTableIds = [...accumulated];
             for (const lt of entry.leafTables) {
                 const triggers = getCachedTriggers(lt);
-                accumulated.push(...triggers.map(t => t.resultTableId), lt.id);
+                // Include both source (tableId) and result (resultTableId) IDs from the chain
+                for (const tp of triggers) {
+                    accumulated.push(tp.tableId, tp.resultTableId);
+                }
+                accumulated.push(lt.id);
             }
         }
     }
@@ -2629,6 +2564,25 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             direction: 'ltr',
             height: 'calc(100% - 16px)',
             width: panelWidth,
+            '&::-webkit-scrollbar': {
+                width: '8px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+                backgroundColor: 'transparent',
+                borderRadius: '4px',
+                transition: 'background-color 0.2s',
+            },
+            '&:hover::-webkit-scrollbar-thumb': {
+                backgroundColor: 'rgba(0,0,0,0.2)',
+            },
+            '&::-webkit-scrollbar-track': {
+                backgroundColor: 'transparent',
+            },
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'transparent transparent',
+            '&:hover': {
+                scrollbarColor: 'rgba(0,0,0,0.2) transparent',
+            },
         }}>
             <Box sx={{
                 display: 'flex',

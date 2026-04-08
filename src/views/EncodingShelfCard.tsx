@@ -87,7 +87,7 @@ import { resolveChartFields, assembleVegaChart, resolveRecommendedChart } from '
 import { EncodingBox } from './EncodingBox';
 
 import { channelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
-import { checkChartAvailability, getDataTable } from './VisualizationView';
+import { checkChartAvailability, getDataTable } from './ChartUtils';
 
 const chartNameToI18nKey: Record<string, string> = {
     "Auto": "auto", "Table": "table",

@@ -1061,42 +1061,7 @@ const AppShell: FC = () => {
                         {isAppPage && (
                             <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                                 <LanguageSwitcher />
-                                {focusedId !== undefined && <React.Fragment><ToggleButtonGroup
-                                    value={viewMode}
-                                    exclusive
-                                    onChange={(_, newMode) => {
-                                        if (newMode !== null) {
-                                            dispatch(dfActions.setViewMode(newMode));
-                                        }
-                                    }}
-                                    sx={{
-                                        mr: 2,
-                                        height: '28px',
-                                        my: 'auto',
-                                        '& .MuiToggleButton-root': {
-                                            textTransform: 'none',
-                                            fontWeight: 500,
-                                            border: 'none',
-                                            '&:hover': {
-                                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                                color: 'text.primary',
-                                            },
-                                        },
-                                    }}
-                                >
-                                    <ToggleButton value="editor">
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <Box component="span">{t('appBar.explore')}</Box>
-                                        </Box>
-                                    </ToggleButton>
-                                    <ToggleButton value="report">
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <Box component="span">
-                                                {generatedReports.length > 0 ? t('appBar.reportsWithCount', { count: generatedReports.length }) : t('appBar.reports')}
-                                            </Box>
-                                        </Box>
-                                    </ToggleButton>
-                                </ToggleButtonGroup>
+                                {focusedId !== undefined && <React.Fragment>
                                 <ConfigDialog />
                                 <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
                                 <ModelSelectionButton />

@@ -18,7 +18,7 @@ import '../scss/EncodingShelf.scss';
 import { Type } from '../data/types';
 
 import { getChartTemplate } from '../components/ChartTemplates';
-import { checkChartAvailability, generateChartSkeleton } from './VisualizationView';
+import { checkChartAvailability, generateChartSkeleton } from './ChartUtils';
 
 import { InsightIcon } from '../icons';
 

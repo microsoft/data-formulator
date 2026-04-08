@@ -356,7 +356,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         } : {
             table: tableId,
             size: 1000,
-            method: 'random'
+            method: 'head',
+            order_by_fields: ['#rowId']
         }
         
         // Use the SAMPLE_TABLE endpoint with appropriate ordering
@@ -370,7 +371,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                setRowsToDisplay(data.rows);
+                setRowsToDisplay(data.rows || []);
             }
             // Set loading to false when done
             setIsLoading(false);

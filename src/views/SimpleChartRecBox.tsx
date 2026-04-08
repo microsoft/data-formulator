@@ -17,7 +17,7 @@ import {
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers } from '../app/utils';
 import { Chart, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
@@ -30,10 +30,12 @@ import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import ArticleIcon from '@mui/icons-material/Article';
 
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ClearIcon from '@mui/icons-material/Clear';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
+import { renderFieldHighlights } from './InteractionEntryCard';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
@@ -60,14 +62,16 @@ const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () =>
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
                 <Typography sx={{
                     fontSize: 10,
-                    animation: 'agentWriting 1.2s ease-in-out infinite',
-                    '@keyframes agentWriting': {
-                        '0%, 100%': { transform: 'rotate(-15deg) translate(0, 0)' },
-                        '25%': { transform: 'rotate(-8deg) translate(2px, 1px)' },
-                        '50%': { transform: 'rotate(-15deg) translate(0, 0)' },
-                        '75%': { transform: 'rotate(-20deg) translate(-2px, 1px)' },
+                    display: 'inline-block',
+                    animation: 'writing-pencil 1s ease-in-out infinite',
+                    transformOrigin: 'bottom left',
+                    '@keyframes writing-pencil': {
+                        '0%': { transform: 'translate(0, 0) rotate(0deg)' },
+                        '25%': { transform: 'translate(3px, -1px) rotate(-5deg)' },
+                        '50%': { transform: 'translate(6px, 0) rotate(0deg)' },
+                        '75%': { transform: 'translate(3px, 1px) rotate(5deg)' },
+                        '100%': { transform: 'translate(0, 0) rotate(0deg)' },
                     },
-                    transformOrigin: 'bottom right',
                 }}>
                     ✏️
                 </Typography>
@@ -136,9 +140,11 @@ export const SimpleChartRecBox: FC = function () {
     const focusedTableId = useCallback(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        return undefined;
     }, [focusedId, charts])();
 
     // Clear ideas when focused table changes — ideas are scoped per table
@@ -196,13 +202,64 @@ export const SimpleChartRecBox: FC = function () {
         return null;
     }, [draftNodes, threadTableIds]);
 
-    // Extract the clarification question text from DraftNode interaction log
+    // Extract the clarification question text and options from DraftNode interaction log
     const clarificationQuestion = React.useMemo(() => {
         if (!pendingClarification?.draftId) return null;
         const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
         const clarifyEntries = draft?.derive?.trigger?.interaction?.filter(e => e.role === 'clarify');
         return clarifyEntries && clarifyEntries.length > 0 ? clarifyEntries[clarifyEntries.length - 1].content : null;
     }, [pendingClarification, draftNodes]);
+
+    const clarificationOptions = React.useMemo(() => {
+        if (!pendingClarification?.draftId) return [];
+        const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
+        const clarifyEntries = draft?.derive?.trigger?.interaction?.filter(e => e.role === 'clarify');
+        const lastEntry = clarifyEntries && clarifyEntries.length > 0 ? clarifyEntries[clarifyEntries.length - 1] : null;
+        return lastEntry?.options || [];
+    }, [pendingClarification, draftNodes]);
+
+    // Clarification auto-select countdown (60s)
+    const CLARIFY_TIMEOUT_MS = 60_000;
+    const [clarifyDeadline, setClarifyDeadline] = useState<number | null>(null);
+    const [clarifyProgress, setClarifyProgress] = useState(1); // 1 → 0
+    const clarifyTimerRef = useRef<number | null>(null);
+
+    // Start / reset deadline whenever a new clarification appears
+    useEffect(() => {
+        if (pendingClarification && clarificationOptions.length > 0 && !isChatFormulating) {
+            setClarifyDeadline(Date.now() + CLARIFY_TIMEOUT_MS);
+            setClarifyProgress(1);
+        } else {
+            setClarifyDeadline(null);
+            setClarifyProgress(1);
+        }
+    }, [pendingClarification?.draftId, clarificationOptions.length, isChatFormulating]);
+
+    // Animate the countdown bar & auto-select on expiry
+    useEffect(() => {
+        if (clarifyDeadline == null) {
+            if (clarifyTimerRef.current) cancelAnimationFrame(clarifyTimerRef.current);
+            return;
+        }
+        const tick = () => {
+            const remaining = clarifyDeadline - Date.now();
+            if (remaining <= 0) {
+                setClarifyProgress(0);
+                setClarifyDeadline(null);
+                // Auto-select first option
+                if (clarificationOptions.length > 0 && pendingClarification) {
+                    const first = clarificationOptions[0];
+                    setChatPrompt(first);
+                    exploreFromChat(first, pendingClarification);
+                }
+                return;
+            }
+            setClarifyProgress(remaining / CLARIFY_TIMEOUT_MS);
+            clarifyTimerRef.current = requestAnimationFrame(tick);
+        };
+        clarifyTimerRef.current = requestAnimationFrame(tick);
+        return () => { if (clarifyTimerRef.current) cancelAnimationFrame(clarifyTimerRef.current); };
+    }, [clarifyDeadline]);
 
     const getIdeasFromAgent = useCallback(async () => {
         if (!currentTable || isLoadingIdeas) return;
@@ -347,8 +404,10 @@ export const SimpleChartRecBox: FC = function () {
                     for (const entry of interaction) {
                         if (entry.role === 'prompt') {
                             history.unshift({ role: 'user', content: entry.content });
-                        } else if (entry.role === 'thought' || entry.role === 'summary') {
+                        } else if (entry.role === 'summary') {
                             history.unshift({ role: 'assistant', content: entry.content });
+                        } else if (entry.plan) {
+                            history.unshift({ role: 'assistant', content: entry.plan });
                         }
                     }
                 }
@@ -428,8 +487,9 @@ export const SimpleChartRecBox: FC = function () {
             createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
         }
 
-        // Track the last agent thought (from "action" events) to include in the trigger
+        // Track the last agent thought and display_instruction (from "action" events)
         let lastAgentThought: string | null = null;
+        let lastAgentDisplayInstruction: string | null = null;
 
         const genTableId = () => {
             let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
@@ -442,15 +502,14 @@ export const SimpleChartRecBox: FC = function () {
         };
 
         const processStreamingResult = (result: any) => {
-            // Agent thinking / choosing next action
+            // Agent planning / choosing next action
             if (result.type === "action" && result.action === "visualize") {
-                const thinkingMsg = result.thought || t('dataThread.thinking');
                 lastAgentThought = result.thought || null;
-                // Append thought to current draft
+                lastAgentDisplayInstruction = result.display_instruction || null;
+                // Plan is stored as a field on the upcoming instruction entry — not as a separate entry.
+                // Show the plan text on the running draft so the user sees live reasoning.
                 if (currentDraftId) {
-                    const thoughtEntry: InteractionEntry = { from: 'data-agent', to: 'data-agent', role: 'thought', content: thinkingMsg, timestamp: Date.now() };
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: thoughtEntry }));
-                    currentDraftInteraction.push(thoughtEntry);
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: lastAgentThought || t('dataThread.thinking') }));
                 }
             }
             // Visualization result (same shape as old data_transformation)
@@ -467,7 +526,7 @@ export const SimpleChartRecBox: FC = function () {
 
                 const rows = transformedData.rows;
                 const candidateTableId = transformedData.virtual?.table_name || genTableId();
-                const displayInstruction = refinedGoal?.display_instruction || t('chartRec.explorationStep', { step: createdTables.length + 1, question });
+                const displayInstruction = lastAgentDisplayInstruction || refinedGoal?.display_instruction || t('chartRec.explorationStep', { step: createdTables.length + 1, question });
 
                 // Chain from last created table, or focused table if first
                 const triggerTableId = lastCreatedTableId || focusedTableId!;
@@ -488,16 +547,19 @@ export const SimpleChartRecBox: FC = function () {
                         interaction: [
                             // Use the local accumulator (avoids stale closure)
                             ...currentDraftInteraction,
-                            // The instruction to the sub-agent
+                            // The instruction to the sub-agent (plan folded in)
                             {
                                 from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
+                                plan: lastAgentThought || undefined,
                                 content: question || displayInstruction,
+                                displayContent: displayInstruction,
                                 timestamp: Date.now(),
                             },
                         ],
                     }
                 };
                 lastAgentThought = null; // consumed
+                lastAgentDisplayInstruction = null; // consumed
                 if (transformedData.virtual) {
                     candidateTable.virtual = { tableId: transformedData.virtual.table_name, rowCount: transformedData.virtual.row_count };
                 }
@@ -567,6 +629,7 @@ export const SimpleChartRecBox: FC = function () {
                 if (currentDraftId) {
                     dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                         from: 'data-agent', to: 'datarec-agent', role: 'instruction',
+                        plan: lastAgentThought || undefined,
                         content: question || displayInstruction,
                         displayContent: displayInstruction,
                         timestamp: Date.now(),
@@ -588,14 +651,16 @@ export const SimpleChartRecBox: FC = function () {
             // Agent asks for clarification — pause and let user respond
             if (result.type === "clarify") {
                 const clarifyMsg = result.message || t('chartRec.couldYouClarify');
-                // Append thought + clarify entries to draft
+                const clarifyOptions: string[] = Array.isArray(result.options) ? result.options : [];
+                // Append clarify entry (with plan folded in) to draft
                 if (currentDraftId) {
-                    if (result.thought) {
-                        const thoughtEntry: InteractionEntry = { from: 'data-agent', to: 'data-agent', role: 'thought', content: result.thought, timestamp: Date.now() };
-                        dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: thoughtEntry }));
-                        currentDraftInteraction.push(thoughtEntry);
-                    }
-                    const clarifyEntry: InteractionEntry = { from: 'data-agent', to: 'user', role: 'clarify', content: clarifyMsg, timestamp: Date.now() };
+                    const clarifyEntry: InteractionEntry = {
+                        from: 'data-agent', to: 'user', role: 'clarify',
+                        plan: result.thought || undefined,
+                        content: clarifyMsg,
+                        options: clarifyOptions.length > 0 ? clarifyOptions : undefined,
+                        timestamp: Date.now(),
+                    };
                     dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: clarifyEntry }));
                     currentDraftInteraction.push(clarifyEntry);
                     dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
@@ -612,21 +677,20 @@ export const SimpleChartRecBox: FC = function () {
                 isCompleted = true; // prevent handleCompletion from firing
             }
 
-            // ── Capture completion thought + summary on the last created table's trigger ──
+            // ── Capture completion summary (with plan folded in) on the last created table's trigger ──
             if (result.type === "completion") {
                 if (lastCreatedTableId) {
-                    const entries: InteractionEntry[] = [];
-                    if (result.content?.thought) {
-                        entries.push({ from: 'data-agent', to: 'data-agent', role: 'thought', content: result.content.thought, timestamp: Date.now() });
-                    }
                     const summary = result.status === "max_iterations"
                         ? t('chartRec.maxIterationsReached')
                         : (result.content?.summary || result.content?.message || "");
                     if (summary) {
-                        entries.push({ from: 'data-agent', to: 'user', role: 'summary', content: summary, timestamp: Date.now() });
-                    }
-                    if (entries.length > 0) {
-                        dispatch(dfActions.appendTriggerInteraction({ tableId: lastCreatedTableId, entries }));
+                        const entry: InteractionEntry = {
+                            from: 'data-agent', to: 'user', role: 'summary',
+                            plan: result.content?.thought || undefined,
+                            content: summary,
+                            timestamp: Date.now(),
+                        };
+                        dispatch(dfActions.appendTriggerInteraction({ tableId: lastCreatedTableId, entries: [entry] }));
                     }
                 }
             }
@@ -780,17 +844,59 @@ export const SimpleChartRecBox: FC = function () {
             {/* Show clarification question above input when agent is asking */}
             {clarificationQuestion && pendingClarification && !isChatFormulating && (
                 <Box sx={{
-                    display: 'flex', alignItems: 'flex-start', gap: '6px',
+                    display: 'flex', flexDirection: 'column', gap: '6px',
                     px: 0.5, py: '6px',
                     borderBottom: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
                     backgroundColor: alpha(theme.palette.warning.main, 0.05),
                     borderRadius: '8px 8px 0 0',
                     mx: '-8px', mt: '-4px', mb: '4px', pt: '8px', pb: '6px',
                 }}>
-                    <SmartToyOutlinedIcon sx={{ fontSize: 14, color: theme.palette.warning.main, mt: '1px', flexShrink: 0 }} />
-                    <Typography sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {clarificationQuestion}
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                        <SmartToyOutlinedIcon sx={{ fontSize: 14, color: theme.palette.warning.main, mt: '1px', flexShrink: 0 }} />
+                        <Typography component="div" sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {renderFieldHighlights(clarificationQuestion, alpha(theme.palette.warning.main, 0.12))}
+                        </Typography>
+                    </Box>
+                    {clarificationOptions.length > 0 && (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '3px', pl: '20px' }}>
+                            {clarificationOptions.map((option, idx) => (
+                                <Box key={idx} sx={{ position: 'relative', width: 'fit-content', overflow: 'hidden', borderRadius: '6px' }}>
+                                    {/* Countdown fill behind the first (default) option */}
+                                    {idx === 0 && clarifyDeadline != null && (
+                                        <Box sx={{
+                                            position: 'absolute',
+                                            inset: 0,
+                                            transformOrigin: 'left center',
+                                            transform: `scaleX(${clarifyProgress})`,
+                                            background: `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.12)}, ${alpha(theme.palette.primary.light, 0.06)})`,
+                                            borderRadius: 'inherit',
+                                            pointerEvents: 'none',
+                                            zIndex: 0,
+                                        }} />
+                                    )}
+                                    <Typography component="div" variant="body2" onClick={() => { setClarifyDeadline(null); setChatPrompt(option); exploreFromChat(option, pendingClarification); }} sx={{
+                                        position: 'relative', zIndex: 1,
+                                        px: '8px', py: '4px',
+                                        borderRadius: '6px',
+                                        border: `1px solid ${idx === 0 ? alpha(theme.palette.primary.main, 0.25) : alpha(theme.palette.text.primary, 0.12)}`,
+                                        backgroundColor: idx === 0 ? 'transparent' : 'white',
+                                        cursor: 'pointer',
+                                        fontSize: 11,
+                                        width: 'fit-content',
+                                        lineHeight: 1.4,
+                                        color: theme.palette.text.primary,
+                                        transition: 'all 0.1s linear',
+                                        '&:hover': {
+                                            backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                                            borderColor: alpha(theme.palette.primary.main, 0.3),
+                                        },
+                                    }}>
+                                        {renderFieldHighlights(option, alpha(theme.palette.primary.main, 0.08))}
+                                    </Typography>
+                                </Box>
+                            ))}
+                        </Box>
+                    )}
                 </Box>
             )}
             {/* Idea chips inline */}
@@ -961,6 +1067,21 @@ export const SimpleChartRecBox: FC = function () {
                                 </IconButton>
                             </Tooltip>
                         )}
+                        <Tooltip title={t('report.createNewReport')}>
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    sx={{ p: 0.5, color: theme.palette.secondary.main }}
+                                    disabled={!focusedTableId || charts.filter(c => tables.some(t => t.id === c.tableRef)).length === 0}
+                                    onClick={() => {
+                                        dispatch(dfActions.setFocused(undefined));
+                                        dispatch(dfActions.setViewMode('report'));
+                                    }}
+                                >
+                                    <ArticleIcon sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
                         <Tooltip title={pendingClarification ? t('chartRec.sendReply') : t('chartRec.explore')}>
                             <span>
                                 <IconButton
@@ -990,7 +1111,7 @@ export const SimpleChartRecBox: FC = function () {
                     message={isLoadingIdeas && !isChatFormulating 
                         ? t('chartRec.generatingIdeas')
                         : draftNodes.find(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId))
-                            ?.derive?.trigger?.interaction?.filter(e => e.role === 'thought').pop()?.content}
+                            ?.derive?.runningPlan}
                     theme={theme}
                     onCancel={isLoadingIdeas && !isChatFormulating ? () => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); } : cancelAgent}
                 />
@@ -1006,6 +1127,7 @@ export const SimpleChartRecBox: FC = function () {
                 open={uploadDialogOpen}
                 onClose={() => setUploadDialogOpen(false)}
                 initialTab="menu"
+                hideSampleDatasets
             />
         </Box>
     );
