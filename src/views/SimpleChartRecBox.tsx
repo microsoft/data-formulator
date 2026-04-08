@@ -35,6 +35,7 @@ import ArticleIcon from '@mui/icons-material/Article';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ClearIcon from '@mui/icons-material/Clear';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
+import { renderFieldHighlights } from './InteractionEntryCard';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
@@ -61,14 +62,16 @@ const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () =>
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
                 <Typography sx={{
                     fontSize: 10,
-                    animation: 'agentWriting 1.2s ease-in-out infinite',
-                    '@keyframes agentWriting': {
-                        '0%, 100%': { transform: 'rotate(-15deg) translate(0, 0)' },
-                        '25%': { transform: 'rotate(-8deg) translate(2px, 1px)' },
-                        '50%': { transform: 'rotate(-15deg) translate(0, 0)' },
-                        '75%': { transform: 'rotate(-20deg) translate(-2px, 1px)' },
+                    display: 'inline-block',
+                    animation: 'writing-pencil 1s ease-in-out infinite',
+                    transformOrigin: 'bottom left',
+                    '@keyframes writing-pencil': {
+                        '0%': { transform: 'translate(0, 0) rotate(0deg)' },
+                        '25%': { transform: 'translate(3px, -1px) rotate(-5deg)' },
+                        '50%': { transform: 'translate(6px, 0) rotate(0deg)' },
+                        '75%': { transform: 'translate(3px, 1px) rotate(5deg)' },
+                        '100%': { transform: 'translate(0, 0) rotate(0deg)' },
                     },
-                    transformOrigin: 'bottom right',
                 }}>
                     ✏️
                 </Typography>
@@ -214,6 +217,49 @@ export const SimpleChartRecBox: FC = function () {
         const lastEntry = clarifyEntries && clarifyEntries.length > 0 ? clarifyEntries[clarifyEntries.length - 1] : null;
         return lastEntry?.options || [];
     }, [pendingClarification, draftNodes]);
+
+    // Clarification auto-select countdown (60s)
+    const CLARIFY_TIMEOUT_MS = 60_000;
+    const [clarifyDeadline, setClarifyDeadline] = useState<number | null>(null);
+    const [clarifyProgress, setClarifyProgress] = useState(1); // 1 → 0
+    const clarifyTimerRef = useRef<number | null>(null);
+
+    // Start / reset deadline whenever a new clarification appears
+    useEffect(() => {
+        if (pendingClarification && clarificationOptions.length > 0 && !isChatFormulating) {
+            setClarifyDeadline(Date.now() + CLARIFY_TIMEOUT_MS);
+            setClarifyProgress(1);
+        } else {
+            setClarifyDeadline(null);
+            setClarifyProgress(1);
+        }
+    }, [pendingClarification?.draftId, clarificationOptions.length, isChatFormulating]);
+
+    // Animate the countdown bar & auto-select on expiry
+    useEffect(() => {
+        if (clarifyDeadline == null) {
+            if (clarifyTimerRef.current) cancelAnimationFrame(clarifyTimerRef.current);
+            return;
+        }
+        const tick = () => {
+            const remaining = clarifyDeadline - Date.now();
+            if (remaining <= 0) {
+                setClarifyProgress(0);
+                setClarifyDeadline(null);
+                // Auto-select first option
+                if (clarificationOptions.length > 0 && pendingClarification) {
+                    const first = clarificationOptions[0];
+                    setChatPrompt(first);
+                    exploreFromChat(first, pendingClarification);
+                }
+                return;
+            }
+            setClarifyProgress(remaining / CLARIFY_TIMEOUT_MS);
+            clarifyTimerRef.current = requestAnimationFrame(tick);
+        };
+        clarifyTimerRef.current = requestAnimationFrame(tick);
+        return () => { if (clarifyTimerRef.current) cancelAnimationFrame(clarifyTimerRef.current); };
+    }, [clarifyDeadline]);
 
     const getIdeasFromAgent = useCallback(async () => {
         if (!currentTable || isLoadingIdeas) return;
@@ -807,31 +853,47 @@ export const SimpleChartRecBox: FC = function () {
                 }}>
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
                         <SmartToyOutlinedIcon sx={{ fontSize: 14, color: theme.palette.warning.main, mt: '1px', flexShrink: 0 }} />
-                        <Typography sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            {clarificationQuestion}
+                        <Typography component="div" sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {renderFieldHighlights(clarificationQuestion, alpha(theme.palette.warning.main, 0.12))}
                         </Typography>
                     </Box>
                     {clarificationOptions.length > 0 && (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '3px', pl: '20px' }}>
                             {clarificationOptions.map((option, idx) => (
-                                <Typography key={idx} component="div" variant="body2" onClick={() => { setChatPrompt(option); exploreFromChat(option, pendingClarification); }} sx={{
-                                    px: '8px', py: '4px',
-                                    borderRadius: '6px',
-                                    border: `1px solid ${alpha(theme.palette.text.primary, 0.12)}`,
-                                    backgroundColor: 'white',
-                                    cursor: 'pointer',
-                                    fontSize: 11,
-                                    width: 'fit-content',
-                                    lineHeight: 1.4,
-                                    color: theme.palette.text.primary,
-                                    transition: 'all 0.1s linear',
-                                    '&:hover': {
-                                        backgroundColor: alpha(theme.palette.primary.main, 0.06),
-                                        borderColor: alpha(theme.palette.primary.main, 0.3),
-                                    },
-                                }}>
-                                    {option}
-                                </Typography>
+                                <Box key={idx} sx={{ position: 'relative', width: 'fit-content', overflow: 'hidden', borderRadius: '6px' }}>
+                                    {/* Countdown fill behind the first (default) option */}
+                                    {idx === 0 && clarifyDeadline != null && (
+                                        <Box sx={{
+                                            position: 'absolute',
+                                            inset: 0,
+                                            transformOrigin: 'left center',
+                                            transform: `scaleX(${clarifyProgress})`,
+                                            background: `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.12)}, ${alpha(theme.palette.primary.light, 0.06)})`,
+                                            borderRadius: 'inherit',
+                                            pointerEvents: 'none',
+                                            zIndex: 0,
+                                        }} />
+                                    )}
+                                    <Typography component="div" variant="body2" onClick={() => { setClarifyDeadline(null); setChatPrompt(option); exploreFromChat(option, pendingClarification); }} sx={{
+                                        position: 'relative', zIndex: 1,
+                                        px: '8px', py: '4px',
+                                        borderRadius: '6px',
+                                        border: `1px solid ${idx === 0 ? alpha(theme.palette.primary.main, 0.25) : alpha(theme.palette.text.primary, 0.12)}`,
+                                        backgroundColor: idx === 0 ? 'transparent' : 'white',
+                                        cursor: 'pointer',
+                                        fontSize: 11,
+                                        width: 'fit-content',
+                                        lineHeight: 1.4,
+                                        color: theme.palette.text.primary,
+                                        transition: 'all 0.1s linear',
+                                        '&:hover': {
+                                            backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                                            borderColor: alpha(theme.palette.primary.main, 0.3),
+                                        },
+                                    }}>
+                                        {renderFieldHighlights(option, alpha(theme.palette.primary.main, 0.08))}
+                                    </Typography>
+                                </Box>
                             ))}
                         </Box>
                     )}

@@ -1451,7 +1451,7 @@ let SingleThreadGroupView: FC<{
 
         // For clarification items, show an hourglass icon
         if (item.isClarifying) {
-            return <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main }} />;
+            return <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main, animation: 'spin 2s ease-in-out infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />;
         }
 
         // For completed items, show a checkmark icon
@@ -1542,7 +1542,7 @@ let SingleThreadGroupView: FC<{
             const gutterIcon = item.isRunning
                 ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
                 : item.isClarifying
-                    ? <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main }} />
+                    ? <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main, animation: 'spin 2s ease-in-out infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
                     : entry
                         ? getEntryGutterIcon(entry, iconColor)
                         : getDefaultGutterIcon(iconColor);

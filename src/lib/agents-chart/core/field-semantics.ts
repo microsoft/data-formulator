@@ -746,17 +746,22 @@ export function resolveTickConstraint(
         return tc;
     }
 
-    // Score with bounded domain → integer ticks
+    // Score with bounded domain → integer ticks ONLY when domain span
+    // indicates meaningful integer steps.  For small spans like [0, 1],
+    // the values are continuous (e.g., outlier_score 0–1) and forcing
+    // integer ticks would remove all intermediate tick marks.
     if (semanticType === 'Score' && domain) {
         const span = domain[1] - domain[0];
-        const tc: TickConstraint = { integersOnly: true, minStep: 1 };
-        if (span <= 20 && span > 0) {
-            tc.exactTicks = [];
-            for (let i = domain[0]; i <= domain[1]; i++) {
-                tc.exactTicks.push(i);
+        if (span >= 2) {
+            const tc: TickConstraint = { integersOnly: true, minStep: 1 };
+            if (span <= 20) {
+                tc.exactTicks = [];
+                for (let i = domain[0]; i <= domain[1]; i++) {
+                    tc.exactTicks.push(i);
+                }
             }
+            return tc;
         }
-        return tc;
     }
 
     return undefined;

@@ -11,7 +11,7 @@ import { AgentIcon } from '../icons';
 import { radius, borderColor } from '../app/tokens';
 
 /** Render text with **field** markers as styled spans with subtle background. */
-function renderFieldHighlights(text: string, bgColor: string): React.ReactNode {
+export function renderFieldHighlights(text: string, bgColor: string): React.ReactNode {
     const parts = text.split(/(\*\*[^*]+\*\*)/g);
     return parts.map((part, i) => {
         const match = part.match(/^\*\*(.+)\*\*$/);
