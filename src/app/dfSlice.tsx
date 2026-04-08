@@ -567,6 +567,8 @@ export const dataFormulatorSlice = createSlice({
                 focusedId: saved.focusedId || (
                     saved.focusedChartId ? { type: 'chart' as const, chartId: saved.focusedChartId } :
                     saved.focusedTableId ? { type: 'table' as const, tableId: saved.focusedTableId } :
+                    (saved.charts && saved.charts.length > 0) ? { type: 'chart' as const, chartId: saved.charts[0].id } :
+                    (saved.tables && saved.tables.length > 0) ? { type: 'table' as const, tableId: saved.tables[0].id } :
                     undefined
                 ),
                 config: { ...initialState.config, ...(saved.config || {}) },

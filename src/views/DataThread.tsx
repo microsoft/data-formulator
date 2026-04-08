@@ -112,7 +112,7 @@ export const ThinkingBanner = (message: string, sx?: SxProps) => (
             fontSize: 10, 
             color: 'rgba(0, 0, 0, 0.7) !important'
         }}>
-            {message}
+            💭 {message}
         </Typography>
     </Box>
 );
@@ -1137,11 +1137,13 @@ let SingleThreadGroupView: FC<{
         extraProps?: Partial<TimelineItem>,
     ) => {
         entries.forEach((entry, ei) => {
+            // A clarify entry is resolved if a user prompt follows it in the same entries array
+            const isResolved = entry.role === 'clarify' && entries.slice(ei + 1).some(e => e.from === 'user');
             timelineItems.push({
                 key: `${keyPrefix}-${entry.role}-${tableId}-${ei}`,
                 type: triggerType,
                 highlighted,
-                element: <InteractionEntryCard entry={entry} highlighted={highlighted} />,
+                element: <InteractionEntryCard entry={entry} highlighted={highlighted} resolved={isResolved} />,
                 interactionEntry: entry,
                 ...extraProps,
             });
@@ -1268,13 +1270,10 @@ let SingleThreadGroupView: FC<{
                                 dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
                             }}
                         >
-                            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center' }}>
-                                {isGenerating && (
-                                    <CircularProgress size={14} thickness={5} sx={{ color: theme.palette.secondary.main, ml: 1, flexShrink: 0 }} />
-                                )}
+                            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0 }}>
                                 <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
                                     <Typography sx={{
-                                        fontSize: 12,
+                                        fontSize: 11,
                                         fontWeight: 500,
                                         color: 'text.primary',
                                         display: '-webkit-box',
@@ -1286,7 +1285,7 @@ let SingleThreadGroupView: FC<{
                                         {report.title || report.style || t('report.untitled')}
                                     </Typography>
                                     <Typography sx={{
-                                        fontSize: 10,
+                                        fontSize: 9,
                                         color: 'text.disabled',
                                         lineHeight: 1.3,
                                         mt: 0.25,
@@ -1540,9 +1539,13 @@ let SingleThreadGroupView: FC<{
             const iconColor = item.highlighted
                 ? (isFromUser ? theme.palette.custom.main : theme.palette.text.disabled)
                 : 'rgba(0,0,0,0.15)';
-            const gutterIcon = entry
-                ? getEntryGutterIcon(entry, iconColor)
-                : getDefaultGutterIcon(iconColor);
+            const gutterIcon = item.isRunning
+                ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
+                : item.isClarifying
+                    ? <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main }} />
+                    : entry
+                        ? getEntryGutterIcon(entry, iconColor)
+                        : getDefaultGutterIcon(iconColor);
 
             return (
                 <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
@@ -2561,6 +2564,25 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             direction: 'ltr',
             height: 'calc(100% - 16px)',
             width: panelWidth,
+            '&::-webkit-scrollbar': {
+                width: '8px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+                backgroundColor: 'transparent',
+                borderRadius: '4px',
+                transition: 'background-color 0.2s',
+            },
+            '&:hover::-webkit-scrollbar-thumb': {
+                backgroundColor: 'rgba(0,0,0,0.2)',
+            },
+            '&::-webkit-scrollbar-track': {
+                backgroundColor: 'transparent',
+            },
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'transparent transparent',
+            '&:hover': {
+                scrollbarColor: 'rgba(0,0,0,0.2) transparent',
+            },
         }}>
             <Box sx={{
                 display: 'flex',

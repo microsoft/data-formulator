@@ -59,7 +59,8 @@ which will write code, transform the data, and pick a chart type.
 {{
     "action": "visualize",
     "thought": "<your reasoning about what to explore next>",
-    "question": "<concise analytical question / instruction for the chart>"
+    "question": "<concise analytical question / instruction for the chart>",
+    "display_instruction": "<short verb phrase (<12 words) summarizing what this step does for the user. Bold **column names** with double asterisks.>"
 }}
 ```
 
@@ -257,6 +258,7 @@ class DataAgent:
                     "action": "visualize",
                     "thought": action.get("thought", ""),
                     "question": question,
+                    "display_instruction": action.get("display_instruction", ""),
                 }
 
                 # Execute the visualize action

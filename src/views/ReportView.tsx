@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useState, useRef, useEffect, useMemo } from 'react';
-import { borderColor, shadow, transition, radius } from '../app/tokens';
+import { borderColor, shadow, transition } from '../app/tokens';
 import {
     Box,
     Button,
@@ -12,15 +12,8 @@ import {
     Card,
     CardContent,
     CircularProgress,
-    Alert,
     Link,
-    Divider,
     Paper,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
     ToggleButton,
     ToggleButtonGroup,
     Tooltip,
@@ -30,187 +23,24 @@ import {
 import Masonry from '@mui/lab/Masonry';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import CreateChartifact from '@mui/icons-material/Description';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import ShareIcon from '@mui/icons-material/Share';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import html2canvas from 'html2canvas';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
 import { Message } from './MessageSnackbar';
-import { getUrls, assembleVegaChart, getTriggers, prepVisTable, fetchWithIdentity, getAgentLanguage } from '../app/utils';
-import { MuiMarkdown, getOverrides } from 'mui-markdown';
+import { getUrls, assembleVegaChart, getTriggers, prepVisTable, fetchWithIdentity } from '../app/utils';
 import embed from 'vega-embed';
 import { getDataTable } from './ChartUtils';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from '../app/store';
-import { Collapse } from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import { convertToChartifact, openChartifactViewer } from './ChartifactDialog';
+import { TiptapReportEditor } from './TiptapReportEditor';
+import { getCachedChart } from '../app/chartCache';
+
 import { StreamIcon } from '../icons';
 import { useTranslation } from 'react-i18next';
-
-// Typography constants
-const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
-const FONT_FAMILY_SERIF = 'Georgia, Cambria, "Times New Roman", Times, serif';
-const FONT_FAMILY_MONO = '"SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-
-// Color constants
-const COLOR_HEADING = 'rgb(37, 37, 37)';
-const COLOR_BODY = 'rgb(55, 53, 47)';
-const COLOR_MUTED = 'rgb(73, 73, 73)';
-const COLOR_BG_LIGHT = 'rgba(247, 246, 243, 1)';
-
-// Social post style constants (Twitter/X style)
-const COLOR_SOCIAL_TEXT = 'rgb(15, 20, 25)';
-const COLOR_SOCIAL_BORDER = 'rgb(207, 217, 222)';
-const COLOR_SOCIAL_ACCENT = 'rgb(29, 155, 240)';
-
-// Executive summary style constants (professional/business look)
-const COLOR_EXEC_TEXT = 'rgb(33, 37, 41)';
-const COLOR_EXEC_HEADING = 'rgb(20, 24, 28)';
-const COLOR_EXEC_BORDER = 'rgb(108, 117, 125)';
-const COLOR_EXEC_ACCENT = 'rgb(0, 123, 255)';
-const COLOR_EXEC_BG = 'rgb(248, 249, 250)';
-
-
-const HEADING_BASE = {
-    fontFamily: FONT_FAMILY_SYSTEM,
-    color: COLOR_HEADING,
-    fontWeight: 700,
-    letterSpacing: '-0.01em',
-};
-
-const BODY_TEXT_BASE = {
-    fontFamily: FONT_FAMILY_SYSTEM,
-    fontSize: '0.9375rem',
-    lineHeight: 1.75,
-    fontWeight: 400,
-    letterSpacing: '0.003em',
-    color: COLOR_BODY,
-};
-
-const TABLE_CELL_BASE = {
-    fontFamily: FONT_FAMILY_SYSTEM,
-    fontSize: '0.875rem',
-    py: 1.5,
-    px: 2,
-};
-
-// Notion-style markdown overrides with MUI components
-const notionStyleMarkdownOverrides = {
-    ...getOverrides(),
-    h1: { component: Typography, props: { variant: 'h4', gutterBottom: true, 
-        sx: { ...HEADING_BASE, fontSize: '1.75rem', lineHeight: 1.25, letterSpacing: '-0.02em', pb: 0.5, mb: 3, mt: 4 } } },
-    h2: { component: Typography, props: { variant: 'h5', gutterBottom: true,
-        sx: { ...HEADING_BASE, fontSize: '1.5rem', lineHeight: 1.3, pb: 0.5, mb: 2.5, mt: 3.5 } } },
-    h3: { component: Typography, props: { variant: 'h6', gutterBottom: true,
-        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1.25rem', lineHeight: 1.4, letterSpacing: '-0.005em', mb: 2, mt: 3 } } },
-    h4: { component: Typography, props: { variant: 'h6', gutterBottom: true,
-        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1.125rem', lineHeight: 1.4, mb: 1.5, mt: 2.5 } } },
-    h5: { component: Typography, props: { variant: 'subtitle1', gutterBottom: true,
-        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '1rem', lineHeight: 1.5, mb: 1.5, mt: 2 } } },
-    h6: { component: Typography, props: { variant: 'subtitle2', gutterBottom: true,
-        sx: { ...HEADING_BASE, fontWeight: 600, fontSize: '0.9375rem', lineHeight: 1.5, mb: 1.5, mt: 2 } } },
-    p: { component: Typography, props: { variant: 'body2', paragraph: true,
-        sx: { ...BODY_TEXT_BASE, mb: 1.75 } } },
-    a: { component: Link, props: { underline: 'hover' as const, color: 'primary' as const, 
-        sx: { fontSize: 'inherit', fontWeight: 500 } } },
-    ul: { component: 'ul', props: { style: { 
-        paddingLeft: '1.8em', marginTop: '0.75em', marginBottom: '1.5em', fontFamily: FONT_FAMILY_SYSTEM
-    } } },
-    ol: { component: 'ol', props: { style: { 
-        paddingLeft: '1.8em', marginTop: '0.75em', marginBottom: '1.5em', fontFamily: FONT_FAMILY_SYSTEM
-    } } },
-    li: { component: Typography, props: { component: 'li', variant: 'body1',
-        sx: { ...BODY_TEXT_BASE, mb: 0.5 } } },
-    blockquote: { component: Box, props: { sx: { 
-        borderLeft: '3px solid', borderColor: borderColor.component, pl: 2.5, py: 1, my: 2.5,
-        fontFamily: FONT_FAMILY_SERIF, fontStyle: 'italic', color: COLOR_MUTED, fontSize: '1rem', lineHeight: 1.7 
-    } } },
-    pre: { component: Paper, props: { elevation: 0, sx: { 
-        backgroundColor: COLOR_BG_LIGHT, p: 2, borderRadius: '4px', overflow: 'auto', my: 2, 
-        border: `1px solid ${borderColor.divider}`,
-        '& code': { 
-            backgroundColor: 'transparent !important', padding: '0 !important', fontSize: '0.8125rem',
-            fontFamily: FONT_FAMILY_MONO, lineHeight: 1.7, color: COLOR_BODY
-        } 
-    } } },
-    table: { component: TableContainer, props: { component: Paper, elevation: 0,
-        sx: { my: 2, border: `1px solid ${borderColor.divider}` } } },
-    thead: { component: TableHead, props: { sx: { backgroundColor: COLOR_BG_LIGHT } } },
-    tbody: { component: TableBody },
-    tr: { component: TableRow },
-    th: { component: TableCell, props: { sx: { 
-        ...TABLE_CELL_BASE, fontWeight: 600, borderBottom: `2px solid ${borderColor.divider}`
-    } } },
-    td: { component: TableCell, props: { sx: { 
-        ...TABLE_CELL_BASE, borderBottom: `1px solid ${borderColor.divider}`, lineHeight: 1.6 
-    } } },
-    hr: { component: Divider, props: { sx: { my: 3 } } }
-} as any;
-
-// Social post style markdown overrides (X/Twitter style)
-const socialStyleMarkdownOverrides = {
-    ...notionStyleMarkdownOverrides,
-    h1: { component: Typography, props: { variant: 'h6', gutterBottom: true, 
-        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontWeight: 700, fontSize: '1.125rem', 
-            lineHeight: 1.25, color: COLOR_SOCIAL_TEXT, mb: 1.5, mt: 1.5 } } },
-    h2: { component: Typography, props: { variant: 'h6', gutterBottom: true,
-        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontWeight: 700, fontSize: '1rem', 
-            lineHeight: 1.25, color: COLOR_SOCIAL_TEXT, mb: 1.25, mt: 1.5 } } },
-    h3: { component: Typography, props: { variant: 'subtitle1', gutterBottom: true,
-        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontWeight: 600, fontSize: '0.9375rem', 
-            lineHeight: 1.3, color: COLOR_SOCIAL_TEXT, mb: 1, mt: 1.25 } } },
-    p: { component: Typography, props: { variant: 'body2', paragraph: true,
-        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontSize: '0.875rem', lineHeight: 1.4, 
-            fontWeight: 400, mb: 0.75, color: COLOR_SOCIAL_TEXT } } },
-    li: { component: Typography, props: { component: 'li', variant: 'body2',
-        sx: { fontFamily: FONT_FAMILY_SYSTEM, fontSize: '0.875rem', lineHeight: 1.4, 
-            fontWeight: 400, mb: 0.25, color: COLOR_SOCIAL_TEXT } } }
-} as any;
-
-// Executive summary style markdown overrides (compact serif styling)
-const executiveSummaryMarkdownOverrides = {
-    ...getOverrides(),
-    h1: { component: Typography, props: { variant: 'h5', gutterBottom: true, 
-        sx: { fontFamily: FONT_FAMILY_SERIF, fontWeight: 700, fontSize: '1.25rem', lineHeight: 1.3, color: COLOR_EXEC_HEADING, mb: 2, mt: 2.5 } } },
-    h2: { component: Typography, props: { variant: 'h6', gutterBottom: true,
-        sx: { fontFamily: FONT_FAMILY_SERIF, fontWeight: 600, fontSize: '1.125rem', lineHeight: 1.3, color: COLOR_EXEC_HEADING, mb: 1.5, mt: 2 } } },
-    h3: { component: Typography, props: { variant: 'h6', gutterBottom: true,
-        sx: { fontFamily: FONT_FAMILY_SERIF, fontWeight: 600, fontSize: '1rem', lineHeight: 1.4, color: COLOR_EXEC_HEADING, mb: 1.25, mt: 1.5 } } },
-    h4: { component: Typography, props: { variant: 'subtitle1', gutterBottom: true,
-        sx: { fontFamily: FONT_FAMILY_SERIF, fontWeight: 600, fontSize: '0.9375rem', lineHeight: 1.4, color: COLOR_EXEC_HEADING, mb: 1, mt: 1.5 } } },
-    p: { component: Typography, props: { variant: 'body2', paragraph: true,
-        sx: { fontFamily: FONT_FAMILY_SERIF, fontSize: '0.875rem', lineHeight: 1.5, fontWeight: 400, color: COLOR_EXEC_TEXT, mb: 1.25, textAlign: 'justify' } } },
-    a: { component: Link, props: { underline: 'hover' as const, color: 'primary' as const, 
-        sx: { fontSize: 'inherit', fontWeight: 500, color: COLOR_EXEC_ACCENT, '&:hover': { color: 'rgb(0, 86, 179)' } } } },
-    ul: { component: 'ul', props: { style: { paddingLeft: '1.5em', marginTop: '0.5em', marginBottom: '1em', fontFamily: FONT_FAMILY_SERIF } } },
-    ol: { component: 'ol', props: { style: { paddingLeft: '1.5em', marginTop: '0.5em', marginBottom: '1em', fontFamily: FONT_FAMILY_SERIF } } },
-    li: { component: Typography, props: { component: 'li', variant: 'body2',
-        sx: { fontFamily: FONT_FAMILY_SERIF, fontSize: '0.875rem', lineHeight: 1.5, fontWeight: 400, color: COLOR_EXEC_TEXT, mb: 0.25 } } },
-    blockquote: { component: Box, props: { sx: { 
-        borderLeft: '2px solid', borderLeftColor: COLOR_EXEC_ACCENT, pl: 2, py: 1, my: 1.5,
-        backgroundColor: COLOR_EXEC_BG, fontFamily: FONT_FAMILY_SERIF, fontStyle: 'italic', color: COLOR_EXEC_TEXT, fontSize: '0.875rem', lineHeight: 1.6
-    } } },
-    pre: { component: Paper, props: { elevation: 0, sx: { 
-        backgroundColor: COLOR_EXEC_BG, p: 1.5, borderRadius: '4px', overflow: 'auto', my: 1.5,
-        '& code': { backgroundColor: 'transparent !important', padding: '0 !important', fontSize: '0.75rem', fontFamily: FONT_FAMILY_MONO, lineHeight: 1.5, color: COLOR_EXEC_TEXT }
-    } } },
-    table: { component: TableContainer, props: { component: Paper, elevation: 0, sx: { my: 1.5, borderRadius: '4px' } } },
-    thead: { component: TableHead, props: { sx: { backgroundColor: COLOR_EXEC_BG } } },
-    tbody: { component: TableBody },
-    tr: { component: TableRow },
-    th: { component: TableCell, props: { sx: { 
-        fontFamily: FONT_FAMILY_SERIF, fontSize: '0.8125rem', py: 1, px: 1.5, fontWeight: 600, borderBottom: '1px solid', borderColor: COLOR_EXEC_BORDER, color: COLOR_EXEC_HEADING
-    } } },
-    td: { component: TableCell, props: { sx: { 
-        fontFamily: FONT_FAMILY_SERIF, fontSize: '0.8125rem', py: 1, px: 1.5, borderBottom: '1px solid', borderColor: COLOR_EXEC_BORDER, lineHeight: 1.5, color: COLOR_EXEC_TEXT
-    } } },
-    hr: { component: Divider, props: { sx: { my: 2, borderColor: COLOR_EXEC_BORDER } } }
-} as any;
 
 export const ReportView: FC = () => {
     // Get all generated reports from Redux state
@@ -244,7 +74,7 @@ export const ReportView: FC = () => {
     const [previewImages, setPreviewImages] = useState<Map<string, { url: string; width: number; height: number }>>(new Map());
     const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
-    const [error, setError] = useState<string>('');
+
     const [style, setStyle] = useState<string>('social post');
     const [mode, setMode] = useState<'compose' | 'post'>(allGeneratedReports.length > 0 ? 'post' : 'compose');
 
@@ -254,7 +84,7 @@ export const ReportView: FC = () => {
     const [generatedStyle, setGeneratedStyle] = useState<string>('social post');
     const [cachedReportImages, setCachedReportImages] = useState<Record<string, { url: string; width: number; height: number }>>({});
     const [shareButtonSuccess, setShareButtonSuccess] = useState(false);
-    const [hideTableOfContents, setHideTableOfContents] = useState(false);
+    const [copyButtonSuccess, setCopyButtonSuccess] = useState(false);
 
     const updateCachedReportImages = (chartId: string, blobUrl: string, width: number, height: number) => {
         setCachedReportImages(prev => ({
@@ -337,8 +167,9 @@ export const ReportView: FC = () => {
         const markdownMatch = rawReport.match(/```markdown\n([\s\S]*?)(?:\n```)?$/);
         let processed = markdownMatch ? markdownMatch[1] : rawReport;
 
-        const makeImg = (url: string, width: number, height: number) =>
-            `<img src="${url}" alt="${t('report.chartAlt')}" width="${width}" height="${height}" />`;
+        const makeImg = (chartId: string, url: string, width: number, height: number) => {
+            return `<img src="${url}" alt="${t('report.chartAlt')}" data-chart-id="${chartId}" width="${width}" height="${height}" style="max-width:100%;" />`;
+        };
 
         const usedKeys = new Set<string>();
         Object.entries(cachedReportImages).forEach(([chartId, { url, width, height }]) => {
@@ -346,20 +177,26 @@ export const ReportView: FC = () => {
             const regex = new RegExp(`\\[IMAGE\\(${escaped}\\)\\]`, 'g');
             if (regex.test(processed)) {
                 usedKeys.add(chartId);
-                processed = processed.replace(regex, makeImg(url, width, height));
+                processed = processed.replace(regex, makeImg(chartId, url, width, height));
             }
         });
 
         const unusedEntries = Object.entries(cachedReportImages)
-            .filter(([key]) => !usedKeys.has(key))
-            .map(([, entry]) => entry);
+            .filter(([key]) => !usedKeys.has(key));
         let unusedIdx = 0;
         processed = processed.replace(/\[IMAGE\([^\)]+\)\]/g, () => {
             if (unusedIdx < unusedEntries.length) {
-                const { url, width, height } = unusedEntries[unusedIdx++];
-                return makeImg(url, width, height);
+                const [chartId, { url, width, height }] = unusedEntries[unusedIdx++];
+                return makeImg(chartId, url, width, height);
             }
             return '';
+        });
+
+        // Refresh stale <img> tags that have data-chart-id with updated blob URLs
+        Object.entries(cachedReportImages).forEach(([chartId, { url, width, height }]) => {
+            const escaped = chartId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const imgRegex = new RegExp(`<img([^>]*?)data-chart-id="${escaped}"([^>]*?)>`, 'g');
+            processed = processed.replace(imgRegex, makeImg(chartId, url, width, height));
         });
 
         return processed;
@@ -375,13 +212,20 @@ export const ReportView: FC = () => {
             report.selectedChartIds.forEach((chartId) => {
                 const chart = charts.find(c => c.id === chartId);
                 if (!chart) return;
+                if (chart.chartType === 'Table' || chart.chartType === '?') return;
 
-                const chartTable = tables.find(t => t.id === chart.tableRef);
-                if (!chartTable) return;
-
-                if (chart.chartType === 'Table' || chart.chartType === '?') {
+                // Try SVG cache first (instant, high quality)
+                const cached = getCachedChart(chartId);
+                if (cached?.svg) {
+                    const blob = new Blob([cached.svg], { type: 'image/svg+xml;charset=utf-8' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    updateCachedReportImages(chartId, blobUrl, config.defaultChartWidth, config.defaultChartHeight);
                     return;
                 }
+
+                // Fall back to full Vega render
+                const chartTable = tables.find(t => t.id === chart.tableRef);
+                if (!chartTable) return;
                 getChartImageFromVega(chart, chartTable).then(({ blobUrl, width, height }) => {
                     if (blobUrl) {
                         updateCachedReportImages(chart.id, blobUrl, width, height);
@@ -408,12 +252,13 @@ export const ReportView: FC = () => {
     }, [focusedReportId]);
 
     // When a report is focused via the thread, load it automatically
+    // Re-runs when charts/tables load so images render on initial page load
     useEffect(() => {
-        if (focusedReportId && focusedReportId !== currentReportId) {
+        if (focusedReportId) {
             loadReport(focusedReportId);
-            setMode('post');
+            if (mode !== 'post') setMode('post');
         }
-    }, [focusedReportId]);
+    }, [focusedReportId, charts, tables]);
 
     // Auto-refresh chart images when underlying table data changes
     // This enables real-time chart updates in reports when data is streaming
@@ -525,7 +370,7 @@ export const ReportView: FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Only cleanup on unmount, not when images change
 
-    // Use existing thumbnails from ChartRenderService instead of re-rendering
+    // Use cached SVG (high-res) for chart previews, falling back to thumbnail PNG
     useEffect(() => {
         const newPreviewImages = new Map<string, { url: string; width: number; height: number }>();
 
@@ -538,8 +383,17 @@ export const ReportView: FC = () => {
 
         for (const chart of sortedCharts) {
             if (chart.chartType === 'Table' || chart.chartType === '?' || chart.chartType === 'Auto') continue;
-            if (chart.thumbnail) {
-                // Use the pre-rendered thumbnail from ChartRenderService
+            const cached = getCachedChart(chart.id);
+            if (cached?.svg) {
+                // Use SVG blob URL for crisp rendering at any size
+                const blob = new Blob([cached.svg], { type: 'image/svg+xml;charset=utf-8' });
+                newPreviewImages.set(chart.id, {
+                    url: URL.createObjectURL(blob),
+                    width: config.defaultChartWidth,
+                    height: config.defaultChartHeight,
+                });
+            } else if (chart.thumbnail) {
+                // Fallback to low-res thumbnail
                 newPreviewImages.set(chart.id, {
                     url: chart.thumbnail,
                     width: config.defaultChartWidth,
@@ -615,24 +469,19 @@ export const ReportView: FC = () => {
                     renderer: 'svg'
                 });
 
+                // Get the actual rendered dimensions from the Vega view (1x)
+                const viewWidth = result.view.width();
+                const viewHeight = result.view.height();
+                const padding = result.view.padding() as any;
+                const displayWidth = viewWidth + (padding.left || 0) + (padding.right || 0);
+                const displayHeight = viewHeight + (padding.top || 0) + (padding.bottom || 0);
+
                 // Export to SVG with high resolution
-                const svgString = await result.view.toSVG(4);
-                
-                // Parse SVG to get original dimensions
-                const parser = new DOMParser();
-                const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-                const svgElement = svgDoc.querySelector('svg');
-                
-                if (!svgElement) {
-                    throw new Error(t('report.couldNotParseSvg'));
-                }
-                
-                // Get original dimensions
-                const originalWidth = parseFloat(svgElement.getAttribute('width') || '0');
-                const originalHeight = parseFloat(svgElement.getAttribute('height') || '0');
-                
+                const svgScale = 4;
+                const svgString = await result.view.toSVG(svgScale);
+
                 // Convert SVG to PNG using canvas
-                const { dataUrl, blobUrl } = await new Promise<{ dataUrl: string; blobUrl: string }>((resolve, reject) => {
+                const { dataUrl, blobUrl, imgDisplayWidth, imgDisplayHeight } = await new Promise<{ dataUrl: string; blobUrl: string; imgDisplayWidth: number; imgDisplayHeight: number }>((resolve, reject) => {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     if (!ctx) {
@@ -647,6 +496,9 @@ export const ReportView: FC = () => {
                     img.onload = () => {
                         canvas.width = img.width;
                         canvas.height = img.height;
+                        // Store 1x display dimensions (PNG is rendered at svgScale×)
+                        const imgDisplayWidth = Math.round(img.width / svgScale);
+                        const imgDisplayHeight = Math.round(img.height / svgScale);
                         ctx.drawImage(img, 0, 0);
                         URL.revokeObjectURL(svgUrl);
                         
@@ -655,9 +507,9 @@ export const ReportView: FC = () => {
                         canvas.toBlob((blob) => {
                             if (blob) {
                                 const blobUrl = URL.createObjectURL(blob);
-                                resolve({ dataUrl, blobUrl });
+                                resolve({ dataUrl, blobUrl, imgDisplayWidth, imgDisplayHeight });
                             } else {
-                                resolve({ dataUrl, blobUrl: '' });
+                                resolve({ dataUrl, blobUrl: '', imgDisplayWidth, imgDisplayHeight });
                             }
                         }, 'image/png');
                     };
@@ -672,7 +524,7 @@ export const ReportView: FC = () => {
 
                 document.body.removeChild(tempDiv);
 
-                return { dataUrl, blobUrl, width: originalWidth, height: originalHeight };
+                return { dataUrl, blobUrl, width: imgDisplayWidth, height: imgDisplayHeight };
             } catch (error) {
                 if (document.body.contains(tempDiv)) {
                     document.body.removeChild(tempDiv);
@@ -687,12 +539,11 @@ export const ReportView: FC = () => {
 
     const generateReport = async () => {
         if (selectedChartIds.size === 0) {
-            setError(t('report.pleaseSelectChart'));
+            showMessage(t('report.pleaseSelectChart'), 'error');
             return;
         }
 
         setIsGenerating(true);
-        setError('');
         setGeneratedReport('');
         setGeneratedStyle(style);
 
@@ -867,7 +718,7 @@ export const ReportView: FC = () => {
             }
 
         } catch (err) {
-            setError((err as Error).message || t('report.failedToGenerateReport'));
+            showMessage((err as Error).message || t('report.failedToGenerateReport'), 'error');
             // Mark the in-progress report as errored (if it was created)
             dispatch(dfActions.updateGeneratedReportContent({ id: reportId, content: '', status: 'error' }));
         } finally {
@@ -896,8 +747,7 @@ export const ReportView: FC = () => {
         }
     };
 
-    let displayedReport = isGenerating ? 
-        `${generatedReport} <span class="pencil" style="opacity: 0.4; margin-left: 2px;">✏️</span>` : generatedReport;
+    let displayedReport = generatedReport;
     displayedReport = processReport(displayedReport);
 
     return (
@@ -1039,12 +889,6 @@ export const ReportView: FC = () => {
                     </Box>
                     
                     <Box sx={{ py: 2, px: 6 }}>
-                        {error && (
-                            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-                                {error}
-                            </Alert>
-                        )}
-
                         {sortedCharts.length === 0 ? (
                             <Typography color="text.secondary">
                                 {t('report.noChartsAvailable')}
@@ -1140,169 +984,132 @@ export const ReportView: FC = () => {
                     </Box>
                 </Box>
             ) : mode === 'post' ? (
-                <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between',  }}>
-                        <Button
-                            size="small"
-                            disabled={isGenerating}
-                            startIcon={<ArrowBackIcon />}
-                            sx={{ textTransform: 'none' }}
-                            onClick={() => setMode('compose')}
-                        >
-                            {t('report.createNewReport')}
-                        </Button>
-                        <Typography variant="body2" color="text.secondary">
-                            {t('report.aiDisclaimer')}
-                        </Typography>
+                <Box sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
+                    {/* Floating action buttons — left side */}
+                    <Box sx={{
+                        position: 'absolute',
+                        top: 12,
+                        left: 12,
+                        zIndex: 10,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1,
+                    }}>
+                        <Tooltip title={t('report.createNewReport')} placement="right">
+                            <IconButton
+                                size="small"
+                                disabled={isGenerating}
+                                onClick={() => setMode('compose')}
+                                sx={{
+                                    backgroundColor: 'background.paper',
+                                    boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                                    '&:hover': { backgroundColor: 'action.hover' },
+                                }}
+                            >
+                                <ArrowBackIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                        </Tooltip>
+                        {currentReportId && (
+                            <>
+                                <Tooltip title={copyButtonSuccess ? t('report.copied') : t('report.copyContent')} placement="right">
+                                    <IconButton
+                                        size="small"
+                                        color={copyButtonSuccess ? 'success' : 'default'}
+                                        onClick={async () => {
+                                            const reportEl = document.querySelector('[data-report-content]') as HTMLElement;
+                                            if (!reportEl) return;
+                                            const html = reportEl.innerHTML;
+                                            const text = reportEl.innerText;
+                                            try {
+                                                await navigator.clipboard.write([
+                                                    new ClipboardItem({
+                                                        'text/html': new Blob([html], { type: 'text/html' }),
+                                                        'text/plain': new Blob([text], { type: 'text/plain' }),
+                                                    }),
+                                                ]);
+                                                setCopyButtonSuccess(true);
+                                                setTimeout(() => setCopyButtonSuccess(false), 2000);
+                                            } catch (e) {
+                                                console.warn('Failed to copy report content:', e);
+                                            }
+                                        }}
+                                        sx={{
+                                            backgroundColor: 'background.paper',
+                                            boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                                            '&:hover': { backgroundColor: 'action.hover' },
+                                        }}
+                                    >
+                                        {copyButtonSuccess ? <CheckCircleIcon sx={{ fontSize: 18 }} /> : <ContentCopyIcon sx={{ fontSize: 18 }} />}
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title={t('report.deleteReport')} placement="right">
+                                    <IconButton
+                                        size="small"
+                                        onClick={(e) => deleteReport(currentReportId, e)}
+                                        sx={{
+                                            backgroundColor: 'background.paper',
+                                            boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                                            color: 'error.main',
+                                            '&:hover': { backgroundColor: 'error.50' },
+                                        }}
+                                    >
+                                        <DeleteIcon sx={{ fontSize: 18 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            </>
+                        )}
                     </Box>
-                    <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-                        {/* Main Content Area */}
-                        <Box sx={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
-                            {/* Action Buttons */}
-                            {currentReportId && (
-                                <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 10, display: 'flex', gap: 1 }}>
-                                    <Tooltip title={t('report.createChartifactReport')}>
-                                        <Button
-                                            variant="contained"
-                                            size="small"
-                                            onClick={() => {
-                                                // Convert report to Chartifact markdown format
-                                                const chartifactMarkdown = convertToChartifact(
-                                                    generatedReport,
-                                                    generatedStyle,
-                                                    charts,
-                                                    tables,
-                                                    conceptShelfItems,
-                                                    config
-                                                );
-                                                openChartifactViewer(chartifactMarkdown);
-                                            }}
-                                            sx={{
-                                                textTransform: 'none',
-                                                backgroundColor: 'primary.main',
-                                                color: 'white',
-                                                '&:hover': {
-                                                    backgroundColor: 'primary.dark',
-                                                },
-                                            }}
-                                            startIcon={<CreateChartifact />}
-                                        >
-                                            {t('report.createChartifact')}
-                                        </Button>
-                                    </Tooltip>
-                                    <Tooltip title={t('report.shareReportAsImage')}>
-                                        <Button
-                                            variant="contained"
-                                            size="small"
-                                            startIcon={
-                                                shareButtonSuccess ? <CheckCircleIcon /> : <ShareIcon />
-                                            }
-                                            onClick={shareReportAsImage}
-                                            sx={{
-                                                textTransform: 'none',
-                                                backgroundColor: shareButtonSuccess ? 'success.main' : 'primary.main',
-                                                color: 'white',
-                                                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                opacity: shareButtonSuccess ? 0.9 : 1,
-                                                transform: shareButtonSuccess ? 'scale(0.98)' : 'scale(1)',
-                                                animation: shareButtonSuccess ? 'pulse 0.6s ease-in-out' : 'none',
-                                                '@keyframes pulse': {
-                                                    '0%': { transform: 'scale(0.98)' },
-                                                    '50%': { transform: 'scale(1.05)' },
-                                                    '100%': { transform: 'scale(0.98)' }
-                                                },
-                                                '&:hover': {
-                                                    backgroundColor: shareButtonSuccess ? 'success.dark' : 'primary.dark',
-                                                },
-                                            }}
-                                        >
-                                            {shareButtonSuccess ? t('report.copied') : t('report.shareImage')}
-                                        </Button>
-                                    </Tooltip>
-                                </Box>
-                            )}
+                    {/* Continuous canvas — content flows cleanly */}
+                    <Box sx={{ 
+                        height: '100%', overflow: 'auto', 
+                        display: 'flex', justifyContent: 'center',
+                    }}>
+                        <Box
+                            data-report-content
+                            sx={{
+                                width: '100%',
+                                maxWidth: '816px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                minHeight: 'fit-content',
+                                alignSelf: 'flex-start',
+                            }}
+                        >
+                            <TiptapReportEditor
+                                content={displayedReport}
+                                editable={!isGenerating}
+                                reportId={currentReportId}
+                                onUpdate={(html) => {
+                                    if (currentReportId) {
+                                        setGeneratedReport(html);
+                                        dispatch(dfActions.updateGeneratedReportContent({ id: currentReportId, content: html }));
+                                    }
+                                }}
+                            />
                             
-                            <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 3 }}>
-                                <Box
-                                    data-report-content
-                                    sx={{
-                                        // Common styles
-                                        width: '100%',
-                                        WebkitFontSmoothing: 'antialiased',
-                                        MozOsxFontSmoothing: 'grayscale',
-                                        '& em': { fontStyle: 'italic' },
-                                        
-                                        // Conditional styles
-                                        ...(generatedStyle === 'social post' || generatedStyle === 'short note' ? {
-                                            maxWidth: '520px', borderRadius: '12px',
-                                            border: '1px solid', borderColor: COLOR_SOCIAL_BORDER, p: 2.5, backgroundColor: 'white',
-                                            fontFamily: FONT_FAMILY_SYSTEM, fontSize: '0.875rem', fontWeight: 400, lineHeight: 1.4,
-                                            color: COLOR_SOCIAL_TEXT,
-                                            '& code': {
-                                                backgroundColor: `${COLOR_SOCIAL_ACCENT}1A`, color: COLOR_SOCIAL_ACCENT,
-                                                padding: '0.1em 0.25em', borderRadius: '3px',
-                                                fontSize: '0.8125rem', fontWeight: 500, fontFamily: FONT_FAMILY_MONO
-                                            },
-                                            '& strong': { fontWeight: 600, color: COLOR_SOCIAL_TEXT },
-                                            '& img': { width: '100%', maxWidth: '100%', height: 'auto', maxHeight: '280px', objectFit: 'contain', borderRadius: '8px', marginTop: '8px', marginBottom: '8px' }
-                                        } : generatedStyle === 'executive summary' ? {
-                                            maxWidth: '700px', p: 2.5, backgroundColor: 'white',
-                                            fontFamily: FONT_FAMILY_SERIF, fontSize: '0.875rem', lineHeight: 1.5, color: COLOR_EXEC_TEXT,
-                                            '& code': { backgroundColor: COLOR_EXEC_BG, color: COLOR_EXEC_ACCENT, padding: '0.1em 0.25em', borderRadius: '2px', fontSize: '0.75rem', fontFamily: FONT_FAMILY_MONO },
-                                            '& strong': { fontWeight: 600, color: COLOR_EXEC_HEADING },
-                                            '& img': { maxWidth: '70%', maxHeight: config.defaultChartHeight * 1.5, objectFit: 'contain', width: 'auto', height: 'auto', borderRadius: '3px', marginTop: '1em', marginBottom: '1em' }
-                                        } : { 
-                                            maxWidth: '800px', px: 6, py: 0, backgroundColor: 'background.paper',
-                                            ...BODY_TEXT_BASE,
-                                            '& code': {
-                                                backgroundColor: 'rgba(135, 131, 120, 0.15)', color: '#eb5757',
-                                                padding: '0.2em 0.4em', borderRadius: '3px',
-                                                fontSize: '0.875rem', fontWeight: 500, fontFamily: FONT_FAMILY_MONO
-                                            },
-                                            '& strong': { fontWeight: 600, color: COLOR_HEADING },
-                                            '& img': {
-                                                maxWidth: '75%', maxHeight: config.defaultChartHeight * 1.5,
-                                                width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: '4px',
-                                                marginTop: '1.75em', marginBottom: '1.75em',
-                                            }
-                                        })
+                            {/* Attribution */}
+                            <Typography sx={{ 
+                                px: 3, pb: 2,
+                                textAlign: 'center',
+                                fontSize: '0.7rem',
+                                color: 'text.disabled',
+                            }}>
+                                {t('report.createdWithAI')}{' '}
+                                <Link 
+                                    href="https://github.com/microsoft/data-formulator" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    sx={{ 
+                                        color: 'text.disabled',
+                                        textDecoration: 'none',
+                                        '&:hover': {
+                                            textDecoration: 'underline'
+                                        }
                                     }}
                                 >
-                                    <MuiMarkdown overrides={
-                                        generatedStyle === 'social post' || generatedStyle === 'short note' 
-                                            ? socialStyleMarkdownOverrides 
-                                            : generatedStyle === 'executive summary'
-                                            ? executiveSummaryMarkdownOverrides
-                                            : notionStyleMarkdownOverrides
-                                    }>{displayedReport}</MuiMarkdown>
-                                    
-                                    {/* Attribution */}
-                                    <Box sx={{ 
-                                        mt: 3, 
-                                        pt: 2, 
-                                        borderTop: '1px solid #e0e0e0',
-                                        textAlign: 'center',
-                                        fontSize: '0.75rem',
-                                        color: '#666'
-                                    }}>
-                                        {t('report.createdWithAI')}{' '}
-                                        <Link 
-                                            href="https://github.com/microsoft/data-formulator" 
-                                            target="_blank" 
-                                            rel="noopener noreferrer"
-                                            sx={{ 
-                                                color: '#1976d2',
-                                                textDecoration: 'none',
-                                                '&:hover': {
-                                                    textDecoration: 'underline'
-                                                }
-                                            }}
-                                        >
-                                            https://github.com/microsoft/data-formulator
-                                        </Link>
-                                    </Box>
-                                </Box>
-                            </Box>
+                                    https://github.com/microsoft/data-formulator
+                                </Link>
+                            </Typography>
                         </Box>
                     </Box>
                 </Box>

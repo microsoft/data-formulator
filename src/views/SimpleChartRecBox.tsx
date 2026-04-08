@@ -441,8 +441,9 @@ export const SimpleChartRecBox: FC = function () {
             createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
         }
 
-        // Track the last agent thought (from "action" events) to include in the trigger
+        // Track the last agent thought and display_instruction (from "action" events)
         let lastAgentThought: string | null = null;
+        let lastAgentDisplayInstruction: string | null = null;
 
         const genTableId = () => {
             let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
@@ -458,6 +459,7 @@ export const SimpleChartRecBox: FC = function () {
             // Agent planning / choosing next action
             if (result.type === "action" && result.action === "visualize") {
                 lastAgentThought = result.thought || null;
+                lastAgentDisplayInstruction = result.display_instruction || null;
                 // Plan is stored as a field on the upcoming instruction entry — not as a separate entry.
                 // Show the plan text on the running draft so the user sees live reasoning.
                 if (currentDraftId) {
@@ -478,7 +480,7 @@ export const SimpleChartRecBox: FC = function () {
 
                 const rows = transformedData.rows;
                 const candidateTableId = transformedData.virtual?.table_name || genTableId();
-                const displayInstruction = refinedGoal?.display_instruction || t('chartRec.explorationStep', { step: createdTables.length + 1, question });
+                const displayInstruction = lastAgentDisplayInstruction || refinedGoal?.display_instruction || t('chartRec.explorationStep', { step: createdTables.length + 1, question });
 
                 // Chain from last created table, or focused table if first
                 const triggerTableId = lastCreatedTableId || focusedTableId!;
@@ -504,12 +506,14 @@ export const SimpleChartRecBox: FC = function () {
                                 from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
                                 plan: lastAgentThought || undefined,
                                 content: question || displayInstruction,
+                                displayContent: displayInstruction,
                                 timestamp: Date.now(),
                             },
                         ],
                     }
                 };
                 lastAgentThought = null; // consumed
+                lastAgentDisplayInstruction = null; // consumed
                 if (transformedData.virtual) {
                     candidateTable.virtual = { tableId: transformedData.virtual.table_name, rowCount: transformedData.virtual.row_count };
                 }
@@ -1061,6 +1065,7 @@ export const SimpleChartRecBox: FC = function () {
                 open={uploadDialogOpen}
                 onClose={() => setUploadDialogOpen(false)}
                 initialTab="menu"
+                hideSampleDatasets
             />
         </Box>
     );

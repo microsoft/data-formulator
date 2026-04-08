@@ -47,7 +47,6 @@ import { AppDispatch } from '../app/store';
 import Markdown from 'markdown-to-jsx';
 
 import CheckIcon from '@mui/icons-material/Check';
-import MuiMarkdown from 'mui-markdown';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import UploadFileIcon from '@mui/icons-material/UploadFile';

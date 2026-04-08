@@ -835,7 +835,14 @@ def generate_report_stream():
             style = content.get("style", "blog post")
             identity_id = get_identity_id()
             workspace = get_workspace(identity_id)
-            temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
+            # Include both input tables and chart data tables as temp data
+            # so derived tables referenced by charts are also available
+            all_tables = list(input_tables)
+            for chart in charts:
+                chart_data = chart.get("chart_data")
+                if chart_data and chart_data.get("name") and chart_data.get("rows"):
+                    all_tables.append(chart_data)
+            temp_data = get_temp_tables(workspace, all_tables) if all_tables else None
 
             with WorkspaceWithTempData(workspace, temp_data) as workspace:
                 agent = ReportGenAgent(client=client, workspace=workspace,
@@ -844,9 +851,9 @@ def generate_report_stream():
                     for chunk in agent.stream(input_tables, charts, style):
                         yield chunk
                 except Exception as e:
-                    logger.error(e)
+                    logger.exception("generate-report-stream failed")
                     error_data = { 
-                        "content": "unable to process report generation request" 
+                        "content": sanitize_model_error(str(e)) 
                     }
                     yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:

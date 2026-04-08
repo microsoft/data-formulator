@@ -181,12 +181,14 @@ export interface DataLoadMenuProps {
     onSelectTab: (tab: UploadTabType) => void;
     serverConfig?: { DISABLE_DATABASE?: boolean };
     variant?: 'dialog' | 'page'; // 'dialog' uses smaller cards, 'page' uses larger cards
+    hideSampleDatasets?: boolean;
 }
 
 export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({ 
     onSelectTab, 
     serverConfig = { DISABLE_DATABASE: false },
-    variant = 'dialog'
+    variant = 'dialog',
+    hideSampleDatasets = false
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -220,7 +222,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             icon: <ImageSearchIcon />, 
             disabled: false
         },
-    ];
+    ].filter(source => !(hideSampleDatasets && source.value === 'explore'));
 
     const liveDataSources = [
         { 
@@ -444,12 +446,14 @@ export interface UnifiedDataUploadDialogProps {
     open: boolean;
     onClose: () => void;
     initialTab?: UploadTabType;
+    hideSampleDatasets?: boolean;
 }
 
 export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = ({
     open,
     onClose,
     initialTab = 'menu',
+    hideSampleDatasets = false,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -1143,6 +1147,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             onSelectTab={(tab) => setActiveTab(tab)}
                             serverConfig={serverConfig}
                             variant="dialog"
+                            hideSampleDatasets={hideSampleDatasets}
                         />
                     </Box>
                 </TabPanel>

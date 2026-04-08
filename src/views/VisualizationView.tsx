@@ -1032,7 +1032,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
     let focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
+        const chartId = (focusedId as { type: 'chart'; chartId: string }).chartId;
         const chart = allCharts.find(c => c.id === chartId);
         return chart?.tableRef;
     }, [focusedId, allCharts]);
