@@ -836,8 +836,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </Fade>;
 
     focusedComponent = [
-        <Box key="chart-focused-element" className="chart-focused-box"  sx={{ minHeight: 'min(75vh, 800px)', width: "100%", m: "auto", display: "flex", flexDirection: "column", flex: 1, justifyContent: 'center'}}>
-            {focusedElement}
+        <Box key="chart-focused-element" className="chart-focused-box"  sx={{ minHeight: 'min(75vh, 800px)', width: "100%", display: "flex", flexDirection: "column", flexShrink: 0}}>
+            <Box sx={{ my: 'auto' }}>
+                {focusedElement}
+            </Box>
             <Box key='chart-action-buttons' sx={{ 
                 display: 'flex', flexShrink: 0, flexDirection: "row", alignItems: 'center',
                 mx: "auto", py: 0.5, gap: 0.25,
@@ -853,7 +855,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     transition: 'box-shadow 0.2s ease',
                     '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
                 };
-                return <>
+                return <Box sx={{ px: 2 }}>
                     {bottomTab === 'data' && (() => {
                         const ROW_HEIGHT = 25;
                         const HEADER_HEIGHT = 32;
@@ -965,7 +967,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                             )}
                         </Box>
                     )}
-                </>;
+                </Box>;
             })()}
         </React.Fragment>,
         <Box key="bottom-spacer" sx={{ flexShrink: 0, height: 16 }} />,
