@@ -159,7 +159,7 @@ Layer 2: DataSourcePlugin  ──依赖──→  Layer 1: AuthProvider (身份 
 |------|-------------|-----------------|-----------------|
 | 抽象基类 | `AuthProvider(ABC)` | `DataSourcePlugin(ABC)` | `CredentialVault(ABC)` |
 | 动态加载 | `importlib.import_module` | 目录自动扫描 (`pkgutil`) | 工厂函数 `get_credential_vault()` |
-| 启用判定 | `AUTH_PROVIDER` 环境变量指定 | `manifest()` 中 `required_env` 全部存在 | `CREDENTIAL_VAULT_KEY` 存在 |
+| 启用判定 | `AUTH_PROVIDER` 环境变量指定 | `manifest()` 中 `required_env`（`PLG_` 前缀）全部存在 | `CREDENTIAL_VAULT_KEY` 存在 |
 | 按需启用 | 未指定则匿名模式 | 缺 `required_env` 则跳过 | 缺密钥则返回 None |
 | 新增方式 | **在 `auth_providers/` 下创建 `.py` 即可**（自动发现） | **在 `plugins/` 下创建目录即可**（零改动） | 写一个 `.py` + 工厂加一个分支 |
 | 生命周期钩子 | `on_configure(app)` | `on_enable(app)` | — |
@@ -1863,9 +1863,9 @@ class DataSourcePlugin(ABC):
                 "icon": "superset",
                 "description": "从 Superset 加载数据集和仪表盘数据",
                 "version": "1.0.0",
-                "env_prefix": "SUPERSET",
-                "required_env": ["SUPERSET_URL"],
-                "optional_env": ["SUPERSET_TIMEOUT"],
+                "env_prefix": "PLG_SUPERSET",
+                "required_env": ["PLG_SUPERSET_URL"],
+                "optional_env": ["PLG_SUPERSET_TIMEOUT"],
                 "auth_modes": ["sso", "jwt", "password"],
                 "capabilities": ["datasets", "dashboards", "filters"],
             }
@@ -2174,14 +2174,14 @@ plugins/
 ├── data_writer.py       ← 工具模块 (ispkg=False, 跳过)
 ├── superset/            ← ispkg=True
 │   └── __init__.py      → plugin_class = SupersetPlugin
-│                          → manifest(): required_env=["SUPERSET_URL"]
-│                          → os.environ["SUPERSET_URL"] 存在? 
+│                          → manifest(): required_env=["PLG_SUPERSET_URL"]
+│                          → os.environ["PLG_SUPERSET_URL"] 存在? 
 │                            → 是 → 实例化 → 注册 Blueprint → ENABLED ✅
 │                            → 否 → DISABLED (Not configured)
 ├── metabase/            ← ispkg=True
 │   └── __init__.py      → plugin_class = MetabasePlugin
-│                          → manifest(): required_env=["METABASE_URL"]
-│                          → os.environ["METABASE_URL"] 不存在
+│                          → manifest(): required_env=["PLG_METABASE_URL"]
+│                          → os.environ["PLG_METABASE_URL"] 不存在
 │                            → DISABLED (Not configured)
 └── _helpers/            ← ispkg=True, 但无 plugin_class → 静默跳过
     └── __init__.py      → (没有 plugin_class 变量)
@@ -2207,7 +2207,7 @@ plugins/grafana/
 **步骤 2**：在 `.env` 中设置环境变量
 
 ```bash
-GRAFANA_URL=http://grafana.example.com:3000
+PLG_GRAFANA_URL=http://grafana.example.com:3000
 ```
 
 **步骤 3**：重启服务
@@ -2713,11 +2713,11 @@ def delete_credential():
 class SupersetPlugin(DataSourcePlugin):
 
     def supports_sso_passthrough(self) -> bool:
-        return bool(os.environ.get("SUPERSET_SSO_ENABLED", "").lower() == "true")
+        return bool(os.environ.get("PLG_SUPERSET_SSO", "").lower() == "true")
 
     def _get_superset_token_via_sso(self, sso_token: str) -> Optional[str]:
         """用 DF 用户的 SSO token 获取 Superset 的 access token。"""
-        superset_url = os.environ["SUPERSET_URL"]
+        superset_url = os.environ["PLG_SUPERSET_URL"]
 
         # 方式 A: 如果 Superset 支持 OAuth token introspection / exchange
         # 用 SSO token 调用 Superset 的 OAuth 端点换取 Superset session
@@ -2949,17 +2949,17 @@ QWEN_MODELS=qwen3-omni-flash
 # --------------------------------------------------------------
 # 数据源插件
 # --------------------------------------------------------------
-# Superset (配置了 SUPERSET_URL 即自动启用)
-SUPERSET_URL=http://superset.example.com:8088
-SUPERSET_SSO_ENABLED=true     # 启用 SSO token 透传到 Superset
-# SUPERSET_TIMEOUT=30          # API 超时秒数 (可选)
+# Superset (配置了 PLG_SUPERSET_URL 即自动启用)
+PLG_SUPERSET_URL=http://superset.example.com:8088
+PLG_SUPERSET_SSO=true          # 启用 SSO token 透传到 Superset
+# PLG_SUPERSET_TIMEOUT=30      # API 超时秒数 (可选)
 
-# Metabase (配置了 METABASE_URL 即自动启用)
-# METABASE_URL=http://metabase.example.com:3000
+# Metabase (配置了 PLG_METABASE_URL 即自动启用)
+# PLG_METABASE_URL=http://metabase.example.com:3000
 
-# Power BI (配置了 POWERBI_TENANT_ID 即自动启用)
-# POWERBI_TENANT_ID=your-tenant-id
-# POWERBI_CLIENT_ID=your-client-id
+# Power BI (配置了 PLG_POWERBI_TENANT_ID 即自动启用)
+# PLG_POWERBI_TENANT_ID=your-tenant-id
+# PLG_POWERBI_CLIENT_ID=your-client-id
 
 # --------------------------------------------------------------
 # Workspace 存储
@@ -3227,8 +3227,8 @@ AUTH_PROVIDER=oidc
 OIDC_ISSUER_URL=https://keycloak.internal:8443/realms/team
 OIDC_CLIENT_ID=data-formulator
 
-SUPERSET_URL=http://superset.internal:8088
-SUPERSET_SSO_ENABLED=true
+PLG_SUPERSET_URL=http://superset.internal:8088
+PLG_SUPERSET_SSO=true
 
 DEEPSEEK_ENABLED=true
 DEEPSEEK_API_KEY=sk-xxx
@@ -3364,10 +3364,10 @@ src/
 - `UnifiedDataUploadDialog.tsx` 修改 — PluginHost
 
 **验证标准**：
-- 配置 `SUPERSET_URL` 后，前端自动显示 Superset Tab
+- 配置 `PLG_SUPERSET_URL` 后，前端自动显示 Superset Tab
 - 用户可以登录 Superset、浏览数据集、加载数据
 - SSO 模式下，用户无需再次输入 Superset 密码
-- 不配置 `SUPERSET_URL` 时，无任何影响
+- 不配置 `PLG_SUPERSET_URL` 时，无任何影响
 
 ### Phase 3：凭证保险箱
 

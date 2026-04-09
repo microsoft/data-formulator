@@ -150,7 +150,7 @@ Data Formulator 最初被设计为**个人本地工具**——用户在自己的
 
 | 层级 | 谁配置 | 存在哪里 | 示例 |
 |------|--------|---------|------|
-| **插件端点** | IT 管理员 | 服务端 `.env` | `SUPERSET_URL=http://...` |
+| **插件端点** | IT 管理员 | 服务端 `.env` | `PLG_SUPERSET_URL=http://...` |
 | **用户认证** | 用户自己 | Flask Session（服务端内存） | Superset JWT Token |
 | **用户数据** | 插件自动加载 | Workspace Parquet（服务端磁盘） | 从 Superset 拉取的数据集 |
 | **前端状态** | 自动管理 | Redux Store（浏览器内存） | sample rows、表元数据 |
@@ -292,7 +292,52 @@ DBTableManager.tsx           +4 行   (监听 superset-dataset-loaded 事件)
 6. **权限透传**：尊重外部系统自身的权限模型（RBAC / RLS）
 7. **统一范式**：与 AuthProvider（认证）、CredentialVault（凭证）共享"抽象基类 + 动态注册 + 环境变量启用"的插件设计范式（详见 `sso-plugin-architecture.md`）
 
-### 5.2 概念模型
+### 5.2 环境变量命名约定
+
+系统中有三类环境变量驱动的自动发现机制，各自使用不同的命名空间以避免冲突：
+
+| 类别 | 前缀 | 发现机制 | 示例 |
+|------|------|---------|------|
+| **系统配置** | 无（直接命名） | 固定读取 | `LOG_LEVEL`、`FLASK_SECRET_KEY`、`DISABLE_DATABASE` |
+| **LLM 模型** | `{PROVIDER}_`（遗留命名） | 扫描 `*_ENABLED=true` | `DEEPSEEK_ENABLED`、`DEEPSEEK_API_KEY`、`QWEN_MODELS` |
+| **数据源插件** | **`PLG_`** + `{PLUGIN}_` | manifest 中 `required_env` 全部存在 | `PLG_SUPERSET_URL`、`PLG_GRAFANA_TIMEOUT` |
+| **认证 Provider** | `AUTH_PROVIDER` 单选 + Provider 自有前缀 | `AUTH_PROVIDER=xxx` 指定 | `AUTH_PROVIDER=oidc`、`OIDC_ISSUER_URL` |
+| **凭证保险箱** | `CREDENTIAL_VAULT_` | `CREDENTIAL_VAULT_KEY` 存在 | `CREDENTIAL_VAULT=local`、`CREDENTIAL_VAULT_KEY=...` |
+
+**为什么插件需要 `PLG_` 前缀？**
+
+LLM 模型的自动发现靠扫描所有 `*_ENABLED=true` 的环境变量。如果插件也使用裸前缀（如 `SUPERSET_SSO_ENABLED=true`），会被模型注册器误识别为 model provider。加 `PLG_` 前缀后，命名空间彻底隔离：
+
+```env
+# =============================================================
+# LLM 模型配置（遗留命名，{PROVIDER}_ 前缀）
+# =============================================================
+DEEPSEEK_ENABLED=true
+DEEPSEEK_API_KEY=sk-xxx
+DEEPSEEK_API_BASE=https://api.deepseek.com
+DEEPSEEK_MODELS=deepseek-chat
+
+# =============================================================
+# 数据源插件（PLG_{PLUGIN}_ 前缀）
+# =============================================================
+PLG_SUPERSET_URL=http://superset:8088
+PLG_SUPERSET_SSO=true
+
+PLG_GRAFANA_URL=http://grafana.example.com:3000
+PLG_GRAFANA_TIMEOUT=10
+
+# =============================================================
+# 认证（无 PLG_ 前缀，单选机制不会冲突）
+# =============================================================
+AUTH_PROVIDER=oidc
+OIDC_ISSUER_URL=https://login.microsoftonline.com/xxx/v2.0
+OIDC_CLIENT_ID=abc123
+```
+
+> **注意**：LLM 模型的 `{PROVIDER}_` 命名是遗留约定，暂不添加 `MODEL_` 前缀以保持向后兼容。
+> 未来如需统一，可分步迁移。当前只为新增的插件系统建立 `PLG_` 前缀规范。
+
+### 5.3 概念模型
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -384,9 +429,9 @@ class DataSourcePlugin(ABC):
                 "icon": "superset",            # 前端图标标识
                 "description": "...",          # 简短描述
                 "version": "1.0.0",
-                "env_prefix": "SUPERSET",      # 环境变量前缀（SUPERSET_URL, etc.）
-                "required_env": ["SUPERSET_URL"],  # 必需的环境变量（缺失则不启用）
-                "optional_env": ["SUPERSET_TIMEOUT"],
+                "env_prefix": "PLG_SUPERSET",      # 环境变量前缀（PLG_SUPERSET_URL, etc.）
+                "required_env": ["PLG_SUPERSET_URL"],  # 必需的环境变量（缺失则不启用）
+                "optional_env": ["PLG_SUPERSET_TIMEOUT"],
                 "auth_modes": ["sso", "jwt", "password"],  # 支持的认证方式（数组）
                 "capabilities": [              # 框架识别的标准能力标识
                     "datasets",                # 可以列出数据集
@@ -1523,7 +1568,7 @@ config["PLUGINS"] = plugins_config
 ┌─────────────────────────────────────────────────────────────────┐
 │                         启动阶段                                 │
 │                                                                  │
-│  1. 环境变量设置 SUPERSET_URL=http://superset:8088              │
+│  1. 环境变量设置 PLG_SUPERSET_URL=http://superset:8088           │
 │  2. app.py → _register_blueprints() → discover_and_register()  │
 │  3. SupersetPlugin 被实例化，Blueprint 被注册                    │
 │  4. /api/app-config 返回 PLUGINS: { superset: { enabled, ... }}  │
@@ -1676,8 +1721,8 @@ class SupersetPlugin(DataSourcePlugin):
             "icon": "superset",
             "description": "Load data from Superset dashboards and datasets",
             "version": "1.0.0",
-            "env_prefix": "SUPERSET",
-            "required_env": ["SUPERSET_URL"],
+            "env_prefix": "PLG_SUPERSET",
+            "required_env": ["PLG_SUPERSET_URL"],
             "auth_modes": ["sso", "jwt", "password"],
             "capabilities": [
                 "datasets", "dashboards", "filters",
@@ -1690,7 +1735,7 @@ class SupersetPlugin(DataSourcePlugin):
         return create_superset_blueprint(self._client, self._catalog, self._bridge)
     
     def get_frontend_config(self):
-        url = os.environ.get("SUPERSET_URL", "")
+        url = os.environ.get("PLG_SUPERSET_URL", "")
         return {
             "enabled": True,
             "sso_login_url": f"{url.rstrip('/')}/df-sso-bridge/" if url else None,
@@ -1711,7 +1756,7 @@ class SupersetPlugin(DataSourcePlugin):
         }
     
     def on_enable(self, app):
-        url = os.environ["SUPERSET_URL"]
+        url = os.environ["PLG_SUPERSET_URL"]
         self._client = SupersetClient(url)
         self._bridge = SupersetAuthBridge(url)
         self._catalog = SupersetCatalog(self._client)
