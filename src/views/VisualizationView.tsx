@@ -36,6 +36,7 @@ import {
 import _ from 'lodash';
 
 import { borderColor, transition } from '../app/tokens';
+import { WritingIndicator } from '../components/FunComponents';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
@@ -908,9 +909,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     {bottomTab === 'insight' && (
                         <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
                             {insightLoading ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2 }}>
-                                    <CircularProgress size={16} />
-                                    <Typography fontSize="small" color="text.secondary">{t('chart.analyzingChart')}</Typography>
+                                <Box sx={{ p: 2 }}>
+                                    <WritingIndicator label={t('chart.analyzingChart')} />
                                 </Box>
                             ) : insightFresh && focusedChart.insight ? (
                                 <Box sx={{ p: 1.5 }}>

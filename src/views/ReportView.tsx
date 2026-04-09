@@ -1018,9 +1018,52 @@ export const ReportView: FC = () => {
                                         onClick={async () => {
                                             const reportEl = document.querySelector('[data-report-content]') as HTMLElement;
                                             if (!reportEl) return;
-                                            const html = reportEl.innerHTML;
-                                            const text = reportEl.innerText;
                                             try {
+                                                // Clone the report and sanitize for external paste targets
+                                                const clone = reportEl.cloneNode(true) as HTMLElement;
+
+                                                // Inline all images as base64 data URLs so they survive
+                                                // clipboard paste into Word, Google Docs, etc.
+                                                const imgs = clone.querySelectorAll('img');
+                                                await Promise.all(Array.from(imgs).map(async (img) => {
+                                                    try {
+                                                        const src = (reportEl.querySelector(`img[src="${CSS.escape(img.getAttribute('src') || '')}"]`) as HTMLImageElement)
+                                                            || (reportEl.querySelector(`img[data-chart-id="${CSS.escape(img.getAttribute('data-chart-id') || '')}"]`) as HTMLImageElement);
+                                                        if (!src || !src.complete || src.naturalWidth === 0) return;
+                                                        const canvas = document.createElement('canvas');
+                                                        canvas.width = src.naturalWidth;
+                                                        canvas.height = src.naturalHeight;
+                                                        const ctx = canvas.getContext('2d');
+                                                        if (!ctx) return;
+                                                        ctx.drawImage(src, 0, 0);
+                                                        img.setAttribute('src', canvas.toDataURL('image/png'));
+                                                    } catch {
+                                                        // Cross-origin or tainted canvas — keep original src
+                                                    }
+                                                }));
+
+                                                // Strip Tiptap/ProseMirror attributes that external apps
+                                                // (Google Docs, Word) may misinterpret as links or styles
+                                                clone.querySelectorAll('*').forEach(el => {
+                                                    el.removeAttribute('contenteditable');
+                                                    el.removeAttribute('draggable');
+                                                    el.removeAttribute('data-node-type');
+                                                    el.removeAttribute('data-type');
+                                                    el.removeAttribute('data-chart-id');
+                                                    // Remove all data- attributes
+                                                    Array.from(el.attributes).forEach(attr => {
+                                                        if (attr.name.startsWith('data-')) {
+                                                            el.removeAttribute(attr.name);
+                                                        }
+                                                    });
+                                                    // Remove Tiptap/ProseMirror classes
+                                                    if (el.getAttribute('class')?.match(/ProseMirror|tiptap|node-/)) {
+                                                        el.removeAttribute('class');
+                                                    }
+                                                });
+
+                                                const html = clone.innerHTML;
+                                                const text = reportEl.innerText;
                                                 await navigator.clipboard.write([
                                                     new ClipboardItem({
                                                         'text/html': new Blob([html], { type: 'text/html' }),

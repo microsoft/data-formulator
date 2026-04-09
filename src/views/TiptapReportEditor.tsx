@@ -8,6 +8,7 @@ import Image from '@tiptap/extension-image';
 import { Markdown } from 'tiptap-markdown';
 import { Box, IconButton, Tooltip, Divider, useTheme, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import { WritingPencil, ShimmerText, WritingIndicator } from '../components/FunComponents';
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
 import FormatItalicIcon from '@mui/icons-material/FormatItalic';
 import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
@@ -322,22 +323,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
                                     '50%': { opacity: 1 },
                                 },
                             }} />
-                            <Box component="span" sx={{
-                                fontSize: '0.8rem',
-                                fontWeight: 500,
-                                background: `linear-gradient(90deg, ${theme.palette.text.secondary} 0%, ${theme.palette.primary.main} 50%, ${theme.palette.text.secondary} 100%)`,
-                                backgroundSize: '200% 100%',
-                                animation: 'shimmer-text 2s ease-in-out infinite',
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text',
-                                '@keyframes shimmer-text': {
-                                    '0%': { backgroundPosition: '100% 0' },
-                                    '100%': { backgroundPosition: '-100% 0' },
-                                },
-                            }}>
-                                Generating…
-                            </Box>
+                            <ShimmerText>Generating…</ShimmerText>
                         </Box>
                     )}
             </Box>
@@ -443,41 +429,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
                         justifyContent: 'center',
                         pb: 6,
                     }}>
-                        <Box sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                        }}>
-                            <Box component="span" sx={{
-                                fontSize: '1rem',
-                                display: 'inline-block',
-                                animation: 'writing-pencil 1s ease-in-out infinite',
-                                transformOrigin: 'bottom left',
-                                '@keyframes writing-pencil': {
-                                    '0%': { transform: 'translate(0, 0) rotate(0deg)' },
-                                    '25%': { transform: 'translate(3px, -1px) rotate(-5deg)' },
-                                    '50%': { transform: 'translate(6px, 0) rotate(0deg)' },
-                                    '75%': { transform: 'translate(3px, 1px) rotate(5deg)' },
-                                    '100%': { transform: 'translate(0, 0) rotate(0deg)' },
-                                },
-                            }}>✏️</Box>
-                            <Typography component="span" sx={{
-                                fontSize: '0.85rem',
-                                fontWeight: 500,
-                                background: `linear-gradient(90deg, ${theme.palette.text.secondary} 0%, ${theme.palette.primary.main} 50%, ${theme.palette.text.secondary} 100%)`,
-                                backgroundSize: '200% 100%',
-                                animation: 'shimmer-overlay 2s ease-in-out infinite',
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text',
-                                '@keyframes shimmer-overlay': {
-                                    '0%': { backgroundPosition: '100% 0' },
-                                    '100%': { backgroundPosition: '-100% 0' },
-                                },
-                            }}>
-                                Writing your report…
-                            </Typography>
-                        </Box>
+                        <WritingIndicator label="Writing your report…" fontSize="0.85rem" />
                     </Box>
                 )}
             </Box>

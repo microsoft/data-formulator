@@ -1040,3 +1040,59 @@ def refresh_derived_data():
             "status": "error",
             "message": sanitize_model_error(str(e))
         }), 400
+
+
+@agent_bp.route('/workspace-summary', methods=['POST'])
+def workspace_summary():
+    """Generate a short name/summary for the current workspace.
+
+    Called after the first agent interaction to auto-name the workspace.
+    Expects: { model: <model_config>, context: { tables: [...], userQuery: "..." } }
+    Returns: { status: "ok", summary: "3-5 word name" }
+    """
+    if not request.is_json:
+        return jsonify(status="error", summary=""), 400
+
+    content = request.get_json()
+
+    try:
+        client = get_client(content['model'])
+
+        ctx = content.get('context', {})
+        table_names = ctx.get('tables', [])
+        user_query = ctx.get('userQuery', '')
+
+        prompt_parts = []
+        if table_names:
+            prompt_parts.append(f"Data tables: {', '.join(table_names)}")
+        if user_query:
+            prompt_parts.append(f"User's first request: {user_query}")
+
+        context_str = '. '.join(prompt_parts) if prompt_parts else 'A data analysis session'
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful assistant. Generate a very short name (3-5 words) "
+                    "for a data analysis workspace based on the context below. "
+                    "Return ONLY the name, no quotes, no explanation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": context_str,
+            },
+        ]
+
+        response = client.get_completion(messages)
+        summary = response.choices[0].message.content.strip().strip('"\'')
+        # Truncate if too long
+        if len(summary) > 60:
+            summary = summary[:57] + "..."
+
+        return jsonify(status="ok", summary=summary)
+
+    except Exception as e:
+        logger.warning(f"Failed to generate workspace summary: {e}")
+        return jsonify(status="error", summary=""), 500

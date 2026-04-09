@@ -45,7 +45,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from data_formulator.datalake.metadata import METADATA_FILENAME
+from data_formulator.datalake.workspace_metadata import METADATA_FILENAME
 
 logger = logging.getLogger(__name__)
 

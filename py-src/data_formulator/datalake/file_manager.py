@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO, Union
 
-from data_formulator.datalake.metadata import TableMetadata
+from data_formulator.datalake.workspace_metadata import TableMetadata
 from data_formulator.datalake.parquet_utils import safe_data_filename
 from data_formulator.datalake.table_names import sanitize_upload_stem_table_name
 from data_formulator.datalake.workspace import Workspace

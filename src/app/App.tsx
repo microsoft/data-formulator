@@ -53,10 +53,13 @@ import {
 import MuiAppBar from '@mui/material/AppBar';
 import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
 
+import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
+import { useAutoSave } from './useAutoSave';
+import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
 import GridViewIcon from '@mui/icons-material/GridView';
 import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
@@ -241,128 +244,76 @@ const TableMenu: React.FC = () => {
 };
 
 
-const SaveSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
-    const [sessionName, setSessionName] = useState('');
-    const [saving, setSaving] = useState(false);
-    const dispatch = useDispatch();
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const { t } = useTranslation();
-
-    const fullState = useSelector((state: DataFormulatorState) => {
-        const excludedFields = new Set([
-            'models', 'selectedModelId', 'testedModels',
-            'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
-        ]);
-        const stateToSerialize: any = {};
-        for (const [key, value] of Object.entries(state)) {
-            if (!excludedFields.has(key)) {
-                stateToSerialize[key] = value;
-            }
-        }
-        return stateToSerialize;
-    });
-
-    const handleSave = async () => {
-        if (!sessionName.trim()) return;
-        setSaving(true);
-        try {
-            const res = await fetchWithIdentity(getUrls().SESSION_SAVE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: sessionName.trim(), state: fullState }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: t('session.sessionSaved', { name: sessionName }) }));
-                onClose();
-            } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || t('session.saveFailed') }));
-            }
-        } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: t('session.failedToSave') }));
-        }
-        setSaving(false);
-    };
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>{t('session.saveTitle')}</DialogTitle>
-            <DialogContent>
-                <TextField
-                    autoFocus fullWidth margin="dense" label={t('session.sessionName')}
-                    value={sessionName} onChange={(e) => setSessionName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
-                    helperText={t('session.tablesWillBeSaved', { count: tables.length })}
-                />
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>{t('app.cancel')}</Button>
-                <Button onClick={handleSave} disabled={!sessionName.trim() || saving}>
-                    {saving ? t('app.loading') : t('app.save')}
-                </Button>
-            </DialogActions>
-        </Dialog>
-    );
-};
-
-const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
-    const [sessions, setSessions] = useState<{name: string, saved_at: string}[]>([]);
+const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
+    const [workspaces, setWorkspaces] = useState<{id: string, display_name: string, saved_at: string}[]>([]);
     const [loading, setLoading] = useState(false);
     const [listLoading, setListLoading] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
     const dispatch = useDispatch();
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const { t } = useTranslation();
 
-    const fetchSessions = useCallback(async () => {
+    const fetchWorkspaces = useCallback(async () => {
         setListLoading(true);
         try {
             const res = await fetchWithIdentity(getUrls().SESSION_LIST);
             const data = await res.json();
-            if (data.status === 'ok') setSessions(data.sessions);
+            if (data.status === 'ok') setWorkspaces(data.sessions);
         } catch (e) { /* ignore */ }
         setListLoading(false);
     }, []);
 
     useEffect(() => {
         if (!open) return;
-        fetchSessions();
-    }, [open, fetchSessions]);
+        fetchWorkspaces();
+    }, [open, fetchWorkspaces]);
 
-    const handleLoad = async (name: string) => {
+    const handleOpen = async (wsId: string) => {
+        if (activeWorkspace?.id === wsId) { onClose(); return; }
+        const wsEntry = workspaces.find(w => w.id === wsId);
         setLoading(true);
-        dispatch(dfActions.setSessionLoading({ loading: true, label: t('session.loadingSessions') }));
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
         onClose();
         try {
             const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({ id: wsId }),
             });
             const data = await res.json();
             if (data.status === 'ok') {
-                dispatch(dfActions.loadState(data.state));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: t('session.sessionLoaded', { name }) }));
+                // Use saved displayName from state, or from list, or fall back to ID
+                const savedWs = data.state?.activeWorkspace;
+                const displayName = savedWs?.displayName || wsEntry?.display_name || wsId;
+                dispatch(dfActions.loadState({ ...data.state, activeWorkspace: { id: wsId, displayName } }));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: `Opened session "${displayName}"` }));
             } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || t('session.loadFailed') }));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: data.message || 'Failed to open workspace' }));
             }
         } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: t('session.failedToLoad') }));
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: 'Failed to open workspace' }));
         }
         setLoading(false);
         dispatch(dfActions.setSessionLoading({ loading: false }));
     };
 
-    const handleDelete = async (name: string) => {
+    const handleCreate = () => {
+        // Reset state → landing page, where user loads data to start a new session
+        dispatch(dfActions.resetState());
+        onClose();
+    };
+
+    const handleDelete = async (workspaceId: string) => {
         try {
             const res = await fetchWithIdentity(getUrls().SESSION_DELETE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({ id: workspaceId }),
             });
             const data = await res.json();
             if (data.status === 'ok') {
-                setSessions(prev => prev.filter(s => s.name !== name));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: t('session.deleteSession') + `: ${name}` }));
+                setWorkspaces(prev => prev.filter(s => s.id !== workspaceId));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: `Deleted session "${workspaceId}"` }));
             }
         } catch (e) { /* ignore */ }
         setConfirmDelete(null);
@@ -371,361 +322,148 @@ const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                {t('session.loadTitle')}
-                <Tooltip title={t('session.refreshList')}>
-                    <IconButton size="small" onClick={fetchSessions} disabled={listLoading} sx={{ color: 'text.secondary' }}>
+                Sessions
+                <Tooltip title="Refresh list">
+                    <IconButton size="small" onClick={fetchWorkspaces} disabled={listLoading} sx={{ color: 'text.secondary' }}>
                         {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
                     </IconButton>
                 </Tooltip>
             </DialogTitle>
             <DialogContent sx={{ px: 1 }}>
-                {listLoading && sessions.length === 0 ? (
+                {listLoading && workspaces.length === 0 ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 1.5 }}>
                         <CircularProgress size={28} />
-                        <Typography variant="body2" color="text.secondary">{t('session.loadingSessions')}</Typography>
+                        <Typography variant="body2" color="text.secondary">Loading sessions...</Typography>
                     </Box>
-                ) : sessions.length === 0 ? (
-                    <DialogContentText sx={{ px: 1 }}>{t('session.noSavedSessions')}</DialogContentText>
                 ) : (
-                    sessions.map(s => (
+                    <>
+                        {/* New session — same row style as session items */}
                         <Box
-                            key={s.name}
                             sx={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                display: 'flex', alignItems: 'center',
                                 px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
                                 '&:hover': { backgroundColor: 'action.hover' },
                                 transition: 'background-color 0.15s',
                             }}
-                            onClick={() => handleLoad(s.name)}
+                            onClick={handleCreate}
+                        >
+                            <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
+                                + New Session
+                            </Typography>
+                        </Box>
+                        {workspaces.length > 0 && <Divider sx={{ my: 0.5 }} />}
+                        {workspaces.map(s => (
+                        <Box
+                            key={s.id}
+                            sx={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
+                                backgroundColor: activeWorkspace?.id === s.id ? 'action.selected' : 'transparent',
+                                '&:hover': { backgroundColor: activeWorkspace?.id === s.id ? 'action.selected' : 'action.hover' },
+                                transition: 'background-color 0.15s',
+                            }}
+                            onClick={() => handleOpen(s.id)}
                         >
                             <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Typography variant="body2" fontWeight="bold" noWrap>{s.name}</Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    {new Date(s.saved_at).toLocaleString()}
+                                <Typography variant="body2" fontWeight={activeWorkspace?.id === s.id ? 'bold' : 'normal'} noWrap>
+                                    {s.display_name} {activeWorkspace?.id === s.id ? '(active)' : ''}
                                 </Typography>
+                                {s.saved_at && (
+                                    <Typography variant="caption" color="text.secondary">
+                                        {new Date(s.saved_at).toLocaleString()}
+                                    </Typography>
+                                )}
                             </Box>
-                            {confirmDelete === s.name ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
-                                    <Button size="small" color="error" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
-                                        onClick={() => handleDelete(s.name)}>{t('app.delete')}</Button>
-                                    <Button size="small" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
-                                        onClick={() => setConfirmDelete(null)}>{t('app.cancel')}</Button>
-                                </Box>
-                            ) : (
-                                <Tooltip title={t('session.deleteSession')}>
-                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.name); }} sx={{ color: 'text.secondary' }}>
-                                        <ClearIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
+                            {activeWorkspace?.id !== s.id && (
+                                confirmDelete === s.id ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
+                                        <Button size="small" color="error" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                            onClick={() => handleDelete(s.id)}>Delete</Button>
+                                        <Button size="small" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                            onClick={() => setConfirmDelete(null)}>Cancel</Button>
+                                    </Box>
+                                ) : (
+                                    <Tooltip title="Delete session">
+                                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.id); }} sx={{ color: 'text.secondary' }}>
+                                            <ClearIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                )
                             )}
                         </Box>
                     ))
+                    }
+                    </>
                 )}
             </DialogContent>
             <DialogActions>
-                <Button onClick={onClose}>{t('app.close')}</Button>
+                <Button onClick={onClose}>Close</Button>
             </DialogActions>
         </Dialog>
     );
 };
 
-const SessionMenu: React.FC = () => {
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-    const [loadDialogOpen, setLoadDialogOpen] = useState(false);
-    const [recentSessions, setRecentSessions] = useState<{name: string, saved_at: string}[]>([]);
-    const [exporting, setExporting] = useState(false);
-    const importRef = React.useRef<HTMLInputElement>(null);
-    const open = Boolean(anchorEl);
-    const dispatch = useDispatch();
-    const { t } = useTranslation();
-    const theme = useTheme();
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
+const WorkspaceMenu: React.FC = () => {
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
 
-    const fullState = useSelector((state: DataFormulatorState) => {
-        const excludedFields = new Set([
-            'models', 'selectedModelId', 'testedModels',
-            'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
-        ]);
-        const obj: any = {};
-        for (const [key, value] of Object.entries(state)) {
-            if (!excludedFields.has(key)) obj[key] = value;
-        }
-        return obj;
-    });
-
-    // Fetch recent sessions when the menu opens
-    useEffect(() => {
-        if (!open || diskPersistenceDisabled) return;
-        (async () => {
-            try {
-                const res = await fetchWithIdentity(getUrls().SESSION_LIST);
-                const data = await res.json();
-                if (data.status === 'ok') setRecentSessions(data.sessions.slice(0, 3));
-            } catch (e) { /* ignore */ }
-        })();
-    }, [open]);
-
-    const closeMenu = () => setAnchorEl(null);
-
-    const handleLoadSession = async (name: string) => {
-        closeMenu();
-        dispatch(dfActions.setSessionLoading({ loading: true, label: t('session.loadingSessions') }));
-        try {
-            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                dispatch(dfActions.loadState(data.state));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: t('session.sessionLoaded', { name }) }));
-            } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || t('session.loadFailed') }));
-            }
-        } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: t('session.failedToLoad') }));
-        }
-        dispatch(dfActions.setSessionLoading({ loading: false }));
-    };
-
-    const handleExport = async () => {
-        closeMenu();
-        setExporting(true);
-        try {
-            const res = await fetchWithIdentity(getUrls().SESSION_EXPORT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ state: fullState }),
-            });
-            if (!res.ok) throw new Error('Export failed');
-            const blob = await res.blob();
-            const disposition = res.headers.get('content-disposition');
-            const match = disposition?.match(/filename="?(.+?)"?$/);
-            const filename = match?.[1] || 'session.dfsession';
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(a.href);
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: t('session.sessionExported') }));
-        } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: t('session.failedToExport') }));
-        }
-        setExporting(false);
-    };
-
-    const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        closeMenu();
-        dispatch(dfActions.setSessionLoading({ loading: true, label: t('session.importingFrom', { file: file.name }) }));
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-            const res = await fetchWithIdentity(getUrls().SESSION_IMPORT, {
-                method: 'POST',
-                body: formData,
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                dispatch(dfActions.loadState(data.state));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: t('session.sessionImported', { file: file.name }) }));
-            } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || t('session.importFailed') }));
-            }
-        } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: t('session.failedToImport') }));
-        }
-        dispatch(dfActions.setSessionLoading({ loading: false }));
-        if (importRef.current) importRef.current.value = '';
-    };
+    if (!activeWorkspace) return null;
 
     return (
         <>
-            <Button 
-                variant="text" 
-                onClick={(e) => setAnchorEl(e.currentTarget)} 
-                endIcon={<KeyboardArrowDownIcon />} 
-                sx={{ textTransform: 'none' }}
-            >
-                {t('appBar.session')}
-            </Button>
-            <Menu
-                anchorEl={anchorEl}
-                open={open}
-                onClose={closeMenu}
-                slotProps={{
-                    paper: { sx: { py: '4px', px: '8px', minWidth: 140 } }
-                }}
-                sx={{ '& .MuiMenuItem-root': { padding: 0, margin: 0 } }}
-            >
-                <Tooltip title={diskPersistenceDisabled ? t('session.installLocallyHint') : ""} placement="right">
-                    <span>
-                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setSaveDialogOpen(true); closeMenu(); }}>
-                            <Button variant="text" startIcon={<SaveIcon />}
-                                sx={{ textTransform: 'none' }}>
-                                {t('session.saveSession')}
-                            </Button>
-                        </MenuItem>
-                    </span>
-                </Tooltip>
-                <Tooltip title={diskPersistenceDisabled ? t('session.installLocallyHint') : ""} placement="right">
-                    <span>
-                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setLoadDialogOpen(true); closeMenu(); }}>
-                            <Button variant="text" startIcon={<FolderOpenIcon />}
-                                sx={{ textTransform: 'none' }}>
-                                {t('session.openSession')}
-                            </Button>
-                        </MenuItem>
-                    </span>
-                </Tooltip>
-
-                {!diskPersistenceDisabled && recentSessions.length > 0 && [
-                    <Divider key="div-recent" sx={{ my: 1 }}><Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>{t('session.quickResume')}</Typography></Divider>,
-                    ...recentSessions.map(s => (
-                        <MenuItem key={s.name} onClick={() => handleLoadSession(s.name)}>
-                            <Button variant="text" sx={{ textTransform: 'none', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                                <Typography noWrap sx={{ fontSize: 14 }}>{s.name}</Typography>
-                                <Typography noWrap sx={{ fontSize: 10, color: 'text.secondary', flexShrink: 0, ml: 2 }}>
-                                    {new Date(s.saved_at).toLocaleDateString()}
-                                </Typography>
-                            </Button>
-                        </MenuItem>
-                    )),
-                ]}
-
-                <Divider sx={{ my: 1 }}><Typography variant="caption" sx={{ fontSize: 12, color: 'text.secondary' }}>{t('session.localFile')}</Typography></Divider>
-                {tables.some(t => t.virtual) && 
-                    <Typography fontSize="inherit" sx={{ color: theme.palette.warning.main, width: '160px', display: 'flex', alignItems: 'center', gap: 1, fontSize: 9 }}>
-                        {t('session.containsDatabaseWarning')}
-                    </Typography>}
-                <MenuItem onClick={handleExport} disabled={exporting}>
-                    <Button variant="text" startIcon={<DownloadIcon />}
-                        sx={{ textTransform: 'none' }}>
-                        {exporting ? t('session.exporting') : t('session.exportToFile')}
-                    </Button>
-                </MenuItem>
-                <MenuItem onClick={() => importRef.current?.click()}>
-                    <Button variant="text" startIcon={<UploadFileIcon />}
-                        sx={{ textTransform: 'none' }}
-                        component="label">
-                        {t('session.importFromFile')}
-                        <input
-                            type="file"
-                            hidden
-                            accept=".dfsession,.zip"
-                            ref={importRef}
-                            onChange={handleImport}
-                        />
-                    </Button>
-                </MenuItem>
-            </Menu>
-            <SaveSessionDialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} />
-            <LoadSessionDialog open={loadDialogOpen} onClose={() => setLoadDialogOpen(false)} />
+            <Tooltip title={`Session: ${activeWorkspace?.id || ''}`} placement="bottom">
+                <Box 
+                    onClick={() => !diskPersistenceDisabled && setPickerOpen(true)}
+                    sx={{ 
+                        display: 'flex', alignItems: 'center', gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 1,
+                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                        '&:hover .ws-chevron': { opacity: 1 },
+                    }}
+                >
+                    <Typography noWrap sx={{ 
+                        fontSize: 14, 
+                        fontWeight: 500, 
+                        color: 'text.primary',
+                        maxWidth: 280,
+                        letterSpacing: '0.01em',
+                    }}>
+                        {activeWorkspace?.displayName || activeWorkspace?.id}
+                    </Typography>
+                    <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: 16, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
+                </Box>
+            </Tooltip>
+            <WorkspacePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} />
         </>
     );
 };
 
-const ResetDialog: React.FC = () => {
-    const [open, setOpen] = useState(false);
-    const [resetting, setResetting] = useState(false);
+const CloseWorkspaceButton: React.FC = () => {
     const dispatch = useDispatch();
-    const { t } = useTranslation();
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
 
-    const handleReset = async () => {
-        setResetting(true);
-        try {
-            await fetchWithIdentity(getUrls().RESET_DB_FILE, { method: 'POST' });
-        } catch (e) {
-            console.warn('Failed to reset server workspace:', e);
-        }
+    if (!activeWorkspace || tables.length === 0) return null;
+
+    const handleClose = () => {
+        // resetState clears tables, charts, activeWorkspace → landing page
         dispatch(dfActions.resetState());
-
-        // Flush the reset state to IndexedDB so the persisted
-        // state matches (preserves models, config, agentRules).
-        await persistor.flush();
-        window.location.reload();
     };
 
     return (
-        <>
-            <Button 
-                variant="text" 
-                sx={{textTransform: 'none'}}
-                onClick={() => setOpen(true)} 
-                endIcon={<RestartAltIcon />}
-            >
-                {t('session.resetButton')}
-            </Button>
-            <Dialog onClose={resetting ? undefined : () => setOpen(false)} open={open} 
-                sx={{ '& .MuiDialog-paper': { position: 'relative', overflow: 'hidden' } }}>
-                <DialogTitle sx={{ display: "flex", alignItems: "center" }}>{t('session.resetTitle')}</DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
-                        {t('session.resetWarning')}
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button 
-                        disabled={resetting}
-                        onClick={handleReset}
-                        endIcon={<RestartAltIcon />}
-                    >
-                        {t('session.resetAction')}
-                    </Button>
-                    <Button onClick={() => setOpen(false)} disabled={resetting}>{t('app.cancel')}</Button>
-                </DialogActions>
-                {/* Cleaning overlay on top of dialog */}
-                {resetting && (
-                    <Box sx={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        backgroundColor: 'rgba(255, 255, 255, 0.92)',
-                        backdropFilter: 'blur(4px)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 2,
-                        zIndex: 1,
-                        borderRadius: 'inherit',
-                    }}>
-                        <Typography sx={{
-                            fontSize: 36,
-                            animation: 'sweepBroom 1.2s ease-in-out infinite',
-                            '@keyframes sweepBroom': {
-                                '0%, 100%': {
-                                    transform: 'rotate(-15deg) translateX(0px)',
-                                },
-                                '25%': {
-                                    transform: 'rotate(-5deg) translateX(8px)',
-                                },
-                                '50%': {
-                                    transform: 'rotate(-15deg) translateX(0px)',
-                                },
-                                '75%': {
-                                    transform: 'rotate(-25deg) translateX(-8px)',
-                                },
-                            },
-                            transformOrigin: 'top center',
-                        }}>
-                            🧹
-                        </Typography>
-                        <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
-                            {t('session.cleaningWorkspace')}
-                        </Typography>
-                        <LinearProgress sx={{ width: 200, mt: 1, borderRadius: 1 }} />
-                    </Box>
-                )}
-            </Dialog>
-        </>
+        <Button 
+            variant="text" 
+            sx={{ textTransform: 'none' }}
+            onClick={handleClose} 
+            endIcon={<ExitToAppIcon sx={{ fontSize: 18 }} />}
+        >
+            Exit
+        </Button>
     );
 };
 
@@ -998,6 +736,12 @@ const AppShell: FC = () => {
     const location = useLocation();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+
+    // Auto-persist session state to the active workspace (debounced)
+    useAutoSave();
+    // Auto-name workspace after first table + model are available
+    useWorkspaceAutoName();
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
 
@@ -1053,10 +797,16 @@ const AppShell: FC = () => {
                             <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
                             <TopNavButton to="/gallery" label={t('appBar.gallery')} selected={isGalleryPage} />
                         </Box>
-                        {tables.length === 0 && (
+                        {tables.length === 0 && !activeWorkspace && (
                             <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.disabled', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                                 {t('appBar.microsoftResearch')}
                             </Typography>
+                        )}
+                        {/* Centered workspace name — acts as session indicator/switcher */}
+                        {activeWorkspace && isAppPage && (
+                            <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
+                                <WorkspaceMenu />
+                            </Box>
                         )}
                         {isAppPage && (
                             <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
@@ -1070,12 +820,10 @@ const AppShell: FC = () => {
                                 <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <TableMenu />
                                 </Typography>
-                                <Divider orientation="vertical" variant="middle" flexItem />
-                                <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <SessionMenu />
-                                </Typography>
-                                <Divider orientation="vertical" variant="middle" flexItem />
-                                {tables.length > 0 && <ResetDialog />}
+                                {activeWorkspace && <>
+                                    <Divider orientation="vertical" variant="middle" flexItem />
+                                    <CloseWorkspaceButton />
+                                </>}
                             </Box>
                         )}
                         {isAboutPage && (
@@ -1195,6 +943,29 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 dispatch(dfActions.setServerConfig(data));
             });
     }, []);
+
+    // Validate persisted workspace still exists on the backend
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    useEffect(() => {
+        if (!activeWorkspace) return;
+        // Check if the workspace exists by trying to load it
+        fetchWithIdentity(getUrls().SESSION_LOAD, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: activeWorkspace.id }),
+        }).then(res => res.json()).then(data => {
+            if (data.status === 'error') {
+                // Workspace no longer exists — reset to landing page
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), component: "Workspace", type: "error",
+                    value: `Session "${activeWorkspace.displayName}" not found. Returning to home.`,
+                }));
+                dispatch(dfActions.resetState());
+            }
+        }).catch(() => {
+            // Backend unavailable — keep local state, don't disrupt
+        });
+    }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
     // User authentication state
     const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);

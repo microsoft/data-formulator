@@ -65,7 +65,7 @@ import yaml
 
 from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
 from data_formulator.datalake.cache_manager import GlobalCacheManager
-from data_formulator.datalake.metadata import (
+from data_formulator.datalake.workspace_metadata import (
     METADATA_FILENAME,
     WorkspaceMetadata,
 )

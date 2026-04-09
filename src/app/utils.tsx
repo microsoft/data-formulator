@@ -62,6 +62,9 @@ export function getUrls() {
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
         GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
 
+        // Workspace summary (auto-naming)
+        WORKSPACE_SUMMARY: `/api/agent/workspace-summary`,
+
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
 
@@ -111,6 +114,20 @@ function getAuthToken(): string | null {
 }
 
 /**
+ * Get the active workspace ID from the Redux store.
+ * Returns null if no workspace is active.
+ */
+async function getActiveWorkspaceId(): Promise<string | null> {
+    try {
+        const { store } = await import('./store');
+        const state = store.getState();
+        return state?.activeWorkspace?.id ?? null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Enhanced fetch wrapper that automatically adds identity and auth headers for API requests.
  * 
  * Security model:
@@ -139,6 +156,12 @@ export async function fetchWithIdentity(
         // Always send namespaced identity (fallback for backend)
         const namespacedIdentity = await getCurrentNamespacedIdentity();
         headers.set('X-Identity-Id', namespacedIdentity);
+
+        // Send active workspace ID so the backend is stateless
+        const workspaceId = await getActiveWorkspaceId();
+        if (workspaceId) {
+            headers.set('X-Workspace-Id', workspaceId);
+        }
 
         // Send current UI language so agent prompts can follow it
         headers.set('Accept-Language', getAgentLanguage());

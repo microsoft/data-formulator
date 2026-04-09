@@ -38,7 +38,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
 
-from data_formulator.datalake.metadata import (
+from data_formulator.datalake.workspace_metadata import (
     WorkspaceMetadata,
     TableMetadata,
     METADATA_FILENAME,

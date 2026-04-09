@@ -9,12 +9,20 @@ Reads the workspace backend configuration from Flask's ``current_app.config``
 :class:`Workspace` subclass.  This keeps the data-layer modules
 (``datalake.workspace``, ``datalake.azure_blob_workspace``) free of any
 Flask dependency.
+
+Multi-workspace support:
+  - Each user has a WorkspaceManager with multiple named workspaces.
+  - ``get_workspace()`` returns the active workspace (defaults to "default").
+  - ``get_workspace_manager()`` returns the WorkspaceManager for workspace CRUD.
+  - ``set_active_workspace()`` switches the active workspace.
 """
 
 import os
 import logging
+from pathlib import Path
 
-from data_formulator.datalake.workspace import Workspace
+from data_formulator.datalake.workspace import Workspace, get_data_formulator_home
+from data_formulator.datalake.workspace_manager import WorkspaceManager
 
 logger = logging.getLogger(__name__)
 
@@ -67,29 +75,39 @@ def _build_azure_container_client(cfg: dict):
     )
 
 
+def _get_user_workspaces_root(identity_id: str) -> Path:
+    """Return the workspaces root for a user: <home>/users/<safe_id>/workspaces/."""
+    safe_id = Workspace._sanitize_identity_id(identity_id)
+    return get_data_formulator_home() / "users" / safe_id / "workspaces"
+
+
+def get_workspace_manager(identity_id: str) -> WorkspaceManager:
+    """
+    Return a :class:`WorkspaceManager` for the given user.
+
+    The manager provides workspace CRUD (list, create, delete, rename)
+    and session state persistence.
+    """
+    root = _get_user_workspaces_root(identity_id)
+    return WorkspaceManager(root)
+
+
+def get_active_workspace_id() -> str | None:
+    """Read the active workspace ID from the current Flask request's X-Workspace-Id header."""
+    from flask import request
+    return request.headers.get("X-Workspace-Id") or None
+
+
 def get_workspace(identity_id: str) -> Workspace:
     """
-    Return a :class:`Workspace` (or subclass) for *identity_id*.
+    Return the active :class:`Workspace` for *identity_id*.
 
-    The backend is selected via the running Flask app's ``CLI_ARGS`` config,
-    which mirrors CLI flags and environment variables set in ``app.py``:
-
-    ================================= ================================ ==================
-    CLI flag                          Env var                          Default
-    ================================= ================================ ==================
-    ``--workspace-backend``           ``WORKSPACE_BACKEND``            ``local``
-    ``--azure-blob-connection-string````AZURE_BLOB_CONNECTION_STRING`` (none)
-    ``--azure-blob-account-url``      ``AZURE_BLOB_ACCOUNT_URL``       (none)
-    ``--azure-blob-container``        ``AZURE_BLOB_CONTAINER``         ``data-formulator``
-    ================================= ================================ ==================
-
-    ``datalake_root`` reuses ``--data-dir`` / ``DATA_FORMULATOR_HOME``
-    (defaulting to ``"workspaces"``).
+    Reads the workspace ID from the X-Workspace-Id request header.
+    Raises ValueError if no workspace ID is present in the request.
     """
     from flask import current_app
 
     cfg = current_app.config.get("CLI_ARGS", {})
-
     backend = cfg.get(
         "workspace_backend", os.getenv("WORKSPACE_BACKEND", "local")
     )
@@ -106,7 +124,6 @@ def get_workspace(identity_id: str) -> Workspace:
             or "workspaces"
         )
 
-        # Cache configuration from env vars / CLI args
         max_cache_mb = int(
             cfg.get("cache_max_mb", os.getenv("DF_CACHE_MAX_MB", "1024"))
         )
@@ -124,5 +141,10 @@ def get_workspace(identity_id: str) -> Workspace:
             max_global_cache_bytes=max_global_cache_mb * 1024 * 1024,
         )
 
-    # Default: local filesystem workspace
-    return Workspace(identity_id)
+    # Default: local multi-workspace
+    ws_id = get_active_workspace_id()
+    if not ws_id:
+        raise ValueError("No active workspace. X-Workspace-Id header is required.")
+
+    mgr = get_workspace_manager(identity_id)
+    return mgr.open_workspace(ws_id, identity_id)

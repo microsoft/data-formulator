@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from data_formulator.datalake.metadata import TableMetadata
+from data_formulator.datalake.workspace_metadata import TableMetadata
 from data_formulator.datalake.workspace import Workspace
 
 pytestmark = [pytest.mark.backend]
