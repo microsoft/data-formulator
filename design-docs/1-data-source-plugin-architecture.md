@@ -1319,209 +1319,97 @@ def refresh_dataset():
 | **计算列/度量** | `metric.expression`, `metric.description` | `field.formula` | `measure.expression` | `measure.sql` |
 | **值域统计** | — | `field.fingerprint` (分布统计) | — | `field.enumerations` |
 
-#### 7.7.2 设计：扩展 ColumnInfo 和 TableMetadata
+#### 7.7.2 设计：不透明 blob + 文本描述（简化方案）
 
-**后端**：在现有的 `ColumnInfo` 和 `TableMetadata` 中增加可选字段承载外部元数据。
+> **设计决策**：不扩展 `ColumnInfo` 和 `TableMetadata` 的结构化字段。
+> 理由与 `loadParams` 保持不透明（[§ 7.5](#75-各-bi-平台查询参数兼容性分析)）相同——各平台元数据格式差异极大，强行统一到 `semantic_type`、`is_metric` 等字段是有损抽象。
+> 
+> 外部元数据的主要消费者是 **AI prompt**（文本）和 **UI tooltip**（文本），不需要结构化查询。
+> 如果未来确实出现结构化需求（如"列出所有 certified 的表"），再从 blob 中提取，成本很低。
+
+**后端改动最小化**：仅在 `TableMetadata` 新增 1 个可选字段：
 
 ```python
-# py-src/data_formulator/datalake/metadata.py — 扩展
-
-@dataclass
-class ColumnInfo:
-    """Information about a single column in a table."""
-    name: str
-    dtype: str
-    # ↓ 新增：来自外部系统的元数据（可选）
-    description: str | None = None       # 列描述（"订单创建日期"）
-    semantic_type: str | None = None     # 语义类型（"datetime", "email", "currency", "foreign_key"）
-    is_metric: bool = False              # 是否为度量/计算字段
-    expression: str | None = None        # 计算表达式（如 Superset metric 的 SQL 表达式）
-    tags: list[str] | None = None        # 标签（如 ["filterable", "groupby", "certified"]）
-
-    def to_dict(self) -> dict:
-        d = {"name": self.name, "dtype": self.dtype}
-        if self.description:     d["description"] = self.description
-        if self.semantic_type:   d["semantic_type"] = self.semantic_type
-        if self.is_metric:       d["is_metric"] = self.is_metric
-        if self.expression:      d["expression"] = self.expression
-        if self.tags:            d["tags"] = self.tags
-        return d
-
-
 @dataclass
 class TableMetadata:
-    """Metadata for a single table/file in the workspace."""
-    name: str
-    source_type: Literal["upload", "data_loader"]
-    # ... 现有字段 ...
-    columns: list[ColumnInfo] | None = None
-    # ↓ 新增：来自外部系统的表级元数据（可选）
-    description: str | None = None       # 表/数据集描述
-    tags: list[str] | None = None        # 表级标签（如 ["certified", "production"]）
-    owners: list[str] | None = None      # 数据所有者
+    # ... 现有字段全部不动 ...
+    description: str | None = None          # ← 已有，复用
+    
+    # 新增：来自外部系统的原始元数据（插件写入，框架不解析）
+    external_metadata: dict | None = None
 ```
 
-这些字段全部是**可选的**（默认 `None`），对现有的 Upload/Paste/Database 数据加载路径零影响。只有通过插件加载的数据才会填充这些字段。
+`ColumnInfo` **不改**。`list-tables` API **不改**。前端 `DictTable` 类型 **不改**。
 
 #### 7.7.3 插件如何提供元数据
 
-`PluginDataWriter.write_dataframe()` 的 `source_metadata` 已经支持任意结构。新增一个专用的 `column_metadata` 参数让插件传入列级信息：
-
-```python
-# plugins/data_writer.py — 扩展 write_dataframe
-
-def write_dataframe(
-    self,
-    df: pd.DataFrame,
-    table_name: str,
-    *,
-    overwrite: bool = True,
-    source_metadata: dict[str, Any] | None = None,
-    column_metadata: dict[str, dict] | None = None,   # ← 新增
-    table_description: str | None = None,              # ← 新增
-    table_tags: list[str] | None = None,               # ← 新增
-) -> dict[str, Any]:
-    # ...写入 Parquet（不变）...
-
-    # 如果插件提供了外部元数据，合并到 ColumnInfo 中
-    if column_metadata:
-        enriched_columns = []
-        for col in (meta.columns or []):
-            ext = column_metadata.get(col.name, {})
-            enriched_columns.append(ColumnInfo(
-                name=col.name,
-                dtype=col.dtype,
-                description=ext.get("description"),
-                semantic_type=ext.get("semantic_type"),
-                is_metric=ext.get("is_metric", False),
-                expression=ext.get("expression"),
-                tags=ext.get("tags"),
-            ))
-        # 更新 workspace metadata 中的 columns
-        meta.columns = enriched_columns
-
-    if table_description:
-        meta.description = table_description
-    if table_tags:
-        meta.tags = table_tags
-    # ... 保存 metadata ...
-```
-
-Superset 插件的调用示例：
+插件在调用 `PluginDataWriter.write_dataframe()` 时，将外部系统的原始元数据塞入 `external_metadata`：
 
 ```python
 # plugins/superset/routes/data.py
 
-def load_dataset():
-    # ...从 Superset API 拉取数据集详情...
-    dataset_info = superset_client.get_dataset(dataset_id)
-
-    # 提取 Superset 提供的列元数据
-    col_meta = {}
-    for col in dataset_info.get("columns", []):
-        col_meta[col["column_name"]] = {
-            "description": col.get("description"),
-            "semantic_type": "datetime" if col.get("is_dttm") else None,
-            "tags": [t for t in ["filterable", "groupby"]
-                     if col.get(t)],
-        }
-    # Superset 的 metric 也作为列
-    for metric in dataset_info.get("metrics", []):
-        col_meta[metric["metric_name"]] = {
-            "description": metric.get("description"),
-            "is_metric": True,
-            "expression": metric.get("expression"),  # 如 "SUM(order_amount)"
-        }
-
-    # 写入时同时传入元数据
-    result = writer.write_dataframe(
-        df, table_name, overwrite=True,
-        source_metadata={...},
-        column_metadata=col_meta,
-        table_description=dataset_info.get("description"),
-        table_tags=(["certified"] if dataset_info.get("is_certified") else []),
-    )
+result = writer.write_dataframe(
+    df, table_name, overwrite=True,
+    source_metadata={...},           # 用于刷新的 loadParams（不变）
+    external_metadata={              # 外部系统的原始元数据（新增，blob）
+        "source": "superset",
+        "dataset_description": dataset_info.get("description"),
+        "owners": [o["username"] for o in dataset_info.get("owners", [])],
+        "certified": dataset_info.get("is_certified", False),
+        "columns": {
+            col["column_name"]: {
+                "description": col.get("description"),
+                "is_dttm": col.get("is_dttm"),
+                "filterable": col.get("filterable"),
+            }
+            for col in dataset_info.get("columns", [])
+        },
+        "metrics": {
+            m["metric_name"]: {
+                "description": m.get("description"),
+                "expression": m.get("expression"),
+            }
+            for m in dataset_info.get("metrics", [])
+        },
+    },
+)
 ```
 
-#### 7.7.4 元数据如何流向前端 AI 分析
+Metabase 插件塞的结构完全不同也没关系——框架不解析它。
+
+#### 7.7.4 元数据如何流向 AI
+
+`PluginDataWriter` 自动将 `external_metadata` 拼成可读文本，写入 `TableMetadata.description`（已有字段）：
 
 ```
-Superset API                  后端 Workspace                前端 DictTable
-────────────                  ─────────────                ──────────────
-dataset.description     →  TableMetadata.description  →  DictTable.attachedMetadata
-                                                          (AI prompt 的表描述)
-
-column.description      →  ColumnInfo.description     →  DictTable.metadata[col].description
-column.is_dttm          →  ColumnInfo.semantic_type   →  DictTable.metadata[col].semanticType
-                                                          (跳过 AI 推断，直接使用)
-
-metric.expression       →  ColumnInfo.expression      →  (AI 可据此理解度量含义)
+来源: superset · sales_data
+描述: 公司季度销售数据，按区域和产品线划分
+所有者: alice@corp.com
+筛选: region = Asia, order_date >= 2025-01-01
+列: region (销售区域), order_date (订单日期, 时间类型), amount (订单金额, SUM(amount))
+行数: 12,345
 ```
 
-**关键价值**：DF 现有的 `fetchFieldSemanticType` 调用 AI Agent 来推断列的语义类型（日期、货币、邮箱等）。如果 BI 系统已经标注了这些信息，可以**直接填入，跳过 AI 推断**——既快又准：
-
-```typescript
-// list-tables 响应 → 构建 DictTable 时
-const metadata: Record<string, FieldMetadata> = {};
-for (const col of serverColumns) {
-    metadata[col.name] = {
-        type: inferTypeFromDtype(col.dtype),
-        semanticType: col.semantic_type || "",  // 优先使用外部元数据
-        levels: [],
-        unit: undefined,
-    };
-    // 如果有外部描述，附加到 column 级别
-    if (col.description) {
-        metadata[col.name].description = col.description;
-    }
-}
-
-// 表描述 → attachedMetadata（AI prompt 使用）
-const attachedMetadata = serverMeta.description
-    ? `来源: ${serverMeta.source_type}. ${serverMeta.description}`
-    : "";
-```
-
-当 AI Agent 生成分析建议或可视化代码时，`attachedMetadata` 中的表描述和列描述会自动进入 prompt，让 AI 更好地理解数据含义。
-
-#### 7.7.5 各平台元数据映射表
-
-| DF 目标字段 | Superset 来源 | Metabase 来源 | Power BI 来源 | Looker 来源 |
-|------------|--------------|--------------|--------------|-------------|
-| `TableMetadata.description` | `dataset.description` | `table.description` | `table.description` | `explore.description` |
-| `TableMetadata.tags` | `["certified"]` if `is_certified` | `[visibility_type]` | — | `explore.tags` |
-| `TableMetadata.owners` | `dataset.owners[].username` | — | `dataset.configuredBy` | `explore.owner` |
-| `ColumnInfo.description` | `column.description` | `field.description` | `column.description` | `field.description` |
-| `ColumnInfo.semantic_type` | `"datetime"` if `is_dttm` | `field.semantic_type` | 从 `formatString` 推断 | `field.tags` |
-| `ColumnInfo.is_metric` | — (metrics 单独) | — | `measure` 类型列 | `field.category == "measure"` |
-| `ColumnInfo.expression` | `metric.expression` | — | `measure.expression` (DAX) | `measure.sql` |
-| `ColumnInfo.tags` | `["filterable","groupby"]` | `["has_field_values"]` | — | `field.tags` |
-
-#### 7.7.6 元数据是"有则更好"，非强制
-
-整个元数据拉取机制遵循**渐进增强**原则：
+这段文本通过现有的 `description` → `attachedMetadata` 链路自动进入 AI prompt，**无需修改任何前端代码**。
 
 ```
-层次 0: 无外部元数据（Upload/Paste/Database 的现有行为）
-  → DF 通过 AI Agent 推断 semanticType
-  → attachedMetadata 为空
-  → 完全不受影响
-
-层次 1: 只有列名和数据类型（插件最低要求）
-  → 与 Upload 行为一致
-  → AI Agent 自动推断语义类型
-
-层次 2: 有列描述和表描述（大多数 BI 平台可以提供）
-  → 跳过 AI 语义推断，直接使用
-  → AI 分析 prompt 质量显著提高
-
-层次 3: 有完整元数据（语义类型、度量表达式、标签、所有者等）
-  → 前端可显示丰富的列信息（tooltip、图标标注）
-  → AI 可以理解计算逻辑（"SUM(order_amount)" 表示总金额）
-  → 认证/可信标签帮助用户选择正确的数据集
+外部 BI 系统 API                    后端                          前端
+─────────────────                  ─────                         ─────
+dataset + columns + metrics  →  external_metadata (blob)
+                                     ↓ PluginDataWriter 拼接
+                                 description (文本)        →  attachedMetadata → AI prompt
+                                 loader_params (结构化)     →  source_metadata → 刷新按钮
 ```
 
-插件开发者只需要在 `column_metadata` 中填入能获取到的字段即可，缺失的字段框架自动忽略。
+#### 7.7.5 渐进增强
+
+| 层次 | 场景 | 效果 |
+|------|------|------|
+| 0 | Upload/Paste/Database（现有行为） | `external_metadata=None`，AI 自行推断，完全不受影响 |
+| 1 | 插件只传数据，不传元数据 | 与 Upload 行为一致 |
+| 2 | 插件传了 `external_metadata` | `description` 自动丰富，AI prompt 质量提升 |
+
+插件开发者把能拿到的元数据原样塞进 `external_metadata` 即可。拼接逻辑在 `PluginDataWriter` 中统一处理，尽力提取可读信息；无法解析的字段静默忽略。
 
 ---
 
