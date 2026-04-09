@@ -62,6 +62,15 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 
+/** Generate a session ID like session_20260408_193052_a1b2 */
+function generateSessionId(): string {
+    const now = new Date();
+    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    const short = crypto.randomUUID().slice(0, 4);
+    return `session_${date}_${time}_${short}`;
+}
+
 export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -173,7 +182,7 @@ export const DataFormulatorFC = ({ }) => {
             const data = await res.json();
             if (data.status === 'ok') {
                 const wsName = file.name.replace(/\.dfsession$|\.zip$/, '') || 'imported';
-                dispatch(dfActions.loadState({ ...data.state, activeWorkspace: { id: `session_${crypto.randomUUID()}`, displayName: wsName } }));
+                dispatch(dfActions.loadState({ ...data.state, activeWorkspace: { id: generateSessionId(), displayName: wsName } }));
             }
         } catch (e) {
             console.warn('Failed to import workspace:', e);
@@ -193,20 +202,10 @@ export const DataFormulatorFC = ({ }) => {
     const sessionLoading = useSelector((state: DataFormulatorState) => state.sessionLoading);
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
-    const openUploadDialog = async (tab: UploadTabType) => {
-        // If no workspace is active, create one on the backend first
+    const openUploadDialog = (tab: UploadTabType) => {
+        // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
         if (!activeWorkspace) {
-            const id = `session_${crypto.randomUUID()}`;
-            try {
-                await fetchWithIdentity(getUrls().SESSION_SAVE.replace('/save', '/create'), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id }),
-                });
-            } catch (e) {
-                console.warn('Failed to create workspace:', e);
-            }
-            dispatch(dfActions.setActiveWorkspace({ id, displayName: 'default' }));
+            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'default' }));
         }
         setUploadDialogInitialTab(tab);
         setUploadDialogOpen(true);

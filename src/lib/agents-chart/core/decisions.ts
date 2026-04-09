@@ -81,6 +81,10 @@ function validateTemporalParsing(
     const sampleValues = data.map(r => r[fieldName]).slice(0, 15).filter((v: any) => v != null);
     if (sampleValues.length === 0) return false;
 
+    // Single unique value → not useful as temporal axis (would show a single point)
+    const uniqueValues = new Set(sampleValues.map(String));
+    if (uniqueValues.size <= 1) return false;
+
     const looksTemporalValue = (val: any): boolean => {
         if (val instanceof Date) return true;
         if (typeof val === 'number') {

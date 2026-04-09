@@ -150,6 +150,11 @@ export function vlApplyLayoutToSpec(
         if (stCategory !== 'temporal') return;
 
         const fieldVals = context.table.map((r: any) => r[enc.field]).filter((v: any) => v != null);
+
+        // Single unique value → no temporal formatting (would lose precision, e.g. "2007-12" → "2007")
+        const uniqueVals = new Set(fieldVals.map(String));
+        if (uniqueVals.size <= 1) return;
+
         const datelikeCnt = fieldVals.filter((v: any) =>
             typeof v !== 'string' || looksLikeDateString(String(v))
         ).length;

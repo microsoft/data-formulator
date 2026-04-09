@@ -12,9 +12,9 @@ Flask dependency.
 
 Multi-workspace support:
   - Each user has a WorkspaceManager with multiple named workspaces.
-  - ``get_workspace()`` returns the active workspace (defaults to "default").
+  - ``get_workspace()`` returns the active workspace (read from X-Workspace-Id header).
   - ``get_workspace_manager()`` returns the WorkspaceManager for workspace CRUD.
-  - ``set_active_workspace()`` switches the active workspace.
+  - Backend is stateless: workspace ID comes from the frontend on every request.
 """
 
 import os
@@ -83,11 +83,28 @@ def _get_user_workspaces_root(identity_id: str) -> Path:
 
 def get_workspace_manager(identity_id: str) -> WorkspaceManager:
     """
-    Return a :class:`WorkspaceManager` for the given user.
+    Return a :class:`WorkspaceManager` (or Azure subclass) for the given user.
 
     The manager provides workspace CRUD (list, create, delete, rename)
     and session state persistence.
     """
+    from flask import current_app
+
+    cfg = current_app.config.get("CLI_ARGS", {})
+    backend = cfg.get(
+        "workspace_backend", os.getenv("WORKSPACE_BACKEND", "local")
+    )
+
+    if backend == "azure_blob":
+        from data_formulator.datalake.azure_blob_workspace_manager import (
+            AzureBlobWorkspaceManager,
+        )
+        client = _build_azure_container_client(cfg)
+        safe_id = Workspace._sanitize_identity_id(identity_id)
+        blob_prefix = f"users/{safe_id}/workspaces"
+        return AzureBlobWorkspaceManager(client, blob_prefix)
+
+    # Default: local filesystem
     root = _get_user_workspaces_root(identity_id)
     return WorkspaceManager(root)
 
@@ -103,48 +120,19 @@ def get_workspace(identity_id: str) -> Workspace:
     Return the active :class:`Workspace` for *identity_id*.
 
     Reads the workspace ID from the X-Workspace-Id request header.
+    Uses the WorkspaceManager (local or Azure) to open the workspace.
+    Creates the workspace lazily if it doesn't exist yet (the frontend
+    generates the ID and the first data operation triggers creation).
     Raises ValueError if no workspace ID is present in the request.
     """
-    from flask import current_app
-
-    cfg = current_app.config.get("CLI_ARGS", {})
-    backend = cfg.get(
-        "workspace_backend", os.getenv("WORKSPACE_BACKEND", "local")
-    )
-
-    if backend == "azure_blob":
-        from data_formulator.datalake.cached_azure_blob_workspace import (
-            CachedAzureBlobWorkspace,
-        )
-
-        client = _build_azure_container_client(cfg)
-        root = (
-            cfg.get("data_dir")
-            or os.getenv("DATA_FORMULATOR_HOME")
-            or "workspaces"
-        )
-
-        max_cache_mb = int(
-            cfg.get("cache_max_mb", os.getenv("DF_CACHE_MAX_MB", "1024"))
-        )
-        max_global_cache_mb = int(
-            cfg.get(
-                "global_cache_max_mb",
-                os.getenv("DF_GLOBAL_CACHE_MAX_MB", "10240"),
-            )
-        )
-        return CachedAzureBlobWorkspace(
-            identity_id,
-            client,
-            datalake_root=root,
-            max_cache_bytes=max_cache_mb * 1024 * 1024,
-            max_global_cache_bytes=max_global_cache_mb * 1024 * 1024,
-        )
-
-    # Default: local multi-workspace
     ws_id = get_active_workspace_id()
     if not ws_id:
         raise ValueError("No active workspace. X-Workspace-Id header is required.")
 
     mgr = get_workspace_manager(identity_id)
+
+    # Lazy creation: frontend generates the ID, backend creates on first use
+    if not mgr.workspace_exists(ws_id):
+        mgr.create_workspace(ws_id)
+
     return mgr.open_workspace(ws_id, identity_id)
