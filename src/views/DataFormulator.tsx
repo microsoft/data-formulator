@@ -48,10 +48,33 @@ import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSe
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import type { DictTable } from '../components/ComponentType';
 import { useTranslation } from 'react-i18next';
+import { fetchWithIdentity, getUrls } from '../app/utils';
+import { AppDispatch } from '../app/store';
+import Card from '@mui/material/Card';
+import CardActionArea from '@mui/material/CardActionArea';
+import CardContent from '@mui/material/CardContent';
+import IconButton from '@mui/material/IconButton';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DownloadIcon from '@mui/icons-material/Download';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+
+/** Generate a session ID like session_20260408_193052_a1b2 */
+function generateSessionId(): string {
+    const now = new Date();
+    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    const short = crypto.randomUUID().slice(0, 4);
+    return `session_${date}_${time}_${short}`;
+}
 
 export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
@@ -59,8 +82,114 @@ export const DataFormulatorFC = ({ }) => {
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const theme = useTheme();
 
-    const dispatch = useDispatch();
+    const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
+
+    // ── Workspace list (shown on landing page) ────────────────────
+    const [savedWorkspaces, setSavedWorkspaces] = useState<{id: string, display_name: string, saved_at: string | null}[]>([]);
+    const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null);
+
+    const fetchWorkspaces = useCallback(async () => {
+        if (serverConfig.DISABLE_DATABASE) return;
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_LIST);
+            const data = await res.json();
+            if (data.status === 'ok') setSavedWorkspaces(data.sessions);
+        } catch { /* ignore */ }
+    }, [serverConfig.DISABLE_DATABASE]);
+
+    useEffect(() => {
+        if (!activeWorkspace || tables.length === 0) {
+            fetchWorkspaces();
+        }
+    }, [activeWorkspace, tables.length, fetchWorkspaces]);
+
+    const handleOpenWorkspace = useCallback(async (name: string) => {
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: name }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok' && data.state && Object.keys(data.state).length > 0) {
+                // Use saved displayName if available, otherwise fall back to ID
+                const savedWs = data.state.activeWorkspace;
+                const displayName = (savedWs && savedWs.displayName) ? savedWs.displayName : name;
+                dispatch(dfActions.loadState({ ...data.state, activeWorkspace: { id: name, displayName } }));
+            } else {
+                dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'default' }));
+            }
+        } catch {
+            dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'default' }));
+        }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+    }, [dispatch]);
+
+    const handleDeleteWorkspace = useCallback(async (name: string) => {
+        try {
+            await fetchWithIdentity(getUrls().SESSION_DELETE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: name }),
+            });
+            setSavedWorkspaces(prev => prev.filter(w => w.id !== name));
+        } catch { /* ignore */ }
+        setConfirmDeleteWs(null);
+    }, []);
+
+    const handleExportWorkspace = useCallback(async (name: string) => {
+        // Open the workspace first to get its state, then export
+        try {
+            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: name }),
+            });
+            const data = await res.json();
+            if (data.status === 'ok' && data.state) {
+                const exportRes = await fetchWithIdentity(getUrls().SESSION_EXPORT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ state: data.state }),
+                });
+                if (!exportRes.ok) throw new Error('Export failed');
+                const blob = await exportRes.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${name}.dfsession`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            }
+        } catch (e) {
+            console.warn('Failed to export workspace:', e);
+        }
+    }, []);
+
+    const importRef = useRef<HTMLInputElement>(null);
+    const handleImportWorkspace = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Importing ${file.name}...` }));
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await fetchWithIdentity(getUrls().SESSION_IMPORT, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                const wsName = file.name.replace(/\.dfsession$|\.zip$/, '') || 'imported';
+                dispatch(dfActions.loadState({ ...data.state, activeWorkspace: { id: generateSessionId(), displayName: wsName } }));
+            }
+        } catch (e) {
+            console.warn('Failed to import workspace:', e);
+        }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+        if (importRef.current) importRef.current.value = '';
+    }, [dispatch]);
     
     // Set up automatic refresh of derived tables when source data changes
     useDerivedTableRefresh();
@@ -74,6 +203,10 @@ export const DataFormulatorFC = ({ }) => {
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
     const openUploadDialog = (tab: UploadTabType) => {
+        // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
+        if (!activeWorkspace) {
+            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'default' }));
+        }
         setUploadDialogInitialTab(tab);
         setUploadDialogOpen(true);
     };
@@ -394,6 +527,88 @@ export const DataFormulatorFC = ({ }) => {
                     variant="page"
                 />
             </Box>
+            {/* ── Saved workspaces section ──────────────────────────── */}
+            {!serverConfig.DISABLE_DATABASE && savedWorkspaces.length > 0 && (
+                <Box sx={{mt: 4}}>
+                    <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
+                        <Typography sx={{ color: 'text.secondary' }}>
+                            Your Sessions
+                        </Typography>
+                    </Divider>
+                    <Box sx={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                        gap: 2,
+                    }}>
+                        {savedWorkspaces.map(w => (
+                            <Card key={w.id} variant="outlined" sx={{
+                                position: 'relative', textAlign: 'left',
+                                borderColor: 'rgba(0,0,0,0.08)',
+                                '&:hover .ws-actions': { opacity: 1 },
+                            }}>
+                                <CardActionArea onClick={() => handleOpenWorkspace(w.id)}>
+                                    <CardContent sx={{ py: 1.5, px: 2 }}>
+                                        <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
+                                            {w.display_name}
+                                        </Typography>
+                                        {w.saved_at && (
+                                            <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
+                                                {new Date(w.saved_at).toLocaleString()}
+                                            </Typography>
+                                        )}
+                                    </CardContent>
+                                </CardActionArea>
+                                <Box className="ws-actions" sx={{
+                                    position: 'absolute', top: 4, right: 4,
+                                    display: 'flex', gap: 0.25,
+                                    opacity: 0, transition: 'opacity 0.15s',
+                                }}>
+                                    <Tooltip title="Export">
+                                        <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                            onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
+                                            <DownloadIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Delete">
+                                        <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                            onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(w.id); }}>
+                                            <DeleteOutlineIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                </Box>
+                            </Card>
+                        ))}
+                        {/* Import workspace card */}
+                        <Card variant="outlined" sx={{
+                            textAlign: 'center', borderStyle: 'dashed',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            height: '100%',
+                        }}>
+                            <CardActionArea onClick={() => importRef.current?.click()}
+                                sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                                <UploadFileIcon sx={{ color: 'text.secondary' }} />
+                                <Typography variant="caption" color="text.secondary">Import .dfsession</Typography>
+                            </CardActionArea>
+                            <input type="file" hidden accept=".dfsession,.zip" ref={importRef} onChange={handleImportWorkspace} />
+                        </Card>
+                    </Box>
+                </Box>
+            )}
+            {/* ── Delete workspace confirmation ────────────────────── */}
+            <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
+                <DialogTitle>Delete session?</DialogTitle>
+                <DialogContent>
+                    <Typography>
+                        This will permanently delete <strong>{confirmDeleteWs}</strong> and all its data.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setConfirmDeleteWs(null)}>Cancel</Button>
+                    <Button color="error" onClick={() => confirmDeleteWs && handleDeleteWorkspace(confirmDeleteWs)}>
+                        Delete
+                    </Button>
+                </DialogActions>
+            </Dialog>
             <Box sx={{mt: 4}}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
                     <Typography sx={{ color: 'text.secondary' }}>

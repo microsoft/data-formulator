@@ -23,6 +23,7 @@ import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers } from
 import { Chart, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
 
 import { alpha } from '@mui/material/styles';
+import { WritingPencil } from '../components/FunComponents';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
@@ -60,21 +61,7 @@ const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () =>
             overflow: 'hidden',
         }}>
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
-                <Typography sx={{
-                    fontSize: 10,
-                    display: 'inline-block',
-                    animation: 'writing-pencil 1s ease-in-out infinite',
-                    transformOrigin: 'bottom left',
-                    '@keyframes writing-pencil': {
-                        '0%': { transform: 'translate(0, 0) rotate(0deg)' },
-                        '25%': { transform: 'translate(3px, -1px) rotate(-5deg)' },
-                        '50%': { transform: 'translate(6px, 0) rotate(0deg)' },
-                        '75%': { transform: 'translate(3px, 1px) rotate(5deg)' },
-                        '100%': { transform: 'translate(0, 0) rotate(0deg)' },
-                    },
-                }}>
-                    ✏️
-                </Typography>
+                <WritingPencil size={10} />
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 10 }}>
                     {t('chartRec.agentWorking')}
                 </Typography>

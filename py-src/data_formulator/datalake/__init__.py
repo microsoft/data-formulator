@@ -40,15 +40,18 @@ from data_formulator.datalake.workspace import (
     get_data_formulator_home,
     get_default_workspace_root,
 )
+from data_formulator.datalake.workspace_manager import WorkspaceManager
 from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
 from data_formulator.datalake.cached_azure_blob_workspace import CachedAzureBlobWorkspace
 from data_formulator.datalake.cache_manager import GlobalCacheManager
 
 # Metadata types and operations
-from data_formulator.datalake.metadata import (
+from data_formulator.datalake.workspace_metadata import (
     TableMetadata,
     ColumnInfo,
     WorkspaceMetadata,
+    ImportedFrom,
+    Derivation,
     load_metadata,
     save_metadata,
     update_metadata,
@@ -89,10 +92,13 @@ __all__ = [
     "GlobalCacheManager",
     "get_data_formulator_home",
     "get_default_workspace_root",
+    "WorkspaceManager",
     # Metadata
     "TableMetadata",
     "ColumnInfo",
     "WorkspaceMetadata",
+    "ImportedFrom",
+    "Derivation",
     "load_metadata",
     "save_metadata",
     "update_metadata",

@@ -8,7 +8,7 @@ from data_formulator.datalake.table_names import sanitize_external_loader_table_
 
 if TYPE_CHECKING:
     from data_formulator.datalake.workspace import Workspace
-    from data_formulator.datalake.metadata import TableMetadata
+    from data_formulator.datalake.workspace_metadata import TableMetadata
 
 logger = logging.getLogger(__name__)
 

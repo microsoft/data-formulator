@@ -127,28 +127,6 @@ h2.view-title {
     }
 }
 
-// Pencil writing animation
-@keyframes writing-pencil {
-    0%, 100% { 
-        transform: rotate(-12deg) translateY(0px); 
-    }
-    25% { 
-        transform: rotate(-8deg) translateY(-1px); 
-    }
-    50% { 
-        transform: rotate(-12deg) translateY(0px); 
-    }
-    75% { 
-        transform: rotate(-15deg) translateY(1px); 
-    }
-}
-
-.pencil {
-    display: inline-block;
-    transform-origin: bottom right;
-    animation: writing-pencil 0.8s ease-in-out infinite;
-}
-
 // Fix MUI Dialog bottom scrolling issues
 .MuiDialog-paper {
     display: flex;

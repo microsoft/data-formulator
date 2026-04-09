@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, date, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Callable, Literal, Any
+from typing import Callable, Literal, Any, Any
 import yaml
 import logging
 import tempfile
@@ -214,6 +214,7 @@ class TableMetadata:
     row_count: int | None = None
     columns: list[ColumnInfo] | None = None
     original_name: str | None = None
+    description: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for YAML serialization."""
@@ -244,6 +245,8 @@ class TableMetadata:
             result["columns"] = [col.to_dict() for col in self.columns]
         if self.original_name is not None:
             result["original_name"] = self.original_name
+        if self.description is not None:
+            result["description"] = self.description
         
         return result
 
@@ -278,6 +281,7 @@ class TableMetadata:
             row_count=data.get("row_count"),
             columns=columns,
             original_name=data.get("original_name"),
+            description=data.get("description"),
         )
 
 
@@ -451,3 +455,118 @@ def update_metadata(
 def metadata_exists(workspace_path: Path) -> bool:
     """Check if workspace metadata file exists."""
     return (workspace_path / METADATA_FILENAME).exists()
+
+
+# ── imported_from: source provenance ─────────────────────────────────
+
+@dataclass
+class ImportedFrom:
+    """
+    Provenance of a dataset — how it was originally imported.
+
+    Mirrors the ExternalDataLoader model. Credentials are never stored;
+    only safe params (output of get_safe_params()) are persisted.
+
+    source_type discriminates the shape:
+      - data_loader: loader_type + params + source_table/source_query
+      - upload: original_name
+      - url: url
+      - stream: url + refresh_interval_seconds
+      - example: dataset_name
+      - paste: (no extra fields)
+    """
+    source_type: Literal["data_loader", "upload", "url", "stream", "example", "paste"]
+    ingested_at: datetime
+
+    # data_loader fields
+    loader_type: str | None = None
+    params: dict[str, Any] | None = None
+    source_table: str | None = None
+    source_query: str | None = None
+
+    # upload fields
+    original_name: str | None = None
+
+    # url / stream fields
+    url: str | None = None
+    refresh_interval_seconds: int | None = None
+
+    # example fields
+    dataset_name: str | None = None
+
+    def to_dict(self) -> dict:
+        result: dict[str, Any] = {
+            "source_type": self.source_type,
+            "ingested_at": self.ingested_at.isoformat(),
+        }
+        if self.source_type == "data_loader":
+            if self.loader_type is not None:
+                result["loader_type"] = self.loader_type
+            if self.params is not None:
+                result["params"] = make_json_safe(self.params)
+            if self.source_table is not None:
+                result["source_table"] = self.source_table
+            if self.source_query is not None:
+                result["source_query"] = self.source_query
+        elif self.source_type == "upload":
+            if self.original_name is not None:
+                result["original_name"] = self.original_name
+        elif self.source_type in ("url", "stream"):
+            if self.url is not None:
+                result["url"] = self.url
+            if self.refresh_interval_seconds is not None:
+                result["refresh_interval_seconds"] = self.refresh_interval_seconds
+        elif self.source_type == "example":
+            if self.dataset_name is not None:
+                result["dataset_name"] = self.dataset_name
+        # paste: no extra fields
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ImportedFrom":
+        ingested_at = data["ingested_at"]
+        if isinstance(ingested_at, str):
+            ingested_at = datetime.fromisoformat(ingested_at)
+        return cls(
+            source_type=data["source_type"],
+            ingested_at=ingested_at,
+            loader_type=data.get("loader_type"),
+            params=data.get("params"),
+            source_table=data.get("source_table"),
+            source_query=data.get("source_query"),
+            original_name=data.get("original_name"),
+            url=data.get("url"),
+            refresh_interval_seconds=data.get("refresh_interval_seconds"),
+            dataset_name=data.get("dataset_name"),
+        )
+
+
+# ── derivation: lineage for derived tables ───────────────────────────
+
+@dataclass
+class Derivation:
+    """Lineage info for a derived table in a workspace."""
+    source_tables: list[str]
+    description: str
+    code: str
+    created_at: datetime
+
+    def to_dict(self) -> dict:
+        return {
+            "source_tables": self.source_tables,
+            "description": self.description,
+            "code": self.code,
+            "created_at": self.created_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Derivation":
+        created_at = data["created_at"]
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+        return cls(
+            source_tables=data.get("source_tables", []),
+            description=data.get("description", ""),
+            code=data.get("code", ""),
+            created_at=created_at,
+        )

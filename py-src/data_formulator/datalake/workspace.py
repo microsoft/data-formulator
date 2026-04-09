@@ -27,7 +27,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from data_formulator.datalake.metadata import (
+from data_formulator.datalake.workspace_metadata import (
     WorkspaceMetadata,
     TableMetadata,
     load_metadata,
@@ -140,13 +140,17 @@ class Workspace:
     All files are stored in a single flat directory per user.
     """
     
-    def __init__(self, identity_id: str, root_dir: Optional[str | Path] = None):
+    def __init__(self, identity_id: str, root_dir: Optional[str | Path] = None, *, workspace_path: Optional[str | Path] = None):
         """
         Initialize a workspace for a user.
         
         Args:
             identity_id: Unique identifier for the user (e.g., "user:123" or "browser:abc")
             root_dir: Root directory for all workspaces. If None, uses default.
+                      Ignored if workspace_path is provided.
+            workspace_path: Direct path to the workspace directory. When provided,
+                           root_dir and identity_id-based path resolution are skipped.
+                           Used by WorkspaceManager for multi-workspace support.
         """
         if not identity_id:
             raise ValueError("identity_id cannot be empty")
@@ -155,26 +159,29 @@ class Workspace:
         self._identity_id = identity_id
         self._safe_id = self._sanitize_identity_id(identity_id)
         
-        # Determine root directory
-        if root_dir is None:
-            self._root = get_default_workspace_root()
+        if workspace_path is not None:
+            # Direct path mode (used by WorkspaceManager)
+            self._path = Path(workspace_path)
+            self._root = self._path.parent
         else:
-            self._root = Path(root_dir)
-        
-        # Workspace path is root / sanitized_identity_id
-        self._path = self._root / self._safe_id
+            # Legacy mode: root_dir / sanitized_identity_id
+            if root_dir is None:
+                self._root = get_default_workspace_root()
+            else:
+                self._root = Path(root_dir)
+            self._path = self._root / self._safe_id
 
-        # Verify the constructed path hasn't escaped the root directory
-        resolved = self._path.resolve()
-        root_resolved = self._root.resolve()
-        if not str(resolved).startswith(str(root_resolved) + os.sep) and resolved != root_resolved:
-            raise ValueError(
-                f"Path traversal detected: workspace path escapes root directory"
-            )
-        if resolved == root_resolved:
-            raise ValueError(
-                "identity_id must not resolve to the workspace root itself"
-            )
+            # Verify the constructed path hasn't escaped the root directory
+            resolved = self._path.resolve()
+            root_resolved = self._root.resolve()
+            if not str(resolved).startswith(str(root_resolved) + os.sep) and resolved != root_resolved:
+                raise ValueError(
+                    f"Path traversal detected: workspace path escapes root directory"
+                )
+            if resolved == root_resolved:
+                raise ValueError(
+                    "identity_id must not resolve to the workspace root itself"
+                )
 
         # Ensure workspace directory exists
         self._path.mkdir(parents=True, exist_ok=True)
@@ -218,37 +225,29 @@ class Workspace:
     
     def get_file_path(self, filename: str) -> Path:
         """
-        Get the full path for a file in the workspace.
+        Get the full path for a data file in the workspace.
+
+        Files are stored under the ``data/`` subdirectory of the workspace.
 
         Uses :func:`safe_data_filename` for Unicode-safe sanitisation:
         extracts the basename to prevent path traversal while preserving
         non-ASCII characters (Chinese, Japanese, etc.).
 
-        For backward compatibility, if the Unicode-named file does not
-        exist on disk, falls back to the legacy ``secure_filename`` name
-        so that workspaces created before this change continue to work.
-
         Args:
             filename: Name of the file
             
         Returns:
-            Full path to the file
+            Full path to the file under data/
         """
+        data_dir = self._path / "data"
+        data_dir.mkdir(exist_ok=True)
+
         basename = safe_data_filename(filename)
-        result = self._path / basename
+        result = data_dir / basename
         try:
-            result.resolve().relative_to(self._path.resolve())
+            result.resolve().relative_to(data_dir.resolve())
         except ValueError:
             raise ValueError(f"Path traversal detected: {filename!r}")
-
-        # Legacy fallback: files saved before Unicode filename support
-        # were written with secure_filename (which strips non-ASCII chars).
-        if not result.exists():
-            legacy_name = secure_filename(filename)
-            if legacy_name and legacy_name != basename:
-                legacy_path = self._path / legacy_name
-                if legacy_path.exists():
-                    return legacy_path
 
         return result
     
@@ -430,7 +429,7 @@ class Workspace:
         metadata = self.get_table_metadata(table_name)
         if metadata is None:
             raise FileNotFoundError(f"Table not found: {table_name}")
-        return metadata.filename
+        return f"data/{metadata.filename}"
 
     def read_data_as_df(self, table_name: str) -> pd.DataFrame:
         """
@@ -530,6 +529,7 @@ class Workspace:
             f"Wrote parquet {filename}: {table.num_rows} rows, "
             f"{table.num_columns} cols ({table_metadata.file_size} bytes) [Arrow]"
         )
+
         return table_metadata
 
     def write_parquet(
@@ -580,6 +580,7 @@ class Workspace:
             f"Wrote parquet {filename}: {len(df)} rows, "
             f"{len(df.columns)} cols ({table_metadata.file_size} bytes)"
         )
+
         return table_metadata
 
     def get_parquet_schema(self, table_name: str) -> dict:
@@ -728,95 +729,8 @@ class Workspace:
             shutil.copytree(src, self._path, dirs_exist_ok=True)
 
     # ------------------------------------------------------------------
-    # Session management
+    # Export / Import
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _sanitize_session_name(name: str) -> str:
-        """Produce a storage-safe session name."""
-        return secure_filename(name) or 'unnamed'
-
-    def _get_sessions_root(self) -> Path:
-        """Return the per-user sessions directory on local filesystem."""
-        p = get_data_formulator_home() / "sessions" / self._safe_id
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-
-    def _session_dir(self, session_name: str) -> Path:
-        return self._get_sessions_root() / self._sanitize_session_name(session_name)
-
-    def save_session(self, session_name: str, state: dict) -> str:
-        """Save a session (state + workspace snapshot).
-
-        Returns the ISO timestamp of the save.
-        """
-        safe_name = self._sanitize_session_name(session_name)
-        sess_dir = self._session_dir(session_name)
-
-        # Wipe previous save with the same name
-        if sess_dir.exists():
-            shutil.rmtree(sess_dir)
-        sess_dir.mkdir(parents=True)
-
-        # 1. Workspace snapshot
-        self.save_workspace_snapshot(sess_dir / "workspace")
-
-        # 2. State JSON
-        (sess_dir / "state.json").write_text(
-            json.dumps(state, default=str, ensure_ascii=False), encoding="utf-8"
-        )
-
-        saved_at = datetime.now(timezone.utc).isoformat()
-        logger.info(f"Saved session '{safe_name}' for {self._identity_id}")
-        return saved_at
-
-    def load_session(self, session_name: str) -> dict | None:
-        """Load a session.  Restores workspace and returns the state dict.
-
-        Returns ``None`` if the session does not exist.
-        """
-        sess_dir = self._session_dir(session_name)
-        state_file = sess_dir / "state.json"
-        if not state_file.exists():
-            return None
-
-        # 1. Restore workspace
-        ws_saved = sess_dir / "workspace"
-        if ws_saved.exists():
-            self.restore_workspace_snapshot(ws_saved)
-
-        # 2. Return state
-        return json.loads(state_file.read_text(encoding="utf-8"))
-
-    def list_sessions(self) -> list[dict]:
-        """List saved sessions (newest first)."""
-        root = self._get_sessions_root()
-        sessions: list[dict] = []
-        if root.exists():
-            for child in sorted(root.iterdir()):
-                if not child.is_dir():
-                    continue
-                state_file = child / "state.json"
-                if not state_file.exists():
-                    continue
-                stat = state_file.stat()
-                sessions.append({
-                    "name": child.name,
-                    "saved_at": datetime.fromtimestamp(
-                        stat.st_mtime, tz=timezone.utc
-                    ).isoformat(),
-                })
-        sessions.sort(key=lambda s: s["saved_at"], reverse=True)
-        return sessions
-
-    def delete_session(self, session_name: str) -> bool:
-        """Delete a saved session.  Returns True if it existed."""
-        sess_dir = self._session_dir(session_name)
-        if not sess_dir.exists():
-            return False
-        shutil.rmtree(sess_dir)
-        logger.info(f"Deleted session '{session_name}' for {self._identity_id}")
-        return True
 
     def export_session_zip(self, state: dict) -> io.BytesIO:
         """Export current state + workspace as a .dfsession zip."""
@@ -855,13 +769,16 @@ class Workspace:
                     ws_tmp.mkdir(parents=True, exist_ok=True)
                     for entry in workspace_entries:
                         rel = entry[len("workspace/"):]
-                        # Guard against zip-slip: secure_filename strips
-                        # path separators and ".." components, and is
-                        # recognised by CodeQL as a path-injection sanitiser.
-                        safe_rel = secure_filename(rel)
-                        if not safe_rel:
-                            continue  # skip entries that sanitise to empty
-                        dest = ws_tmp / safe_rel
+                        if not rel:
+                            continue
+                        # Sanitize each path component individually to preserve
+                        # directory structure (e.g., "data/sales.parquet")
+                        # while still guarding against zip-slip / path traversal.
+                        parts = [secure_filename(p) for p in rel.split("/")]
+                        parts = [p for p in parts if p]
+                        if not parts:
+                            continue
+                        dest = ws_tmp.joinpath(*parts)
                         dest.parent.mkdir(parents=True, exist_ok=True)
                         dest.write_bytes(zf.read(entry))
                     self.restore_workspace_snapshot(ws_tmp)

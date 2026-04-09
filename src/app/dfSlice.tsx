@@ -148,6 +148,10 @@ export interface DataFormulatorState {
     // Session loading overlay
     sessionLoading: boolean;
     sessionLoadingLabel: string;
+
+    // Active workspace (null = show workspace picker)
+    // id: stable identifier (folder name), displayName: user-facing name (can be renamed)
+    activeWorkspace: { id: string; displayName: string } | null;
 }
 
 // Define the initial state using that type
@@ -211,6 +215,8 @@ const initialState: DataFormulatorState = {
 
     sessionLoading: false,
     sessionLoadingLabel: '',
+
+    activeWorkspace: null,
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -513,12 +519,18 @@ export const dataFormulatorSlice = createSlice({
             state.cleanInProgress = false;
 
             state.generatedReports = [];
+
+            // Clear active workspace so stale IDs don't persist across restarts
+            state.activeWorkspace = null;
             // Redux Persist will handle persistence automatically
             
         },
         setSessionLoading: (state, action: PayloadAction<{loading: boolean, label?: string}>) => {
             state.sessionLoading = action.payload.loading;
             state.sessionLoadingLabel = action.payload.label || '';
+        },
+        setActiveWorkspace: (state, action: PayloadAction<{ id: string; displayName: string } | null>) => {
+            state.activeWorkspace = action.payload;
         },
         loadState: (state, action: PayloadAction<any>) => {
             const saved = action.payload;
@@ -584,6 +596,9 @@ export const dataFormulatorSlice = createSlice({
                 cleanInProgress: false,
                 sessionLoading: false,
                 sessionLoadingLabel: '',
+
+                // Preserve or restore workspace name
+                activeWorkspace: saved.activeWorkspace ?? state.activeWorkspace ?? null,
             };
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {

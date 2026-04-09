@@ -38,7 +38,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
 
-from data_formulator.datalake.metadata import (
+from data_formulator.datalake.workspace_metadata import (
     WorkspaceMetadata,
     TableMetadata,
     METADATA_FILENAME,
@@ -85,6 +85,8 @@ class AzureBlobWorkspace(Workspace):
         identity_id: str,
         container_client: ContainerClient,
         datalake_root: str = "",
+        *,
+        blob_prefix: str | None = None,
     ):
         """
         Args:
@@ -93,7 +95,10 @@ class AzureBlobWorkspace(Workspace):
                 already authenticated and pointing at the target container.
             datalake_root: Optional path prefix inside the container
                 (e.g. ``"workspaces"``).  Leading/trailing slashes are
-                stripped automatically.
+                stripped automatically. Ignored if blob_prefix is provided.
+            blob_prefix: Direct blob prefix for this workspace. When provided,
+                datalake_root and identity_id-based prefix are skipped.
+                Used by AzureBlobWorkspaceManager for multi-workspace support.
         """
         if not identity_id:
             raise ValueError("identity_id cannot be empty")
@@ -104,9 +109,15 @@ class AzureBlobWorkspace(Workspace):
 
         # --- blob storage ----------------------------------------------------
         self._container: ContainerClient = container_client
-        root = datalake_root.strip("/")
-        self._datalake_root = root
-        self._prefix = f"{root}/{self._safe_id}/" if root else f"{self._safe_id}/"
+        if blob_prefix is not None:
+            # Direct prefix mode (used by AzureBlobWorkspaceManager)
+            self._datalake_root = ""
+            self._prefix = blob_prefix.rstrip("/") + "/"
+        else:
+            # Legacy mode: datalake_root / safe_id
+            root = datalake_root.strip("/")
+            self._datalake_root = root
+            self._prefix = f"{root}/{self._safe_id}/" if root else f"{self._safe_id}/"
 
         # _path / _root are not meaningful for blob storage but some code
         # (e.g. sandbox) may reference them, so we set them to None rather
@@ -145,6 +156,10 @@ class AzureBlobWorkspace(Workspace):
     def _blob_name(self, filename: str) -> str:
         """Full blob name for *filename* within this workspace."""
         return f"{self._prefix}{filename}"
+
+    def _data_blob_key(self, filename: str) -> str:
+        """Blob-internal key for a data file (under data/ subdirectory)."""
+        return f"data/{filename}"
 
     def _get_blob(self, filename: str):
         """Return a ``BlobClient`` for *filename*."""
@@ -282,7 +297,10 @@ class AzureBlobWorkspace(Workspace):
     # ------------------------------------------------------------------
 
     def get_file_path(self, filename: str) -> str:  # type: ignore[override]
-        """Return the full blob name for *filename*.
+        """Return the full blob name for a data file.
+
+        Data files are stored under the ``data/`` prefix within the workspace,
+        matching the local workspace layout.
 
         .. note::
             The return type is ``str`` (a blob path), **not** a local
@@ -290,10 +308,10 @@ class AzureBlobWorkspace(Workspace):
             will not work — use :meth:`read_data_as_df`,
             :meth:`download_file`, or :meth:`_temp_local_copy` instead.
         """
-        return self._blob_name(safe_data_filename(filename))
+        return self._blob_name(self._data_blob_key(safe_data_filename(filename)))
 
     def file_exists(self, filename: str) -> bool:
-        return self._blob_exists(safe_data_filename(filename))
+        return self._blob_exists(self._data_blob_key(safe_data_filename(filename)))
 
     def delete_table(self, table_name: str) -> bool:
         metadata = self.get_metadata()
@@ -301,8 +319,8 @@ class AzureBlobWorkspace(Workspace):
         if table is None:
             return False
 
-        if self._blob_exists(table.filename):
-            self._delete_blob(table.filename)
+        if self._blob_exists(self._data_blob_key(table.filename)):
+            self._delete_blob(self._data_blob_key(table.filename))
 
         removed = [False]
 
@@ -325,9 +343,9 @@ class AzureBlobWorkspace(Workspace):
 
         self._atomic_update_metadata(_cleanup)
 
-        if deleted and self._blob_exists(safe_filename):
+        if deleted and self._blob_exists(self._data_blob_key(safe_filename)):
             try:
-                self._delete_blob(safe_filename)
+                self._delete_blob(self._data_blob_key(safe_filename))
             except Exception as e:
                 logger.warning("Failed to delete source blob %s: %s", safe_filename, e)
             logger.info(
@@ -353,10 +371,10 @@ class AzureBlobWorkspace(Workspace):
         meta = self.get_table_metadata(table_name)
         if meta is None:
             raise FileNotFoundError(f"Table not found: {table_name}")
-        if not self._blob_exists(meta.filename):
+        if not self._blob_exists(self._data_blob_key(meta.filename)):
             raise FileNotFoundError(f"Blob not found: {meta.filename}")
 
-        buf = io.BytesIO(self._download_bytes(meta.filename))
+        buf = io.BytesIO(self._download_bytes(self._data_blob_key(meta.filename)))
         readers = {
             "parquet": lambda b: pd.read_parquet(b),
             "csv": lambda b: pd.read_csv(b),
@@ -390,14 +408,14 @@ class AzureBlobWorkspace(Workspace):
         ws_meta = self.get_metadata()
         if safe_name in ws_meta.tables:
             old_fn = ws_meta.tables[safe_name].filename
-            if self._blob_exists(old_fn):
-                self._delete_blob(old_fn)
+            if self._blob_exists(self._data_blob_key(old_fn)):
+                self._delete_blob(self._data_blob_key(old_fn))
 
         # Serialise to bytes, upload
         buf = io.BytesIO()
         pq.write_table(table, buf, compression=compression)
         blob_bytes = buf.getvalue()
-        self._upload_bytes(filename, blob_bytes)
+        self._upload_bytes(self._data_blob_key(filename), blob_bytes)
 
         now = datetime.now(timezone.utc)
         table_metadata = TableMetadata(
@@ -439,8 +457,8 @@ class AzureBlobWorkspace(Workspace):
         ws_meta = self.get_metadata()
         if safe_name in ws_meta.tables:
             old_fn = ws_meta.tables[safe_name].filename
-            if self._blob_exists(old_fn):
-                self._delete_blob(old_fn)
+            if self._blob_exists(self._data_blob_key(old_fn)):
+                self._delete_blob(self._data_blob_key(old_fn))
 
         sanitized_df = sanitize_dataframe_for_arrow(df)
         arrow_table = pa.Table.from_pandas(sanitized_df)
@@ -448,7 +466,7 @@ class AzureBlobWorkspace(Workspace):
         buf = io.BytesIO()
         pq.write_table(arrow_table, buf, compression=compression)
         blob_bytes = buf.getvalue()
-        self._upload_bytes(filename, blob_bytes)
+        self._upload_bytes(self._data_blob_key(filename), blob_bytes)
 
         now = datetime.now(timezone.utc)
         table_metadata = TableMetadata(
@@ -487,10 +505,10 @@ class AzureBlobWorkspace(Workspace):
             raise FileNotFoundError(f"Table not found: {table_name}")
         if meta.file_type != "parquet":
             raise ValueError(f"Table {table_name} is not a parquet file")
-        if not self._blob_exists(meta.filename):
+        if not self._blob_exists(self._data_blob_key(meta.filename)):
             raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
 
-        with self._temp_local_copy(meta.filename) as tmp_path:
+        with self._temp_local_copy(self._data_blob_key(meta.filename)) as tmp_path:
             pf = pq.ParquetFile(tmp_path)
             schema = pf.schema_arrow
             return {
@@ -520,9 +538,9 @@ class AzureBlobWorkspace(Workspace):
             raise FileNotFoundError(f"Table not found: {table_name}")
         if meta.file_type != "parquet":
             raise ValueError(f"Table {table_name} is not a parquet file")
-        if not self._blob_exists(meta.filename):
+        if not self._blob_exists(self._data_blob_key(meta.filename)):
             raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
-        return self._blob_name(meta.filename)
+        return self._blob_name(self._data_blob_key(meta.filename))
 
     def run_parquet_sql(self, table_name: str, sql: str) -> pd.DataFrame:
         """Run a DuckDB SQL query against a parquet table.
@@ -537,12 +555,12 @@ class AzureBlobWorkspace(Workspace):
             raise FileNotFoundError(f"Table not found: {table_name}")
         if meta.file_type != "parquet":
             raise ValueError(f"Table {table_name} is not a parquet file")
-        if not self._blob_exists(meta.filename):
+        if not self._blob_exists(self._data_blob_key(meta.filename)):
             raise FileNotFoundError(f"Parquet blob not found: {meta.filename}")
         if "{parquet}" not in sql:
             raise ValueError("SQL must contain {parquet} placeholder")
 
-        with self._temp_local_copy(meta.filename) as tmp_path:
+        with self._temp_local_copy(self._data_blob_key(meta.filename)) as tmp_path:
             escaped = str(tmp_path).replace("\\", "\\\\").replace("'", "''")
             full_sql = sql.format(parquet=f"read_parquet('{escaped}')")
             conn = duckdb.connect(":memory:")
@@ -584,12 +602,12 @@ class AzureBlobWorkspace(Workspace):
     # ------------------------------------------------------------------
 
     def upload_file(self, content: bytes, filename: str) -> None:
-        """Upload raw file content to the workspace as a blob."""
-        self._upload_bytes(safe_data_filename(filename), content)
+        """Upload raw file content to the workspace as a data blob."""
+        self._upload_bytes(self._data_blob_key(safe_data_filename(filename)), content)
 
     def download_file(self, filename: str) -> bytes:
-        """Download raw file content from the workspace blob."""
-        return self._download_bytes(safe_data_filename(filename))
+        """Download raw file content from the workspace data blob."""
+        return self._download_bytes(self._data_blob_key(safe_data_filename(filename)))
 
     # ------------------------------------------------------------------
     # Workspace snapshot (session save / restore)
@@ -622,168 +640,6 @@ class AzureBlobWorkspace(Workspace):
         self._metadata_cache = None
         self._blob_data_cache.clear()
         self._cleanup_temp_files()
-
-    # ------------------------------------------------------------------
-    # Session management (blob-backed)
-    # ------------------------------------------------------------------
-
-    def _session_blob_prefix(self, session_name: str) -> str:
-        """Blob prefix for a named session.
-
-        Uses a parallel structure to the workspace prefix::
-
-          workspace data:  <root>/<safe_id>/...
-          sessions:        sessions/<safe_id>/<session_name>/...
-
-        This mirrors the local filesystem layout where workspaces and
-        sessions live side-by-side.
-        """
-        safe_name = self._sanitize_session_name(session_name)
-        return f"sessions/{self._safe_id}/{safe_name}/"
-
-    def save_session(self, session_name: str, state: dict) -> str:
-        safe_name = self._sanitize_session_name(session_name)
-        prefix = self._session_blob_prefix(session_name)
-
-        # Wipe previous save
-        for blob in self._container.list_blobs(name_starts_with=prefix):
-            self._container.delete_blob(blob.name)
-
-        # 1. Snapshot workspace files into session blobs
-        for blob in self._container.list_blobs(name_starts_with=self._prefix):
-            rel = blob.name[len(self._prefix):]
-            if not rel:
-                continue
-            data = self._container.download_blob(blob.name).readall()
-            self._container.upload_blob(
-                f"{prefix}workspace/{rel}", data, overwrite=True
-            )
-
-        # 2. State JSON
-        state_json = json.dumps(state, default=str, ensure_ascii=False)
-        self._container.upload_blob(
-            f"{prefix}state.json", state_json.encode("utf-8"), overwrite=True
-        )
-
-        saved_at = datetime.now(timezone.utc).isoformat()
-        logger.info(f"Saved session '{safe_name}' for {self._identity_id} (blob)")
-        return saved_at
-
-    def load_session(self, session_name: str) -> dict | None:
-        prefix = self._session_blob_prefix(session_name)
-        state_blob = f"{prefix}state.json"
-
-        from azure.core.exceptions import ResourceNotFoundError
-        try:
-            raw = self._container.download_blob(state_blob).readall()
-        except ResourceNotFoundError:
-            return None
-
-        # Restore workspace: delete current blobs, copy session workspace blobs
-        ws_prefix = f"{prefix}workspace/"
-        ws_blobs = list(self._container.list_blobs(name_starts_with=ws_prefix))
-        if ws_blobs:
-            self.cleanup()
-            for blob in ws_blobs:
-                rel = blob.name[len(ws_prefix):]
-                if not rel:
-                    continue
-                data = self._container.download_blob(blob.name).readall()
-                self._container.upload_blob(
-                    self._blob_name(rel), data, overwrite=True
-                )
-            if not self._blob_exists(METADATA_FILENAME):
-                self._init_metadata()
-
-        # Invalidate caches since workspace blobs were replaced
-        self._metadata_cache = None
-        self._blob_data_cache.clear()
-        self._cleanup_temp_files()
-
-        return json.loads(raw)
-
-    def _sessions_root_prefix(self) -> str:
-        """Blob prefix for all sessions of this user."""
-        return f"sessions/{self._safe_id}/"
-
-    def list_sessions(self) -> list[dict]:
-        sessions_prefix = self._sessions_root_prefix()
-        sessions: list[dict] = []
-        seen: set[str] = set()
-
-        for blob in self._container.list_blobs(name_starts_with=sessions_prefix):
-            rel = blob.name[len(sessions_prefix):]
-            parts = rel.split("/", 1)
-            if len(parts) < 2:
-                continue
-            sess_name = parts[0]
-            if sess_name in seen:
-                continue
-            # Check it has a state.json
-            if parts[1] == "state.json":
-                seen.add(sess_name)
-                sessions.append({
-                    "name": sess_name,
-                    "saved_at": blob.last_modified.isoformat()
-                    if blob.last_modified
-                    else datetime.now(timezone.utc).isoformat(),
-                })
-
-        sessions.sort(key=lambda s: s["saved_at"], reverse=True)
-        return sessions
-
-    def delete_session(self, session_name: str) -> bool:
-        prefix = self._session_blob_prefix(session_name)
-        blobs = list(self._container.list_blobs(name_starts_with=prefix))
-        if not blobs:
-            return False
-        for blob in blobs:
-            self._container.delete_blob(blob.name)
-        logger.info(f"Deleted session '{session_name}' for {self._identity_id} (blob)")
-        return True
-
-    def export_session_zip(self, state: dict) -> io.BytesIO:
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("state.json", json.dumps(state, default=str, ensure_ascii=False))
-            for blob in self._container.list_blobs(name_starts_with=self._prefix):
-                rel = blob.name[len(self._prefix):]
-                if not rel:
-                    continue
-                data = self._container.download_blob(blob.name).readall()
-                zf.writestr(f"workspace/{rel}", data)
-        buf.seek(0)
-        return buf
-
-    def import_session_zip(self, zip_data: io.BytesIO) -> dict:
-        with zipfile.ZipFile(zip_data, "r") as zf:
-            if "state.json" not in zf.namelist():
-                raise ValueError("Invalid session file: missing state.json")
-
-            state = json.loads(zf.read("state.json"))
-
-            workspace_entries = [
-                n for n in zf.namelist()
-                if n.startswith("workspace/") and not n.endswith("/")
-            ]
-            if workspace_entries:
-                self.cleanup()
-                for entry in workspace_entries:
-                    rel = entry[len("workspace/"):]
-                    # Guard against zip-slip: secure_filename strips
-                    # path separators and ".." components.
-                    safe_rel = secure_filename(rel)
-                    if not safe_rel:
-                        continue  # skip entries that sanitise to empty
-                    self._upload_bytes(safe_rel, zf.read(entry))
-                if not self._blob_exists(METADATA_FILENAME):
-                    self._init_metadata()
-                # Invalidate caches since workspace blobs were replaced
-                self._metadata_cache = None
-                self._blob_data_cache.clear()
-                self._cleanup_temp_files()
-
-        return state
 
     # ------------------------------------------------------------------
     # Representation

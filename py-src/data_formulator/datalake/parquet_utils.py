@@ -19,7 +19,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from data_formulator.datalake.metadata import ColumnInfo, make_json_safe
+from data_formulator.datalake.workspace_metadata import ColumnInfo, make_json_safe
 from data_formulator.datalake.table_names import sanitize_workspace_parquet_table_name
 
 logger = logging.getLogger(__name__)
