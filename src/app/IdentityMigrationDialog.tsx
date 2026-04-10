@@ -11,6 +11,7 @@
  */
 
 import { FC, useEffect, useState, useCallback } from "react";
+import { useSelector } from "react-redux";
 import {
     Dialog,
     DialogTitle,
@@ -23,6 +24,7 @@ import {
     Box,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import type { DataFormulatorState } from "./dfSlice";
 import { fetchWithIdentity, getUrls } from "./utils";
 import { persistor } from "./store";
 
@@ -36,6 +38,7 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
     onDone,
 }) => {
     const { t } = useTranslation();
+    const identity = useSelector((s: DataFormulatorState) => s.identity);
     const [loading, setLoading] = useState(true);
     const [migrating, setMigrating] = useState(false);
     const [workspaceCount, setWorkspaceCount] = useState(0);
@@ -43,6 +46,12 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
     const [success, setSuccess] = useState<string | null>(null);
 
     const sourceIdentity = `browser:${oldBrowserId}`;
+
+    const markMigrationDone = useCallback(() => {
+        if (identity?.id) {
+            localStorage.setItem(`df_migrated:${identity.id}`, "true");
+        }
+    }, [identity]);
 
     useEffect(() => {
         (async () => {
@@ -65,9 +74,10 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
     }, []);
 
     const purgeAndFinish = useCallback(async () => {
+        markMigrationDone();
         await persistor.purge();
         onDone();
-    }, [onDone]);
+    }, [onDone, markMigrationDone]);
 
     const handleImport = useCallback(async () => {
         setMigrating(true);
@@ -82,6 +92,7 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
             if (data.status === "ok") {
                 const count = data.copied?.length ?? 0;
                 setSuccess(t("auth.migration.success", { count }));
+                markMigrationDone();
                 setTimeout(async () => {
                     await persistor.purge();
                     window.location.href = "/";

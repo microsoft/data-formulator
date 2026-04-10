@@ -995,11 +995,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
             dispatch(dfActions.setIdentity(resolvedIdentity));
 
-            // Detect anonymous → authenticated transition
+            // Detect anonymous → authenticated transition (only once per user)
+            const migrationKey = `df_migrated:${resolvedIdentity.id}`;
             if (
                 persistedIdentity?.type === 'browser' &&
                 resolvedIdentity.type === 'user' &&
-                persistedIdentity.id
+                persistedIdentity.id &&
+                !localStorage.getItem(migrationKey)
             ) {
                 setMigrationBrowserId(persistedIdentity.id);
             }
