@@ -50,31 +50,33 @@ Data Formulator 需要对接外部 BI/报表系统（如 Apache Superset、Metab
 
 ## 2. 部署模型分析：个人工具 vs 团队平台
 
-### 2.1 原始设计哲学
+### 2.1 数据存储模型
 
-Data Formulator 最初被设计为**个人本地工具**——用户在自己的笔记本上运行，"服务器"和"用户"是同一个人、同一台机器。在这个前提下，很多设计决策是合理的：
+Data Formulator 的所有数据统一通过 **Workspace** 管理。Workspace 后端由 `WORKSPACE_BACKEND` 配置决定，支持多种部署形态：
 
 ```
-个人模式（原始设计假设）:
-
-  用户的笔记本 = 服务器 = 数据存储
-  ┌─────────────────────────────┐
-  │  浏览器 ←→ Flask 后端       │  同一台机器
-  │           ↕                 │
-  │     ~/.data_formulator/     │  "服务端存储"就是自己硬盘
-  └─────────────────────────────┘
-  
-  在这个模型下：
-  - "存服务端"就是存自己硬盘，隐私不是问题
-  - 前端填数据库密码、模型 API Key 是合理的（只有自己用）
-  - Browser/Disk 选择 = 要不要持久化
+┌────────────────────────────────────────────────────────┐
+│               Workspace 统一存储模型                      │
+│                                                          │
+│  所有数据来源 (Upload/Paste/URL/DB/插件)                  │
+│         ↓                                                │
+│     loadTable → Workspace                                │
+│         ↓                                                │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │ WORKSPACE_BACKEND = ?                            │    │
+│  │                                                  │    │
+│  │  local     → 本地磁盘 (~/.data_formulator/)      │    │
+│  │  ephemeral → 仅内存（会话结束即消失）             │    │
+│  │  cloud     → 远程对象存储（未来）                 │    │
+│  └──────────────────────────────────────────────────┘    │
+│                                                          │
+│  前端始终只拿 sample rows + 元数据                        │
+└────────────────────────────────────────────────────────┘
 ```
 
-这个假设催生了以下设计：
-- `storeOnServer` 开关：用户可以选择数据放浏览器（临时）还是放硬盘（持久化）
-- `dataLoaderConnectParams`：数据库连接参数在前端 Redux 中管理，不持久化
-- `DISABLE_DATABASE`：可以完全禁用服务端存储，强制纯浏览器模式
-- `frontendRowLimit = 50000`：浏览器模式下的行数上限
+> **历史说明**：早期版本中曾有 `storeOnServer` 用户开关和 `DISABLE_DATABASE` 环境变量，
+> 分别用于让用户选择"浏览器临时存储 vs 磁盘持久化"和"禁用服务端存储"。
+> 现在这些概念已被 `WORKSPACE_BACKEND` 统一取代——`ephemeral` 模式等价于旧的纯浏览器模式。
 
 ### 2.2 接入 BI 系统后的模型变化
 
@@ -96,54 +98,48 @@ Data Formulator 最初被设计为**个人本地工具**——用户在自己的
   - BI 系统的连接地址是基础设施，由 IT 管理，不是用户自行添加
 ```
 
-### 2.3 现有设计中的张力
+### 2.3 团队部署下仍存在的差异
 
-原始设计假设与团队部署需求之间存在明显的张力：
+Workspace 统一存储解决了数据持久化的问题，但个人与团队部署之间仍有两个需要关注的差异：
 
-| 现象 | 个人模式下为什么合理 | 团队模式下的问题 |
-|------|---------------------|-----------------|
-| 数据库连接参数前端填，刷新即丢 | 只有自己用，填一次就够 | 多人使用，每次打开都要重填 |
-| `storeOnServer` 让用户选 Browser/Disk | 个人偏好，要不要持久化 | BI 数据已经过服务器，"不存服务器"没有意义 |
-| `frontendRowLimit = 50000` 截断 | 个人浏览够用 | BI 报表动辄百万行，截断后失去分析价值 |
-| 模型 API Key 前端填 | 自己的 Key 自己管 | 团队共享时 Key 不应暴露给前端 |
+| 差异 | 个人模式 | 团队模式 |
+|------|---------|---------|
+| 数据库/BI 连接参数 | 前端填，自己用方便 | 应服务端集中管理（减少重复填写、防止 SSRF） |
+| 模型 API Key | 前端填，自己的 Key | 服务端全局配置（0.7 已实现） |
 
-> **值得注意的是**，项目已经开始向正确方向演进：0.7 版本新增的"服务端全局模型配置"功能，正是把模型管理从"前端填"升级为"服务端集中管理"。插件系统应该沿着同样的方向继续。
+> 0.7 版本已将模型管理升级为"服务端全局配置"。插件系统沿着同样的方向继续——连接端点由服务端配置，用户只需认证。
 
 ### 2.4 对插件系统的设计决策
 
-基于以上分析，插件系统采取以下设计立场：
+由于所有数据统一走 Workspace，插件系统只需关注两个插件特有的问题：
 
-**插件配置（URL 等）：只在服务端配置，不在前端添加。**
+**1. 插件配置（URL 等）：只在服务端配置，不在前端添加。**
 
-理由：
-1. BI 系统的 URL 是**基础设施端点**，不是用户数据，由 IT 部门管理
-2. 用户需要做的只是**认证**（登录 Superset），而不是"添加一个 Superset 连接"
-3. 允许前端输入任意 URL 存在安全风险（SSRF——让后端去请求用户指定的任意地址）
+- BI 系统的 URL 是**基础设施端点**，不是用户数据，由 IT 部门管理
+- 用户只需**认证**（登录 Superset），而不是"添加一个 Superset 连接"
+- 禁止前端输入任意 URL（防止 SSRF）
 
-**插件数据存储：强制走 Workspace，`storeOnServer` 开关不适用于插件数据。**
+**2. 插件认证：per-user 凭据，服务端管理。**
 
-理由：
-1. 数据从 Superset → DF 后端 → 写入 Workspace，数据**已经在服务器上经过了**
-2. 浏览器 5 万行截断会让 BI 数据失去实际分析价值
-3. 写入 Workspace 后，前端只拿 sample rows（与现有的"Disk 模式"行为完全一致）
-
-**但不改变现有功能的行为。** 原有的 Upload/Paste/URL/Database 对个人模式依然适用，两种模式自然并行：
+- 用户对 BI 系统的登录凭据存储在服务端（CredentialVault），不暴露给前端
+- 尊重 BI 系统自身的权限模型（RBAC / RLS）
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                       Data Formulator                            │
-│                                                                  │
-│  ┌────────────────────────────────┐  ┌────────────────────────┐  │
-│  │ 原有数据加载 (Upload/Paste等) │  │ 插件数据加载            │  │
-│  │                                │  │ (Superset/Metabase)    │  │
-│  │ ✅ 支持 Browser/Disk 切换     │  │ ✅ 强制 Workspace      │  │
-│  │ ✅ 连接参数前端填              │  │ ✅ 端点 URL 服务端配置 │  │
-│  │ ✅ 适合个人本地使用            │  │ ✅ 认证凭据 per-user   │  │
-│  │ ✅ 保持向后兼容                │  │ ✅ 适合团队部署        │  │
-│  └────────────────────────────────┘  └────────────────────────┘  │
-│                                                                  │
-│  共用底层: loadTable / Workspace / Redux Store                   │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                     Data Formulator                             │
+│                                                                 │
+│  数据来源                                                       │
+│  ┌────────────────────────┐  ┌───────────────────────────┐     │
+│  │ 内置来源                │  │ 插件来源                   │     │
+│  │ Upload / Paste / URL   │  │ Superset / Metabase / ... │     │
+│  │ Database / Extract     │  │                           │     │
+│  └──────────┬─────────────┘  └─────────────┬─────────────┘     │
+│             │                              │                    │
+│             └──────────┬───────────────────┘                    │
+│                        ↓                                        │
+│              loadTable → Workspace                              │
+│              (统一数据入口 → 统一存储)                           │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.5 各层的配置与数据归属总结
@@ -152,7 +148,7 @@ Data Formulator 最初被设计为**个人本地工具**——用户在自己的
 |------|--------|---------|------|
 | **插件端点** | IT 管理员 | 服务端 `.env` | `PLG_SUPERSET_URL=http://...` |
 | **用户认证** | 用户自己 | Flask Session（服务端内存） | Superset JWT Token |
-| **用户数据** | 插件自动加载 | Workspace Parquet（服务端磁盘） | 从 Superset 拉取的数据集 |
+| **用户数据** | 插件自动加载 | Workspace（由 `WORKSPACE_BACKEND` 决定存储位置） | 从 Superset 拉取的数据集 |
 | **前端状态** | 自动管理 | Redux Store（浏览器内存） | sample rows、表元数据 |
 
 ---
@@ -298,7 +294,7 @@ DBTableManager.tsx           +4 行   (监听 superset-dataset-loaded 事件)
 
 | 类别 | 前缀 | 发现机制 | 示例 |
 |------|------|---------|------|
-| **系统配置** | 无（直接命名） | 固定读取 | `LOG_LEVEL`、`FLASK_SECRET_KEY`、`DISABLE_DATABASE` |
+| **系统配置** | 无（直接命名） | 固定读取 | `LOG_LEVEL`、`FLASK_SECRET_KEY`、`WORKSPACE_BACKEND` |
 | **LLM 模型** | `{PROVIDER}_`（遗留命名） | 扫描 `*_ENABLED=true` | `DEEPSEEK_ENABLED`、`DEEPSEEK_API_KEY`、`QWEN_MODELS` |
 | **数据源插件** | **`PLG_`** + `{PLUGIN}_` | manifest 中 `required_env` 全部存在 | `PLG_SUPERSET_URL`、`PLG_GRAFANA_TIMEOUT` |
 | **认证 Provider** | `AUTH_PROVIDER` 单选 + Provider 自有前缀 | `AUTH_PROVIDER=xxx` 指定 | `AUTH_PROVIDER=oidc`、`OIDC_ISSUER_URL` |
@@ -988,7 +984,7 @@ def _build_description(self, source_metadata: dict) -> str:
 | **前端通知** | 返回 `table_name` → 前端刷新 `list-tables` | 前端收到数据后走 `loadTable` thunk |
 | **刷新支持** | 有（`loader_metadata` 记录来源信息，可用于 `refresh-table`） | 无 |
 
-**结论**：插件应默认使用"直接写入 Workspace"路径。仅在特殊场景（如用户只想预览但不保存、或 workspace 被禁用 `DISABLE_DATABASE=true`）时才返回 JSON。
+**结论**：插件应默认使用"直接写入 Workspace"路径。仅在特殊场景（如用户只想预览但不保存、或 `WORKSPACE_BACKEND=ephemeral`）时才返回 JSON。
 
 ---
 
@@ -1102,8 +1098,8 @@ onDataLoaded({ tableName, source, provenance })
   │
   └─ source === 'json'
       → 构建 DictTable
-      → dispatch(loadTable({ table, storeOnServer: true }))
-      → 走常规 loadTable 流程
+      → dispatch(loadTable({ table }))
+      → 走常规 loadTable 流程（自动写入 Workspace）
       → provenance 同样保存
 ```
 
