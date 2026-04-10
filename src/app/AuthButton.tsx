@@ -10,7 +10,7 @@
  * - Anonymous without OIDC     → render nothing
  */
 
-import { FC, useEffect, useState } from "react";
+import { FC, useCallback, useEffect, useState } from "react";
 import { useSelector } from "react-redux";
 import { Box, Button, IconButton, Tooltip, Typography } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import type { UserManager } from "oidc-client-ts";
 import type { DataFormulatorState } from "./dfSlice";
 import { getUserManager } from "./oidcConfig";
+import { persistor } from "./store";
 
 export const AuthButton: FC = () => {
     const { t } = useTranslation();
@@ -28,6 +29,19 @@ export const AuthButton: FC = () => {
     useEffect(() => {
         getUserManager().then(setMgr);
     }, []);
+
+    const handleSignOut = useCallback(async () => {
+        if (!mgr) return;
+        try {
+            // Try IdP-initiated logout if end_session_endpoint is available
+            await mgr.signoutRedirect();
+        } catch {
+            // IdP has no end_session_endpoint — do a local sign-out instead
+            await mgr.removeUser();
+            await persistor.purge();
+            window.location.href = "/";
+        }
+    }, [mgr]);
 
     if (identity?.type === "user") {
         const label = identity.displayName || identity.id;
@@ -40,7 +54,7 @@ export const AuthButton: FC = () => {
                     <Tooltip title={t("auth.signOut")}>
                         <IconButton
                             size="small"
-                            onClick={() => mgr.signoutRedirect()}
+                            onClick={handleSignOut}
                             sx={{ color: "inherit" }}
                         >
                             <LogoutIcon sx={{ fontSize: 18 }} />
