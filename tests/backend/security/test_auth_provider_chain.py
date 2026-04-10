@@ -21,6 +21,7 @@ from data_formulator.security.auth import (
 )
 from data_formulator.auth_providers.base import AuthProvider, AuthResult, AuthenticationError
 from data_formulator.auth_providers import get_provider_class, list_available_providers
+from data_formulator.security.auth import _validate_identity_value
 
 pytestmark = [pytest.mark.backend, pytest.mark.auth]
 
@@ -218,3 +219,82 @@ class TestAuthenticationErrorPropagation:
         ):
             with pytest.raises(ValueError, match="Authentication failed"):
                 get_identity_id()
+
+
+# ------------------------------------------------------------------
+# Provider discovery — all Phase 1 providers
+# ------------------------------------------------------------------
+
+class TestAllPhase1ProvidersDiscovered:
+
+    def test_oidc_discovered(self):
+        assert "oidc" in list_available_providers()
+
+    def test_github_discovered(self):
+        assert "github" in list_available_providers()
+
+    def test_azure_easyauth_discovered(self):
+        assert "azure_easyauth" in list_available_providers()
+
+
+# ------------------------------------------------------------------
+# OIDC provider via init_auth (end-to-end without real IdP)
+# ------------------------------------------------------------------
+
+class TestOIDCViaInitAuth:
+    """Verify that AUTH_PROVIDER=oidc activates OIDCProvider.
+
+    These tests don't verify JWT validation (see test_oidc_provider.py);
+    they only confirm init_auth wiring and the chain's behaviour when
+    the OIDC provider is active but the request has no Bearer token.
+    """
+
+    def test_oidc_activates_when_configured(self, app, monkeypatch):
+        monkeypatch.setenv("AUTH_PROVIDER", "oidc")
+        monkeypatch.setenv("OIDC_ISSUER_URL", "https://idp.example.com")
+        monkeypatch.setenv("OIDC_CLIENT_ID", "test-client")
+        init_auth(app)
+        assert auth_module._provider is not None
+        assert auth_module._provider.name == "oidc"
+
+    def test_oidc_disabled_without_env_vars(self, app, monkeypatch):
+        monkeypatch.setenv("AUTH_PROVIDER", "oidc")
+        monkeypatch.delenv("OIDC_ISSUER_URL", raising=False)
+        monkeypatch.delenv("OIDC_CLIENT_ID", raising=False)
+        init_auth(app)
+        assert auth_module._provider is None
+
+    def test_oidc_no_bearer_falls_back_to_anonymous(self, app, monkeypatch):
+        monkeypatch.setenv("AUTH_PROVIDER", "oidc")
+        monkeypatch.setenv("OIDC_ISSUER_URL", "https://idp.example.com")
+        monkeypatch.setenv("OIDC_CLIENT_ID", "test-client")
+        init_auth(app)
+
+        with app.test_request_context(
+            headers={"X-Identity-Id": "browser-uuid-123"}
+        ):
+            identity = get_identity_id()
+            assert identity == "browser:browser-uuid-123"
+
+
+# ------------------------------------------------------------------
+# Identity regex — OIDC sub claim characters
+# ------------------------------------------------------------------
+
+class TestIdentityRegexExpansion:
+
+    @pytest.mark.parametrize("value", [
+        "auth0|5f1234abc",
+        "github:12345",
+        "user+tag@example.com",
+    ])
+    def test_oidc_style_sub_claims_accepted(self, value):
+        assert _validate_identity_value(value, "test") == value
+
+    def test_path_separator_still_rejected(self):
+        with pytest.raises(ValueError, match="disallowed"):
+            _validate_identity_value("../../etc/passwd", "test")
+
+    def test_space_still_rejected(self):
+        with pytest.raises(ValueError, match="disallowed"):
+            _validate_identity_value("user name", "test")

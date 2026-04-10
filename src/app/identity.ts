@@ -19,6 +19,7 @@ export type IdentityType = 'user' | 'browser';
 export interface Identity {
     type: IdentityType;
     id: string;
+    displayName?: string;
 }
 
 export interface UserInfo {

@@ -491,7 +491,11 @@
     "ssoDescription": "Login with your enterprise account via Single Sign-On",
     "ssoPopupBlocked": "Popup blocked. Please allow popups for this site.",
     "ssoFailed": "SSO login failed: {{message}}",
-    "ssoOrPassword": "or sign in with Superset account"
+    "ssoOrPassword": "or sign in with Superset account",
+    "completingLogin": "Completing login…",
+    "callbackFailed": "Login callback failed: {{message}}",
+    "sessionExpired": "Session expired. Please sign in again.",
+    "silentRenewFailed": "Background token refresh failed. Redirecting to login…"
   },
   "supersetPanel": {
     "datasets": "Datasets",
@@ -528,5 +532,49 @@
     "cancel": "Cancel",
     "confirmLoad": "Confirm & Load",
     "rowLimitTip": "Max rows to load"
+  },
+  "plugin": {
+    "superset": {
+      "connectTo": "Connect to {{name}}",
+      "username": "Username",
+      "password": "Password",
+      "login": "Sign In",
+      "logout": "Sign Out",
+      "or": "or",
+      "ssoLogin": "Sign in with SSO",
+      "loginFailed": "Login failed",
+      "ssoFailed": "SSO login failed",
+      "checkingAuth": "Checking authentication...",
+      "dashboards": "Dashboards",
+      "datasets": "Datasets",
+      "datasetsTitle": "Superset Datasets",
+      "dashboardsTitle": "Superset Dashboards",
+      "refresh": "Refresh",
+      "searchPlaceholder": "Search datasets...",
+      "rowLimitTip": "Max rows to load",
+      "noDatasets": "No datasets found.",
+      "noDashboards": "No dashboards found.",
+      "noDatasetsInDashboard": "No datasets in this dashboard.",
+      "columns": "{{count}} columns",
+      "rows": "{{count}} rows",
+      "loadOverwrite": "Load (overwrite if exists)",
+      "createNewDataset": "Load as new table with suffix",
+      "loadDirect": "Load dataset",
+      "loadWithFilters": "Load with Filters",
+      "loadSuccess": "Dataset \"{{name}}\" loaded ({{count}} rows).",
+      "loadFailed": "Failed to load dataset: {{message}}",
+      "suffixDialogTitle": "Enter Dataset Name Suffix",
+      "suffixDialogDesc": "Specify a suffix for dataset \"{{name}}\".",
+      "suffixPlaceholder": "e.g. 20260101",
+      "confirmLoad": "Confirm & Load",
+      "filterDialogTitle": "Filters: {{dashboard}} → {{dataset}}",
+      "noFiltersAvailable": "No native filters available for this dataset.",
+      "filterValuePlaceholder": "Enter value...",
+      "tableNameSuffix": "Table name suffix (optional)",
+      "defaultValue": "default",
+      "browsePublic": "Skip login, browse public data",
+      "guestFailed": "Failed to enter guest mode",
+      "loginRequired": "Loading data requires login. Please sign in first."
+    }
   }
 }

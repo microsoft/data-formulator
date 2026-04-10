@@ -103,15 +103,8 @@ async function getCurrentNamespacedIdentity(): Promise<string> {
     return `browser:${getBrowserId()}`;
 }
 
-/**
- * Get auth token if available (for future JWT auth support).
- * Currently returns null - implement when adding custom auth.
- */
-function getAuthToken(): string | null {
-    // Future: retrieve JWT from localStorage or auth context
-    // Example: return localStorage.getItem('auth_token');
-    return null;
-}
+// getAccessToken / getUserManager are imported lazily to avoid circular deps
+// and to keep the module working when oidc-client-ts is not bundled.
 
 /**
  * Get the active workspace ID from the Redux store.
@@ -128,66 +121,54 @@ async function getActiveWorkspaceId(): Promise<string | null> {
 }
 
 /**
- * Enhanced fetch wrapper that automatically adds identity and auth headers for API requests.
- * 
- * Security model:
- * - X-Identity-Id: Namespaced identity ("type:id" format) for all requests
- * - Authorization: Bearer token (when implementing custom JWT auth)
- * 
- * The backend prioritizes verified auth (Azure headers, JWT) over X-Identity-Id.
- * For anonymous users, X-Identity-Id is used with "browser:" namespace prefix.
- * 
- * Use this instead of native fetch() for all /api/ calls.
- * 
- * @param url - The URL to fetch
- * @param options - Fetch options (same as native fetch)
- * @returns Promise<Response>
+ * Build a request with identity / auth / workspace headers and ephemeral-mode
+ * body injection, then execute a single `fetch`.  This is the inner workhorse
+ * called by {@link fetchWithIdentity} (which wraps it with 401 retry).
  */
-export async function fetchWithIdentity(
+async function _doFetch(
     url: string | URL,
     options: RequestInit = {}
 ): Promise<Response> {
     const urlString = typeof url === 'string' ? url : url.toString();
-    
-    // Add identity and auth headers for all API requests
+
     if (urlString.startsWith('/api/')) {
         const headers = new Headers(options.headers);
-        
-        // Always send namespaced identity (fallback for backend)
+
         const namespacedIdentity = await getCurrentNamespacedIdentity();
         headers.set('X-Identity-Id', namespacedIdentity);
 
-        // Send active workspace ID so the backend is stateless
         const workspaceId = await getActiveWorkspaceId();
         if (workspaceId) {
             headers.set('X-Workspace-Id', workspaceId);
         }
 
-        // Send current UI language so agent prompts can follow it
         headers.set('Accept-Language', getAgentLanguage());
-        
-        // Send auth token if available (for custom JWT auth)
-        const authToken = getAuthToken();
-        if (authToken) {
-            headers.set('Authorization', `Bearer ${authToken}`);
+
+        // Attach OIDC Bearer token when available
+        try {
+            const { getAccessToken } = await import('./oidcConfig');
+            const accessToken = await getAccessToken();
+            if (accessToken) {
+                headers.set('Authorization', `Bearer ${accessToken}`);
+            }
+        } catch {
+            // oidc-client-ts not available — anonymous mode
         }
-        
+
         options = { ...options, headers };
 
-        console.log(`[fetchWithIdentity] ${options.method || 'GET'} ${urlString} with headers:`, Object.fromEntries(headers.entries()));
+        console.log(
+            `[fetchWithIdentity] ${options.method || 'GET'} ${urlString} with headers:`,
+            Object.fromEntries(headers.entries()),
+        );
 
         // Ephemeral mode: attach full table data from IndexedDB to JSON POST requests.
-        // Uses tableDataDB.loadAll to get all table rows for the workspace.
         if (workspaceId && options.method?.toUpperCase() === 'POST') {
             const isEphemeral = await _isEphemeralBackend();
             if (isEphemeral && typeof options.body === 'string') {
                 try {
                     const { tableDataDB } = await import('./workspaceDB');
-
-                    // Load all table rows from IndexedDB for this workspace
                     const workspaceTables = await tableDataDB.loadAll(workspaceId);
-
-                    // Inject into the JSON body
                     const body = JSON.parse(options.body);
                     body._workspace_tables = workspaceTables;
                     options = { ...options, body: JSON.stringify(body) };
@@ -197,8 +178,44 @@ export async function fetchWithIdentity(
             }
         }
     }
-    
+
     return fetch(url, options);
+}
+
+/**
+ * Enhanced fetch wrapper that automatically adds identity and auth headers
+ * for API requests.
+ *
+ * Security model:
+ * - `X-Identity-Id`: Namespaced identity (`"type:id"` format) for all requests
+ * - `Authorization: Bearer <token>`: OIDC access-token when available
+ *
+ * On a 401 response the function attempts a silent OIDC token refresh and
+ * retries the request exactly once.  If the retry also fails (or OIDC is not
+ * active) the original 401 response is returned.
+ *
+ * Use this instead of native `fetch()` for all `/api/` calls.
+ */
+export async function fetchWithIdentity(
+    url: string | URL,
+    options: RequestInit = {}
+): Promise<Response> {
+    const resp = await _doFetch(url, options);
+
+    if (resp.status === 401) {
+        try {
+            const { getUserManager } = await import('./oidcConfig');
+            const mgr = await getUserManager();
+            if (mgr) {
+                await mgr.signinSilent();
+                return _doFetch(url, options);
+            }
+        } catch {
+            // Silent renew failed or OIDC not available — return original 401
+        }
+    }
+
+    return resp;
 }
 
 async function _isEphemeralBackend(): Promise<boolean> {

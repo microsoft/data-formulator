@@ -480,7 +480,11 @@
     "ssoDescription": "使用企业账号通过单点登录系统认证",
     "ssoPopupBlocked": "弹窗被拦截，请允许本站弹出窗口。",
     "ssoFailed": "SSO 登录失败：{{message}}",
-    "ssoOrPassword": "或使用 Superset 账号登录"
+    "ssoOrPassword": "或使用 Superset 账号登录",
+    "completingLogin": "正在完成登录…",
+    "callbackFailed": "登录回调失败：{{message}}",
+    "sessionExpired": "会话已过期，请重新登录。",
+    "silentRenewFailed": "后台令牌刷新失败，正在跳转到登录页…"
   },
   "supersetPanel": {
     "datasets": "数据集",
@@ -517,5 +521,49 @@
     "cancel": "取消",
     "confirmLoad": "确认加载",
     "rowLimitTip": "最大加载行数"
+  },
+  "plugin": {
+    "superset": {
+      "connectTo": "连接到 {{name}}",
+      "username": "用户名",
+      "password": "密码",
+      "login": "登录",
+      "logout": "退出登录",
+      "or": "或",
+      "ssoLogin": "SSO 单点登录",
+      "loginFailed": "登录失败",
+      "ssoFailed": "SSO 登录失败",
+      "checkingAuth": "正在检查认证状态...",
+      "dashboards": "仪表盘",
+      "datasets": "数据集",
+      "datasetsTitle": "Superset 数据集",
+      "dashboardsTitle": "Superset 仪表盘",
+      "refresh": "刷新",
+      "searchPlaceholder": "搜索数据集...",
+      "rowLimitTip": "最大加载行数",
+      "noDatasets": "未找到数据集。",
+      "noDashboards": "未找到仪表盘。",
+      "noDatasetsInDashboard": "该仪表盘下没有数据集。",
+      "columns": "{{count}} 列",
+      "rows": "{{count}} 行",
+      "loadOverwrite": "加载（已存在则覆盖）",
+      "createNewDataset": "以新表名后缀加载",
+      "loadDirect": "加载数据集",
+      "loadWithFilters": "带筛选条件加载",
+      "loadSuccess": "数据集 \"{{name}}\" 加载成功（{{count}} 行）。",
+      "loadFailed": "加载数据集失败：{{message}}",
+      "suffixDialogTitle": "输入数据集名称后缀",
+      "suffixDialogDesc": "为数据集 \"{{name}}\" 指定一个后缀。",
+      "suffixPlaceholder": "例如 20260101",
+      "confirmLoad": "确认加载",
+      "filterDialogTitle": "筛选条件：{{dashboard}} → {{dataset}}",
+      "noFiltersAvailable": "该数据集没有可用的原生筛选条件。",
+      "filterValuePlaceholder": "输入值...",
+      "tableNameSuffix": "表名后缀（可选）",
+      "defaultValue": "默认值",
+      "browsePublic": "跳过登录，浏览公共数据",
+      "guestFailed": "进入访客模式失败",
+      "loginRequired": "加载数据需要登录，请先登录。"
+    }
   }
 }

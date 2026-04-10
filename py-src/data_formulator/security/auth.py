@@ -37,8 +37,10 @@ logger = logging.getLogger(__name__)
 # Maximum raw length for identity values (before namespacing).
 _MAX_IDENTITY_LENGTH = 256
 
-# Allowed characters: word chars, @, dot, dash (covers emails, UUIDs, etc.).
-_IDENTITY_RE = re.compile(r'^[\w@.\-]+$', re.ASCII)
+# Allowed characters: word chars, @, dot, dash, plus, colon, pipe.
+# Covers emails, UUIDs, OIDC sub claims (e.g. "auth0|5f…", "github:123").
+# Deliberately excludes '/' (path traversal), spaces, and shell metacharacters.
+_IDENTITY_RE = re.compile(r'^[\w@.\-+:|]+$', re.ASCII)
 
 # Active provider instance, set by init_auth().
 _provider: Optional[AuthProvider] = None

@@ -12,6 +12,10 @@ import {
     fetchGlobalModelList,
 } from './dfSlice'
 import { getBrowserId } from './identity';
+import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
+import type { AuthInfo } from './oidcConfig';
+import { OidcCallback } from './OidcCallback';
+import { AuthButton } from './AuthButton';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
 import { palettes, defaultPaletteKey, paletteKeys, bgAlpha } from './tokens';
@@ -889,6 +893,7 @@ const AppShell: FC = () => {
                                 </Button>
                             </Tooltip>
                         )}
+                        <AuthButton />
                     </Toolbar>
                 </AppBar>
                 <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', '& > div': { height: '100%' } }}>
@@ -936,44 +941,62 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         }
     }, [configLoaded]);
 
-    // User authentication state
-    const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
+    // Unified auth initialisation — driven by /api/auth/info
     const [authChecked, setAuthChecked] = useState(false);
 
-    // Check for authenticated user first
     useEffect(() => {
-        fetch('/.auth/me')
-            .then(function (response) { return response.json(); })
-            .then(function (result) {
-                if (Array.isArray(result) && result.length > 0) {
-                    let authInfo = result[0];
-                    let userInfo = {
-                        name: authInfo['user_claims'].find((item: any) => item.typ == 'name')?.val || '',
-                        userId: authInfo['user_id']
-                    }
-                    setUserInfo(userInfo);
-                }
-            }).catch(err => {
-                // User is not logged in, will use browser identity
-            }).finally(() => {
-                setAuthChecked(true);
-            });
-    }, []);
+        (async () => {
+            try {
+                const info: AuthInfo | null = await getAuthInfo();
 
-    // Initialize identity after auth check completes
-    // No server round-trip needed - identity is determined client-side:
-    // Priority: user identity (if logged in) > browser identity (localStorage-based, shared across tabs)
-    useEffect(() => {
-        if (authChecked) {
-            if (userInfo?.userId) {
-                // User is logged in - use their user ID
-                dispatch(dfActions.setIdentity({ type: 'user', id: userInfo.userId }));
-            } else {
-                // Not logged in - use browser ID (from localStorage, shared across tabs)
+                if (info?.action === 'frontend') {
+                    // OIDC PKCE — check for an existing session
+                    const user = await getOidcUser();
+                    if (user && !user.expired) {
+                        dispatch(dfActions.setIdentity({
+                            type: 'user',
+                            id: user.profile.sub,
+                            displayName: user.profile.name ?? undefined,
+                        }));
+                    } else {
+                        dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                    }
+                } else if (info?.action === 'transparent') {
+                    // Azure App Service EasyAuth — headers injected by Azure
+                    try {
+                        const resp = await fetch('/.auth/me');
+                        const result = await resp.json();
+                        if (Array.isArray(result) && result.length > 0) {
+                            const authData = result[0];
+                            const name = authData['user_claims']?.find((item: any) => item.typ === 'name')?.val || '';
+                            const userId = authData['user_id'];
+                            if (userId) {
+                                dispatch(dfActions.setIdentity({ type: 'user', id: userId, displayName: name }));
+                            } else {
+                                dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                            }
+                        } else {
+                            dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                        }
+                    } catch {
+                        dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                    }
+                } else if (info?.action === 'redirect') {
+                    // Server-side OAuth (GitHub) — identity comes from session cookie;
+                    // the backend resolves it on each request. Fall back to browser id
+                    // on the client side so fetchWithIdentity always has a header value.
+                    dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                } else {
+                    // Anonymous / no provider configured
+                    dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                }
+            } catch {
                 dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+            } finally {
+                setAuthChecked(true);
             }
-        }
-    }, [authChecked, userInfo?.userId]);
+        })();
+    }, []);
 
     useEffect(() => {
         document.title = toolName;
@@ -1067,6 +1090,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     });
 
     const router = useMemo(() => createBrowserRouter([
+        {
+            path: "/callback",
+            element: <OidcCallback />,
+        },
         {
             path: "/",
             element: <AppShell />,

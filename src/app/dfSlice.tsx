@@ -48,6 +48,13 @@ export interface ServerConfig {
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
     WORKSPACE_BACKEND: 'local' | 'azure_blob' | 'ephemeral';
+    AUTH_PROVIDER?: string;
+    AUTH_INFO?: {
+        action: 'frontend' | 'redirect' | 'transparent' | 'none';
+        label?: string;
+        [key: string]: unknown;
+    };
+    PLUGINS?: Record<string, import('../plugins/types').PluginConfig>;
 }
 
 export interface ModelConfig {
