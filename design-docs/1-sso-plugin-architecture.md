@@ -581,7 +581,11 @@ class OIDCProvider(AuthProvider):
 
 `AUTH_PROVIDER=oidc` 和 `AUTH_PROVIDER=oauth2` 是同一个 Provider 的两个名字（别名），实际行为完全相同：后端用 JWKS 验 JWT 签名，前端用 Authorization Code + PKCE 流程。之所以加别名，是因为该 Provider 不要求严格的 OpenID Connect 协议——任何支持 JWT + JWKS 的 OAuth2 身份提供者都可以使用。
 
-**Data Formulator 只需 3 个环境变量**：
+**Data Formulator 支持两种配置模式**：
+
+##### 模式 A：自动发现（推荐，适用于标准 OIDC IdP）
+
+只需 3 个环境变量，其余端点自动从 Discovery 获取：
 
 ```
 AUTH_PROVIDER=oidc          # 或 oauth2，等价
@@ -589,18 +593,55 @@ OIDC_ISSUER_URL=https://your-idp.example.com/path
 OIDC_CLIENT_ID=your-client-id
 ```
 
-**IdP 必须满足的条件**：
+**工作原理**：启动时后端请求 `{OIDC_ISSUER_URL}/.well-known/openid-configuration`，从返回的 JSON 中自动提取 `authorization_endpoint`、`token_endpoint`、`userinfo_endpoint`、`jwks_uri` 等全部端点地址。前端 `oidc-client-ts` 也会独立请求同一个 Discovery 端点获取授权和 Token 地址。
 
-| 条件 | 说明 | 用于 |
-|------|------|------|
-| **Discovery 端点** | `{OIDC_ISSUER_URL}/.well-known/openid-configuration` 返回 JSON | 后端获取 JWKS URI；前端获取 authorization/token endpoint |
-| **JWKS 端点** | Discovery JSON 中 `jwks_uri` 指向的 URL，返回 RSA/EC 公钥 | 后端验证 JWT 签名 |
-| **Authorization Endpoint** | Discovery JSON 中 `authorization_endpoint` | 前端浏览器跳转进行用户授权 |
-| **Token Endpoint** | Discovery JSON 中 `token_endpoint` | 前端用 authorization code 换取 access_token |
-| **JWT Access Token** | Token 中必须包含 `sub`（用户唯一 ID）、`iss`（issuer）、`exp`（过期时间）claim | 后端身份验证 |
-| **回调地址注册** | 在 IdP 中将 `http(s)://<df-host>/callback` 注册为合法 redirect URI | 前端 OAuth2 回调 |
+**适用场景**：Keycloak、Auth0、Okta、Azure AD / Entra ID、Google、Authelia、Authentik、Casdoor 等标准 OIDC IdP 均原生支持 Discovery，无需额外配置。
 
-**Discovery 端点最小 JSON 格式**（适用于自建 SSO）：
+**IdP 要求**：
+- `{OIDC_ISSUER_URL}/.well-known/openid-configuration` 必须可访问且返回合法 JSON
+- 返回的 `issuer` 字段值必须与 `OIDC_ISSUER_URL` **完全一致**（含协议、端口、路径，不含尾部 `/`）
+- Discovery JSON 中必须包含 `authorization_endpoint`、`token_endpoint`、`jwks_uri`
+- JWKS 端点返回的公钥用于后端本地验证 JWT 签名（高性能，无额外网络开销）
+
+**判断你的 IdP 是否支持**：在浏览器中直接访问 `{你的 ISSUER URL}/.well-known/openid-configuration`，如果能看到 JSON 响应则支持模式 A；如果返回 404 或错误页面，请使用模式 B。
+
+##### 模式 B：手动端点（适用于无 Discovery 的 OAuth2 服务器）
+
+许多企业自建的 OAuth2 系统没有实现 OIDC Discovery。此时可直接配置端点 URL：
+
+```
+AUTH_PROVIDER=oidc
+OIDC_ISSUER_URL=https://sso.example.com
+OIDC_CLIENT_ID=your-client-id
+OIDC_AUTHORIZE_URL=https://sso.example.com/oauth2/authorize
+OIDC_TOKEN_URL=https://sso.example.com/oauth2/token
+OIDC_USERINFO_URL=https://sso.example.com/oauth2/userinfo
+# OIDC_JWKS_URL=...          # 可选，如无则通过 UserInfo 端点验证 token
+# OIDC_CLIENT_SECRET=...     # 可选，机密客户端才需要
+```
+
+**优先级**：手动配置的值 > Discovery 自动发现的值。两者可以混用。
+
+##### 端点功能说明
+
+| 环境变量 | 用途 | 必须？ |
+|----------|------|--------|
+| `OIDC_ISSUER_URL` | IdP 标识 / Discovery 基础 URL | **必须** |
+| `OIDC_CLIENT_ID` | 在 IdP 注册的应用 ID | **必须** |
+| `OIDC_AUTHORIZE_URL` | 前端浏览器跳转进行用户授权 | 模式 B 必须 |
+| `OIDC_TOKEN_URL` | 前端用 authorization code 换取 access_token | 模式 B 必须 |
+| `OIDC_USERINFO_URL` | 后端验证 token（无 JWKS 时的回退方案） | 推荐 |
+| `OIDC_JWKS_URL` | 后端本地验证 JWT 签名（更高效） | 可选 |
+| `OIDC_CLIENT_SECRET` | 机密客户端的密钥 | 可选 |
+
+##### Token 验证策略
+
+后端按以下优先级验证 access_token：
+
+1. **JWKS 本地验证**（首选）：用 `OIDC_JWKS_URL` 提供的公钥验证 JWT 签名，校验 `iss`、`aud`、`exp` claim。性能最优，无网络开销。
+2. **UserInfo 远程验证**（回退）：向 `OIDC_USERINFO_URL` 发送 `Authorization: Bearer <token>` 请求。如果 IdP 返回用户信息，则 token 有效。适用于无 JWKS 的 OAuth2 服务器或使用不透明 token 的场景。
+
+##### Discovery 端点最小 JSON 格式（自建 SSO 如选择实现）
 
 ```json
 {
@@ -612,13 +653,13 @@ OIDC_CLIENT_ID=your-client-id
 }
 ```
 
-> **自建 SSO 提示**：如果你的 OAuth2 系统尚未实现 Discovery 端点，只需加一个返回上述固定 JSON 的接口即可。
-> 这是标准 OIDC Discovery（[RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414)）的最小子集。
-> Discovery 是前后端共同依赖的：后端从中获取 JWKS URI，前端 `oidc-client-ts` 从中获取
-> authorization 和 token endpoint。因此**不支持绕过 Discovery 手动配置各端点**，
-> 这是刻意的设计选择——保持配置最简化（3 个变量），代价是 IdP 侧需要提供一个简单的 JSON 接口。
+> **自建 SSO 提示**：如果不想实现 Discovery，使用模式 B 手动配置端点即可，无需修改 SSO。
 
-**JWT Access Token 可选但推荐的 claim**：
+##### 回调地址
+
+在 IdP 中将 `http(s)://<df-host>/callback` 注册为合法 redirect URI。
+
+**JWT Access Token claim 要求**（使用 JWKS 验证时）：
 
 | Claim | 用途 | 必须？ |
 |-------|------|--------|
@@ -628,6 +669,8 @@ OIDC_CLIENT_ID=your-client-id
 | `exp` | 后端验证 token 未过期 | **必须** |
 | `name` | 前端显示用户名 | 推荐 |
 | `email` | 前端显示邮箱 | 推荐 |
+
+> 使用 UserInfo 验证时，后端从 UserInfo 响应中提取 `sub`/`id`/`user_id`、`name`/`username`、`email`，对 JWT 内部 claim 无要求。
 
 ### 3.4b GitHub OAuth Provider（新增 — 社交登录）
 
@@ -2976,11 +3019,17 @@ AUTH_PROVIDER=oidc
 # GITHUB_CLIENT_ID=xxx
 # GITHUB_CLIENT_SECRET=xxx
 
-# ─── OIDC / OAuth2 配置（仅需两项，其余从 Discovery 自动获取）───
-# IdP 必须在 OIDC_ISSUER_URL/.well-known/openid-configuration 提供 Discovery JSON
+# ─── OIDC / OAuth2 配置 ───
+# 模式 A（自动发现）：只需 OIDC_ISSUER_URL + OIDC_CLIENT_ID
+# 模式 B（手动端点）：额外配置 OIDC_AUTHORIZE_URL / OIDC_TOKEN_URL 等
 # 详见 § 3.4「对接 OIDC/OAuth2 Provider 的 IdP 要求」
 OIDC_ISSUER_URL=https://keycloak.example.com/realms/my-org
 OIDC_CLIENT_ID=data-formulator
+# OIDC_AUTHORIZE_URL=https://sso.example.com/oauth2/authorize   # 模式 B
+# OIDC_TOKEN_URL=https://sso.example.com/oauth2/token           # 模式 B
+# OIDC_USERINFO_URL=https://sso.example.com/oauth2/userinfo     # 推荐
+# OIDC_JWKS_URL=https://sso.example.com/oauth2/jwks             # 可选
+# OIDC_CLIENT_SECRET=xxx                                         # 机密客户端
 
 # --------------------------------------------------------------
 # 凭证保险箱

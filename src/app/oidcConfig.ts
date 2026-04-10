@@ -2,12 +2,18 @@
 // Licensed under the MIT License.
 
 /**
- * OIDC (OpenID Connect) configuration module.
+ * OIDC / OAuth2 configuration module.
  *
  * All settings are fetched at runtime from `/api/auth/info` — the frontend
  * has zero compile-time OIDC configuration.  The module exposes lazy
  * singletons (`getUserManager`, `getAccessToken`) consumed by
  * `fetchWithIdentity` and `App.tsx`.
+ *
+ * Supports two modes:
+ *   1. **Auto-discovery** — backend returns `authority` only; `oidc-client-ts`
+ *      fetches `/.well-known/openid-configuration` automatically.
+ *   2. **Manual endpoints** — backend returns `metadata` with explicit endpoint
+ *      URLs; `oidc-client-ts` skips discovery entirely.
  */
 
 import { UserManager, WebStorageStateStore, User } from "oidc-client-ts";
@@ -16,11 +22,20 @@ import { UserManager, WebStorageStateStore, User } from "oidc-client-ts";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface OidcEndpointMetadata {
+    authorization_endpoint?: string;
+    token_endpoint?: string;
+    userinfo_endpoint?: string;
+    jwks_uri?: string;
+}
+
 export interface OidcConfig {
     authority: string;
     clientId: string;
+    clientSecret?: string;
     scopes: string;
     redirectUri: string;
+    metadata?: OidcEndpointMetadata;
 }
 
 export interface AuthInfo {
@@ -29,7 +44,9 @@ export interface AuthInfo {
     oidc?: {
         authority: string;
         clientId: string;
+        clientSecret?: string;
         scopes?: string;
+        metadata?: OidcEndpointMetadata;
     };
     url?: string;
 }
@@ -64,8 +81,10 @@ export async function getOidcConfig(): Promise<OidcConfig | null> {
     return {
         authority: info.oidc.authority,
         clientId: info.oidc.clientId,
+        clientSecret: info.oidc.clientSecret,
         scopes: info.oidc.scopes ?? "openid profile email",
         redirectUri: `${window.location.origin}/callback`,
+        metadata: info.oidc.metadata,
     };
 }
 
@@ -79,15 +98,44 @@ export async function getUserManager(): Promise<UserManager | null> {
     const config = await getOidcConfig();
     if (!config) return null;
 
-    _userManager = new UserManager({
-        authority: config.authority,
-        client_id: config.clientId,
-        redirect_uri: config.redirectUri,
-        response_type: "code",
-        scope: config.scopes,
-        automaticSilentRenew: true,
-        userStore: new WebStorageStateStore({ store: window.localStorage }),
-    });
+    const hasManualEndpoints = config.metadata &&
+        config.metadata.authorization_endpoint &&
+        config.metadata.token_endpoint;
+
+    if (hasManualEndpoints) {
+        // Manual mode: provide metadata directly, skip discovery.
+        // loadUserInfo fetches profile from the userinfo endpoint
+        // (since the SSO may not return a JWT id_token).
+        _userManager = new UserManager({
+            authority: config.authority,
+            client_id: config.clientId,
+            client_secret: config.clientSecret || undefined,
+            redirect_uri: config.redirectUri,
+            response_type: "code",
+            scope: config.scopes,
+            loadUserInfo: !!config.metadata!.userinfo_endpoint,
+            automaticSilentRenew: false,
+            userStore: new WebStorageStateStore({ store: window.localStorage }),
+            metadata: {
+                issuer: config.authority,
+                authorization_endpoint: config.metadata!.authorization_endpoint!,
+                token_endpoint: config.metadata!.token_endpoint!,
+                userinfo_endpoint: config.metadata!.userinfo_endpoint,
+                jwks_uri: config.metadata!.jwks_uri,
+            },
+        });
+    } else {
+        // Discovery mode: oidc-client-ts fetches /.well-known/openid-configuration
+        _userManager = new UserManager({
+            authority: config.authority,
+            client_id: config.clientId,
+            redirect_uri: config.redirectUri,
+            response_type: "code",
+            scope: config.scopes,
+            automaticSilentRenew: true,
+            userStore: new WebStorageStateStore({ store: window.localStorage }),
+        });
+    }
 
     _userManager.events.addSilentRenewError(() => {
         console.warn("[oidcConfig] Silent renew failed, redirecting to login…");
