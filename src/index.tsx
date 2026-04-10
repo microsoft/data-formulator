@@ -5,6 +5,9 @@ import React from 'react';
 import './index.css';
 
 import './i18n';
+import { registerPluginTranslations } from './plugins/registry';
+
+registerPluginTranslations();
 
 import store, { persistor } from './app/store'
 import { Provider } from 'react-redux'

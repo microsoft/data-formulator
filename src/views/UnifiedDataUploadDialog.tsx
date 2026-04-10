@@ -38,7 +38,7 @@ import Backdrop from '@mui/material/Backdrop';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { loadTable } from '../app/tableThunks';
+import { loadTable, loadPluginTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
@@ -57,8 +57,9 @@ import CloudIcon from '@mui/icons-material/Cloud';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
+import { getEnabledPlugins, PluginHost } from '../plugins';
 
-export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore';
+export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore' | `plugin:${string}`;
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -223,7 +224,9 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         },
     ].filter(source => !(hideSampleDatasets && source.value === 'explore'));
 
-    const liveDataSources = [
+    const enabledPlugins = getEnabledPlugins((serverConfig as any)?.PLUGINS);
+
+    const liveDataSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean }> = [
         { 
             value: 'url' as UploadTabType, 
             title: t('upload.loadFromUrl'), 
@@ -238,6 +241,13 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             icon: <StorageIcon />, 
             disabled: false
         },
+        ...enabledPlugins.map(({ module, config }) => ({
+            value: `plugin:${module.id}` as UploadTabType,
+            title: config.name,
+            description: t(`plugin.${module.id}.description`, { defaultValue: config.description || '' }),
+            icon: <module.Icon sx={{ fontSize: 18 }} />,
+            disabled: false,
+        })),
     ];
 
     if (variant === 'page') {
@@ -1037,9 +1047,16 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const showUrlPreview = urlPreviewLoading || !!urlPreviewError || (urlPreviewTables && urlPreviewTables.length > 0);
     const hasPasteContent = (pasteContent || '').trim() !== '';
 
+    const enabledPluginsForDialog = getEnabledPlugins(serverConfig?.PLUGINS as any);
+
     // Get current tab title for header
     const getCurrentTabTitle = () => {
-        const tabTitles: Record<UploadTabType, string> = {
+        if (activeTab.startsWith('plugin:')) {
+            const pluginId = activeTab.slice(7);
+            const found = enabledPluginsForDialog.find(p => p.module.id === pluginId);
+            return found?.config.name || pluginId;
+        }
+        const tabTitles: Record<string, string> = {
             'menu': t('upload.title'),
             'explore': t('upload.sampleDatasets'),
             'upload': t('upload.uploadFile'),
@@ -1593,6 +1610,21 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 <TabPanel value={activeTab} index="database">
                     <DBManagerPane onClose={handleClose} />
                 </TabPanel>
+
+                {/* Plugin Tabs */}
+                {enabledPluginsForDialog.map(({ module, config }) => (
+                    <TabPanel key={module.id} value={activeTab} index={`plugin:${module.id}` as UploadTabType}>
+                        <PluginHost
+                            module={module}
+                            config={config}
+                            onDataLoaded={async (info) => {
+                                dispatch(loadPluginTable({ tableName: info.tableName, pluginId: info.source }));
+                                handleClose();
+                            }}
+                            onClose={handleClose}
+                        />
+                    </TabPanel>
+                ))}
 
                 {/* Extract Data Tab */}
                 <TabPanel value={activeTab} index="extract">

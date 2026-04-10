@@ -491,7 +491,21 @@
     "ssoDescription": "Login with your enterprise account via Single Sign-On",
     "ssoPopupBlocked": "Popup blocked. Please allow popups for this site.",
     "ssoFailed": "SSO login failed: {{message}}",
-    "ssoOrPassword": "or sign in with Superset account"
+    "ssoOrPassword": "or sign in with Superset account",
+    "completingLogin": "Completing login…",
+    "idpRedirecting": "Redirecting from SSO, please wait…",
+    "callbackFailed": "Login callback failed: {{message}}",
+    "sessionExpired": "Session expired. Please sign in again.",
+    "silentRenewFailed": "Background token refresh failed. Redirecting to login…",
+    "migration": {
+      "title": "Import Previous Data?",
+      "description": "You were previously working anonymously and have {{count}} workspace(s) with data. Would you like to import them into your account?",
+      "importButton": "Import Data",
+      "freshButton": "Start Fresh",
+      "importing": "Importing workspaces…",
+      "success": "Successfully imported {{count}} workspace(s).",
+      "failed": "Import failed: {{message}}"
+    }
   },
   "supersetPanel": {
     "datasets": "Datasets",

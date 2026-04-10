@@ -86,11 +86,25 @@ def save_session():
 
 @session_bp.route("/list", methods=["GET"])
 def list_sessions():
-    """List all workspaces for the current user."""
+    """List all workspaces for the current user.
+
+    Optional query param ``source_identity`` (e.g. ``browser:<uuid>``) lets an
+    authenticated ``user:`` identity peek at an anonymous identity's workspace
+    list — used by the migration dialog to check whether there is data to import.
+    """
     if _is_ephemeral():
         return jsonify(status="ok", sessions=[])
 
     identity_id = get_identity_id()
+
+    source = request.args.get("source_identity", "").strip()
+    if source:
+        if not identity_id.startswith("user:"):
+            return jsonify(status="error", message="source_identity requires authenticated user"), 403
+        if not source.startswith("browser:"):
+            return jsonify(status="error", message="source_identity must be a browser identity"), 400
+        identity_id = source
+
     mgr = get_workspace_manager(identity_id)
     workspaces = mgr.list_workspaces()
 
@@ -227,3 +241,79 @@ def import_session():
     except Exception as e:
         logger.error(f"Error importing session: {e}")
         return jsonify(status="error", message=str(e)), 400
+
+
+@session_bp.route("/migrate", methods=["POST"])
+def migrate_workspaces():
+    """Move workspaces from an anonymous browser identity to the current user.
+
+    Body: ``{ "source_identity": "browser:<uuid>" }``
+
+    Only allowed when the current identity is ``user:*`` and the source is
+    ``browser:*``.  New workspaces are moved; existing ones are merged
+    (new data files + metadata entries added).  The anonymous source
+    workspaces are deleted after a successful move.
+    """
+    if _is_ephemeral():
+        return jsonify(status="ok", moved=[], message="No-op in ephemeral mode")
+
+    target_id = get_identity_id()
+    if not target_id.startswith("user:"):
+        return jsonify(status="error", message="Migration requires an authenticated user"), 403
+
+    data = request.get_json(force=True)
+    source_id: str = (data.get("source_identity") or "").strip()
+    if not source_id.startswith("browser:"):
+        return jsonify(status="error", message="source_identity must be a browser identity"), 400
+
+    try:
+        source_mgr = get_workspace_manager(source_id)
+        target_mgr = get_workspace_manager(target_id)
+        moved = target_mgr.move_workspaces_from(source_mgr.root)
+        # Best-effort cleanup: remove any leftover anonymous entries that were
+        # not moved (e.g. stale non-workspace files or partial leftovers).
+        try:
+            source_mgr.delete_all_workspaces()
+        except Exception as cleanup_err:
+            logger.warning("Post-migrate cleanup failed (non-fatal): %s", cleanup_err)
+        logger.info(
+            "Migrated %d workspace(s) from %s to %s",
+            len(moved), source_id, target_id,
+        )
+        return jsonify(status="ok", moved=moved)
+    except Exception as e:
+        logger.error("Workspace migration failed: %s", e)
+        return jsonify(status="error", message=str(e)), 500
+
+
+@session_bp.route("/cleanup-anonymous", methods=["POST"])
+def cleanup_anonymous():
+    """Delete all workspaces belonging to an anonymous browser identity.
+
+    Body: ``{ "source_identity": "browser:<uuid>" }``
+
+    Used by the "Start Fresh" migration option so the anonymous data
+    does not linger and trigger another migration prompt later.
+    """
+    if _is_ephemeral():
+        return jsonify(status="ok", deleted=0, message="No-op in ephemeral mode")
+
+    target_id = get_identity_id()
+    if not target_id.startswith("user:"):
+        return jsonify(status="error", message="Cleanup requires an authenticated user"), 403
+
+    data = request.get_json(force=True)
+    source_id: str = (data.get("source_identity") or "").strip()
+    if not source_id.startswith("browser:"):
+        return jsonify(status="error", message="source_identity must be a browser identity"), 400
+
+    try:
+        source_mgr = get_workspace_manager(source_id)
+        deleted = source_mgr.delete_all_workspaces()
+        logger.info("Cleaned up %d anonymous workspace(s) for %s", deleted, source_id)
+        return jsonify(status="ok", deleted=deleted)
+    except Exception as e:
+        # On Windows, files may be locked by other processes; treat as
+        # best-effort — the identity type flip prevents future prompts.
+        logger.warning("Anonymous cleanup partially failed (non-fatal): %s", e)
+        return jsonify(status="ok", deleted=0, warning=str(e))

@@ -54,6 +54,9 @@ dependencies = [
     "google-cloud-bigquery",    # bigquery
     "google-auth",              # bigquery
     "db-dtypes",                # bigquery
+    # SSO / Auth deps
+    "PyJWT[crypto]>=2.8.0",     # OIDC JWT verification (includes cryptography)
+    "requests",                 # GitHub OAuth code exchange, plugin HTTP calls
 ]
 
 [project.urls]

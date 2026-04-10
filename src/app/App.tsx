@@ -12,6 +12,11 @@ import {
     fetchGlobalModelList,
 } from './dfSlice'
 import { getBrowserId } from './identity';
+import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
+import type { AuthInfo } from './oidcConfig';
+import { OidcCallback } from './OidcCallback';
+import { AuthButton } from './AuthButton';
+import { IdentityMigrationDialog } from './IdentityMigrationDialog';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
 import { palettes, defaultPaletteKey, paletteKeys, bgAlpha } from './tokens';
@@ -889,6 +894,7 @@ const AppShell: FC = () => {
                                 </Button>
                             </Tooltip>
                         )}
+                        <AuthButton />
                     </Toolbar>
                 </AppBar>
                 <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', '& > div': { height: '100%' } }}>
@@ -936,44 +942,76 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         }
     }, [configLoaded]);
 
-    // User authentication state
-    const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
+    // Unified auth initialisation — driven by /api/auth/info
     const [authChecked, setAuthChecked] = useState(false);
+    const [migrationBrowserId, setMigrationBrowserId] = useState<string | null>(null);
 
-    // Check for authenticated user first
     useEffect(() => {
-        fetch('/.auth/me')
-            .then(function (response) { return response.json(); })
-            .then(function (result) {
-                if (Array.isArray(result) && result.length > 0) {
-                    let authInfo = result[0];
-                    let userInfo = {
-                        name: authInfo['user_claims'].find((item: any) => item.typ == 'name')?.val || '',
-                        userId: authInfo['user_id']
+        (async () => {
+            const prevType = localStorage.getItem('df_identity_type');
+            const prevBrowserId = localStorage.getItem('df_browser_id');
+
+            let resolvedIdentity: { type: 'user' | 'browser'; id: string; displayName?: string } | null = null;
+
+            try {
+                const info: AuthInfo | null = await getAuthInfo();
+
+                if (info?.action === 'frontend') {
+                    // OIDC PKCE — check for an existing session
+                    const user = await getOidcUser();
+                    if (user && !user.expired) {
+                        resolvedIdentity = {
+                            type: 'user',
+                            id: user.profile.sub,
+                            displayName: user.profile.name ?? undefined,
+                        };
                     }
-                    setUserInfo(userInfo);
+                } else if (info?.action === 'transparent') {
+                    // Azure App Service EasyAuth — headers injected by Azure
+                    try {
+                        const resp = await fetch('/.auth/me');
+                        const result = await resp.json();
+                        if (Array.isArray(result) && result.length > 0) {
+                            const authData = result[0];
+                            const name = authData['user_claims']?.find((item: any) => item.typ === 'name')?.val || '';
+                            const userId = authData['user_id'];
+                            if (userId) {
+                                resolvedIdentity = { type: 'user', id: userId, displayName: name };
+                            }
+                        }
+                    } catch {
+                        // fall through to browser identity
+                    }
                 }
-            }).catch(err => {
-                // User is not logged in, will use browser identity
-            }).finally(() => {
-                setAuthChecked(true);
-            });
-    }, []);
-
-    // Initialize identity after auth check completes
-    // No server round-trip needed - identity is determined client-side:
-    // Priority: user identity (if logged in) > browser identity (localStorage-based, shared across tabs)
-    useEffect(() => {
-        if (authChecked) {
-            if (userInfo?.userId) {
-                // User is logged in - use their user ID
-                dispatch(dfActions.setIdentity({ type: 'user', id: userInfo.userId }));
-            } else {
-                // Not logged in - use browser ID (from localStorage, shared across tabs)
-                dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                // 'redirect' and 'none' → browser identity (resolvedIdentity stays null)
+            } catch {
+                // fall through to browser identity
             }
-        }
-    }, [authChecked, userInfo?.userId]);
+
+            if (!resolvedIdentity) {
+                resolvedIdentity = { type: 'browser', id: getBrowserId() };
+            }
+
+            dispatch(dfActions.setIdentity(resolvedIdentity));
+
+            // Persist current identity type for next page load
+            localStorage.setItem('df_identity_type', resolvedIdentity.type);
+            if (resolvedIdentity.type === 'browser') {
+                localStorage.setItem('df_browser_id', resolvedIdentity.id);
+            }
+
+            // Detect anonymous → authenticated transition
+            if (
+                prevType === 'browser' &&
+                resolvedIdentity.type === 'user' &&
+                prevBrowserId
+            ) {
+                setMigrationBrowserId(prevBrowserId);
+            }
+
+            setAuthChecked(true);
+        })();
+    }, []);
 
     useEffect(() => {
         document.title = toolName;
@@ -1068,6 +1106,10 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const router = useMemo(() => createBrowserRouter([
         {
+            path: "/callback",
+            element: <OidcCallback />,
+        },
+        {
             path: "/",
             element: <AppShell />,
             errorElement: <Box sx={{ width: "100%", height: "100%", display: "flex" }}>
@@ -1104,6 +1146,12 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 <RouterProvider router={router} />
             ) : (
                 <AnvilLoader />
+            )}
+            {migrationBrowserId && (
+                <IdentityMigrationDialog
+                    oldBrowserId={migrationBrowserId}
+                    onDone={() => setMigrationBrowserId(null)}
+                />
             )}
         </ThemeProvider>
     );

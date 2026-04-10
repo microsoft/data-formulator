@@ -134,6 +134,21 @@ def _register_blueprints():
     # Start background ISS position collector
     start_iss_collector()
 
+    # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
+    from data_formulator.security.auth import init_auth, get_active_provider
+    init_auth(app)
+
+    # Register auth gateway blueprints for stateful providers (e.g. GitHub OAuth)
+    provider = get_active_provider()
+    if provider and provider.name == "github":
+        from data_formulator.auth_gateways.github_gateway import github_bp
+        app.register_blueprint(github_bp)
+
+    # Auto-discover and register data source plugins
+    print("  Loading plugins...", flush=True)
+    from data_formulator.plugins import discover_and_register
+    discover_and_register(app)
+
 
 # Register blueprints at module level so WSGI servers (gunicorn) pick up all routes.
 # The guard inside _register_blueprints() prevents double registration when run via CLI.
@@ -161,6 +176,20 @@ def page_not_found(e):
     return send_from_directory(app.static_folder, "index.html")
 
 
+@app.route('/api/auth/info', methods=['GET'])
+def get_auth_info():
+    """Return authentication configuration for the frontend.
+
+    The response tells the frontend how to initiate login based on the
+    active provider (OIDC PKCE, GitHub redirect, transparent, or none).
+    """
+    from data_formulator.security.auth import get_active_provider
+    provider = get_active_provider()
+    if provider:
+        return flask.jsonify(provider.get_auth_info())
+    return flask.jsonify({"action": "none"})
+
+
 @app.route('/api/app-config', methods=['GET'])
 def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
@@ -181,6 +210,30 @@ def get_app_config():
     if workspace_backend == 'local':
         from data_formulator.datalake.workspace import get_data_formulator_home
         config["DATA_FORMULATOR_HOME"] = str(get_data_formulator_home())
+
+    from data_formulator.security.auth import get_active_provider
+    provider = get_active_provider()
+    if provider:
+        config["AUTH_PROVIDER"] = provider.name
+        config["AUTH_INFO"] = provider.get_auth_info()
+
+    # Expose enabled data source plugins to the frontend
+    from data_formulator.plugins import ENABLED_PLUGINS
+    if ENABLED_PLUGINS:
+        plugins_info: dict[str, dict] = {}
+        for pid, plugin in ENABLED_PLUGINS.items():
+            manifest = plugin.manifest()
+            frontend_cfg = plugin.get_frontend_config()
+            plugins_info[pid] = {
+                "id": manifest.get("id", pid),
+                "name": manifest.get("name", pid),
+                "icon": manifest.get("icon"),
+                "description": manifest.get("description"),
+                "capabilities": manifest.get("capabilities", []),
+                "auth_modes": manifest.get("auth_modes", []),
+                **frontend_cfg,
+            }
+        config["PLUGINS"] = plugins_info
 
     return flask.jsonify(config)
 
