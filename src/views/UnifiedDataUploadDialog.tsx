@@ -111,13 +111,12 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
                 border: `1px solid ${borderColor.divider}`,
                 borderRadius: radius.sm,
                 opacity: disabled ? 0.5 : 1,
-                transition: transition.fast,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 1.5,
                 '&:hover': disabled ? {} : {
-                    borderColor: 'primary.main',
-                    backgroundColor: alpha(theme.palette.primary.main, 0.04),
+                    transform: 'translateY(-2px)',
+                    backgroundColor: 'action.hover',
                 }
             }}
         >
@@ -179,14 +178,14 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
 // Reusable Data Load Menu Component
 export interface DataLoadMenuProps {
     onSelectTab: (tab: UploadTabType) => void;
-    serverConfig?: { DISABLE_DATABASE?: boolean };
+    serverConfig?: { WORKSPACE_BACKEND?: string };
     variant?: 'dialog' | 'page'; // 'dialog' uses smaller cards, 'page' uses larger cards
     hideSampleDatasets?: boolean;
 }
 
 export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({ 
     onSelectTab, 
-    serverConfig = { DISABLE_DATABASE: false },
+    serverConfig = { WORKSPACE_BACKEND: 'local' },
     variant = 'dialog',
     hideSampleDatasets = false
 }) => {
@@ -468,16 +467,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const fileInputRef = useRef<HTMLInputElement>(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
 
-    // Store on server toggle (forced off when DISABLE_DATABASE)
-    const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
-    const [storeOnServer, setStoreOnServer] = useState<boolean>(!diskPersistenceDisabled);
-
-    // When serverConfig loads and database is enabled, default to store on server
-    useEffect(() => {
-        if (!diskPersistenceDisabled) {
-            setStoreOnServer(true);
-        }
-    }, [diskPersistenceDisabled]);
+    // Storage is determined by backend config — no user toggle
+    const isEphemeral = serverConfig.WORKSPACE_BACKEND === 'ephemeral';
+    const storeOnServer = !isEphemeral; // used to decide file upload behavior
 
     // Paste tab state
     const [pasteContent, setPasteContent] = useState<string>("");
@@ -782,7 +774,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             try {
                 await dispatch(loadTable({
                     table: tableWithSource,
-                    storeOnServer,
                     file: storeOnServer ? filePreviewFiles[filePreviewActiveIndex] || filePreviewFiles[0] : undefined,
                 }));
             } finally {
@@ -827,7 +818,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 await dispatch(loadTable({
                     table: tableWithSource,
-                    storeOnServer,
                     file: storeOnServer ? filePreviewFiles[i] || filePreviewFiles[0] : undefined,
                     replaceSource: storeOnServer && isFirstForFile,
                 }));
@@ -889,7 +879,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             const tableWithSource = { ...table, source: { type: 'paste' as const } };
             setTableLoading(true);
             try {
-                await dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+                await dispatch(loadTable({ table: tableWithSource }));
             } finally {
                 setTableLoading(false);
             }
@@ -992,7 +982,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             const tableWithSource = { ...table, source: sourceConfig };
             setTableLoading(true);
             try {
-                await dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+                await dispatch(loadTable({ table: tableWithSource }));
             } finally {
                 setTableLoading(false);
             }
@@ -1021,7 +1011,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     sourceConfig = { type: 'url', url: tableURL };
                 }
                 const tableWithSource = { ...table, source: sourceConfig };
-                await dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+                await dispatch(loadTable({ table: tableWithSource }));
             }
         } finally {
             setTableLoading(false);
@@ -1109,53 +1099,28 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     </Tooltip>
                 )}
                 {activeTab !== 'menu' && (
-                    <Box sx={{ ml: 'auto', mr: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.secondary', mr: 0.5 }}>
-                            {t('upload.loadDataIn')}
-                        </Typography>
-                        <ToggleButtonGroup
-                            value={storeOnServer ? 'disk' : 'browser'}
-                            exclusive
-                            onChange={(_, val) => { if (val) setStoreOnServer(val === 'disk'); }}
-                            size="small"
-                            sx={{ height: 26, '& .MuiToggleButton-root': { textTransform: 'none', fontSize: '0.7rem', px: 1, py: 0 } }}
-                        >
-                            <ToggleButton value="browser">
-                                <Tooltip title={t('upload.browserTooltip', { limit: frontendRowLimit.toLocaleString() })} placement="bottom">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <LanguageIcon sx={{ fontSize: 14 }} /> {t('upload.browserLabel')}
-                                    </Box>
-                                </Tooltip>
-                            </ToggleButton>
-                            <ToggleButton value="disk" disabled={diskPersistenceDisabled}>
-                                <Tooltip title={diskPersistenceDisabled
-                                    ? t('upload.installLocallyTooltip')
+                    <Tooltip title={
+                        isEphemeral
+                            ? t('upload.storedInBrowser', 'Data is stored in your browser (IndexedDB)')
+                            : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
+                                ? t('upload.storedInAzure', 'Data is stored in Azure Blob Storage')
+                                : t('upload.storedOnDisk', `Data is stored on disk (${serverConfig.DATA_FORMULATOR_HOME || '~/.data_formulator'})`)
+                    } placement="bottom">
+                        <Box sx={{ ml: 'auto', mr: 0, display: 'flex', alignItems: 'center', gap: 0.5, px: 1 }}>
+                            {isEphemeral
+                                ? <LanguageIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                                : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
+                                    ? <CloudIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                                    : <FolderOpenIcon sx={{ fontSize: 14, color: 'text.secondary' }} />}
+                            <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.secondary' }}>
+                                {isEphemeral
+                                    ? t('upload.browserLabel', 'Browser')
                                     : serverConfig.WORKSPACE_BACKEND === 'azure_blob'
-                                        ? t('upload.azureBlobTooltip')
-                                        : t('upload.diskTooltip')} placement="bottom">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        {serverConfig.WORKSPACE_BACKEND === 'azure_blob'
-                                            ? <><CloudIcon sx={{ fontSize: 14 }} /> {t('upload.azureLabel')}</>
-                                            : <><FolderOpenIcon sx={{ fontSize: 14 }} /> {t('upload.diskLabel')}</>}
-                                    </Box>
-                                </Tooltip>
-                            </ToggleButton>
-                        </ToggleButtonGroup>
-                        {storeOnServer && !diskPersistenceDisabled && serverConfig.DATA_FORMULATOR_HOME
-                            && serverConfig.WORKSPACE_BACKEND !== 'azure_blob' && (
-                            <Tooltip title={t('upload.openWorkspace', { path: serverConfig.DATA_FORMULATOR_HOME })} placement="bottom">
-                                <IconButton
-                                    size="small"
-                                    onClick={() => {
-                                        fetchWithIdentity(getUrls().OPEN_WORKSPACE, { method: 'POST' }).catch(() => {});
-                                    }}
-                                    sx={{ p: 0.5 }}
-                                >
-                                    <OpenInNewIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                    </Box>
+                                        ? t('upload.azureLabel', 'Azure')
+                                        : t('upload.diskLabel', 'Disk')}
+                            </Typography>
+                        </Box>
+                    </Tooltip>
                 )}
                 <IconButton
                     sx={{ marginLeft: activeTab === 'menu' ? 'auto' : undefined }}
@@ -1626,12 +1591,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 {/* Database Tab */}
                 <TabPanel value={activeTab} index="database">
-                    <DBManagerPane onClose={handleClose} storeOnServer={storeOnServer} />
+                    <DBManagerPane onClose={handleClose} />
                 </TabPanel>
 
                 {/* Extract Data Tab */}
                 <TabPanel value={activeTab} index="extract">
-                    <DataLoadingChat storeOnServer={storeOnServer} />
+                    <DataLoadingChat />
                 </TabPanel>
 
                 {/* Explore Sample Datasets Tab */}
@@ -1678,7 +1643,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                             // Regular example data
                                             dictTable.source = { type: 'example', url: table.url };
                                         }
-                                        await dispatch(loadTable({ table: dictTable, storeOnServer }));
+                                        await dispatch(loadTable({ table: dictTable }));
                                     }
                                 });
                                 await Promise.all(loadPromises);

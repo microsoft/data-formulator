@@ -10,6 +10,7 @@ import { getChartTemplate, getChartChannels } from "../components/ChartTemplates
 import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
 import { getDataTable } from '../views/ChartUtils';
 import { getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
+import { deleteTablesFromWorkspace } from './workspaceService';
 import { getChartPngDataUrl } from './chartCache';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
@@ -40,14 +41,13 @@ export interface SSEMessage {
 // Add interface for app configuration
 export interface ServerConfig {
     DISABLE_DISPLAY_KEYS: boolean;
-    DISABLE_DATABASE: boolean;
     DISABLE_FILE_UPLOAD: boolean;
     PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
     AVAILABLE_LANGUAGES: string[];
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
-    WORKSPACE_BACKEND: string; // 'local' | 'azure_blob'
+    WORKSPACE_BACKEND: 'local' | 'azure_blob' | 'ephemeral';
 }
 
 export interface ModelConfig {
@@ -70,7 +70,6 @@ export type FocusedId =
 
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
-    autoChartInsight: boolean;
     defaultChartWidth: number;
     defaultChartHeight: number;
     maxStretchFactor: number; // max per-axis stretch multiplier for chart sizing (default 2.0)
@@ -187,7 +186,6 @@ const initialState: DataFormulatorState = {
 
     serverConfig: {
         DISABLE_DISPLAY_KEYS: false,
-        DISABLE_DATABASE: false, // will be overridden by /api/app-config
         DISABLE_FILE_UPLOAD: false,
         PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
@@ -198,7 +196,6 @@ const initialState: DataFormulatorState = {
 
     config: {
         formulateTimeoutSeconds: 60,
-        autoChartInsight: false,
         defaultChartWidth: 400,
         defaultChartHeight: 300,
         maxStretchFactor: 2.0,
@@ -229,25 +226,6 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
     return state.tables.filter(table => table.derive && !tableWithDescendants.includes(table.id) && !chartRefedTables.includes(table.id)).map(t => t.id);
 }
 
-/**
- * Fire-and-forget cleanup of virtual tables from the workspace backend.
- * Called when derived tables are removed from the frontend state.
- */
-export function cleanupVirtualTablesFromWorkspace(tables: DictTable[]) {
-    for (const table of tables) {
-        if (table.virtual?.tableId) {
-            fetchWithIdentity(getUrls().DELETE_TABLE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table_name: table.virtual.tableId }),
-            }).catch(err => {
-                console.warn(`Failed to clean up virtual table ${table.virtual?.tableId}:`, err);
-            });
-        }
-    }
-}
-
-// Helper function to auto-populate latitude/longitude encodings for map charts
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     let charts = state.charts.filter(c => !chartIds.includes(c.id));
     let currentFocusedChartId = state.focusedId?.type === 'chart' ? state.focusedId.chartId : undefined;
@@ -270,7 +248,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     
     // Clean up virtual tables from workspace before removing from state
     let tablesToDelete = state.tables.filter(t => tableIdsToDelete.includes(t.id));
-    cleanupVirtualTablesFromWorkspace(tablesToDelete);
+    deleteTablesFromWorkspace(tablesToDelete.map(t => t.virtual.tableId));
 
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
 }
@@ -657,7 +635,7 @@ export const dataFormulatorSlice = createSlice({
             const tableId = action.payload;
             const tableToDelete = state.tables.find(t => t.id === tableId);
             if (!tableToDelete) return;
-            cleanupVirtualTablesFromWorkspace([tableToDelete]);
+            deleteTablesFromWorkspace([tableToDelete.virtual.tableId]);
             removeTableStateRoutine(state, tableId);
         },
         removeTableLocally: (state, action: PayloadAction<string>) => {
@@ -702,7 +680,8 @@ export const dataFormulatorSlice = createSlice({
                     // Use provided content hash (from backend for virtual/DB tables) or compute locally
                     // For virtual tables, backend hash reflects full table; for stream tables, compute from actual rows
                     const newContentHash = providedContentHash || computeContentHash(newRows, t.names);
-                    return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash };
+                    const updatedVirtual = { ...t.virtual, rowCount: newRows.length };
+                    return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash, virtual: updatedVirtual };
                 }
                 return t;
             });
@@ -728,7 +707,8 @@ export const dataFormulatorSlice = createSlice({
                 }
                 const updatedSource = t.source ? { ...t.source, lastRefreshed: Date.now() } : undefined;
                 const newContentHash = providedContentHash || computeContentHash(newRows, t.names);
-                return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash };
+                const updatedVirtual = { ...t.virtual, rowCount: newRows.length };
+                return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash, virtual: updatedVirtual };
             });
         },
         updateTableSource: (state, action: PayloadAction<{tableId: string, source: DataSourceConfig}>) => {
@@ -1145,7 +1125,7 @@ export const dataFormulatorSlice = createSlice({
                 draft.derive.pendingClarification = action.payload.pendingClarification;
             }
         },
-        promoteDraft: (state, action: PayloadAction<{ draftId: string; rows: any[]; names: string[]; metadata: any; code: string; codeSignature?: string; outputVariable?: string; dialog?: any[]; explanation?: any; virtual?: { tableId: string; rowCount: number }; attachedMetadata?: string; source?: DataSourceConfig }>) => {
+        promoteDraft: (state, action: PayloadAction<{ draftId: string; rows: any[]; names: string[]; metadata: any; code: string; codeSignature?: string; outputVariable?: string; dialog?: any[]; explanation?: any; virtual: { tableId: string; rowCount: number }; attachedMetadata?: string; source?: DataSourceConfig }>) => {
             const { draftId, rows, names, metadata, code, codeSignature, outputVariable, dialog, explanation, virtual, attachedMetadata, source } = action.payload;
             const draft = state.draftNodes.find(d => d.id === draftId);
             if (!draft) return;
@@ -1166,7 +1146,7 @@ export const dataFormulatorSlice = createSlice({
                 rows,
                 names,
                 metadata,
-                virtual,
+                virtual: virtual,
                 attachedMetadata: attachedMetadata || '',
                 source,
             };
@@ -1191,7 +1171,7 @@ export const dataFormulatorSlice = createSlice({
             // Clean up old virtual table from workspace since it's being replaced
             let oldTable = state.tables.find(t => t.id == table.id);
             if (oldTable) {
-                cleanupVirtualTablesFromWorkspace([oldTable]);
+                deleteTablesFromWorkspace([oldTable.virtual.tableId]);
             }
             
             state.tables = [...state.tables.filter(t => t.id != table.id), table];
@@ -1203,7 +1183,7 @@ export const dataFormulatorSlice = createSlice({
             // Clean up virtual table from workspace before removing from state
             let tableToDelete = state.tables.find(t => t.derive && t.id == tableId);
             if (tableToDelete) {
-                cleanupVirtualTablesFromWorkspace([tableToDelete]);
+                deleteTablesFromWorkspace([tableToDelete.virtual.tableId]);
             }
             
             state.tables = state.tables.filter(t => !(t.derive && t.id == tableId));
@@ -1216,7 +1196,7 @@ export const dataFormulatorSlice = createSlice({
             let tablesToRemove = state.tables.filter(t => t.derive && !referredTableId.some(tableId => tableId == t.id));
             
             // Clean up virtual tables from workspace
-            cleanupVirtualTablesFromWorkspace(tablesToRemove);
+            deleteTablesFromWorkspace(tablesToRemove.map(t => t.virtual.tableId));
             
             state.tables = state.tables.filter(t => !tablesToRemove.some(tr => tr.id == t.id));
         },

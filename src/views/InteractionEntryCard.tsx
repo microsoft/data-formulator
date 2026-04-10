@@ -107,7 +107,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         borderRadius: '4px',
                         px: '2px',
                         mx: '-2px',
-                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
                     } : {}),
                 }}
                 onClick={() => isCollapsible && setExpanded(!expanded)}

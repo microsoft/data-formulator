@@ -122,9 +122,7 @@ class TestDeriveDataRepairLoop:
                 patch(f"{MODULE}.get_client", return_value=MagicMock()),
                 patch(f"{MODULE}.get_identity_id", return_value="test-user"),
                 patch(f"{MODULE}.get_workspace", return_value=ws),
-                patch(f"{MODULE}.get_temp_tables", return_value=[]),
                 patch(f"{MODULE}.get_language_instruction", return_value=""),
-                patch(f"{MODULE}.WorkspaceWithTempData", side_effect=fake_ctx),
                 patch(f"{MODULE}.DataRecAgent", return_value=mock_agent),
                 patch(f"{MODULE}.sign_result"),
             ):
@@ -148,9 +146,7 @@ class TestDeriveDataRepairLoop:
                 patch(f"{MODULE}.get_client", return_value=MagicMock()),
                 patch(f"{MODULE}.get_identity_id", return_value="test-user"),
                 patch(f"{MODULE}.get_workspace", return_value=ws),
-                patch(f"{MODULE}.get_temp_tables", return_value=[]),
                 patch(f"{MODULE}.get_language_instruction", return_value=""),
-                patch(f"{MODULE}.WorkspaceWithTempData", side_effect=fake_ctx),
                 patch(f"{MODULE}.DataRecAgent", return_value=mock_agent),
                 patch(f"{MODULE}.sign_result"),
             ):
@@ -173,9 +169,7 @@ class TestDeriveDataRepairLoop:
                 patch(f"{MODULE}.get_client", return_value=MagicMock()),
                 patch(f"{MODULE}.get_identity_id", return_value="test-user"),
                 patch(f"{MODULE}.get_workspace", return_value=ws),
-                patch(f"{MODULE}.get_temp_tables", return_value=[]),
                 patch(f"{MODULE}.get_language_instruction", return_value=""),
-                patch(f"{MODULE}.WorkspaceWithTempData", side_effect=fake_ctx),
                 patch(f"{MODULE}.DataRecAgent", return_value=mock_agent),
                 patch(f"{MODULE}.sign_result"),
             ):
@@ -199,9 +193,7 @@ class TestDeriveDataRepairLoop:
                 patch(f"{MODULE}.get_client", return_value=MagicMock()),
                 patch(f"{MODULE}.get_identity_id", return_value="test-user"),
                 patch(f"{MODULE}.get_workspace", return_value=ws),
-                patch(f"{MODULE}.get_temp_tables", return_value=[]),
                 patch(f"{MODULE}.get_language_instruction", return_value=""),
-                patch(f"{MODULE}.WorkspaceWithTempData", side_effect=fake_ctx),
                 patch(f"{MODULE}.DataRecAgent", return_value=mock_agent),
                 patch(f"{MODULE}.sign_result"),
             ):
@@ -242,9 +234,7 @@ class TestRefineDataRepairLoop:
                 patch(f"{MODULE}.get_client", return_value=MagicMock()),
                 patch(f"{MODULE}.get_identity_id", return_value="test-user"),
                 patch(f"{MODULE}.get_workspace", return_value=ws),
-                patch(f"{MODULE}.get_temp_tables", return_value=[]),
                 patch(f"{MODULE}.get_language_instruction", return_value=""),
-                patch(f"{MODULE}.WorkspaceWithTempData", side_effect=fake_ctx),
                 patch(f"{MODULE}.DataTransformationAgent", return_value=mock_agent),
                 patch(f"{MODULE}.sign_result"),
             ):
@@ -266,9 +256,7 @@ class TestRefineDataRepairLoop:
                 patch(f"{MODULE}.get_client", return_value=MagicMock()),
                 patch(f"{MODULE}.get_identity_id", return_value="test-user"),
                 patch(f"{MODULE}.get_workspace", return_value=ws),
-                patch(f"{MODULE}.get_temp_tables", return_value=[]),
                 patch(f"{MODULE}.get_language_instruction", return_value=""),
-                patch(f"{MODULE}.WorkspaceWithTempData", side_effect=fake_ctx),
                 patch(f"{MODULE}.DataTransformationAgent", return_value=mock_agent),
                 patch(f"{MODULE}.sign_result"),
             ):
@@ -293,9 +281,7 @@ class TestRefineDataRepairLoop:
                 patch(f"{MODULE}.get_client", return_value=MagicMock()),
                 patch(f"{MODULE}.get_identity_id", return_value="test-user"),
                 patch(f"{MODULE}.get_workspace", return_value=ws),
-                patch(f"{MODULE}.get_temp_tables", return_value=[]),
                 patch(f"{MODULE}.get_language_instruction", return_value=""),
-                patch(f"{MODULE}.WorkspaceWithTempData", side_effect=fake_ctx),
                 patch(f"{MODULE}.DataTransformationAgent", return_value=mock_agent),
                 patch(f"{MODULE}.sign_result"),
             ):
@@ -326,9 +312,7 @@ class TestGetRecommendationQuestionsError:
                 patch(f"{MODULE}.get_client", return_value=MagicMock()),
                 patch(f"{MODULE}.get_identity_id", return_value="test-user"),
                 patch(f"{MODULE}.get_workspace", return_value=ws),
-                patch(f"{MODULE}.get_temp_tables", return_value=[]),
                 patch(f"{MODULE}.get_language_instruction", return_value=""),
-                patch(f"{MODULE}.WorkspaceWithTempData", side_effect=fake_ctx),
                 patch(f"{MODULE}.InteractiveExploreAgent", return_value=mock_agent),
             ):
                 with app.test_client() as client:
@@ -363,9 +347,7 @@ class TestGetRecommendationQuestionsError:
                 patch(f"{MODULE}.get_client", return_value=MagicMock()),
                 patch(f"{MODULE}.get_identity_id", return_value="test-user"),
                 patch(f"{MODULE}.get_workspace", return_value=ws),
-                patch(f"{MODULE}.get_temp_tables", return_value=[]),
                 patch(f"{MODULE}.get_language_instruction", return_value=""),
-                patch(f"{MODULE}.WorkspaceWithTempData", side_effect=fake_ctx),
                 patch(f"{MODULE}.InteractiveExploreAgent", return_value=mock_agent),
             ):
                 with app.test_client() as client:

@@ -25,7 +25,7 @@ from data_formulator.agents.agent_data_rec import DataRecAgent
 from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.security.auth import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
-from data_formulator.datalake.workspace import Workspace, WorkspaceWithTempData
+from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
@@ -52,24 +52,6 @@ def get_language_instruction(*, mode: str = "full") -> str:
     lang = request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0].strip().lower()
     return build_language_instruction(lang, mode=mode)
 
-
-def get_temp_tables(workspace, input_tables: list[dict]) -> list[dict]:
-    """
-    Determine which input tables are temp tables (not persisted in the workspace datalake).
-    
-    Args:
-        workspace: The user's workspace instance
-        input_tables: List of table dicts with 'name' and 'rows' keys
-        
-    Returns:
-        List of table dicts that don't exist in the workspace (temp tables)
-    """
-    existing_tables = set(workspace.list_tables())
-    input_names = [t.get('name') for t in input_tables]
-    temp_tables = [table for table in input_tables if table.get('name') not in existing_tables]
-    temp_names = [t.get('name') for t in temp_tables]
-    logger.info(f"[get_temp_tables] existing={existing_tables}, input={input_names}, temp={temp_names}")
-    return temp_tables
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
 
@@ -273,13 +255,11 @@ def process_data_on_load_request():
 
             # Check if input table is in workspace, if not add as temp data
             input_tables = [{"name": input_data.get("name"), "rows": input_data.get("rows", [])}]
-            temp_data = get_temp_tables(workspace, input_tables)
             
-            with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                language_instruction = get_language_instruction(mode="compact")
-                agent = DataLoadAgent(client=client, workspace=workspace, language_instruction=language_instruction)
-                candidates = agent.run(content["input_data"])
-                candidates = [c['content'] for c in candidates if c['status'] == 'ok']
+            language_instruction = get_language_instruction(mode="compact")
+            agent = DataLoadAgent(client=client, workspace=workspace, language_instruction=language_instruction)
+            candidates = agent.run(content["input_data"])
+            candidates = [c['content'] for c in candidates if c['status'] == 'ok']
 
             response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
         except Exception as e:
@@ -403,7 +383,6 @@ def derive_data():
         try:
             identity_id = get_identity_id()
             workspace = get_workspace(identity_id)
-            temp_data = get_temp_tables(workspace, input_tables)
             max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
             language_instruction = get_language_instruction(mode="compact")
@@ -414,48 +393,47 @@ def derive_data():
                 "api_base": content['model'].get("api_base", ""),
             }
 
-            with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                if mode == "recommendation":
-                    agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
-                    results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
-                else:
-                    agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
-                    results = agent.run(input_tables, instruction, prev_messages,
-                                        current_visualization=current_visualization, expected_visualization=expected_visualization)
+            if mode == "recommendation":
+                agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
+                results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
+            else:
+                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
+                results = agent.run(input_tables, instruction, prev_messages,
+                                    current_visualization=current_visualization, expected_visualization=expected_visualization)
 
-                repair_attempts = 0
-                while (
-                    isinstance(results, list)
-                    and len(results) > 0
-                    and results[0].get('status') in ('error', 'other error')
-                    and repair_attempts < max_repair_attempts
-                ):
-                    error_message = results[0].get('content', 'Unknown error')
-                    logger.warning(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
-                    new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+            repair_attempts = 0
+            while (
+                isinstance(results, list)
+                and len(results) > 0
+                and results[0].get('status') in ('error', 'other error')
+                and repair_attempts < max_repair_attempts
+            ):
+                error_message = results[0].get('content', 'Unknown error')
+                logger.warning(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
+                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
 
-                    prev_dialog = results[0].get('dialog', [])
+                prev_dialog = results[0].get('dialog', [])
 
-                    try:
-                        if mode == "transform":
-                            results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                        if mode == "recommendation":
-                            results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                    except Exception as followup_exc:
-                        logger.exception("derive_data followup failed")
-                        results = [{
-                            "status": "error",
-                            "content": sanitize_model_error(str(followup_exc)),
-                            "code": "",
-                            "dialog": [],
-                        }]
-                        break
+                try:
+                    if mode == "transform":
+                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                    if mode == "recommendation":
+                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                except Exception as followup_exc:
+                    logger.exception("derive_data followup failed")
+                    results = [{
+                        "status": "error",
+                        "content": sanitize_model_error(str(followup_exc)),
+                        "code": "",
+                        "dialog": [],
+                    }]
+                    break
 
-                    repair_attempts += 1
-                    logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
+                repair_attempts += 1
+                logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
 
-                if repair_attempts > 0:
-                    logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
+            if repair_attempts > 0:
+                logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
 
             # Sign code in each result so the frontend can send it back
             # for re-execution during data refresh with proof of authenticity.
@@ -524,51 +502,49 @@ def data_agent_streaming():
                 return
 
             workspace = get_workspace(identity_id)
-            temp_data = get_temp_tables(workspace, input_tables) if input_tables else None
 
             language_instruction = get_language_instruction(mode="full")
             rec_language_instruction = get_language_instruction(mode="compact")
 
             try:
-                with WorkspaceWithTempData(workspace, temp_data) as ws:
-                    agent = DataAgent(
-                        client=client,
-                        workspace=ws,
-                        agent_exploration_rules=agent_exploration_rules,
-                        agent_coding_rules=agent_coding_rules,
-                        language_instruction=language_instruction,
-                        rec_language_instruction=rec_language_instruction,
-                        max_iterations=max_iterations,
-                        max_repair_attempts=max_repair_attempts,
-                    )
+                agent = DataAgent(
+                    client=client,
+                    workspace=workspace,
+                    agent_exploration_rules=agent_exploration_rules,
+                    agent_coding_rules=agent_coding_rules,
+                    language_instruction=language_instruction,
+                    rec_language_instruction=rec_language_instruction,
+                    max_iterations=max_iterations,
+                    max_repair_attempts=max_repair_attempts,
+                )
 
-                    # Build trajectory for resume or fresh start
-                    trajectory = None
-                    if resume_trajectory and clarification_response:
-                        # Append the user's clarification to the saved trajectory
-                        trajectory = list(resume_trajectory)
-                        trajectory.append({
-                            "role": "user",
-                            "content": f"[USER CLARIFICATION]\n\n{clarification_response}",
-                        })
-                        logger.debug(f"== resuming with clarification ===> {clarification_response}")
+                # Build trajectory for resume or fresh start
+                trajectory = None
+                if resume_trajectory and clarification_response:
+                    # Append the user's clarification to the saved trajectory
+                    trajectory = list(resume_trajectory)
+                    trajectory.append({
+                        "role": "user",
+                        "content": f"[USER CLARIFICATION]\n\n{clarification_response}",
+                    })
+                    logger.debug(f"== resuming with clarification ===> {clarification_response}")
 
-                    for event in agent.run(
-                        input_tables=input_tables,
-                        user_question=user_question,
-                        conversation_history=conversation_history,
-                        trajectory=trajectory,
-                        completed_step_count=completed_step_count,
-                    ):
-                        yield json.dumps({
-                            "token": token,
-                            "status": "ok",
-                            "result": event,
-                        }, ensure_ascii=False) + '\n'
+                for event in agent.run(
+                    input_tables=input_tables,
+                    user_question=user_question,
+                    conversation_history=conversation_history,
+                    trajectory=trajectory,
+                    completed_step_count=completed_step_count,
+                ):
+                    yield json.dumps({
+                        "token": token,
+                        "status": "ok",
+                        "result": event,
+                    }, ensure_ascii=False) + '\n'
 
-                        # Stop streaming after terminal events
-                        if event.get("type") in ("completion", "clarify"):
-                            break
+                    # Stop streaming after terminal events
+                    if event.get("type") in ("completion", "clarify"):
+                        break
 
             except Exception as e:
                 logger.error(f"Error in data-agent-streaming: {e}")
@@ -630,7 +606,6 @@ def refine_data():
         try:
             identity_id = get_identity_id()
             workspace = get_workspace(identity_id)
-            temp_data = get_temp_tables(workspace, input_tables)
             max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
             language_instruction = get_language_instruction(mode="compact")
@@ -641,40 +616,39 @@ def refine_data():
                 "api_base": content['model'].get("api_base", ""),
             }
 
-            with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
-                results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
-                                        current_visualization=current_visualization, expected_visualization=expected_visualization)
+            agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
+            results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
+                                    current_visualization=current_visualization, expected_visualization=expected_visualization)
 
-                repair_attempts = 0
-                while (
-                    isinstance(results, list)
-                    and len(results) > 0
-                    and results[0].get('status') in ('error', 'other error')
-                    and repair_attempts < max_repair_attempts
-                ):
-                    error_message = results[0].get('content', 'Unknown error')
-                    logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
-                    new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-                    prev_dialog = results[0].get('dialog', [])
+            repair_attempts = 0
+            while (
+                isinstance(results, list)
+                and len(results) > 0
+                and results[0].get('status') in ('error', 'other error')
+                and repair_attempts < max_repair_attempts
+            ):
+                error_message = results[0].get('content', 'Unknown error')
+                logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
+                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+                prev_dialog = results[0].get('dialog', [])
 
-                    try:
-                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                    except Exception as followup_exc:
-                        logger.exception("refine_data followup failed")
-                        results = [{
-                            "status": "error",
-                            "content": sanitize_model_error(str(followup_exc)),
-                            "code": "",
-                            "dialog": [],
-                        }]
-                        break
+                try:
+                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                except Exception as followup_exc:
+                    logger.exception("refine_data followup failed")
+                    results = [{
+                        "status": "error",
+                        "content": sanitize_model_error(str(followup_exc)),
+                        "code": "",
+                        "dialog": [],
+                    }]
+                    break
 
-                    repair_attempts += 1
-                    logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
+                repair_attempts += 1
+                logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
 
-                if repair_attempts > 0:
-                    logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
+            if repair_attempts > 0:
+                logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
 
             # Sign code in each result for secure refresh later.
             for r in results:
@@ -704,28 +678,26 @@ def request_code_expl():
         # Get workspace and mount temp data
         identity_id = get_identity_id()
         workspace = get_workspace(identity_id)
-        temp_data = get_temp_tables(workspace, input_tables)
 
         language_instruction = get_language_instruction()
 
-        with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            try:
-                code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace, language_instruction=language_instruction)
-                candidates = code_expl_agent.run(input_tables, code)
+        try:
+            code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace, language_instruction=language_instruction)
+            candidates = code_expl_agent.run(input_tables, code)
 
-                # Return the first candidate's content as JSON
-                if candidates and len(candidates) > 0:
-                    result = candidates[0]
-                    if result['status'] == 'ok':
-                        return jsonify(result)
-                    else:
-                        return jsonify(result), 400
+            # Return the first candidate's content as JSON
+            if candidates and len(candidates) > 0:
+                result = candidates[0]
+                if result['status'] == 'ok':
+                    return jsonify(result)
                 else:
-                    return jsonify({'error': 'No explanation generated'}), 400
-            except Exception as e:
-                logger.error(f"Error in code-expl: {e}")
-                logger.error(traceback.format_exc())
-                return jsonify({'error': sanitize_model_error(str(e))}), 400
+                    return jsonify(result), 400
+            else:
+                return jsonify({'error': 'No explanation generated'}), 400
+        except Exception as e:
+            logger.error(f"Error in code-expl: {e}")
+            logger.error(traceback.format_exc())
+            return jsonify({'error': sanitize_model_error(str(e))}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 
@@ -744,26 +716,24 @@ def request_chart_insight():
         # Get workspace
         identity_id = get_identity_id()
         workspace = get_workspace(identity_id)
-        temp_data = get_temp_tables(workspace, input_tables)
 
-        with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            try:
-                agent = ChartInsightAgent(client=client, workspace=workspace,
-                                          language_instruction=get_language_instruction())
-                candidates = agent.run(chart_image, chart_type, field_names, input_tables)
+        try:
+            agent = ChartInsightAgent(client=client, workspace=workspace,
+                                      language_instruction=get_language_instruction())
+            candidates = agent.run(chart_image, chart_type, field_names, input_tables)
 
-                if candidates and len(candidates) > 0:
-                    result = candidates[0]
-                    if result['status'] == 'ok':
-                        return jsonify(result)
-                    else:
-                        return jsonify(result), 400
+            if candidates and len(candidates) > 0:
+                result = candidates[0]
+                if result['status'] == 'ok':
+                    return jsonify(result)
                 else:
-                    return jsonify({'error': 'No insight generated'}), 400
-            except Exception as e:
-                logger.error(f"Error in chart-insight: {e}")
-                logger.error(traceback.format_exc())
-                return jsonify({'error': sanitize_model_error(str(e))}), 400
+                    return jsonify(result), 400
+            else:
+                return jsonify({'error': 'No insight generated'}), 400
+        except Exception as e:
+            logger.error(f"Error in chart-insight: {e}")
+            logger.error(traceback.format_exc())
+            return jsonify({'error': sanitize_model_error(str(e))}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 
@@ -793,21 +763,19 @@ def get_recommendation_questions():
             all_tables = list(input_tables)
             if exploration_thread:
                 all_tables.extend(exploration_thread)
-            temp_data = get_temp_tables(workspace, all_tables) if all_tables else None
 
-            with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                agent = InteractiveExploreAgent(client=client, workspace=workspace,
-                                                agent_exploration_rules=agent_exploration_rules,
-                                                language_instruction=get_language_instruction())
-                try:
-                    for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
-                        yield chunk
-                except Exception as e:
-                    logger.exception("get-recommendation-questions failed")
-                    error_data = {
-                        "content": sanitize_model_error(str(e))
-                    }
-                    yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
+            agent = InteractiveExploreAgent(client=client, workspace=workspace,
+                                            agent_exploration_rules=agent_exploration_rules,
+                                            language_instruction=get_language_instruction())
+            try:
+                for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
+                    yield chunk
+            except Exception as e:
+                logger.exception("get-recommendation-questions failed")
+                error_data = {
+                    "content": sanitize_model_error(str(e))
+                }
+                yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
             error_data = { 
                 "content": "Invalid request format" 
@@ -842,20 +810,18 @@ def generate_report_stream():
                 chart_data = chart.get("chart_data")
                 if chart_data and chart_data.get("name") and chart_data.get("rows"):
                     all_tables.append(chart_data)
-            temp_data = get_temp_tables(workspace, all_tables) if all_tables else None
 
-            with WorkspaceWithTempData(workspace, temp_data) as workspace:
-                agent = ReportGenAgent(client=client, workspace=workspace,
-                                       language_instruction=get_language_instruction())
-                try:
-                    for chunk in agent.stream(input_tables, charts, style):
-                        yield chunk
-                except Exception as e:
-                    logger.exception("generate-report-stream failed")
-                    error_data = { 
-                        "content": sanitize_model_error(str(e)) 
-                    }
-                    yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
+            agent = ReportGenAgent(client=client, workspace=workspace,
+                                   language_instruction=get_language_instruction())
+            try:
+                for chunk in agent.stream(input_tables, charts, style):
+                    yield chunk
+            except Exception as e:
+                logger.exception("generate-report-stream failed")
+                error_data = { 
+                    "content": sanitize_model_error(str(e)) 
+                }
+                yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
             error_data = { 
                 "content": "Invalid request format" 
@@ -979,7 +945,6 @@ def refresh_derived_data():
         # Get workspace and mount temp data for tables not in workspace
         identity_id = get_identity_id()
         workspace = get_workspace(identity_id)
-        temp_data = get_temp_tables(workspace, input_tables)
         
         # Get settings from app config
         cli_args = current_app.config.get('CLI_ARGS', {})
@@ -987,52 +952,51 @@ def refresh_derived_data():
         
         sandbox = create_sandbox(cli_args.get('sandbox', 'local'))
         
-        with WorkspaceWithTempData(workspace, temp_data) as workspace:
-            # Run the transformation code in the sandbox
-            result = sandbox.run_python_code(
-                code=code,
-                workspace=workspace,
-                output_variable=output_variable,
-            )
-            
-            if result['status'] == 'ok':
-                result_df = result['content']
-                row_count = len(result_df)
-                
-                response_data = {
-                    "status": "ok",
-                    "message": "Successfully refreshed derived data",
+        # Run the transformation code in the sandbox
+        result = sandbox.run_python_code(
+            code=code,
+            workspace=workspace,
+            output_variable=output_variable,
+        )
+
+        if result['status'] == 'ok':
+            result_df = result['content']
+            row_count = len(result_df)
+
+            response_data = {
+                "status": "ok",
+                "message": "Successfully refreshed derived data",
+                "row_count": row_count
+            }
+
+            if virtual:
+                # Virtual table: update workspace and return limited rows for display
+                workspace.write_parquet(result_df, output_table_name)
+                response_data["virtual"] = {
+                    "table_name": output_table_name,
                     "row_count": row_count
                 }
-                
-                if virtual:
-                    # Virtual table: update workspace and return limited rows for display
-                    workspace.write_parquet(result_df, output_table_name)
-                    response_data["virtual"] = {
-                        "table_name": output_table_name,
-                        "row_count": row_count
-                    }
-                    # Limit rows for response payload since full data is in workspace
-                    if row_count > max_display_rows:
-                        display_df = result_df.head(max_display_rows)
-                    else:
-                        display_df = result_df
-                    # Remove duplicate columns to avoid orient='records' error
-                    display_df = display_df.loc[:, ~display_df.columns.duplicated()]
-                    response_data["rows"] = json.loads(display_df.to_json(orient='records', date_format='iso'))
+                # Limit rows for response payload since full data is in workspace
+                if row_count > max_display_rows:
+                    display_df = result_df.head(max_display_rows)
                 else:
-                    # Temp table: return full data since there's no workspace storage
-                    # Remove duplicate columns to avoid orient='records' error
-                    result_df = result_df.loc[:, ~result_df.columns.duplicated()]
-                    response_data["rows"] = json.loads(result_df.to_json(orient='records', date_format='iso'))
-                
-                return jsonify(response_data)
+                    display_df = result_df
+                # Remove duplicate columns to avoid orient='records' error
+                display_df = display_df.loc[:, ~display_df.columns.duplicated()]
+                response_data["rows"] = json.loads(display_df.to_json(orient='records', date_format='iso'))
             else:
-                return jsonify({
-                    "status": "error",
-                    "message": result.get('content', 'Unknown error during transformation')
-                }), 400
-            
+                # Temp table: return full data since there's no workspace storage
+                # Remove duplicate columns to avoid orient='records' error
+                result_df = result_df.loc[:, ~result_df.columns.duplicated()]
+                response_data["rows"] = json.loads(result_df.to_json(orient='records', date_format='iso'))
+
+            return jsonify(response_data)
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result.get('content', 'Unknown error during transformation')
+            }), 400
+
     except Exception as e:
         logger.error(f"Error refreshing derived data: {str(e)}")
         logger.error(traceback.format_exc())

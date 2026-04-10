@@ -4,7 +4,7 @@
 import { useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from './dfSlice';
-import { fetchWithIdentity, getUrls } from './utils';
+import { saveWorkspaceState } from './workspaceService';
 
 /**
  * Fields excluded from auto-save (secrets / ephemeral / fetched-on-startup).
@@ -69,11 +69,7 @@ export function useAutoSave() {
             isSavingRef.current = true;
             try {
                 const serializable = getSerializableState(state);
-                await fetchWithIdentity(getUrls().SESSION_SAVE, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ state: serializable }),
-                });
+                await saveWorkspaceState(serializable);
             } catch (err) {
                 // Auto-save is best-effort; log but don't disrupt the user
                 console.warn('[auto-save] failed:', err);

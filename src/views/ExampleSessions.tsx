@@ -7,9 +7,6 @@ import {
     Box,
     Card,
     CardContent,
-    Chip,
-    alpha,
-    useTheme,
 } from '@mui/material';
 import { StreamIcon } from '../icons';
 
@@ -69,18 +66,17 @@ export const exampleSessions: ExampleSession[] = [
 // Session card component for displaying example sessions
 export const ExampleSessionCard: React.FC<{
     session: ExampleSession;
-    theme: any;
     onClick: () => void;
     disabled?: boolean;
-}> = ({ session, theme, onClick, disabled }) => {
+}> = ({ session, onClick, disabled }) => {
     return (
         <Card
             variant="outlined"
             sx={{
+                textAlign: 'left',
                 cursor: disabled ? 'default' : 'pointer',
                 '&:hover': disabled ? {} : {
                     transform: 'translateY(-2px)',
-                    borderColor: session.live ? alpha(theme.palette.secondary.main, 0.4) : alpha(theme.palette.primary.main, 0.4),
                 },
             }}
             onClick={disabled ? undefined : onClick}
@@ -109,25 +105,20 @@ export const ExampleSessionCard: React.FC<{
             </Box>
 
             {/* Content */}
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', py: 1,
-                '&:last-child': { pb: 1 }
-             }}>
-                {/* Header */}
-                <Box>
-                    <Typography
-                        variant="subtitle2"
-                        sx={{
-                            fontSize: '12px',
-                            color: theme.palette.text.secondary,
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden'
-                        }}
-                    >
-                        {session.live && <StreamIcon sx={{ fontSize: 10, color: 'success.main' }} />} <span style={{textDecoration: 'underline'}}>{session.title}:</span> {session.description}
-                    </Typography>
-                </Box>
+            <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
+                    {session.live && <StreamIcon sx={{ fontSize: 10, color: 'success.main', mr: 0.5 }} />}
+                    {session.title}
+                </Typography>
+                <Typography variant="caption" color="text.disabled" sx={{
+                    fontSize: 11,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden'
+                }}>
+                    {session.description}
+                </Typography>
             </CardContent>
         </Card>
     );

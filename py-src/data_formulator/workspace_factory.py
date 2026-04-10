@@ -81,12 +81,18 @@ def _get_user_workspaces_root(identity_id: str) -> Path:
     return get_data_formulator_home() / "users" / safe_id / "workspaces"
 
 
+def _get_backend() -> str:
+    """Read workspace backend from Flask config."""
+    from flask import current_app
+    cfg = current_app.config.get("CLI_ARGS", {})
+    return cfg.get("workspace_backend", os.getenv("WORKSPACE_BACKEND", "local"))
+
+
 def get_workspace_manager(identity_id: str) -> WorkspaceManager:
     """
     Return a :class:`WorkspaceManager` (or Azure subclass) for the given user.
 
-    The manager provides workspace CRUD (list, create, delete, rename)
-    and session state persistence.
+    Not available for ephemeral mode — raises RuntimeError.
     """
     from flask import current_app
 
@@ -94,6 +100,12 @@ def get_workspace_manager(identity_id: str) -> WorkspaceManager:
     backend = cfg.get(
         "workspace_backend", os.getenv("WORKSPACE_BACKEND", "local")
     )
+
+    if backend == "ephemeral":
+        raise RuntimeError(
+            "get_workspace_manager() is not available for ephemeral backend. "
+            "Session management is handled client-side."
+        )
 
     if backend == "azure_blob":
         from data_formulator.datalake.azure_blob_workspace_manager import (
@@ -119,15 +131,29 @@ def get_workspace(identity_id: str) -> Workspace:
     """
     Return the active :class:`Workspace` for *identity_id*.
 
-    Reads the workspace ID from the X-Workspace-Id request header.
-    Uses the WorkspaceManager (local or Azure) to open the workspace.
-    Creates the workspace lazily if it doesn't exist yet (the frontend
-    generates the ID and the first data operation triggers creation).
-    Raises ValueError if no workspace ID is present in the request.
+    For local/Azure: uses WorkspaceManager with lazy creation.
+    For ephemeral: creates a scratch workspace and materializes table data
+    from ``_workspace_tables`` in the request body.  The frontend (IndexedDB)
+    owns all data and sends it with every request; the backend writes it to
+    temp parquet files so agents/DuckDB can read normally.
     """
     ws_id = get_active_workspace_id()
     if not ws_id:
         raise ValueError("No active workspace. X-Workspace-Id header is required.")
+
+    backend = _get_backend()
+
+    if backend == "ephemeral":
+        from data_formulator.datalake.ephemeral_workspace import construct_scratch_workspace
+
+        # Extract workspace tables from the request body
+        workspace_tables = []
+        from flask import request
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            workspace_tables = data.get("_workspace_tables") or []
+
+        return construct_scratch_workspace(identity_id, ws_id, workspace_tables)
 
     mgr = get_workspace_manager(identity_id)
 

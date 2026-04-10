@@ -628,7 +628,7 @@ export const SimpleChartRecBox: FC = function () {
                 // Create a new draft for the next potential step, chained from this table
                 createNextDraft(candidateTableId, []);
 
-                if (createdCharts.length > 0 && config.autoChartInsight) {
+                if (createdCharts.length > 0) {
                     const lastChart = createdCharts[createdCharts.length - 1];
                     setTimeout(() => {
                         dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);

@@ -98,8 +98,6 @@
     "defaultChartWidth": "default chart width",
     "defaultChartHeight": "default chart height",
     "chartSizeRangeError": "Value must be between 100 and 1000 pixels",
-    "autoChartInsight": "Auto-generate chart insights",
-    "autoChartInsightHint": "Automatically generate AI insights when a new chart is created.",
     "formulateTimeout": "formulate timeout (seconds)",
     "formulateTimeoutRangeError": "Value must be between 1 and 3600 seconds",
     "formulateTimeoutHint": "Maximum time allowed for the formulation process before timing out.",

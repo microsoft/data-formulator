@@ -98,8 +98,6 @@
     "defaultChartWidth": "默认图表宽度",
     "defaultChartHeight": "默认图表高度",
     "chartSizeRangeError": "取值必须在 100 到 1000 像素之间",
-    "autoChartInsight": "自动生成图表洞察",
-    "autoChartInsightHint": "创建新图表时自动调用 AI 生成数据洞察。",
     "formulateTimeout": "生成超时（秒）",
     "formulateTimeoutRangeError": "取值必须在 1 到 3600 秒之间",
     "formulateTimeoutHint": "生成过程允许的最大时长，超时后将终止。",

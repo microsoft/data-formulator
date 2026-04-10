@@ -86,6 +86,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls, fetchWithIdentity } from './utils';
+import { listWorkspaces, loadWorkspace, deleteWorkspace } from './workspaceService';
 import { persistor } from './store';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
@@ -253,20 +254,19 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const { t } = useTranslation();
 
-    const fetchWorkspaces = useCallback(async () => {
+    const fetchWsList = useCallback(async () => {
         setListLoading(true);
         try {
-            const res = await fetchWithIdentity(getUrls().SESSION_LIST);
-            const data = await res.json();
-            if (data.status === 'ok') setWorkspaces(data.sessions);
+            const sessions = await listWorkspaces();
+            setWorkspaces(sessions as any);
         } catch (e) { /* ignore */ }
         setListLoading(false);
     }, []);
 
     useEffect(() => {
         if (!open) return;
-        fetchWorkspaces();
-    }, [open, fetchWorkspaces]);
+        fetchWsList();
+    }, [open, fetchWsList]);
 
     const handleOpen = async (wsId: string) => {
         if (activeWorkspace?.id === wsId) { onClose(); return; }
@@ -275,20 +275,13 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
         dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
         onClose();
         try {
-            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: wsId }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                // Use saved displayName from state, or from list, or fall back to ID
-                const savedWs = data.state?.activeWorkspace;
-                const displayName = savedWs?.displayName || wsEntry?.display_name || wsId;
-                dispatch(dfActions.loadState({ ...data.state, activeWorkspace: { id: wsId, displayName } }));
+            const result = await loadWorkspace(wsId);
+            if (result) {
+                const displayName = result.displayName || wsEntry?.display_name || wsId;
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: wsId, displayName } }));
                 dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: `Opened session "${displayName}"` }));
             } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: data.message || 'Failed to open workspace' }));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: 'Failed to open workspace' }));
             }
         } catch (e) {
             dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: 'Failed to open workspace' }));
@@ -298,23 +291,15 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
     };
 
     const handleCreate = () => {
-        // Reset state → landing page, where user loads data to start a new session
         dispatch(dfActions.resetState());
         onClose();
     };
 
     const handleDelete = async (workspaceId: string) => {
         try {
-            const res = await fetchWithIdentity(getUrls().SESSION_DELETE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: workspaceId }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                setWorkspaces(prev => prev.filter(s => s.id !== workspaceId));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: `Deleted session "${workspaceId}"` }));
-            }
+            await deleteWorkspace(workspaceId);
+            setWorkspaces(prev => prev.filter(s => s.id !== workspaceId));
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: `Deleted session "${workspaceId}"` }));
         } catch (e) { /* ignore */ }
         setConfirmDelete(null);
     };
@@ -324,7 +309,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 Sessions
                 <Tooltip title="Refresh list">
-                    <IconButton size="small" onClick={fetchWorkspaces} disabled={listLoading} sx={{ color: 'text.secondary' }}>
+                    <IconButton size="small" onClick={fetchWsList} disabled={listLoading} sx={{ color: 'text.secondary' }}>
                         {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
                     </IconButton>
                 </Tooltip>
@@ -407,7 +392,7 @@ const WorkspaceMenu: React.FC = () => {
     const [pickerOpen, setPickerOpen] = useState(false);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
+    const diskPersistenceDisabled = false; // all backends support workspace switching
 
     if (!activeWorkspace) return null;
 
@@ -450,7 +435,7 @@ const CloseWorkspaceButton: React.FC = () => {
 
     if (!activeWorkspace || tables.length === 0) return null;
 
-    const handleClose = () => {
+    const handleClose = async () => {
         // resetState clears tables, charts, activeWorkspace → landing page
         dispatch(dfActions.resetState());
     };
@@ -475,8 +460,6 @@ const ConfigDialog: React.FC = () => {
 
 
     const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 60);
-    const [autoChartInsight, setAutoChartInsight] = useState(config.autoChartInsight ?? false);
-
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
     const [maxStretchFactor, setMaxStretchFactor] = useState(config.maxStretchFactor ?? 2.0);
@@ -486,7 +469,6 @@ const ConfigDialog: React.FC = () => {
     );
 
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
-                      autoChartInsight !== config.autoChartInsight ||
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight ||
                       maxStretchFactor !== config.maxStretchFactor ||
@@ -594,24 +576,6 @@ const ConfigDialog: React.FC = () => {
                                 />
                             </Box>
                         </Box>
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    checked={autoChartInsight}
-                                    onChange={(e) => setAutoChartInsight(e.target.checked)}
-                                    size="small"
-                                />
-                            }
-                            label={
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <Typography sx={{ fontSize: 13 }}>{t('config.autoChartInsight')}</Typography>
-                                    <Tooltip title={t('config.autoChartInsightHint')} arrow placement="top">
-                                        <InfoOutlinedIcon sx={{ fontSize: 15, color: 'text.secondary', cursor: 'help' }} />
-                                    </Tooltip>
-                                </Box>
-                            }
-                            sx={{ ml: 0 }}
-                        />
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
                                 <TextField
@@ -702,7 +666,6 @@ const ConfigDialog: React.FC = () => {
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
                         setFormulateTimeoutSeconds(60);
-                        setAutoChartInsight(false);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
                         setMaxStretchFactor(2.0);
@@ -718,7 +681,7 @@ const ConfigDialog: React.FC = () => {
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
                             || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
                         onClick={() => {
-                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, autoChartInsight, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
+                            dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
                             setOpen(false);
                         }}
                     >
@@ -936,36 +899,34 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
 
+    const [configLoaded, setConfigLoaded] = useState(false);
+
     useEffect(() => {
         fetchWithIdentity(getUrls().APP_CONFIG)
             .then(response => response.json())
             .then(data => {
                 dispatch(dfActions.setServerConfig(data));
+                setConfigLoaded(true);
             });
     }, []);
 
     // Validate persisted workspace still exists on the backend
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    
+    // Debug: log persisted state on startup
     useEffect(() => {
-        if (!activeWorkspace) return;
-        // Check if the workspace exists by trying to load it
-        fetchWithIdentity(getUrls().SESSION_LOAD, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: activeWorkspace.id }),
-        }).then(res => res.json()).then(data => {
-            if (data.status === 'error') {
-                // Workspace no longer exists — reset to landing page
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), component: "Workspace", type: "error",
-                    value: `Session "${activeWorkspace.displayName}" not found. Returning to home.`,
-                }));
-                dispatch(dfActions.resetState());
+        if (configLoaded) {
+            console.log('[DEBUG] activeWorkspace:', activeWorkspace);
+            console.log('[DEBUG] tables:', tables.length, tables.map(t => ({ id: t.id, virtual: t.virtual, rowLen: t.rows?.length })));
+            
+            // Recover orphaned state: tables exist but activeWorkspace was lost
+            if (!activeWorkspace && tables.length > 0) {
+                const recoveredId = `recovered_${Date.now()}`;
+                dispatch(dfActions.setActiveWorkspace({ id: recoveredId, displayName: 'Recovered Session' }));
             }
-        }).catch(() => {
-            // Backend unavailable — keep local state, don't disrupt
-        });
-    }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+        }
+    }, [configLoaded]);
 
     // User authentication state
     const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
@@ -1084,6 +1045,17 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 },
             },
         },
+        transitions: {
+            duration: {
+                shortest: 100,
+                shorter: 100,
+                short: 100,
+                standard: 100,
+                complex: 150,
+                enteringScreen: 100,
+                leavingScreen: 100,
+            },
+        },
     });
 
     const router = useMemo(() => createBrowserRouter([
@@ -1120,7 +1092,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     return (
         <ThemeProvider theme={theme}>
-            <RouterProvider router={router} />
+            {configLoaded ? (
+                <RouterProvider router={router} />
+            ) : (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+                    <CircularProgress size={28} />
+                </Box>
+            )}
         </ThemeProvider>
     );
 }

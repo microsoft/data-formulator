@@ -38,7 +38,7 @@ export function useDataRefresh() {
     const dispatch = useDispatch<AppDispatch>();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const refreshConfigs = useSelector(selectRefreshConfigs);
-    const timeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
+    const timeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
     const refreshInProgressRef = useRef<Map<string, boolean>>(new Map());
     const isActiveRef = useRef<Map<string, boolean>>(new Map());
     const initializedTablesRef = useRef<Set<string>>(new Set());

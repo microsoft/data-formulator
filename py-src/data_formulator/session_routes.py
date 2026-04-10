@@ -4,11 +4,17 @@
 """
 Workspace management routes.
 
-Workspace = session. Each workspace is a named folder containing data files,
-metadata (workspace.yaml), and auto-persisted frontend state (session_state.json).
+For local / azure_blob backends:
+  Standard workspace CRUD — list, create, delete, rename, save/load state.
+
+For ephemeral backend:
+  Workspace data is sent inline with every request via ``_workspace_tables``
+  and materialized by ``get_workspace()`` in workspace_factory.
+  Session routes (list, save, load, create, rename) return no-ops — the
+  frontend manages all state in IndexedDB.
 
 Routes:
-  POST /api/sessions/save       — auto-persist state to active workspace
+  POST /api/sessions/save        — auto-persist state to active workspace
   GET  /api/sessions/list        — list all workspaces
   POST /api/sessions/load        — switch to a workspace (open it)
   POST /api/sessions/delete      — delete a workspace
@@ -24,37 +30,36 @@ import io
 import logging
 from datetime import datetime
 
-from flask import Blueprint, request, jsonify, send_file, current_app
+from flask import Blueprint, request, jsonify, send_file
 
 from data_formulator.security.auth import get_identity_id
 from data_formulator.workspace_factory import (
     get_workspace,
     get_workspace_manager,
     get_active_workspace_id,
+    _get_backend,
 )
 
 logger = logging.getLogger(__name__)
 
-
-def _disk_persistence_enabled() -> bool:
-    """Return True unless --disable-database was passed (no disk persistence)."""
-    try:
-        return not current_app.config.get('CLI_ARGS', {}).get('disable_database', False)
-    except RuntimeError:
-        return True
-
 session_bp = Blueprint("sessions", __name__, url_prefix="/api/sessions")
 
 
+def _is_ephemeral() -> bool:
+    return _get_backend() == "ephemeral"
+
+
 # ---------------------------------------------------------------------------
-# Routes
+# Routes — standard for local/azure, no-ops for ephemeral
+# (ephemeral mode: workspace data is sent inline with every request via
+#  _workspace_tables, materialized by get_workspace() in workspace_factory)
 # ---------------------------------------------------------------------------
 
 @session_bp.route("/save", methods=["POST"])
 def save_session():
     """Auto-persist frontend state to the active workspace."""
-    if not _disk_persistence_enabled():
-        return jsonify(status="error", message="Session save is disabled (no disk persistence)"), 403
+    if _is_ephemeral():
+        return jsonify(status="ok", message="No-op in ephemeral mode")
 
     data = request.get_json(force=True)
     state: dict = data.get("state")
@@ -70,8 +75,9 @@ def save_session():
 
     mgr = get_workspace_manager(identity_id)
 
+    # Lazy creation: frontend generates the ID, first save triggers creation
     if not mgr.workspace_exists(ws_id):
-        return jsonify(status="error", message=f"Workspace '{ws_id}' not found"), 404
+        mgr.create_workspace(ws_id)
 
     mgr.save_session_state(ws_id, state)
 
@@ -81,7 +87,7 @@ def save_session():
 @session_bp.route("/list", methods=["GET"])
 def list_sessions():
     """List all workspaces for the current user."""
-    if not _disk_persistence_enabled():
+    if _is_ephemeral():
         return jsonify(status="ok", sessions=[])
 
     identity_id = get_identity_id()
@@ -98,8 +104,8 @@ def list_sessions():
 @session_bp.route("/load", methods=["POST"])
 def load_session():
     """Switch to a workspace (open it) and return its state."""
-    if not _disk_persistence_enabled():
-        return jsonify(status="error", message="Session load is disabled (no disk persistence)"), 403
+    if _is_ephemeral():
+        return jsonify(status="ok", id="", state={}, message="No-op in ephemeral mode")
 
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or data.get("name", "")).strip()
@@ -123,8 +129,8 @@ def load_session():
 @session_bp.route("/delete", methods=["POST"])
 def delete_session():
     """Delete a workspace."""
-    if not _disk_persistence_enabled():
-        return jsonify(status="error", message="Session delete is disabled (no disk persistence)"), 403
+    if _is_ephemeral():
+        return jsonify(status="ok", id=(request.get_json(force=True).get("id") or ""))
 
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or data.get("name", "")).strip()
@@ -143,8 +149,8 @@ def delete_session():
 @session_bp.route("/create", methods=["POST"])
 def create_workspace_route():
     """Create a new workspace."""
-    if not _disk_persistence_enabled():
-        return jsonify(status="error", message="Workspace creation is disabled (no disk persistence)"), 403
+    if _is_ephemeral():
+        return jsonify(status="ok", message="No-op in ephemeral mode (frontend owns workspace creation)")
 
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or data.get("name", "")).strip()
@@ -165,8 +171,8 @@ def create_workspace_route():
 @session_bp.route("/rename", methods=["POST"])
 def rename_workspace_route():
     """Rename a workspace (change its folder ID)."""
-    if not _disk_persistence_enabled():
-        return jsonify(status="error", message="Workspace rename is disabled"), 403
+    if _is_ephemeral():
+        return jsonify(status="ok", message="No-op in ephemeral mode (frontend owns workspace naming)")
 
     data = request.get_json(force=True)
     old_id: str = (data.get("old_id") or data.get("old_name", "")).strip()
@@ -187,7 +193,7 @@ def rename_workspace_route():
 
 @session_bp.route("/export", methods=["POST"])
 def export_session():
-    """Export the active workspace as a .dfsession zip."""
+    """Export the active workspace as a zip."""
     data = request.get_json(force=True)
     state: dict = data.get("state")
     if state is None:
@@ -200,13 +206,13 @@ def export_session():
     clean_state = _strip_sensitive(state)
     buf = ws.export_session_zip(clean_state)
 
-    filename = f"df_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.dfsession"
+    filename = f"df_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
     return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=filename)
 
 
 @session_bp.route("/import", methods=["POST"])
 def import_session():
-    """Import a workspace from a .dfsession zip."""
+    """Import a workspace from a zip."""
     if "file" not in request.files:
         return jsonify(status="error", message="No file uploaded"), 400
 
