@@ -493,6 +493,7 @@
     "ssoFailed": "SSO login failed: {{message}}",
     "ssoOrPassword": "or sign in with Superset account",
     "completingLogin": "Completing login…",
+    "idpRedirecting": "Redirecting from SSO, please wait…",
     "callbackFailed": "Login callback failed: {{message}}",
     "sessionExpired": "Session expired. Please sign in again.",
     "silentRenewFailed": "Background token refresh failed. Redirecting to login…",

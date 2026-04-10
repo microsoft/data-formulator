@@ -27,15 +27,27 @@ export function OidcCallback() {
     const { t } = useTranslation();
     const theme = useTheme();
     const [error, setError] = useState<string | null>(null);
+    const [redirecting, setRedirecting] = useState(false);
 
     useEffect(() => {
         (async () => {
             try {
                 const mgr = await getUserManager();
-                if (mgr) {
-                    await mgr.signinRedirectCallback();
-                    window.location.href = "/";
+                if (!mgr) return;
+
+                const params = new URLSearchParams(window.location.search);
+                if (!params.get("state") && params.get("code")) {
+                    // IdP-initiated flow: the SSO redirected here directly
+                    // without DF having started the login.  Re-initiate a
+                    // standard SP flow — since the user is already
+                    // authenticated at the IdP, the redirect is transparent.
+                    setRedirecting(true);
+                    await mgr.signinRedirect();
+                    return;
                 }
+
+                await mgr.signinRedirectCallback();
+                window.location.href = "/";
             } catch (err: any) {
                 setError(err?.message || "Unknown error");
             }
@@ -88,7 +100,9 @@ export function OidcCallback() {
                             variant="body2"
                             sx={{ color: "text.secondary" }}
                         >
-                            {t("auth.completingLogin")}
+                            {redirecting
+                                ? t("auth.idpRedirecting")
+                                : t("auth.completingLogin")}
                         </Typography>
                     </>
                 )}

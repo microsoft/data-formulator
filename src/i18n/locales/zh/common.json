@@ -482,6 +482,7 @@
     "ssoFailed": "SSO 登录失败：{{message}}",
     "ssoOrPassword": "或使用 Superset 账号登录",
     "completingLogin": "正在完成登录…",
+    "idpRedirecting": "正在从 SSO 系统跳转，请稍候…",
     "callbackFailed": "登录回调失败：{{message}}",
     "sessionExpired": "会话已过期，请重新登录。",
     "silentRenewFailed": "后台令牌刷新失败，正在跳转到登录页…",
