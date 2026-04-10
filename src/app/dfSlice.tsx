@@ -171,7 +171,7 @@ const initialState: DataFormulatorState = {
     identity: { type: 'browser', id: getBrowserId() },
     globalModels: [],
     models: [],
-    selectedModelId: undefined,
+    selectedModelId: localStorage.getItem('df_selected_model') || undefined,
     testedModels: [],
 
     tables: [],
@@ -596,6 +596,13 @@ export const dataFormulatorSlice = createSlice({
         },
         selectModel: (state, action: PayloadAction<string | undefined>) => {
             state.selectedModelId = action.payload;
+            try {
+                if (action.payload) {
+                    localStorage.setItem('df_selected_model', action.payload);
+                } else {
+                    localStorage.removeItem('df_selected_model');
+                }
+            } catch { /* localStorage unavailable */ }
         },
         addModel: (state, action: PayloadAction<ModelConfig>) => {
             state.models = [...state.models, action.payload];
@@ -604,6 +611,7 @@ export const dataFormulatorSlice = createSlice({
             state.models = state.models.filter(model => model.id != action.payload);
             if (state.selectedModelId == action.payload) {
                 state.selectedModelId = undefined;
+                try { localStorage.removeItem('df_selected_model'); } catch { /* */ }
             }
         },
         updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}>) => {

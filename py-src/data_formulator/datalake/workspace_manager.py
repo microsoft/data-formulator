@@ -135,28 +135,85 @@ class WorkspaceManager:
         """Get the filesystem path for a workspace."""
         return self._root / self._safe_id(workspace_id)
 
-    def copy_workspaces_from(self, source_root: Path) -> list[str]:
-        """Copy all workspaces from *source_root* into this manager's root.
+    def move_workspaces_from(self, source_root: Path) -> list[str]:
+        """Move all workspaces from *source_root* into this manager's root.
 
-        Existing workspaces with the same ID are skipped (not overwritten).
-        Returns the list of workspace IDs that were actually copied.
+        - New workspaces (not in target) are moved directly.
+        - Existing workspaces are merged: new data files and updated metadata
+          are copied from source into the target, then the source is removed.
+
+        Returns the list of workspace IDs that were moved/merged.
         """
-        copied: list[str] = []
+        moved: list[str] = []
         if not source_root.exists():
-            return copied
+            return moved
 
         for child in source_root.iterdir():
             if not child.is_dir():
                 continue
             dest = self._root / child.name
             if dest.exists():
-                logger.info("Skipping existing workspace '%s' during migration", child.name)
-                continue
-            shutil.copytree(child, dest)
-            copied.append(child.name)
-            logger.info("Migrated workspace '%s' from %s", child.name, source_root)
+                self._merge_workspace(child, dest)
+                shutil.rmtree(child)
+                logger.info("Merged workspace '%s' from %s", child.name, source_root)
+            else:
+                shutil.move(str(child), str(dest))
+                logger.info("Moved workspace '%s' from %s", child.name, source_root)
+            moved.append(child.name)
 
-        return copied
+        return moved
+
+    @staticmethod
+    def _merge_workspace(src: Path, dest: Path) -> None:
+        """Merge data files and metadata from *src* workspace into *dest*."""
+        src_data = src / "data"
+        dest_data = dest / "data"
+        dest_data.mkdir(exist_ok=True)
+
+        if src_data.is_dir():
+            for f in src_data.iterdir():
+                target = dest_data / f.name
+                if not target.exists():
+                    shutil.copy2(str(f), str(target))
+
+        src_yaml = src / "workspace.yaml"
+        dest_yaml = dest / "workspace.yaml"
+        if src_yaml.exists() and dest_yaml.exists():
+            try:
+                import yaml
+                src_meta = yaml.safe_load(src_yaml.read_text(encoding="utf-8")) or {}
+                dest_meta = yaml.safe_load(dest_yaml.read_text(encoding="utf-8")) or {}
+                src_tables = src_meta.get("tables", {})
+                dest_tables = dest_meta.get("tables", {})
+                for name, entry in src_tables.items():
+                    if name not in dest_tables:
+                        dest_tables[name] = entry
+                dest_meta["tables"] = dest_tables
+                dest_yaml.write_text(
+                    yaml.dump(dest_meta, allow_unicode=True, default_flow_style=False),
+                    encoding="utf-8",
+                )
+            except Exception as exc:
+                logger.warning("Failed to merge workspace.yaml: %s", exc)
+        elif src_yaml.exists():
+            shutil.copy2(str(src_yaml), str(dest_yaml))
+
+    def delete_all_workspaces(self) -> int:
+        """Delete every workspace under this manager's root.
+
+        Returns the number of entries deleted.
+        """
+        count = 0
+        if not self._root.exists():
+            return count
+        for child in self._root.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink(missing_ok=True)
+            count += 1
+            logger.info("Deleted workspace entry '%s' during cleanup", child.name)
+        return count
 
     def create_workspace(self, workspace_id: str) -> Path:
         """

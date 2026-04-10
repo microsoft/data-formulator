@@ -42,7 +42,6 @@ def _with_retry(fn, *args, **kwargs):
         if e.response is not None and e.response.status_code == 401:
             new_token = try_refresh()
             if new_token:
-                # Replace the first positional arg (token) with the new one
                 new_args = (new_token,) + args[1:]
                 return fn(*new_args, **kwargs)
             return None
@@ -51,9 +50,11 @@ def _with_retry(fn, *args, **kwargs):
 
 @catalog_bp.route("/datasets", methods=["GET"])
 def list_datasets():
-    """List datasets visible to the current user (or public datasets if not authenticated)."""
+    """List datasets visible to the current user."""
     token, user = require_auth()
-    user_id = user["id"] if user else None
+    if not user:
+        return jsonify({"status": "error", "message": "Authentication required"}), 401
+    user_id = user["id"]
 
     catalog = _catalog()
     try:
@@ -75,9 +76,11 @@ def list_datasets():
 
 @catalog_bp.route("/dashboards", methods=["GET"])
 def list_dashboards():
-    """List dashboards visible to the current user (or public dashboards if not authenticated)."""
+    """List dashboards visible to the current user."""
     token, user = require_auth()
-    user_id = user["id"] if user else None
+    if not user:
+        return jsonify({"status": "error", "message": "Authentication required"}), 401
+    user_id = user["id"]
 
     catalog = _catalog()
     try:
@@ -101,6 +104,8 @@ def list_dashboards():
 def get_dashboard_datasets(dashboard_id: int):
     """Get datasets used by a specific dashboard."""
     token, user = require_auth()
+    if not user:
+        return jsonify({"status": "error", "message": "Authentication required"}), 401
 
     catalog = _catalog()
     try:
@@ -123,6 +128,8 @@ def get_dashboard_datasets(dashboard_id: int):
 def get_dashboard_filters(dashboard_id: int):
     """Get native filters defined for a dashboard."""
     token, user = require_auth()
+    if not user:
+        return jsonify({"status": "error", "message": "Authentication required"}), 401
 
     dataset_id_raw = request.args.get("dataset_id")
     dataset_id = int(dataset_id_raw) if dataset_id_raw else None
@@ -154,6 +161,8 @@ def get_dashboard_filters(dashboard_id: int):
 def get_filter_options():
     """Get option values for a dashboard filter field."""
     token, user = require_auth()
+    if not user:
+        return jsonify({"status": "error", "message": "Authentication required"}), 401
 
     dataset_id_raw = request.args.get("dataset_id")
     column_name = (request.args.get("column_name") or "").strip()
@@ -189,7 +198,9 @@ def get_filter_options():
 @catalog_bp.route("/datasets/<int:dataset_id>", methods=["GET"])
 def get_dataset_detail(dataset_id: int):
     """Full detail for a single dataset."""
-    token, _ = require_auth()
+    token, user = require_auth()
+    if not user:
+        return jsonify({"status": "error", "message": "Authentication required"}), 401
 
     catalog = _catalog()
     try:

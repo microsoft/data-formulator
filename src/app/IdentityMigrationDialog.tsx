@@ -7,11 +7,13 @@
  * Shown when the persisted Redux identity was `browser:<uuid>` but the
  * newly resolved identity is `user:<sub>`.  Checks whether the old
  * anonymous identity has workspaces on the server and, if so, offers
- * to copy them into the authenticated user's workspace root.
+ * to move them into the authenticated user's workspace root.
+ *
+ * Both options ("Import" and "Start Fresh") delete the anonymous
+ * workspaces afterwards so stale data never lingers.
  */
 
 import { FC, useEffect, useState, useCallback } from "react";
-import { useSelector } from "react-redux";
 import {
     Dialog,
     DialogTitle,
@@ -24,7 +26,6 @@ import {
     Box,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import type { DataFormulatorState } from "./dfSlice";
 import { fetchWithIdentity, getUrls } from "./utils";
 import { persistor } from "./store";
 
@@ -38,7 +39,6 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
     onDone,
 }) => {
     const { t } = useTranslation();
-    const identity = useSelector((s: DataFormulatorState) => s.identity);
     const [loading, setLoading] = useState(true);
     const [migrating, setMigrating] = useState(false);
     const [workspaceCount, setWorkspaceCount] = useState(0);
@@ -46,12 +46,6 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
     const [success, setSuccess] = useState<string | null>(null);
 
     const sourceIdentity = `browser:${oldBrowserId}`;
-
-    const markMigrationDone = useCallback(() => {
-        if (identity?.id) {
-            localStorage.setItem(`df_migrated:${identity.id}`, "true");
-        }
-    }, [identity]);
 
     useEffect(() => {
         (async () => {
@@ -63,21 +57,30 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
                 const count = data.status === "ok" ? (data.sessions?.length ?? 0) : 0;
                 setWorkspaceCount(count);
                 if (count === 0) {
-                    await purgeAndFinish();
+                    onDone();
                 }
             } catch {
-                await purgeAndFinish();
+                onDone();
             } finally {
                 setLoading(false);
             }
         })();
     }, []);
 
-    const purgeAndFinish = useCallback(async () => {
-        markMigrationDone();
-        await persistor.purge();
-        onDone();
-    }, [onDone, markMigrationDone]);
+    const cleanupAnonymous = useCallback(async () => {
+        const resp = await fetchWithIdentity("/api/sessions/cleanup-anonymous", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source_identity: sourceIdentity }),
+        });
+        if (!resp.ok) {
+            throw new Error(`cleanup-anonymous failed: HTTP ${resp.status}`);
+        }
+        const payload = await resp.json();
+        if (payload?.status !== "ok") {
+            throw new Error(payload?.message || "cleanup-anonymous failed");
+        }
+    }, [sourceIdentity]);
 
     const handleImport = useCallback(async () => {
         setMigrating(true);
@@ -90,10 +93,11 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
             });
             const data = await res.json();
             if (data.status === "ok") {
-                const count = data.copied?.length ?? 0;
+                const count = data.moved?.length ?? 0;
                 setSuccess(t("auth.migration.success", { count }));
-                markMigrationDone();
+                await cleanupAnonymous();
                 setTimeout(async () => {
+                    localStorage.setItem('df_identity_type', 'user');
                     await persistor.purge();
                     window.location.href = "/";
                 }, 1200);
@@ -105,12 +109,21 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
             setError(err?.message || "Network error");
             setMigrating(false);
         }
-    }, [sourceIdentity, t]);
+    }, [sourceIdentity, t, cleanupAnonymous]);
 
     const handleFresh = useCallback(async () => {
-        await purgeAndFinish();
-        window.location.href = "/";
-    }, [purgeAndFinish]);
+        setMigrating(true);
+        setError(null);
+        try {
+            await cleanupAnonymous();
+            localStorage.setItem('df_identity_type', 'user');
+            await persistor.purge();
+            window.location.href = "/";
+        } catch (err: any) {
+            setError(err?.message || "Cleanup failed");
+            setMigrating(false);
+        }
+    }, [cleanupAnonymous]);
 
     if (loading || workspaceCount === 0) {
         return null;

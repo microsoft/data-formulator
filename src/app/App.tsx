@@ -948,9 +948,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     useEffect(() => {
         (async () => {
-            // Snapshot the persisted identity BEFORE we resolve the new one
-            const { store } = await import('./store');
-            const persistedIdentity = store.getState().identity;
+            const prevType = localStorage.getItem('df_identity_type');
+            const prevBrowserId = localStorage.getItem('df_browser_id');
 
             let resolvedIdentity: { type: 'user' | 'browser'; id: string; displayName?: string } | null = null;
 
@@ -995,15 +994,19 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
             dispatch(dfActions.setIdentity(resolvedIdentity));
 
-            // Detect anonymous → authenticated transition (only once per user)
-            const migrationKey = `df_migrated:${resolvedIdentity.id}`;
+            // Persist current identity type for next page load
+            localStorage.setItem('df_identity_type', resolvedIdentity.type);
+            if (resolvedIdentity.type === 'browser') {
+                localStorage.setItem('df_browser_id', resolvedIdentity.id);
+            }
+
+            // Detect anonymous → authenticated transition
             if (
-                persistedIdentity?.type === 'browser' &&
+                prevType === 'browser' &&
                 resolvedIdentity.type === 'user' &&
-                persistedIdentity.id &&
-                !localStorage.getItem(migrationKey)
+                prevBrowserId
             ) {
-                setMigrationBrowserId(persistedIdentity.id);
+                setMigrationBrowserId(prevBrowserId);
             }
 
             setAuthChecked(true);

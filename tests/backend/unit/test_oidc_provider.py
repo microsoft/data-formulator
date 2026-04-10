@@ -250,8 +250,11 @@ class TestOIDCSkip:
         """Before on_configure() or when OIDC Discovery fails."""
         monkeypatch.setenv("OIDC_ISSUER_URL", ISSUER)
         monkeypatch.setenv("OIDC_CLIENT_ID", CLIENT_ID)
+        for var in ("OIDC_USERINFO_URL", "OIDC_JWKS_URL", "OIDC_AUTHORIZE_URL",
+                     "OIDC_TOKEN_URL", "OIDC_CLIENT_SECRET", "OIDC_SCOPES"):
+            monkeypatch.delenv(var, raising=False)
         p = OIDCProvider()
-        # _jwks_client is None (on_configure not called)
+        # No strategy available: _jwks_client is None, _userinfo_url is empty
         with app.test_request_context(
             headers={"Authorization": "Bearer some.jwt.token"}
         ):

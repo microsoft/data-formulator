@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pytest
+import yaml
 from pathlib import Path
 
 from data_formulator.datalake.workspace_manager import WorkspaceManager
@@ -183,3 +184,82 @@ class TestOpenWorkspace:
         assert "data_table" in ws.list_tables()
         state = manager.load_session_state("full_ws")
         assert state["tables"] == [{"id": "data_table"}]
+
+
+class TestWorkspaceMigrationOps:
+    def test_move_workspaces_from_merges_existing_and_cleans_source(self, tmp_path):
+        src = WorkspaceManager(tmp_path / "src")
+        dst = WorkspaceManager(tmp_path / "dst")
+
+        # Source workspace "alpha" with table_a
+        src.create_workspace("alpha")
+        alpha_src = src.get_workspace_path("alpha")
+        (alpha_src / "workspace.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "version": "2.0",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                    "tables": {
+                        "table_a": {
+                            "source_type": "upload",
+                            "filename": "a.parquet",
+                            "file_type": "parquet",
+                            "created_at": "2026-01-01T00:00:00+00:00",
+                            "updated_at": "2026-01-01T00:00:00+00:00",
+                        }
+                    },
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        (alpha_src / "data" / "a.parquet").write_text("source-a", encoding="utf-8")
+
+        # Destination workspace with same ID "alpha" and existing table_b
+        dst.create_workspace("alpha")
+        alpha_dst = dst.get_workspace_path("alpha")
+        (alpha_dst / "workspace.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "version": "2.0",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                    "tables": {
+                        "table_b": {
+                            "source_type": "upload",
+                            "filename": "b.parquet",
+                            "file_type": "parquet",
+                            "created_at": "2026-01-01T00:00:00+00:00",
+                            "updated_at": "2026-01-01T00:00:00+00:00",
+                        }
+                    },
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        (alpha_dst / "data" / "b.parquet").write_text("dest-b", encoding="utf-8")
+
+        moved = dst.move_workspaces_from(src.root)
+        assert moved == ["alpha"]
+
+        # Source workspace directory removed after merge
+        assert not alpha_src.exists()
+
+        # Destination metadata contains both tables
+        merged_meta = yaml.safe_load((alpha_dst / "workspace.yaml").read_text(encoding="utf-8"))
+        assert "table_a" in merged_meta["tables"]
+        assert "table_b" in merged_meta["tables"]
+        assert (alpha_dst / "data" / "a.parquet").exists()
+        assert (alpha_dst / "data" / "b.parquet").exists()
+
+    def test_delete_all_workspaces_removes_dirs_and_files(self, manager):
+        manager.create_workspace("one")
+        manager.create_workspace("two")
+        # simulate stale non-directory artifact under root
+        (manager.root / "stale.txt").write_text("x", encoding="utf-8")
+
+        deleted = manager.delete_all_workspaces()
+        assert deleted == 3
+        assert list(manager.root.iterdir()) == []
