@@ -13,13 +13,14 @@
 9. [数据流设计](#9-数据流设计)
 10. [Superset 插件迁移示例](#10-superset-插件迁移示例)
 11. [与现有 ExternalDataLoader 的关系](#11-与现有-externaldataloader-的关系)
-12. [目录结构](#12-目录结构)
-13. [实施路径](#13-实施路径)
-14. [关键设计难点：外部系统配置与用户身份](#14-关键设计难点外部系统配置与用户身份)
-15. [FAQ](#15-faq)
-16. [附录 A：核心代码改动清单](#附录-a核心代码改动清单)
-17. [附录 B：新增插件的完整步骤](#附录-b新增插件的完整步骤零核心改动)
-18. [附录 C：关联文档](#附录-c关联文档)
+12. [插件 i18n 自包含方案](#12-插件-i18n-自包含方案)
+13. [目录结构](#13-目录结构)
+14. [实施路径](#14-实施路径)
+15. [关键设计难点：外部系统配置与用户身份](#15-关键设计难点外部系统配置与用户身份)
+16. [FAQ](#16-faq)
+17. [附录 A：核心代码改动清单](#附录-a核心代码改动清单)
+18. [附录 B：新增插件的完整步骤](#附录-b新增插件的完整步骤零核心改动)
+19. [附录 C：关联文档](#附录-c关联文档)
 
 ---
 
@@ -1689,4 +1690,112 @@ Grafana          │  DataSourcePlugin   │  同上
 >
 > 这些改进针对数据库连接器，与 DataSourcePlugin（BI 系统插件）互不干扰，
 > 可以独立于插件框架按优先级逐步实施。
+
+---
+
+## 12. 插件 i18n 自包含方案
+
+### 12.1 问题
+
+宿主项目的翻译文件（如 `src/i18n/locales/en/common.json`）是核心项目的一部分。如果每个插件的翻译 key 都直接写入这些文件，会导致：
+
+1. **插件开发者被迫修改宿主项目文件** — 违反"自包含"原则
+2. **多个插件的翻译 key 混杂在同一个 JSON 中** — 职责不清
+3. **上游更新时容易冲突** — 宿主 `common.json` 频繁变动
+
+### 12.2 方案：插件自带翻译 + 启动时自动合并
+
+每个插件在自己的目录下维护翻译文件，通过 `DataSourcePluginModule.locales` 字段导出，框架在启动时自动合并到 i18next 的 `translation` namespace 中。
+
+#### 目录结构
+
+```
+src/plugins/superset/
+  ├── locales/
+  │   ├── en.json      ← 插件自己的英文翻译
+  │   └── zh.json      ← 插件自己的中文翻译
+  ├── api.ts
+  ├── SupersetPanel.tsx
+  └── index.tsx         ← 通过 locales 字段导出翻译
+```
+
+#### 翻译文件格式
+
+JSON 结构保持与宿主项目相同的 key path 风格，以 `plugin.<pluginId>.` 作为命名空间前缀：
+
+```json
+{
+  "plugin": {
+    "superset": {
+      "login": "Sign In",
+      "logout": "Sign Out",
+      "datasets": "Datasets"
+    }
+  }
+}
+```
+
+#### 插件模块导出
+
+```typescript
+// src/plugins/superset/index.tsx
+import en from './locales/en.json';
+import zh from './locales/zh.json';
+
+const supersetPlugin: DataSourcePluginModule = {
+    id: 'superset',
+    Icon: SupersetIcon,
+    Panel: SupersetPanel,
+    locales: { en, zh },
+};
+```
+
+#### 框架自动注册
+
+`src/plugins/registry.ts` 提供 `registerPluginTranslations()` 函数，在应用启动时调用。该函数遍历所有已发现的插件模块，将它们的 `locales` deep-merge 到 i18next：
+
+```typescript
+import i18n from '../i18n';
+
+export function registerPluginTranslations(): void {
+    for (const [, mod] of _modules) {
+        if (!mod.locales) continue;
+        for (const [lang, bundle] of Object.entries(mod.locales)) {
+            i18n.addResourceBundle(lang, 'translation', bundle, true, true);
+        }
+    }
+}
+```
+
+`addResourceBundle(lang, ns, bundle, deep=true, overwrite=true)` 是 i18next 内置 API，deep-merge 到已有 resources，无需重新初始化。
+
+#### 调用时机
+
+在 `src/index.tsx` 中，`import './i18n'`（初始化 i18next）之后、React 渲染之前调用：
+
+```typescript
+import './i18n';
+import { registerPluginTranslations } from './plugins/registry';
+registerPluginTranslations();
+```
+
+由于 `import.meta.glob` 使用 eager 模式，此时所有插件模块（包括其 locales JSON）已经加载完成。
+
+### 12.3 运行机制说明
+
+`locales: { en, zh }` 是**数据声明**而非语言选择——它声明"该插件提供 en 和 zh 两套翻译"。`registerPluginTranslations()` 会将**所有语言的 bundle 都注册**到 i18next 中。实际使用哪套翻译由 i18next 的语言检测器（`LanguageDetector`）或 `i18n.changeLanguage()` 决定，与宿主项目的语言切换行为完全一致。
+
+### 12.4 不变的地方
+
+- 所有插件组件继续使用 `useTranslation()` 不带参数
+- 所有 `t('plugin.superset.xxx')` 调用不变
+- 宿主项目自己的翻译文件和加载方式完全不变
+- 语言切换自动生效，插件翻译跟随系统设置
+
+### 12.5 新增插件的 i18n 清单
+
+1. 在插件目录下创建 `locales/en.json` 和 `locales/zh.json`（或其他语言）
+2. JSON 顶层结构为 `{ "plugin": { "<pluginId>": { ... } } }`
+3. 在插件的 `index.tsx` 中导入并通过 `locales` 字段导出
+4. 无需修改宿主项目的任何翻译文件
 
