@@ -85,6 +85,13 @@ export const DataFormulatorFC = ({ }) => {
     const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
 
+    // Auto-focus: when focusedId is undefined but tables exist, select the first table
+    useEffect(() => {
+        if (!focusedId && tables.length > 0) {
+            dispatch(dfActions.setFocused({ type: 'table', tableId: tables[0].id }));
+        }
+    }, [focusedId, tables, dispatch]);
+
     // ── Workspace list (shown on landing page) ────────────────────
     const [savedWorkspaces, setSavedWorkspaces] = useState<{id: string, display_name: string, saved_at: string | null}[]>([]);
     const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null);
@@ -191,6 +198,7 @@ export const DataFormulatorFC = ({ }) => {
             .then(savedState => {
                 // Use loadState to restore the complete session state
                 dispatch(dfActions.loadState(savedState));
+                
                 
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
@@ -561,7 +569,8 @@ export const DataFormulatorFC = ({ }) => {
                 <DialogTitle>Delete session?</DialogTitle>
                 <DialogContent>
                     <Typography>
-                        This will permanently delete <strong>{confirmDeleteWs}</strong> and all its data.
+                        This will permanently delete <strong>{savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs}</strong>{' '}
+                        ({confirmDeleteWs}) and all its data.
                     </Typography>
                 </DialogContent>
                 <DialogActions>

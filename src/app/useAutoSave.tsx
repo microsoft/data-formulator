@@ -24,7 +24,7 @@ const AUTO_SAVE_DEBOUNCE_MS = 3000;
 /**
  * Extract the serializable portion of the Redux state (strip sensitive/transient fields).
  */
-function getSerializableState(state: DataFormulatorState): Record<string, unknown> {
+export function getSerializableState(state: DataFormulatorState): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(state)) {
         if (!EXCLUDED_FIELDS.has(key)) {

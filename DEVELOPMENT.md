@@ -317,7 +317,7 @@ data-formulator/                          ← container
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
-| `--workspace-backend` | `WORKSPACE_BACKEND` | `local` | `local` or `azure_blob` |
+| `--workspace-backend` | `WORKSPACE_BACKEND` | `local` | `local`, `azure_blob`, or `ephemeral` |
 | `--azure-blob-connection-string` | `AZURE_BLOB_CONNECTION_STRING` | — | Shared-key connection string |
 | `--azure-blob-account-url` | `AZURE_BLOB_ACCOUNT_URL` | — | Account URL for Entra ID auth |
 | `--azure-blob-container` | `AZURE_BLOB_CONTAINER` | `data-formulator` | Blob container name |
@@ -329,23 +329,35 @@ data-formulator/                          ← container
 
 When deploying Data Formulator to production, please be aware of the following security considerations:
 
-### Database and Data Storage Security
+### Data Storage
 
-1. **Workspace and table data**: Table data is stored in per-identity workspaces (e.g. parquet files). DuckDB is used only in-memory per request when needed (e.g. for SQL mode); no persistent DuckDB database files are created by the app.
+Data Formulator supports three workspace backends:
 
-2. **Identity Management**: 
-   - Each user's data is isolated by a namespaced identity key (e.g., `user:alice@example.com` or `browser:550e8400-...`)
-   - Anonymous users get a browser-based UUID stored in localStorage
-   - Authenticated users get their verified user ID from the auth provider
+| Backend | Flag | Storage | Persistence |
+|---------|------|---------|-------------|
+| **local** (default) | `--workspace-backend local` | `~/.data_formulator/users/<identity>/workspaces/<id>/` | Server filesystem |
+| **azure_blob** | `--workspace-backend azure_blob` | Azure Blob container | Cloud |
+| **ephemeral** | `--workspace-backend ephemeral` | Browser IndexedDB (frontend) + temp dirs (backend) | Browser session only |
 
-3. **Data persistence**: User data may be written to workspace storage (e.g. parquet) on the server. In multi-tenant deployments, ensure workspace directories are isolated and access-controlled.
+Each workspace contains:
+- `workspace.yaml` — table metadata
+- `session_state.json` — auto-persisted frontend state
+- `data/` — table data as parquet files
+
+### Identity and Data Isolation
+
+- Each user's data is isolated by a namespaced identity key (e.g., `user:alice@example.com` or `browser:550e8400-...`)
+- Anonymous users get a browser-based UUID stored in localStorage
+- Authenticated users get their verified user ID from the auth provider
+- In multi-tenant deployments, ensure workspace directories are isolated and access-controlled
 
 ### Recommended Security Measures
 
 For production deployment, consider:
 
-1. **Use `--disable-database` flag** to disable table-connector routes when you do not need external or uploaded table support
-2. **Implement proper authentication, authorization, and other security measures** as needed for your specific use case, for example:
+1. **Use `--workspace-backend ephemeral`** for stateless public hosting (no server-side persistence; data lives only in the user's browser)
+2. **Set `DF_ALLOWED_API_BASES`** to restrict which LLM endpoints users can target from the UI, preventing SSRF attacks (e.g. `DF_ALLOWED_API_BASES=https://api.openai.com*,https://*.openai.azure.com/*`). See `.env.template` for details.
+3. **Implement proper authentication, authorization, and other security measures** as needed for your specific use case, for example:
    - User authentication (OAuth, JWT tokens, etc.)
    - Role-based access control
    - API rate limiting
@@ -356,7 +368,7 @@ For production deployment, consider:
 
 ```bash
 # For stateless deployment (recommended for public hosting)
-python -m data_formulator.app --disable-database
+data_formulator --workspace-backend ephemeral
 ```
 
 ## Authentication Architecture
@@ -390,8 +402,8 @@ Data Formulator supports a **hybrid identity system** that supports both anonymo
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      Storage Isolation                               │
 ├─────────────────────────────────────────────────────────────────────┤
-│  "user:alice@example.com"  → alice's DuckDB file (ONLY via auth)     │
-│  "browser:550e8400-..."    → anonymous user's DuckDB file            │
+│  "user:alice@example.com"  → alice's workspace dir (ONLY via auth)   │
+│  "browser:550e8400-..."    → anonymous user's workspace dir          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -413,7 +425,7 @@ The key security principle is **namespaced isolation with forced prefixing**:
 
 To add JWT-based authentication:
 
-1. **Backend** (`tables_routes.py`): Uncomment and configure the JWT verification code in `get_identity_id()`
+1. **Backend** (`security/auth.py`): Uncomment and configure the JWT verification code in `get_identity_id()`
 2. **Frontend** (`utils.tsx`): Implement `getAuthToken()` to retrieve the JWT from your auth context
 3. **Add JWT secret** to Flask config: `current_app.config['JWT_SECRET']`
 

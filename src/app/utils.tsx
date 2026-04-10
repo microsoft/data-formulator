@@ -173,9 +173,41 @@ export async function fetchWithIdentity(
         }
         
         options = { ...options, headers };
+
+        console.log(`[fetchWithIdentity] ${options.method || 'GET'} ${urlString} with headers:`, Object.fromEntries(headers.entries()));
+
+        // Ephemeral mode: attach full table data from IndexedDB to JSON POST requests.
+        // Uses tableDataDB.loadAll to get all table rows for the workspace.
+        if (workspaceId && options.method?.toUpperCase() === 'POST') {
+            const isEphemeral = await _isEphemeralBackend();
+            if (isEphemeral && typeof options.body === 'string') {
+                try {
+                    const { tableDataDB } = await import('./workspaceDB');
+
+                    // Load all table rows from IndexedDB for this workspace
+                    const workspaceTables = await tableDataDB.loadAll(workspaceId);
+
+                    // Inject into the JSON body
+                    const body = JSON.parse(options.body);
+                    body._workspace_tables = workspaceTables;
+                    options = { ...options, body: JSON.stringify(body) };
+                } catch (e) {
+                    console.warn('[fetchWithIdentity] Failed to attach workspace tables:', e);
+                }
+            }
+        }
     }
     
     return fetch(url, options);
+}
+
+async function _isEphemeralBackend(): Promise<boolean> {
+    try {
+        const { store } = await import('./store');
+        return store.getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
+    } catch {
+        return false;
+    }
 }
 
 import i18n from '../i18n';

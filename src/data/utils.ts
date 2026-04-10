@@ -153,6 +153,7 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
         }), {}),
         rows: columnTable.objects(),
         derive: derive,
+        virtual: { tableId: title, rowCount: len },
         anchored: anchored,
         attachedMetadata: context || ''
     }
