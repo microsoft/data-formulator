@@ -13,7 +13,9 @@ from unittest.mock import patch
 import flask
 import pytest
 
+import data_formulator.security.auth as auth_module
 from data_formulator.security.auth import get_identity_id, _validate_identity_value
+from data_formulator.auth_providers.azure_easyauth import AzureEasyAuthProvider
 
 pytestmark = [pytest.mark.backend]
 
@@ -24,6 +26,12 @@ def app():
     app = flask.Flask(__name__)
     app.config["TESTING"] = True
     return app
+
+
+@pytest.fixture
+def azure_provider(monkeypatch):
+    """Activate the Azure EasyAuth provider for the duration of a test."""
+    monkeypatch.setattr(auth_module, "_provider", AzureEasyAuthProvider())
 
 
 # ===================================================================
@@ -75,7 +83,7 @@ class TestValidateIdentityValue:
 
 class TestGetIdentityId:
 
-    def test_azure_principal_returns_user_prefix(self, app):
+    def test_azure_principal_returns_user_prefix(self, app, azure_provider):
         with app.test_request_context(
             headers={"X-MS-CLIENT-PRINCIPAL-ID": "azure-user-123"}
         ):
@@ -98,8 +106,8 @@ class TestGetIdentityId:
             assert identity.startswith("browser:")
             assert "alice@example.com" in identity
 
-    def test_azure_header_takes_priority_over_browser(self, app):
-        """When both headers are present, Azure wins."""
+    def test_azure_header_takes_priority_over_browser(self, app, azure_provider):
+        """When both headers are present, Azure provider wins."""
         with app.test_request_context(
             headers={
                 "X-MS-CLIENT-PRINCIPAL-ID": "azure-user-456",
@@ -114,7 +122,7 @@ class TestGetIdentityId:
             with pytest.raises(ValueError, match="X-Identity-Id"):
                 get_identity_id()
 
-    def test_malformed_azure_header_rejected(self, app):
+    def test_malformed_azure_header_rejected(self, app, azure_provider):
         with app.test_request_context(
             headers={"X-MS-CLIENT-PRINCIPAL-ID": "../../etc/passwd"}
         ):

@@ -134,6 +134,10 @@ def _register_blueprints():
     # Start background ISS position collector
     start_iss_collector()
 
+    # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
+    from data_formulator.security.auth import init_auth
+    init_auth(app)
+
 
 # Register blueprints at module level so WSGI servers (gunicorn) pick up all routes.
 # The guard inside _register_blueprints() prevents double registration when run via CLI.
@@ -181,6 +185,12 @@ def get_app_config():
     if workspace_backend == 'local':
         from data_formulator.datalake.workspace import get_data_formulator_home
         config["DATA_FORMULATOR_HOME"] = str(get_data_formulator_home())
+
+    from data_formulator.security.auth import get_active_provider
+    provider = get_active_provider()
+    if provider:
+        config["AUTH_PROVIDER"] = provider.name
+        config["AUTH_INFO"] = provider.get_auth_info()
 
     return flask.jsonify(config)
 
