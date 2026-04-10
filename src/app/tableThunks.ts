@@ -192,9 +192,6 @@ export const loadTable = createAsyncThunk<
                     console.error('Failed to upload file to workspace:', err);
                     throw err;
                 }
-            } else if (table.virtual) {
-                // Table already exists in workspace (e.g., loaded from DB table manager)
-                finalTable = { ...table, source: enrichedSource || table.source };
             } else {
                 // Other sources (paste/url/example/extract): upload raw data to workspace
                 try {

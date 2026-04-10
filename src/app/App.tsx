@@ -78,6 +78,7 @@ import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
+import { AnvilLoader } from '../components/AnvilLoader';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -86,8 +87,9 @@ import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls, fetchWithIdentity } from './utils';
-import { listWorkspaces, loadWorkspace, deleteWorkspace } from './workspaceService';
-import { persistor } from './store';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState } from './workspaceService';
+import { getSerializableState } from './useAutoSave';
+import store, { persistor } from './store';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -270,6 +272,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
 
     const handleOpen = async (wsId: string) => {
         if (activeWorkspace?.id === wsId) { onClose(); return; }
+        try { await saveWorkspaceState(getSerializableState(store.getState())); } catch { /* best effort */ }
         const wsEntry = workspaces.find(w => w.id === wsId);
         setLoading(true);
         dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
@@ -394,6 +397,10 @@ const WorkspaceMenu: React.FC = () => {
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const diskPersistenceDisabled = false; // all backends support workspace switching
 
+    console.log('Rendering WorkspaceMenu, activeWorkspace:', activeWorkspace, 'serverConfig:', serverConfig); // Debug log for rendering and state
+    console.log(serverConfig); // Debug log for serverConfig
+    console.log(activeWorkspace); // Debug log for activeWorkspace
+
     if (!activeWorkspace) return null;
 
     return (
@@ -432,11 +439,12 @@ const CloseWorkspaceButton: React.FC = () => {
     const dispatch = useDispatch();
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const state = useSelector((s: DataFormulatorState) => s);
 
     if (!activeWorkspace || tables.length === 0) return null;
 
     const handleClose = async () => {
-        // resetState clears tables, charts, activeWorkspace → landing page
+        try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
         dispatch(dfActions.resetState());
     };
 
@@ -1095,9 +1103,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             {configLoaded ? (
                 <RouterProvider router={router} />
             ) : (
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-                    <CircularProgress size={28} />
-                </Box>
+                <AnvilLoader />
             )}
         </ThemeProvider>
     );

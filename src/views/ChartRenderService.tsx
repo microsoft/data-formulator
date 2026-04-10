@@ -174,6 +174,7 @@ export const ChartRenderService: FC = () => {
             const entry: ChartCacheEntry = {
                 svg: fullResult.svg,
                 thumbnailDataUrl: thumbnailPng,
+                fullPngDataUrl: fullResult.pngDataUrl,
                 specKey: cacheKey,
             };
             setCachedChart(chart.id, entry);

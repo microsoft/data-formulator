@@ -463,68 +463,32 @@ export const ReportView: FC = () => {
             document.body.appendChild(tempDiv);
 
             try {
-                // Embed the chart
+                // Use canvas renderer for reliable PNG generation
+                // (SVG → Image → Canvas pipeline can fail to render text and complex features)
+                const scale = 2;
                 const result = await embed(`#${tempId}`, assembledChart, { 
                     actions: false,
-                    renderer: 'svg'
+                    renderer: 'canvas',
+                    scaleFactor: scale,
                 });
 
-                // Get the actual rendered dimensions from the Vega view (1x)
-                const viewWidth = result.view.width();
-                const viewHeight = result.view.height();
-                const padding = result.view.padding() as any;
-                const displayWidth = viewWidth + (padding.left || 0) + (padding.right || 0);
-                const displayHeight = viewHeight + (padding.top || 0) + (padding.bottom || 0);
+                // Get high-resolution canvas directly from Vega
+                const canvas = await result.view.toCanvas(scale);
+                const displayWidth = Math.round(canvas.width / scale);
+                const displayHeight = Math.round(canvas.height / scale);
 
-                // Export to SVG with high resolution
-                const svgScale = 4;
-                const svgString = await result.view.toSVG(svgScale);
+                const dataUrl = canvas.toDataURL('image/png');
 
-                // Convert SVG to PNG using canvas
-                const { dataUrl, blobUrl, imgDisplayWidth, imgDisplayHeight } = await new Promise<{ dataUrl: string; blobUrl: string; imgDisplayWidth: number; imgDisplayHeight: number }>((resolve, reject) => {
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) {
-                        reject(new Error(t('report.couldNotGetCanvasContext')));
-                        return;
-                    }
-
-                    const img = new Image();
-                    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-                    const svgUrl = URL.createObjectURL(svgBlob);
-
-                    img.onload = () => {
-                        canvas.width = img.width;
-                        canvas.height = img.height;
-                        // Store 1x display dimensions (PNG is rendered at svgScale×)
-                        const imgDisplayWidth = Math.round(img.width / svgScale);
-                        const imgDisplayHeight = Math.round(img.height / svgScale);
-                        ctx.drawImage(img, 0, 0);
-                        URL.revokeObjectURL(svgUrl);
-                        
-                        const dataUrl = canvas.toDataURL('image/png');
-                        
-                        canvas.toBlob((blob) => {
-                            if (blob) {
-                                const blobUrl = URL.createObjectURL(blob);
-                                resolve({ dataUrl, blobUrl, imgDisplayWidth, imgDisplayHeight });
-                            } else {
-                                resolve({ dataUrl, blobUrl: '', imgDisplayWidth, imgDisplayHeight });
-                            }
-                        }, 'image/png');
-                    };
-
-                    img.onerror = (err) => {
-                        URL.revokeObjectURL(svgUrl);
-                        reject(err);
-                    };
-
-                    img.src = svgUrl;
+                // Create blob URL for display in the report
+                const blob = await new Promise<Blob | null>((resolve) => {
+                    canvas.toBlob(resolve, 'image/png');
                 });
+                const blobUrl = blob ? URL.createObjectURL(blob) : '';
 
+                result.view.finalize();
                 document.body.removeChild(tempDiv);
 
-                return { dataUrl, blobUrl, width: imgDisplayWidth, height: imgDisplayHeight };
+                return { dataUrl, blobUrl, width: displayWidth, height: displayHeight };
             } catch (error) {
                 if (document.body.contains(tempDiv)) {
                     document.body.removeChild(tempDiv);

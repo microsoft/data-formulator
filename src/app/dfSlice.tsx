@@ -491,7 +491,7 @@ export const dataFormulatorSlice = createSlice({
             state.chartSynthesisInProgress = [];
             state.chartInsightInProgress = [];
 
-            state.serverConfig = initialState.serverConfig;
+            // Preserve serverConfig — it reflects the actual server state, not user state
 
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
@@ -524,10 +524,13 @@ export const dataFormulatorSlice = createSlice({
                 selectedModelId: state.selectedModelId || undefined,
                 testedModels: state.testedModels || [],
                 dataLoaderConnectParams: state.dataLoaderConnectParams || {},
-                serverConfig: initialState.serverConfig,
+                serverConfig: state.serverConfig,
 
-                // Restore from saved payload
-                tables: saved.tables || [],
+                // Restore from saved payload (backfill virtual for old states)
+                tables: (saved.tables || []).map((t: any) => ({
+                    ...t,
+                    virtual: t.virtual || { tableId: t.id, rowCount: t.rows?.length || 0 },
+                })),
                 draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
                     // Mark any running/clarifying drafts as interrupted (SSE connection lost)
                     if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
@@ -553,14 +556,7 @@ export const dataFormulatorSlice = createSlice({
                 charts: saved.charts || [],
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
-                // Migrate from old focusedTableId/focusedChartId to new focusedId
-                focusedId: saved.focusedId || (
-                    saved.focusedChartId ? { type: 'chart' as const, chartId: saved.focusedChartId } :
-                    saved.focusedTableId ? { type: 'table' as const, tableId: saved.focusedTableId } :
-                    (saved.charts && saved.charts.length > 0) ? { type: 'chart' as const, chartId: saved.charts[0].id } :
-                    (saved.tables && saved.tables.length > 0) ? { type: 'table' as const, tableId: saved.tables[0].id } :
-                    undefined
-                ),
+                focusedId: saved.focusedId || undefined,
                 config: { ...initialState.config, ...(saved.config || {}) },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
                 generatedReports: saved.generatedReports || [],

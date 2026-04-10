@@ -93,6 +93,12 @@ def construct_scratch_workspace(
 
     ws = Workspace(identity_id, workspace_path=ws_dir)
 
+    logger.info(
+        f"construct_scratch_workspace: ws_id={workspace_id}, "
+        f"received {len(workspace_tables)} table(s): "
+        f"{[t.get('name') for t in workspace_tables]}"
+    )
+
     for table in workspace_tables:
         name = table.get("name")
         rows = table.get("rows")
