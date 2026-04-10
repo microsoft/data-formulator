@@ -214,7 +214,7 @@ export function useFormulateData() {
      * Handles request building, dialog continuation, table/concept creation, and error handling.
      * Chart creation is delegated to the caller via the createChart callback.
      */
-    function formulateData(options: FormulateDataOptions): void {
+    async function formulateData(options: FormulateDataOptions): Promise<void> {
         const {
             instruction, mode, actionTableIds, currentTable,
             overrideTableId, currentVisualization, expectedVisualization,
@@ -448,7 +448,7 @@ export function useFormulateData() {
             // Delegate chart creation to the caller
             const focusedChartId = createChart({ candidateTable, refinedGoal, currentConcepts });
 
-            if (focusedChartId && config.autoChartInsight) {
+            if (focusedChartId) {
                 const chartIdForInsight = focusedChartId;
                 setTimeout(() => {
                     dispatch(fetchChartInsight({ chartId: chartIdForInsight, tableId: candidateTable.id }) as any);

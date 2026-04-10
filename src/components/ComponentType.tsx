@@ -168,9 +168,9 @@ export interface DictTable {
         trigger: Trigger,
         status?: DeriveStatus, // lifecycle state (new — completed tables may omit for backward compat)
     };
-    virtual?: {
-        tableId: string; // the id of the virtual table in the database
-        rowCount: number; // total number of rows in the full table
+    virtual: {
+        tableId: string; // the canonical server-side table name (sanitized)
+        rowCount: number; // total number of rows (rows.length may be a sample)
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
     attachedMetadata: string; // a string of attached metadata explaining what the table is about (used for prompt)
@@ -194,7 +194,7 @@ export function createDictTable(
             dialog: any[], 
             trigger: Trigger
         } | undefined = undefined,
-    virtual: {tableId: string, rowCount: number} | undefined = undefined,
+    virtual: {tableId: string, rowCount: number} = { tableId: id, rowCount: rows.length },
     anchored: boolean = false,
     attachedMetadata: string = '',
     source: DataSourceConfig | undefined = undefined,

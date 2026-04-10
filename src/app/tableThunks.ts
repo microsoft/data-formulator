@@ -18,6 +18,7 @@ import { Type } from '../data/types';
 import { inferTypeFromValueArray } from '../data/utils';
 import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
+import { tableDataDB } from './workspaceDB';
 
 /** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
 async function compressBlob(data: string): Promise<Blob> {
@@ -30,9 +31,6 @@ async function compressBlob(data: string): Promise<Blob> {
 export interface LoadTablePayload {
     // The table data (already parsed into rows/names/metadata on the frontend)
     table: DictTable;
-    
-    // Whether to store on the server workspace (true) or keep local-only (false)
-    storeOnServer: boolean;
     
     // For file uploads to server: the raw File object
     file?: File;
@@ -63,12 +61,9 @@ export interface LoadTableResult {
 /**
  * Unified thunk to load a table from any source.
  * 
- * Routes:
- * - storeOnServer=true + file/paste/url/example/extract: POST to /api/tables/create-table
- * - storeOnServer=true + database: use existing /api/tables/data-loader/ingest-data 
- *   (caller should have already ingested; table comes from workspace list)
- * - storeOnServer=false + database: call /api/tables/data-loader/fetch-data (new endpoint)
- * - storeOnServer=false + other: keep data local, apply frontendRowLimit
+ * Storage is determined by the server config:
+ * - local / azure_blob: store on server (workspace parquet)
+ * - ephemeral: keep data local (frontend-owned, sent with each request)
  * 
  * In all cases: adds table to Redux state + fetches semantic types
  */
@@ -79,10 +74,13 @@ export const loadTable = createAsyncThunk<
 >(
     'dataFormulator/loadTable',
     async (payload, { dispatch, getState }) => {
-        const { table, storeOnServer, file, replaceSource, dataLoaderType, dataLoaderParams, sourceTableName, importOptions } = payload;
+        const { table, file, replaceSource, dataLoaderType, dataLoaderParams, sourceTableName, importOptions } = payload;
         const state = getState();
         const frontendRowLimit = state.config?.frontendRowLimit ?? 50000;
         const existingTables = state.tables;
+
+        // Storage determined by backend config
+        const storeOnServer = state.serverConfig?.WORKSPACE_BACKEND !== 'ephemeral';
 
         // === DUPLICATE CHECK ===
         // Skip when replaceSource is true — the user explicitly wants to
@@ -296,19 +294,38 @@ export const loadTable = createAsyncThunk<
             }
         }
 
+        // Ephemeral mode: store full rows in IndexedDB, keep only samples in Redux
+        const isEphemeral = state.serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
+        if (isEphemeral && finalTable.rows.length > 0) {
+            const wsId = state.activeWorkspace?.id;
+            if (wsId) {
+                const tableId = finalTable.virtual?.tableId || finalTable.id;
+                const fullRows = finalTable.rows;
+                const fullRowCount = fullRows.length;
+
+                // Store full data in IndexedDB
+                await tableDataDB.save(wsId, tableId, fullRows);
+
+                // Keep only sample rows in Redux + set virtual
+                const sampleSize = Math.min(1000, fullRowCount);
+                finalTable = {
+                    ...finalTable,
+                    rows: fullRows.slice(0, sampleSize),
+                    virtual: { tableId, rowCount: fullRowCount },
+                };
+            }
+        }
+
         // Dispatch the table into Redux state
         dispatch(dfActions.addTableToStore(finalTable));
         dispatch(fetchFieldSemanticType(finalTable));
 
         // Notify user about truncation
         if (truncated && originalRowCount) {
-            const diskDisabled = state.serverConfig?.DISABLE_DATABASE;
             const workspaceBackend = state.serverConfig?.WORKSPACE_BACKEND;
             const storageLabel = workspaceBackend === 'azure_blob' ? 'Azure' : 'Disk';
             const baseMsg = `Table "${finalTable.displayId || finalTable.id}" was truncated from ${originalRowCount.toLocaleString()} to ${frontendRowLimit.toLocaleString()} rows (browser limit).`;
-            const installHint = diskDisabled
-                ? ` To load the full dataset, install Data Formulator locally and use disk storage.`
-                : ` To load the full dataset, switch to "${storageLabel}" storage mode.`;
+            const installHint = ` To load the full dataset, switch to "${storageLabel}" storage mode.`;
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'warning',

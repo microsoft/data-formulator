@@ -165,8 +165,8 @@ def open_workspace():
     from data_formulator.datalake.workspace import get_data_formulator_home
     import subprocess, platform
 
-    if current_app.config.get('CLI_ARGS', {}).get('disable_database', False):
-        return jsonify(status="error", message="Workspace access is disabled"), 403
+    if current_app.config.get('CLI_ARGS', {}).get('workspace_backend', 'local') != 'local':
+        return jsonify(status="error", message="Workspace folder access is only available for local backend"), 403
 
     try:
         home_path = str(get_data_formulator_home())

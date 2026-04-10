@@ -126,8 +126,7 @@ interface ColumnStatistics {
 
 export const DBManagerPane: React.FC<{ 
     onClose?: () => void;
-    storeOnServer?: boolean;
-}> = function DBManagerPane({ onClose, storeOnServer = true }) {
+}> = function DBManagerPane({ onClose }) {
     const { t } = useTranslation();
     const theme = useTheme();
 
@@ -177,6 +176,18 @@ export const DBManagerPane: React.FC<{
 
     // Fetch list of tables
     const fetchTables = async (): Promise<DBTable[] | undefined> => {
+        // In ephemeral mode, tables live in Redux, not on the server
+        if (serverConfig.WORKSPACE_BACKEND === 'ephemeral') {
+            const localTables: DBTable[] = tables.map(t => ({
+                name: t.id,
+                columns: t.names.map(n => ({ name: n, type: String(t.metadata?.[n]?.type || 'unknown') })),
+                row_count: t.rows.length,
+                sample_rows: t.rows.slice(0, 100),
+                view_source: null,
+            }));
+            setDbTables(localTables);
+            return localTables;
+        }
         try {
             const response = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
             const data = await response.json();
@@ -308,7 +319,6 @@ export const DBManagerPane: React.FC<{
                         dataLoaderType={dataLoaderType} 
                         paramDefs={metadata.params}
                         authInstructions={metadata.auth_instructions}
-                        storeOnServer={storeOnServer}
                         onImport={() => {
                             setIsUploading(true);
                         }} 
@@ -397,10 +407,9 @@ export const DataLoaderForm: React.FC<{
     dataLoaderType: string, 
     paramDefs: {name: string, default: string, type: string, required: boolean, description: string}[],
     authInstructions: string,
-    storeOnServer?: boolean,
     onImport: () => void,
     onFinish: (status: "success" | "error", message: string, importedTables?: string[]) => void
-}> = ({dataLoaderType, paramDefs, authInstructions, storeOnServer = true, onImport, onFinish}) => {
+}> = ({dataLoaderType, paramDefs, authInstructions, onImport, onFinish}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
@@ -472,6 +481,7 @@ export const DataLoaderForm: React.FC<{
                 ...acc,
                 [name]: { type: 'string' as any, semanticType: '', levels: [] }
             }), {}),
+            virtual: { tableId: selectedPreviewTable, rowCount: metadata.row_count || sampleRows.length },
             anchored: true,
             attachedMetadata: '',
         };
@@ -701,6 +711,7 @@ export const DataLoaderForm: React.FC<{
                                             [col.name]: { type: 'string' as any, semanticType: '', levels: [] }
                                         }), {}),
                                         rows: sampleRows,
+                                        virtual: { tableId: tableName.split('.').pop() || tableName, rowCount: metadata.row_count || sampleRows.length },
                                         anchored: true,
                                         attachedMetadata: '',
                                         source: {
@@ -714,7 +725,6 @@ export const DataLoaderForm: React.FC<{
                                     onImport();
                                     dispatch(loadTable({
                                         table: tableObj,
-                                        storeOnServer,
                                         dataLoaderType,
                                         dataLoaderParams: params,
                                         sourceTableName: tableName,

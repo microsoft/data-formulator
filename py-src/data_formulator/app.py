@@ -50,16 +50,19 @@ load_dotenv(os.path.join(APP_ROOT, "..", "..", '.env'))
 load_dotenv(os.path.join(APP_ROOT, '.env'))
 
 # Default config from env (can be overridden by CLI args)
+# Legacy: DISABLE_DATABASE=true → workspace_backend='ephemeral'
+_default_ws_backend = os.environ.get('WORKSPACE_BACKEND', 'local')
+if os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true' and _default_ws_backend == 'local':
+    _default_ws_backend = 'ephemeral'
 app.config['CLI_ARGS'] = {
     'sandbox': os.environ.get('SANDBOX', 'local'),
     'disable_display_keys': os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
-    'disable_database': os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true',
     'disable_file_upload': os.environ.get('DISABLE_FILE_UPLOAD', 'false').lower() == 'true',
     'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true',
     'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
     'data_dir': os.environ.get('DATA_FORMULATOR_HOME', None),
     'dev': os.environ.get('DEV_MODE', 'false').lower() == 'true',
-    'workspace_backend': os.environ.get('WORKSPACE_BACKEND', 'local'),
+    'workspace_backend': _default_ws_backend,
     'azure_blob_connection_string': os.environ.get('AZURE_BLOB_CONNECTION_STRING', None),
     'azure_blob_account_url': os.environ.get('AZURE_BLOB_ACCOUNT_URL', None),
     'azure_blob_container': os.environ.get('AZURE_BLOB_CONTAINER', 'data-formulator'),
@@ -163,23 +166,21 @@ def get_app_config():
     """Provide frontend configuration settings from CLI arguments"""
     args = app.config['CLI_ARGS']
     
+    workspace_backend = args.get('workspace_backend', 'local')
     config = {
         "SANDBOX": args['sandbox'],
         "DISABLE_DISPLAY_KEYS": args['disable_display_keys'],
-        "DISABLE_DATABASE": args['disable_database'],
         "DISABLE_FILE_UPLOAD": args['disable_file_upload'],
         "PROJECT_FRONT_PAGE": args['project_front_page'],
         "MAX_DISPLAY_ROWS": args['max_display_rows'],
         "DEV_MODE": args.get('dev', False),
-        "WORKSPACE_BACKEND": args.get('workspace_backend', 'local'),
+        "WORKSPACE_BACKEND": workspace_backend,
         "AVAILABLE_LANGUAGES": args.get('available_languages', ['en', 'zh']),
     }
 
-    if not args['disable_database']:
-        workspace_backend = args.get('workspace_backend', 'local')
-        if workspace_backend != 'azure_blob':
-            from data_formulator.datalake.workspace import get_data_formulator_home
-            config["DATA_FORMULATOR_HOME"] = str(get_data_formulator_home())
+    if workspace_backend == 'local':
+        from data_formulator.datalake.workspace import get_data_formulator_home
+        config["DATA_FORMULATOR_HOME"] = str(get_data_formulator_home())
 
     return flask.jsonify(config)
 
@@ -197,8 +198,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-display-keys", action='store_true', default=False,
         help="Whether disable displaying keys in the frontend UI, recommended to turn on if you host the app not just for yourself.")
     parser.add_argument("--disable-database", action='store_true', default=False,
-        help="Disable server-side data persistence. Data loaders and table routes remain available but data is not saved to disk. "
-             "The frontend forces local-only mode (storeOnServer=false) so all table data lives in the browser.")
+        help="Deprecated: use --workspace-backend=ephemeral instead. "
+             "Sets workspace backend to 'ephemeral' for backward compatibility.")
     parser.add_argument("--disable-file-upload", action='store_true', default=False,
         help="Disable file upload functionality. This prevents the app from uploading files to the server.")
     parser.add_argument("--project-front-page", action='store_true', default=False,
@@ -212,8 +213,9 @@ def parse_args() -> argparse.Namespace:
         help="Launch the app in development mode (prevents the app from opening the browser automatically)")
     parser.add_argument("--workspace-backend", type=str,
         default=os.environ.get('WORKSPACE_BACKEND', 'local'),
-        choices=['local', 'azure_blob'],
-        help="Workspace storage backend: 'local' (default, filesystem) or 'azure_blob' (Azure Blob Storage)")
+        choices=['local', 'azure_blob', 'ephemeral'],
+        help="Workspace storage backend: 'local' (default, filesystem), "
+             "'azure_blob' (Azure Blob Storage), or 'ephemeral' (temp dirs, data does not survive restart)")
     parser.add_argument("--azure-blob-connection-string", type=str,
         default=os.environ.get('AZURE_BLOB_CONNECTION_STRING'),
         help="Azure Blob Storage connection string (mutually exclusive with --azure-blob-account-url)")
@@ -233,17 +235,21 @@ def run_app():
     configure_logging()
     args = parse_args()
     
+    # Legacy: --disable-database → workspace_backend='ephemeral'
+    workspace_backend = args.workspace_backend
+    if args.disable_database and workspace_backend == 'local':
+        workspace_backend = 'ephemeral'
+
     # Override config from CLI args
     app.config['CLI_ARGS'] = {
         'sandbox': args.sandbox,
         'disable_display_keys': args.disable_display_keys,
-        'disable_database': args.disable_database,
         'disable_file_upload': args.disable_file_upload,
         'project_front_page': args.project_front_page,
         'max_display_rows': args.max_display_rows,
         'data_dir': args.data_dir,
         'dev': args.dev,
-        'workspace_backend': args.workspace_backend,
+        'workspace_backend': workspace_backend,
         'azure_blob_connection_string': args.azure_blob_connection_string,
         'azure_blob_account_url': args.azure_blob_account_url,
         'azure_blob_container': args.azure_blob_container,

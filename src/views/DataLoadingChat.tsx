@@ -31,7 +31,7 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
     return uniqueName;
 };
 
-export const DataLoadingChat: React.FC<{storeOnServer?: boolean}> = ({storeOnServer = true}) => {
+export const DataLoadingChat: React.FC = () => {
     const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
     const inputBoxRef = useRef<(() => void) | null>(null);
@@ -85,7 +85,7 @@ export const DataLoadingChat: React.FC<{storeOnServer?: boolean}> = ({storeOnSer
         const table = createTableFromText(unique, selectedTable.content.value, selectedTable.context);
         if (table) {
             const tableWithSource = { ...table, source: { type: 'extract' as const } };
-            dispatch(loadTable({ table: tableWithSource, storeOnServer }));
+            dispatch(loadTable({ table: tableWithSource }));
         }
     };
 

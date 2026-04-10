@@ -733,7 +733,7 @@ class Workspace:
     # ------------------------------------------------------------------
 
     def export_session_zip(self, state: dict) -> io.BytesIO:
-        """Export current state + workspace as a .dfsession zip."""
+        """Export current state + workspace as a zip."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("state.json", json.dumps(state, default=str, ensure_ascii=False))
@@ -749,7 +749,7 @@ class Workspace:
         return buf
 
     def import_session_zip(self, zip_data: io.BytesIO) -> dict:
-        """Import a .dfsession zip.  Restores workspace, returns state dict.
+        """Import a zip.  Restores workspace, returns state dict.
 
         Raises ``ValueError`` on invalid zip / missing state.json.
         """

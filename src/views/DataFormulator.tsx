@@ -27,7 +27,7 @@ import {
     CircularProgress,
     Backdrop,
 } from '@mui/material';
-import { borderColor, shadow, radius } from '../app/tokens';
+import { borderColor, shadow, radius, transition } from '../app/tokens';
 
 
 import { VisualizationViewFC } from './VisualizationView';
@@ -49,9 +49,9 @@ import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import type { DictTable } from '../components/ComponentType';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls } from '../app/utils';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace } from '../app/workspaceService';
 import { AppDispatch } from '../app/store';
 import Card from '@mui/material/Card';
-import CardActionArea from '@mui/material/CardActionArea';
 import CardContent from '@mui/material/CardContent';
 import IconButton from '@mui/material/IconButton';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -90,13 +90,11 @@ export const DataFormulatorFC = ({ }) => {
     const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null);
 
     const fetchWorkspaces = useCallback(async () => {
-        if (serverConfig.DISABLE_DATABASE) return;
         try {
-            const res = await fetchWithIdentity(getUrls().SESSION_LIST);
-            const data = await res.json();
-            if (data.status === 'ok') setSavedWorkspaces(data.sessions);
+            const sessions = await listWorkspaces();
+            setSavedWorkspaces(sessions);
         } catch { /* ignore */ }
-    }, [serverConfig.DISABLE_DATABASE]);
+    }, []);
 
     useEffect(() => {
         if (!activeWorkspace || tables.length === 0) {
@@ -107,17 +105,9 @@ export const DataFormulatorFC = ({ }) => {
     const handleOpenWorkspace = useCallback(async (name: string) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
         try {
-            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: name }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok' && data.state && Object.keys(data.state).length > 0) {
-                // Use saved displayName if available, otherwise fall back to ID
-                const savedWs = data.state.activeWorkspace;
-                const displayName = (savedWs && savedWs.displayName) ? savedWs.displayName : name;
-                dispatch(dfActions.loadState({ ...data.state, activeWorkspace: { id: name, displayName } }));
+            const result = await loadWorkspace(name);
+            if (result && Object.keys(result.state).length > 0) {
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName: result.displayName } }));
             } else {
                 dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'default' }));
             }
@@ -129,39 +119,20 @@ export const DataFormulatorFC = ({ }) => {
 
     const handleDeleteWorkspace = useCallback(async (name: string) => {
         try {
-            await fetchWithIdentity(getUrls().SESSION_DELETE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: name }),
-            });
+            await deleteWorkspace(name);
             setSavedWorkspaces(prev => prev.filter(w => w.id !== name));
         } catch { /* ignore */ }
         setConfirmDeleteWs(null);
     }, []);
 
     const handleExportWorkspace = useCallback(async (name: string) => {
-        // Open the workspace first to get its state, then export
         try {
-            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: name }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok' && data.state) {
-                const exportRes = await fetchWithIdentity(getUrls().SESSION_EXPORT, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ state: data.state }),
-                });
-                if (!exportRes.ok) throw new Error('Export failed');
-                const blob = await exportRes.blob();
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `${name}.dfsession`;
-                a.click();
-                URL.revokeObjectURL(a.href);
-            }
+            const blob = await exportWorkspace(name);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${name}.zip`;
+            a.click();
+            URL.revokeObjectURL(a.href);
         } catch (e) {
             console.warn('Failed to export workspace:', e);
         }
@@ -173,17 +144,10 @@ export const DataFormulatorFC = ({ }) => {
         if (!file) return;
         dispatch(dfActions.setSessionLoading({ loading: true, label: `Importing ${file.name}...` }));
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-            const res = await fetchWithIdentity(getUrls().SESSION_IMPORT, {
-                method: 'POST',
-                body: formData,
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                const wsName = file.name.replace(/\.dfsession$|\.zip$/, '') || 'imported';
-                dispatch(dfActions.loadState({ ...data.state, activeWorkspace: { id: generateSessionId(), displayName: wsName } }));
-            }
+            const wsName = file.name.replace(/\.zip$/, '') || 'imported';
+            const wsId = generateSessionId();
+            const state = await importWorkspace(file, wsId, wsName);
+            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: wsName } }));
         } catch (e) {
             console.warn('Failed to import workspace:', e);
         }
@@ -528,7 +492,7 @@ export const DataFormulatorFC = ({ }) => {
                 />
             </Box>
             {/* ── Saved workspaces section ──────────────────────────── */}
-            {!serverConfig.DISABLE_DATABASE && savedWorkspaces.length > 0 && (
+            {savedWorkspaces.length > 0 && (
                 <Box sx={{mt: 4}}>
                     <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
                         <Typography sx={{ color: 'text.secondary' }}>
@@ -541,23 +505,22 @@ export const DataFormulatorFC = ({ }) => {
                         gap: 2,
                     }}>
                         {savedWorkspaces.map(w => (
-                            <Card key={w.id} variant="outlined" sx={{
+                            <Card key={w.id} variant="outlined" onClick={() => handleOpenWorkspace(w.id)} sx={{
                                 position: 'relative', textAlign: 'left',
-                                borderColor: 'rgba(0,0,0,0.08)',
+                                cursor: 'pointer',
+                                '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
                                 '&:hover .ws-actions': { opacity: 1 },
                             }}>
-                                <CardActionArea onClick={() => handleOpenWorkspace(w.id)}>
-                                    <CardContent sx={{ py: 1.5, px: 2 }}>
-                                        <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
-                                            {w.display_name}
+                                <CardContent sx={{ py: 1.5, px: 2 }}>
+                                    <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
+                                        {w.display_name}
+                                    </Typography>
+                                    {w.saved_at && (
+                                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
+                                            {new Date(w.saved_at).toLocaleString()}
                                         </Typography>
-                                        {w.saved_at && (
-                                            <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
-                                                {new Date(w.saved_at).toLocaleString()}
-                                            </Typography>
-                                        )}
-                                    </CardContent>
-                                </CardActionArea>
+                                    )}
+                                </CardContent>
                                 <Box className="ws-actions" sx={{
                                     position: 'absolute', top: 4, right: 4,
                                     display: 'flex', gap: 0.25,
@@ -579,17 +542,16 @@ export const DataFormulatorFC = ({ }) => {
                             </Card>
                         ))}
                         {/* Import workspace card */}
-                        <Card variant="outlined" sx={{
+                        <Card variant="outlined" onClick={() => importRef.current?.click()} sx={{
                             textAlign: 'center', borderStyle: 'dashed',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            height: '100%',
+                            cursor: 'pointer',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                            gap: 0.5, py: 1.5,
+                            '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
                         }}>
-                            <CardActionArea onClick={() => importRef.current?.click()}
-                                sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
-                                <UploadFileIcon sx={{ color: 'text.secondary' }} />
-                                <Typography variant="caption" color="text.secondary">Import .dfsession</Typography>
-                            </CardActionArea>
-                            <input type="file" hidden accept=".dfsession,.zip" ref={importRef} onChange={handleImportWorkspace} />
+                            <UploadFileIcon sx={{ color: 'text.secondary' }} />
+                            <Typography variant="caption" color="text.secondary">Import workspace (.zip)</Typography>
+                            <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                         </Card>
                     </Box>
                 </Box>
@@ -617,14 +579,13 @@ export const DataFormulatorFC = ({ }) => {
                 </Divider>
                 <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
                     gap: 2,
                 }}>
                     {exampleSessions.map((session) => (
                         <ExampleSessionCard
                             key={session.id}
                             session={session}
-                            theme={theme}
                             onClick={() => handleLoadExampleSession(session)}
                         />
                     ))}
