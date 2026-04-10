@@ -54,12 +54,20 @@ def _discover_providers() -> None:
 
 _discover_providers()
 
+# Aliases let users write AUTH_PROVIDER=oauth2 instead of AUTH_PROVIDER=oidc.
+# The OIDC provider handles any OAuth2 + JWT + JWKS identity provider, not
+# just strict OpenID Connect, so the alias avoids confusion.
+_ALIASES: dict[str, str] = {
+    "oauth2": "oidc",
+}
+
 
 def get_provider_class(name: str) -> Optional[type[AuthProvider]]:
-    """Return the provider class registered under *name*, or ``None``."""
-    return _PROVIDER_REGISTRY.get(name)
+    """Return the provider class registered under *name* (or alias), or ``None``."""
+    canonical = _ALIASES.get(name, name)
+    return _PROVIDER_REGISTRY.get(canonical)
 
 
 def list_available_providers() -> list[str]:
-    """Return sorted names of all discovered providers."""
-    return sorted(_PROVIDER_REGISTRY.keys())
+    """Return sorted names of all discovered providers (including aliases)."""
+    return sorted(set(_PROVIDER_REGISTRY.keys()) | set(_ALIASES.keys()))
