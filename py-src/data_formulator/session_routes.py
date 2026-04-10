@@ -86,11 +86,25 @@ def save_session():
 
 @session_bp.route("/list", methods=["GET"])
 def list_sessions():
-    """List all workspaces for the current user."""
+    """List all workspaces for the current user.
+
+    Optional query param ``source_identity`` (e.g. ``browser:<uuid>``) lets an
+    authenticated ``user:`` identity peek at an anonymous identity's workspace
+    list — used by the migration dialog to check whether there is data to import.
+    """
     if _is_ephemeral():
         return jsonify(status="ok", sessions=[])
 
     identity_id = get_identity_id()
+
+    source = request.args.get("source_identity", "").strip()
+    if source:
+        if not identity_id.startswith("user:"):
+            return jsonify(status="error", message="source_identity requires authenticated user"), 403
+        if not source.startswith("browser:"):
+            return jsonify(status="error", message="source_identity must be a browser identity"), 400
+        identity_id = source
+
     mgr = get_workspace_manager(identity_id)
     workspaces = mgr.list_workspaces()
 
@@ -227,3 +241,39 @@ def import_session():
     except Exception as e:
         logger.error(f"Error importing session: {e}")
         return jsonify(status="error", message=str(e)), 400
+
+
+@session_bp.route("/migrate", methods=["POST"])
+def migrate_workspaces():
+    """Copy workspaces from an anonymous browser identity to the current user.
+
+    Body: ``{ "source_identity": "browser:<uuid>" }``
+
+    Only allowed when the current identity is ``user:*`` and the source is
+    ``browser:*``.  Existing target workspaces with the same ID are skipped.
+    The source data is NOT deleted (safe, idempotent).
+    """
+    if _is_ephemeral():
+        return jsonify(status="ok", copied=[], message="No-op in ephemeral mode")
+
+    target_id = get_identity_id()
+    if not target_id.startswith("user:"):
+        return jsonify(status="error", message="Migration requires an authenticated user"), 403
+
+    data = request.get_json(force=True)
+    source_id: str = (data.get("source_identity") or "").strip()
+    if not source_id.startswith("browser:"):
+        return jsonify(status="error", message="source_identity must be a browser identity"), 400
+
+    try:
+        source_mgr = get_workspace_manager(source_id)
+        target_mgr = get_workspace_manager(target_id)
+        copied = target_mgr.copy_workspaces_from(source_mgr.root)
+        logger.info(
+            "Migrated %d workspace(s) from %s to %s",
+            len(copied), source_id, target_id,
+        )
+        return jsonify(status="ok", copied=copied)
+    except Exception as e:
+        logger.error("Workspace migration failed: %s", e)
+        return jsonify(status="error", message=str(e)), 500

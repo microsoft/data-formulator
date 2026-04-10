@@ -135,6 +135,29 @@ class WorkspaceManager:
         """Get the filesystem path for a workspace."""
         return self._root / self._safe_id(workspace_id)
 
+    def copy_workspaces_from(self, source_root: Path) -> list[str]:
+        """Copy all workspaces from *source_root* into this manager's root.
+
+        Existing workspaces with the same ID are skipped (not overwritten).
+        Returns the list of workspace IDs that were actually copied.
+        """
+        copied: list[str] = []
+        if not source_root.exists():
+            return copied
+
+        for child in source_root.iterdir():
+            if not child.is_dir():
+                continue
+            dest = self._root / child.name
+            if dest.exists():
+                logger.info("Skipping existing workspace '%s' during migration", child.name)
+                continue
+            shutil.copytree(child, dest)
+            copied.append(child.name)
+            logger.info("Migrated workspace '%s' from %s", child.name, source_root)
+
+        return copied
+
     def create_workspace(self, workspace_id: str) -> Path:
         """
         Create a new empty workspace.

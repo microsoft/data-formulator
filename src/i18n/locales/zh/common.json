@@ -484,7 +484,16 @@
     "completingLogin": "正在完成登录…",
     "callbackFailed": "登录回调失败：{{message}}",
     "sessionExpired": "会话已过期，请重新登录。",
-    "silentRenewFailed": "后台令牌刷新失败，正在跳转到登录页…"
+    "silentRenewFailed": "后台令牌刷新失败，正在跳转到登录页…",
+    "migration": {
+      "title": "是否导入之前的数据？",
+      "description": "检测到您之前以匿名身份使用，有 {{count}} 个工作区包含数据。是否将它们导入到当前账号？",
+      "importButton": "导入数据",
+      "freshButton": "全新开始",
+      "importing": "正在导入工作区…",
+      "success": "成功导入 {{count}} 个工作区。",
+      "failed": "导入失败：{{message}}"
+    }
   },
   "supersetPanel": {
     "datasets": "数据集",

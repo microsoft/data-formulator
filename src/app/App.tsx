@@ -16,6 +16,7 @@ import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
 import type { AuthInfo } from './oidcConfig';
 import { OidcCallback } from './OidcCallback';
 import { AuthButton } from './AuthButton';
+import { IdentityMigrationDialog } from './IdentityMigrationDialog';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
 import { palettes, defaultPaletteKey, paletteKeys, bgAlpha } from './tokens';
@@ -943,9 +944,16 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     // Unified auth initialisation — driven by /api/auth/info
     const [authChecked, setAuthChecked] = useState(false);
+    const [migrationBrowserId, setMigrationBrowserId] = useState<string | null>(null);
 
     useEffect(() => {
         (async () => {
+            // Snapshot the persisted identity BEFORE we resolve the new one
+            const { store } = await import('./store');
+            const persistedIdentity = store.getState().identity;
+
+            let resolvedIdentity: { type: 'user' | 'browser'; id: string; displayName?: string } | null = null;
+
             try {
                 const info: AuthInfo | null = await getAuthInfo();
 
@@ -953,13 +961,11 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                     // OIDC PKCE — check for an existing session
                     const user = await getOidcUser();
                     if (user && !user.expired) {
-                        dispatch(dfActions.setIdentity({
+                        resolvedIdentity = {
                             type: 'user',
                             id: user.profile.sub,
                             displayName: user.profile.name ?? undefined,
-                        }));
-                    } else {
-                        dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                        };
                     }
                 } else if (info?.action === 'transparent') {
                     // Azure App Service EasyAuth — headers injected by Azure
@@ -971,30 +977,34 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                             const name = authData['user_claims']?.find((item: any) => item.typ === 'name')?.val || '';
                             const userId = authData['user_id'];
                             if (userId) {
-                                dispatch(dfActions.setIdentity({ type: 'user', id: userId, displayName: name }));
-                            } else {
-                                dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                                resolvedIdentity = { type: 'user', id: userId, displayName: name };
                             }
-                        } else {
-                            dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
                         }
                     } catch {
-                        dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+                        // fall through to browser identity
                     }
-                } else if (info?.action === 'redirect') {
-                    // Server-side OAuth (GitHub) — identity comes from session cookie;
-                    // the backend resolves it on each request. Fall back to browser id
-                    // on the client side so fetchWithIdentity always has a header value.
-                    dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
-                } else {
-                    // Anonymous / no provider configured
-                    dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
                 }
+                // 'redirect' and 'none' → browser identity (resolvedIdentity stays null)
             } catch {
-                dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
-            } finally {
-                setAuthChecked(true);
+                // fall through to browser identity
             }
+
+            if (!resolvedIdentity) {
+                resolvedIdentity = { type: 'browser', id: getBrowserId() };
+            }
+
+            dispatch(dfActions.setIdentity(resolvedIdentity));
+
+            // Detect anonymous → authenticated transition
+            if (
+                persistedIdentity?.type === 'browser' &&
+                resolvedIdentity.type === 'user' &&
+                persistedIdentity.id
+            ) {
+                setMigrationBrowserId(persistedIdentity.id);
+            }
+
+            setAuthChecked(true);
         })();
     }, []);
 
@@ -1131,6 +1141,12 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 <RouterProvider router={router} />
             ) : (
                 <AnvilLoader />
+            )}
+            {migrationBrowserId && (
+                <IdentityMigrationDialog
+                    oldBrowserId={migrationBrowserId}
+                    onDone={() => setMigrationBrowserId(null)}
+                />
             )}
         </ThemeProvider>
     );
