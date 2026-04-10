@@ -50,6 +50,8 @@ export interface DataSourcePluginModule {
     Icon: FC<{ sx?: object }>;
     /** Main panel component rendered in the upload dialog. */
     Panel: FC<PluginPanelProps>;
+    /** Plugin-local translations, keyed by language code (e.g. `{ en: {...}, zh: {...} }`). */
+    locales?: Record<string, Record<string, unknown>>;
 }
 
 export interface PluginPanelProps {

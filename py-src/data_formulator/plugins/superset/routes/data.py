@@ -39,6 +39,16 @@ data_bp = Blueprint(
 # SQL building helpers (lifted from 0.6)
 # ------------------------------------------------------------------
 
+def _sanitize_table_name(raw: str) -> str:
+    """Normalize a raw table name to a safe identifier."""
+    name = (raw or "").lower().replace("-", "_").replace(" ", "_")
+    name = re.sub(r"[^\w]", "_", name, flags=re.UNICODE)
+    name = re.sub(r"_+", "_", name).strip("_")
+    if not name or not name[0].isalpha():
+        name = f"table_{name}"
+    return name
+
+
 def _quote_identifier(name: str) -> str:
     escaped = (name or "").replace('"', '""')
     return f'"{escaped}"'
@@ -288,7 +298,7 @@ def load_dataset():
     except ValueError as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400
 
-    final_table_name = table_name_override or table_name
+    final_table_name = _sanitize_table_name(table_name_override or table_name)
     writer = PluginDataWriter("superset")
 
     def _generate():

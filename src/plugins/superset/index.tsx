@@ -11,6 +11,9 @@ import type { DataSourcePluginModule } from '../types';
 
 import { SupersetPanel } from './SupersetPanel';
 
+import en from './locales/en.json';
+import zh from './locales/zh.json';
+
 // MUI-compatible Superset icon (inline SVG wrapped as component)
 import React from 'react';
 import SvgIcon from '@mui/material/SvgIcon';
@@ -25,6 +28,7 @@ const supersetPlugin: DataSourcePluginModule = {
     id: 'superset',
     Icon: SupersetIcon,
     Panel: SupersetPanel,
+    locales: { en, zh },
 };
 
 export default supersetPlugin;

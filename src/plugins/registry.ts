@@ -11,6 +11,7 @@
  */
 
 import type { DataSourcePluginModule, PluginConfig } from './types';
+import i18n from '../i18n';
 
 // Build-time eager import of every `plugins/*/index.{ts,tsx}`
 const pluginModules = import.meta.glob<{ default: DataSourcePluginModule }>(
@@ -52,4 +53,17 @@ export function getEnabledPlugins(
 /** Get a single plugin module by id (for direct rendering). */
 export function getPluginModule(id: string): DataSourcePluginModule | undefined {
     return _modules.get(id);
+}
+
+/**
+ * Merge each plugin's self-contained translations into the i18next
+ * `translation` namespace.  Call once at app startup, after i18n.init().
+ */
+export function registerPluginTranslations(): void {
+    for (const [, mod] of _modules) {
+        if (!mod.locales) continue;
+        for (const [lang, bundle] of Object.entries(mod.locales)) {
+            i18n.addResourceBundle(lang, 'translation', bundle, true, true);
+        }
+    }
 }
