@@ -2979,11 +2979,27 @@ ExternalDataLoader 可以作为 Database/Storage Plugin 的内部实现被保留
 | SSO 登录 | OIDC sub claim | `user:alice@corp.com` | `user:alice@corp.com` | 自动支持 |
 | Azure EasyAuth | Azure Principal | `user:guid` | `user:guid` | 自动支持 |
 
-### 8.3 身份迁移（不在本架构中实现）
+### 8.3 身份迁移（匿名 → 认证用户）
 
-当匿名用户（`browser:xxx`）首次通过 SSO 登录后，之前的匿名数据与新的 `user:xxx` 身份分属不同 Workspace。本架构**不提供自动迁移机制** —— 这是一个极低频场景（仅发生在用户从匿名模式升级到 SSO 的一瞬间），且数据量通常很小。
+当匿名用户（`browser:xxx`）首次通过 SSO 登录后，身份变为 `user:xxx`，两者分属不同 Workspace。系统自动检测此转换并提示用户选择：
 
-如果未来确实需要，可以通过管理员命令行工具离线完成，不影响核心架构。
+**检测机制**（前端 `App.tsx`）：
+- 应用启动时，redux-persist 恢复上次 `identity`（`browser:uuid`）
+- Auth useEffect 解析出新身份（`user:sub`）
+- 如果 `旧.type === 'browser'` 且 `新.type === 'user'` → 触发迁移流程
+
+**迁移流程**：
+1. 前端调用 `GET /api/sessions/list?source_identity=browser:<uuid>` 检查旧匿名身份是否有 workspace 数据
+2. 如果有 → 弹出 `IdentityMigrationDialog`，提供两个选择：
+   - **导入数据**：调用 `POST /api/sessions/migrate { source_identity: "browser:<uuid>" }`，后端将旧身份的 workspace 文件夹复制到新身份下（不删除源数据，安全、幂等）
+   - **全新开始**：直接清空前端持久化状态
+3. 如果无 → 静默清空前端持久化状态，无弹窗
+4. 无论哪种选择，最后都执行 `persistor.purge()` 清除 localforage 中的旧 Redux 状态
+
+**安全约束**：
+- `source_identity` 参数仅接受 `browser:` 前缀，且调用者必须是 `user:` 身份
+- 迁移只做复制（`shutil.copytree`），不删除源数据
+- Ephemeral 模式下跳过（无服务端数据可迁移）
 
 ---
 
