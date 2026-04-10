@@ -1,6 +1,7 @@
 {
   "plugin": {
     "superset": {
+      "description": "连接到 Apache Superset 实例，浏览并加载数据集。",
       "connectTo": "连接到 {{name}}",
       "username": "用户名",
       "password": "密码",

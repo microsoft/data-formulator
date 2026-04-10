@@ -4,10 +4,12 @@
 import React, { FC, useState, useCallback, useEffect } from 'react';
 import {
     Box, Button, TextField, Typography, Alert, CircularProgress,
-    Divider, alpha, useTheme,
+    Divider, IconButton, InputAdornment, alpha, useTheme,
 } from '@mui/material';
 import LoginIcon from '@mui/icons-material/Login';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import { useTranslation } from 'react-i18next';
 
 import { supersetLogin, supersetSsoSaveTokens, supersetGuestLogin } from './api';
@@ -25,6 +27,7 @@ export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess }
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     const ssoLoginUrl = config.sso_login_url as string | undefined;
     const authModes = (config.auth_modes as string[]) || [];
@@ -118,11 +121,25 @@ export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess }
                     <TextField
                         size="small"
                         label={t('plugin.superset.password')}
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                         fullWidth
                         onKeyDown={e => e.key === 'Enter' && handlePasswordLogin()}
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setShowPassword(prev => !prev)}
+                                        edge="end"
+                                        tabIndex={-1}
+                                    >
+                                        {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        }}
                     />
                     <Button
                         variant="contained"

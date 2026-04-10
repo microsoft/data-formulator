@@ -1,6 +1,7 @@
 {
   "plugin": {
     "superset": {
+      "description": "Connect to an Apache Superset instance to browse and load datasets.",
       "connectTo": "Connect to {{name}}",
       "username": "Username",
       "password": "Password",

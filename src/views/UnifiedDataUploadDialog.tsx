@@ -244,7 +244,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         ...enabledPlugins.map(({ module, config }) => ({
             value: `plugin:${module.id}` as UploadTabType,
             title: config.name,
-            description: config.description || '',
+            description: t(`plugin.${module.id}.description`, { defaultValue: config.description || '' }),
             icon: <module.Icon sx={{ fontSize: 18 }} />,
             disabled: false,
         })),
