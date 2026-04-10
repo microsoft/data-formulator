@@ -136,13 +136,18 @@ class WorkspaceManager:
         return self._root / self._safe_id(workspace_id)
 
     def move_workspaces_from(self, source_root: Path) -> list[str]:
-        """Move all workspaces from *source_root* into this manager's root.
+        """Copy all workspaces from *source_root* into this manager's root.
 
-        - New workspaces (not in target) are moved directly.
-        - Existing workspaces are merged: new data files and updated metadata
-          are copied from source into the target, then the source is removed.
+        Uses copy-then-delete semantics so that the operation succeeds even
+        when the source files are locked by another process (common on
+        Windows when the anonymous workspace is still open).
 
-        Returns the list of workspace IDs that were moved/merged.
+        - New workspaces are copied via ``shutil.copytree``.
+        - Existing workspaces are merged (new data files + metadata).
+        - Source removal is best-effort; locked files are left for later
+          cleanup by ``delete_all_workspaces``.
+
+        Returns the list of workspace IDs that were copied/merged.
         """
         moved: list[str] = []
         if not source_root.exists():
@@ -154,12 +159,21 @@ class WorkspaceManager:
             dest = self._root / child.name
             if dest.exists():
                 self._merge_workspace(child, dest)
-                shutil.rmtree(child)
                 logger.info("Merged workspace '%s' from %s", child.name, source_root)
             else:
-                shutil.move(str(child), str(dest))
-                logger.info("Moved workspace '%s' from %s", child.name, source_root)
+                shutil.copytree(str(child), str(dest))
+                logger.info("Copied workspace '%s' from %s", child.name, source_root)
             moved.append(child.name)
+
+            # Best-effort source removal; on Windows files may still be
+            # locked by the current process and will be cleaned up later.
+            try:
+                shutil.rmtree(child)
+            except OSError as exc:
+                logger.warning(
+                    "Could not remove source workspace '%s' (will retry later): %s",
+                    child.name, exc,
+                )
 
         return moved
 
@@ -201,18 +215,22 @@ class WorkspaceManager:
     def delete_all_workspaces(self) -> int:
         """Delete every workspace under this manager's root.
 
-        Returns the number of entries deleted.
+        Returns the number of entries deleted (or attempted).
+        On Windows, locked files are skipped with a warning.
         """
         count = 0
         if not self._root.exists():
             return count
-        for child in self._root.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink(missing_ok=True)
-            count += 1
-            logger.info("Deleted workspace entry '%s' during cleanup", child.name)
+        for child in list(self._root.iterdir()):
+            try:
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink(missing_ok=True)
+                count += 1
+                logger.info("Deleted workspace entry '%s' during cleanup", child.name)
+            except OSError as exc:
+                logger.warning("Could not delete '%s' (file locked?): %s", child.name, exc)
         return count
 
     def create_workspace(self, workspace_id: str) -> Path:

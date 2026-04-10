@@ -270,9 +270,12 @@ def migrate_workspaces():
         source_mgr = get_workspace_manager(source_id)
         target_mgr = get_workspace_manager(target_id)
         moved = target_mgr.move_workspaces_from(source_mgr.root)
-        # Defensive cleanup: remove any leftover anonymous entries that were
+        # Best-effort cleanup: remove any leftover anonymous entries that were
         # not moved (e.g. stale non-workspace files or partial leftovers).
-        source_mgr.delete_all_workspaces()
+        try:
+            source_mgr.delete_all_workspaces()
+        except Exception as cleanup_err:
+            logger.warning("Post-migrate cleanup failed (non-fatal): %s", cleanup_err)
         logger.info(
             "Migrated %d workspace(s) from %s to %s",
             len(moved), source_id, target_id,
@@ -310,5 +313,7 @@ def cleanup_anonymous():
         logger.info("Cleaned up %d anonymous workspace(s) for %s", deleted, source_id)
         return jsonify(status="ok", deleted=deleted)
     except Exception as e:
-        logger.error("Anonymous cleanup failed: %s", e)
-        return jsonify(status="error", message=str(e)), 500
+        # On Windows, files may be locked by other processes; treat as
+        # best-effort — the identity type flip prevents future prompts.
+        logger.warning("Anonymous cleanup partially failed (non-fatal): %s", e)
+        return jsonify(status="ok", deleted=0, warning=str(e))

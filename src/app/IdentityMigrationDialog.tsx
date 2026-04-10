@@ -82,6 +82,13 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
         }
     }, [sourceIdentity]);
 
+    const finishMigration = useCallback(async () => {
+        localStorage.setItem('df_identity_type', 'user');
+        localStorage.removeItem('df_browser_id');
+        await persistor.purge();
+        window.location.href = "/";
+    }, []);
+
     const handleImport = useCallback(async () => {
         setMigrating(true);
         setError(null);
@@ -95,12 +102,9 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
             if (data.status === "ok") {
                 const count = data.moved?.length ?? 0;
                 setSuccess(t("auth.migration.success", { count }));
-                await cleanupAnonymous();
-                setTimeout(async () => {
-                    localStorage.setItem('df_identity_type', 'user');
-                    await persistor.purge();
-                    window.location.href = "/";
-                }, 1200);
+                // Cleanup is best-effort; migrate already moved/deleted data
+                try { await cleanupAnonymous(); } catch { /* ignore */ }
+                setTimeout(finishMigration, 1200);
             } else {
                 setError(data.message || "Unknown error");
                 setMigrating(false);
@@ -109,21 +113,15 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
             setError(err?.message || "Network error");
             setMigrating(false);
         }
-    }, [sourceIdentity, t, cleanupAnonymous]);
+    }, [sourceIdentity, t, cleanupAnonymous, finishMigration]);
 
     const handleFresh = useCallback(async () => {
         setMigrating(true);
         setError(null);
-        try {
-            await cleanupAnonymous();
-            localStorage.setItem('df_identity_type', 'user');
-            await persistor.purge();
-            window.location.href = "/";
-        } catch (err: any) {
-            setError(err?.message || "Cleanup failed");
-            setMigrating(false);
-        }
-    }, [cleanupAnonymous]);
+        // Cleanup is best-effort; even if it fails, proceed to fresh start
+        try { await cleanupAnonymous(); } catch { /* ignore */ }
+        await finishMigration();
+    }, [cleanupAnonymous, finishMigration]);
 
     if (loading || workspaceCount === 0) {
         return null;

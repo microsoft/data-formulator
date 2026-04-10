@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useState, useCallback, useEffect } from 'react';
+import React, { FC, useState, useCallback, useRef } from 'react';
 import {
     Box, Button, TextField, Typography, Alert, CircularProgress,
     Divider, IconButton, InputAdornment, alpha, useTheme,
@@ -70,14 +70,40 @@ export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess }
         }
     }, [onLoginSuccess, t]);
 
+    const popupRef = useRef<Window | null>(null);
+    const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
     const handleSsoLogin = useCallback(() => {
         if (!ssoLoginUrl) return;
-        const popup = window.open(ssoLoginUrl, 'superset-sso', 'width=600,height=700');
+        setLoading(true);
+        setError('');
+
+        const url = new URL(ssoLoginUrl);
+        url.searchParams.set('df_origin', window.location.origin);
+
+        const width = 600;
+        const height = 700;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+        const popup = window.open(
+            url.toString(),
+            'df-sso-login',
+            `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`,
+        );
+
+        if (!popup) {
+            setError(t('plugin.superset.ssoFailed'));
+            setLoading(false);
+            return;
+        }
+
+        popupRef.current = popup;
 
         const handler = async (event: MessageEvent) => {
-            if (!event.data?.type?.startsWith?.('superset-sso')) return;
+            if (event.data?.type !== 'df-sso-auth') return;
             window.removeEventListener('message', handler);
-            popup?.close();
+            if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+            popup.close();
 
             const { access_token, refresh_token, user } = event.data;
             if (access_token) {
@@ -92,8 +118,18 @@ export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess }
                     setError(err.message || t('plugin.superset.ssoFailed'));
                 }
             }
+            setLoading(false);
         };
+
         window.addEventListener('message', handler);
+
+        pollTimerRef.current = setInterval(() => {
+            if (popup.closed) {
+                if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+                window.removeEventListener('message', handler);
+                setLoading(false);
+            }
+        }, 1000);
     }, [ssoLoginUrl, onLoginSuccess, t]);
 
     return (
