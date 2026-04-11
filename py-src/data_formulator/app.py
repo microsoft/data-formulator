@@ -147,6 +147,10 @@ def _register_blueprints():
         from data_formulator.auth_gateways.github_gateway import github_bp
         app.register_blueprint(github_bp)
 
+    # Register credential vault API (safe even when vault is not configured)
+    from data_formulator.credential_routes import credential_bp
+    app.register_blueprint(credential_bp)
+
     # Auto-discover and register data source plugins
     print("  Loading plugins...", flush=True)
     from data_formulator.plugins import discover_and_register
@@ -219,6 +223,10 @@ def get_app_config():
     if provider:
         config["AUTH_PROVIDER"] = provider.name
         config["AUTH_INFO"] = provider.get_auth_info()
+
+    # Expose credential vault availability to the frontend
+    from data_formulator.credential_vault import get_credential_vault
+    config["CREDENTIAL_VAULT_ENABLED"] = get_credential_vault() is not None
 
     # Expose enabled data source plugins to the frontend
     from data_formulator.plugins import ENABLED_PLUGINS

@@ -219,7 +219,13 @@ result = writer.write_dataframe(
 
 ## 6. 后端：认证路由规范（三模式协商）
 
-**这是插件开发中最重要的规范。** 每个插件的认证路由必须实现三层认证协商：
+**这是插件开发中最重要的规范。**
+
+> **代码层面强制约束**：所有插件必须继承 `PluginAuthHandler` 基类（`plugins/auth_base.py`）。
+> 基类自动生成 `/login`、`/logout`、`/status`、`/me` 标准路由，内置 Vault 生命周期管理。
+> **插件作者无需手动处理 Vault 存储、清除、自动登录逻辑**——基类全部代劳。
+
+### 三模式协商流程
 
 ```
 用户打开插件面板 → GET /api/plugins/<id>/auth/status
@@ -249,105 +255,73 @@ result = writer.write_dataframe(
     └─ authenticated=false → 显示登录表单
 ```
 
-### auth/login 路由（带 Vault 存储）
+### 使用 PluginAuthHandler（必须）
 
 ```python
-@auth_bp.route("/login", methods=["POST"])
-def login():
-    data = request.get_json(force=True)
-    username = data.get("username", "")
-    password = data.get("password", "")
-    remember = data.get("remember", False)   # 前端传入的"记住凭证"标志
+# routes/auth.py
 
-    if not username or not password:
-        return jsonify({"status": "error", "message": "Missing credentials"}), 400
+from data_formulator.plugins.auth_base import PluginAuthHandler
 
-    try:
-        result = _do_login(username, password)
-    except Exception as exc:
-        return jsonify({"status": "error", "message": str(exc)}), 401
+class MetabaseAuthHandler(PluginAuthHandler):
+    """插件作者只需实现以下 4 个方法。"""
 
-    # ── Vault 存储 ──
-    if remember:
-        _vault_store({"username": username, "password": password})
-    else:
-        # 用户未勾选记住 → 如果 Vault 中有旧凭证（vault_stale），也应清除
-        _vault_delete()
+    def do_login(self, username: str, password: str) -> dict:
+        """与外部系统认证，成功后写入 Flask session。
+        返回 {"user": {"id": ..., "username": ..., ...}}
+        失败时抛异常。"""
+        result = _bridge().login(username, password)
+        save_session(result["access_token"], ...)
+        return {"user": {...}}
 
-    return jsonify(result)
-```
+    def do_clear_session(self) -> None:
+        """清除插件在 Flask session 中的所有 key。"""
+        clear_session()
 
-### auth/status 路由（带 Vault 自动取用）
-
-```python
-@auth_bp.route("/status", methods=["GET"])
-def auth_status():
-    plugin_id = "metabase"
-
-    # ① 已有 Session
-    token, user = require_auth()
-    if token and user:
-        return jsonify({"authenticated": True, "mode": "session", "user": _user_info(user)})
-
-    # ② SSO 透传（如果插件支持）
-    sso_token = _try_sso_passthrough()
-    if sso_token:
-        return jsonify({"authenticated": True, "mode": "sso", "user": ...})
-
-    # ③ Credential Vault 自动取用
-    vault_result = _try_vault_login(plugin_id)
-    if vault_result is not None:
-        return jsonify(vault_result)
-    # vault_result 可能是:
-    #   {"authenticated": True, "mode": "vault", "user": ...}   — 成功
-    #   {"authenticated": False, "vault_stale": True}            — 凭证过期
-
-    # 全部未命中
-    return jsonify({"authenticated": False})
-```
-
-### _try_vault_login 实现模式
-
-```python
-def _try_vault_login(plugin_id: str) -> dict | None:
-    """尝试用 Vault 中的已存凭证登录。
-
-    Returns:
-        None           — Vault 未配置或无凭证
-        dict           — 登录结果（成功或 vault_stale）
-    """
-    from data_formulator.credential_vault import get_credential_vault
-    from data_formulator.security.auth import get_identity_id
-
-    vault = get_credential_vault()
-    if not vault:
+    def get_session_auth(self) -> dict | None:
+        """检查当前 session 是否已认证。
+        已认证返回 {"authenticated": True, "mode": "session", "user": {...}}
+        未认证返回 None。"""
+        token, user = require_auth()
+        if token and user:
+            return {"authenticated": True, "mode": "session", "user": format_user(user)}
         return None
 
-    identity = get_identity_id()
-    stored = vault.retrieve(identity, plugin_id)
-    if not stored:
-        return None
+    def get_current_user(self) -> dict | None:
+        """从 session 中取当前用户，或 None。"""
+        return get_user()
 
-    try:
-        result = _do_login(stored["username"], stored["password"])
-        # 登录成功 → Session 已写入
-        return {"authenticated": True, "mode": "vault", "user": result.get("user")}
-    except Exception:
-        # 凭证失效（密码已改、账号已禁等）
-        return {"authenticated": False, "vault_stale": True}
+
+# 创建 handler 实例 → 生成标准路由 Blueprint
+_handler = MetabaseAuthHandler("metabase")
+auth_bp = _handler.create_auth_blueprint("/api/plugins/metabase/auth")
+
+# 如有插件专属路由，可继续追加到同一个 Blueprint
+@auth_bp.route("/sso/callback", methods=["POST"])
+def sso_callback():
+    ...
 ```
+
+### 基类自动处理的路由
+
+| 路由 | 方法 | 基类自动行为 |
+|------|------|-------------|
+| `/login` | POST | 调用 `do_login()` + remember=true 存 Vault / remember=false 清 Vault |
+| `/logout` | POST | 调用 `do_clear_session()` + **强制清除 Vault**（不可遗漏） |
+| `/status` | GET | Session → Vault 自动登录 → 未认证（三模式协商） |
+| `/me` | GET | 返回 `get_current_user()` 或 401 |
 
 ### 核心规则总结
 
-| 规则 | 说明 |
-|------|------|
-| **先 Session → 再 SSO → 再 Vault → 最后手动** | 严格按优先级链，不跳步 |
-| **Vault 凭证必须实测验证** | 从 Vault 取出后必须用它去**实际登录**外部系统，不能直接信任 |
-| **失效凭证返回 vault_stale** | 外部系统密码已改时，不崩溃，而是返回 `vault_stale: true` 提示前端 |
-| **remember=true 才存 Vault** | 用户主动勾选"记住凭证"后才写入 Vault |
-| **remember=false 要清理 Vault** | 用户重新输入密码但不勾选记住 → 删除 Vault 中的旧凭证 |
-| **凭证只在服务端流转** | 前端只知道"有没有已存凭证"（authenticated + mode），绝不接触明文 |
-| **_vault_store / _vault_delete 辅助函数** | 每个插件用自己的 `plugin_id` 作为 `source_key` |
+| 规则 | 说明 | 由基类强制 |
+|------|------|-----------|
+| **先 Session → 再 SSO → 再 Vault → 最后手动** | 严格按优先级链，不跳步 | ✅ status 路由 |
+| **Vault 凭证必须实测验证** | 从 Vault 取出后必须**实际登录**外部系统 | ✅ try_vault_login |
+| **失效凭证返回 vault_stale** | 外部系统密码已改时返回 `vault_stale: true` | ✅ try_vault_login |
+| **remember=true 才存 Vault** | 用户主动勾选"记住凭证"后才写入 | ✅ login 路由 |
+| **remember=false 要清理 Vault** | 用户不勾选记住 → 删除旧凭证 | ✅ login 路由 |
+| **退出必须同时清 Session + Vault** | 防止"退出后 Vault 自动登录回来"的死循环 | ✅ logout 路由 |
+| **凭证只在服务端流转** | 前端只知道 authenticated + mode，不接触明文 | ✅ 架构设计 |
+| **Vault 操作 best-effort** | 存/删/取失败时静默跳过，不阻断主流程 | ✅ vault_* 方法 |
 
 ---
 
@@ -355,42 +329,24 @@ def _try_vault_login(plugin_id: str) -> dict | None:
 
 ### 概述
 
-CredentialVault 是一个可选组件（通过 `CREDENTIAL_VAULT_KEY` 环境变量启用）。插件**不应假设** Vault 一定存在——`get_credential_vault()` 返回 `None` 时，应优雅回退到纯 Session 模式。
+CredentialVault 是一个可选组件（本地部署时自动零配置启用）。插件**不应假设** Vault 一定存在——Vault 不可用时，基类自动跳过，回退到纯 Session 模式。
 
-### 插件内的 Vault 辅助函数模板
+> **重要**：插件作者**不需要手写** Vault 辅助函数。`PluginAuthHandler` 基类已内置
+> `vault_store()`、`vault_delete()`、`vault_retrieve()`、`try_vault_login()` 方法，
+> 并在 login / logout / status 路由中自动调用。
 
-每个需要凭证存储的插件应在 `routes/auth.py` 或 `session_helpers.py` 中实现以下辅助函数：
+### 如果需要在自定义路由中访问 Vault
+
+在极少数情况下（如自定义的凭证管理路由），可通过 handler 实例直接调用：
 
 ```python
-from data_formulator.credential_vault import get_credential_vault
-from data_formulator.security.auth import get_identity_id
-
-PLUGIN_ID = "metabase"
-
-def _vault_store(credentials: dict) -> None:
-    """将凭证存入 Vault（如果可用）。"""
-    vault = get_credential_vault()
-    if not vault:
-        return
-    identity = get_identity_id()
-    vault.store(identity, PLUGIN_ID, credentials)
-
-def _vault_delete() -> None:
-    """从 Vault 中删除当前用户在本插件的凭证。"""
-    vault = get_credential_vault()
-    if not vault:
-        return
-    identity = get_identity_id()
-    vault.delete(identity, PLUGIN_ID)
-
-def _vault_retrieve() -> dict | None:
-    """从 Vault 中取出凭证。返回 None 表示无存储或 Vault 不可用。"""
-    vault = get_credential_vault()
-    if not vault:
-        return None
-    identity = get_identity_id()
-    return vault.retrieve(identity, PLUGIN_ID)
+# 前提：_handler 是你的 PluginAuthHandler 子类实例
+_handler.vault_store({"username": "alice", "password": "pw"})
+_handler.vault_delete()
+creds = _handler.vault_retrieve()  # → dict | None
 ```
+
+这些方法内部已处理 Vault 不可用、identity 解析失败等异常，不会抛出。
 
 ### Vault source_key 命名
 
@@ -485,6 +441,20 @@ const [remember, setRemember] = useState(false);
 const loginPayload = { username, password, remember };
 ```
 
+**复选框必须附带注释说明**，避免用户与浏览器内置的"记住密码"功能混淆：
+
+```typescript
+<FormControlLabel
+    control={<Checkbox checked={remember} onChange={...} />}
+    label={t('plugin.xxx.rememberCredentials')}
+/>
+<Typography variant="caption" sx={{ opacity: 0.55 }}>
+    {t('plugin.xxx.rememberCredentialsHint')}
+</Typography>
+```
+
+注释文案应说明：**凭证存储在服务器端（非浏览器），便于自动化 Agent 代用户拉取数据**。
+
 当 `auth/status` 返回 `vault_stale: true` 时，应显示明确的提示：
 
 ```typescript
@@ -570,6 +540,7 @@ def vault(tmp_path):
 |------|------|
 | `plugins/__init__.py` | 自动发现逻辑 |
 | `plugins/base.py` | 基类定义 |
+| `plugins/auth_base.py` | 认证基类（Vault 生命周期） |
 | `plugins/data_writer.py` | 数据写入工具 |
 | `src/plugins/types.ts` | 前端类型 |
 | `src/plugins/registry.ts` | 前端注册表 |
@@ -593,11 +564,10 @@ def vault(tmp_path):
 - [ ] `get_frontend_config()` 不包含任何密钥
 - [ ] Session key 使用 `plugin_<id>_` 前缀
 - [ ] 数据写入使用 `PluginDataWriter`，不直接调用 workspace
-- [ ] 认证路由实现三模式协商（Session → SSO → Vault → 手动）
-- [ ] Vault 不可用时优雅降级（`get_credential_vault()` 返回 None 时跳过）
-- [ ] Vault 凭证取出后**实际验证**，不盲目信任
-- [ ] 失效凭证返回 `vault_stale: true`
-- [ ] `remember=true` 时存入 Vault，`remember=false` 时清除旧凭证
+- [ ] **认证路由继承 `PluginAuthHandler` 基类**（代码层面约束 Vault 生命周期）
+- [ ] 只实现 `do_login`、`do_clear_session`、`get_session_auth`、`get_current_user` 四个方法
+- [ ] 退出时 Session + Vault 同时清除（由基类自动保证）
+- [ ] Vault 不可用时优雅降级（由基类自动保证）
 - [ ] HTTP 错误有意义的错误信息和正确的状态码
 - [ ] 缺少必须环境变量时不启用，不报错
 
@@ -606,7 +576,7 @@ def vault(tmp_path):
 - [ ] `index.ts` default export 包含 `id`、`Icon`、`Panel`
 - [ ] `id` 与后端 `manifest.id` 一致
 - [ ] 数据加载成功后调用 `callbacks.onDataLoaded()`
-- [ ] 登录表单包含"记住凭证"复选框
+- [ ] 登录表单包含"记住凭证"复选框 + **注释说明**（服务器端存储，供自动化 Agent 使用）
 - [ ] `vault_stale` 时显示"凭证已失效"提示
 - [ ] 翻译 key 使用 `plugin.<id>.*` 前缀
 - [ ] 不引用其他插件的代码
