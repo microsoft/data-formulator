@@ -152,8 +152,18 @@ export async function getUserManager(): Promise<UserManager | null> {
 export async function getAccessToken(): Promise<string | null> {
     const mgr = await getUserManager();
     if (!mgr) return null;
-    const user = await mgr.getUser();
-    if (!user || user.expired) return null;
+    let user = await mgr.getUser();
+    if (!user) return null;
+
+    if (user.expired) {
+        try {
+            user = await mgr.signinSilent();
+        } catch {
+            return null;
+        }
+        if (!user) return null;
+    }
+
     return user.access_token;
 }
 

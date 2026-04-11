@@ -135,11 +135,10 @@ class OIDCProvider(AuthProvider):
         if self._scopes:
             return self._scopes
         if self._jwks_client:
-            # JWKS available (via discovery or manual) → SSO issues JWTs
-            return "openid profile email"
+            return "openid profile email offline_access"
         # No JWKS → SSO likely doesn't issue JWT id_tokens;
         # requesting 'openid' would cause oidc-client-ts to fail parsing.
-        return "profile email"
+        return "profile email offline_access"
 
     def get_auth_info(self) -> dict:
         info: dict[str, Any] = {
