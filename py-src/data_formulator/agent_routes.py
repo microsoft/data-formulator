@@ -7,7 +7,6 @@ import sys
 import os
 import mimetypes
 import re
-import traceback
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
@@ -38,7 +37,6 @@ from data_formulator.model_registry import model_registry
 
 from data_formulator.agents.data_agent import DataAgent
 from data_formulator.agents.agent_language import build_language_instruction
-from data_formulator.security.sanitize import sanitize_error_message
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -75,11 +73,10 @@ def _set_cors(response):
 @agent_bp.errorhandler(Exception)
 def handle_agent_error(e):
     """Catch-all error handler to ensure JSON responses instead of HTML error pages."""
-    logger.error(f"Unhandled error in agent route: {e}")
-    logger.error(traceback.format_exc())
+    logger.error("Unhandled error in agent route", exc_info=e)
     response = flask.jsonify({
         "status": "error",
-        "error_message": sanitize_model_error(str(e)),
+        "error_message": "An unexpected error occurred",
         "results": [],
         "result": []
     })
@@ -160,8 +157,7 @@ def check_available_models():
         except Exception as e:
             elapsed = time.time() - t0
             logger.warning(f"  [{model_id}] Failed ({elapsed:.1f}s): {type(e).__name__}: {e}")
-            raw_err = str(e)
-            error = sanitize_model_error(raw_err) if raw_err else "Connection failed, please check server configuration"
+            error = "Connection failed, please check server configuration"
 
         return {**public_info, "status": status, "error": error}
 
@@ -187,10 +183,6 @@ def check_available_models():
     logger.info("=" * 60)
 
     return jsonify(results)
-
-def sanitize_model_error(error_message: str) -> str:
-    """Backward-compatible alias — delegates to the shared sanitizer."""
-    return sanitize_error_message(error_message)
 
 @agent_bp.route('/test-model', methods=['GET', 'POST'])
 def test_model():
@@ -223,12 +215,10 @@ def test_model():
                 }
         except Exception as e:
             logger.exception(f"Error testing model {content['model'].get('id', '')}")
-            is_global = content['model'].get('is_global', False)
             result = {
                 "model": content['model'],
                 "status": 'error',
-                "message": "Connection failed, please check server configuration" if is_global
-                           else sanitize_model_error(str(e)),
+                "message": "Connection failed, please check server configuration",
             }
     else:
         result = {'status': 'error'}
@@ -336,9 +326,8 @@ def sort_data_request():
             candidates = candidates if candidates != None else []
             response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
         except Exception as e:
-            logger.error(f"Error in sort-data: {e}")
-            logger.error(traceback.format_exc())
-            response = flask.jsonify({ "token": token, "status": "error", "result": [], "error_message": sanitize_model_error(str(e)) })
+            logger.error("Error in sort-data", exc_info=e)
+            response = flask.jsonify({ "token": token, "status": "error", "result": [], "error_message": "Model request failed" })
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
@@ -423,7 +412,7 @@ def derive_data():
                     logger.exception("derive_data followup failed")
                     results = [{
                         "status": "error",
-                        "content": sanitize_model_error(str(followup_exc)),
+                        "content": "Code repair request failed",
                         "code": "",
                         "dialog": [],
                     }]
@@ -442,9 +431,8 @@ def derive_data():
 
             response = flask.jsonify({ "token": token, "status": "ok", "results": results })
         except Exception as e:
-            logger.error(f"Error in derive-data: {e}")
-            logger.error(traceback.format_exc())
-            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": sanitize_model_error(str(e)) })
+            logger.error("Error in derive-data", exc_info=e)
+            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": "Model request failed" })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
@@ -547,13 +535,12 @@ def data_agent_streaming():
                         break
 
             except Exception as e:
-                logger.error(f"Error in data-agent-streaming: {e}")
-                logger.error(traceback.format_exc())
+                logger.error("Error in data-agent-streaming", exc_info=e)
                 yield json.dumps({
                     "token": token,
                     "status": "error",
                     "result": None,
-                    "error_message": sanitize_model_error(str(e)),
+                    "error_message": "Agent request failed",
                 }, ensure_ascii=False) + '\n'
 
             logger.setLevel(logging.WARNING)
@@ -638,7 +625,7 @@ def refine_data():
                     logger.exception("refine_data followup failed")
                     results = [{
                         "status": "error",
-                        "content": sanitize_model_error(str(followup_exc)),
+                        "content": "Code repair request failed",
                         "code": "",
                         "dialog": [],
                     }]
@@ -656,9 +643,8 @@ def refine_data():
 
             response = flask.jsonify({ "token": token, "status": "ok", "results": results})
         except Exception as e:
-            logger.error(f"Error in refine-data: {e}")
-            logger.error(traceback.format_exc())
-            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": sanitize_model_error(str(e)) })
+            logger.error("Error in refine-data", exc_info=e)
+            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": "Model request failed" })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": []})
 
@@ -695,9 +681,8 @@ def request_code_expl():
             else:
                 return jsonify({'error': 'No explanation generated'}), 400
         except Exception as e:
-            logger.error(f"Error in code-expl: {e}")
-            logger.error(traceback.format_exc())
-            return jsonify({'error': sanitize_model_error(str(e))}), 400
+            logger.error("Error in code-expl", exc_info=e)
+            return jsonify({'error': 'Failed to generate code explanation'}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 
@@ -731,9 +716,8 @@ def request_chart_insight():
             else:
                 return jsonify({'error': 'No insight generated'}), 400
         except Exception as e:
-            logger.error(f"Error in chart-insight: {e}")
-            logger.error(traceback.format_exc())
-            return jsonify({'error': sanitize_model_error(str(e))}), 400
+            logger.error("Error in chart-insight", exc_info=e)
+            return jsonify({'error': 'Failed to generate chart insight'}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 
@@ -773,7 +757,7 @@ def get_recommendation_questions():
             except Exception as e:
                 logger.exception("get-recommendation-questions failed")
                 error_data = {
-                    "content": sanitize_model_error(str(e))
+                    "content": "Failed to generate recommendations"
                 }
                 yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
@@ -819,7 +803,7 @@ def generate_report_stream():
             except Exception as e:
                 logger.exception("generate-report-stream failed")
                 error_data = { 
-                    "content": sanitize_model_error(str(e)) 
+                    "content": "Failed to generate report" 
                 }
                 yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
@@ -998,11 +982,10 @@ def refresh_derived_data():
             }), 400
 
     except Exception as e:
-        logger.error(f"Error refreshing derived data: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.error("Error refreshing derived data", exc_info=e)
         return jsonify({
             "status": "error",
-            "message": sanitize_model_error(str(e))
+            "message": "Failed to refresh derived data"
         }), 400
 
 

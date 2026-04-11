@@ -3,8 +3,8 @@
 Covers:
 - Repair loop triggers on both 'error' and 'other error' statuses
 - Empty results list does not crash (IndexError guard)
-- Followup exceptions are caught gracefully
-- get-recommendation-questions uses sanitize_model_error for error messages
+- Followup exceptions are caught gracefully with safe generic messages
+- get-recommendation-questions never leaks exception details to the client
 """
 from __future__ import annotations
 
@@ -181,7 +181,8 @@ class TestDeriveDataRepairLoop:
         assert data["results"] == []
 
     def test_followup_exception_is_caught(self) -> None:
-        """If agent.followup() raises, the error should be caught and returned."""
+        """If agent.followup() raises, the error should be caught and a safe
+        generic message returned (no raw exception text)."""
         app = _build_app()
 
         mock_agent = MagicMock()
@@ -204,7 +205,8 @@ class TestDeriveDataRepairLoop:
         assert data["status"] == "ok"
         result = data["results"][0]
         assert result["status"] == "error"
-        assert "timeout" in result["content"].lower()
+        assert result["content"] == "Code repair request failed"
+        assert "timeout" not in result["content"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +270,7 @@ class TestRefineDataRepairLoop:
         assert data["results"] == []
 
     def test_followup_exception_in_repair_is_caught(self) -> None:
+        """Followup exception returns a safe generic message, not raw exception text."""
         app = _build_app()
 
         mock_agent = MagicMock()
@@ -291,17 +294,18 @@ class TestRefineDataRepairLoop:
         data = resp.get_json()
         result = data["results"][0]
         assert result["status"] == "error"
-        assert "expired" in result["content"].lower()
+        assert result["content"] == "Code repair request failed"
+        assert "expired" not in result["content"].lower()
 
 
 # ---------------------------------------------------------------------------
-# get-recommendation-questions: error message uses sanitize_model_error
+# get-recommendation-questions: error message must never leak exception details
 # ---------------------------------------------------------------------------
 
 class TestGetRecommendationQuestionsError:
 
-    def test_error_message_contains_real_exception_info(self) -> None:
-        """Error response should include sanitized exception info, not a generic message."""
+    def test_error_message_is_generic_not_exception_details(self) -> None:
+        """Error response must use a fixed safe message, not raw exception text."""
         app = _build_app()
 
         mock_agent = MagicMock()
@@ -332,11 +336,11 @@ class TestGetRecommendationQuestionsError:
         assert len(error_line) == 1
 
         error_payload = json.loads(error_line[0].removeprefix("error: "))
-        assert "not found" in error_payload["content"]
-        assert "unable to process" not in error_payload["content"].lower()
+        assert error_payload["content"] == "Failed to generate recommendations"
+        assert "not found" not in error_payload["content"]
 
-    def test_error_message_redacts_api_keys(self) -> None:
-        """API keys in exception messages should be redacted by sanitize_model_error."""
+    def test_error_message_never_leaks_api_keys(self) -> None:
+        """Even when exception contains API keys, the fixed message must not leak them."""
         app = _build_app()
 
         mock_agent = MagicMock()
@@ -365,4 +369,4 @@ class TestGetRecommendationQuestionsError:
         error_line = [l for l in lines if l.startswith("error:")]
         error_payload = json.loads(error_line[0].removeprefix("error: "))
         assert "sk-secret123" not in error_payload["content"]
-        assert "redacted" in error_payload["content"].lower()
+        assert error_payload["content"] == "Failed to generate recommendations"
