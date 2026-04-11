@@ -3,21 +3,20 @@
 
 """Authentication routes for the Superset plugin.
 
-Migrated from 0.6 ``superset/auth_routes.py`` with:
-- Plugin-namespaced session keys (``plugin_superset_*``)
-- Routes under ``/api/plugins/superset/auth/``
-- Extensions keyed as ``plugin_superset_*``
+Uses :class:`PluginAuthHandler` for standard auth lifecycle (login, logout,
+status, me) with built-in Credential Vault support.  Superset-specific routes
+(guest login, SSO save-tokens) are added to the same Blueprint.
 """
-
 from __future__ import annotations
 
 import logging
+from typing import Any, Optional
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import current_app, jsonify, request
 
+from data_formulator.plugins.auth_base import PluginAuthHandler
 from data_formulator.plugins.superset.session_helpers import (
     clear_session,
-    get_token,
     get_user,
     require_auth,
     save_session,
@@ -26,93 +25,82 @@ from data_formulator.plugins.superset.session_helpers import (
 
 logger = logging.getLogger(__name__)
 
-auth_bp = Blueprint(
-    "plugin_superset_auth",
-    __name__,
-    url_prefix="/api/plugins/superset/auth",
-)
-
 
 def _bridge():
     return current_app.extensions["plugin_superset_bridge"]
 
 
-def _do_login(username: str, password: str, is_guest: bool = False):
-    """Shared login logic for both normal and guest login."""
-    result = _bridge().login(username, password)
-    access_token = result["access_token"]
-    refresh_token = result.get("refresh_token")
-
-    try:
-        user_info = _bridge().get_user_info(access_token)
-    except Exception as exc:
-        logger.warning("Superset /api/v1/me unavailable, using JWT fallback: %s", exc)
-        user_info = user_from_jwt_fallback(access_token, username)
-
-    if is_guest:
-        user_info["_guest"] = True
-
-    save_session(access_token, user_info, refresh_token)
-
-    return {
-        "status": "ok",
-        "user": {
-            "id": user_info.get("id"),
-            "username": user_info.get("username", ""),
-            "first_name": user_info.get("first_name", ""),
-            "last_name": user_info.get("last_name", ""),
-            "is_guest": is_guest,
-        },
+def _format_user(user: dict, *, is_guest: bool = False) -> dict:
+    info = {
+        "id": user.get("id"),
+        "username": user.get("username", ""),
+        "first_name": user.get("first_name", ""),
+        "last_name": user.get("last_name", ""),
     }
+    if is_guest:
+        info["is_guest"] = True
+    return info
 
 
-@auth_bp.route("/login", methods=["POST"])
-def login():
-    """Proxy login: frontend -> DF backend -> Superset JWT."""
-    data = request.get_json(force=True)
-    username = data.get("username", "")
-    password = data.get("password", "")
+# ------------------------------------------------------------------
+# Superset-specific auth handler
+# ------------------------------------------------------------------
 
-    if not username or not password:
-        return jsonify({"status": "error", "message": "Missing credentials"}), 400
+class SupersetAuthHandler(PluginAuthHandler):
+    """Superset auth: proxies login to Superset JWT API."""
 
-    try:
-        return jsonify(_do_login(username, password))
-    except Exception as exc:
-        logger.warning("Login failed for %s: %s", username, exc)
-        return jsonify({"status": "error", "message": str(exc)}), 401
+    def do_login(self, username: str, password: str) -> dict[str, Any]:
+        result = _bridge().login(username, password)
+        access_token = result["access_token"]
+        refresh_token = result.get("refresh_token")
+
+        try:
+            user_info = _bridge().get_user_info(access_token)
+        except Exception as exc:
+            logger.warning("Superset /api/v1/me unavailable, using JWT fallback: %s", exc)
+            user_info = user_from_jwt_fallback(access_token, username)
+
+        save_session(access_token, user_info, refresh_token)
+        return {"user": _format_user(user_info)}
+
+    def do_clear_session(self) -> None:
+        clear_session()
+
+    def get_session_auth(self) -> Optional[dict[str, Any]]:
+        token, user = require_auth()
+        if token and user:
+            return {"authenticated": True, "mode": "session", "user": _format_user(user)}
+        if user:
+            return {
+                "authenticated": True,
+                "mode": "session",
+                "user": _format_user(user, is_guest=user.get("_guest", False)),
+            }
+        return None
+
+    def get_current_user(self) -> Optional[dict[str, Any]]:
+        user = get_user()
+        return user if user else None
+
+
+# ------------------------------------------------------------------
+# Blueprint (standard routes via base class + Superset extras)
+# ------------------------------------------------------------------
+
+_handler = SupersetAuthHandler("superset")
+auth_bp = _handler.create_auth_blueprint("/api/plugins/superset/auth")
 
 
 @auth_bp.route("/guest", methods=["POST"])
 def guest_login():
-    """Enter guest mode — browse public data without Superset credentials.
-
-    No actual Superset login is performed.  Catalog routes will call the
-    Superset API without an Authorization header; Superset's Public Role
-    determines what data is visible.
-    """
+    """Enter guest mode — browse public data without Superset credentials."""
     guest_user = {"id": None, "username": "guest", "first_name": "Guest", "last_name": "", "_guest": True}
     save_session("", guest_user, None)
 
     return jsonify({
         "status": "ok",
-        "user": {
-            "id": None,
-            "username": "guest",
-            "first_name": "Guest",
-            "last_name": "",
-            "is_guest": True,
-        },
+        "user": _format_user(guest_user, is_guest=True),
     })
-
-
-@auth_bp.route("/me", methods=["GET"])
-def me():
-    """Return the current authenticated Superset user (from session)."""
-    user = get_user()
-    if not user:
-        return jsonify({"status": "error", "message": "Not authenticated"}), 401
-    return jsonify({"status": "ok", "user": user})
 
 
 @auth_bp.route("/sso/save-tokens", methods=["POST"])
@@ -136,37 +124,4 @@ def sso_save_tokens():
 
     save_session(access_token, user_info, refresh_token)
 
-    return jsonify({
-        "status": "ok",
-        "user": {
-            "id": user_info.get("id"),
-            "username": user_info.get("username", ""),
-            "first_name": user_info.get("first_name", ""),
-            "last_name": user_info.get("last_name", ""),
-        },
-    })
-
-
-@auth_bp.route("/status", methods=["GET"])
-def auth_status():
-    """Check if the user has a valid Superset session."""
-    token, user = require_auth()
-    if token and user:
-        return jsonify({
-            "status": "ok",
-            "authenticated": True,
-            "user": {
-                "id": user.get("id"),
-                "username": user.get("username", ""),
-                "first_name": user.get("first_name", ""),
-                "last_name": user.get("last_name", ""),
-            },
-        })
-    return jsonify({"status": "ok", "authenticated": False})
-
-
-@auth_bp.route("/logout", methods=["POST"])
-def logout():
-    """Clear Superset plugin session data."""
-    clear_session()
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "user": _format_user(user_info)})

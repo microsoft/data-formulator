@@ -500,70 +500,68 @@ export const DataFormulatorFC = ({ }) => {
                 />
             </Box>
             {/* ── Saved workspaces section ──────────────────────────── */}
-            {savedWorkspaces.length > 0 && (
-                <Box sx={{mt: 4}}>
-                    <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
-                        <Typography sx={{ color: 'text.secondary' }}>
-                            Your Sessions
-                        </Typography>
-                    </Divider>
-                    <Box sx={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                        gap: 2,
-                    }}>
-                        {savedWorkspaces.map(w => (
-                            <Card key={w.id} variant="outlined" onClick={() => handleOpenWorkspace(w.id)} sx={{
-                                position: 'relative', textAlign: 'left',
-                                cursor: 'pointer',
-                                '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
-                                '&:hover .ws-actions': { opacity: 1 },
-                            }}>
-                                <CardContent sx={{ py: 1.5, px: 2 }}>
-                                    <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
-                                        {w.display_name}
-                                    </Typography>
-                                    {w.saved_at && (
-                                        <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
-                                            {new Date(w.saved_at).toLocaleString()}
-                                        </Typography>
-                                    )}
-                                </CardContent>
-                                <Box className="ws-actions" sx={{
-                                    position: 'absolute', top: 4, right: 4,
-                                    display: 'flex', gap: 0.25,
-                                    opacity: 0, transition: 'opacity 0.15s',
-                                }}>
-                                    <Tooltip title="Export">
-                                        <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
-                                            onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
-                                            <DownloadIcon fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Delete">
-                                        <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
-                                            onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(w.id); }}>
-                                            <DeleteOutlineIcon fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                </Box>
-                            </Card>
-                        ))}
-                        {/* Import workspace card */}
-                        <Card variant="outlined" onClick={() => importRef.current?.click()} sx={{
-                            textAlign: 'center', borderStyle: 'dashed',
+            <Box sx={{mt: 4}}>
+                <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
+                    <Typography sx={{ color: 'text.secondary' }}>
+                        Your Sessions
+                    </Typography>
+                </Divider>
+                <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                    gap: 2,
+                }}>
+                    {savedWorkspaces.map(w => (
+                        <Card key={w.id} variant="outlined" onClick={() => handleOpenWorkspace(w.id)} sx={{
+                            position: 'relative', textAlign: 'left',
                             cursor: 'pointer',
-                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                            gap: 0.5, py: 1.5,
                             '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
+                            '&:hover .ws-actions': { opacity: 1 },
                         }}>
-                            <UploadFileIcon sx={{ color: 'text.secondary' }} />
-                            <Typography variant="caption" color="text.secondary">Import workspace (.zip)</Typography>
-                            <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                            <CardContent sx={{ py: 1.5, px: 2 }}>
+                                <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
+                                    {w.display_name}
+                                </Typography>
+                                {w.saved_at && (
+                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
+                                        {new Date(w.saved_at).toLocaleString()}
+                                    </Typography>
+                                )}
+                            </CardContent>
+                            <Box className="ws-actions" sx={{
+                                position: 'absolute', top: 4, right: 4,
+                                display: 'flex', gap: 0.25,
+                                opacity: 0, transition: 'opacity 0.15s',
+                            }}>
+                                <Tooltip title="Export">
+                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                        onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
+                                        <DownloadIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Delete">
+                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(w.id); }}>
+                                        <DeleteOutlineIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
                         </Card>
-                    </Box>
+                    ))}
+                    {/* Import workspace card */}
+                    <Card variant="outlined" onClick={() => importRef.current?.click()} sx={{
+                        textAlign: 'center', borderStyle: 'dashed',
+                        cursor: 'pointer',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        gap: 0.5, py: 1.5,
+                        '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
+                    }}>
+                        <UploadFileIcon sx={{ color: 'text.secondary' }} />
+                        <Typography variant="caption" color="text.secondary">Import workspace (.zip)</Typography>
+                        <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                    </Card>
                 </Box>
-            )}
+            </Box>
             {/* ── Delete workspace confirmation ────────────────────── */}
             <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
                 <DialogTitle>Delete session?</DialogTitle>

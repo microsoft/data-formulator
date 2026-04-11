@@ -4,7 +4,8 @@
 import React, { FC, useState, useCallback, useRef } from 'react';
 import {
     Box, Button, TextField, Typography, Alert, CircularProgress,
-    Divider, IconButton, InputAdornment, alpha, useTheme,
+    Divider, IconButton, InputAdornment, FormControlLabel, Checkbox,
+    alpha, useTheme,
 } from '@mui/material';
 import LoginIcon from '@mui/icons-material/Login';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -18,13 +19,15 @@ import type { PluginConfig } from '../types';
 interface SupersetLoginProps {
     config: PluginConfig;
     onLoginSuccess: (user: Record<string, unknown>) => void;
+    vaultStale?: boolean;
 }
 
-export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess }) => {
+export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess, vaultStale }) => {
     const { t } = useTranslation();
     const theme = useTheme();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [remember, setRemember] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -40,7 +43,7 @@ export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess }
         setLoading(true);
         setError('');
         try {
-            const result = await supersetLogin(username, password);
+            const result = await supersetLogin(username, password, remember);
             if (result.status === 'ok') {
                 onLoginSuccess(result.user);
             } else {
@@ -51,7 +54,7 @@ export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess }
         } finally {
             setLoading(false);
         }
-    }, [username, password, onLoginSuccess, t]);
+    }, [username, password, remember, onLoginSuccess, t]);
 
     const handleGuestLogin = useCallback(async () => {
         setLoading(true);
@@ -141,6 +144,12 @@ export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess }
                 {t('plugin.superset.connectTo', { name: config.name || 'Apache Superset' })}
             </Typography>
 
+            {vaultStale && (
+                <Alert severity="warning" sx={{ width: '100%', maxWidth: 360 }}>
+                    {t('plugin.superset.vaultStale')}
+                </Alert>
+            )}
+
             {error && <Alert severity="error" sx={{ width: '100%', maxWidth: 360 }}>{error}</Alert>}
 
             {showPasswordLogin && (
@@ -177,6 +186,26 @@ export const SupersetLogin: FC<SupersetLoginProps> = ({ config, onLoginSuccess }
                             ),
                         }}
                     />
+                    <Box>
+                        <FormControlLabel
+                            control={
+                                <Checkbox
+                                    size="small"
+                                    checked={remember}
+                                    onChange={e => setRemember(e.target.checked)}
+                                />
+                            }
+                            label={
+                                <Typography variant="caption" color="text.secondary">
+                                    {t('plugin.superset.rememberCredentials')}
+                                </Typography>
+                            }
+                            sx={{ ml: 0 }}
+                        />
+                        <Typography variant="caption" sx={{ display: 'block', ml: 3.5, mt: -0.5, opacity: 0.55, fontSize: 11, lineHeight: 1.4 }}>
+                            {t('plugin.superset.rememberCredentialsHint')}
+                        </Typography>
+                    </Box>
                     <Button
                         variant="contained"
                         size="small"

@@ -28,12 +28,19 @@ import base64
 
 APP_ROOT = Path(Path(__file__).parent).absolute()
 
+# Load env files early so FLASK_SECRET_KEY is available before app setup.
+load_dotenv(os.path.join(APP_ROOT, "..", "..", '.env'))
+load_dotenv(os.path.join(APP_ROOT, '.env'))
+
 # Create Flask app (lightweight, no heavy imports yet)
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
-app.secret_key = secrets.token_hex(16)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(16)
 app.json.sort_keys = False
 app.json.ensure_ascii = False
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
+app.config['PERMANENT_SESSION_LIFETIME'] = 60 * 60 * 24 * 365
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -44,10 +51,6 @@ class CustomJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 app.json_encoder = CustomJSONEncoder
-
-# Load env files early.
-load_dotenv(os.path.join(APP_ROOT, "..", "..", '.env'))
-load_dotenv(os.path.join(APP_ROOT, '.env'))
 
 # Default config from env (can be overridden by CLI args)
 # Legacy: DISABLE_DATABASE=true → workspace_backend='ephemeral'
@@ -144,6 +147,10 @@ def _register_blueprints():
         from data_formulator.auth_gateways.github_gateway import github_bp
         app.register_blueprint(github_bp)
 
+    # Register credential vault API (safe even when vault is not configured)
+    from data_formulator.credential_routes import credential_bp
+    app.register_blueprint(credential_bp)
+
     # Auto-discover and register data source plugins
     print("  Loading plugins...", flush=True)
     from data_formulator.plugins import discover_and_register
@@ -216,6 +223,10 @@ def get_app_config():
     if provider:
         config["AUTH_PROVIDER"] = provider.name
         config["AUTH_INFO"] = provider.get_auth_info()
+
+    # Expose credential vault availability to the frontend
+    from data_formulator.credential_vault import get_credential_vault
+    config["CREDENTIAL_VAULT_ENABLED"] = get_credential_vault() is not None
 
     # Expose enabled data source plugins to the frontend
     from data_formulator.plugins import ENABLED_PLUGINS

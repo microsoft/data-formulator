@@ -65,6 +65,9 @@
       "op.contains": "Contains",
       "op.isNull": "Is null",
       "op.isNotNull": "Is not null",
+      "rememberCredentials": "Remember credentials on this server",
+      "rememberCredentialsHint": "Allows background agents to pull data automatically; without this, agents cannot access this data source for you.",
+      "vaultStale": "Your saved credentials are no longer valid. Please enter new credentials.",
       "browsePublic": "Skip login, browse public data",
       "guestFailed": "Failed to enter guest mode",
       "loginRequired": "Loading data requires login. Please sign in first."

@@ -65,6 +65,9 @@
       "op.contains": "包含",
       "op.isNull": "为空",
       "op.isNotNull": "非空",
+      "rememberCredentials": "在此服务器上记住凭证",
+      "rememberCredentialsHint": "保存后，后台 Agent 可自动拉取数据；不保存则 Agent 无法代你访问此数据源。",
+      "vaultStale": "已保存的凭证已失效，请重新输入。",
       "browsePublic": "跳过登录，浏览公共数据",
       "guestFailed": "进入访客模式失败",
       "loginRequired": "加载数据需要登录，请先登录。"

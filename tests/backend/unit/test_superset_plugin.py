@@ -42,7 +42,12 @@ pytestmark = [pytest.mark.backend, pytest.mark.plugin]
 
 @pytest.fixture
 def app(monkeypatch):
-    """Flask app with Superset plugin registered via on_enable."""
+    """Flask app with Superset plugin registered via on_enable.
+
+    Vault is disabled (returns None) so that auth routes don't require
+    X-Identity-Id headers — Vault integration is tested separately in
+    test_plugin_auth_with_vault.py.
+    """
     monkeypatch.setenv("PLG_SUPERSET_URL", "http://superset.test")
 
     _app = flask.Flask(__name__)
@@ -53,6 +58,12 @@ def app(monkeypatch):
     bp = plugin.create_blueprint()
     _app.register_blueprint(bp)
     plugin.on_enable(_app)
+
+    # Disable Vault so auth routes skip identity-dependent code paths
+    monkeypatch.setattr(
+        "data_formulator.credential_vault.get_credential_vault",
+        lambda: None,
+    )
 
     return _app
 

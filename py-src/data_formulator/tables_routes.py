@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import io
 import logging
 import sys
 import os
@@ -531,7 +532,6 @@ def parse_file():
                 })
             return jsonify({"status": "success", "sheets": sheets})
         elif ext == '.csv':
-            import io
             raw = normalize_text_encoding(file.stream.read(), 'csv')
             df = pd.read_csv(io.BytesIO(raw))
             df = df.where(df.notna(), None)
@@ -629,6 +629,53 @@ def download_db_file():
         "status": "error",
         "message": "Database file download is no longer supported. Data lives in the workspace.",
     }), 410
+
+
+@tables_bp.route('/export-table-csv', methods=['POST'])
+def export_table_csv():
+    """Export a workspace table as CSV (or TSV) file download."""
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        delimiter = data.get('delimiter', ',')
+
+        if not table_name:
+            return jsonify({"status": "error", "message": "table_name is required"}), 400
+
+        if delimiter not in (',', '\t'):
+            return jsonify({"status": "error", "message": "delimiter must be ',' or '\\t'"}), 400
+
+        workspace = _get_workspace()
+
+        if _should_use_duckdb(workspace, table_name):
+            df = workspace.run_parquet_sql(table_name, "SELECT * FROM {parquet} AS t")
+        else:
+            df = workspace.read_data_as_df(table_name)
+
+        df = _dedup_dataframe_columns(df)
+        # Drop internal row-id column if present
+        if '#rowId' in df.columns:
+            df = df.drop(columns=['#rowId'])
+
+        buf = io.StringIO()
+        df.to_csv(buf, index=False, sep=delimiter)
+        csv_bytes = buf.getvalue().encode('utf-8-sig')
+
+        ext = 'tsv' if delimiter == '\t' else 'csv'
+        mime = 'text/tab-separated-values' if delimiter == '\t' else 'text/csv'
+
+        return Response(
+            csv_bytes,
+            mimetype=mime,
+            headers={
+                'Content-Disposition': f'attachment; filename="{table_name}.{ext}"',
+                'Content-Length': str(len(csv_bytes)),
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error exporting table to CSV: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({"status": "error", "message": safe_msg}), status_code
 
 
 @tables_bp.route('/reset-db-file', methods=['POST'])

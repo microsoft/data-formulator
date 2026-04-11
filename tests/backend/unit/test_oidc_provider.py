@@ -133,6 +133,19 @@ class TestOIDCProviderMetadata:
         assert info["oidc"]["authority"] == ISSUER
         assert info["oidc"]["clientId"] == CLIENT_ID
 
+    def test_default_scopes_include_offline_access(self, provider):
+        info = provider.get_auth_info()
+        scopes = info["oidc"]["scopes"]
+        assert "offline_access" in scopes
+
+    def test_custom_scopes_override_defaults(self, monkeypatch):
+        monkeypatch.setenv("OIDC_ISSUER_URL", ISSUER)
+        monkeypatch.setenv("OIDC_CLIENT_ID", CLIENT_ID)
+        monkeypatch.setenv("OIDC_SCOPES", "openid profile")
+        p = OIDCProvider()
+        info = p.get_auth_info()
+        assert info["oidc"]["scopes"] == "openid profile"
+
 
 # ------------------------------------------------------------------
 # Successful authentication

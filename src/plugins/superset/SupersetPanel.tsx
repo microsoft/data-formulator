@@ -19,12 +19,14 @@ export const SupersetPanel: FC<PluginPanelProps> = ({ config, callbacks }) => {
     const [tab, setTab] = useState<0 | 1>(0);
     const [authenticated, setAuthenticated] = useState<boolean | null>(null);
     const [user, setUser] = useState<Record<string, unknown> | null>(null);
+    const [vaultStale, setVaultStale] = useState(false);
 
     useEffect(() => {
         supersetAuthStatus()
             .then(data => {
                 setAuthenticated(data.authenticated);
                 if (data.authenticated) setUser(data.user);
+                if (data.vault_stale) setVaultStale(true);
             })
             .catch(() => setAuthenticated(false));
     }, []);
@@ -55,7 +57,7 @@ export const SupersetPanel: FC<PluginPanelProps> = ({ config, callbacks }) => {
     }
 
     if (!authenticated) {
-        return <SupersetLogin config={config} onLoginSuccess={handleLoginSuccess} />;
+        return <SupersetLogin config={config} onLoginSuccess={handleLoginSuccess} vaultStale={vaultStale} />;
     }
 
     return (

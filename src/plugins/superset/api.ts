@@ -14,11 +14,11 @@ const BASE = '/api/plugins/superset';
 
 // -- Auth ---------------------------------------------------------------
 
-export async function supersetLogin(username: string, password: string) {
+export async function supersetLogin(username: string, password: string, remember = false) {
     const resp = await fetchWithIdentity(`${BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, remember }),
     });
     return resp.json();
 }
