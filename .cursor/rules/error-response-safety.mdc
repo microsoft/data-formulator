@@ -1,0 +1,61 @@
+---
+description: Prevent information exposure through exception messages in HTTP responses
+globs: py-src/**/*.py
+alwaysApply: false
+---
+
+# Error Response Safety
+
+Never return raw exception text (`str(e)`, `f"...{e}"`) directly in HTTP responses.
+Python exceptions may contain stack traces, file paths, database connection strings,
+API keys, or internal IP addresses — all of which are security risks (CWE-209).
+
+## Rules
+
+1. **5xx errors** — return a fixed generic message; never expose exception details.
+2. **502 errors** — return `"Upstream service unavailable"`; never include upstream error body.
+3. **4xx errors** — run `sanitize_error_message(str(e))` so business-validation messages
+   stay useful while secrets are stripped.
+4. **Logging** — always log the full exception server-side (`logger.warning` / `logger.error`
+   with `exc_info=True` when needed). The client never needs the stack trace.
+
+## How To
+
+For Flask route `except` blocks, use `safe_error_response`:
+
+```python
+from data_formulator.security.sanitize import safe_error_response
+
+except HTTPError as e:
+    return safe_error_response(e, 502, log_message="Upstream call failed")
+except ValueError as e:
+    return safe_error_response(e, 400, log_message="Invalid input")
+except Exception as e:
+    return safe_error_response(e, 500, log_message="Unexpected error")
+```
+
+For non-route contexts (generators, background tasks) where a Flask response
+cannot be returned, use `sanitize_error_message` directly:
+
+```python
+from data_formulator.security.sanitize import sanitize_error_message
+
+except Exception as exc:
+    logger.error("Task failed: %s", exc, exc_info=True)
+    payload = {"status": "error", "message": sanitize_error_message(str(exc))}
+```
+
+## Common Mistakes
+
+```python
+# ❌ BAD — raw exception leaks internal details
+return jsonify({"message": str(e)}), 500
+return jsonify({"message": f"Failed: {e}"}), 502
+
+# ❌ BAD — manual traceback in response
+import traceback
+return jsonify({"message": traceback.format_exc()}), 500
+
+# ✅ GOOD
+return safe_error_response(e, 500, log_message="Operation failed")
+```

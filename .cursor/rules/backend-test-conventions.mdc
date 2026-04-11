@@ -1,0 +1,63 @@
+---
+description: Backend Python test conventions (pytest)
+globs: tests/backend/**/*.py
+alwaysApply: false
+---
+
+# Backend Test Conventions
+
+## File Location & Naming
+
+- Place tests under `tests/backend/unit/`, `tests/backend/integration/`, or `tests/backend/contract/`.
+- Name files `test_<feature_or_module>.py` with descriptive snake_case names.
+- Shared test data goes in `tests/backend/fixtures/`.
+
+## File Structure
+
+```python
+"""One-paragraph summary of what is being tested and why.
+
+Background
+----------
+Brief context about the feature or bug fix these tests validate.
+"""
+from __future__ import annotations
+
+import pytest
+
+pytestmark = [pytest.mark.backend]
+```
+
+## Conventions
+
+- Always add `pytestmark = [pytest.mark.backend]` at module level.
+- Group related tests in classes prefixed with `Test` (e.g. `TestStripImageBlocks`).
+- Use `pytest.mark.parametrize` for data-driven tests instead of writing repetitive cases.
+- Use `pytest.fixture()` for shared setup; keep fixtures close to where they are used.
+- Unit tests must **not** depend on Flask, network, or external services.
+- Mock external calls with `unittest.mock.patch` / `MagicMock`; never make real API calls.
+- Each test function should verify **one** behavior and have a clear name: `test_<what>_<condition>`.
+
+## Running Tests
+
+- When running pytest, use `-q` (quiet mode) instead of `-v` (verbose mode) for cleaner output.
+- **Preferred:** `python -m pytest tests/backend/ -q`
+- **Avoid:** `python -m pytest tests/backend/ -v 2>&1`
+
+## Example
+
+```python
+# ❌ BAD – vague name, no parametrize, no marker
+def test_it_works():
+    assert sanitize("hello world") == "hello_world"
+
+# ✅ GOOD
+pytestmark = [pytest.mark.backend]
+
+@pytest.mark.parametrize("raw,expected", [
+    ("hello world", "hello_world"),
+    ("订单明细", "订单明细"),
+])
+def test_sanitize_preserves_unicode(raw: str, expected: str) -> None:
+    assert sanitize(raw) == expected
+```
