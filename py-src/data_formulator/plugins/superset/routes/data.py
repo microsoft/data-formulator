@@ -360,7 +360,11 @@ def load_dataset():
 
         except Exception as exc:
             logger.error("Failed to load dataset %s: %s", dataset_id, exc, exc_info=True)
-            err = {"status": "error", "message": sanitize_error_message(str(exc))}
+            if isinstance(exc, (ValueError, TypeError)):
+                msg = sanitize_error_message(str(exc))
+            else:
+                msg = "An unexpected error occurred while loading the dataset"
+            err = {"status": "error", "message": msg}
             if stream_mode:
                 yield json.dumps({"type": "error", **err}, ensure_ascii=False) + "\n"
             else:
