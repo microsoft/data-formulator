@@ -20,6 +20,7 @@ from data_formulator.plugins.superset.session_helpers import (
     require_auth,
     try_refresh,
 )
+from data_formulator.security.sanitize import safe_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +66,9 @@ def list_datasets():
         if datasets is None:
             return jsonify({"status": "error", "message": "Authentication expired, please log in again"}), 401
     except HTTPError as e:
-        logger.warning("Superset API call failed: %s", e)
-        return jsonify({"status": "error", "message": f"Superset request failed: {e}"}), 502
+        return safe_error_response(e, 502, log_message="Superset API call failed")
     except Exception as e:
-        logger.warning("Failed to list datasets: %s", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return safe_error_response(e, 500, log_message="Failed to list datasets")
 
     return jsonify({"status": "ok", "datasets": datasets, "count": len(datasets)})
 
@@ -91,11 +90,9 @@ def list_dashboards():
         if dashboards is None:
             return jsonify({"status": "error", "message": "Authentication expired, please log in again"}), 401
     except HTTPError as e:
-        logger.warning("Superset API call failed: %s", e)
-        return jsonify({"status": "error", "message": f"Superset request failed: {e}"}), 502
+        return safe_error_response(e, 502, log_message="Superset API call failed")
     except Exception as e:
-        logger.warning("Failed to list dashboards: %s", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return safe_error_response(e, 500, log_message="Failed to list dashboards")
 
     return jsonify({"status": "ok", "dashboards": dashboards, "count": len(dashboards)})
 
@@ -116,10 +113,9 @@ def get_dashboard_datasets(dashboard_id: int):
         if datasets is None:
             return jsonify({"status": "error", "message": "Authentication expired, please log in again"}), 401
     except HTTPError as e:
-        return jsonify({"status": "error", "message": f"Superset request failed: {e}"}), 502
+        return safe_error_response(e, 502, log_message="Superset API call failed")
     except Exception as e:
-        logger.warning("Failed to get dashboard datasets: %s", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return safe_error_response(e, 500, log_message="Failed to get dashboard datasets")
 
     return jsonify({"status": "ok", "datasets": datasets, "count": len(datasets)})
 
@@ -143,10 +139,9 @@ def get_dashboard_filters(dashboard_id: int):
         if filters is None:
             return jsonify({"status": "error", "message": "Authentication expired, please log in again"}), 401
     except HTTPError as e:
-        return jsonify({"status": "error", "message": f"Superset request failed: {e}"}), 502
+        return safe_error_response(e, 502, log_message="Superset API call failed")
     except Exception as e:
-        logger.warning("Failed to get dashboard filters: %s", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return safe_error_response(e, 500, log_message="Failed to get dashboard filters")
 
     return jsonify({
         "status": "ok",
@@ -185,12 +180,11 @@ def get_filter_options():
         if payload is None:
             return jsonify({"status": "error", "message": "Authentication expired, please log in again"}), 401
     except HTTPError as e:
-        return jsonify({"status": "error", "message": f"Superset request failed: {e}"}), 502
+        return safe_error_response(e, 502, log_message="Superset API call failed")
     except ValueError as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
+        return safe_error_response(e, 400, log_message="Invalid filter options request")
     except Exception as e:
-        logger.warning("Failed to get filter options: %s", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return safe_error_response(e, 500, log_message="Failed to get filter options")
 
     return jsonify({"status": "ok", **payload})
 
@@ -211,10 +205,8 @@ def get_dataset_detail(dataset_id: int):
         if detail is None:
             return jsonify({"status": "error", "message": "Authentication expired, please log in again"}), 401
     except HTTPError as e:
-        logger.warning("Superset API call failed: %s", e)
-        return jsonify({"status": "error", "message": f"Superset request failed: {e}"}), 502
+        return safe_error_response(e, 502, log_message="Superset API call failed")
     except Exception as e:
-        logger.warning("Failed to get dataset detail: %s", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return safe_error_response(e, 500, log_message="Failed to get dataset detail")
 
     return jsonify({"status": "ok", "dataset": detail})

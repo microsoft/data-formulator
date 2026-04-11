@@ -44,6 +44,8 @@ from typing import Any, Optional
 
 from flask import Blueprint, jsonify, request
 
+from data_formulator.security.sanitize import sanitize_error_message
+
 logger = logging.getLogger(__name__)
 
 
@@ -212,7 +214,7 @@ class PluginAuthHandler(ABC):
                 result = handler.do_login(username, password)
             except Exception as exc:
                 logger.warning("Login failed for %s: %s", username, exc)
-                return jsonify({"status": "error", "message": str(exc)}), 401
+                return jsonify({"status": "error", "message": sanitize_error_message(str(exc))}), 401
 
             if remember:
                 handler.vault_store({"username": username, "password": password})

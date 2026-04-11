@@ -25,6 +25,7 @@ from data_formulator.plugins.superset.session_helpers import (
     require_auth,
     try_refresh,
 )
+from data_formulator.security.sanitize import safe_error_response, sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -273,13 +274,14 @@ def load_dataset():
                 try:
                     detail = superset_client.get_dataset_detail(token, dataset_id)
                 except Exception as retry_err:
-                    return jsonify({"status": "error", "message": f"Auth failed: {retry_err}"}), 401
+                    logger.warning("Auth retry failed for dataset %s: %s", dataset_id, retry_err)
+                    return jsonify({"status": "error", "message": "Authentication failed"}), 401
             else:
                 return jsonify({"status": "error", "message": "Authentication expired, please log in again"}), 401
         else:
-            return jsonify({"status": "error", "message": f"Failed to fetch dataset detail: {exc}"}), 502
+            return safe_error_response(exc, 502, log_message="Failed to fetch dataset detail")
     except Exception as exc:
-        return jsonify({"status": "error", "message": f"Failed to fetch dataset detail: {exc}"}), 500
+        return safe_error_response(exc, 500, log_message="Failed to fetch dataset detail")
 
     db_id, schema, base_sql = _build_dataset_sql(detail)
     table_name = detail["table_name"]
@@ -296,7 +298,7 @@ def load_dataset():
     try:
         where_clauses = _build_where_clauses(filters, column_map)
     except ValueError as exc:
-        return jsonify({"status": "error", "message": str(exc)}), 400
+        return safe_error_response(exc, 400, log_message="Invalid filter definition")
 
     final_table_name = _sanitize_table_name(table_name_override or table_name)
     writer = PluginDataWriter("superset")
@@ -357,9 +359,8 @@ def load_dataset():
                 yield json.dumps(done_payload, ensure_ascii=False)
 
         except Exception as exc:
-            import traceback
-            logger.error("Failed to load dataset %s: %s\n%s", dataset_id, exc, traceback.format_exc())
-            err = {"status": "error", "message": str(exc)}
+            logger.error("Failed to load dataset %s: %s", dataset_id, exc, exc_info=True)
+            err = {"status": "error", "message": sanitize_error_message(str(exc))}
             if stream_mode:
                 yield json.dumps({"type": "error", **err}, ensure_ascii=False) + "\n"
             else:
