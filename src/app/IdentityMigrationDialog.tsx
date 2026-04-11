@@ -116,9 +116,7 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
     }, [sourceIdentity, t, cleanupAnonymous, finishMigration]);
 
     const handleFresh = useCallback(async () => {
-        setMigrating(true);
         setError(null);
-        // Cleanup is best-effort; even if it fails, proceed to fresh start
         try { await cleanupAnonymous(); } catch { /* ignore */ }
         await finishMigration();
     }, [cleanupAnonymous, finishMigration]);
