@@ -43,8 +43,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 from flask import Blueprint, jsonify, request
-
-from data_formulator.security.sanitize import sanitize_error_message
+from requests.exceptions import ConnectionError as RequestsConnectionError, HTTPError
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +213,19 @@ class PluginAuthHandler(ABC):
                 result = handler.do_login(username, password)
             except Exception as exc:
                 logger.warning("Login failed for %s: %s", username, exc)
-                return jsonify({"status": "error", "message": sanitize_error_message(str(exc))}), 401
+                if isinstance(exc, HTTPError) and exc.response is not None:
+                    code = exc.response.status_code
+                    if code in (401, 403):
+                        msg = "Invalid username or password"
+                    elif code == 429:
+                        msg = "Too many login attempts, please try again later"
+                    else:
+                        msg = "Authentication service unavailable"
+                elif isinstance(exc, (RequestsConnectionError, OSError)):
+                    msg = "Unable to connect to authentication service"
+                else:
+                    msg = "Login failed"
+                return jsonify({"status": "error", "message": msg}), 401
 
             if remember:
                 handler.vault_store({"username": username, "password": password})
