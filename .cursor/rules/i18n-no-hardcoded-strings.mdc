@@ -1,0 +1,40 @@
+---
+description: No hardcoded UI strings — use i18n translation keys
+globs: src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# i18n: No Hardcoded UI Strings
+
+All user-visible text in the frontend MUST go through the i18n system. Never hardcode Chinese, English, or any other language string directly in components.
+
+## How to Use
+
+```tsx
+import { useTranslation } from 'react-i18next';
+
+const { t } = useTranslation();
+
+// ✅ GOOD
+<Button>{t('common.save')}</Button>
+<Tooltip content={t('chart.noData')} />
+
+// ❌ BAD
+<Button>保存</Button>
+<Button>Save</Button>
+<Tooltip content="No data available" />
+```
+
+## Translation Files
+
+- English: `src/i18n/locales/en/<namespace>.json`
+- Chinese: `src/i18n/locales/zh/<namespace>.json`
+- Namespaces: `common`, `upload`, `chart`, `model`, `encoding`, `messages`, `navigation`
+
+When adding a new key, add it to **both** `en` and `zh` locale files. Pick the namespace that fits; create a new namespace only if none applies.
+
+## What Counts as User-Visible
+
+Must use `t()`: button labels, tooltips, placeholders, error messages, dialog titles, tab names, toast notifications, table headers, empty-state text.
+
+May stay hardcoded: log messages (`console.log`), error messages thrown but never displayed, internal constants, CSS class names, test IDs.
