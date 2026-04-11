@@ -9,8 +9,9 @@
  * anonymous identity has workspaces on the server and, if so, offers
  * to move them into the authenticated user's workspace root.
  *
- * Both options ("Import" and "Start Fresh") delete the anonymous
- * workspaces afterwards so stale data never lingers.
+ * "Import" migrates anonymous workspaces into the authenticated user's
+ * root.  "Start Fresh" simply switches identity without touching the
+ * anonymous data — it remains on the server for future anonymous sessions.
  */
 
 import { FC, useEffect, useState, useCallback } from "react";
@@ -84,7 +85,6 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
 
     const finishMigration = useCallback(async () => {
         localStorage.setItem('df_identity_type', 'user');
-        localStorage.removeItem('df_browser_id');
         await persistor.purge();
         window.location.href = "/";
     }, []);
@@ -116,10 +116,8 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
     }, [sourceIdentity, t, cleanupAnonymous, finishMigration]);
 
     const handleFresh = useCallback(async () => {
-        setError(null);
-        try { await cleanupAnonymous(); } catch { /* ignore */ }
         await finishMigration();
-    }, [cleanupAnonymous, finishMigration]);
+    }, [finishMigration]);
 
     if (loading || workspaceCount === 0) {
         return null;
