@@ -182,7 +182,7 @@ class TestDeriveDataRepairLoop:
 
     def test_followup_exception_is_caught(self) -> None:
         """If agent.followup() raises, the error should be caught and a safe
-        generic message returned (no raw exception text)."""
+        classified message returned (no raw exception text)."""
         app = _build_app()
 
         mock_agent = MagicMock()
@@ -205,8 +205,10 @@ class TestDeriveDataRepairLoop:
         assert data["status"] == "ok"
         result = data["results"][0]
         assert result["status"] == "error"
-        assert result["content"] == "Code repair request failed"
-        assert "timeout" not in result["content"].lower()
+        # classify_llm_error maps "timeout" → safe timeout message
+        assert "timed out" in result["content"].lower() or "timeout" in result["content"].lower()
+        # Raw exception text must not leak
+        assert "LLM connection timeout" not in result["content"]
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +272,7 @@ class TestRefineDataRepairLoop:
         assert data["results"] == []
 
     def test_followup_exception_in_repair_is_caught(self) -> None:
-        """Followup exception returns a safe generic message, not raw exception text."""
+        """Followup exception returns a safe classified message, not raw exception text."""
         app = _build_app()
 
         mock_agent = MagicMock()
@@ -294,18 +296,24 @@ class TestRefineDataRepairLoop:
         data = resp.get_json()
         result = data["results"][0]
         assert result["status"] == "error"
-        assert result["content"] == "Code repair request failed"
-        assert "expired" not in result["content"].lower()
+        # Raw exception text must not appear
+        assert "API key expired" not in result["content"]
+        # Should be classified as a model request failure (generic fallback)
+        assert result["content"] in (
+            "Model request failed",
+            "Authentication failed — please check your API key",
+        )
 
 
 # ---------------------------------------------------------------------------
-# get-recommendation-questions: error message must never leak exception details
+# get-recommendation-questions: error message uses classify_llm_error
 # ---------------------------------------------------------------------------
 
 class TestGetRecommendationQuestionsError:
 
-    def test_error_message_is_generic_not_exception_details(self) -> None:
-        """Error response must use a fixed safe message, not raw exception text."""
+    def test_error_message_is_classified_not_raw(self) -> None:
+        """Error response uses classify_llm_error — safe pre-defined message,
+        not the raw exception text."""
         app = _build_app()
 
         mock_agent = MagicMock()
@@ -336,11 +344,14 @@ class TestGetRecommendationQuestionsError:
         assert len(error_line) == 1
 
         error_payload = json.loads(error_line[0].removeprefix("error: "))
-        assert error_payload["content"] == "Failed to generate recommendations"
-        assert "not found" not in error_payload["content"]
+        # Raw exception must not leak
+        assert "column 'x' not found" not in error_payload["content"]
+        # classify_llm_error returns a pre-defined safe message
+        assert error_payload["content"] == "Model request failed"
 
     def test_error_message_never_leaks_api_keys(self) -> None:
-        """Even when exception contains API keys, the fixed message must not leak them."""
+        """Even when exception contains API keys, classify_llm_error returns
+        a safe pre-defined message without any raw exception text."""
         app = _build_app()
 
         mock_agent = MagicMock()
@@ -369,4 +380,5 @@ class TestGetRecommendationQuestionsError:
         error_line = [l for l in lines if l.startswith("error:")]
         error_payload = json.loads(error_line[0].removeprefix("error: "))
         assert "sk-secret123" not in error_payload["content"]
-        assert error_payload["content"] == "Failed to generate recommendations"
+        # "auth failed" matches the authentication pattern
+        assert "Authentication failed" in error_payload["content"]

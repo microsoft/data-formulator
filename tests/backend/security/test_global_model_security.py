@@ -96,12 +96,7 @@ class TestGetClientGlobalResolution:
 # ---------------------------------------------------------------------------
 
 class TestSharedErrorSanitization:
-    """The shared sanitize_error_message function must strip sensitive data.
-
-    Note: agent_routes no longer exposes sanitize_model_error; agents now
-    return fixed safe messages.  These tests exercise the shared utility
-    in ``data_formulator.security.sanitize`` directly.
-    """
+    """The shared sanitize_error_message function must strip sensitive data."""
 
     def test_sanitize_redacts_api_key_patterns(self):
         from data_formulator.security.sanitize import sanitize_error_message
@@ -129,3 +124,63 @@ class TestSharedErrorSanitization:
 
         assert "<script>" not in sanitized
         assert "&lt;script&gt;" in sanitized
+
+
+# ---------------------------------------------------------------------------
+# classify_llm_error: pattern-based safe message classification
+# ---------------------------------------------------------------------------
+
+class TestClassifyLlmError:
+    """classify_llm_error returns pre-defined safe messages based on error patterns."""
+
+    def test_auth_error_401(self):
+        from data_formulator.security.sanitize import classify_llm_error
+
+        msg = classify_llm_error(RuntimeError("Error code: 401 - Unauthorized"))
+        assert "Authentication failed" in msg
+        assert "401" not in msg
+
+    def test_auth_error_invalid_key(self):
+        from data_formulator.security.sanitize import classify_llm_error
+
+        msg = classify_llm_error(RuntimeError("Invalid API key provided: sk-secret..."))
+        assert "Authentication failed" in msg
+        assert "sk-secret" not in msg
+
+    def test_rate_limit_429(self):
+        from data_formulator.security.sanitize import classify_llm_error
+
+        msg = classify_llm_error(RuntimeError("Error code: 429 - Rate limit exceeded"))
+        assert "Rate limit" in msg
+
+    def test_context_length(self):
+        from data_formulator.security.sanitize import classify_llm_error
+
+        msg = classify_llm_error(RuntimeError("maximum context length is 8192 tokens"))
+        assert "too long" in msg.lower() or "reduce" in msg.lower()
+
+    def test_model_not_found(self):
+        from data_formulator.security.sanitize import classify_llm_error
+
+        msg = classify_llm_error(RuntimeError("The model 'gpt-5' does not exist"))
+        assert "Model not found" in msg
+
+    def test_timeout(self):
+        from data_formulator.security.sanitize import classify_llm_error
+
+        msg = classify_llm_error(RuntimeError("Connection timed out"))
+        assert "timed out" in msg.lower() or "timeout" in msg.lower()
+
+    def test_unknown_error_generic_fallback(self):
+        from data_formulator.security.sanitize import classify_llm_error
+
+        msg = classify_llm_error(RuntimeError("some completely unknown error xyz"))
+        assert msg == "Model request failed"
+        assert "unknown error xyz" not in msg
+
+    def test_never_includes_raw_exception_text(self):
+        from data_formulator.security.sanitize import classify_llm_error
+
+        secret = "my-super-secret-api-key-12345"
+        msg = classify_llm_error(RuntimeError(f"Failed with api_key={secret}"))
+        assert secret not in msg

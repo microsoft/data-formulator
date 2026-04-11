@@ -77,6 +77,57 @@ def safe_error_response(
     return jsonify({"status": "error", "message": _GENERIC_4XX}), status_code
 
 
+_LLM_ERROR_GENERIC = "Model request failed"
+
+_LLM_ERROR_PATTERNS: list[tuple[str, str]] = [
+    # (regex matched against lowercased str(exception), safe client message)
+    # — Authentication / credentials
+    (r"401|unauthorized|invalid.{0,15}api.?key|invalid.{0,15}key|auth\w*.{0,10}fail",
+     "Authentication failed — please check your API key"),
+    # — Rate limiting
+    (r"429|rate.?limit|too many requests|quota",
+     "Rate limit exceeded — please wait and try again"),
+    # — Context / token length
+    (r"context.{0,10}length|too many tokens|max.{0,10}tokens|token limit|maximum context",
+     "Input too long — please reduce the data size or prompt length"),
+    # — Model not found / not available
+    (r"model.{0,20}not.{0,5}found|model.{0,20}does not exist|no such model|decommissioned|deprecated model",
+     "Model not found — please check the model name"),
+    # — Timeout / connectivity
+    (r"timeout|timed?\s*out|connect.{0,10}error|connection.{0,10}refused|unreachable|econnrefused|name.{0,15}resolution",
+     "Request timed out — please check connectivity and try again"),
+    # — Server-side (upstream 5xx)
+    (r"\b50[0-9]\b|bad gateway|service.{0,10}unavailable|internal server error|server.{0,10}error",
+     "The model service returned an error — please try again later"),
+    # — Content filtering / safety
+    (r"content.?filter|content.?policy|responsible.?ai|safety|flagged",
+     "The request was blocked by the content safety filter"),
+    # — Permission / access
+    (r"403|forbidden|access.?denied|not.?allowed|insufficient.{0,10}permission",
+     "Access denied — you do not have permission to use this model"),
+    # — Invalid request shape
+    (r"400|bad request|invalid.{0,10}request|malformed",
+     "Invalid request — please check your input and try again"),
+]
+
+
+def classify_llm_error(exc: Exception) -> str:
+    """Return a safe, user-friendly message for an LLM / external-API error.
+
+    The function matches ``str(exc)`` against known error patterns and
+    returns a **pre-defined** human-readable message.  No text from the
+    original exception is ever included in the return value.
+
+    Falls back to a generic ``"Model request failed"`` for unknown errors.
+    The caller is responsible for logging the full exception server-side.
+    """
+    text = str(exc).lower()
+    for pattern, safe_msg in _LLM_ERROR_PATTERNS:
+        if re.search(pattern, text):
+            return safe_msg
+    return _LLM_ERROR_GENERIC
+
+
 def sanitize_error_message(error_message: str) -> str:
     """Sanitize error messages before sending to client.
 

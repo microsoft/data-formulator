@@ -37,6 +37,7 @@ from data_formulator.model_registry import model_registry
 
 from data_formulator.agents.data_agent import DataAgent
 from data_formulator.agents.agent_language import build_language_instruction
+from data_formulator.security.sanitize import classify_llm_error
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -157,7 +158,7 @@ def check_available_models():
         except Exception as e:
             elapsed = time.time() - t0
             logger.warning(f"  [{model_id}] Failed ({elapsed:.1f}s): {type(e).__name__}: {e}")
-            error = "Connection failed, please check server configuration"
+            error = classify_llm_error(e)
 
         return {**public_info, "status": status, "error": error}
 
@@ -218,7 +219,7 @@ def test_model():
             result = {
                 "model": content['model'],
                 "status": 'error',
-                "message": "Connection failed, please check server configuration",
+                "message": classify_llm_error(e),
             }
     else:
         result = {'status': 'error'}
@@ -327,7 +328,7 @@ def sort_data_request():
             response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
         except Exception as e:
             logger.error("Error in sort-data", exc_info=e)
-            response = flask.jsonify({ "token": token, "status": "error", "result": [], "error_message": "Model request failed" })
+            response = flask.jsonify({ "token": token, "status": "error", "result": [], "error_message": classify_llm_error(e) })
     else:
         response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
 
@@ -412,7 +413,7 @@ def derive_data():
                     logger.exception("derive_data followup failed")
                     results = [{
                         "status": "error",
-                        "content": "Code repair request failed",
+                        "content": classify_llm_error(followup_exc),
                         "code": "",
                         "dialog": [],
                     }]
@@ -432,7 +433,7 @@ def derive_data():
             response = flask.jsonify({ "token": token, "status": "ok", "results": results })
         except Exception as e:
             logger.error("Error in derive-data", exc_info=e)
-            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": "Model request failed" })
+            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": classify_llm_error(e) })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": [] })
 
@@ -540,7 +541,7 @@ def data_agent_streaming():
                     "token": token,
                     "status": "error",
                     "result": None,
-                    "error_message": "Agent request failed",
+                    "error_message": classify_llm_error(e),
                 }, ensure_ascii=False) + '\n'
 
             logger.setLevel(logging.WARNING)
@@ -625,7 +626,7 @@ def refine_data():
                     logger.exception("refine_data followup failed")
                     results = [{
                         "status": "error",
-                        "content": "Code repair request failed",
+                        "content": classify_llm_error(followup_exc),
                         "code": "",
                         "dialog": [],
                     }]
@@ -644,7 +645,7 @@ def refine_data():
             response = flask.jsonify({ "token": token, "status": "ok", "results": results})
         except Exception as e:
             logger.error("Error in refine-data", exc_info=e)
-            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": "Model request failed" })
+            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": classify_llm_error(e) })
     else:
         response = flask.jsonify({ "token": "", "status": "error", "results": []})
 
@@ -671,7 +672,6 @@ def request_code_expl():
             code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace, language_instruction=language_instruction)
             candidates = code_expl_agent.run(input_tables, code)
 
-            # Return the first candidate's content as JSON
             if candidates and len(candidates) > 0:
                 result = candidates[0]
                 if result['status'] == 'ok':
@@ -682,7 +682,7 @@ def request_code_expl():
                 return jsonify({'error': 'No explanation generated'}), 400
         except Exception as e:
             logger.error("Error in code-expl", exc_info=e)
-            return jsonify({'error': 'Failed to generate code explanation'}), 400
+            return jsonify({'error': classify_llm_error(e)}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 
@@ -717,7 +717,7 @@ def request_chart_insight():
                 return jsonify({'error': 'No insight generated'}), 400
         except Exception as e:
             logger.error("Error in chart-insight", exc_info=e)
-            return jsonify({'error': 'Failed to generate chart insight'}), 400
+            return jsonify({'error': classify_llm_error(e)}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
 
@@ -757,7 +757,7 @@ def get_recommendation_questions():
             except Exception as e:
                 logger.exception("get-recommendation-questions failed")
                 error_data = {
-                    "content": "Failed to generate recommendations"
+                    "content": classify_llm_error(e)
                 }
                 yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
@@ -803,7 +803,7 @@ def generate_report_stream():
             except Exception as e:
                 logger.exception("generate-report-stream failed")
                 error_data = { 
-                    "content": "Failed to generate report" 
+                    "content": classify_llm_error(e) 
                 }
                 yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
         else:
@@ -985,7 +985,7 @@ def refresh_derived_data():
         logger.error("Error refreshing derived data", exc_info=e)
         return jsonify({
             "status": "error",
-            "message": "Failed to refresh derived data"
+            "message": classify_llm_error(e)
         }), 400
 
 
