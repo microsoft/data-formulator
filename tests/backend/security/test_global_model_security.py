@@ -92,35 +92,40 @@ class TestGetClientGlobalResolution:
 
 
 # ---------------------------------------------------------------------------
-# Error sanitization for global models
+# Error sanitization (shared sanitize module)
 # ---------------------------------------------------------------------------
 
-class TestGlobalModelErrorSanitization:
-    """Global model errors must not leak API keys to the frontend."""
+class TestSharedErrorSanitization:
+    """The shared sanitize_error_message function must strip sensitive data.
+
+    Note: agent_routes no longer exposes sanitize_model_error; agents now
+    return fixed safe messages.  These tests exercise the shared utility
+    in ``data_formulator.security.sanitize`` directly.
+    """
 
     def test_sanitize_redacts_api_key_patterns(self):
-        from data_formulator.agent_routes import sanitize_model_error
+        from data_formulator.security.sanitize import sanitize_error_message
 
         raw = "Connection failed: api_key=sk-secret-key-12345 is invalid"
-        sanitized = sanitize_model_error(raw)
+        sanitized = sanitize_error_message(raw)
 
         assert "sk-secret-key-12345" not in sanitized
         assert "<redacted>" in sanitized
 
     def test_sanitize_truncates_long_messages(self):
-        from data_formulator.agent_routes import sanitize_model_error
+        from data_formulator.security.sanitize import sanitize_error_message
 
         raw = "x" * 1000
-        sanitized = sanitize_model_error(raw)
+        sanitized = sanitize_error_message(raw)
 
         assert len(sanitized) <= 503  # 500 + "..."
         assert sanitized.endswith("...")
 
     def test_sanitize_escapes_html(self):
-        from data_formulator.agent_routes import sanitize_model_error
+        from data_formulator.security.sanitize import sanitize_error_message
 
         raw = '<script>alert("xss")</script>'
-        sanitized = sanitize_model_error(raw)
+        sanitized = sanitize_error_message(raw)
 
         assert "<script>" not in sanitized
         assert "&lt;script&gt;" in sanitized

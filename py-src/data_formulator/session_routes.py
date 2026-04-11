@@ -176,8 +176,8 @@ def create_workspace_route():
 
     try:
         mgr.create_workspace(workspace_id)
-    except ValueError as e:
-        return jsonify(status="error", message=str(e)), 409
+    except ValueError:
+        return jsonify(status="error", message="Workspace already exists"), 409
 
     return jsonify(status="ok", id=workspace_id)
 
@@ -199,8 +199,8 @@ def rename_workspace_route():
 
     try:
         mgr.rename_workspace(old_id, new_id)
-    except ValueError as e:
-        return jsonify(status="error", message=str(e)), 400
+    except ValueError:
+        return jsonify(status="error", message="Rename failed — workspace not found or name conflict"), 400
 
     return jsonify(status="ok", old_id=old_id, new_id=new_id)
 
@@ -236,11 +236,11 @@ def import_session():
         ws = get_workspace(identity_id)
         state = ws.import_session_zip(io.BytesIO(file.read()))
         return jsonify(status="ok", state=state)
-    except ValueError as e:
-        return jsonify(status="error", message=str(e)), 400
+    except ValueError:
+        return jsonify(status="error", message="Invalid session file"), 400
     except Exception as e:
-        logger.error(f"Error importing session: {e}")
-        return jsonify(status="error", message=str(e)), 400
+        logger.error("Error importing session", exc_info=e)
+        return jsonify(status="error", message="Failed to import session"), 400
 
 
 @session_bp.route("/migrate", methods=["POST"])
@@ -282,8 +282,8 @@ def migrate_workspaces():
         )
         return jsonify(status="ok", moved=moved)
     except Exception as e:
-        logger.error("Workspace migration failed: %s", e)
-        return jsonify(status="error", message=str(e)), 500
+        logger.error("Workspace migration failed", exc_info=e)
+        return jsonify(status="error", message="Workspace migration failed"), 500
 
 
 @session_bp.route("/cleanup-anonymous", methods=["POST"])
@@ -315,5 +315,5 @@ def cleanup_anonymous():
     except Exception as e:
         # On Windows, files may be locked by other processes; treat as
         # best-effort — the identity type flip prevents future prompts.
-        logger.warning("Anonymous cleanup partially failed (non-fatal): %s", e)
-        return jsonify(status="ok", deleted=0, warning=str(e))
+        logger.warning("Anonymous cleanup partially failed (non-fatal)", exc_info=e)
+        return jsonify(status="ok", deleted=0, warning="Cleanup partially failed")

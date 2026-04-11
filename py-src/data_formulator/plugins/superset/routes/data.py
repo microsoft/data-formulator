@@ -25,7 +25,7 @@ from data_formulator.plugins.superset.session_helpers import (
     require_auth,
     try_refresh,
 )
-from data_formulator.security.sanitize import safe_error_response, sanitize_error_message
+from data_formulator.security.sanitize import safe_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -363,9 +363,11 @@ def load_dataset():
                 yield json.dumps(done_payload, ensure_ascii=False)
 
         except Exception as exc:
-            logger.error("Failed to load dataset %s: %s", dataset_id, exc, exc_info=True)
-            if isinstance(exc, (ValueError, TypeError)):
-                msg = sanitize_error_message(str(exc))
+            logger.error("Failed to load dataset %s", dataset_id, exc_info=exc)
+            if isinstance(exc, ValueError):
+                msg = "Invalid request parameters for dataset loading"
+            elif isinstance(exc, TypeError):
+                msg = "Data type error while processing dataset"
             else:
                 msg = "An unexpected error occurred while loading the dataset"
             err = {"status": "error", "message": msg}
