@@ -182,7 +182,11 @@ def get_filter_options():
     except HTTPError as e:
         return safe_error_response(e, 502, log_message="Superset API call failed")
     except ValueError as e:
-        return safe_error_response(e, 400, log_message="Invalid filter options request")
+        return safe_error_response(
+            e, 400,
+            client_message="Invalid filter options request",
+            log_message="Invalid filter options request",
+        )
     except Exception as e:
         return safe_error_response(e, 500, log_message="Failed to get filter options")
 

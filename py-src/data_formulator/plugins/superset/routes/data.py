@@ -298,7 +298,11 @@ def load_dataset():
     try:
         where_clauses = _build_where_clauses(filters, column_map)
     except ValueError as exc:
-        return safe_error_response(exc, 400, log_message="Invalid filter definition")
+        return safe_error_response(
+            exc, 400,
+            client_message="Invalid filter definition",
+            log_message="Invalid filter definition",
+        )
 
     final_table_name = _sanitize_table_name(table_name_override or table_name)
     writer = PluginDataWriter("superset")

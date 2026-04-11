@@ -10,7 +10,6 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 import json
 import gzip
-import traceback
 from flask import request, jsonify, Blueprint, Response
 import pandas as pd
 from pathlib import Path
@@ -21,8 +20,6 @@ from data_formulator.workspace_factory import get_workspace as _create_workspace
 from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, normalize_text_encoding
 from data_formulator.datalake.workspace_metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
-from data_formulator.security.sanitize import sanitize_error_message
-
 import re
 
 # Get logger for this module (logging config done in app.py)
@@ -183,7 +180,7 @@ def open_workspace():
         return jsonify(status="ok", path=home_path)
     except Exception as e:
         logger.error(f"Failed to open workspace: {e}")
-        return jsonify(status="error", message=sanitize_error_message(str(e))), 500
+        return jsonify(status="error", message="Failed to open workspace"), 500
 
 
 @tables_bp.route('/list-tables', methods=['GET'])
@@ -364,7 +361,6 @@ def sample_table():
             "total_row_count": total_row_count,
         })
     except Exception as e:
-        logger.error(f"Error sampling table: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -409,7 +405,6 @@ def get_table_data():
             "page_size": page_size,
         })
     except Exception as e:
-        logger.error(f"Error getting table data: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -476,7 +471,8 @@ def create_table():
             try:
                 df = pd.DataFrame(json.loads(raw_data))
             except Exception as e:
-                return jsonify({"status": "error", "message": f"Invalid JSON data: {sanitize_error_message(str(e))}, it must be a list of dictionaries"}), 400
+                logger.warning("Invalid JSON in raw_data", exc_info=True)
+                return jsonify({"status": "error", "message": "Invalid JSON data — it must be a JSON array of objects"}), 400
             workspace.write_parquet(df, sanitized_table_name)
             row_count = len(df)
             columns = list(df.columns)
@@ -493,7 +489,6 @@ def create_table():
             "columns": columns,
         })
     except Exception as e:
-        logger.error(f"Error creating table: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -550,7 +545,7 @@ def parse_file():
 
     except Exception as e:
         logger.error("Error parsing file", exc_info=True)
-        return jsonify({"status": "error", "message": sanitize_error_message(str(e))}), 400
+        return jsonify({"status": "error", "message": "Failed to parse the uploaded file"}), 400
 
 
 @tables_bp.route('/sync-table-data', methods=['POST'])
@@ -589,7 +584,6 @@ def sync_table_data():
             "row_count": len(df),
         })
     except Exception as e:
-        logger.error(f"Error syncing table data: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -608,7 +602,6 @@ def drop_table():
             return jsonify({"status": "error", "message": f"Table '{table_name}' does not exist"}), 404
         return jsonify({"status": "success", "message": f"Table {table_name} dropped"})
     except Exception as e:
-        logger.error(f"Error dropping table: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -673,7 +666,6 @@ def export_table_csv():
             },
         )
     except Exception as e:
-        logger.error(f"Error exporting table to CSV: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -686,7 +678,6 @@ def reset_db_file():
         workspace.cleanup()
         return jsonify({"status": "success", "message": "Workspace reset successfully"})
     except Exception as e:
-        logger.error(f"Error resetting workspace: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -765,7 +756,6 @@ def analyze_table():
 
         return jsonify({"status": "success", "table_name": table_name, "statistics": stats})
     except Exception as e:
-        logger.error(f"Error analyzing table: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -775,43 +765,35 @@ def sanitize_table_name(table_name: str) -> str:
     return parquet_sanitize_table_name(table_name)
 
 def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
-    """
-    Sanitize error messages before sending to client.
-    Returns a tuple of (sanitized_message, status_code)
-    """
-    # Convert error to string
-    error_msg = str(error)
-    
-    # Define patterns for known safe errors
-    safe_error_patterns = {
-        # Database table errors
-        r"Table.*does not exist": (error_msg, 404),
-        r"Table.*already exists": (error_msg, 409),
-        # Query errors
-        r"syntax error": (error_msg, 400),
-        r"Catalog Error": (error_msg, 404), 
-        r"Binder Error": (error_msg, 400),
-        r"Invalid input syntax": (error_msg, 400),
-        
-        # File errors
-        r"No such file": (error_msg, 404),
-        r"Permission denied": ("Access denied", 403),
+    """Classify *error* and return ``(safe_message, status_code)``.
 
-        # Data loader errors
-        r"Entity ID": (error_msg, 500),
-        r"identity": ("Identity not found, please refresh the page", 500),
-    }
-    
-    # Check if error matches any safe pattern
-    for pattern, (safe_msg, status_code) in safe_error_patterns.items():
+    **Security rule**: the returned message must *never* contain text
+    derived from ``str(error)``.  Only pre-defined, human-written strings
+    are returned.  The full exception (including traceback) is written to
+    the server log so operators can still debug.
+    """
+    logger.error("sanitize_db_error_message caught exception", exc_info=error)
+
+    error_msg = str(error)
+
+    _SAFE_PATTERNS: list[tuple[str, str, int]] = [
+        # (regex, safe client message, HTTP status)
+        (r"Table.*does not exist",       "The requested table does not exist",            404),
+        (r"Table.*already exists",       "A table with that name already exists",         409),
+        (r"syntax error",                "Query syntax error",                            400),
+        (r"Catalog Error",               "The requested catalog object was not found",    404),
+        (r"Binder Error",                "Invalid query reference",                       400),
+        (r"Invalid input syntax",        "Invalid input syntax",                          400),
+        (r"No such file",                "The requested resource was not found",          404),
+        (r"Permission denied",           "Access denied",                                 403),
+        (r"identity",                    "Identity not found, please refresh the page",   500),
+    ]
+
+    for pattern, safe_msg, status_code in _SAFE_PATTERNS:
         if re.search(pattern, error_msg, re.IGNORECASE):
             return safe_msg, status_code
-            
-    # Log the full error for debugging
-    logger.error(f"Unexpected error occurred: {error_msg}")
-    
-    # Return a generic error message for unknown errors
-    return f"An unexpected error occurred: {error_msg}", 500
+
+    return "An unexpected error occurred", 500
 
 
 @tables_bp.route('/data-loader/list-data-loaders', methods=['GET'])
@@ -834,7 +816,6 @@ def data_loader_list_data_loaders():
             }
         })
     except Exception as e:
-        logger.error(f"Error listing data loaders: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error", 
@@ -861,7 +842,6 @@ def data_loader_list_tables():
 
         return jsonify({"status": "success", "tables": tables})
     except Exception as e:
-        logger.error(f"Error listing tables from data loader: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -899,7 +879,6 @@ def data_loader_ingest_data():
             "table_name": meta.name,
         })
     except Exception as e:
-        logger.error(f"Error ingesting data from data loader: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -926,7 +905,6 @@ def data_loader_view_query_sample():
             }), 400
         return jsonify({"status": "success", "sample": sample, "message": "Successfully retrieved query sample"})
     except Exception as e:
-        logger.error(f"Error viewing query sample: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "sample": [], "message": safe_msg}), status_code
 
@@ -980,8 +958,6 @@ def data_loader_fetch_data():
             "row_limit_applied": row_limit,
         })
     except Exception as e:
-        logger.error(f"Error fetching data from data loader: {str(e)}")
-        logger.error(traceback.format_exc())
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -1038,8 +1014,6 @@ def data_loader_refresh_table():
             "data_changed": data_changed,
         })
     except Exception as e:
-        logger.error(f"Error refreshing table: {str(e)}")
-        logger.error(traceback.format_exc())
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -1062,7 +1036,6 @@ def data_loader_get_table_metadata():
             "message": f"No metadata found for table '{table_name}'" if metadata is None else None,
         })
     except Exception as e:
-        logger.error(f"Error getting table metadata: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
 
@@ -1080,6 +1053,5 @@ def data_loader_list_table_metadata():
                 metadata_list.append(m)
         return jsonify({"status": "success", "metadata": metadata_list})
     except Exception as e:
-        logger.error(f"Error listing table metadata: {str(e)}")
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({"status": "error", "message": safe_msg}), status_code
