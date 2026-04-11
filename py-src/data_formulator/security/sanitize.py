@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 _GENERIC_5XX = "An unexpected error occurred"
 _GENERIC_502 = "Upstream service unavailable"
+_GENERIC_4XX = "Bad request"
 
 _HTTP_CLIENT_MESSAGES: dict[int, str] = {
     400: "Bad request",
@@ -32,6 +33,7 @@ def safe_error_response(
     exc: BaseException,
     status_code: int = 500,
     *,
+    client_message: Optional[str] = None,
     log_message: Optional[str] = None,
     log_level: int = logging.WARNING,
 ):
@@ -42,8 +44,10 @@ def safe_error_response(
     * **5xx** — never expose exception details; return a fixed generic message
       and log the full exception server-side.
     * **502 (HTTPError from upstream)** — return "Upstream service unavailable".
-    * **4xx** — run ``sanitize_error_message`` on the exception text so that
-      business-validation errors remain useful while secrets are stripped.
+    * **4xx** — if *client_message* is provided, use it directly (caller
+      asserts the message is safe); otherwise select a canned message based
+      on the upstream HTTP status, falling back to a generic "Bad request".
+      Exception details are **never** derived from the exception object.
 
     For ``HTTPError`` exceptions the upstream HTTP status is used to choose
     a safe canned message when the resulting *status_code* is 4xx.
@@ -59,15 +63,18 @@ def safe_error_response(
     if status_code == 502:
         return jsonify({"status": "error", "message": _GENERIC_502}), 502
 
-    # 4xx — allow sanitized detail through
+    # 4xx — caller-supplied safe message takes priority
+    if client_message:
+        return jsonify({"status": "error", "message": client_message}), status_code
+
+    # HTTPError with known upstream status → canned message
     if isinstance(exc, HTTPError) and exc.response is not None:
         upstream_code = exc.response.status_code
         canned = _HTTP_CLIENT_MESSAGES.get(upstream_code)
         if canned:
             return jsonify({"status": "error", "message": canned}), status_code
 
-    safe_msg = sanitize_error_message(str(exc))
-    return jsonify({"status": "error", "message": safe_msg}), status_code
+    return jsonify({"status": "error", "message": _GENERIC_4XX}), status_code
 
 
 def sanitize_error_message(error_message: str) -> str:
