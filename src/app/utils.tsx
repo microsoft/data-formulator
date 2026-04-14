@@ -82,6 +82,24 @@ export function getUrls() {
 }
 
 /**
+ * Build API URLs for a ConnectedDataSource by source_id.
+ */
+export function getSourceUrls(sourceId: string) {
+    const base = `/api/sources/${sourceId}`;
+    return {
+        AUTH_CONNECT: `${base}/auth/connect`,
+        AUTH_DISCONNECT: `${base}/auth/disconnect`,
+        AUTH_STATUS: `${base}/auth/status`,
+        CATALOG_LS: `${base}/catalog/ls`,
+        CATALOG_METADATA: `${base}/catalog/metadata`,
+        CATALOG_LIST_TABLES: `${base}/catalog/list_tables`,
+        DATA_IMPORT: `${base}/data/import`,
+        DATA_REFRESH: `${base}/data/refresh`,
+        DATA_PREVIEW: `${base}/data/preview`,
+    };
+}
+
+/**
  * Get the current namespaced identity from the Redux store, or fall back to browser ID.
  * Returns identity in "type:id" format (e.g., "user:alice@example.com" or "browser:550e8400-...")
  * 

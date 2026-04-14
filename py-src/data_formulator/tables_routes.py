@@ -869,9 +869,11 @@ def data_loader_ingest_data():
             workspace,
             safe_name,
             source_table=table_name,
-            size=row_limit,
-            sort_columns=sort_columns,
-            sort_order=sort_order,
+            import_options={
+                "size": row_limit,
+                "sort_columns": sort_columns,
+                "sort_order": sort_order,
+            },
         )
         return jsonify({
             "status": "success",
@@ -936,9 +938,11 @@ def data_loader_fetch_data():
         # Fetch data as DataFrame (not Arrow, since we need JSON output not parquet)
         df = data_loader.fetch_data_as_dataframe(
             source_table=table_name,
-            size=row_limit,
-            sort_columns=sort_columns,
-            sort_order=sort_order,
+            import_options={
+                "size": row_limit,
+                "sort_columns": sort_columns,
+                "sort_order": sort_order,
+            },
         )
         
         total_row_count = len(df)
@@ -998,7 +1002,10 @@ def data_loader_refresh_table():
 
         data_loader = DATA_LOADERS[data_loader_type](data_loader_params)
         if meta.source_table:
-            arrow_table = data_loader.fetch_data_as_arrow(source_table=meta.source_table)
+            arrow_table = data_loader.fetch_data_as_arrow(
+                source_table=meta.source_table,
+                import_options=meta.import_options,
+            )
         else:
             return jsonify({
                 "status": "error",

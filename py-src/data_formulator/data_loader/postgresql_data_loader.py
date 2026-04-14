@@ -2,11 +2,10 @@ import json
 import logging
 from typing import Any
 
-import pandas as pd
 import pyarrow as pa
 import psycopg2
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
             {"name": "host", "type": "string", "required": True, "default": "localhost", "description": "PostgreSQL host"}, 
             {"name": "port", "type": "string", "required": False, "default": "5432", "description": "PostgreSQL port"},
-            {"name": "database", "type": "string", "required": True, "default": "postgres", "description": "PostgreSQL database name"}
+            {"name": "database", "type": "string", "required": False, "default": "", "description": "Database name (leave empty to browse all databases)"}
         ]
         return params_list
 
@@ -31,6 +30,8 @@ class PostgreSQLDataLoader(ExternalDataLoader):
 **Local setup:** Ensure PostgreSQL is running — `brew services list` (macOS) or `systemctl status postgresql` (Linux). Leave password blank if none is set.
 
 **Remote setup:** Get host, port, username, and password from your database administrator. The user must have SELECT permissions on the tables you want to access.
+
+**Scope:** Leave *database* empty to browse all databases on the server, or fill it in to go straight to schemas/tables in that database.
 
 **Troubleshooting:** Test with `psql -U <user> -h <host> -p <port> -d <database>`"""
 
@@ -47,8 +48,10 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             raise ValueError("PostgreSQL host is required")
         if not self.user:
             raise ValueError("PostgreSQL user is required")
-        if not self.database:
-            raise ValueError("PostgreSQL database is required")
+
+        # When no database is specified, connect to the default "postgres" DB
+        # for catalog browsing. The user can browse all databases via ls().
+        connect_db = self.database or "postgres"
 
         # Build psycopg2 connection
         # Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
@@ -60,13 +63,13 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 port=int(self.port),
                 user=self.user,
                 password=self.password or "",
-                dbname=self.database,
+                dbname=connect_db,
             )
             self._conn.autocommit = True
         except Exception as e:
-            logger.error(f"Failed to connect to PostgreSQL (postgresql://{self.user}:***@{self.host}:{self.port}/{self.database}): {e}")
-            raise ValueError(f"Failed to connect to PostgreSQL database '{self.database}' on host '{self.host}': {e}") from e
-        logger.info(f"Successfully connected to PostgreSQL: postgresql://{self.user}:***@{self.host}:{self.port}/{self.database}")
+            logger.error(f"Failed to connect to PostgreSQL (postgresql://{self.user}:***@{self.host}:{self.port}/{connect_db}): {e}")
+            raise ValueError(f"Failed to connect to PostgreSQL database '{connect_db}' on host '{self.host}': {e}") from e
+        logger.info(f"Successfully connected to PostgreSQL: postgresql://{self.user}:***@{self.host}:{self.port}/{connect_db}")
 
     # PostgreSQL types that may need special handling
     _SPATIAL_TYPES = {'geometry', 'geography'}  # PostGIS types → ST_AsText()
@@ -75,9 +78,25 @@ class PostgreSQLDataLoader(ExternalDataLoader):
     _UNSUPPORTED_TYPES = _SPATIAL_TYPES | _OTHER_UNSUPPORTED
 
     def _read_sql(self, query: str) -> pa.Table:
-        """Execute a query and return results as a PyArrow Table via psycopg2."""
-        df = pd.read_sql(query, self._conn)
-        return pa.Table.from_pandas(df)
+        """Execute a query and return results as a PyArrow Table (no pandas)."""
+        return self._execute_on_conn(self._conn, query)
+
+    @staticmethod
+    def _execute_on_conn(conn, query: str) -> pa.Table:
+        """Run *query* on *conn* and return a PyArrow Table."""
+        cur = conn.cursor()
+        try:
+            cur.execute(query)
+            if cur.description is None:
+                return pa.table({})
+            columns = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+            if not rows:
+                return pa.table({col: pa.array([], type=pa.null()) for col in columns})
+            col_data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
+            return pa.table(col_data)
+        finally:
+            cur.close()
 
     def _safe_select_list(self, schema: str, table_name: str) -> str:
         """Build a SELECT column list that converts unsupported types to text.
@@ -111,13 +130,16 @@ class PostgreSQLDataLoader(ExternalDataLoader):
     def fetch_data_as_arrow(
         self,
         source_table: str,
-        size: int = 1000000,
-        sort_columns: list[str] | None = None,
-        sort_order: str = 'asc'
+        import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
         """
         Fetch data from PostgreSQL as a PyArrow Table.
         """
+        opts = import_options or {}
+        size = opts.get("size", 1000000)
+        sort_columns = opts.get("sort_columns")
+        sort_order = opts.get("sort_order", "asc")
+
         if not source_table:
             raise ValueError("source_table must be provided")
         
@@ -239,3 +261,185 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         except Exception as e:
             logger.error(f"Error listing tables: {e}")
             return []
+
+    # -- Catalog tree API --------------------------------------------------
+
+    @staticmethod
+    def catalog_hierarchy() -> list[dict[str, str]]:
+        return [
+            {"key": "database", "label": "Database"},
+            {"key": "schema", "label": "Schema"},
+            {"key": "table", "label": "Table"},
+        ]
+
+    def _connect_to_db(self, dbname: str):
+        """Open a new connection to a specific database on the same server."""
+        host_for_conn = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
+        conn = psycopg2.connect(
+            host=host_for_conn,
+            port=int(self.port),
+            user=self.user,
+            password=self.password or "",
+            dbname=dbname,
+        )
+        conn.autocommit = True
+        return conn
+
+    def _read_sql_on(self, query: str, dbname: str | None = None) -> pa.Table:
+        """Run a query, optionally on a different database."""
+        if dbname and dbname != (self.database or "postgres"):
+            conn = self._connect_to_db(dbname)
+            try:
+                return self._execute_on_conn(conn, query)
+            finally:
+                conn.close()
+        else:
+            return self._execute_on_conn(self._conn, query)
+
+    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+        path = path or []
+        eff = self.effective_hierarchy()
+
+        if len(path) >= len(eff):
+            return []
+
+        level_key = eff[len(path)]["key"]
+
+        # --- database level ---
+        if level_key == "database":
+            query = """
+                SELECT datname FROM pg_database
+                WHERE datistemplate = false AND datallowconn = true
+                ORDER BY datname
+            """
+            rows = self._read_sql(query).to_pandas()
+            nodes = []
+            for _, r in rows.iterrows():
+                name = r["datname"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(
+                    name=name, node_type="namespace",
+                    path=path + [name],
+                ))
+            return nodes
+
+        # --- schema level ---
+        if level_key == "schema":
+            # Determine which database to query
+            pinned = self.pinned_scope()
+            db = pinned.get("database") or (path[0] if path else None)
+            if not db:
+                return []
+            query = """
+                SELECT schema_name
+                FROM information_schema.schemata
+                WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+                  AND schema_name NOT LIKE '%%_intern%%'
+                  AND schema_name NOT LIKE '%%timescaledb%%'
+                ORDER BY schema_name
+            """
+            rows = self._read_sql_on(query, db).to_pandas()
+            nodes = []
+            for _, r in rows.iterrows():
+                name = r["schema_name"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(
+                    name=name, node_type="namespace",
+                    path=path + [name],
+                ))
+            return nodes
+
+        # --- table level ---
+        if level_key == "table":
+            pinned = self.pinned_scope()
+            # Resolve database and schema from pinned values + path
+            remaining_path = list(path)
+            db = pinned.get("database")
+            if not db:
+                if not remaining_path:
+                    return []
+                db = remaining_path.pop(0)
+            schema = pinned.get("schema")
+            if not schema:
+                if not remaining_path:
+                    return []
+                schema = remaining_path.pop(0)
+            query = f"""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = '{schema}'
+                  AND table_type = 'BASE TABLE'
+                  AND table_name NOT LIKE '%%/%%'
+                ORDER BY table_name
+            """
+            rows = self._read_sql_on(query, db).to_pandas()
+            nodes = []
+            for _, r in rows.iterrows():
+                name = r["table_name"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(
+                    name=name, node_type="table",
+                    path=path + [name],
+                ))
+            return nodes
+
+        return []
+
+    def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        if not path:
+            return {}
+        # Resolve the actual database.schema.table from effective path + pinned
+        pinned = self.pinned_scope()
+        remaining = list(path)
+        db = pinned.get("database")
+        if not db:
+            if not remaining:
+                return {}
+            db = remaining.pop(0)
+        schema = pinned.get("schema")
+        if not schema:
+            if not remaining:
+                return {}
+            schema = remaining.pop(0)
+        if not remaining:
+            return {}
+        table_name = remaining[0]
+        try:
+            cols_query = f"""
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}' AND table_name = '{table_name}'
+                ORDER BY ordinal_position
+            """
+            cols_df = self._read_sql_on(cols_query, db).to_pandas()
+            columns = [
+                {"name": r["column_name"], "type": r["data_type"]}
+                for _, r in cols_df.iterrows()
+            ]
+            count_df = self._read_sql_on(
+                f'SELECT COUNT(*) AS cnt FROM "{schema}"."{table_name}"', db
+            ).to_pandas()
+            row_count = int(count_df["cnt"].iloc[0])
+            col_list = self._safe_select_list(schema, table_name)
+            sample_df = self._read_sql_on(
+                f'SELECT {col_list} FROM "{schema}"."{table_name}" LIMIT 5', db
+            ).to_pandas()
+            sample_rows = json.loads(sample_df.to_json(orient="records"))
+            return {
+                "row_count": row_count,
+                "columns": columns,
+                "sample_rows": sample_rows,
+            }
+        except Exception as e:
+            logger.warning(f"get_metadata failed for {path}: {e}")
+            return {}
+
+    def test_connection(self) -> bool:
+        try:
+            self._read_sql("SELECT 1")
+            return True
+        except Exception:
+            return False

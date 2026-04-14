@@ -2,11 +2,10 @@ import json
 import logging
 from typing import Any
 
-import pandas as pd
 import pyarrow as pa
 import pymysql
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ class MySQLDataLoader(ExternalDataLoader):
             {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank for no password"}, 
             {"name": "host", "type": "string", "required": True, "default": "localhost", "description": "server address"}, 
             {"name": "port", "type": "int", "required": False, "default": 3306, "description": "server port"},
-            {"name": "database", "type": "string", "required": True, "default": "mysql", "description": "database name"}
+            {"name": "database", "type": "string", "required": False, "default": "", "description": "Database name (leave empty to browse all databases)"}
         ]
         return params_list
 
@@ -31,6 +30,8 @@ class MySQLDataLoader(ExternalDataLoader):
 **Local setup:** Ensure MySQL is running — `brew services list` (macOS) or `systemctl status mysql` (Linux). Leave password blank if none is set.
 
 **Remote setup:** Get host, port, username, and password from your database administrator. Ensure the server allows remote connections and your IP is whitelisted.
+
+**Scope:** Leave *database* empty to browse all databases on the server, or fill it in to go straight to tables in that database.
 
 **Troubleshooting:** Test with `mysql -u <user> -p -h <host> -P <port> <database>`"""
 
@@ -46,8 +47,6 @@ class MySQLDataLoader(ExternalDataLoader):
             raise ValueError("MySQL host is required")
         if not self.user:
             raise ValueError("MySQL user is required")
-        if not self.database:
-            raise ValueError("MySQL database is required")
 
         port = self.params.get("port", "")
         if isinstance(port, str):
@@ -61,20 +60,23 @@ class MySQLDataLoader(ExternalDataLoader):
         # Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
         host_for_conn = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
         
-        self._sanitized_url = f"mysql://{self.user}:***@{self.host}:{self.port}/{self.database}"
+        self._sanitized_url = f"mysql://{self.user}:***@{self.host}:{self.port}/{self.database or '(all)'}"
         
-        # Test connection
+        # Connect — database is optional (can be None for server-level browsing)
+        connect_kwargs: dict[str, Any] = {
+            "host": host_for_conn,
+            "user": self.user,
+            "password": self.password or "",
+            "port": self.port,
+        }
+        if self.database:
+            connect_kwargs["database"] = self.database
+        
         try:
-            self._conn = pymysql.connect(
-                host=host_for_conn,
-                user=self.user,
-                password=self.password or "",
-                database=self.database,
-                port=self.port,
-            )
+            self._conn = pymysql.connect(**connect_kwargs)
         except Exception as e:
             logger.error(f"Failed to connect to MySQL ({self._sanitized_url}): {e}")
-            raise ValueError(f"Failed to connect to MySQL database '{self.database}' on host '{self.host}': {e}") from e
+            raise ValueError(f"Failed to connect to MySQL on host '{self.host}': {e}") from e
         logger.info(f"Successfully connected to MySQL: {self._sanitized_url}")
 
     # MySQL types that may need special handling
@@ -85,9 +87,20 @@ class MySQLDataLoader(ExternalDataLoader):
     _UNSUPPORTED_TYPES = _GEOMETRY_TYPES | _OTHER_UNSUPPORTED
 
     def _read_sql(self, query: str) -> pa.Table:
-        """Execute a query and return results as a PyArrow Table via pymysql."""
-        df = pd.read_sql(query, self._conn)
-        return pa.Table.from_pandas(df)
+        """Execute a query and return results as a PyArrow Table (no pandas)."""
+        cur = self._conn.cursor()
+        try:
+            cur.execute(query)
+            if cur.description is None:
+                return pa.table({})
+            columns = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+            if not rows:
+                return pa.table({col: pa.array([], type=pa.null()) for col in columns})
+            col_data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
+            return pa.table(col_data)
+        finally:
+            cur.close()
 
     def _safe_select_list(self, schema: str, table_name: str) -> str:
         """Build a SELECT column list that converts unsupported types to text.
@@ -121,13 +134,16 @@ class MySQLDataLoader(ExternalDataLoader):
     def fetch_data_as_arrow(
         self,
         source_table: str,
-        size: int = 1000000,
-        sort_columns: list[str] | None = None,
-        sort_order: str = 'asc'
+        import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
         """
         Fetch data from MySQL as a PyArrow Table.
         """
+        opts = import_options or {}
+        size = opts.get("size", 1000000)
+        sort_columns = opts.get("sort_columns")
+        sort_order = opts.get("sort_order", "asc")
+
         if not source_table:
             raise ValueError("source_table must be provided")
         
@@ -162,12 +178,17 @@ class MySQLDataLoader(ExternalDataLoader):
         return self._list_tables(table_filter)
     
     def _list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List tables from MySQL database."""
+        """List tables from MySQL database(s) within pinned scope."""
         try:
+            # If database is pinned, list only that database; otherwise all user-accessible DBs
+            if self.database:
+                db_filter = f"TABLE_SCHEMA = '{self.database}'"
+            else:
+                db_filter = "TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')"
             tables_query = f"""
                 SELECT TABLE_SCHEMA, TABLE_NAME 
                 FROM information_schema.tables 
-                WHERE TABLE_SCHEMA = '{self.database}'
+                WHERE {db_filter}
                 AND TABLE_TYPE = 'BASE TABLE'
             """
             tables_arrow = self._read_sql(tables_query)
@@ -239,3 +260,113 @@ class MySQLDataLoader(ExternalDataLoader):
         except Exception as e:
             logger.error(f"Error listing tables: {e}")
             return []
+
+    # -- Catalog tree API --------------------------------------------------
+
+    @staticmethod
+    def catalog_hierarchy() -> list[dict[str, str]]:
+        return [
+            {"key": "database", "label": "Database"},
+            {"key": "table", "label": "Table"},
+        ]
+
+    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+        path = path or []
+        eff = self.effective_hierarchy()
+
+        if len(path) >= len(eff):
+            return []
+
+        level_key = eff[len(path)]["key"]
+
+        if level_key == "database":
+            query = """
+                SELECT SCHEMA_NAME
+                FROM information_schema.schemata
+                WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+                ORDER BY SCHEMA_NAME
+            """
+            rows = self._read_sql(query).to_pandas()
+            nodes = []
+            for _, r in rows.iterrows():
+                name = r["SCHEMA_NAME"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(
+                    name=name, node_type="namespace", path=path + [name],
+                ))
+            return nodes
+
+        if level_key == "table":
+            pinned = self.pinned_scope()
+            db = pinned.get("database") or (path[0] if path else None)
+            if not db:
+                return []
+            query = f"""
+                SELECT TABLE_NAME
+                FROM information_schema.tables
+                WHERE TABLE_SCHEMA = '{db}' AND TABLE_TYPE = 'BASE TABLE'
+                ORDER BY TABLE_NAME
+            """
+            rows = self._read_sql(query).to_pandas()
+            nodes = []
+            for _, r in rows.iterrows():
+                name = r["TABLE_NAME"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(
+                    name=name, node_type="table", path=path + [name],
+                ))
+            return nodes
+
+        return []
+
+    def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        if not path:
+            return {}
+        pinned = self.pinned_scope()
+        remaining = list(path)
+        db = pinned.get("database")
+        if not db:
+            if not remaining:
+                return {}
+            db = remaining.pop(0)
+        if not remaining:
+            return {}
+        table_name = remaining[0]
+        try:
+            cols_query = f"""
+                SELECT COLUMN_NAME, DATA_TYPE
+                FROM information_schema.columns
+                WHERE TABLE_SCHEMA = '{db}' AND TABLE_NAME = '{table_name}'
+                ORDER BY ORDINAL_POSITION
+            """
+            cols_df = self._read_sql(cols_query).to_pandas()
+            columns = [
+                {"name": r["COLUMN_NAME"], "type": r["DATA_TYPE"]}
+                for _, r in cols_df.iterrows()
+            ]
+            count_df = self._read_sql(
+                f"SELECT COUNT(*) AS cnt FROM `{db}`.`{table_name}`"
+            ).to_pandas()
+            row_count = int(count_df["cnt"].iloc[0])
+            col_list = self._safe_select_list(db, table_name)
+            sample_df = self._read_sql(
+                f"SELECT {col_list} FROM `{db}`.`{table_name}` LIMIT 5"
+            ).to_pandas()
+            sample_rows = json.loads(sample_df.to_json(orient="records", date_format="iso"))
+            return {
+                "row_count": row_count,
+                "columns": columns,
+                "sample_rows": sample_rows,
+            }
+        except Exception as e:
+            logger.warning(f"get_metadata failed for {path}: {e}")
+            return {}
+
+    def test_connection(self) -> bool:
+        try:
+            self._read_sql("SELECT 1")
+            return True
+        except Exception:
+            return False

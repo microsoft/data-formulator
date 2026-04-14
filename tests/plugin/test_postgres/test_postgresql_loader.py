@@ -106,7 +106,7 @@ class TestPostgreSQLDataLoader(unittest.TestCase):
     def test_fetch_data_as_arrow_from_table(self) -> None:
         loader = PostgreSQLDataLoader(get_test_config())
         # Table name from list_tables is schema.table (e.g. sample.products)
-        table = loader.fetch_data_as_arrow(source_table="sample.products", size=20)
+        table = loader.fetch_data_as_arrow(source_table="sample.products", import_options={"size": 20})
 
         self.assertIsNotNone(table)
         self.assertGreater(table.num_rows, 0)
@@ -116,14 +116,14 @@ class TestPostgreSQLDataLoader(unittest.TestCase):
 
     def test_fetch_data_respects_size(self) -> None:
         loader = PostgreSQLDataLoader(get_test_config())
-        table = loader.fetch_data_as_arrow(source_table="sample.products", size=5)
+        table = loader.fetch_data_as_arrow(source_table="sample.products", import_options={"size": 5})
         self.assertLessEqual(table.num_rows, 5)
 
     def test_ingest_table_to_workspace(self) -> None:
         loader = PostgreSQLDataLoader(get_test_config())
         workspace = self._get_workspace()
         meta = loader.ingest_to_workspace(
-            workspace, "products_test", source_table="sample.products", size=100
+            workspace, "products_test", source_table="sample.products", import_options={"size": 100}
         )
 
         self.assertEqual(meta.name, "products_test")
@@ -140,7 +140,7 @@ class TestPostgreSQLDataLoader(unittest.TestCase):
         loader = PostgreSQLDataLoader(get_test_config())
         workspace = self._get_workspace()
         meta = loader.ingest_to_workspace(
-            workspace, "electronics_products", source_table="sample.products", size=1000
+            workspace, "electronics_products", source_table="sample.products", import_options={"size": 1000}
         )
 
         self.assertGreater(meta.row_count, 0)
@@ -155,7 +155,7 @@ class TestPostgreSQLDataLoader(unittest.TestCase):
         loader = PostgreSQLDataLoader(get_test_config())
         workspace = self._get_workspace()
         loader.ingest_to_workspace(
-            workspace, "my_table", source_table="sample.customers", size=5_000
+            workspace, "my_table", source_table="sample.customers", import_options={"size": 5_000}
         )
 
         self.assertIn("my_table", workspace.list_tables())

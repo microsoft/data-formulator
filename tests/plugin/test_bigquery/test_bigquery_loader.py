@@ -153,7 +153,7 @@ class TestBigQueryDataLoader(unittest.TestCase):
         config = get_test_config()
         loader = create_loader_for_emulator(config)
         source_table = "test-project.sample.products"
-        table = loader.fetch_data_as_arrow(source_table=source_table, size=20)
+        table = loader.fetch_data_as_arrow(source_table=source_table, import_options={"size": 20})
 
         self.assertIsNotNone(table)
         self.assertGreater(table.num_rows, 0)
@@ -166,7 +166,7 @@ class TestBigQueryDataLoader(unittest.TestCase):
         config = get_test_config()
         loader = create_loader_for_emulator(config)
         table = loader.fetch_data_as_arrow(
-            source_table="test-project.sample.products", size=5
+            source_table="test-project.sample.products", import_options={"size": 5}
         )
 
         self.assertLessEqual(table.num_rows, 5)
@@ -177,7 +177,7 @@ class TestBigQueryDataLoader(unittest.TestCase):
         with self.assertRaises(Exception):
             loader.fetch_data_as_arrow(
                 source_table="test-project.sample.nonexistent_table_xyz",
-                size=10,
+                import_options={"size": 10},
             )
 
     def test_ingest_table_to_workspace(self) -> None:
@@ -188,7 +188,7 @@ class TestBigQueryDataLoader(unittest.TestCase):
         target_name = "customers_test"
 
         meta = loader.ingest_to_workspace(
-            workspace, target_name, source_table=table_name, size=100
+            workspace, target_name, source_table=table_name, import_options={"size": 100}
         )
 
         self.assertEqual(meta.name, "customers_test")
@@ -209,7 +209,7 @@ class TestBigQueryDataLoader(unittest.TestCase):
         table_name = "test-project.sample.customers"
 
         meta = loader.ingest_to_workspace(
-            workspace, "customers", source_table=table_name, size=100
+            workspace, "customers", source_table=table_name, import_options={"size": 100}
         )
 
         self.assertEqual(meta.name, "customers")
@@ -224,7 +224,7 @@ class TestBigQueryDataLoader(unittest.TestCase):
         source_table = "test-project.sample.products"
 
         meta = loader.ingest_to_workspace(
-            workspace, target_name, source_table=source_table, size=1000
+            workspace, target_name, source_table=source_table, import_options={"size": 1000}
         )
 
         self.assertGreater(meta.row_count, 0)
@@ -240,7 +240,7 @@ class TestBigQueryDataLoader(unittest.TestCase):
         loader = create_loader_for_emulator(config)
         workspace = self._get_workspace()
         meta = loader.ingest_to_workspace(
-            workspace, "order_details", source_table="test-project.sample.orders", size=1000
+            workspace, "order_details", source_table="test-project.sample.orders", import_options={"size": 1000}
         )
 
         self.assertGreater(meta.row_count, 0)
@@ -257,8 +257,7 @@ class TestBigQueryDataLoader(unittest.TestCase):
         meta = loader.ingest_to_workspace(
             workspace,
             "test-table-with-dashes",
-            source_table="test-project.sample.customers",
-            size=10,
+            source_table="test-project.sample.customers", import_options={"size": 10},
         )
 
         # sanitize_table_name produces lowercase with underscores
@@ -274,8 +273,7 @@ class TestBigQueryDataLoader(unittest.TestCase):
         loader.ingest_to_workspace(
             workspace,
             "my_table",
-            source_table="test-project.sample.customers",
-            size=5_000,
+            source_table="test-project.sample.customers", import_options={"size": 5_000},
         )
 
         self.assertIn("my_table", workspace.list_tables())

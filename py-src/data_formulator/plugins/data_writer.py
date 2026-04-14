@@ -8,7 +8,7 @@ Instead of calling ``workspace.write_parquet()`` directly, plugins use
 
 * Identity-scoped workspace resolution (via ``get_identity_id()``)
 * Table name sanitisation
-* Automatic ``loader_metadata`` stamping (``loader_type = "plugin:<id>"``)
+* Automatic ``source_info`` stamping (``loader_type = "plugin:<id>"``)
 * ``overwrite=False`` collision avoidance (auto-suffix ``_1``, ``_2``, …)
 """
 
@@ -70,12 +70,12 @@ class PluginDataWriter:
         if not overwrite:
             safe_name = self._unique_name(safe_name, workspace)
 
-        loader_metadata = self._build_loader_metadata(
+        source_info = self._build_source_info(
             safe_name, source_metadata,
         )
 
         table_meta = workspace.write_parquet(
-            df, safe_name, loader_metadata=loader_metadata,
+            df, safe_name, source_info=source_info,
         )
 
         is_renamed = safe_name != sanitize_table_name(table_name)
@@ -94,7 +94,7 @@ class PluginDataWriter:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _build_loader_metadata(
+    def _build_source_info(
         self,
         table_name: str,
         source_metadata: Optional[dict[str, Any]],

@@ -4,7 +4,7 @@ from typing import Any
 import pandas as pd
 import pyarrow as pa
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, sanitize_table_name
 
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
 from azure.kusto.data.helpers import dataframe_from_result_table
@@ -17,7 +17,7 @@ class KustoDataLoader(ExternalDataLoader):
     def list_params() -> list[dict[str, Any]]:
         params_list = [
             {"name": "kusto_cluster", "type": "string", "required": True, "description": "e.g., https://mycluster.region.kusto.windows.net"}, 
-            {"name": "kusto_database", "type": "string", "required": True, "description": "database name"}, 
+            {"name": "kusto_database", "type": "string", "required": False, "description": "Database name (leave empty to browse all databases)"}, 
             {"name": "client_id", "type": "string", "required": False, "description": "only for App Key auth"}, 
             {"name": "client_secret", "type": "string", "required": False, "description": "only for App Key auth"}, 
             {"name": "tenant_id", "type": "string", "required": False, "description": "only for App Key auth"}
@@ -130,9 +130,7 @@ Register an Azure AD application, generate a client secret, and grant it access 
     def fetch_data_as_arrow(
         self,
         source_table: str,
-        size: int = 1000000,
-        sort_columns: list[str] | None = None,
-        sort_order: str = 'asc'
+        import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
         """
         Fetch data from Kusto/Azure Data Explorer as a PyArrow Table.
@@ -145,6 +143,11 @@ Register an Azure AD application, generate a client secret, and grant it access 
             sort_columns: Columns to sort by
             sort_order: Sort direction
         """
+        opts = import_options or {}
+        size = opts.get("size", 1000000)
+        sort_columns = opts.get("sort_columns")
+        sort_order = opts.get("sort_order", "asc")
+
         if not source_table:
             raise ValueError("source_table must be provided")
         
@@ -212,3 +215,91 @@ Register an Azure AD application, generate a client secret, and grant it access 
             })
 
         return tables
+
+    # -- Catalog tree API --------------------------------------------------
+
+    @staticmethod
+    def catalog_hierarchy() -> list[dict[str, str]]:
+        return [
+            {"key": "kusto_database", "label": "Database"},
+            {"key": "table", "label": "Table"},
+        ]
+
+    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+        path = path or []
+        eff = self.effective_hierarchy()
+        if len(path) >= len(eff):
+            return []
+        level_key = eff[len(path)]["key"]
+
+        if level_key == "kusto_database":
+            # List databases on the cluster
+            db_df = self.query(".show databases")
+            nodes = []
+            for rec in db_df.to_dict(orient="records"):
+                name = rec["DatabaseName"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="namespace", path=path + [name]))
+            return nodes
+
+        if level_key == "table":
+            pinned = self.pinned_scope()
+            db = pinned.get("kusto_database") or (path[0] if path else None)
+            if not db:
+                return []
+            # Query tables in the specific database
+            old_db = self.kusto_database
+            self.kusto_database = db
+            try:
+                tables_df = self.query(".show tables")
+            finally:
+                self.kusto_database = old_db
+            nodes = []
+            for rec in tables_df.to_dict(orient="records"):
+                name = rec["TableName"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="table", path=path + [name]))
+            return nodes
+
+        return []
+
+    def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        if not path:
+            return {}
+        pinned = self.pinned_scope()
+        remaining = list(path)
+        db = pinned.get("kusto_database")
+        if not db:
+            if not remaining:
+                return {}
+            db = remaining.pop(0)
+        if not remaining:
+            return {}
+        table_name = remaining[0]
+        old_db = self.kusto_database
+        self.kusto_database = db
+        try:
+            schema_result = self.query(f".show table ['{table_name}'] schema as json").to_dict(orient="records")
+            columns = [
+                {"name": r["Name"], "type": r["Type"]}
+                for r in json.loads(schema_result[0]["Schema"])["OrderedColumns"]
+            ]
+            details = self.query(f".show table ['{table_name}'] details").to_dict(orient="records")
+            row_count = int(details[0]["TotalRowCount"])
+            sample_df = self.query(f"['{table_name}'] | take 5")
+            sample_rows = json.loads(sample_df.to_json(orient="records", date_format="iso"))
+            return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+        except Exception as e:
+            logger.warning(f"get_metadata failed for {path}: {e}")
+            return {}
+        finally:
+            self.kusto_database = old_db
+
+    def test_connection(self) -> bool:
+        try:
+            self.query(".show databases | take 1")
+            return True
+        except Exception:
+            return False

@@ -33,7 +33,7 @@ import SearchIcon from '@mui/icons-material/Search';
 
 import Autocomplete from '@mui/material/Autocomplete';
 
-import { getUrls, fetchWithIdentity } from '../app/utils';
+import { getUrls, getSourceUrls, fetchWithIdentity } from '../app/utils';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
@@ -297,6 +297,35 @@ export const DBManagerPane: React.FC<{
                 </span>
             </Tooltip>
         ))}
+
+        {/* Connected data sources from /api/app-config SOURCES */}
+        {(serverConfig.SOURCES ?? []).length > 0 && (
+            <Divider sx={{ my: 0.5 }} />
+        )}
+        {(serverConfig.SOURCES ?? []).map((source) => (
+            <Button
+                key={`source-${source.source_id}`}
+                variant="text"
+                size="small"
+                color="primary"
+                onClick={() => setSelectedDataLoader(`source:${source.source_id}`)}
+                sx={{
+                    fontSize: 12,
+                    textTransform: "none",
+                    width: '100%',
+                    justifyContent: 'flex-start',
+                    textAlign: 'left',
+                    borderRadius: 0,
+                    py: 1,
+                    px: 2,
+                    color: selectedDataLoader === `source:${source.source_id}` ? 'primary.main' : 'text.secondary',
+                    borderRight: selectedDataLoader === `source:${source.source_id}` ? 2 : 0,
+                    borderColor: 'primary.main',
+                }}
+            >
+                {source.name}
+            </Button>
+        ))}
     </Box>
 
     let dataConnectorView = <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflowY: 'auto', overflowX: 'hidden', p: 2, pb: 4, display: 'flex', flexDirection: 'column', minWidth: 0, overscrollBehavior: 'contain' }}>
@@ -319,6 +348,32 @@ export const DBManagerPane: React.FC<{
                         dataLoaderType={dataLoaderType} 
                         paramDefs={metadata.params}
                         authInstructions={metadata.auth_instructions}
+                        onImport={() => {
+                            setIsUploading(true);
+                        }} 
+                        onFinish={(status, message, importedTables) => {
+                            setIsUploading(false);
+                            if (status === "success") {
+                                setSystemMessage(message, "success");
+                            } else {
+                                setSystemMessage(message, "error");
+                            }
+                        }} 
+                    />
+                </Box>
+            )
+        ))}
+
+        {/* Connected data source forms */}
+        {(serverConfig.SOURCES ?? []).map((source) => (
+            selectedDataLoader === `source:${source.source_id}` && (
+                <Box key={`source:${source.source_id}`} sx={{ position: "relative", maxWidth: '100%', flexShrink: 0 }}>
+                    <DataLoaderForm 
+                        key={`source-form-${source.source_id}`}
+                        dataLoaderType={source.source_id}
+                        paramDefs={source.params_form}
+                        authInstructions={source.auth_instructions}
+                        connectedSourceId={source.source_id}
                         onImport={() => {
                             setIsUploading(true);
                         }} 
@@ -405,11 +460,12 @@ export const DBManagerPane: React.FC<{
 
 export const DataLoaderForm: React.FC<{
     dataLoaderType: string, 
-    paramDefs: {name: string, default: string, type: string, required: boolean, description: string}[],
+    paramDefs: {name: string, default?: string, type: string, required: boolean, description?: string}[],
     authInstructions: string,
+    connectedSourceId?: string,
     onImport: () => void,
     onFinish: (status: "success" | "error", message: string, importedTables?: string[]) => void
-}> = ({dataLoaderType, paramDefs, authInstructions, onImport, onFinish}) => {
+}> = ({dataLoaderType, paramDefs, authInstructions, connectedSourceId, onImport, onFinish}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
@@ -446,6 +502,63 @@ export const DataLoaderForm: React.FC<{
     }, [workspaceLoadedTables, loadedTables]);
 
     let [isConnecting, setIsConnecting] = useState(false);
+
+    // Helper: connect and list tables — branches based on connectedSourceId
+    const connectAndListTables = useCallback(async (filter?: string) => {
+        setIsConnecting(true);
+        try {
+            if (connectedSourceId) {
+                // Connected source: first connect, then list tables
+                const urls = getSourceUrls(connectedSourceId);
+                const connectResp = await fetchWithIdentity(urls.AUTH_CONNECT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ params: params }),
+                });
+                const connectData = await connectResp.json();
+                if (connectData.status === 'error') {
+                    throw new Error(connectData.message || 'Connection failed');
+                }
+                // List tables
+                const listResp = await fetchWithIdentity(urls.CATALOG_LIST_TABLES, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filter: filter?.trim() || null }),
+                });
+                const listData = await listResp.json();
+                if (listData.tables) {
+                    setTableMetadata(Object.fromEntries(
+                        listData.tables.map((t: any) => [t.name, t.metadata])
+                    ));
+                } else if (listData.status === 'error') {
+                    throw new Error(listData.message || 'Failed to list tables');
+                }
+            } else {
+                // Legacy data loader: single list-tables call
+                const resp = await fetchWithIdentity(getUrls().DATA_LOADER_LIST_TABLES, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data_loader_type: dataLoaderType,
+                        data_loader_params: params,
+                        table_filter: filter?.trim() || null,
+                    }),
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    setTableMetadata(Object.fromEntries(
+                        data.tables.map((t: any) => [t.name, t.metadata])
+                    ));
+                } else {
+                    throw new Error(data.message || 'Failed to list tables');
+                }
+            }
+        } catch (error: any) {
+            onFinish("error", error.message || 'Failed to connect');
+        } finally {
+            setIsConnecting(false);
+        }
+    }, [connectedSourceId, dataLoaderType, params, onFinish]);
 
     // Auto-select first table for preview when metadata loads
     useEffect(() => {
@@ -725,8 +838,9 @@ export const DataLoaderForm: React.FC<{
                                     onImport();
                                     dispatch(loadTable({
                                         table: tableObj,
-                                        dataLoaderType,
-                                        dataLoaderParams: params,
+                                        dataLoaderType: connectedSourceId ? undefined : dataLoaderType,
+                                        dataLoaderParams: connectedSourceId ? undefined : params,
+                                        connectedSourceId,
                                         sourceTableName: tableName,
                                         importOptions: Object.keys(importOptions).length > 0 ? importOptions : undefined,
                                     })).unwrap()
@@ -813,36 +927,7 @@ export const DataLoaderForm: React.FC<{
                                 variant="outlined"
                                 size="small"
                                 sx={{textTransform: "none", height: 30, fontSize: 12}}
-                                onClick={() => {
-                                    setIsConnecting(true);
-                                    fetchWithIdentity(getUrls().DATA_LOADER_LIST_TABLES, {
-                                        method: 'POST',
-                                        headers: {
-                                            'Content-Type': 'application/json',
-                                        },
-                                        body: JSON.stringify({
-                                            data_loader_type: dataLoaderType, 
-                                            data_loader_params: params,
-                                            table_filter: tableFilter.trim() || null
-                                        })
-                                    }).then((response: Response) => response.json())
-                                .then((data: any) => {
-                                    if (data.status === "success") {
-                                        console.log(data.tables);
-                                        setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
-                                            return [table.name, table.metadata];
-                                        })));
-                                    } else {
-                                        console.error('Failed to fetch data loader tables: {}', data.message);
-                                        onFinish("error", t('db.failedFetchLoaderTables', { message: data.message }));
-                                    }
-                                    setIsConnecting(false);
-                                })
-                                .catch((error: any) => {
-                                    onFinish("error", t('db.failedFetchLoaderTablesServer'));
-                                    setIsConnecting(false);
-                                });
-                                }}
+                                onClick={() => connectAndListTables(tableFilter)}
                             >
                                 {t('db.refresh')}
                             </Button>
@@ -851,6 +936,11 @@ export const DataLoaderForm: React.FC<{
                                 size="small"
                                 sx={{textTransform: "none", height: 30, fontSize: 12}}
                                 onClick={() => {
+                                    if (connectedSourceId) {
+                                        fetchWithIdentity(getSourceUrls(connectedSourceId).AUTH_DISCONNECT, {
+                                            method: 'POST',
+                                        }).catch(() => {});
+                                    }
                                     setTableMetadata({});
                                     setTableFilter("");
                                 }}
@@ -940,36 +1030,7 @@ export const DataLoaderForm: React.FC<{
                                 color="primary"
                                 size="small"
                                 sx={{textTransform: "none", minWidth: 100, height: 30}}
-                                onClick={() => {
-                                    setIsConnecting(true);
-                                    fetchWithIdentity(getUrls().DATA_LOADER_LIST_TABLES, {
-                                        method: 'POST',
-                                        headers: {
-                                            'Content-Type': 'application/json',
-                                        },
-                                        body: JSON.stringify({
-                                            data_loader_type: dataLoaderType, 
-                                            data_loader_params: params,
-                                            table_filter: tableFilter.trim() || null
-                                        })
-                                    }).then((response: Response) => response.json())
-                                .then((data: any) => {
-                                    if (data.status === "success") {
-                                        console.log(data.tables);
-                                        setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
-                                            return [table.name, table.metadata];
-                                        })));
-                                    } else {
-                                        console.error('Failed to fetch data loader tables: {}', data.message);
-                                        onFinish("error", t('db.failedFetchLoaderTables', { message: data.message }));
-                                    }
-                                    setIsConnecting(false);
-                                })
-                                .catch((error: any) => {
-                                    onFinish("error", t('db.failedFetchLoaderTablesServer'));
-                                    setIsConnecting(false);
-                                });
-                            }}>
+                                onClick={() => connectAndListTables(tableFilter)}>
                                 {t('db.connect', { suffix: tableFilter.trim() ? t('db.withFilter') : '' })}
                             </Button>}
                     </Box>

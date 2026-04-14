@@ -92,8 +92,7 @@ class TestMySQLDataLake(unittest.TestCase):
         meta = loader.ingest_to_workspace(
             workspace,
             "ingested_table",
-            source_table=table_name,
-            size=10_000,
+            source_table=table_name, import_options={"size": 10_000},
         )
 
         self.assertEqual(meta.name, "ingested_table")
@@ -114,7 +113,7 @@ class TestMySQLDataLake(unittest.TestCase):
 
         workspace = Workspace("test-identity-mysql-info", root_dir=self._workspace_root)
         source_table = tables[0]["name"]
-        loader.ingest_to_workspace(workspace, "my_table", source_table=source_table, size=5_000)
+        loader.ingest_to_workspace(workspace, "my_table", source_table=source_table, import_options={"size": 5_000})
 
         # List tables in workspace
         names = workspace.list_tables()

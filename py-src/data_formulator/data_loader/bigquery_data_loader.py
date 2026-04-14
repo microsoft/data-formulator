@@ -3,7 +3,7 @@ import re
 from typing import Any
 import pyarrow as pa
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, sanitize_table_name
 
 from google.cloud import bigquery
 from google.oauth2 import service_account
@@ -135,9 +135,7 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Lea
     def fetch_data_as_arrow(
         self,
         source_table: str,
-        size: int = 1000000,
-        sort_columns: list[str] | None = None,
-        sort_order: str = 'asc'
+        import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
         """
         Fetch data from BigQuery as a PyArrow Table using native Arrow support.
@@ -145,6 +143,11 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Lea
         BigQuery's Python client provides .to_arrow() for efficient Arrow-native
         data transfer, avoiding pandas conversion overhead.
         """
+        opts = import_options or {}
+        size = opts.get("size", 1000000)
+        sort_columns = opts.get("sort_columns")
+        sort_order = opts.get("sort_order", "asc")
+
         if not source_table:
             raise ValueError("source_table must be provided")
         
@@ -207,3 +210,86 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Lea
             process_field(field)
 
         return select_parts if select_parts else ["*"]
+
+    # -- Catalog tree API --------------------------------------------------
+
+    @staticmethod
+    def catalog_hierarchy() -> list[dict[str, str]]:
+        return [
+            {"key": "project_id", "label": "Project"},
+            {"key": "dataset_id", "label": "Dataset"},
+            {"key": "table", "label": "Table"},
+        ]
+
+    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+        path = path or []
+        eff = self.effective_hierarchy()
+        if len(path) >= len(eff):
+            return []
+        level_key = eff[len(path)]["key"]
+
+        if level_key == "project_id":
+            # Project is always pinned (required param), but just in case
+            return [CatalogNode(name=self.project_id, node_type="namespace", path=path + [self.project_id])]
+
+        if level_key == "dataset_id":
+            datasets = list(self.client.list_datasets(max_results=200))
+            nodes = []
+            for ds in datasets:
+                name = ds.dataset_id
+                if self.dataset_ids and name not in self.dataset_ids:
+                    continue
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="namespace", path=path + [name]))
+            return nodes
+
+        if level_key == "table":
+            pinned = self.pinned_scope()
+            remaining = list(path)
+            # project is always pinned
+            dataset = pinned.get("dataset_id")
+            if not dataset:
+                if not remaining:
+                    return []
+                dataset = remaining.pop(0)
+            dataset_ref = f"{self.project_id}.{dataset}"
+            tables = list(self.client.list_tables(dataset_ref, max_results=500))
+            nodes = []
+            for t in tables:
+                name = t.table_id
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="table", path=path + [name]))
+            return nodes
+
+        return []
+
+    def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        if not path:
+            return {}
+        pinned = self.pinned_scope()
+        remaining = list(path)
+        dataset = pinned.get("dataset_id")
+        if not dataset:
+            if not remaining:
+                return {}
+            dataset = remaining.pop(0)
+        if not remaining:
+            return {}
+        table_name = remaining[0]
+        full_table = f"{self.project_id}.{dataset}.{table_name}"
+        try:
+            table_ref = self.client.get_table(full_table)
+            columns = [{"name": f.name, "type": f.field_type} for f in table_ref.schema]
+            return {"row_count": table_ref.num_rows or 0, "columns": columns, "sample_rows": []}
+        except Exception as e:
+            log.warning(f"get_metadata failed for {path}: {e}")
+            return {}
+
+    def test_connection(self) -> bool:
+        try:
+            list(self.client.list_datasets(max_results=1))
+            return True
+        except Exception:
+            return False

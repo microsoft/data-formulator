@@ -55,7 +55,7 @@ class _FakeWorkspace:
         table_name: str,
         *,
         compression: str = "snappy",
-        loader_metadata: dict[str, Any] | None = None,
+        source_info: dict[str, Any] | None = None,
     ) -> _FakeTableMetadata:
         self._tables.add(table_name)
         return _FakeTableMetadata(
@@ -101,7 +101,7 @@ class TestBasicWrite:
 
     @patch("data_formulator.plugins.data_writer.get_identity_id", return_value="user:bob")
     @patch("data_formulator.plugins.data_writer.get_workspace")
-    def test_loader_metadata_stamped(self, mock_get_ws, _mock_id, writer, sample_df):
+    def test_source_info_stamped(self, mock_get_ws, _mock_id, writer, sample_df):
         ws = MagicMock(spec=_FakeWorkspace)
         ws.write_parquet.return_value = _FakeTableMetadata(
             name="sales", row_count=2, columns=[]
@@ -111,7 +111,7 @@ class TestBasicWrite:
         writer.write_dataframe(sample_df, "sales")
 
         _, kwargs = ws.write_parquet.call_args
-        meta = kwargs["loader_metadata"]
+        meta = kwargs["source_info"]
         assert meta["loader_type"] == "plugin:superset"
         assert meta["source_table"] == "sales"
 
@@ -129,7 +129,7 @@ class TestBasicWrite:
         )
 
         _, kwargs = ws.write_parquet.call_args
-        assert kwargs["loader_metadata"]["loader_params"] == {"dashboard_id": 42}
+        assert kwargs["source_info"]["loader_params"] == {"dashboard_id": 42}
 
 
 # ------------------------------------------------------------------

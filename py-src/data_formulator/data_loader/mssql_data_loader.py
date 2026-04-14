@@ -1,14 +1,24 @@
 import json
 import logging
+import math
 from typing import Any
 
-import pandas as pd
 import pyarrow as pa
 import pyodbc
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, sanitize_table_name
 
 log = logging.getLogger(__name__)
+
+
+def _is_nan(value) -> bool:
+    """Check if a value is NaN (works for float, int, None)."""
+    if value is None:
+        return True
+    try:
+        return math.isnan(float(value))
+    except (TypeError, ValueError):
+        return False
 
 
 class MSSQLDataLoader(ExternalDataLoader):
@@ -25,9 +35,9 @@ class MSSQLDataLoader(ExternalDataLoader):
             {
                 "name": "database",
                 "type": "string",
-                "required": True,
-                "default": "master",
-                "description": "Database name to connect to",
+                "required": False,
+                "default": "",
+                "description": "Database name (leave empty to browse all databases)",
             },
             {
                 "name": "user",
@@ -102,7 +112,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         self.params = params
 
         self.server = params.get("server", "localhost")
-        self.database = params.get("database", "master")
+        self.database = params.get("database", "") or ""
         self.user = params.get("user", "").strip()
         self.password = params.get("password", "").strip()
         self.port = params.get("port", "1433")
@@ -111,11 +121,14 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         self.trust_server_certificate = params.get("trust_server_certificate", "no")
         self.connection_timeout = params.get("connection_timeout", "30")
 
+        # When no database specified, connect to master for catalog browsing
+        connect_db = self.database or "master"
+
         # Build ODBC connection string
         conn_str = (
             f"DRIVER={{{self.driver}}};"
             f"SERVER={self.server},{self.port};"
-            f"DATABASE={self.database};"
+            f"DATABASE={connect_db};"
             f"Encrypt={self.encrypt};"
             f"TrustServerCertificate={self.trust_server_certificate};"
             f"Connection Timeout={self.connection_timeout};"
@@ -166,9 +179,20 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
             return "*"
 
     def _read_sql(self, query: str) -> pa.Table:
-        """Execute a query and return results as a PyArrow Table via pyodbc."""
-        df = pd.read_sql(query, self._conn)
-        return pa.Table.from_pandas(df)
+        """Execute a query and return results as a PyArrow Table (no pandas)."""
+        cur = self._conn.cursor()
+        try:
+            cur.execute(query)
+            if cur.description is None:
+                return pa.table({})
+            columns = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+            if not rows:
+                return pa.table({col: pa.array([], type=pa.null()) for col in columns})
+            col_data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
+            return pa.table(col_data)
+        finally:
+            cur.close()
 
     def _execute_query_raw(self, query: str) -> pa.Table:
         """Execute a query (no error wrapping)."""
@@ -185,13 +209,16 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
     def fetch_data_as_arrow(
         self,
         source_table: str,
-        size: int = 1000000,
-        sort_columns: list[str] | None = None,
-        sort_order: str = 'asc'
+        import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
         """
         Fetch data from SQL Server as a PyArrow Table.
         """
+        opts = import_options or {}
+        size = opts.get("size", 1000000)
+        sort_columns = opts.get("sort_columns")
+        sort_order = opts.get("sort_order", "asc")
+
         if not source_table:
             raise ValueError("source_table must be provided")
         
@@ -277,7 +304,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
                         # Add length/precision info for relevant types with NaN handling
                         if (
                             col_row["CHARACTER_MAXIMUM_LENGTH"] is not None
-                            and not pd.isna(col_row["CHARACTER_MAXIMUM_LENGTH"])
+                            and not _is_nan(col_row["CHARACTER_MAXIMUM_LENGTH"])
                         ):
                             try:
                                 col_info["max_length"] = int(col_row["CHARACTER_MAXIMUM_LENGTH"])
@@ -286,7 +313,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
 
                         if (
                             col_row["NUMERIC_PRECISION"] is not None
-                            and not pd.isna(col_row["NUMERIC_PRECISION"])
+                            and not _is_nan(col_row["NUMERIC_PRECISION"])
                         ):
                             try:
                                 col_info["precision"] = int(col_row["NUMERIC_PRECISION"])
@@ -295,7 +322,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
 
                         if (
                             col_row["NUMERIC_SCALE"] is not None
-                            and not pd.isna(col_row["NUMERIC_SCALE"])
+                            and not _is_nan(col_row["NUMERIC_SCALE"])
                         ):
                             try:
                                 col_info["scale"] = int(col_row["NUMERIC_SCALE"])
@@ -311,13 +338,17 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
                     sample_rows = []
                     sample_query = f"SELECT TOP 10 {col_list} FROM [{schema}].[{table_name}]"
                     try:
-                        sample_df = self._execute_query(sample_query).to_pandas()
-                        sample_df_clean = sample_df.fillna(value=None)
-                        sample_rows = json.loads(
-                            sample_df_clean.to_json(
-                                orient="records", date_format="iso", default_handler=str
-                            )
-                        )
+                        sample_table = self._execute_query(sample_query)
+                        sample_rows = sample_table.to_pydict()
+                        # Convert to list-of-dicts format
+                        if sample_table.num_rows > 0:
+                            cols = sample_table.column_names
+                            sample_rows = [
+                                {c: str(sample_table.column(c)[i].as_py()) if sample_table.column(c)[i].as_py() is not None else None for c in cols}
+                                for i in range(sample_table.num_rows)
+                            ]
+                        else:
+                            sample_rows = []
                     except Exception as e:
                         log.warning(
                             f"Failed to sample table {schema}.{table_name}: {e}"
@@ -325,11 +356,11 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
 
                     # Get row count
                     count_query = f"SELECT COUNT(*) as row_count FROM [{schema}].[{table_name}]"
-                    count_df = self._execute_query(count_query).to_pandas()
+                    count_table = self._execute_query(count_query)
 
                     # Handle NaN values in row count
-                    raw_count = count_df.iloc[0]["row_count"]
-                    if pd.isna(raw_count):
+                    raw_count = count_table.column("row_count")[0].as_py()
+                    if _is_nan(raw_count):
                         row_count = 0
                         log.warning(
                             f"Row count for table {schema}.{table_name} returned NaN, using 0"
@@ -372,3 +403,134 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
             results = []
 
         return results
+
+    # -- Catalog tree API --------------------------------------------------
+
+    @staticmethod
+    def catalog_hierarchy() -> list[dict[str, str]]:
+        return [
+            {"key": "database", "label": "Database"},
+            {"key": "schema", "label": "Schema"},
+            {"key": "table", "label": "Table"},
+        ]
+
+    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+        path = path or []
+        eff = self.effective_hierarchy()
+        if len(path) >= len(eff):
+            return []
+        level_key = eff[len(path)]["key"]
+
+        if level_key == "database":
+            query = """
+                SELECT name FROM sys.databases
+                WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')
+                  AND state_desc = 'ONLINE'
+                ORDER BY name
+            """
+            rows = self._execute_query(query).to_pandas()
+            nodes = []
+            for _, r in rows.iterrows():
+                name = r["name"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="namespace", path=path + [name]))
+            return nodes
+
+        if level_key == "schema":
+            pinned = self.pinned_scope()
+            db = pinned.get("database") or (path[0] if path else None)
+            if not db:
+                return []
+            query = f"""
+                SELECT DISTINCT TABLE_SCHEMA
+                FROM [{db}].INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_TYPE = 'BASE TABLE'
+                  AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+                ORDER BY TABLE_SCHEMA
+            """
+            rows = self._execute_query(query).to_pandas()
+            nodes = []
+            for _, r in rows.iterrows():
+                name = r["TABLE_SCHEMA"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="namespace", path=path + [name]))
+            return nodes
+
+        if level_key == "table":
+            pinned = self.pinned_scope()
+            remaining = list(path)
+            db = pinned.get("database")
+            if not db:
+                if not remaining:
+                    return []
+                db = remaining.pop(0)
+            schema = pinned.get("schema")
+            if not schema:
+                if not remaining:
+                    return []
+                schema = remaining.pop(0)
+            query = f"""
+                SELECT TABLE_NAME
+                FROM [{db}].INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = '{schema}'
+                ORDER BY TABLE_NAME
+            """
+            rows = self._execute_query(query).to_pandas()
+            nodes = []
+            for _, r in rows.iterrows():
+                name = r["TABLE_NAME"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="table", path=path + [name]))
+            return nodes
+
+        return []
+
+    def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        if not path:
+            return {}
+        pinned = self.pinned_scope()
+        remaining = list(path)
+        db = pinned.get("database")
+        if not db:
+            if not remaining:
+                return {}
+            db = remaining.pop(0)
+        schema = pinned.get("schema")
+        if not schema:
+            if not remaining:
+                return {}
+            schema = remaining.pop(0)
+        if not remaining:
+            return {}
+        table_name = remaining[0]
+        try:
+            cols_df = self._execute_query(f"""
+                SELECT COLUMN_NAME, DATA_TYPE
+                FROM [{db}].INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
+                ORDER BY ORDINAL_POSITION
+            """).to_pandas()
+            columns = [{"name": r["COLUMN_NAME"], "type": r["DATA_TYPE"]} for _, r in cols_df.iterrows()]
+            count_df = self._execute_query(
+                f"SELECT COUNT(*) AS cnt FROM [{db}].[{schema}].[{table_name}]"
+            ).to_pandas()
+            row_count = int(count_df["cnt"].iloc[0])
+            col_list = self._safe_select_list(schema, table_name)
+            sample_df = self._execute_query(
+                f"SELECT TOP 5 {col_list} FROM [{db}].[{schema}].[{table_name}]"
+            ).to_pandas()
+            sample_rows = json.loads(sample_df.fillna(value=None).to_json(orient="records", date_format="iso", default_handler=str))
+            return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+        except Exception as e:
+            log.warning(f"get_metadata failed for {path}: {e}")
+            return {}
+
+    def test_connection(self) -> bool:
+        try:
+            self._execute_query("SELECT 1 AS ok")
+            return True
+        except Exception:
+            return False

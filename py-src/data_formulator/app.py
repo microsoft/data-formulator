@@ -156,6 +156,11 @@ def _register_blueprints():
     from data_formulator.plugins import discover_and_register
     discover_and_register(app)
 
+    # Auto-register all installed data loaders as ConnectedDataSource plugins
+    print("  Loading connected data sources...", flush=True)
+    from data_formulator.connected_source import register_connected_sources
+    register_connected_sources(app)
+
 
 # Register blueprints at module level so WSGI servers (gunicorn) pick up all routes.
 # The guard inside _register_blueprints() prevents double registration when run via CLI.
@@ -245,6 +250,14 @@ def get_app_config():
                 **frontend_cfg,
             }
         config["PLUGINS"] = plugins_info
+
+    # Expose connected data sources to the frontend
+    from data_formulator.connected_source import CONNECTED_SOURCES
+    if CONNECTED_SOURCES:
+        sources_info: list[dict] = []
+        for sid, src in CONNECTED_SOURCES.items():
+            sources_info.append(src.get_frontend_config())
+        config["SOURCES"] = sources_info
 
     return flask.jsonify(config)
 

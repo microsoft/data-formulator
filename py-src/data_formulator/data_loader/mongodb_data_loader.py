@@ -7,7 +7,7 @@ import pyarrow as pa
 import pymongo
 from bson import ObjectId
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, sanitize_table_name
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -164,10 +164,12 @@ class MongoDBDataLoader(ExternalDataLoader):
     def fetch_data_as_arrow(
         self,
         source_table: str,
-        size: int = 1000000,
-        sort_columns: list[str] | None = None,
-        sort_order: str = 'asc'
+        import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
+        opts = import_options or {}
+        size = opts.get("size", 1000000)
+        sort_columns = opts.get("sort_columns")
+        sort_order = opts.get("sort_order", "asc")
         """
         Fetch data from MongoDB as a PyArrow Table.
         
@@ -276,3 +278,63 @@ class MongoDBDataLoader(ExternalDataLoader):
                 continue
 
         return results
+
+    # -- Catalog tree API --------------------------------------------------
+
+    @staticmethod
+    def catalog_hierarchy() -> list[dict[str, str]]:
+        return [
+            {"key": "database", "label": "Database"},
+            {"key": "collection", "label": "Collection"},
+        ]
+
+    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+        path = path or []
+        eff = self.effective_hierarchy()
+        if len(path) >= len(eff):
+            return []
+        level_key = eff[len(path)]["key"]
+
+        if level_key == "database":
+            # database is required, so always pinned — but handle defensively
+            return [CatalogNode(
+                name=self.database_name, node_type="namespace",
+                path=path + [self.database_name],
+            )]
+
+        if level_key == "collection":
+            collection_names = self.db.list_collection_names()
+            nodes = []
+            for name in sorted(collection_names):
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="table", path=path + [name]))
+            return nodes
+
+        return []
+
+    def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        if not path:
+            return {}
+        collection_name = path[-1]
+        try:
+            coll = self.db[collection_name]
+            row_count = coll.count_documents({})
+            sample = list(coll.find().limit(5))
+            if sample:
+                df = self._process_documents(sample)
+                columns = [{"name": c, "type": str(df[c].dtype)} for c in df.columns]
+                sample_rows = json.loads(df.to_json(orient="records"))
+            else:
+                columns, sample_rows = [], []
+            return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+        except Exception as e:
+            logger.warning(f"get_metadata failed for {path}: {e}")
+            return {}
+
+    def test_connection(self) -> bool:
+        try:
+            self.mongo_client.admin.command("ping")
+            return True
+        except Exception:
+            return False

@@ -16,7 +16,7 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { inferTypeFromValueArray } from '../data/utils';
-import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
+import { fetchWithIdentity, getUrls, getSourceUrls, computeContentHash } from './utils';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
 import { tableDataDB } from './workspaceDB';
 
@@ -44,6 +44,8 @@ export interface LoadTablePayload {
     dataLoaderType?: string;
     dataLoaderParams?: Record<string, string>;
     sourceTableName?: string;
+    // For connected data sources (new /api/sources/{id}/ routes):
+    connectedSourceId?: string;
     importOptions?: {
         rowLimit?: number;
         sortColumns?: string[];
@@ -74,7 +76,7 @@ export const loadTable = createAsyncThunk<
 >(
     'dataFormulator/loadTable',
     async (payload, { dispatch, getState }) => {
-        const { table, file, replaceSource, dataLoaderType, dataLoaderParams, sourceTableName, importOptions } = payload;
+        const { table, file, replaceSource, dataLoaderType, dataLoaderParams, sourceTableName, connectedSourceId, importOptions } = payload;
         const state = getState();
         const frontendRowLimit = state.config?.frontendRowLimit ?? 50000;
         const existingTables = state.tables;
@@ -129,18 +131,33 @@ export const loadTable = createAsyncThunk<
 
         if (storeOnServer) {
             // === STORE ON SERVER PATH ===
-            if (sourceType === 'database' && dataLoaderType && sourceTableName) {
-                // Database source: ingest to workspace via data loader
+            if (sourceType === 'database' && sourceTableName && (dataLoaderType || connectedSourceId)) {
+                // Database source: ingest to workspace via data loader or connected source
                 try {
-                    const response = await fetchWithIdentity(getUrls().DATA_LOADER_INGEST_DATA, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
+                    let ingestUrl: string;
+                    let ingestBody: any;
+                    if (connectedSourceId) {
+                        // Connected source route
+                        ingestUrl = getSourceUrls(connectedSourceId).DATA_IMPORT;
+                        ingestBody = {
+                            source_table: sourceTableName,
+                            table_name: sourceTableName,
+                            import_options: importOptions || {},
+                        };
+                    } else {
+                        // Legacy data loader route
+                        ingestUrl = getUrls().DATA_LOADER_INGEST_DATA;
+                        ingestBody = {
                             data_loader_type: dataLoaderType,
                             data_loader_params: dataLoaderParams,
                             table_name: sourceTableName,
                             import_options: importOptions || {},
-                        }),
+                        };
+                    }
+                    const response = await fetchWithIdentity(ingestUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(ingestBody),
                     });
                     const data = await response.json();
                     if (data.status === 'success') {

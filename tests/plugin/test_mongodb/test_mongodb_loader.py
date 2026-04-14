@@ -128,7 +128,7 @@ class TestMongoDBDataLoader(unittest.TestCase):
 
     def test_fetch_data_as_arrow(self) -> None:
         loader = self._get_loader()
-        table = loader.fetch_data_as_arrow(source_table="products", size=20)
+        table = loader.fetch_data_as_arrow(source_table="products", import_options={"size": 20})
         self.assertIsNotNone(table)
         self.assertGreater(table.num_rows, 0)
         self.assertIn("name", table.column_names)
@@ -137,14 +137,14 @@ class TestMongoDBDataLoader(unittest.TestCase):
 
     def test_fetch_data_respects_size(self) -> None:
         loader = self._get_loader()
-        table = loader.fetch_data_as_arrow(source_table="products", size=5)
+        table = loader.fetch_data_as_arrow(source_table="products", import_options={"size": 5})
         self.assertLessEqual(table.num_rows, 5)
 
     def test_ingest_table_to_workspace(self) -> None:
         loader = self._get_loader()
         workspace = self._get_workspace()
         meta = loader.ingest_to_workspace(
-            workspace, "products_test", source_table="products", size=100
+            workspace, "products_test", source_table="products", import_options={"size": 100}
         )
 
         self.assertEqual(meta.name, "products_test")
@@ -162,7 +162,7 @@ class TestMongoDBDataLoader(unittest.TestCase):
         loader = self._get_loader()
         workspace = self._get_workspace()
         meta = loader.ingest_to_workspace(
-            workspace, "products_nested", source_table="products", size=100
+            workspace, "products_nested", source_table="products", import_options={"size": 100}
         )
         df = workspace.read_data_as_df(meta.name)
         spec_cols = [c for c in df.columns if c.startswith("specs_")]
@@ -172,7 +172,7 @@ class TestMongoDBDataLoader(unittest.TestCase):
         loader = self._get_loader()
         workspace = self._get_workspace()
         meta = loader.ingest_to_workspace(
-            workspace, "products_arrays", source_table="products", size=100
+            workspace, "products_arrays", source_table="products", import_options={"size": 100}
         )
         df = workspace.read_data_as_df(meta.name)
         tag_cols = [c for c in df.columns if c.startswith("tags_")]
@@ -182,7 +182,7 @@ class TestMongoDBDataLoader(unittest.TestCase):
         loader = self._get_loader()
         workspace = self._get_workspace()
         meta = loader.ingest_to_workspace(
-            workspace, "test-table-with-dashes", source_table="products", size=10
+            workspace, "test-table-with-dashes", source_table="products", import_options={"size": 10}
         )
         self.assertIn(meta.name, workspace.list_tables())
         df = workspace.read_data_as_df(meta.name)
@@ -191,7 +191,7 @@ class TestMongoDBDataLoader(unittest.TestCase):
     def test_get_table_info_from_datalake(self) -> None:
         loader = self._get_loader()
         workspace = self._get_workspace()
-        loader.ingest_to_workspace(workspace, "my_table", source_table="customers", size=5_000)
+        loader.ingest_to_workspace(workspace, "my_table", source_table="customers", import_options={"size": 5_000})
 
         self.assertIn("my_table", workspace.list_tables())
         meta = workspace.get_table_metadata("my_table")

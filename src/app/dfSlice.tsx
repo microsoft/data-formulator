@@ -55,6 +55,17 @@ export interface ServerConfig {
         [key: string]: unknown;
     };
     PLUGINS?: Record<string, import('../plugins/types').PluginConfig>;
+    SOURCES?: Array<{
+        source_id: string;
+        source_type: string;
+        name: string;
+        icon: string;
+        params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string}>;
+        pinned_params: Record<string, string>;
+        hierarchy: Array<{key: string; label: string}>;
+        effective_hierarchy: Array<{key: string; label: string}>;
+        auth_instructions: string;
+    }>;
 }
 
 export interface ModelConfig {
