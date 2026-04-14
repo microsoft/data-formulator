@@ -12,9 +12,10 @@
 
 import { FC, useCallback, useEffect, useState } from "react";
 import { useSelector } from "react-redux";
-import { Box, Button, IconButton, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, IconButton, Snackbar, Tooltip, Typography } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import LoginIcon from "@mui/icons-material/Login";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import { useTranslation } from "react-i18next";
 import type { UserManager } from "oidc-client-ts";
 import type { DataFormulatorState } from "./dfSlice";
@@ -25,9 +26,16 @@ export const AuthButton: FC = () => {
     const { t } = useTranslation();
     const identity = useSelector((s: DataFormulatorState) => s.identity);
     const [mgr, setMgr] = useState<UserManager | null>(null);
+    const [initError, setInitError] = useState<string | null>(null);
+    const [loginError, setLoginError] = useState<string | null>(null);
 
     useEffect(() => {
-        getUserManager().then(setMgr);
+        getUserManager()
+            .then(setMgr)
+            .catch((err) => {
+                console.error("[AuthButton] Failed to initialise SSO:", err);
+                setInitError(err instanceof Error ? err.message : String(err));
+            });
     }, []);
 
     const handleSignOut = useCallback(async () => {
@@ -65,24 +73,63 @@ export const AuthButton: FC = () => {
         );
     }
 
+    const handleSignIn = useCallback(async () => {
+        if (!mgr) return;
+        try {
+            await mgr.signinRedirect();
+        } catch (err) {
+            console.error("[AuthButton] signinRedirect failed:", err);
+            setLoginError(err instanceof Error ? err.message : String(err));
+        }
+    }, [mgr]);
+
+    if (initError) {
+        return (
+            <Tooltip title={`SSO Error: ${initError}`}>
+                <Box sx={{ display: "flex", alignItems: "center", ml: 1, color: "error.main" }}>
+                    <ErrorOutlineIcon sx={{ fontSize: 18, mr: 0.5 }} />
+                    <Typography variant="body2" sx={{ fontSize: 12 }}>
+                        SSO Error
+                    </Typography>
+                </Box>
+            </Tooltip>
+        );
+    }
+
     if (mgr) {
         return (
-            <Tooltip title={t("auth.ssoDescription")}>
-                <Button
-                    variant="text"
-                    size="small"
-                    startIcon={<LoginIcon sx={{ fontSize: 16 }} />}
-                    onClick={() => mgr.signinRedirect()}
-                    sx={{
-                        ml: 1,
-                        textTransform: "none",
-                        color: "inherit",
-                        fontSize: 12,
-                    }}
+            <>
+                <Tooltip title={t("auth.ssoDescription")}>
+                    <Button
+                        variant="text"
+                        size="small"
+                        startIcon={<LoginIcon sx={{ fontSize: 16 }} />}
+                        onClick={handleSignIn}
+                        sx={{
+                            ml: 1,
+                            textTransform: "none",
+                            color: "inherit",
+                            fontSize: 12,
+                        }}
+                    >
+                        {t("auth.ssoLogin")}
+                    </Button>
+                </Tooltip>
+                <Snackbar
+                    open={!!loginError}
+                    autoHideDuration={8000}
+                    onClose={() => setLoginError(null)}
+                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
                 >
-                    {t("auth.ssoLogin")}
-                </Button>
-            </Tooltip>
+                    <Alert
+                        severity="error"
+                        onClose={() => setLoginError(null)}
+                        variant="filled"
+                    >
+                        {t("auth.ssoLogin")} Error: {loginError}
+                    </Alert>
+                </Snackbar>
+            </>
         );
     }
 

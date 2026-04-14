@@ -32,7 +32,6 @@ export interface OidcEndpointMetadata {
 export interface OidcConfig {
     authority: string;
     clientId: string;
-    clientSecret?: string;
     scopes: string;
     redirectUri: string;
     metadata?: OidcEndpointMetadata;
@@ -44,7 +43,6 @@ export interface AuthInfo {
     oidc?: {
         authority: string;
         clientId: string;
-        clientSecret?: string;
         scopes?: string;
         metadata?: OidcEndpointMetadata;
     };
@@ -81,7 +79,6 @@ export async function getOidcConfig(): Promise<OidcConfig | null> {
     return {
         authority: info.oidc.authority,
         clientId: info.oidc.clientId,
-        clientSecret: info.oidc.clientSecret,
         scopes: info.oidc.scopes ?? "openid profile email",
         redirectUri: `${window.location.origin}/callback`,
         metadata: info.oidc.metadata,
@@ -102,39 +99,47 @@ export async function getUserManager(): Promise<UserManager | null> {
         config.metadata.authorization_endpoint &&
         config.metadata.token_endpoint;
 
-    if (hasManualEndpoints) {
-        // Manual mode: provide metadata directly, skip discovery.
-        // loadUserInfo fetches profile from the userinfo endpoint
-        // (since the SSO may not return a JWT id_token).
-        _userManager = new UserManager({
-            authority: config.authority,
-            client_id: config.clientId,
-            client_secret: config.clientSecret || undefined,
-            redirect_uri: config.redirectUri,
-            response_type: "code",
-            scope: config.scopes,
-            loadUserInfo: !!config.metadata!.userinfo_endpoint,
-            automaticSilentRenew: false,
-            userStore: new WebStorageStateStore({ store: window.localStorage }),
-            metadata: {
-                issuer: config.authority,
-                authorization_endpoint: config.metadata!.authorization_endpoint!,
-                token_endpoint: config.metadata!.token_endpoint!,
-                userinfo_endpoint: config.metadata!.userinfo_endpoint,
-                jwks_uri: config.metadata!.jwks_uri,
-            },
-        });
-    } else {
-        // Discovery mode: oidc-client-ts fetches /.well-known/openid-configuration
-        _userManager = new UserManager({
-            authority: config.authority,
-            client_id: config.clientId,
-            redirect_uri: config.redirectUri,
-            response_type: "code",
-            scope: config.scopes,
-            automaticSilentRenew: true,
-            userStore: new WebStorageStateStore({ store: window.localStorage }),
-        });
+    try {
+        if (hasManualEndpoints) {
+            // Manual mode: provide metadata directly, skip browser-side discovery.
+            // loadUserInfo fetches profile from the userinfo endpoint
+            // (since the SSO may not return a JWT id_token).
+            console.info("[oidcConfig] Creating UserManager with explicit metadata");
+            _userManager = new UserManager({
+                authority: config.authority,
+                client_id: config.clientId,
+                redirect_uri: config.redirectUri,
+                response_type: "code",
+                scope: config.scopes,
+                loadUserInfo: !!config.metadata!.userinfo_endpoint,
+                automaticSilentRenew: false,
+                userStore: new WebStorageStateStore({ store: window.localStorage }),
+                metadata: {
+                    issuer: config.authority,
+                    authorization_endpoint: config.metadata!.authorization_endpoint!,
+                    token_endpoint: config.metadata!.token_endpoint!,
+                    userinfo_endpoint: config.metadata!.userinfo_endpoint,
+                    jwks_uri: config.metadata!.jwks_uri,
+                },
+            });
+        } else {
+            // Discovery mode: oidc-client-ts fetches /.well-known/openid-configuration
+            console.info("[oidcConfig] Creating UserManager with auto-discovery");
+            _userManager = new UserManager({
+                authority: config.authority,
+                client_id: config.clientId,
+                redirect_uri: config.redirectUri,
+                response_type: "code",
+                scope: config.scopes,
+                automaticSilentRenew: true,
+                userStore: new WebStorageStateStore({ store: window.localStorage }),
+            });
+        }
+    } catch (err) {
+        console.error("[oidcConfig] Failed to create UserManager:", err);
+        throw new Error(
+            `SSO configuration error: ${err instanceof Error ? err.message : String(err)}`
+        );
     }
 
     _userManager.events.addSilentRenewError(() => {
