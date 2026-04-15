@@ -19,11 +19,11 @@ class S3DataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "aws_access_key_id", "type": "string", "required": True, "default": "", "description": "AWS access key ID"},
-            {"name": "aws_secret_access_key", "type": "string", "required": True, "default": "", "description": "AWS secret access key"},
-            {"name": "aws_session_token", "type": "string", "required": False, "default": "", "description": "AWS session token (required for temporary credentials)"},
-            {"name": "region_name", "type": "string", "required": True, "default": "us-east-1", "description": "AWS region name"},
-            {"name": "bucket", "type": "string", "required": True, "default": "", "description": "S3 bucket name"}
+            {"name": "aws_access_key_id", "type": "string", "required": True, "default": "", "sensitive": True, "tier": "auth", "description": "AWS access key ID"},
+            {"name": "aws_secret_access_key", "type": "string", "required": True, "default": "", "sensitive": True, "tier": "auth", "description": "AWS secret access key"},
+            {"name": "aws_session_token", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS session token (required for temporary credentials)"},
+            {"name": "region_name", "type": "string", "required": True, "default": "us-east-1", "tier": "connection", "description": "AWS region name"},
+            {"name": "bucket", "type": "string", "required": True, "default": "", "tier": "connection", "description": "S3 bucket name"}
         ]
         return params_list
 

@@ -53,14 +53,18 @@ class CustomJSONEncoder(json.JSONEncoder):
 app.json_encoder = CustomJSONEncoder
 
 # Default config from env (can be overridden by CLI args)
-# Legacy: DISABLE_DATABASE=true → workspace_backend='ephemeral'
+# DISABLE_DATABASE=true is a convenience preset for multi-user anonymous deployments.
+# It bundles: ephemeral workspace + no data connectors + no custom models + hide keys.
+_disable_database = os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true'
 _default_ws_backend = os.environ.get('WORKSPACE_BACKEND', 'local')
-if os.environ.get('DISABLE_DATABASE', 'false').lower() == 'true' and _default_ws_backend == 'local':
+if _disable_database and _default_ws_backend == 'local':
     _default_ws_backend = 'ephemeral'
 app.config['CLI_ARGS'] = {
+    'host': os.environ.get('HOST', '127.0.0.1'),
     'sandbox': os.environ.get('SANDBOX', 'local'),
-    'disable_display_keys': os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
-    'disable_file_upload': os.environ.get('DISABLE_FILE_UPLOAD', 'false').lower() == 'true',
+    'disable_display_keys': _disable_database or os.environ.get('DISABLE_DISPLAY_KEYS', 'false').lower() == 'true',
+    'disable_data_connectors': _disable_database or os.environ.get('DISABLE_DATA_CONNECTORS', 'false').lower() == 'true',
+    'disable_custom_models': _disable_database or os.environ.get('DISABLE_CUSTOM_MODELS', 'false').lower() == 'true',
     'project_front_page': os.environ.get('PROJECT_FRONT_PAGE', 'false').lower() == 'true',
     'max_display_rows': int(os.environ.get('MAX_DISPLAY_ROWS', '10000')),
     'data_dir': os.environ.get('DATA_FORMULATOR_HOME', None),
@@ -156,10 +160,13 @@ def _register_blueprints():
     from data_formulator.plugins import discover_and_register
     discover_and_register(app)
 
-    # Auto-register all installed data loaders as ConnectedDataSource plugins
-    print("  Loading connected data sources...", flush=True)
-    from data_formulator.connected_source import register_connected_sources
-    register_connected_sources(app)
+    # Auto-register all installed data loaders as DataConnector instances
+    if not app.config['CLI_ARGS'].get('disable_data_connectors'):
+        print("  Loading data connectors...", flush=True)
+        from data_formulator.data_connector import register_data_connectors
+        register_data_connectors(app)
+    else:
+        print("  Data connectors disabled (DISABLE_DATA_CONNECTORS=true)", flush=True)
 
 
 # Register blueprints at module level so WSGI servers (gunicorn) pick up all routes.
@@ -211,7 +218,8 @@ def get_app_config():
     config = {
         "SANDBOX": args['sandbox'],
         "DISABLE_DISPLAY_KEYS": args['disable_display_keys'],
-        "DISABLE_FILE_UPLOAD": args['disable_file_upload'],
+        "DISABLE_DATA_CONNECTORS": args.get('disable_data_connectors', False),
+        "DISABLE_CUSTOM_MODELS": args.get('disable_custom_models', False),
         "PROJECT_FRONT_PAGE": args['project_front_page'],
         "MAX_DISPLAY_ROWS": args['max_display_rows'],
         "DEV_MODE": args.get('dev', False),
@@ -228,6 +236,17 @@ def get_app_config():
     if provider:
         config["AUTH_PROVIDER"] = provider.name
         config["AUTH_INFO"] = provider.get_auth_info()
+
+    # Return the server-assigned identity so the frontend can use it.
+    # For localhost mode this is the fixed local:<os_username> identity;
+    # for anonymous mode the server echoes back the browser-provided UUID.
+    try:
+        from data_formulator.security.auth import get_identity_id
+        identity = get_identity_id()
+        id_type, _, id_value = identity.partition(':')
+        config["IDENTITY"] = {"type": id_type, "id": id_value}
+    except Exception:
+        pass  # No identity available (e.g. during startup)
 
     # Expose credential vault availability to the frontend
     from data_formulator.credential_vault import get_credential_vault
@@ -251,13 +270,35 @@ def get_app_config():
             }
         config["PLUGINS"] = plugins_info
 
-    # Expose connected data sources to the frontend
-    from data_formulator.connected_source import CONNECTED_SOURCES
-    if CONNECTED_SOURCES:
-        sources_info: list[dict] = []
-        for sid, src in CONNECTED_SOURCES.items():
-            sources_info.append(src.get_frontend_config())
-        config["SOURCES"] = sources_info
+    # Expose data connectors to the frontend
+    from data_formulator.data_connector import DATA_CONNECTORS
+    if DATA_CONNECTORS:
+        connectors_info: list[dict] = []
+        for sid, src in DATA_CONNECTORS.items():
+            connectors_info.append(src.get_frontend_config())
+        config["CONNECTORS"] = connectors_info
+
+    # Tell the frontend which connectors the current user has vault credentials for
+    # so it can render "Connected" vs "Available" without N status calls.
+    try:
+        from data_formulator.security.auth import get_identity_id
+        identity = get_identity_id()
+        connected_ids: list[str] = []
+        for sid, src in DATA_CONNECTORS.items():
+            if src.has_stored_credentials(identity) or src._get_loader(identity) is not None:
+                connected_ids.append(sid)
+        if connected_ids:
+            config["CONNECTED_CONNECTORS"] = connected_ids
+    except Exception:
+        pass  # No identity available (e.g. during startup); skip
+
+    # Expose disabled data sources (missing deps) so UI can show greyed-out entries
+    from data_formulator.data_loader import DISABLED_LOADERS
+    if DISABLED_LOADERS:
+        config["DISABLED_SOURCES"] = {
+            name: {"install_hint": hint}
+            for name, hint in DISABLED_LOADERS.items()
+        }
 
     return flask.jsonify(config)
 
@@ -275,10 +316,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-display-keys", action='store_true', default=False,
         help="Whether disable displaying keys in the frontend UI, recommended to turn on if you host the app not just for yourself.")
     parser.add_argument("--disable-database", action='store_true', default=False,
-        help="Deprecated: use --workspace-backend=ephemeral instead. "
-             "Sets workspace backend to 'ephemeral' for backward compatibility.")
-    parser.add_argument("--disable-file-upload", action='store_true', default=False,
-        help="Disable file upload functionality. This prevents the app from uploading files to the server.")
+        help="Multi-user anonymous preset: enables ephemeral workspace, disables data connectors, "
+             "disables custom LLM endpoints, and hides API keys. Equivalent to setting "
+             "--workspace-backend=ephemeral --disable-data-connectors --disable-custom-models --disable-display-keys.")
+    parser.add_argument("--disable-data-connectors", action='store_true', default=False,
+        help="Disable external data connectors (MySQL, PostgreSQL, etc.). "
+             "Recommended for multi-user anonymous deployments to prevent credential exposure.")
+    parser.add_argument("--disable-custom-models", action='store_true', default=False,
+        help="Prevent users from adding custom LLM endpoints via the UI. "
+             "Only server-configured models will be available.")
     parser.add_argument("--project-front-page", action='store_true', default=False,
         help="Project the front page as the main page instead of the app.")
     parser.add_argument("--max-display-rows", type=int,
@@ -312,16 +358,25 @@ def run_app():
     configure_logging()
     args = parse_args()
     
-    # Legacy: --disable-database → workspace_backend='ephemeral'
+    # --disable-database is a convenience preset for multi-user anonymous deployments.
+    # It bundles: ephemeral workspace + no data connectors + no custom models + hide keys.
     workspace_backend = args.workspace_backend
-    if args.disable_database and workspace_backend == 'local':
-        workspace_backend = 'ephemeral'
+    if args.disable_database:
+        if workspace_backend == 'local':
+            workspace_backend = 'ephemeral'
+        args.disable_data_connectors = True
+        args.disable_custom_models = True
+        args.disable_display_keys = True
+        print("  Multi-user anonymous mode (--disable-database): "
+              "ephemeral workspace, no connectors, no custom models, keys hidden", flush=True)
 
     # Override config from CLI args
     app.config['CLI_ARGS'] = {
+        'host': args.host,
         'sandbox': args.sandbox,
         'disable_display_keys': args.disable_display_keys,
-        'disable_file_upload': args.disable_file_upload,
+        'disable_data_connectors': args.disable_data_connectors,
+        'disable_custom_models': args.disable_custom_models,
         'project_front_page': args.project_front_page,
         'max_display_rows': args.max_display_rows,
         'data_dir': args.data_dir,

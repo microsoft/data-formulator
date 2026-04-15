@@ -61,7 +61,6 @@ def app():
     _app.config["CLI_ARGS"] = {
         "sandbox": "local",
         "disable_display_keys": False,
-        "disable_file_upload": False,
         "project_front_page": False,
         "max_display_rows": 10000,
         "dev": False,
@@ -75,7 +74,6 @@ def app():
         config = {
             "SANDBOX": args["sandbox"],
             "DISABLE_DISPLAY_KEYS": args["disable_display_keys"],
-            "DISABLE_FILE_UPLOAD": args["disable_file_upload"],
             "PROJECT_FRONT_PAGE": args["project_front_page"],
             "MAX_DISPLAY_ROWS": args["max_display_rows"],
             "DEV_MODE": args.get("dev", False),

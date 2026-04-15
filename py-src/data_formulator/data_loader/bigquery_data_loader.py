@@ -16,10 +16,10 @@ class BigQueryDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         return [
-            {"name": "project_id", "type": "text", "required": True, "description": "Google Cloud Project ID", "default": ""},
-            {"name": "dataset_id", "type": "text", "required": False, "description": "Dataset ID(s) - leave empty for all, or specify one (e.g., 'billing') or multiple separated by commas (e.g., 'billing,enterprise_collected,ga_api')", "default": ""},
-            {"name": "credentials_path", "type": "text", "required": False, "description": "Path to service account JSON file (optional)", "default": ""},
-            {"name": "location", "type": "text", "required": False, "description": "BigQuery location (default: US)", "default": "US"}
+            {"name": "project_id", "type": "text", "required": True, "tier": "connection", "description": "Google Cloud Project ID", "default": ""},
+            {"name": "dataset_id", "type": "text", "required": False, "tier": "filter", "description": "Dataset ID(s) - leave empty for all, or specify one (e.g., 'billing') or multiple separated by commas (e.g., 'billing,enterprise_collected,ga_api')", "default": ""},
+            {"name": "credentials_path", "type": "text", "required": False, "tier": "auth", "description": "Path to service account JSON file (optional)", "default": ""},
+            {"name": "location", "type": "text", "required": False, "tier": "connection", "description": "BigQuery location (default: US)", "default": "US"}
         ]
 
     @staticmethod

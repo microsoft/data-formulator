@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Sensitive parameter names that should be excluded from stored metadata
-SENSITIVE_PARAMS = {'password', 'api_key', 'secret', 'token', 'access_key', 'secret_key'}
+SENSITIVE_PARAMS = {'password', 'api_key', 'secret', 'token', 'access_token', 'refresh_token', 'access_key', 'secret_key'}
 
 
 def sanitize_table_name(name_as: str) -> str:
@@ -64,15 +64,25 @@ class ExternalDataLoader(ABC):
         """
         Get connection parameters with sensitive values removed.
         
+        Uses the ``sensitive`` flag from :meth:`list_params` as the primary
+        source of truth, falling back to the ``SENSITIVE_PARAMS`` name set
+        for params not declared in ``list_params``.
+        
         Returns:
             Dictionary of parameters safe to store in metadata
         """
         if not hasattr(self, 'params'):
             return {}
         
+        # Build set of sensitive names from list_params declarations
+        declared_sensitive = {
+            p["name"] for p in self.list_params()
+            if p.get("sensitive") or p.get("type") == "password"
+        }
+        
         return {
             k: v for k, v in self.params.items()
-            if k.lower() not in SENSITIVE_PARAMS
+            if k not in declared_sensitive and k.lower() not in SENSITIVE_PARAMS
         }
     
     @abstractmethod
@@ -185,6 +195,24 @@ class ExternalDataLoader(ABC):
     def auth_instructions() -> str:
         """Return human-readable authentication instructions."""
         pass
+
+    @staticmethod
+    def delegated_login_config() -> dict[str, Any] | None:
+        """Return config for delegated (popup-based) token login, or None.
+
+        When a loader supports logging in via the external system's own
+        login page (e.g. Superset's token bridge), return a dict with:
+
+        * ``"login_url"`` — URL to open in a popup.
+        * ``"label"`` — button label shown in the UI (e.g. "Login via Superset").
+
+        The popup is expected to post a ``df-sso-auth`` message back via
+        ``postMessage`` containing ``access_token``, ``refresh_token``,
+        and ``user``.
+
+        Returns ``None`` by default (not supported).
+        """
+        return None
 
     @abstractmethod
     def __init__(self, params: dict[str, Any]):

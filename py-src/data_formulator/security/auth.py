@@ -7,14 +7,17 @@ Pluggable single-provider model with anonymous fallback::
 
     AUTH_PROVIDER=oidc            → OIDCProvider   → user:<sub>
     AUTH_PROVIDER=azure_easyauth  → AzureEasyAuth  → user:<principal>
-    (not set)                     → anonymous only  → browser:<uuid>
+    (not set, localhost)          → single-user     → local:<os_username>
+    (not set, 0.0.0.0)           → anonymous only  → browser:<uuid>
 
 Security Model:
+- Local users: Fixed OS-derived identity (single-user localhost only)
 - Anonymous users: Browser UUID from X-Identity-Id header (prefixed with "browser:")
 - Authenticated users: Verified identity from a configured AuthProvider (prefixed with "user:")
 - Namespacing ensures authenticated user data cannot be accessed by spoofing headers
 """
 
+import getpass
 import logging
 import os
 import re
@@ -48,6 +51,10 @@ _provider: Optional[AuthProvider] = None
 # Whether unauthenticated requests may fall back to browser UUID identity.
 _allow_anonymous: bool = True
 
+# Single-user localhost mode: use fixed OS-derived identity instead of
+# trusting the client-provided X-Identity-Id header.
+_localhost_identity: Optional[str] = None
+
 
 def _validate_identity_value(value: str, source: str) -> str:
     """Validate and return a trimmed identity value.
@@ -76,8 +83,13 @@ def init_auth(app: Flask) -> None:
 
     Reads ``AUTH_PROVIDER`` to select a provider and ``ALLOW_ANONYMOUS``
     to control whether unauthenticated requests are permitted.
+
+    When no provider is configured and the server is bound to a
+    loopback address (``127.0.0.1`` / ``localhost``), enables
+    single-user localhost mode with a fixed ``local:<os_username>``
+    identity.
     """
-    global _provider, _allow_anonymous
+    global _provider, _allow_anonymous, _localhost_identity
 
     _allow_anonymous = os.environ.get(
         "ALLOW_ANONYMOUS", "true"
@@ -86,7 +98,24 @@ def init_auth(app: Flask) -> None:
     provider_name = os.environ.get("AUTH_PROVIDER", "").strip().lower()
 
     if not provider_name or provider_name == "anonymous":
-        logger.info("Auth mode: anonymous only (no AUTH_PROVIDER configured)")
+        # Determine if single-user localhost mode applies.
+        host = app.config.get('CLI_ARGS', {}).get('host', os.environ.get('HOST', '127.0.0.1'))
+        if host in ('127.0.0.1', 'localhost', '::1'):
+            try:
+                username = getpass.getuser()
+                validated = _validate_identity_value(username, "os_username")
+                _localhost_identity = f"local:{validated}"
+                logger.info(
+                    "Auth mode: single-user localhost (identity=%s)",
+                    _localhost_identity,
+                )
+            except Exception:
+                logger.warning(
+                    "Could not determine OS username; falling back to anonymous mode"
+                )
+                logger.info("Auth mode: anonymous only (no AUTH_PROVIDER configured)")
+        else:
+            logger.info("Auth mode: anonymous only (no AUTH_PROVIDER configured)")
         return
 
     provider_cls = get_provider_class(provider_name)
@@ -129,11 +158,12 @@ def get_identity_id() -> str:
     Resolution order:
 
     1. Active AuthProvider → ``user:<verified_id>``
-    2. Anonymous fallback (``ALLOW_ANONYMOUS=true``) → ``browser:<uuid>``
-    3. Neither → ``ValueError``
+    2. Single-user localhost → ``local:<os_username>``
+    3. Anonymous fallback (``ALLOW_ANONYMOUS=true``) → ``browser:<uuid>``
+    4. Neither → ``ValueError``
 
     Returns:
-        ``"user:<id>"`` or ``"browser:<id>"``
+        ``"user:<id>"``, ``"local:<username>"``, or ``"browser:<id>"``
 
     Raises:
         ValueError: when no identity can be determined.
@@ -156,6 +186,10 @@ def get_identity_id() -> str:
                 "Auth provider '%s' rejected request: %s", e.provider, e,
             )
             raise ValueError(f"Authentication failed: {e}")
+
+    # --- single-user localhost -----------------------------------------
+    if _localhost_identity:
+        return _localhost_identity
 
     # --- anonymous fallback --------------------------------------------
     if _allow_anonymous:

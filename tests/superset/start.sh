@@ -33,11 +33,13 @@ set +a
 if docker ps --format '{{.Names}}' | grep -q "^df-test-superset$"; then
     info "Superset already running"
 else
+    # Remove stopped container if it exists (avoids port/name conflicts)
+    docker rm -f df-test-superset 2>/dev/null || true
     info "Starting Superset (first run takes ~2 min)..."
-    docker compose -f "$COMPOSE_FILE" up -d
+    docker compose -f "$COMPOSE_FILE" up -d --force-recreate
     info "Waiting for Superset..."
     until curl -sf http://localhost:8088/health > /dev/null 2>&1; do sleep 3; done
-    info "Superset ready"
+    info "Superset ready (SSO bridge enabled at /df-sso-bridge/)"
 fi
 
 # --- Start DF backend ---

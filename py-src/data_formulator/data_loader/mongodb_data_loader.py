@@ -18,13 +18,13 @@ class MongoDBDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "host", "type": "string", "required": True, "default": "localhost", "description": "server address"}, 
-            {"name": "port", "type": "int", "required": False, "default": 27017, "description": "server port"},
-            {"name": "username", "type": "string", "required": False, "default": "", "description": "leave blank if no auth"},
-            {"name": "password", "type": "string", "required": False, "default": "", "description": "leave blank if no auth"},
-            {"name": "database", "type": "string", "required": True, "default": "", "description": "database name"},
-            {"name": "collection", "type": "string", "required": False, "default": "", "description": "leave empty to list all collections"},
-            {"name": "authSource", "type": "string", "required": False, "default": "", "description": "auth database (defaults to target database)"}
+            {"name": "host", "type": "string", "required": True, "default": "localhost", "tier": "connection", "description": "server address"}, 
+            {"name": "port", "type": "int", "required": False, "default": 27017, "tier": "connection", "description": "server port"},
+            {"name": "username", "type": "string", "required": False, "default": "", "tier": "auth", "description": "leave blank if no auth"},
+            {"name": "password", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "leave blank if no auth"},
+            {"name": "database", "type": "string", "required": True, "default": "", "tier": "connection", "description": "database name"},
+            {"name": "collection", "type": "string", "required": False, "default": "", "tier": "filter", "description": "leave empty to list all collections"},
+            {"name": "authSource", "type": "string", "required": False, "default": "", "tier": "auth", "description": "auth database (defaults to target database)"}
         ]
         return params_list
 

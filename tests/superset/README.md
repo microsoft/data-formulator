@@ -45,6 +45,19 @@ Plus Superset's built-in example datasets (if `load_examples` succeeds).
 5. Click it, then log in with `admin` / `admin`
 6. Browse datasets and load one into Data Formulator
 
+### Token-based Login (via Superset)
+
+The test Docker mounts a custom `superset_config.py` that adds a `/df-sso-bridge/` endpoint. This lets you test the delegated login flow where DF obtains a JWT token by having the user log in directly on Superset:
+
+1. Start both services: `./tests/superset/start.sh`
+2. Log into Superset UI at http://localhost:8088 with `admin` / `admin` (creates a session)
+3. Open http://localhost:5567 (or http://localhost:5173 for Vite dev)
+4. In the Superset login panel, click the **Login via Superset** button
+5. A popup opens → Superset sees the existing session → issues JWT tokens via `postMessage`
+6. DF receives the tokens and you're logged in without entering credentials in DF
+
+> **Note**: You must have an active Superset session (step 2) for the bridge to work. If you're not logged into Superset, the popup will redirect you to Superset's login page first.
+
 ## Manual Setup (without the script)
 
 ```bash

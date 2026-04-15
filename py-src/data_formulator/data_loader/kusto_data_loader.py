@@ -16,25 +16,19 @@ class KustoDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "kusto_cluster", "type": "string", "required": True, "description": "e.g., https://mycluster.region.kusto.windows.net"}, 
-            {"name": "kusto_database", "type": "string", "required": False, "description": "Database name (leave empty to browse all databases)"}, 
-            {"name": "client_id", "type": "string", "required": False, "description": "only for App Key auth"}, 
-            {"name": "client_secret", "type": "string", "required": False, "description": "only for App Key auth"}, 
-            {"name": "tenant_id", "type": "string", "required": False, "description": "only for App Key auth"}
+            {"name": "kusto_cluster", "type": "string", "required": True, "tier": "connection", "description": "e.g., https://mycluster.region.kusto.windows.net"}, 
+            {"name": "kusto_database", "type": "string", "required": False, "tier": "filter", "description": "Database name (leave empty to browse all databases)"}, 
+            {"name": "client_id", "type": "string", "required": False, "tier": "auth", "description": "Service principal only"}, 
+            {"name": "client_secret", "type": "string", "required": False, "sensitive": True, "tier": "auth", "description": "Service principal only"}, 
+            {"name": "tenant_id", "type": "string", "required": False, "tier": "auth", "description": "Service principal only"}
         ]
         return params_list
-    
+
     @staticmethod
     def auth_instructions() -> str:
-        return """**Example (CLI):** kusto_cluster: `https://mycluster.westus.kusto.windows.net` · kusto_database: `mydb`
+        return """**Option 1 — Azure Default Identity (easiest):** Leave auth fields empty. DF will automatically use your Azure CLI login (`az login`), Managed Identity, VS Code credentials, or environment variables — whichever is available.
 
-**Example (App Key):** kusto_cluster: `https://mycluster.westus.kusto.windows.net` · kusto_database: `mydb` · client_id: `abc-123...` · client_secret: `xyz...` · tenant_id: `def-456...`
-
-**Option 1 — Azure CLI (recommended):**
-Run `az login` in your terminal. Leave `client_id`, `client_secret`, and `tenant_id` empty.
-
-**Option 2 — App Key Authentication:**
-Register an Azure AD application, generate a client secret, and grant it access to your Kusto cluster (e.g., "AllDatabasesViewer" role via Azure Portal → Kusto cluster → Permissions). Provide `client_id`, `client_secret`, and `tenant_id`."""
+**Option 2 — Service Principal:** Provide `client_id`, `client_secret`, and `tenant_id` for a service principal with cluster access."""
 
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -47,18 +41,24 @@ Register an Azure AD application, generate a client secret, and grant it access 
 
         try:
             if self.client_id and self.client_secret and self.tenant_id:
+                # Service principal auth
                 self.client = KustoClient(KustoConnectionStringBuilder.with_aad_application_key_authentication(
                     self.kusto_cluster, self.client_id, self.client_secret, self.tenant_id))
+                logger.info("Using service principal authentication for Kusto client.")
             else:
-                cluster_url = KustoConnectionStringBuilder.with_az_cli_authentication(self.kusto_cluster)
-                logger.info(f"Connecting to Kusto cluster: {self.kusto_cluster}")
-                self.client = KustoClient(cluster_url)
-                logger.info("Using Azure CLI authentication for Kusto client.")
+                # DefaultAzureCredential: tries az login, Managed Identity, VS Code, env vars, etc.
+                from azure.identity import DefaultAzureCredential
+                credential = DefaultAzureCredential()
+                kcsb = KustoConnectionStringBuilder.with_azure_token_credential(
+                    self.kusto_cluster, credential)
+                self.client = KustoClient(kcsb)
+                logger.info("Using DefaultAzureCredential for Kusto client (az login / Managed Identity / etc.).")
         except Exception as e:
             logger.error(f"Error creating Kusto client: {e}")
             raise RuntimeError(
                 f"Error creating Kusto client: {e}. "
-                "Please authenticate with Azure CLI (az login) when starting the app."
+                "If running locally, run 'az login' or provide service principal credentials. "
+                "If running on Azure, ensure a Managed Identity is assigned to the host."
             ) from e
 
     def _convert_kusto_datetime_columns(self, df: pd.DataFrame) -> pd.DataFrame:

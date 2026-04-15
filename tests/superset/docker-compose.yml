@@ -24,6 +24,7 @@ services:
       - superset-data:/app/superset_home
       - ./init-superset.sh:/docker-entrypoint-initdb.d/init-superset.sh:ro
       - ./sample_data.py:/tmp/sample_data.py:ro
+      - ./superset_config.py:/app/pythonpath/superset_config.py:ro
     # Override entrypoint to run init then start
     entrypoint: ["/bin/bash", "-c"]
     command:

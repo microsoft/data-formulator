@@ -60,15 +60,15 @@ class AthenaDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "aws_profile", "type": "string", "required": False, "default": "", "description": "AWS profile name from ~/.aws/credentials (if set, access key and secret are not required)"},
-            {"name": "aws_access_key_id", "type": "string", "required": False, "default": "", "description": "AWS access key ID (not required if using aws_profile)"},
-            {"name": "aws_secret_access_key", "type": "string", "required": False, "default": "", "description": "AWS secret access key (not required if using aws_profile)"},
-            {"name": "aws_session_token", "type": "string", "required": False, "default": "", "description": "AWS session token (required for temporary credentials)"},
-            {"name": "region_name", "type": "string", "required": True, "default": "us-east-1", "description": "AWS region name"},
-            {"name": "workgroup", "type": "string", "required": False, "default": "primary", "description": "Athena workgroup name (output location is fetched from workgroup configuration)"},
-            {"name": "output_location", "type": "string", "required": False, "default": "", "description": "S3 output location for query results (e.g., s3://bucket/path/). If empty, uses workgroup configuration."},
-            {"name": "database", "type": "string", "required": False, "default": "", "description": "Default database/catalog to use for queries"},
-            {"name": "query_timeout", "type": "number", "required": False, "default": 300, "description": "Query execution timeout in seconds (default: 300 = 5 minutes)"}
+            {"name": "aws_profile", "type": "string", "required": False, "default": "", "tier": "auth", "description": "AWS profile name from ~/.aws/credentials (if set, access key and secret are not required)"},
+            {"name": "aws_access_key_id", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS access key ID (not required if using aws_profile)"},
+            {"name": "aws_secret_access_key", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS secret access key (not required if using aws_profile)"},
+            {"name": "aws_session_token", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS session token (required for temporary credentials)"},
+            {"name": "region_name", "type": "string", "required": True, "default": "us-east-1", "tier": "connection", "description": "AWS region name"},
+            {"name": "workgroup", "type": "string", "required": False, "default": "primary", "tier": "connection", "description": "Athena workgroup name (output location is fetched from workgroup configuration)"},
+            {"name": "output_location", "type": "string", "required": False, "default": "", "tier": "connection", "description": "S3 output location for query results (e.g., s3://bucket/path/). If empty, uses workgroup configuration."},
+            {"name": "database", "type": "string", "required": False, "default": "", "tier": "filter", "description": "Default database/catalog to use for queries"},
+            {"name": "query_timeout", "type": "number", "required": False, "default": 300, "tier": "connection", "description": "Query execution timeout in seconds (default: 300 = 5 minutes)"}
         ]
         return params_list
 

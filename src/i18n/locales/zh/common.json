@@ -298,7 +298,9 @@
     "failedIngestData": "写入数据失败：{{error}}",
     "emptyValue": "（空）",
     "notInstalledHint": "未安装。请运行：{{hint}}",
-    "selectDataLoader": "请从左侧面板选择数据加载器",
+    "selectDataLoader": "请从左侧面板选择数据源",
+    "connectedSection": "已连接",
+    "availableSection": "可用",
     "uploadingData": "正在上传数据...",
     "rowsCount": "{{count}} 行",
     "sampleRowsCount": "{{count}} 行（样本）",
@@ -307,7 +309,9 @@
     "subsetLoaded": "子集已加载",
     "unload": "卸载",
     "loadTableSubset": "加载表子集",
-    "loadTableBtn": "加载表"
+    "loadTableBtn": "加载表",
+    "rememberCredentials": "记住凭据",
+    "connectionTimeout": "连接超时。请检查凭据后重试。"
   },
   "dataThread": {
     "title": "数据线程",

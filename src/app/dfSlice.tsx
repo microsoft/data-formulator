@@ -41,7 +41,8 @@ export interface SSEMessage {
 // Add interface for app configuration
 export interface ServerConfig {
     DISABLE_DISPLAY_KEYS: boolean;
-    DISABLE_FILE_UPLOAD: boolean;
+    DISABLE_DATA_CONNECTORS: boolean;
+    DISABLE_CUSTOM_MODELS: boolean;
     PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
     AVAILABLE_LANGUAGES: string[];
@@ -55,17 +56,23 @@ export interface ServerConfig {
         [key: string]: unknown;
     };
     PLUGINS?: Record<string, import('../plugins/types').PluginConfig>;
-    SOURCES?: Array<{
+    CONNECTORS?: Array<{
         source_id: string;
         source_type: string;
         name: string;
         icon: string;
-        params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string}>;
+        params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
         pinned_params: Record<string, string>;
         hierarchy: Array<{key: string; label: string}>;
         effective_hierarchy: Array<{key: string; label: string}>;
         auth_instructions: string;
+        auth_mode?: string;
+        delegated_login?: { login_url: string; label?: string } | null;
     }>;
+    DISABLED_SOURCES?: Record<string, {install_hint: string}>;
+    CONNECTED_CONNECTORS?: string[];
+    IDENTITY?: { type: string; id: string };
+    CREDENTIAL_VAULT_ENABLED?: boolean;
 }
 
 export interface ModelConfig {
@@ -116,8 +123,8 @@ export interface DataFormulatorState {
         exploration: string;
     };
 
-    // Identity management: user identity (if logged in) or browser identity (localStorage-based)
-    // Always initialized with browser identity, updated to user identity if logged in
+    // Identity management: local (localhost), user (SSO), or browser (anonymous multi-user)
+    // Initialized with browser identity, then updated from server config or auth provider
     identity: Identity;
     /**
      * Server-managed global models loaded from the backend on every app start.
@@ -204,7 +211,8 @@ const initialState: DataFormulatorState = {
 
     serverConfig: {
         DISABLE_DISPLAY_KEYS: false,
-        DISABLE_FILE_UPLOAD: false,
+        DISABLE_DATA_CONNECTORS: false,
+        DISABLE_CUSTOM_MODELS: false,
         PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
         AVAILABLE_LANGUAGES: ['en', 'zh'],

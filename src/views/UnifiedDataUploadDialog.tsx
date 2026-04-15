@@ -1186,52 +1186,41 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             onChange={handleFileInputChange}
                         />
                         
-                        {/* File Upload Section - only show drop zone when file upload is enabled */}
-                        {!serverConfig.DISABLE_FILE_UPLOAD ? (
-                            <Box
-                                sx={{
-                                    border: '2px dashed',
-                                    borderColor: isDragOver ? 'primary.main' : borderColor.divider,
-                                    borderRadius: radius.md,
-                                    p: showFilePreview ? 2 : 3,
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    transition: transition.normal,
-                                    backgroundColor: isDragOver ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
-                                    '&:hover': {
-                                        borderColor: 'primary.main',
-                                        backgroundColor: alpha(theme.palette.primary.main, 0.04),
-                                    }
-                                }}
-                                onClick={() => fileInputRef.current?.click()}
-                                onDrop={handleFileDrop}
-                                onDragOver={handleDragOver}
-                                onDragEnter={handleDragEnter}
-                                onDragLeave={handleDragLeave}
-                            >
-                                <UploadFileIcon sx={{ fontSize: showFilePreview ? 28 : 36, color: 'text.secondary', mb: 1 }} />
-                                <Typography variant={showFilePreview ? "body2" : "subtitle1"} gutterBottom>
-                                    {t('upload.dragDrop')}
+                        {/* File Upload Section */}
+                        <Box
+                            sx={{
+                                border: '2px dashed',
+                                borderColor: isDragOver ? 'primary.main' : borderColor.divider,
+                                borderRadius: radius.md,
+                                p: showFilePreview ? 2 : 3,
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                transition: transition.normal,
+                                backgroundColor: isDragOver ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
+                                '&:hover': {
+                                    borderColor: 'primary.main',
+                                    backgroundColor: alpha(theme.palette.primary.main, 0.04),
+                                }
+                            }}
+                            onClick={() => fileInputRef.current?.click()}
+                            onDrop={handleFileDrop}
+                            onDragOver={handleDragOver}
+                            onDragEnter={handleDragEnter}
+                            onDragLeave={handleDragLeave}
+                        >
+                            <UploadFileIcon sx={{ fontSize: showFilePreview ? 28 : 36, color: 'text.secondary', mb: 1 }} />
+                            <Typography variant={showFilePreview ? "body2" : "subtitle1"} gutterBottom>
+                                {t('upload.dragDrop')}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: showFilePreview ? '0.75rem' : '0.875rem' }}>
+                                {t('upload.or')} <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>{t('upload.browse')}</Link>
+                            </Typography>
+                            {!showFilePreview && (
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                    {t('upload.supportedFormats')}
                                 </Typography>
-                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: showFilePreview ? '0.75rem' : '0.875rem' }}>
-                                    {t('upload.or')} <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>{t('upload.browse')}</Link>
-                                </Typography>
-                                {!showFilePreview && (
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                        {t('upload.supportedFormats')}
-                                    </Typography>
-                                )}
-                            </Box>
-                        ) : (
-                            <Box sx={{ textAlign: 'center', py: 4, px: 2 }}>
-                                <Typography color="text.secondary" sx={{ mb: 2 }}>
-                                    {t('upload.fileUploadDisabled')}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    {t('upload.useLoadFromUrl')}
-                                </Typography>
-                            </Box>
-                        )}
+                            )}
+                        </Box>
                         </Box>
 
                         {showFilePreview && (

@@ -30,6 +30,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": True,
                 "default": "localhost",
+                "tier": "connection",
                 "description": "SQL Server host address or instance name",
             },
             {
@@ -37,6 +38,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": False,
                 "default": "",
+                "tier": "filter",
                 "description": "Database name (leave empty to browse all databases)",
             },
             {
@@ -44,6 +46,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": False,
                 "default": "",
+                "tier": "auth",
                 "description": "Username (leave empty for Windows Authentication)",
             },
             {
@@ -51,6 +54,8 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": False,
                 "default": "",
+                "sensitive": True,
+                "tier": "auth",
                 "description": "Password (leave empty for Windows Authentication)",
             },
             {
@@ -58,6 +63,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": False,
                 "default": "1433",
+                "tier": "connection",
                 "description": "SQL Server port (default: 1433)",
             },
             {
@@ -65,6 +71,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": False,
                 "default": "ODBC Driver 17 for SQL Server",
+                "tier": "connection",
                 "description": "ODBC driver name",
             },
             {
@@ -72,6 +79,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": False,
                 "default": "yes",
+                "tier": "connection",
                 "description": "Enable encryption (yes/no)",
             },
             {
@@ -79,6 +87,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": False,
                 "default": "no",
+                "tier": "connection",
                 "description": "Trust server certificate (yes/no)",
             },
             {
@@ -86,6 +95,7 @@ class MSSQLDataLoader(ExternalDataLoader):
                 "type": "string",
                 "required": False,
                 "default": "30",
+                "tier": "connection",
                 "description": "Connection timeout in seconds",
             },
         ]

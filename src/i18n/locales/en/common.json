@@ -298,7 +298,9 @@
     "failedIngestData": "Failed to ingest data: {{error}}",
     "emptyValue": "(empty)",
     "notInstalledHint": "Not installed. Run: {{hint}}",
-    "selectDataLoader": "Select a data loader from the left panel",
+    "selectDataLoader": "Select a data source from the left panel",
+    "connectedSection": "Connected",
+    "availableSection": "Available",
     "uploadingData": "Uploading data...",
     "rowsCount": "{{count}} rows",
     "sampleRowsCount": "{{count}} sample rows",
@@ -307,7 +309,16 @@
     "subsetLoaded": "Subset loaded",
     "unload": "Unload",
     "loadTableSubset": "Load Table Subset",
-    "loadTableBtn": "Load Table"
+    "loadTableBtn": "Load Table",
+    "rememberCredentials": "Remember credentials",
+    "connectionTimeout": "Connection timed out. Please check your credentials and try again.",
+    "delegatedLogin": "Login via service",
+    "popupBlocked": "Popup was blocked. Please allow popups and try again.",
+    "tierConnection": "Connection",
+    "tierAuth": "Sign in",
+    "tierFilter": "Scope",
+    "tierAuthOr": "or",
+    "tierAuthManual": "Enter credentials manually"
   },
   "dataThread": {
     "title": "Data Threads",

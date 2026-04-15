@@ -49,16 +49,6 @@ export function getUrls() {
         SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
-        DATA_LOADER_LIST_DATA_LOADERS: `/api/tables/data-loader/list-data-loaders`,
-        DATA_LOADER_LIST_TABLES: `/api/tables/data-loader/list-tables`,
-        DATA_LOADER_INGEST_DATA: `/api/tables/data-loader/ingest-data`,
-        DATA_LOADER_VIEW_QUERY_SAMPLE: `/api/tables/data-loader/view-query-sample`,
-        DATA_LOADER_INGEST_DATA_FROM_QUERY: `/api/tables/data-loader/ingest-data-from-query`,
-        DATA_LOADER_REFRESH_TABLE: `/api/tables/data-loader/refresh-table`,
-        DATA_LOADER_FETCH_DATA: `/api/tables/data-loader/fetch-data`,
-        DATA_LOADER_GET_TABLE_METADATA: `/api/tables/data-loader/get-table-metadata`,
-        DATA_LOADER_LIST_TABLE_METADATA: `/api/tables/data-loader/list-table-metadata`,
-
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
         GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
 
@@ -82,14 +72,15 @@ export function getUrls() {
 }
 
 /**
- * Build API URLs for a ConnectedDataSource by source_id.
+ * Build API URLs for a DataConnector by connector ID.
  */
-export function getSourceUrls(sourceId: string) {
-    const base = `/api/sources/${sourceId}`;
+export function getConnectorUrls(connectorId: string) {
+    const base = `/api/connectors/${connectorId}`;
     return {
         AUTH_CONNECT: `${base}/auth/connect`,
         AUTH_DISCONNECT: `${base}/auth/disconnect`,
         AUTH_STATUS: `${base}/auth/status`,
+        AUTH_TOKEN_CONNECT: `${base}/auth/token-connect`,
         CATALOG_LS: `${base}/catalog/ls`,
         CATALOG_METADATA: `${base}/catalog/metadata`,
         CATALOG_LIST_TABLES: `${base}/catalog/list_tables`,

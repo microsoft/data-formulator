@@ -1,22 +1,22 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""ConnectedDataSource — generic lifecycle wrapper for ExternalDataLoader.
+"""DataConnector — generic lifecycle wrapper for ExternalDataLoader.
 
 Takes any ``ExternalDataLoader`` class and auto-generates a Flask Blueprint
-with auth / catalog / data routes.  No per-source code needed.
+with auth / catalog / data routes.  No per-connector code needed.
 
 Usage::
 
-    from data_formulator.connected_source import ConnectedDataSource
+    from data_formulator.data_connector import DataConnector
 
-    plugin = ConnectedDataSource.from_loader(
+    connector = DataConnector.from_loader(
         PostgreSQLDataLoader,
         source_id="pg_prod",
         display_name="Production DB",
         default_params={"host": "db.corp", "database": "prod"},
     )
-    app.register_blueprint(plugin.create_blueprint())
+    app.register_blueprint(connector.create_blueprint())
 """
 
 import dataclasses
@@ -34,8 +34,8 @@ from data_formulator.plugins.base import DataSourcePlugin
 
 logger = logging.getLogger(__name__)
 
-# Registry of enabled ConnectedDataSource instances (populated at startup).
-CONNECTED_SOURCES: dict[str, "ConnectedDataSource"] = {}
+# Registry of enabled DataConnector instances (populated at startup).
+DATA_CONNECTORS: dict[str, "DataConnector"] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ def _sanitize_error(error: Exception) -> tuple[str, int]:
 
     Never leaks internal details to the client.
     """
-    logger.error("ConnectedDataSource error", exc_info=error)
+    logger.error("DataConnector error", exc_info=error)
     msg = str(error).lower()
     if "required" in msg or "invalid" in msg:
         return "Invalid connection parameters", 400
@@ -72,10 +72,10 @@ def _hierarchy_dicts(levels: list[dict[str, str]]) -> list[dict[str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# ConnectedDataSource
+# DataConnector
 # ---------------------------------------------------------------------------
 
-class ConnectedDataSource(DataSourcePlugin):
+class DataConnector(DataSourcePlugin):
     """A DataSourcePlugin auto-generated from an ExternalDataLoader.
 
     Provides:
@@ -114,7 +114,7 @@ class ConnectedDataSource(DataSourcePlugin):
         display_name: str | None = None,
         default_params: dict[str, Any] | None = None,
         icon: str | None = None,
-    ) -> "ConnectedDataSource":
+    ) -> "DataConnector":
         return cls(
             loader_class=loader_class,
             source_id=source_id,
@@ -141,6 +141,16 @@ class ConnectedDataSource(DataSourcePlugin):
             "capabilities": ["tables", "catalog", "refresh"],
         }
 
+    # Common filter-tier param appended to every loader's form
+    _TABLE_FILTER_PARAM = {
+        "name": "table_filter",
+        "type": "string",
+        "required": False,
+        "default": "",
+        "tier": "filter",
+        "description": "Filter table by keywords (e.g. 'sales')",
+    }
+
     def get_frontend_config(self) -> dict[str, Any]:
         all_params = self._loader_class.list_params()
         form_fields: list[dict] = []
@@ -151,6 +161,9 @@ class ConnectedDataSource(DataSourcePlugin):
                 pinned_params[param["name"]] = self._default_params[param["name"]]
             else:
                 form_fields.append(param)
+
+        # Append common table_filter param
+        form_fields.append(self._TABLE_FILTER_PARAM)
 
         full_hierarchy = self._loader_class.catalog_hierarchy()
         effective = [
@@ -168,21 +181,36 @@ class ConnectedDataSource(DataSourcePlugin):
             "hierarchy": _hierarchy_dicts(full_hierarchy),
             "effective_hierarchy": _hierarchy_dicts(effective),
             "auth_instructions": self._loader_class.auth_instructions(),
+            "auth_mode": self._loader_class.auth_mode(),
+            "delegated_login": self._resolve_delegated_login(),
         }
+
+    def _resolve_delegated_login(self) -> dict[str, Any] | None:
+        """Resolve delegated login config, converting relative URLs to absolute."""
+        raw = self._loader_class.delegated_login_config()
+        if raw is None:
+            return None
+        login_url = raw.get("login_url", "")
+        # Resolve relative URLs to the connector's API prefix
+        if login_url and not login_url.startswith("http"):
+            login_url = f"/api/connectors/{self._source_id}/{login_url}"
+        # Only send safe fields to the frontend
+        return {"login_url": login_url, "label": raw.get("label", "")}
 
     def create_blueprint(self) -> Blueprint:
         bp = Blueprint(
-            f"source_{self._source_id}",
+            f"connector_{self._source_id}",
             __name__,
-            url_prefix=f"/api/sources/{self._source_id}",
+            url_prefix=f"/api/connectors/{self._source_id}",
         )
         self._register_auth_routes(bp)
         self._register_catalog_routes(bp)
         self._register_data_routes(bp)
+
         return bp
 
     def on_enable(self, app: Flask) -> None:
-        logger.info("ConnectedDataSource '%s' enabled", self._source_id)
+        logger.info("DataConnector '%s' enabled", self._source_id)
 
     # -- Identity + Loader Management --------------------------------------
 
@@ -191,27 +219,128 @@ class ConnectedDataSource(DataSourcePlugin):
         from data_formulator.security.auth import get_identity_id
         return get_identity_id()
 
+    @staticmethod
+    def _get_vault():
+        """Return the credential vault (or None if unavailable)."""
+        from data_formulator.credential_vault import get_credential_vault
+        return get_credential_vault()
+
+    def _vault_store(self, identity: str, user_params: dict[str, Any]) -> bool:
+        """Encrypt and persist user_params for this source. Returns True on success."""
+        vault = self._get_vault()
+        if vault is None:
+            return False
+        try:
+            vault.store(identity, self._source_id, {
+                "user_params": user_params,
+                "source_id": self._source_id,
+            })
+            return True
+        except Exception as exc:
+            logger.warning("Failed to store credentials for %s/%s: %s",
+                           identity[:16], self._source_id, exc)
+            return False
+
+    def _vault_retrieve(self, identity: str) -> dict[str, Any] | None:
+        """Retrieve stored user_params from the vault. Returns None if absent."""
+        vault = self._get_vault()
+        if vault is None:
+            return None
+        try:
+            data = vault.retrieve(identity, self._source_id)
+            if data and "user_params" in data:
+                return data["user_params"]
+            return None
+        except Exception as exc:
+            logger.warning("Failed to retrieve credentials for %s/%s: %s",
+                           identity[:16], self._source_id, exc)
+            return None
+
+    def _vault_delete(self, identity: str) -> None:
+        """Delete stored credentials from the vault."""
+        vault = self._get_vault()
+        if vault is None:
+            return
+        try:
+            vault.delete(identity, self._source_id)
+        except Exception as exc:
+            logger.warning("Failed to delete credentials for %s/%s: %s",
+                           identity[:16], self._source_id, exc)
+
+    def has_stored_credentials(self, identity: str) -> bool:
+        """Check if the vault has credentials for this identity+source."""
+        vault = self._get_vault()
+        if vault is None:
+            return False
+        try:
+            return self._source_id in vault.list_sources(identity)
+        except Exception:
+            return False
+
     def _get_loader(self, identity: str | None = None) -> ExternalDataLoader | None:
         identity = identity or self._get_identity()
         return self._loaders.get(identity)
 
-    def _connect(self, user_params: dict[str, Any]) -> ExternalDataLoader:
-        """Instantiate a loader with merged params (default + user)."""
+    def _connect(self, user_params: dict[str, Any], persist: bool = True) -> ExternalDataLoader:
+        """Instantiate a loader with merged params (default + user).
+
+        Note: This only creates the loader and caches it in-memory.
+        Vault persistence is handled separately by the caller after
+        connection verification succeeds.
+        """
         merged = {**self._default_params, **user_params}
         loader = self._loader_class(merged)
         identity = self._get_identity()
         self._loaders[identity] = loader
         return loader
 
+    def _persist_credentials(self, user_params: dict[str, Any]) -> bool:
+        """Store credentials in the vault for the current identity."""
+        identity = self._get_identity()
+        return self._vault_store(identity, user_params)
+
     def _disconnect(self) -> None:
         identity = self._get_identity()
         self._loaders.pop(identity, None)
+        self._vault_delete(identity)
+
+    def _try_auto_reconnect(self, identity: str) -> ExternalDataLoader | None:
+        """Attempt to restore a connection from vault credentials.
+
+        Returns the loader on success, or None (and cleans up stale vault
+        entry) on failure.
+        """
+        stored_params = self._vault_retrieve(identity)
+        if stored_params is None:
+            return None
+        try:
+            merged = {**self._default_params, **stored_params}
+            loader = self._loader_class(merged)
+            if loader.test_connection():
+                self._loaders[identity] = loader
+                logger.info("Auto-reconnected '%s' for %s", self._source_id, identity[:16])
+                return loader
+            else:
+                logger.info("Auto-reconnect test failed for '%s'/%s, clearing stale credentials",
+                            self._source_id, identity[:16])
+                self._vault_delete(identity)
+                return None
+        except Exception as exc:
+            logger.warning("Auto-reconnect failed for '%s'/%s: %s",
+                           self._source_id, identity[:16], exc)
+            self._vault_delete(identity)
+            return None
 
     def _require_loader(self) -> ExternalDataLoader:
-        loader = self._get_loader()
-        if loader is None:
-            raise ValueError("Not connected. Please connect first.")
-        return loader
+        identity = self._get_identity()
+        loader = self._loaders.get(identity)
+        if loader is not None:
+            return loader
+        # Try auto-reconnect from vault
+        loader = self._try_auto_reconnect(identity)
+        if loader is not None:
+            return loader
+        raise ValueError("Not connected. Please connect first.")
 
     # -- Auth Routes -------------------------------------------------------
 
@@ -223,15 +352,26 @@ class ConnectedDataSource(DataSourcePlugin):
             try:
                 data = request.get_json() or {}
                 user_params = data.get("params", {})
+                persist = data.get("persist", True)
                 loader = source._connect(user_params)
 
                 if not loader.test_connection():
                     source._disconnect()
                     return jsonify({"status": "error", "message": "Connection test failed"}), 400
 
+                # Only persist to vault after connection is verified
+                persisted = False
+                if persist:
+                    persisted = source._persist_credentials(user_params)
+                else:
+                    # User opted out — clear any previously stored credentials
+                    identity = source._get_identity()
+                    source._vault_delete(identity)
+
                 safe = loader.get_safe_params()
                 return jsonify({
                     "status": "connected",
+                    "persisted": persisted,
                     "params": safe,
                     "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
                     "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
@@ -247,12 +387,73 @@ class ConnectedDataSource(DataSourcePlugin):
             source._disconnect()
             return jsonify({"status": "disconnected"})
 
+        @bp.route("/auth/token-connect", methods=["POST"])
+        def auth_token_connect():
+            """Accept tokens from a delegated (popup) login flow and create a connection.
+
+            Expected JSON body::
+
+                {
+                    "access_token": "eyJ...",
+                    "refresh_token": "eyJ...",   // optional
+                    "user": {...},               // optional user info
+                    "params": {"url": "..."},    // extra params (e.g. Superset base URL)
+                    "persist": true
+                }
+            """
+            try:
+                data = request.get_json() or {}
+                access_token = data.get("access_token")
+                if not access_token:
+                    return jsonify({"status": "error", "message": "Missing access_token"}), 400
+
+                extra_params = data.get("params", {})
+                persist = data.get("persist", True)
+
+                # Build loader params: merge default + extra + tokens
+                user_params = {
+                    **extra_params,
+                    "access_token": access_token,
+                    "refresh_token": data.get("refresh_token", ""),
+                }
+
+                loader = source._connect(user_params)
+
+                if not loader.test_connection():
+                    source._disconnect()
+                    return jsonify({"status": "error", "message": "Token connection test failed"}), 400
+
+                persisted = False
+                if persist:
+                    persisted = source._persist_credentials(user_params)
+
+                safe = loader.get_safe_params()
+                return jsonify({
+                    "status": "connected",
+                    "persisted": persisted,
+                    "params": safe,
+                    "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
+                    "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
+                    "pinned_scope": loader.pinned_scope(),
+                    "user": data.get("user", {}),
+                })
+            except Exception as e:
+                source._disconnect()
+                safe_msg, status_code = _sanitize_error(e)
+                return jsonify({"status": "error", "message": safe_msg}), status_code
+
         @bp.route("/auth/status", methods=["GET"])
         def auth_status():
-            loader = source._get_loader()
+            identity = source._get_identity()
+            loader = source._get_loader(identity)
+            # Try auto-reconnect from vault if no in-memory loader
             if loader is None:
+                loader = source._try_auto_reconnect(identity)
+            if loader is None:
+                has_stored = source.has_stored_credentials(identity)
                 return jsonify({
                     "connected": False,
+                    "has_stored_credentials": has_stored,
                     "params_form": source.get_frontend_config()["params_form"],
                 })
             try:
@@ -263,10 +464,12 @@ class ConnectedDataSource(DataSourcePlugin):
                 source._disconnect()
                 return jsonify({
                     "connected": False,
+                    "has_stored_credentials": False,
                     "params_form": source.get_frontend_config()["params_form"],
                 })
             return jsonify({
                 "connected": True,
+                "persisted": source._get_vault() is not None,
                 "params": loader.get_safe_params(),
                 "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
                 "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
@@ -410,10 +613,15 @@ class ConnectedDataSource(DataSourcePlugin):
                 if not source_table:
                     return jsonify({"status": "error", "message": "source_table is required"}), 400
 
-                size = data.get("size", 10)
+                import_options = data.get("import_options", {})
+                if not import_options:
+                    # Legacy: accept top-level size/row_limit params
+                    size = data.get("size") or data.get("row_limit", 10)
+                    import_options = {"size": size}
+
                 arrow_table = loader.fetch_data_as_arrow(
                     source_table=source_table,
-                    import_options={"size": size},
+                    import_options=import_options,
                 )
                 df = arrow_table.to_pandas()
                 rows = _json.loads(df.to_json(orient="records", date_format="iso"))
@@ -424,6 +632,7 @@ class ConnectedDataSource(DataSourcePlugin):
                     "columns": columns,
                     "rows": rows,
                     "row_count": len(rows),
+                    "total_row_count": len(rows),
                 })
             except Exception as e:
                 safe_msg, status_code = _sanitize_error(e)
@@ -552,7 +761,7 @@ def _build_source_specs() -> tuple[list[SourceSpec], bool]:
             loader_type = entry.get("type", "")
             if not loader_type:
                 continue
-            sid = entry.get("id") or f"{loader_type}_{i}" if i > 0 else loader_type
+            sid = entry.get("id") or (f"{loader_type}_{i}" if i > 0 else loader_type)
             yaml_specs.append(SourceSpec(
                 source_id=sid,
                 loader_type=loader_type,
@@ -588,8 +797,8 @@ def _build_source_specs() -> tuple[list[SourceSpec], bool]:
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_connected_sources(app: Flask) -> None:
-    """Register ConnectedDataSource plugins from config + auto-discovery.
+def register_data_connectors(app: Flask) -> None:
+    """Register DataConnector instances from config + auto-discovery.
 
     Called from ``app.py`` during startup.
     """
@@ -609,7 +818,7 @@ def register_connected_sources(app: Flask) -> None:
                 logger.warning("Unknown source type '%s' for '%s'", spec.loader_type, spec.source_id)
             continue
 
-        source = ConnectedDataSource.from_loader(
+        source = DataConnector.from_loader(
             loader_class,
             source_id=spec.source_id,
             display_name=spec.display_name,
@@ -619,14 +828,14 @@ def register_connected_sources(app: Flask) -> None:
         bp = source.create_blueprint()
         app.register_blueprint(bp)
         source.on_enable(app)
-        CONNECTED_SOURCES[spec.source_id] = source
+        DATA_CONNECTORS[spec.source_id] = source
         logger.info(
-            "Registered ConnectedDataSource '%s' (type=%s%s)",
+            "Registered DataConnector '%s' (type=%s%s)",
             spec.source_id,
             spec.loader_type,
             f", pinned={list(spec.default_params.keys())}" if spec.default_params else "",
         )
 
     for key, reason in DISABLED_LOADERS.items():
-        if key not in CONNECTED_SOURCES:
+        if key not in DATA_CONNECTORS:
             logger.info("Source '%s' not available: %s", key, reason)

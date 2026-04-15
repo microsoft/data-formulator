@@ -18,13 +18,13 @@ class AzureBlobDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "account_name", "type": "string", "required": True, "default": "", "description": "Azure storage account name"},
-            {"name": "container_name", "type": "string", "required": True, "default": "", "description": "Azure blob container name"},
-            {"name": "connection_string", "type": "string", "required": False, "default": "", "description": "Azure storage connection string (alternative to account_name + credentials)"},
-            {"name": "credential_chain", "type": "string", "required": False, "default": "cli;managed_identity;env", "description": "Ordered list of Azure credential providers (cli;managed_identity;env)"},
-            {"name": "account_key", "type": "string", "required": False, "default": "", "description": "Azure storage account key"},
-            {"name": "sas_token", "type": "string", "required": False, "default": "", "description": "Azure SAS token"},
-            {"name": "endpoint", "type": "string", "required": False, "default": "blob.core.windows.net", "description": "Azure endpoint override"}
+            {"name": "account_name", "type": "string", "required": True, "default": "", "tier": "connection", "description": "Azure storage account name"},
+            {"name": "container_name", "type": "string", "required": True, "default": "", "tier": "connection", "description": "Azure blob container name"},
+            {"name": "connection_string", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure storage connection string (alternative to account_name + credentials)"},
+            {"name": "credential_chain", "type": "string", "required": False, "default": "cli;managed_identity;env", "tier": "auth", "description": "Ordered list of Azure credential providers (cli;managed_identity;env)"},
+            {"name": "account_key", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure storage account key"},
+            {"name": "sas_token", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure SAS token"},
+            {"name": "endpoint", "type": "string", "required": False, "default": "blob.core.windows.net", "tier": "connection", "description": "Azure endpoint override"}
         ]
         return params_list
     

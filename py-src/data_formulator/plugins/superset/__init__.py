@@ -3,6 +3,13 @@
 
 """Superset data source plugin for Data Formulator.
 
+.. deprecated::
+    This legacy plugin is superseded by ``SupersetLoader`` registered as a
+    ``DataConnector`` (see ``data_loader/superset_data_loader.py``).
+    It will be removed in Phase 3 of the generalized-plugin migration.
+    New deployments should use the DataConnector route at
+    ``/api/connectors/superset/`` instead of ``/api/plugins/superset/``.
+
 Provides:
 - Password / SSO authentication against a Superset instance
 - Dataset & dashboard catalog browsing with native filter support
@@ -13,7 +20,9 @@ Activation requires ``PLG_SUPERSET_URL`` to be set.
 
 from __future__ import annotations
 
+import logging
 import os
+import warnings
 from typing import Any
 
 from flask import Blueprint, Flask
@@ -25,7 +34,13 @@ from data_formulator.plugins.superset.superset_client import SupersetClient
 
 
 class SupersetPlugin(DataSourcePlugin):
-    """Concrete ``DataSourcePlugin`` for Apache Superset."""
+    """Concrete ``DataSourcePlugin`` for Apache Superset.
+
+    .. deprecated::
+        Superseded by ``SupersetLoader`` + ``DataConnector``.
+        Routes at ``/api/plugins/superset/`` will be removed in Phase 3.
+        Use ``/api/connectors/superset/`` instead.
+    """
 
     @staticmethod
     def manifest() -> dict[str, Any]:
@@ -71,6 +86,17 @@ class SupersetPlugin(DataSourcePlugin):
 
     def on_enable(self, app: Flask) -> None:
         """Create shared service objects and store them as Flask extensions."""
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "SupersetPlugin (legacy) is deprecated. "
+            "Use the DataConnector at /api/connectors/superset/ instead. "
+            "This plugin will be removed in Phase 3."
+        )
+        warnings.warn(
+            "SupersetPlugin is deprecated; use SupersetLoader via DataConnector",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         superset_url = os.environ["PLG_SUPERSET_URL"].rstrip("/")
         cache_ttl = int(os.environ.get("PLG_SUPERSET_CACHE_TTL", "300"))
 

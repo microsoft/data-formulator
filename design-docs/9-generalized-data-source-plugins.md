@@ -1,6 +1,6 @@
 # Generalized Data Source Plugins — Unifying DataLoader + Plugin into a Lifecycle-Managed Connection
 
-## Status: Phase 1 complete
+## Status: Phase 3 complete (legacy data-loader endpoints removed)
 
 ## 1. Problem
 
@@ -22,7 +22,7 @@ This split causes problems:
 
 A DataLoader already knows *how* to talk to a data source (connect, list tables, fetch data). A Plugin knows *how* to manage a session (login, persist auth, browse, present UI). **Combining them gives us a lifecycle-managed data connection** — which is what users actually want.
 
-## 2. Proposal: `ConnectedDataSource` — A Generalized Plugin Built from a DataLoader
+## 2. Proposal: `DataConnector` — A Generalized Plugin Built from a DataLoader
 
 ### 2.1 Core Idea
 
@@ -40,7 +40,7 @@ This means: to add "PostgreSQL as a connected data source," you write **zero new
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    ConnectedDataSource                       │
+│                    DataConnector                       │
 │              (generic plugin framework)                      │
 │                                                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐ │
@@ -84,17 +84,17 @@ This means we don't need separate abstractions for "BI plugin" vs. "database plu
 | Component | Change |
 |-----------|--------|
 | `ExternalDataLoader` | **Evolves** into the universal data protocol. Gains `catalog_hierarchy()` + `ls()` + `effective_hierarchy()` for tree browsing with scope pinning. |
-| `DataSourcePlugin` | **Stays** as the abstract base, but now primarily implemented via `ConnectedDataSource`. |
-| **New: `ConnectedDataSource`** | Generic `DataSourcePlugin` subclass that wraps any `ExternalDataLoader`. Auto-generates auth/catalog/data routes. |
-| **New: `ConnectedDataSourcePanel`** | Generic React component for all connected data sources (login → tree browser → import). |
-| `SupersetPlugin` | **Migrates** to a `ConnectedDataSource` backed by a `SupersetLoader`. Dashboards are `"namespace"` nodes, datasets are `"table"` nodes — hierarchy labels provide the UI terminology. |
+| `DataSourcePlugin` | **Stays** as the abstract base, but now primarily implemented via `DataConnector`. |
+| **New: `DataConnector`** | Generic `DataSourcePlugin` subclass that wraps any `ExternalDataLoader`. Auto-generates auth/catalog/data routes. |
+| **New: `DataConnectorPanel`** | Generic React component for all connected data sources (login → tree browser → import). |
+| `SupersetPlugin` | **Migrates** to a `DataConnector` backed by a `SupersetLoader`. Dashboards are `"namespace"` nodes, datasets are `"table"` nodes — hierarchy labels provide the UI terminology. |
 
 ## 3. API Design
 
-### 3.1 Backend: `ConnectedDataSource` Base
+### 3.1 Backend: `DataConnector` Base
 
 ```python
-class ConnectedDataSource(DataSourcePlugin):
+class DataConnector(DataSourcePlugin):
     """A DataSourcePlugin auto-generated from an ExternalDataLoader.
     
     Provides lifecycle management: connection persistence, catalog browsing,
@@ -216,7 +216,7 @@ POST /api/plugins/{id}/catalog/metadata
   }
 ```
 
-**How this maps to `ExternalDataLoader`:** The `ls(path)` method (§3.4) drives every tree expansion. `ConnectedDataSource` adds caching (per-session, with TTL) on top.
+**How this maps to `ExternalDataLoader`:** The `ls(path)` method (§3.4) drives every tree expansion. `DataConnector` adds caching (per-session, with TTL) on top.
 
 #### 3.2.3 Data Loading + Refresh
 
@@ -264,7 +264,7 @@ POST /api/plugins/{id}/data/preview
 
 ### 3.3 Refresh Mechanism
 
-Refresh is a first-class concept. When a table is imported via a `ConnectedDataSource`, the workspace metadata stores:
+Refresh is a first-class concept. When a table is imported via a `DataConnector`, the workspace metadata stores:
 
 ```python
 {
@@ -750,7 +750,7 @@ class ExternalDataLoader(ABC):
 **Key design decisions:**
 - **`CatalogNode.node_type`** uses `"namespace"` / `"table"` (following the Iceberg REST / Unity Catalog convention), not per-source types like `"database"`, `"schema"`. The hierarchy labels provide the per-source terminology.
 - **`list_tables()` is kept permanently** as the flat/eager complement to `ls()`. It returns every importable table in the pinned scope — simple and complete, but potentially slow. `ls()` is the lazy/hierarchical alternative. The default `ls()` falls back to `list_tables()` for loaders that haven't implemented hierarchical browsing.
-- **`effective_hierarchy()` and `pinned_scope()`** live on the loader itself (not on `ConnectedDataSource`), since the loader has access to its own `params`.
+- **`effective_hierarchy()` and `pinned_scope()`** live on the loader itself (not on `DataConnector`), since the loader has access to its own `params`.
 - **`test_connection()`** has a default implementation, but loaders should override with something lightweight.
 - **`import_options`** is a single extensible dict replacing the old scattered `size`/`sort_columns`/`sort_order`/`columns`/`import_context` params. All data-shaping options go through one bag: `size`, `columns`, `sort_columns`, `sort_order`, `filters`, `source_filters`. Loaders extract what they need; unknown keys are ignored.
 
@@ -864,11 +864,11 @@ When no config file or env vars are set, the framework **auto-discovers** all in
 
 ```python
 def discover_sources(app):
-    """Auto-register every installed ExternalDataLoader as a ConnectedDataSource plugin."""
+    """Auto-register every installed ExternalDataLoader as a DataConnector plugin."""
     for key, loader_class in DATA_LOADERS.items():
         # DATA_LOADERS is the existing registry from data_loader/__init__.py
         # Only contains loaders whose pip dependencies are installed
-        plugin = ConnectedDataSource.from_loader(loader_class, source_id=key)
+        plugin = DataConnector.from_loader(loader_class, source_id=key)
         register_plugin(app, plugin)
     
     # Log disabled loaders (missing deps)
@@ -1062,9 +1062,9 @@ At startup, the framework:
 2. **Read** config sources (env vars → YAML → UI settings) → merge
 3. **For each configured source** (or auto-discovered loader):
    - Resolve the `ExternalDataLoader` class from `type`
-   - Create a `ConnectedDataSource` instance with pre-filled `params`
+   - Create a `DataConnector` instance with pre-filled `params`
    - Generate Flask Blueprint with auth/catalog/data routes
-   - Register frontend module (generic `ConnectedSourcePanel`)
+   - Register frontend module (generic `DataConnectorPanel`)
 4. **Serve** `/api/app-config` with the list of enabled sources
 
 ```python
@@ -1078,7 +1078,7 @@ def register_sources(app):
             logger.warn(f"Unknown source type: {source_spec.type}")
             continue
         
-        plugin = ConnectedDataSource.from_loader(
+        plugin = DataConnector.from_loader(
             loader_class,
             source_id=source_spec.id,       # auto-generated or from config
             display_name=source_spec.name,  # optional custom name
@@ -1090,11 +1090,11 @@ def register_sources(app):
 
 ### 4.9 Frontend: No Per-Source Registration Needed
 
-Since all `ConnectedDataSource` plugins use the same generic `ConnectedSourcePanel`, the frontend doesn't need per-source modules either. The backend's `/api/app-config` tells the frontend what sources are available:
+Since all `DataConnector` plugins use the same generic `DataConnectorPanel`, the frontend doesn't need per-source modules either. The backend's `/api/app-config` tells the frontend what sources are available:
 
 ```json
 {
-  "SOURCES": [
+  "CONNECTORS": [
     {
       "id": "pg_prod",
       "type": "postgresql",
@@ -1123,24 +1123,24 @@ Since all `ConnectedDataSource` plugins use the same generic `ConnectedSourcePan
 }
 ```
 
-The frontend renders one `ConnectedSourcePanel` per source in the `SOURCES` list — each with its own connection form, tree hierarchy, and icon. **Zero frontend code per source.**
+The frontend renders one `DataConnectorPanel` per source in the `SOURCES` list — each with its own connection form, tree hierarchy, and icon. **Zero frontend code per source.**
 
-## 5. Frontend: Generic `ConnectedSourcePanel`
+## 5. Frontend: Generic `DataConnectorPanel`
 
 ### 5.1 Shared UI for All Database-Type Sources
 
-Instead of writing a custom React panel per data source, `ConnectedDataSource` plugins share a single generic panel:
+Instead of writing a custom React panel per data source, `DataConnector` plugins share a single generic panel:
 
 ```typescript
-// src/plugins/_shared/ConnectedSourcePanel.tsx
+// src/plugins/_shared/DataConnectorPanel.tsx
 
-interface ConnectedSourcePanelProps {
+interface DataConnectorPanelProps {
   pluginId: string;
   config: PluginConfig;
   callbacks: PluginHostCallbacks;
 }
 
-function ConnectedSourcePanel({ pluginId, config, callbacks }: ConnectedSourcePanelProps) {
+function DataConnectorPanel({ pluginId, config, callbacks }: DataConnectorPanelProps) {
   // State machine: disconnected → connecting → connected → browsing → importing
   
   // 1. If not connected: show connection form (auto-generated from list_params)
@@ -1195,12 +1195,12 @@ Once connected, the table browser uses the unified tree from [design-doc #8](8-u
 
 ### 5.4 Frontend Plugin Registration
 
-No per-source frontend code needed. The backend's `/api/app-config` response (see §4.9) tells the frontend what sources exist and what their connection forms / hierarchy look like. One generic `ConnectedSourcePanel` handles all of them.
+No per-source frontend code needed. The backend's `/api/app-config` response (see §4.9) tells the frontend what sources exist and what their connection forms / hierarchy look like. One generic `DataConnectorPanel` handles all of them.
 
 The frontend factory is only needed once, in the shared module:
 
 ```typescript
-// src/plugins/_shared/ConnectedSourcePanel.tsx
+// src/plugins/_shared/DataConnectorPanel.tsx
 // Handles ALL connected data sources — databases, BI tools, cloud storage
 // Reads source config from /api/app-config → SOURCES[]
 // Renders: connection form (from params_form) → tree browser (from hierarchy) → import
@@ -1208,12 +1208,12 @@ The frontend factory is only needed once, in the shared module:
 
 ## 6. Full Unification: BI Tools as Data Loaders
 
-Since DF only **consumes** data, both databases and BI tools serve the same role: hierarchical sources of importable tables. We unify them under the same `ConnectedDataSource` model.
+Since DF only **consumes** data, both databases and BI tools serve the same role: hierarchical sources of importable tables. We unify them under the same `DataConnector` model.
 
 ### 6.1 Architecture (Unified)
 
 ```
-                  ConnectedDataSource (generic lifecycle wrapper)
+                  DataConnector (generic lifecycle wrapper)
                            |
               ┌────────────┼────────────────┐
               │            │                │
@@ -1284,7 +1284,7 @@ The rich Superset-specific features (dashboard filters, column metadata, etc.) a
 
 ### 6.3 Critical Differences to Be Aware Of
 
-Unification is the right call, but these differences must be handled in the `ConnectedDataSource` framework:
+Unification is the right call, but these differences must be handled in the `DataConnector` framework:
 
 #### 1. Auth Model Diversity
 
@@ -1295,7 +1295,7 @@ Unification is the right call, but these differences must be handled in the `Con
 | Superset, Metabase | JWT (username/password → token) | Expires, needs refresh |
 | Grafana | API key | Long-lived, no refresh |
 
-**Solution:** The `ConnectedDataSource` auth layer must support both:
+**Solution:** The `DataConnector` auth layer must support both:
 - **Persistent connection** mode (databases): store connection object in session, reconnect on failure
 - **Token** mode (BI tools, cloud): store token in session, auto-refresh on expiry
 
@@ -1359,7 +1359,7 @@ class ExternalDataLoader(ABC):
         """Optional rate limit hints. None = no limit."""
         return None  # or {"requests_per_minute": 60, "concurrent": 5}
 ```
-The `ConnectedDataSource` framework uses this to throttle catalog expansion and data loads.
+The `DataConnector` framework uses this to throttle catalog expansion and data loads.
 
 #### 5. Import Filtering: Standard SPJ + Source-Defined Filters
 
@@ -1522,24 +1522,36 @@ For sources that can't filter server-side (e.g., some REST APIs), the framework 
    - MongoDB: database required, collection is scope param — 2-level hierarchy
    - S3, Azure Blob: bucket/container required (can't list safely) — 2-level hierarchy
 3. ✅ Unify `fetch_data_as_arrow()` signature: replace `size`/`sort_columns`/`sort_order` positional params with single `import_options: dict` — extensible for `columns`, `filters`, `source_filters`. All 9 loaders, callers, and tests updated. Renamed `loader_metadata` → `source_info`. Removed pandas from PG/MySQL/MSSQL query path (cursor + `pa.table()` directly). `import_options` stored in workspace metadata for refresh replay.
-4. ✅ Implement `ConnectedDataSource` base class with generic auth/catalog/data routes — auto-registers all 10 loaders at startup (90 routes under `/api/sources/{id}/`), exposes `SOURCES` in `/api/app-config`
-5. ✅ Implement `SupersetLoader(ExternalDataLoader)` — JWT-based auth (`auth_mode="token"`), dashboard→dataset hierarchy, SQL Lab data fetch. Registered as 10th loader, auto-wrapped by `ConnectedDataSource` with 9 routes.
+4. ✅ Implement `DataConnector` base class with generic auth/catalog/data routes — auto-registers all 10 loaders at startup (90 routes under `/api/connectors/{id}/`), exposes `SOURCES` in `/api/app-config`
+5. ✅ Implement `SupersetLoader(ExternalDataLoader)` — JWT-based auth (`auth_mode="token"`), dashboard→dataset hierarchy, SQL Lab data fetch. Registered as 10th loader, auto-wrapped by `DataConnector` with 9 routes.
 6. ✅ Implement config-driven registration — `data-sources.yml` (searched in `DATA_FORMULATOR_HOME`, cwd, `~/.data-formulator/`, `/etc/`), env vars (`DF_SOURCES__id__key`), `${ENV_REF}` resolution, `auto_discover: false` to restrict to configured sources only. Multiple instances of same type supported.
-7. ✅ Integrate `ConnectedDataSource` into frontend — `SOURCES` from `/api/app-config` rendered in `DBManagerPane` sidebar alongside legacy loaders. `DataLoaderForm` accepts optional `connectedSourceId` to route through `/api/sources/{id}/*`. `loadTable` thunk updated to support connected source import. Zero new components — reuses existing form/table UI.
+7. ✅ Integrate `DataConnector` into frontend — `SOURCES` from `/api/app-config` rendered in `DBManagerPane` sidebar alongside legacy loaders. `DataLoaderForm` accepts optional `connectorId` to route through `/api/connectors/{id}/*`. `loadTable` thunk updated to support connected source import. Zero new components — reuses existing form/table UI.
 
 ### Phase 2: Integration Testing
 
-7. Test database loaders end-to-end: PostgreSQL, MySQL via auto-discovery and `data-sources.yml` config
+7. ✅ Test database loaders end-to-end: PostgreSQL, MySQL via auto-discovery and `data-sources.yml` config
    - Connect → browse hierarchy → scope pinning → import with SPJ filters → refresh → disconnect → reconnect from saved credentials
-8. Test `SupersetLoader` end-to-end: dashboard → dataset hierarchy, source-defined filters, SSO auth
-9. Deprecate old hand-written `SupersetPlugin(DataSourcePlugin)`
-10. Verify remaining loaders via auto-discovery: Kusto, BigQuery, MSSQL, MongoDB, S3, Azure Blob
+   - 40 unit tests for DataConnector framework (mock loader), 17 config tests, E2E route tests for PG + MySQL (Docker-gated)
+8. ✅ Test `SupersetLoader` end-to-end: dashboard → dataset hierarchy, source-defined filters, SSO auth
+   - 16 integration tests with mocked Superset API (JWT auth, catalog browsing, data preview/import, token refresh)
+9. ✅ Deprecate old hand-written `SupersetPlugin(DataSourcePlugin)` — deprecation warnings added, docstrings updated
+10. ✅ Verify remaining loaders via auto-discovery: Kusto, BigQuery, MSSQL, MongoDB, S3, Azure Blob
+    - 16 verification tests confirm catalog_hierarchy, effective_hierarchy, scope pinning, auth_mode, list_params, blueprint generation for all 10 loaders
+    - Also found and fixed operator-precedence bug in `_build_source_specs` YAML ID assignment
 
-### Phase 3: Cleanup + Unified Panel
+### Phase 3: Cleanup + Unified Panel ✅ (partial)
 
-11. Remove `DataSourcePlugin` base class, `plugins/` directory, and per-plugin `__init__.py` files
-12. Integrate with unified data source panel ([doc #8](8-unified-data-source-panel.md))
-13. Old `/api/db-manager/load-table` endpoint → deprecation path
+- ✅ Removed 8 legacy `/api/tables/data-loader/*` backend routes from `tables_routes.py`
+- ✅ Removed 9 `DATA_LOADER_*` URL constants from frontend `utils.tsx`
+- ✅ `DBTableManager` now uses only `serverConfig.SOURCES` (DataConnector) for data source discovery
+- ✅ `DataLoaderForm` uses only connected source auth/catalog/import routes (no legacy branches)
+- ✅ `loadTable` thunk uses only connected source routes for both store-on-server and ephemeral paths
+- ✅ `useDataRefresh` uses connected source `DATA_REFRESH` endpoint (requires active connection)
+- ✅ Added `connectorId` to `DataSourceConfig` so tables remember their source
+- ✅ Added `DISABLED_SOURCES` to app-config for greyed-out UI entries
+- ✅ Enhanced `data/preview` route to support full `import_options` (sort, limit)
+- [ ] Remove `DataSourcePlugin` base class, `plugins/` directory, and per-plugin `__init__.py` files
+- [ ] Integrate with unified data source panel ([doc #8](8-unified-data-source-panel.md))
 
 ### Phase 4: Advanced Features
 
@@ -1568,7 +1580,7 @@ py-src/data_formulator/
     mysql_data_loader.py
     postgresql_data_loader.py
     ...
-  connected_source.py                ← NEW: ConnectedDataSource framework
+  data_connector.py                ← NEW: DataConnector framework
                                        (route generation, form computation, lifecycle)
   plugins/                           ← REMOVED after Phase 3
 ```
@@ -1578,7 +1590,7 @@ Post-migration architecture:
 ```
 ExternalDataLoader (driver)       ← each source type implements this
         ↓
-ConnectedDataSource (framework)   ← generic lifecycle wrapper, one implementation
+DataConnector (framework)   ← generic lifecycle wrapper, one implementation
         ↓                            uses auth/ for credentials, tokens, SSO
 data-sources.yml / auto-discovery ← config, not code
 ```
@@ -1636,7 +1648,7 @@ The current `fetch_data_as_arrow(source_table, size, ...)` doesn't support colum
 
 Some data sources use OAuth/service accounts, not username/password. The `list_params()` already handles this — BigQuery asks for a service account JSON, Kusto uses Azure AD tokens.
 
-The `ConnectedDataSource` auth layer should support:
+The `DataConnector` auth layer should support:
 - **Password mode** (MySQL, PostgreSQL, MSSQL): user/password fields
 - **Token/key mode** (BigQuery, Kusto): API key or token file
 - **OAuth mode** (future): redirect-based auth flow
@@ -1645,7 +1657,7 @@ The `ConnectedDataSource` auth layer should support:
 
 ### Q6: Should the old `db-manager` endpoints remain?
 
-The existing `POST /api/db-manager/load-table` is a stateless, one-shot endpoint. Once `ConnectedDataSource` plugins exist, it's redundant. But we should keep it for backward compatibility and deprecate it gradually.
+The existing `POST /api/db-manager/load-table` is a stateless, one-shot endpoint. Once `DataConnector` plugins exist, it's redundant. But we should keep it for backward compatibility and deprecate it gradually.
 
 ```
 Phase 1-2: Both endpoints work
@@ -1660,7 +1672,7 @@ Phase 4:   Remove (or keep as thin wrapper that delegates to plugin)
 ```
 ExternalDataLoader  (data protocol: how to connect, browse, fetch)
         +
-ConnectedDataSource (lifecycle mgmt: session, caching, refresh, UI)
+DataConnector (lifecycle mgmt: session, caching, refresh, UI)
         =
 A full plugin — for databases AND BI tools — for free
 ```

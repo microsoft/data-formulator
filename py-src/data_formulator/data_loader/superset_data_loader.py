@@ -90,11 +90,14 @@ class SupersetLoader(ExternalDataLoader):
     def list_params() -> list[dict[str, Any]]:
         return [
             {"name": "url", "type": "string", "required": True,
+             "tier": "connection",
              "description": "Superset base URL (e.g. https://bi.company.com)"},
-            {"name": "username", "type": "string", "required": True,
-             "description": "Superset username"},
-            {"name": "password", "type": "password", "required": True,
-             "description": "Superset password"},
+            {"name": "username", "type": "string", "required": False,
+             "tier": "auth",
+             "description": "Superset username (optional if using SSO)"},
+            {"name": "password", "type": "password", "required": False, "sensitive": True,
+             "tier": "auth",
+             "description": "Superset password (optional if using SSO)"},
         ]
 
     @staticmethod
@@ -108,6 +111,19 @@ class SupersetLoader(ExternalDataLoader):
     @staticmethod
     def auth_mode() -> str:
         return "token"
+
+    @staticmethod
+    def delegated_login_config() -> dict[str, Any] | None:
+        """Return popup-based login config if PLG_SUPERSET_URL is set."""
+        import os
+        superset_url = os.environ.get("PLG_SUPERSET_URL", "")
+        if not superset_url:
+            return None
+        login_url = os.environ.get(
+            "PLG_SUPERSET_SSO_LOGIN_URL",
+            f"{superset_url.rstrip('/')}/df-sso-bridge/",
+        )
+        return {"login_url": login_url, "label": "Login via Superset"}
 
     @staticmethod
     def catalog_hierarchy() -> list[dict[str, str]]:
@@ -133,10 +149,12 @@ class SupersetLoader(ExternalDataLoader):
         self._bridge = _SupersetAuthBridge(self.url)
 
         # Authenticate immediately
-        self._access_token: str | None = None
-        self._refresh_token: str | None = None
-        if self.username and self.password:
+        self._access_token: str | None = params.get("access_token")
+        self._refresh_token: str | None = params.get("refresh_token")
+        if not self._access_token and self.username and self.password:
             self._do_login()
+        elif not self._access_token:
+            raise ValueError("Superset requires either username/password or an SSO access token")
 
     def _do_login(self) -> None:
         result = self._bridge.login(self.username, self.password)

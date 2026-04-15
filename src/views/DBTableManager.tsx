@@ -33,7 +33,7 @@ import SearchIcon from '@mui/icons-material/Search';
 
 import Autocomplete from '@mui/material/Autocomplete';
 
-import { getUrls, getSourceUrls, fetchWithIdentity } from '../app/utils';
+import { getUrls, getConnectorUrls, fetchWithIdentity } from '../app/utils';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
@@ -53,6 +53,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import ClearIcon from '@mui/icons-material/Clear';
 
 
 export const handleDBDownload = async (identityId: string) => {
@@ -136,14 +137,18 @@ export const DBManagerPane: React.FC<{
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataLoaderConnectParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams);
 
+    // Disabled data sources (missing deps) from app-config
+    const disabledSources = serverConfig.DISABLED_SOURCES ?? {};
 
-    // maps data loader type to list of param defs
-    const [dataLoaderMetadata, setDataLoaderMetadata] = useState<Record<string, {
-        params: {name: string, default: string, type: string, required: boolean, description: string}[], 
-        auth_instructions: string}>>({});
+    // Sources with vault credentials or active in-memory loaders
+    const [connectedIds, setConnectedIds] = useState<Set<string>>(
+        new Set(serverConfig.CONNECTED_CONNECTORS ?? [])
+    );
 
-    // loaders whose deps are missing on the server, keyed by name -> install hint
-    const [disabledLoaders, setDisabledLoaders] = useState<Record<string, {install_hint: string}>>({});
+    // Split sources into connected vs available
+    const allSources = serverConfig.CONNECTORS ?? [];
+    const connectedSources = allSources.filter(s => connectedIds.has(s.source_id));
+    const availableSources = allSources.filter(s => !connectedIds.has(s.source_id));
 
     const [dbTables, setDbTables] = useState<DBTable[]>([]);
     const [selectedTabKey, setSelectedTabKey] = useState("");
@@ -159,10 +164,6 @@ export const DBManagerPane: React.FC<{
             "value": content
         }));
     }
-
-    useEffect(() => {
-        fetchDataLoaders();
-    }, []);
 
     useEffect(() => {
         if (selectedDataLoader === "") {
@@ -201,30 +202,23 @@ export const DBManagerPane: React.FC<{
         return undefined;
     };
 
-    const fetchDataLoaders = async () => {
-        fetchWithIdentity(getUrls().DATA_LOADER_LIST_DATA_LOADERS, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === "success") {
-                setDataLoaderMetadata(data.data_loaders);
-                setDisabledLoaders(data.disabled_loaders ?? {});
-            } else {
-                console.error('Failed to fetch data loader params:', data.error);
-            }
-        })
-        .catch(error => {
-            console.error('Failed to fetch data loader params:', error);
-        });
-    }
-
     useEffect(() => {
         fetchTables();
     }, []);
+
+    const sourceButtonSx = (sourceId: string) => ({
+        fontSize: 12,
+        textTransform: "none" as const,
+        width: '100%',
+        justifyContent: 'flex-start',
+        textAlign: 'left' as const,
+        borderRadius: 0,
+        py: 1,
+        px: 2,
+        color: selectedDataLoader === sourceId ? 'primary.main' : 'text.secondary',
+        borderRight: selectedDataLoader === sourceId ? 2 : 0,
+        borderColor: 'primary.main',
+    });
 
     let tableSelectionPanel = <Box sx={{ 
         pt: 1, 
@@ -232,39 +226,54 @@ export const DBManagerPane: React.FC<{
         flexDirection: 'column', 
         width: '100%',
     }}>
-        {/* Active data loaders */}
-        {Object.keys(dataLoaderMetadata ?? {}).map((dataLoaderType) => (
+        {/* Connected sources — user has stored or active credentials */}
+        {connectedSources.length > 0 && (
+            <Typography variant="caption" sx={{ px: 2, pt: 0.5, pb: 0.5, color: 'text.disabled', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {t('db.connectedSection')}
+            </Typography>
+        )}
+        {connectedSources.map((source) => (
             <Button
-                key={dataLoaderType}
+                key={`source-${source.source_id}`}
                 variant="text"
                 size="small"
                 color="primary"
-                onClick={() => setSelectedDataLoader(dataLoaderType)}
-                sx={{
-                    fontSize: 12,
-                    textTransform: "none",
-                    width: '100%',
-                    justifyContent: 'flex-start',
-                    textAlign: 'left',
-                    borderRadius: 0,
-                    py: 1,
-                    px: 2,
-                    color: selectedDataLoader === dataLoaderType ? 'primary.main' : 'text.secondary',
-                    borderRight: selectedDataLoader === dataLoaderType ? 2 : 0,
-                    borderColor: 'primary.main',
-                }}
+                onClick={() => setSelectedDataLoader(source.source_id)}
+                sx={sourceButtonSx(source.source_id)}
             >
-                {dataLoaderType}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, width: '100%' }}>
+                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'success.main', flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{source.name}</span>
+                </Box>
             </Button>
         ))}
 
-        {/* Disabled loaders (missing deps) — greyed out with install hint */}
-        {Object.keys(disabledLoaders).length > 0 && (
+        {/* Available sources — registered but no credentials */}
+        {availableSources.length > 0 && (
+            <Typography variant="caption" sx={{ px: 2, pt: 1, pb: 0.5, color: 'text.disabled', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {t('db.availableSection')}
+            </Typography>
+        )}
+        {availableSources.map((source) => (
+            <Button
+                key={`source-${source.source_id}`}
+                variant="text"
+                size="small"
+                color="primary"
+                onClick={() => setSelectedDataLoader(source.source_id)}
+                sx={sourceButtonSx(source.source_id)}
+            >
+                {source.name}
+            </Button>
+        ))}
+
+        {/* Disabled sources (missing deps) — greyed out with install hint */}
+        {Object.keys(disabledSources).length > 0 && (
             <Divider sx={{ my: 0.5 }} />
         )}
-        {Object.entries(disabledLoaders).map(([loaderName, { install_hint }]) => (
+        {Object.entries(disabledSources).map(([sourceName, { install_hint }]) => (
             <Tooltip
-                key={`disabled-${loaderName}`}
+                key={`disabled-${sourceName}`}
                 title={t('db.notInstalledHint', { hint: install_hint })}
                 placement="right"
                 arrow
@@ -292,45 +301,16 @@ export const DBManagerPane: React.FC<{
                         },
                     }}
                 >
-                    {loaderName}
+                    {sourceName}
                 </Button>
                 </span>
             </Tooltip>
-        ))}
-
-        {/* Connected data sources from /api/app-config SOURCES */}
-        {(serverConfig.SOURCES ?? []).length > 0 && (
-            <Divider sx={{ my: 0.5 }} />
-        )}
-        {(serverConfig.SOURCES ?? []).map((source) => (
-            <Button
-                key={`source-${source.source_id}`}
-                variant="text"
-                size="small"
-                color="primary"
-                onClick={() => setSelectedDataLoader(`source:${source.source_id}`)}
-                sx={{
-                    fontSize: 12,
-                    textTransform: "none",
-                    width: '100%',
-                    justifyContent: 'flex-start',
-                    textAlign: 'left',
-                    borderRadius: 0,
-                    py: 1,
-                    px: 2,
-                    color: selectedDataLoader === `source:${source.source_id}` ? 'primary.main' : 'text.secondary',
-                    borderRight: selectedDataLoader === `source:${source.source_id}` ? 2 : 0,
-                    borderColor: 'primary.main',
-                }}
-            >
-                {source.name}
-            </Button>
         ))}
     </Box>
 
     let dataConnectorView = <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflowY: 'auto', overflowX: 'hidden', p: 2, pb: 4, display: 'flex', flexDirection: 'column', minWidth: 0, overscrollBehavior: 'contain' }}>
 
-        {/* Empty state when no loader selected */}
+        {/* Empty state when no source selected */}
         {selectedDataLoader === '' && (
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'text.disabled' }}>
                 <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
@@ -338,42 +318,20 @@ export const DBManagerPane: React.FC<{
                 </Typography>
             </Box>
         )}
-        
-        {/* Data loader forms */}
-        {dataLoaderMetadata && Object.entries(dataLoaderMetadata).map(([dataLoaderType, metadata]) => (
-            selectedDataLoader === dataLoaderType && (
-                <Box key={`dataLoader:${dataLoaderType}`} sx={{ position: "relative", maxWidth: '100%', flexShrink: 0 }}>
-                    <DataLoaderForm 
-                        key={`data-loader-form-${dataLoaderType}`}
-                        dataLoaderType={dataLoaderType} 
-                        paramDefs={metadata.params}
-                        authInstructions={metadata.auth_instructions}
-                        onImport={() => {
-                            setIsUploading(true);
-                        }} 
-                        onFinish={(status, message, importedTables) => {
-                            setIsUploading(false);
-                            if (status === "success") {
-                                setSystemMessage(message, "success");
-                            } else {
-                                setSystemMessage(message, "error");
-                            }
-                        }} 
-                    />
-                </Box>
-            )
-        ))}
 
-        {/* Connected data source forms */}
-        {(serverConfig.SOURCES ?? []).map((source) => (
-            selectedDataLoader === `source:${source.source_id}` && (
+        {/* Data source forms (connected + available) */}
+        {allSources.map((source) => (
+            selectedDataLoader === source.source_id && (
                 <Box key={`source:${source.source_id}`} sx={{ position: "relative", maxWidth: '100%', flexShrink: 0 }}>
                     <DataLoaderForm 
                         key={`source-form-${source.source_id}`}
                         dataLoaderType={source.source_id}
                         paramDefs={source.params_form}
                         authInstructions={source.auth_instructions}
-                        connectedSourceId={source.source_id}
+                        connectorId={source.source_id}
+                        autoConnect={connectedIds.has(source.source_id)}
+                        delegatedLogin={source.delegated_login}
+                        authMode={source.auth_mode}
                         onImport={() => {
                             setIsUploading(true);
                         }} 
@@ -384,7 +342,17 @@ export const DBManagerPane: React.FC<{
                             } else {
                                 setSystemMessage(message, "error");
                             }
-                        }} 
+                        }}
+                        onConnected={() => {
+                            setConnectedIds(prev => new Set([...prev, source.source_id]));
+                        }}
+                        onDisconnected={() => {
+                            setConnectedIds(prev => {
+                                const next = new Set(prev);
+                                next.delete(source.source_id);
+                                return next;
+                            });
+                        }}
                     />
                 </Box>
             )
@@ -460,12 +428,17 @@ export const DBManagerPane: React.FC<{
 
 export const DataLoaderForm: React.FC<{
     dataLoaderType: string, 
-    paramDefs: {name: string, default?: string, type: string, required: boolean, description?: string}[],
+    paramDefs: {name: string, default?: string, type: string, required: boolean, description?: string, sensitive?: boolean, tier?: 'connection' | 'auth' | 'filter'}[],
     authInstructions: string,
-    connectedSourceId?: string,
+    connectorId?: string,
+    autoConnect?: boolean,
+    delegatedLogin?: { login_url: string; label?: string } | null,
+    authMode?: string,
     onImport: () => void,
-    onFinish: (status: "success" | "error", message: string, importedTables?: string[]) => void
-}> = ({dataLoaderType, paramDefs, authInstructions, connectedSourceId, onImport, onFinish}) => {
+    onFinish: (status: "success" | "error", message: string, importedTables?: string[]) => void,
+    onConnected?: () => void,
+    onDisconnected?: () => void,
+}> = ({dataLoaderType, paramDefs, authInstructions, connectorId, autoConnect, delegatedLogin, authMode, onImport, onFinish, onConnected, onDisconnected}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
@@ -475,7 +448,6 @@ export const DataLoaderForm: React.FC<{
 
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
     const [selectedPreviewTable, setSelectedPreviewTable] = useState<string | null>(null);
-    let [tableFilter, setTableFilter] = useState<string>("");
     // Import mode for the currently selected table
     const [importMode, setImportMode] = useState<'full' | 'subset'>('full');
     const [subsetConfig, setSubsetConfig] = useState<{ rowLimit: number; sortColumns: string[]; sortOrder: 'asc' | 'desc' }>({ rowLimit: 1000, sortColumns: [], sortOrder: 'asc' });
@@ -502,63 +474,205 @@ export const DataLoaderForm: React.FC<{
     }, [workspaceLoadedTables, loadedTables]);
 
     let [isConnecting, setIsConnecting] = useState(false);
+    const [persistCredentials, setPersistCredentials] = useState(true);
 
-    // Helper: connect and list tables — branches based on connectedSourceId
+    // Sensitive params (passwords, tokens, secrets) live in component state only —
+    // never persisted to Redux / localStorage.
+    // Sensitivity is declared by the loader via `sensitive: true` or `type: "password"`.
+    const sensitiveParamNames = useMemo(
+        () => new Set(paramDefs.filter(p => p.sensitive || p.type === 'password').map(p => p.name)),
+        [paramDefs]
+    );
+    const [sensitiveParams, setSensitiveParams] = useState<Record<string, string>>({});
+
+    // Merged params: Redux (non-sensitive) + component state (sensitive)
+    const mergedParams = useMemo(
+        () => ({ ...params, ...sensitiveParams }),
+        [params, sensitiveParams]
+    );
+
+    // Ref for the connected-state table filter input (uncontrolled for performance)
+    const filterInputRef = useRef<HTMLInputElement>(null);
+
+    // Connection timeout in milliseconds (30 seconds)
+    const CONNECTION_TIMEOUT_MS = 30_000;
+
+    // Helper: connect and list tables via data connector
     const connectAndListTables = useCallback(async (filter?: string) => {
         setIsConnecting(true);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), CONNECTION_TIMEOUT_MS);
         try {
-            if (connectedSourceId) {
-                // Connected source: first connect, then list tables
-                const urls = getSourceUrls(connectedSourceId);
-                const connectResp = await fetchWithIdentity(urls.AUTH_CONNECT, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ params: params }),
-                });
-                const connectData = await connectResp.json();
-                if (connectData.status === 'error') {
-                    throw new Error(connectData.message || 'Connection failed');
-                }
-                // List tables
-                const listResp = await fetchWithIdentity(urls.CATALOG_LIST_TABLES, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filter: filter?.trim() || null }),
-                });
-                const listData = await listResp.json();
-                if (listData.tables) {
-                    setTableMetadata(Object.fromEntries(
-                        listData.tables.map((t: any) => [t.name, t.metadata])
-                    ));
-                } else if (listData.status === 'error') {
-                    throw new Error(listData.message || 'Failed to list tables');
-                }
-            } else {
-                // Legacy data loader: single list-tables call
-                const resp = await fetchWithIdentity(getUrls().DATA_LOADER_LIST_TABLES, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        data_loader_type: dataLoaderType,
-                        data_loader_params: params,
-                        table_filter: filter?.trim() || null,
-                    }),
-                });
-                const data = await resp.json();
-                if (data.status === 'success') {
-                    setTableMetadata(Object.fromEntries(
-                        data.tables.map((t: any) => [t.name, t.metadata])
-                    ));
-                } else {
-                    throw new Error(data.message || 'Failed to list tables');
-                }
+            const sourceId = connectorId!;
+            const urls = getConnectorUrls(sourceId);
+            // Strip table_filter from params sent to connect (it's for catalog browsing, not connection)
+            const { table_filter: _tf, ...connectParams } = mergedParams as Record<string, any>;
+            const connectResp = await fetchWithIdentity(urls.AUTH_CONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ params: connectParams, persist: persistCredentials }),
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            const connectData = await connectResp.json();
+            if (connectData.status !== 'connected') {
+                throw new Error(connectData.message || 'Connection failed');
             }
+            // List tables before promoting to "connected" state
+            const tableFilterValue = filter ?? (mergedParams as Record<string, any>).table_filter ?? '';
+            const listResp = await fetchWithIdentity(urls.CATALOG_LIST_TABLES, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filter: tableFilterValue?.trim() || null }),
+            });
+            const listData = await listResp.json();
+            if (listData.tables) {
+                setTableMetadata(Object.fromEntries(
+                    listData.tables.map((t: any) => [t.name, t.metadata])
+                ));
+            } else if (listData.status === 'error') {
+                throw new Error(listData.message || 'Failed to list tables');
+            }
+            // Only promote to "connected" after tables are loaded
+            onConnected?.();
         } catch (error: any) {
-            onFinish("error", error.message || 'Failed to connect');
+            clearTimeout(timeoutId);
+            if (error.name === 'AbortError') {
+                onFinish("error", t('db.connectionTimeout'));
+            } else {
+                onFinish("error", error.message || 'Failed to connect');
+            }
         } finally {
             setIsConnecting(false);
         }
-    }, [connectedSourceId, dataLoaderType, params, onFinish]);
+    }, [connectorId, mergedParams, persistCredentials, onFinish, onConnected, t]);
+
+    // Delegated (popup-based) login flow for token-based connectors
+    const popupRef = useRef<Window | null>(null);
+    const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const handleDelegatedLogin = useCallback(() => {
+        if (!delegatedLogin?.login_url || !connectorId) return;
+        setIsConnecting(true);
+
+        const url = new URL(delegatedLogin.login_url, window.location.origin);
+        url.searchParams.set('df_origin', window.location.origin);
+        // Pass auth-tier form params (e.g. client_id, tenant_id) to the login endpoint
+        for (const p of paramDefs) {
+            if (p.tier === 'auth' && !p.sensitive && p.type !== 'password' && mergedParams[p.name]) {
+                url.searchParams.set(p.name, mergedParams[p.name]);
+            }
+        }
+
+        const width = 600;
+        const height = 700;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+        const popup = window.open(
+            url.toString(),
+            'df-sso-login',
+            `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`,
+        );
+
+        if (!popup) {
+            onFinish("error", t('db.popupBlocked') || 'Popup was blocked. Please allow popups and try again.');
+            setIsConnecting(false);
+            return;
+        }
+        popupRef.current = popup;
+
+        const handler = async (event: MessageEvent) => {
+            if (event.data?.type !== 'df-sso-auth') return;
+            window.removeEventListener('message', handler);
+            if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+            popup.close();
+
+            const { access_token, refresh_token, user } = event.data;
+            if (access_token) {
+                try {
+                    const urls = getConnectorUrls(connectorId);
+                    // Send tokens to backend token-connect endpoint
+                    const connectResp = await fetchWithIdentity(urls.AUTH_TOKEN_CONNECT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            access_token,
+                            refresh_token,
+                            user,
+                            params: mergedParams,  // include any filled-in params (e.g. url)
+                            persist: persistCredentials,
+                        }),
+                    });
+                    const connectData = await connectResp.json();
+                    if (connectData.status !== 'connected') {
+                        throw new Error(connectData.message || 'Token connection failed');
+                    }
+                    // List tables
+                    const listResp = await fetchWithIdentity(urls.CATALOG_LIST_TABLES, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filter: null }),
+                    });
+                    const listData = await listResp.json();
+                    if (listData.tables) {
+                        setTableMetadata(Object.fromEntries(
+                            listData.tables.map((t: any) => [t.name, t.metadata])
+                        ));
+                    }
+                    onConnected?.();
+                } catch (err: any) {
+                    onFinish("error", err.message || 'Login failed');
+                }
+            }
+            setIsConnecting(false);
+        };
+
+        window.addEventListener('message', handler);
+
+        pollTimerRef.current = setInterval(() => {
+            if (popup.closed) {
+                if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+                window.removeEventListener('message', handler);
+                setIsConnecting(false);
+            }
+        }, 1000);
+    }, [delegatedLogin, connectorId, params, persistCredentials, onFinish, onConnected, t]);
+
+    // Auto-connect on mount if this source has stored vault credentials.
+    // Uses auth/status which auto-reconnects from vault, then lists tables.
+    const autoConnectTriggered = useRef(false);
+    useEffect(() => {
+        if (autoConnect && connectorId && !autoConnectTriggered.current && Object.keys(tableMetadata).length === 0) {
+            autoConnectTriggered.current = true;
+            (async () => {
+                setIsConnecting(true);
+                try {
+                    const urls = getConnectorUrls(connectorId);
+                    // auth/status triggers auto-reconnect from vault
+                    const statusResp = await fetchWithIdentity(urls.AUTH_STATUS, { method: 'GET' });
+                    const statusData = await statusResp.json();
+                    if (statusData.connected) {
+                        // Already connected / reconnected from vault — list tables
+                        const listResp = await fetchWithIdentity(urls.CATALOG_LIST_TABLES, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filter: null }),
+                        });
+                        const listData = await listResp.json();
+                        if (listData.tables) {
+                            setTableMetadata(Object.fromEntries(
+                                listData.tables.map((t: any) => [t.name, t.metadata])
+                            ));
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Auto-connect failed for', connectorId, err);
+                } finally {
+                    setIsConnecting(false);
+                }
+            })();
+        }
+    }, [autoConnect, connectorId]);
 
     // Auto-select first table for preview when metadata loads
     useEffect(() => {
@@ -832,15 +946,14 @@ export const DataLoaderForm: React.FC<{
                                             databaseTable: tableName,
                                             canRefresh: true,
                                             lastRefreshed: Date.now(),
+                                            connectorId: connectorId,
                                         },
                                     };
 
                                     onImport();
                                     dispatch(loadTable({
                                         table: tableObj,
-                                        dataLoaderType: connectedSourceId ? undefined : dataLoaderType,
-                                        dataLoaderParams: connectedSourceId ? undefined : params,
-                                        connectedSourceId,
+                                        connectorId,
                                         sourceTableName: tableName,
                                         importOptions: Object.keys(importOptions).length > 0 ? importOptions : undefined,
                                     })).unwrap()
@@ -876,78 +989,77 @@ export const DataLoaderForm: React.FC<{
                 <CircularProgress size={20} />
             </Box>}
             {isConnected ? (
-                // Connected state: show connection parameters and disconnect button
-                <Box sx={{}}>
-                    <Box sx={{mb: 1.5}}>
-                        <Box sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 0.5, mb: 1.5, flexWrap: "wrap"}}>
-                            <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'secondary.main', fontWeight: 600, mr: 0.5}}>
-                                {dataLoaderType}
+                // Connected state: show connection info + table browser
+                <Box>
+                    {/* Header: source name · connection params · disconnect */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" component="span" sx={{ fontSize: 12, color: 'secondary.main', fontWeight: 600 }}>
+                            {dataLoaderType}
+                        </Typography>
+                        {paramDefs.filter(p => params[p.name] && !sensitiveParamNames.has(p.name) && p.tier !== 'auth').map((paramDef) => (
+                            <Typography key={paramDef.name} variant="body2" component="span" sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                {paramDef.name}: <Box component="span" sx={{ fontWeight: 500, color: 'text.primary' }}>{params[paramDef.name]}</Box>
                             </Typography>
-                            {paramDefs.filter((paramDef) => params[paramDef.name]).length > 0 && (
-                                <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.disabled', mr: 0.5}}>·</Typography>
-                            )}
-                            {paramDefs.filter((paramDef) => params[paramDef.name]).map((paramDef, index) => (
-                                <React.Fragment key={paramDef.name}>
-                                    <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.secondary'}}>
-                                        {paramDef.name}:
-                                    </Typography>
-                                    <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.primary', fontWeight: 500, mr: 0.5}}>
-                                        {params[paramDef.name] || t('db.emptyValue')}
-                                    </Typography>
-                                    {index < paramDefs.filter((p) => params[p.name]).length - 1 && (
-                                        <Typography variant="body2" component="span" sx={{fontSize: 11, color: 'text.disabled', mr: 0.5}}>·</Typography>
-                                    )}
-                                </React.Fragment>
-                            ))}
-                        </Box>
-                        <Box sx={{display: "flex", flexDirection: "row", alignItems: "flex-end", gap: 1.5}}>
-                            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, flex: 1, maxWidth: 300 }}>
-                                <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'text.secondary', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <SearchIcon sx={{ fontSize: 11 }} /> {t('db.tableFilter')}
-                                </Typography>
-                                <TextField
-                                    sx={{
-                                        '& .MuiInputBase-root': {fontSize: 12, height: '30px'},
-                                        '& .MuiInputBase-input': {fontSize: 12, py: 0.5, px: 1},
-                                        '& .MuiInputBase-input::placeholder': {fontSize: 11, fontStyle: "italic"},
-                                        '& .MuiOutlinedInput-root': {
-                                            '& fieldset': { borderColor: 'rgba(0,0,0,0.15)' },
-                                        }
-                                    }}
-                                    variant="outlined"
-                                    size="small"
-                                    fullWidth
-                                    autoComplete="off"
-                                    placeholder={t('db.tableFilterPlaceholder')}
-                                    value={tableFilter}
-                                    onChange={(event) => setTableFilter(event.target.value)}
-                                />
-                            </Box>
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                sx={{textTransform: "none", height: 30, fontSize: 12}}
-                                onClick={() => connectAndListTables(tableFilter)}
-                            >
-                                {t('db.refresh')}
-                            </Button>
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                sx={{textTransform: "none", height: 30, fontSize: 12}}
-                                onClick={() => {
-                                    if (connectedSourceId) {
-                                        fetchWithIdentity(getSourceUrls(connectedSourceId).AUTH_DISCONNECT, {
-                                            method: 'POST',
-                                        }).catch(() => {});
-                                    }
-                                    setTableMetadata({});
-                                    setTableFilter("");
-                                }}
-                            >
-                                {t('db.disconnect')}
-                            </Button>
-                        </Box>
+                        ))}
+                        <Box sx={{ flex: 1 }} />
+                        <Button
+                            variant="outlined" size="small" color="inherit"
+                            sx={{ textTransform: "none", fontSize: 11, height: 26, minWidth: 0, color: 'text.secondary', borderColor: 'rgba(0,0,0,0.2)' }}
+                            onClick={() => {
+                                fetchWithIdentity(getConnectorUrls(connectorId!).AUTH_DISCONNECT, {
+                                    method: 'POST',
+                                }).catch(() => {});
+                                setTableMetadata({});
+                                dispatch(dfActions.updateDataLoaderConnectParam({dataLoaderType, paramName: 'table_filter', paramValue: ''}));
+                                onDisconnected?.();
+                            }}
+                        >
+                            {t('db.disconnect')}
+                        </Button>
+                    </Box>
+                    {/* Search bar: filter + refresh in a pill-shaped container */}
+                    <Box sx={{
+                        display: 'flex', alignItems: 'center', gap: 0.5,
+                        mb: 1.5, px: 1.5, py: 0.5,
+                        borderRadius: 2,
+                        border: '1px solid', borderColor: 'divider',
+                        backgroundColor: 'rgba(0,0,0,0.02)',
+                        maxWidth: 420,
+                    }}>
+                        <SearchIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                        <TextField
+                            sx={{
+                                flex: 1,
+                                '& .MuiInputBase-root': { fontSize: 12 },
+                                '& .MuiInputBase-input': { fontSize: 12, py: 0.25, px: 0.5 },
+                                '& .MuiInputBase-input::placeholder': { fontSize: 11, opacity: 0.5 },
+                                '& .MuiInput-underline:before, & .MuiInput-underline:after': { display: 'none' },
+                            }}
+                            variant="standard" size="small"
+                            placeholder={t('db.tableFilterPlaceholder')}
+                            autoComplete="off"
+                            defaultValue={params.table_filter || ''}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    const val = (e.target as HTMLInputElement).value;
+                                    dispatch(dfActions.updateDataLoaderConnectParam({dataLoaderType, paramName: 'table_filter', paramValue: val}));
+                                    connectAndListTables(val);
+                                }
+                            }}
+                            inputRef={filterInputRef}
+                        />
+                        <Divider orientation="vertical" flexItem sx={{ my: 0.5 }} />
+                        <Button
+                            variant="text" size="small"
+                            sx={{ textTransform: "none", fontSize: 11, minWidth: 0, px: 1, color: 'primary.main', fontWeight: 600, whiteSpace: 'nowrap' }}
+                            onClick={() => {
+                                const val = filterInputRef.current?.value ?? params.table_filter ?? '';
+                                dispatch(dfActions.updateDataLoaderConnectParam({dataLoaderType, paramName: 'table_filter', paramValue: val}));
+                                connectAndListTables(val);
+                            }}
+                        >
+                            {t('db.refresh')}
+                        </Button>
                     </Box>
                     
                     {tableMetadataBox}
@@ -958,82 +1070,208 @@ export const DataLoaderForm: React.FC<{
                     <Typography variant="body2" sx={{fontSize: 12, color: 'secondary.main', fontWeight: 600, mt: 1}}>
                         {dataLoaderType}
                     </Typography>
-                    <Box sx={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(3, 1fr)",
-                        gap: 1.5,
-                        mt: 1,
-                    }}>
-                        {paramDefs.map((paramDef) => (
-                            <Box key={paramDef.name} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
-                                <Typography 
-                                    sx={{
-                                        fontSize: 11,
-                                        fontWeight: 500,
-                                        color: paramDef.required ? 'text.primary' : 'text.secondary',
-                                        lineHeight: 1.3,
-                                    }}
-                                >
-                                    {paramDef.name}
-                                    {paramDef.required && <span style={{color: '#d32f2f'}}> *</span>}
-                                </Typography>
-                                <TextField
-                                    sx={{
-                                        '& .MuiInputBase-root': {fontSize: 12, height: '30px'},
-                                        '& .MuiInputBase-input': {fontSize: 12, py: 0.5, px: 1},
-                                        '& .MuiInputBase-input::placeholder': {fontSize: 11, fontStyle: "italic"},
-                                        '& .MuiOutlinedInput-root': {
-                                            '& fieldset': { borderColor: 'rgba(0,0,0,0.15)' },
-                                        }
-                                    }}
-                                    variant="outlined"
-                                    size="small"
-                                    fullWidth
-                                    required={paramDef.required}
-                                    value={params[paramDef.name] ?? ''}
-                                    placeholder={paramDef.default ? `${paramDef.default}` : paramDef.description || ''}
-                                    onChange={(event: any) => { 
-                                        dispatch(dfActions.updateDataLoaderConnectParam({
-                                            dataLoaderType, paramName: paramDef.name, 
-                                            paramValue: event.target.value}));
-                                    }}
-                                />
+                    {(() => {
+                        const hasTiers = paramDefs.some(p => p.tier);
+                        // Section wrapper: subtle background, rounded, with label
+                        const sectionSx = { mt: 1, px: 1.5, pt: 0.75, pb: 1.5, borderRadius: 1, backgroundColor: 'rgba(0,0,0,0.025)' };
+                        // Shared input style: standard variant (underline), label always shrunk so placeholder is visible
+                        const inputSx = {
+                            '& .MuiInput-underline:before': { borderBottomColor: 'rgba(0,0,0,0.15)' },
+                            '& .MuiInputBase-root': { fontSize: 12, mt: 1.5 },
+                            '& .MuiInputBase-input': { fontSize: 12, py: 0.5, px: 0 },
+                            '& .MuiInputBase-input::placeholder': { fontSize: 11, opacity: 0.45 },
+                            '& .MuiInputLabel-root': { fontSize: 11, color: 'text.secondary', fontWeight: 500 },
+                            '& .MuiInputLabel-root.Mui-focused': { color: 'primary.main' },
+                        };
+                        const shrinkProps = { shrink: true };
+                        // Pick 2 or 3 columns to minimise orphan fields on the last row
+                        const balancedCols = (n: number) => {
+                            if (n <= 2) return 2;
+                            if (n % 3 === 0) return 3;  // 3,6,9 → perfect 3-col rows
+                            if (n % 2 === 0) return 2;  // 4,8 → perfect 2-col rows
+                            return 3;                    // 5,7 → 3 cols (3+2, 3+3+1) is acceptable
+                        };
+                        if (!hasTiers) {
+                            // Legacy: no tier field, render flat grid
+                            const cols = balancedCols(paramDefs.length);
+                            return (
+                                <Box sx={{ ...sectionSx, display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 2 }}>
+                                    {paramDefs.map((paramDef) => (
+                                        <TextField
+                                            key={paramDef.name}
+                                            sx={inputSx}
+                                            variant="standard" size="small" fullWidth
+                                            InputLabelProps={shrinkProps}
+                                            label={paramDef.name}
+                                            type={paramDef.type === 'password' ? 'password' : 'text'}
+                                            required={paramDef.required}
+                                            value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
+                                            placeholder={paramDef.description || (paramDef.default ? `${paramDef.default}` : '')}
+                                            onChange={(event: any) => {
+                                                if (sensitiveParamNames.has(paramDef.name)) {
+                                                    setSensitiveParams(prev => ({ ...prev, [paramDef.name]: event.target.value }));
+                                                } else {
+                                                    dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: event.target.value }));
+                                                }
+                                            }}
+                                        />
+                                    ))}
+                                </Box>
+                            );
+                        }
+
+                        const renderParamGrid = (tierParams: typeof paramDefs) => {
+                            const cols = balancedCols(tierParams.length);
+                            return (
+                            <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 2 }}>
+                                {tierParams.map((paramDef) => (
+                                    <TextField
+                                        key={paramDef.name}
+                                        sx={inputSx}
+                                        variant="standard" size="small" fullWidth
+                                        InputLabelProps={shrinkProps}
+                                        label={paramDef.name}
+                                        type={paramDef.type === 'password' ? 'password' : 'text'}
+                                        required={paramDef.required}
+                                        value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
+                                        placeholder={paramDef.description || (paramDef.default ? `${paramDef.default}` : '')}
+                                        onChange={(event: any) => {
+                                            if (sensitiveParamNames.has(paramDef.name)) {
+                                                setSensitiveParams(prev => ({ ...prev, [paramDef.name]: event.target.value }));
+                                            } else {
+                                                dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: event.target.value }));
+                                            }
+                                        }}
+                                    />
+                                ))}
                             </Box>
-                        ))}
-                    </Box>
-                    <Box sx={{ display: "flex", flexDirection: "row", alignItems: "flex-end", gap: 1.5, mt: 2 }}>
-                        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, flex: 1, maxWidth: 300 }}>
-                            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'text.secondary', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <SearchIcon sx={{ fontSize: 11 }} /> {t('db.tableFilter')}
-                            </Typography>
-                            <TextField
-                                sx={{
-                                    '& .MuiInputBase-root': {fontSize: 12, height: '30px'},
-                                    '& .MuiInputBase-input': {fontSize: 12, py: 0.5, px: 1},
-                                    '& .MuiInputBase-input::placeholder': {fontSize: 11, fontStyle: "italic"},
-                                    '& .MuiOutlinedInput-root': {
-                                        '& fieldset': { borderColor: 'rgba(0,0,0,0.15)' },
-                                    }
-                                }}
-                                variant="outlined"
-                                size="small"
-                                fullWidth
-                                autoComplete="off"
-                                placeholder={t('db.tableFilterPlaceholder')}
-                                value={tableFilter}
-                                onChange={(event) => setTableFilter(event.target.value)}
-                            />
-                        </Box>
-                        {paramDefs.length > 0 && 
-                            <Button 
-                                variant="contained"
-                                color="primary"
-                                size="small"
-                                sx={{textTransform: "none", minWidth: 100, height: 30}}
-                                onClick={() => connectAndListTables(tableFilter)}>
-                                {t('db.connect', { suffix: tableFilter.trim() ? t('db.withFilter') : '' })}
-                            </Button>}
-                    </Box>
+                            );
+                        };
+
+                        const connectionParams = paramDefs.filter(p => p.tier === 'connection');
+                        const filterParams = paramDefs.filter(p => p.tier === 'filter');
+                        const authParams = paramDefs.filter(p => p.tier === 'auth');
+                        const hasDelegated = !!delegatedLogin?.login_url;
+
+                        return (
+                            <>
+                                {/* Tier 1: Connection */}
+                                {connectionParams.length > 0 && (
+                                    <Box sx={sectionSx}>
+                                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                                            {t('db.tierConnection')}
+                                        </Typography>
+                                        {renderParamGrid(connectionParams)}
+                                    </Box>
+                                )}
+
+                                {/* Tier 2: Scope */}
+                                {filterParams.length > 0 && (
+                                    <Box sx={sectionSx}>
+                                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                                            {t('db.tierFilter')}
+                                        </Typography>
+                                        {renderParamGrid(filterParams)}
+                                    </Box>
+                                )}
+
+                                {/* Tier 3: Sign in — Connect lives here */}
+                                <Box sx={sectionSx}>
+                                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                                        {t('db.tierAuth')}
+                                    </Typography>
+
+                                    {hasDelegated && authParams.length > 0 ? (
+                                        /* Left/right split: delegated | or | credentials + connect */
+                                        <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'stretch' }}>
+                                            {/* Left: delegated login */}
+                                            <Box sx={{ display: 'flex', alignItems: 'center', pr: 2.5, borderRight: '1px solid', borderColor: 'divider' }}>
+                                                <Button
+                                                    variant="outlined"
+                                                    color="primary"
+                                                    size="small"
+                                                    sx={{ textTransform: "none", minWidth: 80, height: 30, fontSize: 12, whiteSpace: 'nowrap' }}
+                                                    disabled={isConnecting}
+                                                    onClick={handleDelegatedLogin}
+                                                >
+                                                    {delegatedLogin!.label || t('db.delegatedLogin')}
+                                                </Button>
+                                            </Box>
+                                            {/* Right: credential fields + connect */}
+                                            <Box sx={{ flex: 1 }}>
+                                                <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${authParams.length}, 1fr)`, gap: 2 }}>
+                                                    {authParams.map((paramDef) => (
+                                                        <TextField
+                                                            key={paramDef.name}
+                                                            sx={inputSx}
+                                                            variant="standard" size="small" fullWidth
+                                                            InputLabelProps={shrinkProps}
+                                                            label={paramDef.name}
+                                                            type={paramDef.type === 'password' ? 'password' : 'text'}
+                                                            value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
+                                                            placeholder={paramDef.description || (paramDef.default ? `${paramDef.default}` : '')}
+                                                            onChange={(event: any) => {
+                                                                if (sensitiveParamNames.has(paramDef.name)) {
+                                                                    setSensitiveParams(prev => ({ ...prev, [paramDef.name]: event.target.value }));
+                                                                } else {
+                                                                    dispatch(dfActions.updateDataLoaderConnectParam({ dataLoaderType, paramName: paramDef.name, paramValue: event.target.value }));
+                                                                }
+                                                            }}
+                                                        />
+                                                    ))}
+                                                </Box>
+                                                <Button
+                                                    variant="contained" color="primary" size="small"
+                                                    sx={{ textTransform: "none", minWidth: 80, height: 30, mt: 1.5, fontSize: 12 }}
+                                                    onClick={() => connectAndListTables()}>
+                                                    {t('db.connect', { suffix: (params.table_filter || '').trim() ? t('db.withFilter') : '' })}
+                                                </Button>
+                                            </Box>
+                                        </Box>
+                                    ) : hasDelegated ? (
+                                        /* Delegated only */
+                                        <Button
+                                            variant="contained" color="primary" size="small"
+                                            sx={{ textTransform: "none", minWidth: 80, height: 30, fontSize: 12 }}
+                                            disabled={isConnecting}
+                                            onClick={handleDelegatedLogin}
+                                        >
+                                            {delegatedLogin!.label || t('db.delegatedLogin')}
+                                        </Button>
+                                    ) : (
+                                        /* Manual credentials only + connect */
+                                        <>
+                                            {renderParamGrid(authParams)}
+                                            <Button
+                                                variant="contained" color="primary" size="small"
+                                                sx={{ textTransform: "none", minWidth: 80, height: 30, mt: 1.5, fontSize: 12 }}
+                                                onClick={() => connectAndListTables()}>
+                                                {t('db.connect', { suffix: (params.table_filter || '').trim() ? t('db.withFilter') : '' })}
+                                            </Button>
+                                        </>
+                                    )}
+                                </Box>
+                            </>
+                        );
+                    })()}
+                    {paramDefs.length > 0 && (
+                        <FormControlLabel
+                            sx={{ mt: 0.5, ml: 0 }}
+                            control={
+                                <Checkbox
+                                    size="small"
+                                    checked={persistCredentials}
+                                    onChange={(e) => setPersistCredentials(e.target.checked)}
+                                    sx={{ p: 0.5 }}
+                                />
+                            }
+                            label={
+                                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                    {t('db.rememberCredentials')}
+                                </Typography>
+                            }
+                        />
+                    )}
                     {authInstructions.trim() && (
                         <Box sx={(theme) => ({
                             mt: 2, px: 1.5, py: 1, 
