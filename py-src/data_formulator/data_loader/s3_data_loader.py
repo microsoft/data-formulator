@@ -9,7 +9,7 @@ import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
 from pyarrow import fs as pa_fs
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +19,11 @@ class S3DataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "aws_access_key_id", "type": "string", "required": True, "default": "", "description": "AWS access key ID"},
-            {"name": "aws_secret_access_key", "type": "string", "required": True, "default": "", "description": "AWS secret access key"},
-            {"name": "aws_session_token", "type": "string", "required": False, "default": "", "description": "AWS session token (required for temporary credentials)"},
-            {"name": "region_name", "type": "string", "required": True, "default": "us-east-1", "description": "AWS region name"},
-            {"name": "bucket", "type": "string", "required": True, "default": "", "description": "S3 bucket name"}
+            {"name": "aws_access_key_id", "type": "string", "required": True, "default": "", "sensitive": True, "tier": "auth", "description": "AWS access key ID"},
+            {"name": "aws_secret_access_key", "type": "string", "required": True, "default": "", "sensitive": True, "tier": "auth", "description": "AWS secret access key"},
+            {"name": "aws_session_token", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS session token (required for temporary credentials)"},
+            {"name": "region_name", "type": "string", "required": True, "default": "us-east-1", "tier": "connection", "description": "AWS region name"},
+            {"name": "bucket", "type": "string", "required": True, "default": "", "tier": "connection", "description": "S3 bucket name"}
         ]
         return params_list
 
@@ -57,15 +57,18 @@ class S3DataLoader(ExternalDataLoader):
     def fetch_data_as_arrow(
         self,
         source_table: str,
-        size: int = 1000000,
-        sort_columns: list[str] | None = None,
-        sort_order: str = 'asc'
+        import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
         """
         Fetch data from S3 as a PyArrow Table using PyArrow's native S3 filesystem.
         
         For files (parquet, csv), reads directly using PyArrow.
         """
+        opts = import_options or {}
+        size = opts.get("size", 1000000)
+        sort_columns = opts.get("sort_columns")
+        sort_order = opts.get("sort_order", "asc")
+
         if not source_table:
             raise ValueError("source_table (S3 URL) must be provided")
         
@@ -153,6 +156,7 @@ class S3DataLoader(ExternalDataLoader):
                     
                     results.append({
                         "name": s3_url,
+                        "path": [s3_url],
                         "metadata": table_metadata
                     })
                 except Exception as e:
@@ -198,3 +202,77 @@ class S3DataLoader(ExternalDataLoader):
         except Exception as e:
             logger.warning(f"Error estimating row count for {s3_url}: {e}")
             return 0
+
+    # -- Catalog tree API --------------------------------------------------
+
+    @staticmethod
+    def catalog_hierarchy() -> list[dict[str, str]]:
+        return [
+            {"key": "bucket", "label": "Bucket"},
+            {"key": "table", "label": "File"},
+        ]
+
+    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+        path = path or []
+        eff = self.effective_hierarchy()
+        if len(path) >= len(eff):
+            return []
+        level_key = eff[len(path)]["key"]
+
+        if level_key == "bucket":
+            # Bucket is always pinned (required) but handle defensively
+            return [CatalogNode(name=self.bucket, node_type="namespace", path=path + [self.bucket])]
+
+        if level_key == "table":
+            s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token if self.aws_session_token else None,
+                region_name=self.region_name,
+            )
+            resp = s3_client.list_objects_v2(Bucket=self.bucket)
+            nodes = []
+            for obj in resp.get("Contents", []):
+                key = obj["Key"]
+                if key.endswith("/") or not self._is_supported_file(key):
+                    continue
+                if filter and filter.lower() not in key.lower():
+                    continue
+                nodes.append(CatalogNode(
+                    name=key, node_type="table", path=path + [key],
+                    metadata={"size_bytes": obj.get("Size", 0)},
+                ))
+            return nodes
+
+        return []
+
+    def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        if not path:
+            return {}
+        key = path[-1]
+        s3_url = f"s3://{self.bucket}/{key}"
+        try:
+            sample = self._read_sample_arrow(s3_url, 5)
+            sample_df = sample.to_pandas()
+            columns = [{"name": c, "type": str(sample_df[c].dtype)} for c in sample_df.columns]
+            sample_rows = json.loads(sample_df.to_json(orient="records"))
+            row_count = self._estimate_row_count(s3_url)
+            return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+        except Exception as e:
+            logger.warning(f"get_metadata failed for {path}: {e}")
+            return {}
+
+    def test_connection(self) -> bool:
+        try:
+            s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token if self.aws_session_token else None,
+                region_name=self.region_name,
+            )
+            s3_client.head_bucket(Bucket=self.bucket)
+            return True
+        except Exception:
+            return False

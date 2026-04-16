@@ -21,7 +21,7 @@ import os
 import logging
 from pathlib import Path
 
-from data_formulator.datalake.workspace import Workspace, get_data_formulator_home
+from data_formulator.datalake.workspace import Workspace, get_data_formulator_home, get_user_home
 from data_formulator.datalake.workspace_manager import WorkspaceManager
 
 logger = logging.getLogger(__name__)
@@ -77,8 +77,7 @@ def _build_azure_container_client(cfg: dict):
 
 def _get_user_workspaces_root(identity_id: str) -> Path:
     """Return the workspaces root for a user: <home>/users/<safe_id>/workspaces/."""
-    safe_id = Workspace._sanitize_identity_id(identity_id)
-    return get_data_formulator_home() / "users" / safe_id / "workspaces"
+    return get_user_home(identity_id) / "workspaces"
 
 
 def _get_backend() -> str:

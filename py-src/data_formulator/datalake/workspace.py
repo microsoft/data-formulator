@@ -84,6 +84,30 @@ def get_default_workspace_root() -> Path:
     return get_data_formulator_home() / "workspaces"
 
 
+def get_user_home(identity_id: str) -> Path:
+    """Return the per-user home directory: DATA_FORMULATOR_HOME/users/<safe_id>/.
+
+    Shared helper used by workspace_factory, data_connector, and any
+    code that needs per-user storage paths.
+    """
+    safe_id = _sanitize_identity_id(identity_id)
+    return get_data_formulator_home() / "users" / safe_id
+
+
+def _sanitize_identity_id(identity_id: str) -> str:
+    """Sanitize identity_id for use as a directory name.
+
+    Uses ``secure_filename`` to produce a safe single-component name.
+    Raises ``ValueError`` if the result is empty or too long.
+    """
+    if len(identity_id) > 256:
+        raise ValueError("identity_id too long")
+    result = secure_filename(identity_id)
+    if not result:
+        raise ValueError("identity_id sanitized to empty string")
+    return result
+
+
 def cleanup_stale_temp_files(workspace_path: Path, max_age_hours: int = 24) -> int:
     """
     Remove stale temporary files from workspace directory.
@@ -204,18 +228,11 @@ class Workspace:
     
     @staticmethod
     def _sanitize_identity_id(identity_id: str) -> str:
-        """
-        Sanitize identity_id for use as a directory name.
+        """Sanitize identity_id for use as a directory name.
         
-        Uses ``secure_filename`` to produce a safe single-component name.
-        Raises ``ValueError`` if the result is empty or too long.
+        Delegates to module-level :func:`_sanitize_identity_id`.
         """
-        if len(identity_id) > 256:
-            raise ValueError("identity_id too long")
-        result = secure_filename(identity_id)
-        if not result:
-            raise ValueError("identity_id sanitized to empty string")
-        return result
+        return _sanitize_identity_id(identity_id)
     
     def _init_metadata(self) -> None:
         """Initialize a new workspace with empty metadata."""
@@ -484,7 +501,7 @@ class Workspace:
         table: pa.Table,
         table_name: str,
         compression: str = DEFAULT_COMPRESSION,
-        loader_metadata: Optional[dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
     ) -> TableMetadata:
         """
         Write a PyArrow Table directly to parquet.
@@ -518,11 +535,12 @@ class Workspace:
             last_synced=now,
         )
 
-        if loader_metadata:
-            table_metadata.loader_type = loader_metadata.get('loader_type')
-            table_metadata.loader_params = loader_metadata.get('loader_params')
-            table_metadata.source_table = loader_metadata.get('source_table')
-            table_metadata.source_query = loader_metadata.get('source_query')
+        if source_info:
+            table_metadata.loader_type = source_info.get('loader_type')
+            table_metadata.loader_params = source_info.get('loader_params')
+            table_metadata.source_table = source_info.get('source_table')
+            table_metadata.source_query = source_info.get('source_query')
+            table_metadata.import_options = source_info.get('import_options')
 
         self.add_table_metadata(table_metadata)
         logger.info(
@@ -537,7 +555,7 @@ class Workspace:
         df: pd.DataFrame,
         table_name: str,
         compression: str = DEFAULT_COMPRESSION,
-        loader_metadata: Optional[dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
     ) -> TableMetadata:
         """Write a pandas DataFrame to parquet."""
         safe_name = sanitize_table_name(table_name)
@@ -569,11 +587,12 @@ class Workspace:
             last_synced=now,
         )
 
-        if loader_metadata:
-            table_metadata.loader_type = loader_metadata.get('loader_type')
-            table_metadata.loader_params = loader_metadata.get('loader_params')
-            table_metadata.source_table = loader_metadata.get('source_table')
-            table_metadata.source_query = loader_metadata.get('source_query')
+        if source_info:
+            table_metadata.loader_type = source_info.get('loader_type')
+            table_metadata.loader_params = source_info.get('loader_params')
+            table_metadata.source_table = source_info.get('source_table')
+            table_metadata.source_query = source_info.get('source_query')
+            table_metadata.import_options = source_info.get('import_options')
 
         self.add_table_metadata(table_metadata)
         logger.info(
@@ -667,7 +686,7 @@ class Workspace:
             logger.info(f"Table {table_name} unchanged (hash: {new_hash[:8]}…)")
             return old_meta, False
 
-        loader_metadata = {
+        source_info = {
             'loader_type': old_meta.loader_type,
             'loader_params': old_meta.loader_params,
             'source_table': old_meta.source_table,
@@ -677,7 +696,7 @@ class Workspace:
             table=table,
             table_name=table_name,
             compression=compression,
-            loader_metadata=loader_metadata,
+            source_info=source_info,
         )
         logger.info(f"Refreshed {table_name}: {old_meta.row_count} → {new_meta.row_count} rows")
         return new_meta, True

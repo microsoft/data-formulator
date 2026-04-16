@@ -49,21 +49,14 @@ export function getUrls() {
         SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
-        DATA_LOADER_LIST_DATA_LOADERS: `/api/tables/data-loader/list-data-loaders`,
-        DATA_LOADER_LIST_TABLES: `/api/tables/data-loader/list-tables`,
-        DATA_LOADER_INGEST_DATA: `/api/tables/data-loader/ingest-data`,
-        DATA_LOADER_VIEW_QUERY_SAMPLE: `/api/tables/data-loader/view-query-sample`,
-        DATA_LOADER_INGEST_DATA_FROM_QUERY: `/api/tables/data-loader/ingest-data-from-query`,
-        DATA_LOADER_REFRESH_TABLE: `/api/tables/data-loader/refresh-table`,
-        DATA_LOADER_FETCH_DATA: `/api/tables/data-loader/fetch-data`,
-        DATA_LOADER_GET_TABLE_METADATA: `/api/tables/data-loader/get-table-metadata`,
-        DATA_LOADER_LIST_TABLE_METADATA: `/api/tables/data-loader/list-table-metadata`,
-
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
         GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
 
         // Workspace summary (auto-naming)
         WORKSPACE_SUMMARY: `/api/agent/workspace-summary`,
+
+        // NL-to-filter
+        NL_TO_FILTER: `/api/agent/nl-to-filter`,
 
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
@@ -80,6 +73,29 @@ export function getUrls() {
         OPEN_WORKSPACE: `/api/tables/open-workspace`,
     };
 }
+
+/**
+ * Static API URLs for connector actions.
+ * All action routes accept `connector_id` in the JSON body.
+ */
+export const CONNECTOR_ACTION_URLS = {
+    CONNECT: '/api/connectors/connect',
+    GET_STATUS: '/api/connectors/get-status',
+    GET_CATALOG: '/api/connectors/get-catalog',
+    GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',
+    IMPORT_DATA: '/api/connectors/import-data',
+    REFRESH_DATA: '/api/connectors/refresh-data',
+    PREVIEW_DATA: '/api/connectors/preview-data',
+    IMPORT_GROUP: '/api/connectors/import-group',
+} as const;
+
+/** Global connector management URLs. */
+export const CONNECTOR_URLS = {
+    DATA_LOADERS: '/api/data-loaders',
+    LIST: '/api/connectors',
+    CREATE: '/api/connectors',
+    DELETE: (id: string) => `/api/connectors/${id}`,
+} as const;
 
 /**
  * Get the current namespaced identity from the Redux store, or fall back to browser ID.

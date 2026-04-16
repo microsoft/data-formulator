@@ -16,7 +16,7 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { inferTypeFromValueArray } from '../data/utils';
-import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
+import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash } from './utils';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
 import { tableDataDB } from './workspaceDB';
 
@@ -40,14 +40,14 @@ export interface LoadTablePayload {
     // orphaned sheets when re-uploading a file.
     replaceSource?: boolean;
 
-    // For database sources loaded via external data loader:
-    dataLoaderType?: string;
-    dataLoaderParams?: Record<string, string>;
+    // For database sources loaded via data connector:
     sourceTableName?: string;
+    connectorId?: string;
     importOptions?: {
         rowLimit?: number;
         sortColumns?: string[];
         sortOrder?: 'asc' | 'desc';
+        conditions?: { column: string; operator: string; value?: any }[];
     };
 }
 
@@ -74,9 +74,9 @@ export const loadTable = createAsyncThunk<
 >(
     'dataFormulator/loadTable',
     async (payload, { dispatch, getState }) => {
-        const { table, file, replaceSource, dataLoaderType, dataLoaderParams, sourceTableName, importOptions } = payload;
+        const { table, file, replaceSource, sourceTableName, connectorId, importOptions } = payload;
         const state = getState();
-        const frontendRowLimit = state.config?.frontendRowLimit ?? 50000;
+        const frontendRowLimit = state.config?.frontendRowLimit ?? 2_000_000;
         const existingTables = state.tables;
 
         // Storage determined by backend config
@@ -129,18 +129,20 @@ export const loadTable = createAsyncThunk<
 
         if (storeOnServer) {
             // === STORE ON SERVER PATH ===
-            if (sourceType === 'database' && dataLoaderType && sourceTableName) {
-                // Database source: ingest to workspace via data loader
+            if (sourceType === 'database' && sourceTableName && connectorId) {
+                // Database source: ingest to workspace via data connector
                 try {
-                    const response = await fetchWithIdentity(getUrls().DATA_LOADER_INGEST_DATA, {
+                    const ingestUrl = CONNECTOR_ACTION_URLS.IMPORT_DATA;
+                    const ingestBody = {
+                        connector_id: connectorId,
+                        source_table: sourceTableName,
+                        table_name: sourceTableName,
+                        import_options: importOptions || {},
+                    };
+                    const response = await fetchWithIdentity(ingestUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            data_loader_type: dataLoaderType,
-                            data_loader_params: dataLoaderParams,
-                            table_name: sourceTableName,
-                            import_options: importOptions || {},
-                        }),
+                        body: JSON.stringify(ingestBody),
                     });
                     const data = await response.json();
                     if (data.status === 'success') {
@@ -227,26 +229,27 @@ export const loadTable = createAsyncThunk<
             }
         } else {
             // === LOCAL ONLY PATH (storeOnServer = false) ===
-            if (sourceType === 'database' && dataLoaderType && dataLoaderParams && sourceTableName) {
-                // Database source: fetch data without saving to workspace
+            if (sourceType === 'database' && connectorId && sourceTableName) {
+                // Database source: fetch data via data connector preview (no workspace save)
                 try {
-                    const response = await fetchWithIdentity(getUrls().DATA_LOADER_FETCH_DATA, {
+                    const response = await fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            data_loader_type: dataLoaderType,
-                            data_loader_params: dataLoaderParams,
-                            table_name: sourceTableName,
-                            row_limit: frontendRowLimit,
-                            sort_columns: importOptions?.sortColumns,
-                            sort_order: importOptions?.sortOrder,
+                            connector_id: connectorId,
+                            source_table: sourceTableName,
+                            import_options: {
+                                size: frontendRowLimit,
+                                sort_columns: importOptions?.sortColumns,
+                                sort_order: importOptions?.sortOrder,
+                            },
                         }),
                     });
                     const data = await response.json();
                     if (data.status === 'success') {
                         const rows = data.rows;
                         const names = rows.length > 0 ? Object.keys(rows[0]) : [];
-                        const totalCount: number = data.total_row_count ?? rows.length;
+                        const totalCount: number = data.total_row_count ?? table.virtual?.rowCount ?? rows.length;
                         originalRowCount = totalCount;
                         truncated = rows.length < totalCount;
                         
@@ -265,7 +268,6 @@ export const loadTable = createAsyncThunk<
                                     levels: []
                                 }
                             }), {}),
-                            // No virtual field = local-only (not stored on server)
                             anchored: true,
                         };
                     } else {
@@ -406,46 +408,6 @@ export function buildDictTableFromWorkspace(
         source: sourceConfig,
     };
 }
-
-/**
- * Load a table that a plugin has already written to the workspace.
- *
- * This is the canonical way for **any** data-source plugin to surface its
- * output in the app.  It fetches the workspace table listing, builds a
- * proper {@link DictTable} (with type inference, source config, etc.),
- * and dispatches it through the standard `loadTable` path.
- *
- * @param tableName  The workspace table name returned by the plugin backend.
- * @param pluginId   Plugin identifier (used in the `source` config).
- */
-export const loadPluginTable = createAsyncThunk<
-    LoadTableResult | null,
-    { tableName: string; pluginId: string },
-    { state: DataFormulatorState }
->(
-    'dataFormulator/loadPluginTable',
-    async ({ tableName, pluginId }, { dispatch }) => {
-        const listResp = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
-        const listData = await listResp.json();
-        if (listData.status !== 'success') return null;
-
-        const wsTable = listData.tables.find((t: any) => t.name === tableName);
-        if (!wsTable) return null;
-
-        const source: DataSourceConfig = {
-            type: 'database',
-            databaseTable: wsTable.name,
-            canRefresh: false,
-            lastRefreshed: Date.now(),
-            originalTableName: wsTable.name,
-        };
-        const tableObj = buildDictTableFromWorkspace(wsTable, source);
-
-        const result = await dispatch(loadTable({ table: tableObj })).unwrap();
-        return result;
-    },
-);
-
 
 /**
  * Check if any ancestor table of a given table is local-only (no virtual field).

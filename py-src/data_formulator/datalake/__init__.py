@@ -39,6 +39,7 @@ from data_formulator.datalake.workspace import (
     WorkspaceWithTempData,
     get_data_formulator_home,
     get_default_workspace_root,
+    get_user_home,
 )
 from data_formulator.datalake.workspace_manager import WorkspaceManager
 from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
@@ -92,6 +93,7 @@ __all__ = [
     "GlobalCacheManager",
     "get_data_formulator_home",
     "get_default_workspace_root",
+    "get_user_home",
     "WorkspaceManager",
     # Metadata
     "TableMetadata",

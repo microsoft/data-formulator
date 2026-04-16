@@ -62,12 +62,12 @@ pytest tests/plugin/ -v                # run all loader tests
 
 | Layer | Location | Runner | Count |
 |-------|----------|--------|-------|
-| Backend unit | `tests/backend/unit/` | pytest | 17 files |
+| Backend unit | `tests/backend/unit/` | pytest | 20 files |
 | Backend security | `tests/backend/security/` | pytest | 6 files |
-| Backend integration | `tests/backend/integration/` | pytest | 7 files (6 route tests + sandbox) |
+| Backend integration | `tests/backend/integration/` | pytest | 8 files (7 route tests + sandbox) |
 | Backend contract | `tests/backend/contract/` | pytest | 2 files |
 | Backend benchmarks | `tests/backend/benchmarks/` | manual | 2 files |
-| Plugin (data loaders) | `tests/plugin/` | pytest (manual) | 5 suites (requires Docker) |
+| Plugin (data loaders) | `tests/plugin/` | pytest (manual) | 7 suites (requires Docker) |
 | Frontend unit | `tests/frontend/unit/` | vitest | 4 files |
 
 `tests/backend/` runs by default with `pytest` — no Docker required.

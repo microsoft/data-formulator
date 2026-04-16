@@ -23,8 +23,6 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { useSelector } from 'react-redux';
-import { DataFormulatorState } from '../app/dfSlice';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { useTranslation } from 'react-i18next';
@@ -71,7 +69,6 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     // Constants for content size limits
     const MAX_DISPLAY_LINES = 20;
@@ -458,24 +455,6 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                 </TabPanel>
 
                 <TabPanel value={tabValue} index={1}>
-                    {serverConfig.DISABLE_FILE_UPLOAD ? (
-                        <Box sx={{ textAlign: 'center', py: 6 }}>
-                            <Typography color="text.secondary" sx={{ mb: 1.5, fontSize: '0.875rem' }}>
-                                {t('upload.fileUploadDisabled')}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                                {t('refresh.installLocallyForUpload')} <br />
-                                <Link 
-                                    href="https://github.com/microsoft/data-formulator" 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    sx={{ fontSize: '0.75rem' }}
-                                >
-                                    https://github.com/microsoft/data-formulator
-                                </Link>
-                            </Typography>
-                        </Box>
-                    ) : (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             <Input
                                 inputProps={{ accept: '.csv,.tsv,.json,.xlsx,.xls' }}
@@ -515,7 +494,6 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                                 </Typography>
                             </Box>
                         </Box>
-                    )}
                 </TabPanel>
 
                 <TabPanel value={tabValue} index={2}>
