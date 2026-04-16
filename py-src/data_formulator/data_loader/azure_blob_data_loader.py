@@ -211,6 +211,7 @@ Just provide `account_name` + `container_name`. Requires `az login` or Managed I
 
                 results.append({
                     "name": azure_url,
+                    "path": [azure_url],
                     "metadata": table_metadata
                 })
             except Exception as e:

@@ -416,6 +416,7 @@ Enter `aws_access_key_id` and `aws_secret_access_key` directly. Add `aws_session
 
                         results.append({
                             "name": full_table_name,
+                            "path": [db_name, table_name],
                             "metadata": {
                                 "row_count": 0,  # Athena doesn't provide row counts directly
                                 "columns": columns,

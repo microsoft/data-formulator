@@ -211,6 +211,7 @@ class KustoDataLoader(ExternalDataLoader):
             tables.append({
                 "type": "table",
                 "name": table_name,
+                "path": [table_name],
                 "metadata": table_metadata
             })
 

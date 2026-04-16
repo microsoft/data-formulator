@@ -55,6 +55,9 @@ export function getUrls() {
         // Workspace summary (auto-naming)
         WORKSPACE_SUMMARY: `/api/agent/workspace-summary`,
 
+        // NL-to-filter
+        NL_TO_FILTER: `/api/agent/nl-to-filter`,
+
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
 
@@ -72,23 +75,27 @@ export function getUrls() {
 }
 
 /**
- * Build API URLs for a DataConnector by connector ID.
+ * Static API URLs for connector actions.
+ * All action routes accept `connector_id` in the JSON body.
  */
-export function getConnectorUrls(connectorId: string) {
-    const base = `/api/connectors/${connectorId}`;
-    return {
-        AUTH_CONNECT: `${base}/auth/connect`,
-        AUTH_DISCONNECT: `${base}/auth/disconnect`,
-        AUTH_STATUS: `${base}/auth/status`,
-        AUTH_TOKEN_CONNECT: `${base}/auth/token-connect`,
-        CATALOG_LS: `${base}/catalog/ls`,
-        CATALOG_METADATA: `${base}/catalog/metadata`,
-        CATALOG_LIST_TABLES: `${base}/catalog/list_tables`,
-        DATA_IMPORT: `${base}/data/import`,
-        DATA_REFRESH: `${base}/data/refresh`,
-        DATA_PREVIEW: `${base}/data/preview`,
-    };
-}
+export const CONNECTOR_ACTION_URLS = {
+    CONNECT: '/api/connectors/connect',
+    GET_STATUS: '/api/connectors/get-status',
+    GET_CATALOG: '/api/connectors/get-catalog',
+    GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',
+    IMPORT_DATA: '/api/connectors/import-data',
+    REFRESH_DATA: '/api/connectors/refresh-data',
+    PREVIEW_DATA: '/api/connectors/preview-data',
+    IMPORT_GROUP: '/api/connectors/import-group',
+} as const;
+
+/** Global connector management URLs. */
+export const CONNECTOR_URLS = {
+    DATA_LOADERS: '/api/data-loaders',
+    LIST: '/api/connectors',
+    CREATE: '/api/connectors',
+    DELETE: (id: string) => `/api/connectors/${id}`,
+} as const;
 
 /**
  * Get the current namespaced identity from the Redux store, or fall back to browser ID.

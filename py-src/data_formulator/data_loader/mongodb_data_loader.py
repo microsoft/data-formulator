@@ -271,6 +271,7 @@ class MongoDBDataLoader(ExternalDataLoader):
                 
                 results.append({
                     "name": full_table_name,
+                    "path": [collection_name],
                     "metadata": table_metadata
                 })
             except Exception as e:

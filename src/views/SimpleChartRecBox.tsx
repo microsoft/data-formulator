@@ -444,6 +444,7 @@ export const SimpleChartRecBox: FC = function () {
         // Local accumulator mirrors the DraftNode's interaction (avoids stale closure reads)
         let currentDraftInteraction: InteractionEntry[] = [];
         let currentDraftId: string | null = null;
+        let currentDraftParentTableId: string | null = null;
         const createNextDraft = (parentTableId: string, initialInteraction: InteractionEntry[]) => {
             const draftId = `draft-${actionId}-${Date.now()}`;
             dispatch(dfActions.createDraftNode({
@@ -455,6 +456,7 @@ export const SimpleChartRecBox: FC = function () {
                 actionId,
             }));
             currentDraftId = draftId;
+            currentDraftParentTableId = parentTableId;
             currentDraftInteraction = [...initialInteraction];
             return draftId;
         };
@@ -464,6 +466,7 @@ export const SimpleChartRecBox: FC = function () {
             currentDraftId = pendingClarification.draftId;
             // Seed local accumulator from the existing draft's interaction (fresh at this point)
             const existingDraft = draftNodes.find(d => d.id === pendingClarification.draftId);
+            currentDraftParentTableId = existingDraft?.derive?.trigger?.tableId || null;
             currentDraftInteraction = [...(existingDraft?.derive?.trigger?.interaction || [])];
             // The user reply was already appended above, add to local accumulator too
             currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now() });
@@ -656,6 +659,10 @@ export const SimpleChartRecBox: FC = function () {
                         completedStepCount: result.completed_step_count || 0,
                         lastCreatedTableId,
                     }}));
+                    // Auto-focus the table that owns the clarification so the user sees the question
+                    if (currentDraftParentTableId) {
+                        dispatch(dfActions.setFocused({ type: 'table', tableId: currentDraftParentTableId }));
+                    }
                 }
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;

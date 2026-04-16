@@ -93,6 +93,9 @@ export type FocusedId =
     | { type: 'report'; reportId: string }
     | undefined;
 
+export const DEFAULT_ROW_LIMIT = 2_000_000;
+export const DEFAULT_ROW_LIMIT_EPHEMERAL = 20_000;
+
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
     defaultChartWidth: number;
@@ -225,7 +228,7 @@ const initialState: DataFormulatorState = {
         defaultChartWidth: 400,
         defaultChartHeight: 300,
         maxStretchFactor: 2.0,
-        frontendRowLimit: 50000,
+        frontendRowLimit: DEFAULT_ROW_LIMIT,
         paletteKey: 'fluent',
     },
 
@@ -603,6 +606,10 @@ export const dataFormulatorSlice = createSlice({
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
             state.serverConfig = action.payload;
+            // Auto-adjust frontendRowLimit for ephemeral mode if still at default
+            if (action.payload.WORKSPACE_BACKEND === 'ephemeral' && state.config.frontendRowLimit === DEFAULT_ROW_LIMIT) {
+                state.config.frontendRowLimit = DEFAULT_ROW_LIMIT_EPHEMERAL;
+            }
         },
         setConfig: (state, action: PayloadAction<ClientConfig>) => {
             state.config = action.payload;

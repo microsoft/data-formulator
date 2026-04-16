@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-"""Load sample datasets into the Superset test instance's default SQLite DB.
+"""Create sample tables and add native filters to the Sales Dashboard.
 
-This runs inside the Superset container after `superset init`.
-It creates small, self-contained tables useful for testing the DF plugin:
-  - df_test_sales       (100 rows, mixed types)
-  - df_test_employees   (30  rows, names and departments)
-  - df_test_weather     (365 rows, daily temps)
+Runs inside the Superset container after ``superset load_examples``.
+All operations use plain sqlite3 — no Superset imports needed.
+
+Phase 1: Write df_test_* tables into the *examples* SQLite database.
+Phase 2: Patch the Sales Dashboard's json_metadata in the *metadata*
+         database so it has native filter definitions for testing.
 """
 
+import json
 import random
 import datetime
 import sqlite3
 import os
 
-DB_PATH = os.path.expanduser("~/.superset/superset.db")
-# Fallback: newer Superset images may use a different path
-if not os.path.exists(DB_PATH):
-    DB_PATH = "/app/superset_home/superset.db"
+# -- paths inside the container --
+EXAMPLES_DB = "/app/superset_home/examples.db"
+METADATA_DB = "/app/superset_home/superset.db"
 
 
 def create_tables(conn: sqlite3.Connection) -> None:
@@ -123,57 +124,108 @@ def create_tables(conn: sqlite3.Connection) -> None:
     print(f"[sample_data] Created df_test_sales (100), df_test_employees (30), df_test_weather (365)")
 
 
-def register_datasets_in_superset() -> None:
-    """Register our tables as Superset datasets via the Superset Python API.
+def add_native_filters_to_sales_dashboard() -> None:
+    """Inject native filter configuration into the Sales Dashboard.
 
-    This runs inside the Superset process context so we can use
-    superset's own SQLAlchemy models.
+    The built-in Sales Dashboard (slug='sales-dashboard') ships with no
+    native filters. We patch its ``json_metadata`` to add select filters
+    on the ``cleaned_sales_data`` dataset columns so the DF filter UI
+    has something to work with.
     """
-    try:
-        from superset.app import create_app
-        from superset.connectors.sqla.models import SqlaTable
-        from superset.extensions import db as superset_db
+    if not os.path.exists(METADATA_DB):
+        print("[sample_data] Metadata DB not found, skipping filter injection")
+        return
 
-        app = create_app()
-        with app.app_context():
-            # Find the default "examples" database
-            from superset.models.core import Database
-            examples_db = superset_db.session.query(Database).filter_by(
-                database_name="examples"
-            ).first()
+    conn = sqlite3.connect(METADATA_DB)
+    cur = conn.cursor()
 
-            if not examples_db:
-                print("[sample_data] Warning: 'examples' database not found, skipping dataset registration")
-                return
+    # Find the Sales Dashboard
+    cur.execute(
+        "SELECT id, json_metadata FROM dashboards "
+        "WHERE dashboard_title = 'Sales Dashboard' OR slug = 'sales-dashboard' "
+        "LIMIT 1"
+    )
+    row = cur.fetchone()
+    if not row:
+        print("[sample_data] Sales Dashboard not found, skipping filter injection")
+        conn.close()
+        return
 
-            for table_name in ["df_test_sales", "df_test_employees", "df_test_weather"]:
-                existing = superset_db.session.query(SqlaTable).filter_by(
-                    table_name=table_name, database_id=examples_db.id
-                ).first()
-                if existing:
-                    print(f"[sample_data] Dataset '{table_name}' already registered")
-                    continue
+    dash_id, raw_meta = row
+    meta = json.loads(raw_meta) if raw_meta else {}
 
-                dataset = SqlaTable(
-                    table_name=table_name,
-                    database_id=examples_db.id,
-                    schema=None,
-                )
-                superset_db.session.add(dataset)
-                print(f"[sample_data] Registered dataset '{table_name}'")
+    # Already has filters? Skip.
+    if meta.get("native_filter_configuration"):
+        print(f"[sample_data] Sales Dashboard (id={dash_id}) already has native filters")
+        conn.close()
+        return
 
-            superset_db.session.commit()
+    # Find the cleaned_sales_data dataset id
+    cur.execute(
+        "SELECT id FROM tables WHERE table_name = 'cleaned_sales_data' LIMIT 1"
+    )
+    ds_row = cur.fetchone()
+    if not ds_row:
+        print("[sample_data] cleaned_sales_data dataset not found, skipping filter injection")
+        conn.close()
+        return
+    ds_id = ds_row[0]
 
-    except Exception as e:
-        print(f"[sample_data] Dataset registration failed (non-fatal): {e}")
-        print("[sample_data] Tables exist in SQLite but may need manual registration in Superset UI")
+    # Build native filters
+    native_filters = [
+        {
+            "id": "NATIVE_FILTER-status",
+            "name": "Order Status",
+            "filterType": "filter_select",
+            "targets": [{"datasetId": ds_id, "column": {"name": "status"}}],
+            "controlValues": {"multiSelect": True, "enableEmptyFilter": False},
+            "defaultDataMask": {"filterState": {"value": ["Shipped", "In Progress"]}},
+            "scope": {"rootPath": ["ROOT_ID"], "excluded": []},
+            "type": "NATIVE_FILTER",
+            "required": False,
+        },
+        {
+            "id": "NATIVE_FILTER-product_line",
+            "name": "Product Line",
+            "filterType": "filter_select",
+            "targets": [{"datasetId": ds_id, "column": {"name": "product_line"}}],
+            "controlValues": {"multiSelect": True, "enableEmptyFilter": False},
+            "defaultDataMask": {"filterState": {}},
+            "scope": {"rootPath": ["ROOT_ID"], "excluded": []},
+            "type": "NATIVE_FILTER",
+            "required": False,
+        },
+        {
+            "id": "NATIVE_FILTER-deal_size",
+            "name": "Deal Size",
+            "filterType": "filter_select",
+            "targets": [{"datasetId": ds_id, "column": {"name": "deal_size"}}],
+            "controlValues": {"multiSelect": False, "enableEmptyFilter": False},
+            "defaultDataMask": {"filterState": {}},
+            "scope": {"rootPath": ["ROOT_ID"], "excluded": []},
+            "type": "NATIVE_FILTER",
+            "required": False,
+        },
+    ]
+
+    meta["native_filter_configuration"] = native_filters
+    cur.execute(
+        "UPDATE dashboards SET json_metadata = ? WHERE id = ?",
+        (json.dumps(meta), dash_id),
+    )
+    conn.commit()
+    conn.close()
+    print(f"[sample_data] Added {len(native_filters)} native filters to Sales Dashboard (id={dash_id})")
 
 
 if __name__ == "__main__":
-    # Step 1: Create the tables in the examples SQLite database
-    conn = sqlite3.connect(DB_PATH)
-    create_tables(conn)
-    conn.close()
+    # 1. Create custom tables in the examples database
+    if os.path.exists(EXAMPLES_DB):
+        conn = sqlite3.connect(EXAMPLES_DB)
+        create_tables(conn)
+        conn.close()
+    else:
+        print(f"[sample_data] Warning: {EXAMPLES_DB} not found, skipping table creation")
 
-    # Step 2: Register as Superset datasets
-    register_datasets_in_superset()
+    # 2. Add native filters to the Sales Dashboard
+    add_native_filters_to_sales_dashboard()

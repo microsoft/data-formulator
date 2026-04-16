@@ -4,7 +4,7 @@
 """SupersetLoader — ExternalDataLoader implementation for Apache Superset.
 
 Treats Superset as a hierarchical data source:
-  dashboard (namespace) → dataset (table)
+  dashboard (table_group) → dataset (table)
 
 Authentication is JWT-based (``auth_mode() = "token"``).  Data is fetched
 via Superset's SQL Lab API, reusing the existing ``SupersetClient`` and
@@ -218,56 +218,98 @@ class SupersetLoader(ExternalDataLoader):
         except Exception:
             return False
 
-    # -- list_tables (flat/eager) ------------------------------------------
+    # -- list_tables (eager, with dashboard hierarchy) ---------------------
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List all datasets the user can access (flat).
+        """List datasets grouped under dashboards **and** under "All Datasets".
 
-        Fetches detail per dataset to populate columns — may be slow for
-        large Superset instances.
+        Each dataset appears once under every dashboard it belongs to, plus
+        once under the synthetic "All Datasets" folder.  Metadata (columns,
+        sample rows) is fetched once per unique dataset and shared across
+        duplicate entries.
         """
         token = self._ensure_token()
-        all_datasets = self._fetch_all_datasets(token)
-        results = []
-        for ds in all_datasets:
-            name = ds.get("table_name") or ""
-            if table_filter and table_filter.lower() not in name.lower():
-                continue
 
-            # The list endpoint doesn't include columns or row_count —
-            # fetch detail for each dataset.
+        # 1. Fetch all datasets and build a detail cache keyed by dataset id
+        all_datasets = self._fetch_all_datasets(token)
+        ds_by_id: dict[int, dict] = {ds["id"]: ds for ds in all_datasets}
+        detail_cache: dict[int, dict] = {}  # dataset_id → metadata dict
+
+        def _get_metadata(ds: dict) -> dict:
+            ds_id = ds["id"]
+            if ds_id in detail_cache:
+                return detail_cache[ds_id]
+
             columns: list[dict] = []
             row_count = ds.get("row_count")
             sample_rows: list[dict] = []
             try:
-                detail = self._client.get_dataset_detail(token, ds["id"])
+                detail = self._client.get_dataset_detail(token, ds_id)
                 columns = [
-                    {"name": c.get("column_name") or c.get("name") or "", "type": c.get("type") or ""}
+                    {"name": c.get("column_name") or c.get("name") or "",
+                     "type": c.get("type") or ""}
                     for c in (detail.get("columns") or [])
                 ]
                 row_count = detail.get("row_count") or row_count
 
-                # Fetch sample rows via SQL Lab
                 db_id, schema, base_sql = _build_dataset_sql(detail)
                 sql_session = self._client.create_sql_session(token)
                 result = self._client.execute_sql_with_session(
-                    sql_session, db_id, f"SELECT * FROM ({base_sql}) AS _src LIMIT 10", schema, 10,
+                    sql_session, db_id,
+                    f"SELECT * FROM ({base_sql}) AS _src LIMIT 10",
+                    schema, 10,
                 )
                 sample_rows = result.get("data", []) or []
             except Exception:
-                logger.debug("Failed to fetch detail for dataset %s", ds.get("id"))
+                logger.debug("Failed to fetch detail for dataset %s", ds_id)
 
-            results.append({
-                "name": f"{ds.get('id')}:{name}",
-                "metadata": {
-                    "dataset_id": ds["id"],
-                    "row_count": row_count,
-                    "columns": columns,
-                    "sample_rows": sample_rows,
-                    "schema": ds.get("schema", ""),
-                    "database": (ds.get("database") or {}).get("database_name", ""),
-                },
-            })
+            meta = {
+                "dataset_id": ds_id,
+                "row_count": row_count,
+                "columns": columns,
+                "sample_rows": sample_rows,
+                "schema": ds.get("schema", ""),
+                "database": (ds.get("database") or {}).get("database_name", ""),
+            }
+            detail_cache[ds_id] = meta
+            return meta
+
+        def _make_entry(ds: dict, folder: str, ds_name: str) -> dict:
+            return {
+                "name": f"{ds['id']}:{ds_name}",
+                "path": [folder, ds_name],
+                "metadata": dict(_get_metadata(ds)),  # shallow copy
+            }
+
+        results: list[dict[str, Any]] = []
+
+        # 2. Walk dashboards → datasets
+        raw = self._client.list_dashboards(token, page=0, page_size=500)
+        dashboards = raw.get("result", [])
+        for dash in dashboards:
+            dash_title = dash.get("dashboard_title", f"Dashboard {dash['id']}")
+            try:
+                ds_raw = self._client.get_dashboard_datasets(token, dash["id"])
+                dash_datasets = ds_raw.get("result", [])
+            except Exception:
+                logger.debug("Failed to fetch datasets for dashboard %s", dash.get("id"))
+                continue
+
+            for ds in dash_datasets:
+                ds_name = ds.get("table_name") or ds.get("name") or f"dataset_{ds.get('id', '?')}"
+                if table_filter and table_filter.lower() not in ds_name.lower():
+                    continue
+                # Ensure we have full dataset info from the all-datasets list
+                full_ds = ds_by_id.get(ds["id"], ds)
+                results.append(_make_entry(full_ds, dash_title, ds_name))
+
+        # 3. All datasets under "All Datasets"
+        for ds in all_datasets:
+            ds_name = ds.get("table_name") or ""
+            if table_filter and table_filter.lower() not in ds_name.lower():
+                continue
+            results.append(_make_entry(ds, "All Datasets", ds_name))
+
         return results
 
     # -- ls (lazy/hierarchical) --------------------------------------------
@@ -277,7 +319,7 @@ class SupersetLoader(ExternalDataLoader):
         token = self._ensure_token()
 
         if len(path) == 0:
-            # Root: list dashboards + "All Datasets"
+            # Root: list dashboards as table_group nodes + "All Datasets" namespace
             raw = self._client.list_dashboards(token, page=0, page_size=500)
             dashboards = raw.get("result", [])
             nodes = []
@@ -285,13 +327,20 @@ class SupersetLoader(ExternalDataLoader):
                 title = d.get("dashboard_title", f"Dashboard {d['id']}")
                 if filter and filter.lower() not in title.lower():
                     continue
+                dash_id = d["id"]
+                # Build table_group node with tables + source_filters
+                tables, source_filters = self._build_dashboard_group_metadata(token, dash_id)
                 nodes.append(CatalogNode(
                     name=title,
-                    node_type="namespace",
-                    path=[str(d["id"])],
-                    metadata={"dashboard_id": d["id"]},
+                    node_type="table_group",
+                    path=[str(dash_id)],
+                    metadata={
+                        "dashboard_id": dash_id,
+                        "tables": tables,
+                        "source_filters": source_filters,
+                    },
                 ))
-            # Add synthetic "All Datasets" entry
+            # Add synthetic "All Datasets" entry (namespace, not table_group)
             if not filter or "all datasets" in (filter or "").lower():
                 nodes.append(CatalogNode(
                     name="All Datasets",
@@ -301,11 +350,13 @@ class SupersetLoader(ExternalDataLoader):
             return nodes
 
         if len(path) == 1:
-            # Expand a dashboard or "All Datasets"
+            # Expand "All Datasets" namespace (dashboards are table_group leaves, no children)
             parent_id = path[0]
             if parent_id == "__all__":
                 datasets = self._fetch_all_datasets(token)
             else:
+                # Should not normally be called for dashboards (they're table_group leaves),
+                # but support it for backwards compatibility
                 try:
                     raw = self._client.get_dashboard_datasets(token, int(parent_id))
                     datasets = raw.get("result", [])
@@ -331,6 +382,222 @@ class SupersetLoader(ExternalDataLoader):
             return nodes
 
         return []
+
+    def _build_dashboard_group_metadata(
+        self, token: str, dashboard_id: int,
+    ) -> tuple[list[dict], list[dict]]:
+        """Build tables list and source_filters for a dashboard table_group node.
+
+        Returns (tables, source_filters).
+        """
+        # Fetch datasets under this dashboard
+        try:
+            ds_raw = self._client.get_dashboard_datasets(token, dashboard_id)
+            datasets = ds_raw.get("result", [])
+        except Exception:
+            logger.debug("Failed to fetch datasets for dashboard %s", dashboard_id)
+            return [], []
+
+        tables = []
+        for ds in datasets:
+            ds_id = ds["id"]
+            name = ds.get("table_name") or ds.get("name") or f"dataset_{ds_id}"
+            # Fetch columns for this dataset
+            columns: list[str] = []
+            try:
+                detail = self._client.get_dataset_detail(token, ds_id)
+                columns = [
+                    c.get("column_name") or c.get("name") or ""
+                    for c in (detail.get("columns") or [])
+                    if c.get("column_name") or c.get("name")
+                ]
+            except Exception:
+                logger.debug("Failed to fetch detail for dataset %s", ds_id)
+            tables.append({
+                "name": name,
+                "dataset_id": ds_id,
+                "row_count": ds.get("row_count"),
+                "columns": columns,
+            })
+
+        # Extract native filters from dashboard metadata
+        source_filters = self._extract_dashboard_filters(token, dashboard_id, datasets)
+
+        return tables, source_filters
+
+    def _extract_dashboard_filters(
+        self, token: str, dashboard_id: int, datasets: list[dict],
+    ) -> list[dict]:
+        """Extract native filter definitions from a dashboard's json_metadata.
+
+        Returns a list of source_filter dicts in the generic format defined
+        in design doc 9.2.
+        """
+        try:
+            detail = self._client.get_dashboard_detail(token, dashboard_id)
+        except Exception:
+            logger.debug("Failed to fetch dashboard detail %s for filters", dashboard_id)
+            return []
+
+        json_metadata = detail.get("json_metadata")
+        if isinstance(json_metadata, str):
+            try:
+                json_metadata = json.loads(json_metadata)
+            except Exception:
+                json_metadata = {}
+        if not isinstance(json_metadata, dict):
+            json_metadata = {}
+
+        raw_filters = (
+            json_metadata.get("native_filter_configuration")
+            or json_metadata.get("filter_configuration")
+            or []
+        )
+        if isinstance(raw_filters, str):
+            try:
+                raw_filters = json.loads(raw_filters)
+            except Exception:
+                return []
+
+        dataset_ids = {ds["id"] for ds in datasets}
+        filter_defs: list[dict] = []
+
+        for raw_filter in raw_filters:
+            if not isinstance(raw_filter, dict):
+                continue
+
+            filter_name = raw_filter.get("name") or "Unnamed filter"
+            filter_type = str(raw_filter.get("filterType") or raw_filter.get("type") or "")
+            control_values = raw_filter.get("controlValues") or {}
+            multi = bool(
+                control_values.get("multiSelect")
+                or control_values.get("enableMultiple")
+                or control_values.get("multi_select")
+            )
+            required = bool(raw_filter.get("required"))
+
+            # Extract default value
+            dm = raw_filter.get("defaultDataMask") or {}
+            fs = dm.get("filterState") or {}
+            default_value = fs.get("value")
+
+            targets = raw_filter.get("targets") or []
+            applies_to: list[int] = []
+            column_name = ""
+
+            for target in targets:
+                if not isinstance(target, dict):
+                    continue
+                target_ds_id = target.get("datasetId") or target.get("dataset_id")
+                if not target_ds_id:
+                    continue
+                target_ds_id = int(target_ds_id)
+                if target_ds_id in dataset_ids:
+                    applies_to.append(target_ds_id)
+                if not column_name:
+                    col_obj = target.get("column") or {}
+                    column_name = (
+                        col_obj.get("name")
+                        or target.get("column_name")
+                        or target.get("columnName")
+                        or ""
+                    )
+
+            if not column_name or not applies_to:
+                continue
+
+            # Infer column_type and input_type
+            column_type = self._infer_column_type(filter_type)
+            input_type = self._infer_input_type(filter_type, column_type)
+
+            filter_defs.append({
+                "name": filter_name,
+                "column": column_name,
+                "input_type": input_type,
+                "column_type": column_type,
+                "multi": multi,
+                "required": required,
+                "default_value": default_value,
+                "applies_to": applies_to,
+            })
+
+        return filter_defs
+
+    @staticmethod
+    def _infer_column_type(filter_type: str) -> str:
+        """Infer column type from Superset filter type string."""
+        ft = (filter_type or "").lower()
+        if any(tok in ft for tok in ("time", "date", "temporal")):
+            return "TEMPORAL"
+        if any(tok in ft for tok in ("number", "range", "numeric")):
+            return "NUMERIC"
+        return "STRING"
+
+    @staticmethod
+    def _infer_input_type(filter_type: str, column_type: str) -> str:
+        """Map Superset filter type to generic input_type."""
+        ft = (filter_type or "").lower()
+        if "time" in ft or column_type == "TEMPORAL":
+            return "time"
+        if "number" in ft or "range" in ft or column_type == "NUMERIC":
+            return "numeric"
+        if "select" in ft:
+            return "select"
+        return "select"  # default to select for unknown types
+
+    @staticmethod
+    def _build_source_filter_clauses(source_filters: list[dict] | None) -> list[str]:
+        """Convert source_filters from import_options into SQL WHERE clause fragments.
+
+        Each filter has: column, operator, value.
+        Uses safe quoting — column names are double-quoted, string values are escaped.
+        """
+        if not source_filters:
+            return []
+
+        # Valid operators (prevents SQL injection via operator field)
+        valid_ops = frozenset({
+            "EQ", "NEQ", "GT", "GTE", "LT", "LTE",
+            "IN", "NOT_IN", "LIKE", "ILIKE",
+            "IS_NULL", "IS_NOT_NULL",
+            "BETWEEN",
+        })
+
+        clauses: list[str] = []
+        for sf in source_filters:
+            if not isinstance(sf, dict):
+                continue
+            col = sf.get("column")
+            op = (sf.get("operator") or "").upper()
+            value = sf.get("value")
+
+            if not col or op not in valid_ops:
+                continue
+
+            qcol = _quote_identifier(col)
+
+            if op == "IS_NULL":
+                clauses.append(f"{qcol} IS NULL")
+            elif op == "IS_NOT_NULL":
+                clauses.append(f"{qcol} IS NOT NULL")
+            elif op in ("IN", "NOT_IN"):
+                if not isinstance(value, list) or len(value) == 0:
+                    continue
+                literals = ", ".join(_sql_literal(v) for v in value)
+                sql_op = "IN" if op == "IN" else "NOT IN"
+                clauses.append(f"{qcol} {sql_op} ({literals})")
+            elif op == "BETWEEN":
+                if not isinstance(value, list) or len(value) != 2:
+                    continue
+                clauses.append(f"{qcol} BETWEEN {_sql_literal(value[0])} AND {_sql_literal(value[1])}")
+            else:
+                sql_ops = {
+                    "EQ": "=", "NEQ": "!=", "GT": ">", "GTE": ">=",
+                    "LT": "<", "LTE": "<=", "LIKE": "LIKE", "ILIKE": "ILIKE",
+                }
+                clauses.append(f"{qcol} {sql_ops[op]} {_sql_literal(value)}")
+
+        return clauses
 
     # -- get_metadata ------------------------------------------------------
 
@@ -388,8 +655,14 @@ class SupersetLoader(ExternalDataLoader):
         detail = self._client.get_dataset_detail(token, dataset_id)
         db_id, schema, base_sql = _build_dataset_sql(detail)
 
+        # Build WHERE clauses from source_filters
+        where_clauses = self._build_source_filter_clauses(opts.get("source_filters"))
+
         # Build SQL
-        full_sql = f"SELECT * FROM ({base_sql}) AS _src LIMIT {size}"
+        if where_clauses:
+            full_sql = f"SELECT * FROM ({base_sql}) AS _src WHERE {' AND '.join(where_clauses)} LIMIT {size}"
+        else:
+            full_sql = f"SELECT * FROM ({base_sql}) AS _src LIMIT {size}"
 
         # Execute via SQL Lab
         sql_session = self._client.create_sql_session(token)
@@ -405,6 +678,70 @@ class SupersetLoader(ExternalDataLoader):
         columns = list(rows[0].keys())
         col_data = {col: [row.get(col) for row in rows] for col in columns}
         return pa.table(col_data)
+
+    # -- list_tables_tree (override) ----------------------------------------
+
+    def list_tables_tree(self, table_filter: str | None = None) -> dict:
+        """Build nested tree using ls() instead of list_tables().
+
+        Dashboards become ``table_group`` leaf nodes (with tables and
+        source_filters in metadata).  "All Datasets" remains a namespace
+        with child table nodes that include full metadata (columns, sample_rows).
+        """
+        root_nodes = self.ls(path=[], filter=table_filter)
+        tree: list[dict] = []
+
+        # For "All Datasets", use the eager list_tables() which fetches
+        # columns and sample_rows per dataset (needed for table preview).
+        all_datasets_meta: dict[str, dict] | None = None
+
+        for node in root_nodes:
+            d = {
+                "name": node.name,
+                "node_type": node.node_type,
+                "path": node.path,
+                "metadata": node.metadata,
+            }
+            if node.node_type == "namespace":
+                # Lazily fetch full metadata for All Datasets namespace
+                if all_datasets_meta is None:
+                    try:
+                        full_tables = self.list_tables(table_filter=table_filter)
+                        all_datasets_meta = {}
+                        for t in full_tables:
+                            # Key by dataset name for lookup
+                            name = t["name"].split(":", 1)[-1] if ":" in t["name"] else t["name"]
+                            # Only keep entries under "All Datasets"
+                            if t.get("path") and t["path"][0] == "All Datasets":
+                                all_datasets_meta[name] = t.get("metadata") or {}
+                    except Exception:
+                        all_datasets_meta = {}
+
+                # Expand namespace children with enriched metadata
+                child_nodes = self.ls(path=node.path, filter=table_filter)
+                d["children"] = []
+                for cn in child_nodes:
+                    enriched_meta = {**(cn.metadata or {})}
+                    # Merge full metadata (columns, sample_rows) if available
+                    full_meta = all_datasets_meta.get(cn.name, {})
+                    if full_meta:
+                        enriched_meta.update(full_meta)
+                    d["children"].append({
+                        "name": cn.name,
+                        "node_type": cn.node_type,
+                        "path": cn.path,
+                        "metadata": enriched_meta,
+                    })
+            else:
+                # table_group: no children in tree
+                d["children"] = []
+            tree.append(d)
+
+        return {
+            "hierarchy": self.catalog_hierarchy(),
+            "effective_hierarchy": self.effective_hierarchy(),
+            "tree": tree,
+        }
 
     # -- helpers -----------------------------------------------------------
 

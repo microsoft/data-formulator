@@ -106,7 +106,7 @@
     "maxRepairAttemptsHint": "当代码执行失败时，LLM 可尝试修复的次数（建议为 1，较高值可能提高成功率但会更慢）。",
     "colorTheme": "颜色主题",
     "localRowLimit": "本地数据行数上限",
-    "localRowLimitRangeError": "取值必须在 100 到 1,000,000 行之间",
+    "localRowLimitRangeError": "取值必须在 100 到 2,000,000 行之间",
     "localRowLimitHint": "本地加载数据时保留的最大行数（不存储到服务端）。",
     "maxStretchFactor": "图表最大拉伸系数",
     "maxStretchFactorRangeError": "取值必须在 1.0 到 5.0 之间",
@@ -311,7 +311,9 @@
     "loadTableSubset": "加载表子集",
     "loadTableBtn": "加载表",
     "rememberCredentials": "记住凭据",
-    "connectionTimeout": "连接超时。请检查凭据后重试。"
+    "connectionTimeout": "连接超时。请检查凭据后重试。",
+    "selectTableFromTree": "从树中选择一个表来预览",
+    "noTablesFound": "未找到表"
   },
   "dataThread": {
     "title": "数据线程",

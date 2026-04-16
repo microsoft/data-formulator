@@ -391,7 +391,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
                         "table_type": table_type,
                     }
 
-                    results.append({"name": full_table_name, "metadata": table_metadata})
+                    results.append({"name": full_table_name, "path": [schema, table_name], "metadata": table_metadata})
 
                 except Exception as e:
                     log.warning(f"Failed to get metadata for table {full_table_name}: {e}")
@@ -399,6 +399,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
                     results.append(
                         {
                             "name": full_table_name,
+                            "path": [schema, table_name],
                             "metadata": {
                                 "row_count": 0,
                                 "columns": [],

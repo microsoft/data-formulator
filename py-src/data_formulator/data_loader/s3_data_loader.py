@@ -156,6 +156,7 @@ class S3DataLoader(ExternalDataLoader):
                     
                     results.append({
                         "name": s3_url,
+                        "path": [s3_url],
                         "metadata": table_metadata
                     })
                 except Exception as e:

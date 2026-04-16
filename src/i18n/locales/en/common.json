@@ -106,7 +106,7 @@
     "maxRepairAttemptsHint": "How many attempts LLM will make to repair code if code fails to execute (recommended = 1, higher values might increase the chance of success but it's slow).",
     "colorTheme": "Color Theme",
     "localRowLimit": "local-only row limit",
-    "localRowLimitRangeError": "Value must be between 100 and 1,000,000 rows",
+    "localRowLimitRangeError": "Value must be between 100 and 2,000,000 rows",
     "localRowLimitHint": "Maximum number of rows kept when loading data locally (not stored on server).",
     "maxStretchFactor": "max chart stretch factor",
     "maxStretchFactorRangeError": "Value must be between 1.0 and 5.0",
@@ -318,7 +318,9 @@
     "tierAuth": "Sign in",
     "tierFilter": "Scope",
     "tierAuthOr": "or",
-    "tierAuthManual": "Enter credentials manually"
+    "tierAuthManual": "Enter credentials manually",
+    "selectTableFromTree": "Select a table from the tree to preview",
+    "noTablesFound": "No tables found"
   },
   "dataThread": {
     "title": "Data Threads",

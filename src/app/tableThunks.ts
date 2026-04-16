@@ -16,7 +16,7 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { inferTypeFromValueArray } from '../data/utils';
-import { fetchWithIdentity, getUrls, getConnectorUrls, computeContentHash } from './utils';
+import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash } from './utils';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
 import { tableDataDB } from './workspaceDB';
 
@@ -47,6 +47,7 @@ export interface LoadTablePayload {
         rowLimit?: number;
         sortColumns?: string[];
         sortOrder?: 'asc' | 'desc';
+        conditions?: { column: string; operator: string; value?: any }[];
     };
 }
 
@@ -75,7 +76,7 @@ export const loadTable = createAsyncThunk<
     async (payload, { dispatch, getState }) => {
         const { table, file, replaceSource, sourceTableName, connectorId, importOptions } = payload;
         const state = getState();
-        const frontendRowLimit = state.config?.frontendRowLimit ?? 50000;
+        const frontendRowLimit = state.config?.frontendRowLimit ?? 2_000_000;
         const existingTables = state.tables;
 
         // Storage determined by backend config
@@ -131,8 +132,9 @@ export const loadTable = createAsyncThunk<
             if (sourceType === 'database' && sourceTableName && connectorId) {
                 // Database source: ingest to workspace via data connector
                 try {
-                    const ingestUrl = getConnectorUrls(connectorId).DATA_IMPORT;
+                    const ingestUrl = CONNECTOR_ACTION_URLS.IMPORT_DATA;
                     const ingestBody = {
+                        connector_id: connectorId,
                         source_table: sourceTableName,
                         table_name: sourceTableName,
                         import_options: importOptions || {},
@@ -230,10 +232,11 @@ export const loadTable = createAsyncThunk<
             if (sourceType === 'database' && connectorId && sourceTableName) {
                 // Database source: fetch data via data connector preview (no workspace save)
                 try {
-                    const response = await fetchWithIdentity(getConnectorUrls(connectorId).DATA_PREVIEW, {
+                    const response = await fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
+                            connector_id: connectorId,
                             source_table: sourceTableName,
                             import_options: {
                                 size: frontendRowLimit,

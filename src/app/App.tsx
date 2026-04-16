@@ -10,6 +10,8 @@ import {
     dfActions,
     dfSelectors,
     fetchGlobalModelList,
+    DEFAULT_ROW_LIMIT,
+    DEFAULT_ROW_LIMIT_EPHEMERAL,
 } from './dfSlice'
 import { getBrowserId } from './identity';
 import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
@@ -470,13 +472,16 @@ const ConfigDialog: React.FC = () => {
     const dispatch = useDispatch();
     const { t } = useTranslation();
     const config = useSelector((state: DataFormulatorState) => state.config);
+    const isEphemeral = useSelector((state: DataFormulatorState) => state.serverConfig?.WORKSPACE_BACKEND === 'ephemeral');
+    const rowLimitDefault = isEphemeral ? DEFAULT_ROW_LIMIT_EPHEMERAL : DEFAULT_ROW_LIMIT;
+    const rowLimitMax = DEFAULT_ROW_LIMIT;
 
 
     const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 60);
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
     const [maxStretchFactor, setMaxStretchFactor] = useState(config.maxStretchFactor ?? 2.0);
-    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? 50000);
+    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? rowLimitDefault);
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
@@ -605,12 +610,12 @@ const ConfigDialog: React.FC = () => {
                                         input: {
                                             inputProps: {
                                                 min: 100,
-                                                max: 1000000
+                                                max: rowLimitMax
                                             }
                                         }
                                     }}
-                                    error={frontendRowLimit < 100 || frontendRowLimit > 1000000}
-                                    helperText={frontendRowLimit < 100 || frontendRowLimit > 1000000 ? 
+                                    error={frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
+                                    helperText={frontendRowLimit < 100 || frontendRowLimit > rowLimitMax ? 
                                         t('config.localRowLimitRangeError') : ""}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
@@ -682,7 +687,7 @@ const ConfigDialog: React.FC = () => {
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
                         setMaxStretchFactor(2.0);
-                        setFrontendRowLimit(50000);
+                        setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
@@ -692,7 +697,7 @@ const ConfigDialog: React.FC = () => {
                             || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
                             || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
-                            || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
+                            || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
                             dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
                             setOpen(false);

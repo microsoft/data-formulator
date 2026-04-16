@@ -25,6 +25,7 @@ import pytest
 from data_formulator.data_connector import (
     DATA_CONNECTORS,
     DataConnector,
+    connectors_bp,
 )
 from data_formulator.credential_vault.base import CredentialVault
 from data_formulator.data_loader.external_data_loader import (
@@ -111,14 +112,26 @@ def vault():
     return InMemoryVault()
 
 
+@pytest.fixture(autouse=True)
+def _clean_data_connectors():
+    """Reset the global DATA_CONNECTORS dict between tests."""
+    old = dict(DATA_CONNECTORS)
+    DATA_CONNECTORS.clear()
+    yield
+    DATA_CONNECTORS.clear()
+    DATA_CONNECTORS.update(old)
+
+
 @pytest.fixture
 def source():
-    return DataConnector.from_loader(
+    s = DataConnector.from_loader(
         MockLoader,
         source_id="test_db",
         display_name="Test DB",
         default_params={"host": "localhost"},
     )
+    DATA_CONNECTORS["test_db"] = s
+    return s
 
 
 @pytest.fixture
@@ -126,8 +139,7 @@ def app(source):
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.secret_key = "test-secret"
-    bp = source.create_blueprint()
-    _app.register_blueprint(bp)
+    _app.register_blueprint(connectors_bp)
     return _app
 
 
@@ -216,7 +228,8 @@ class TestConnectStoresCredentials:
     def test_connect_via_route_stores_in_vault(self, client, source, vault):
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
              patch.object(DataConnector, "_get_vault", return_value=vault):
-            resp = client.post("/api/connectors/test_db/auth/connect", json={
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "test_db",
                 "params": {"password": "secret"},
             })
             data = resp.get_json()
@@ -230,7 +243,8 @@ class TestConnectStoresCredentials:
         """Route with persist=false should not store in vault."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
              patch.object(DataConnector, "_get_vault", return_value=vault):
-            resp = client.post("/api/connectors/test_db/auth/connect", json={
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "test_db",
                 "params": {"password": "secret"},
                 "persist": False,
             })
@@ -245,7 +259,8 @@ class TestConnectStoresCredentials:
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
              patch.object(DataConnector, "_get_vault", return_value=vault):
             # First connect with persist=true
-            resp = client.post("/api/connectors/test_db/auth/connect", json={
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "test_db",
                 "params": {"password": "secret"},
                 "persist": True,
             })
@@ -253,7 +268,8 @@ class TestConnectStoresCredentials:
             assert vault.retrieve(IDENTITY, "test_db") is not None
 
             # Reconnect with persist=false — old entry must be deleted
-            resp = client.post("/api/connectors/test_db/auth/connect", json={
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "test_db",
                 "params": {"password": "secret"},
                 "persist": False,
             })
@@ -265,32 +281,19 @@ class TestConnectStoresCredentials:
 # Tests: Disconnect deletes credentials
 # ==================================================================
 
-class TestDisconnectDeletesCredentials:
+class TestDeleteCredentials:
 
-    def test_disconnect_clears_vault(self, source, vault):
+    def test_delete_credentials_clears_vault(self, source, vault):
+        """_delete_credentials clears both in-memory loader AND vault."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
              patch.object(DataConnector, "_get_vault", return_value=vault):
             source._connect({"password": "secret"})
             source._persist_credentials({"password": "secret"})
             assert vault.retrieve(IDENTITY, "test_db") is not None
 
-            source._disconnect()
+            source._delete_credentials()
             assert vault.retrieve(IDENTITY, "test_db") is None
             assert source._get_loader(IDENTITY) is None
-
-    def test_disconnect_via_route_clears_vault(self, client, source, vault):
-        with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
-             patch.object(DataConnector, "_get_vault", return_value=vault):
-            # Connect first
-            client.post("/api/connectors/test_db/auth/connect", json={
-                "params": {"password": "secret"},
-            })
-            assert vault.retrieve(IDENTITY, "test_db") is not None
-
-            # Disconnect
-            resp = client.post("/api/connectors/test_db/auth/disconnect")
-            assert resp.get_json()["status"] == "disconnected"
-            assert vault.retrieve(IDENTITY, "test_db") is None
 
 
 # ==================================================================
@@ -349,8 +352,8 @@ class TestAutoReconnect:
                 assert loader is None
                 assert vault.retrieve(IDENTITY, "test_db") is None
 
-    def test_auth_status_triggers_auto_reconnect(self, client, source, vault):
-        """GET /auth/status should auto-reconnect from vault if no in-memory loader."""
+    def test_status_reports_stored_credentials(self, client, source, vault):
+        """POST /get-status is side-effect-free: reports has_stored_credentials but does not reconnect."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
              patch.object(DataConnector, "_get_vault", return_value=vault):
             # Store credentials in vault (simulating a previous session)
@@ -361,17 +364,17 @@ class TestAutoReconnect:
             # Clear any in-memory loader
             source._loaders.clear()
 
-            resp = client.get("/api/connectors/test_db/auth/status")
+            resp = client.post("/api/connectors/get-status", json={"connector_id": "test_db"})
             data = resp.get_json()
-            assert data["connected"] is True
-            assert data["persisted"] is True
+            assert data["connected"] is False
+            assert data["has_stored_credentials"] is True
 
     def test_auth_status_not_connected_no_vault(self, client, source):
-        """GET /auth/status with no loader and no vault = not connected."""
+        """POST /get-status with no loader and no vault = not connected."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
              patch.object(DataConnector, "_get_vault", return_value=None):
             source._loaders.clear()
-            resp = client.get("/api/connectors/test_db/auth/status")
+            resp = client.post("/api/connectors/get-status", json={"connector_id": "test_db"})
             data = resp.get_json()
             assert data["connected"] is False
             assert data.get("has_stored_credentials") is False
@@ -395,7 +398,8 @@ class TestNoVaultFallback:
         """Route returns persisted=False when no vault."""
         with patch.object(DataConnector, "_get_identity", return_value=IDENTITY), \
              patch.object(DataConnector, "_get_vault", return_value=None):
-            resp = client.post("/api/connectors/test_db/auth/connect", json={
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "test_db",
                 "params": {"password": "secret"},
             })
             data = resp.get_json()
@@ -433,8 +437,8 @@ class TestIdentityIsolation:
             assert alice_creds["user_params"]["password"] == "alice-pw"
             assert bob_creds["user_params"]["password"] == "bob-pw"
 
-    def test_disconnect_only_affects_own_user(self, source, vault):
-        """Disconnecting one user doesn't affect another."""
+    def test_delete_only_affects_own_user(self, source, vault):
+        """Deleting one user's credentials doesn't affect another's."""
         with patch.object(DataConnector, "_get_vault", return_value=vault):
             with patch.object(DataConnector, "_get_identity", return_value="user:alice"):
                 source._connect({"password": "alice-pw"})
@@ -444,7 +448,10 @@ class TestIdentityIsolation:
                 source._persist_credentials({"password": "bob-pw"})
 
             with patch.object(DataConnector, "_get_identity", return_value="user:alice"):
-                source._disconnect()
+                source._delete_credentials()
 
+            # Alice's credentials are gone (memory + vault), Bob's are untouched
             assert vault.retrieve("user:alice", "test_db") is None
             assert vault.retrieve("user:bob", "test_db") is not None
+            assert source._get_loader("user:alice") is None
+            assert source._get_loader("user:bob") is not None

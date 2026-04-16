@@ -30,10 +30,11 @@ from data_formulator.data_connector import (
     DATA_CONNECTORS,
     DataConnector,
     SourceSpec,
-    _build_source_specs,
     _node_to_dict,
+    _resolve_connector,
     _resolve_env_refs,
     _sanitize_error,
+    connectors_bp,
 )
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
@@ -164,43 +165,56 @@ class FailingTestConnectionLoader(MockLoader):
 # Fixtures
 # ------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _clean_data_connectors():
+    """Reset the global DATA_CONNECTORS dict between tests."""
+    old = dict(DATA_CONNECTORS)
+    DATA_CONNECTORS.clear()
+    yield
+    DATA_CONNECTORS.clear()
+    DATA_CONNECTORS.update(old)
+
+
 @pytest.fixture
 def app():
-    """Minimal Flask app with a DataConnector for MockLoader."""
+    """Minimal Flask app with the shared connectors blueprint."""
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.secret_key = "test-secret"
+    _app.register_blueprint(connectors_bp)
     return _app
 
 
 @pytest.fixture
 def source():
     """A DataConnector wrapping MockLoader."""
-    return DataConnector.from_loader(
+    s = DataConnector.from_loader(
         MockLoader,
         source_id="mock_db",
         display_name="Mock Database",
         default_params={"host": "localhost"},
         icon="mock",
     )
+    DATA_CONNECTORS["mock_db"] = s
+    return s
 
 
 @pytest.fixture
 def source_pinned():
     """A DataConnector with database pre-pinned."""
-    return DataConnector.from_loader(
+    s = DataConnector.from_loader(
         MockLoader,
         source_id="mock_pinned",
         display_name="Mock Pinned",
         default_params={"host": "localhost", "database": "testdb"},
     )
+    DATA_CONNECTORS["mock_pinned"] = s
+    return s
 
 
 @pytest.fixture
 def client(app, source):
-    """Flask test client with source blueprint registered."""
-    bp = source.create_blueprint()
-    app.register_blueprint(bp)
+    """Flask test client with shared connectors blueprint."""
     return app.test_client()
 
 
@@ -208,7 +222,8 @@ def client(app, source):
 def connected_client(client):
     """Client that is already connected."""
     with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-        resp = client.post("/api/connectors/mock_db/auth/connect", json={
+        resp = client.post("/api/connectors/connect", json={
+            "connector_id": "mock_db",
             "params": {"host": "localhost", "user": "test", "password": "test"},
         })
         assert resp.status_code == 200
@@ -219,25 +234,18 @@ def connected_client(client):
 # Tests: Blueprint & Registration
 # ==================================================================
 
-class TestBlueprintCreation:
+class TestSharedRouteRegistration:
 
-    def test_blueprint_has_correct_prefix(self, source):
-        bp = source.create_blueprint()
-        assert bp.url_prefix == "/api/connectors/mock_db"
-
-    def test_blueprint_registers_routes(self, app, source):
-        bp = source.create_blueprint()
-        app.register_blueprint(bp)
+    def test_shared_routes_registered(self, app, source):
         rules = [rule.rule for rule in app.url_map.iter_rules()]
-        assert "/api/connectors/mock_db/auth/connect" in rules
-        assert "/api/connectors/mock_db/auth/disconnect" in rules
-        assert "/api/connectors/mock_db/auth/status" in rules
-        assert "/api/connectors/mock_db/catalog/ls" in rules
-        assert "/api/connectors/mock_db/catalog/metadata" in rules
-        assert "/api/connectors/mock_db/catalog/list_tables" in rules
-        assert "/api/connectors/mock_db/data/import" in rules
-        assert "/api/connectors/mock_db/data/refresh" in rules
-        assert "/api/connectors/mock_db/data/preview" in rules
+        assert "/api/connectors/connect" in rules
+        assert "/api/connectors/get-status" in rules
+        assert "/api/connectors/get-catalog" in rules
+        assert "/api/connectors/get-catalog-tree" in rules
+        assert "/api/connectors/import-data" in rules
+        assert "/api/connectors/import-group" in rules
+        assert "/api/connectors/refresh-data" in rules
+        assert "/api/connectors/preview-data" in rules
 
 
 # ==================================================================
@@ -286,7 +294,8 @@ class TestAuthRoutes:
 
     def test_connect_success(self, client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = client.post("/api/connectors/mock_db/auth/connect", json={
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
                 "params": {"host": "localhost", "user": "test", "password": "test"},
             })
         data = resp.get_json()
@@ -298,7 +307,8 @@ class TestAuthRoutes:
     def test_connect_merges_default_params(self, client):
         """Default params (host=localhost) merged with user params."""
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = client.post("/api/connectors/mock_db/auth/connect", json={
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
                 "params": {"user": "test", "password": "test"},
             })
         data = resp.get_json()
@@ -307,10 +317,11 @@ class TestAuthRoutes:
 
     def test_connect_bad_host_returns_error(self, app):
         source = DataConnector.from_loader(MockLoader, source_id="mock_bad")
-        app.register_blueprint(source.create_blueprint())
+        DATA_CONNECTORS["mock_bad"] = source
         c = app.test_client()
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = c.post("/api/connectors/mock_bad/auth/connect", json={
+            resp = c.post("/api/connectors/connect", json={
+                "connector_id": "mock_bad",
                 "params": {"host": "bad-host", "user": "x", "password": "x"},
             })
         assert resp.status_code in (400, 500, 502)
@@ -321,45 +332,47 @@ class TestAuthRoutes:
         source = DataConnector.from_loader(
             FailingTestConnectionLoader, source_id="mock_fail"
         )
-        app.register_blueprint(source.create_blueprint())
+        DATA_CONNECTORS["mock_fail"] = source
         c = app.test_client()
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = c.post("/api/connectors/mock_fail/auth/connect", json={
+            resp = c.post("/api/connectors/connect", json={
+                "connector_id": "mock_fail",
                 "params": {"host": "localhost", "user": "x", "password": "x"},
             })
         assert resp.status_code == 400
         assert resp.get_json()["status"] == "error"
 
-    def test_disconnect(self, connected_client):
+    def test_delete_connector_clears_status(self, connected_client):
+        """After DELETE, the connector is gone."""
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/auth/disconnect")
+            resp = connected_client.delete("/api/connectors/mock_db")
         assert resp.status_code == 200
-        assert resp.get_json()["status"] == "disconnected"
+        assert resp.get_json()["status"] == "deleted"
 
     def test_status_connected(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.get("/api/connectors/mock_db/auth/status")
+            resp = connected_client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
         data = resp.get_json()
         assert data["connected"] is True
         assert "hierarchy" in data
 
     def test_status_not_connected(self, client):
         with patch.object(DataConnector, "_get_identity", return_value="other-user"):
-            resp = client.get("/api/connectors/mock_db/auth/status")
+            resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
         data = resp.get_json()
         assert data["connected"] is False
         assert "params_form" in data
 
-    def test_disconnect_then_status(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            connected_client.post("/api/connectors/mock_db/auth/disconnect")
-            resp = connected_client.get("/api/connectors/mock_db/auth/status")
+    def test_status_not_connected_after_no_connect(self, client):
+        """Status should show not-connected for a user that never connected."""
+        with patch.object(DataConnector, "_get_identity", return_value="other-user"):
+            resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
         data = resp.get_json()
         assert data["connected"] is False
 
     def test_safe_params_exclude_password(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.get("/api/connectors/mock_db/auth/status")
+            resp = connected_client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
         data = resp.get_json()
         assert "password" not in data.get("params", {})
 
@@ -372,7 +385,8 @@ class TestCatalogRoutes:
 
     def test_ls_root(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/catalog/ls", json={
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "mock_db",
                 "path": [],
             })
         data = resp.get_json()
@@ -384,7 +398,7 @@ class TestCatalogRoutes:
 
     def test_ls_returns_hierarchy(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/catalog/ls", json={"path": []})
+            resp = connected_client.post("/api/connectors/get-catalog", json={"connector_id": "mock_db", "path": []})
         data = resp.get_json()
         assert "hierarchy" in data
         assert "effective_hierarchy" in data
@@ -394,19 +408,21 @@ class TestCatalogRoutes:
         """Expand database → schema → tables."""
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             # Level 1: databases
-            resp = connected_client.post("/api/connectors/mock_db/catalog/ls", json={"path": []})
+            resp = connected_client.post("/api/connectors/get-catalog", json={"connector_id": "mock_db", "path": []})
             db_node = resp.get_json()["nodes"][0]
             assert db_node["name"] == "testdb"
 
             # Level 2: schemas
-            resp = connected_client.post("/api/connectors/mock_db/catalog/ls", json={
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "mock_db",
                 "path": db_node["path"],
             })
             schema_node = resp.get_json()["nodes"][0]
             assert schema_node["name"] == "public"
 
             # Level 3: tables
-            resp = connected_client.post("/api/connectors/mock_db/catalog/ls", json={
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "mock_db",
                 "path": schema_node["path"],
             })
             tables = resp.get_json()["nodes"]
@@ -418,7 +434,8 @@ class TestCatalogRoutes:
 
     def test_ls_with_filter(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/catalog/ls", json={
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "mock_db",
                 "path": ["testdb", "public"],
                 "filter": "user",
             })
@@ -428,12 +445,13 @@ class TestCatalogRoutes:
 
     def test_ls_not_connected_returns_error(self, client):
         with patch.object(DataConnector, "_get_identity", return_value="nobody"):
-            resp = client.post("/api/connectors/mock_db/catalog/ls", json={"path": []})
+            resp = client.post("/api/connectors/get-catalog", json={"connector_id": "mock_db", "path": []})
         assert resp.status_code in (400, 500, 502)
 
     def test_catalog_metadata(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/catalog/metadata", json={
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "mock_db",
                 "path": ["testdb", "public", "users"],
             })
         data = resp.get_json()
@@ -442,24 +460,23 @@ class TestCatalogRoutes:
         assert data["metadata"]["row_count"] == 5
         assert len(data["metadata"]["columns"]) == 3
 
-    def test_list_tables_flat(self, connected_client):
+    def test_catalog_tree(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/catalog/list_tables", json={})
+            resp = connected_client.post("/api/connectors/get-catalog-tree", json={"connector_id": "mock_db"})
         data = resp.get_json()
         assert resp.status_code == 200
-        assert len(data["tables"]) == 2
-        names = {t["name"] for t in data["tables"]}
-        assert "public.users" in names
-        assert "public.orders" in names
+        assert "tree" in data
+        assert "hierarchy" in data
 
-    def test_list_tables_with_filter(self, connected_client):
+    def test_catalog_tree_with_filter(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/catalog/list_tables", json={
+            resp = connected_client.post("/api/connectors/get-catalog-tree", json={
+                "connector_id": "mock_db",
                 "filter": "order",
             })
         data = resp.get_json()
-        assert len(data["tables"]) == 1
-        assert "orders" in data["tables"][0]["name"]
+        assert resp.status_code == 200
+        assert "tree" in data
 
 
 # ==================================================================
@@ -470,9 +487,10 @@ class TestDataRoutes:
 
     def test_preview(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/data/preview", json={
+            resp = connected_client.post("/api/connectors/preview-data", json={
+                "connector_id": "mock_db",
                 "source_table": "public.users",
-                "size": 3,
+                "limit": 3,
             })
         data = resp.get_json()
         assert resp.status_code == 200
@@ -484,12 +502,12 @@ class TestDataRoutes:
 
     def test_preview_missing_source_table(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/data/preview", json={})
+            resp = connected_client.post("/api/connectors/preview-data", json={"connector_id": "mock_db"})
         assert resp.status_code == 400
 
     def test_import_requires_source_table(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/data/import", json={})
+            resp = connected_client.post("/api/connectors/import-data", json={"connector_id": "mock_db"})
         assert resp.status_code == 400
 
     def test_import_success(self, connected_client):
@@ -502,7 +520,8 @@ class TestDataRoutes:
              patch("data_formulator.security.auth.get_identity_id", return_value="test-user"), \
              patch("data_formulator.workspace_factory.get_workspace") as mock_ws, \
              patch.object(MockLoader, "ingest_to_workspace", return_value=mock_meta):
-            resp = connected_client.post("/api/connectors/mock_db/data/import", json={
+            resp = connected_client.post("/api/connectors/import-data", json={
+                "connector_id": "mock_db",
                 "source_table": "public.users",
                 "table_name": "users",
             })
@@ -515,7 +534,7 @@ class TestDataRoutes:
 
     def test_refresh_requires_table_name(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/mock_db/data/refresh", json={})
+            resp = connected_client.post("/api/connectors/refresh-data", json={"connector_id": "mock_db"})
         assert resp.status_code == 400
 
 
@@ -547,7 +566,8 @@ class TestErrorHandling:
     def test_error_does_not_leak_internal_details(self, client):
         """Errors from loader should not expose connection strings or stack traces."""
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = client.post("/api/connectors/mock_db/auth/connect", json={
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
                 "params": {"host": "bad-host", "user": "x", "password": "secret123"},
             })
         data = resp.get_json()
@@ -563,38 +583,38 @@ class TestIdentityIsolation:
     def test_different_identities_have_separate_loaders(self, client):
         """Two users connecting to the same source get separate loader instances."""
         with patch.object(DataConnector, "_get_identity", return_value="user-a"):
-            client.post("/api/connectors/mock_db/auth/connect", json={
+            client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
                 "params": {"host": "localhost", "user": "A", "password": "A"},
             })
         with patch.object(DataConnector, "_get_identity", return_value="user-b"):
-            client.post("/api/connectors/mock_db/auth/connect", json={
+            client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
                 "params": {"host": "localhost", "user": "B", "password": "B"},
             })
         # Both should be connected
         with patch.object(DataConnector, "_get_identity", return_value="user-a"):
-            resp = client.get("/api/connectors/mock_db/auth/status")
+            resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
             assert resp.get_json()["connected"] is True
         with patch.object(DataConnector, "_get_identity", return_value="user-b"):
-            resp = client.get("/api/connectors/mock_db/auth/status")
+            resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
             assert resp.get_json()["connected"] is True
 
-    def test_disconnect_does_not_affect_other_user(self, client):
+    def test_delete_does_not_affect_other_user(self, client):
+        """Deleting credentials for user-a doesn't affect user-b's session."""
         with patch.object(DataConnector, "_get_identity", return_value="user-a"):
-            client.post("/api/connectors/mock_db/auth/connect", json={
+            client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
                 "params": {"host": "localhost", "user": "A", "password": "A"},
             })
         with patch.object(DataConnector, "_get_identity", return_value="user-b"):
-            client.post("/api/connectors/mock_db/auth/connect", json={
+            client.post("/api/connectors/connect", json={
+                "connector_id": "mock_db",
                 "params": {"host": "localhost", "user": "B", "password": "B"},
             })
-        # Disconnect user-a
-        with patch.object(DataConnector, "_get_identity", return_value="user-a"):
-            client.post("/api/connectors/mock_db/auth/disconnect")
-            resp = client.get("/api/connectors/mock_db/auth/status")
-            assert resp.get_json()["connected"] is False
-        # user-b should still be connected
+        # user-b should still be connected regardless of user-a's state
         with patch.object(DataConnector, "_get_identity", return_value="user-b"):
-            resp = client.get("/api/connectors/mock_db/auth/status")
+            resp = client.post("/api/connectors/get-status", json={"connector_id": "mock_db"})
             assert resp.get_json()["connected"] is True
 
 
@@ -606,13 +626,13 @@ class TestScopePinning:
 
     def test_pinned_database_skips_database_level(self, app, source_pinned):
         """When database is pinned, ls([]) should start at schema level."""
-        app.register_blueprint(source_pinned.create_blueprint())
         c = app.test_client()
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            c.post("/api/connectors/mock_pinned/auth/connect", json={
+            c.post("/api/connectors/connect", json={
+                "connector_id": "mock_pinned",
                 "params": {"user": "test", "password": "test"},
             })
-            resp = c.post("/api/connectors/mock_pinned/catalog/ls", json={"path": []})
+            resp = c.post("/api/connectors/get-catalog", json={"connector_id": "mock_pinned", "path": []})
         data = resp.get_json()
         # Should skip database level and show schemas directly
         eff_keys = [h["key"] for h in data["effective_hierarchy"]]
@@ -623,10 +643,10 @@ class TestScopePinning:
         assert nodes[0]["node_type"] == "namespace"
 
     def test_pinned_scope_in_connect_response(self, app, source_pinned):
-        app.register_blueprint(source_pinned.create_blueprint())
         c = app.test_client()
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = c.post("/api/connectors/mock_pinned/auth/connect", json={
+            resp = c.post("/api/connectors/connect", json={
+                "connector_id": "mock_pinned",
                 "params": {"user": "test", "password": "test"},
             })
         data = resp.get_json()

@@ -31,35 +31,33 @@ import ImageSearchIcon from '@mui/icons-material/ImageSearch';
 import ExploreIcon from '@mui/icons-material/Explore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import AddIcon from '@mui/icons-material/Add';
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 import Backdrop from '@mui/material/Backdrop';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
+import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { loadTable, loadPluginTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
-import { getUrls, fetchWithIdentity } from '../app/utils';
-import { DBManagerPane } from './DBTableManager';
+import { getUrls, fetchWithIdentity, CONNECTOR_URLS } from '../app/utils';
+import { DataLoaderForm } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
-    ToggleButton, 
-    ToggleButtonGroup,
     FormControlLabel,
     Switch,
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CloudIcon from '@mui/icons-material/Cloud';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
 import { getEnabledPlugins, PluginHost } from '../plugins';
 
-export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore' | `plugin:${string}`;
+export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore' | `plugin:${string}` | 'add-connection' | `connector:${string}`;
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -91,6 +89,7 @@ interface DataSourceCardProps {
     description: string;
     onClick: () => void;
     disabled?: boolean;
+    dashed?: boolean;
 }
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
@@ -99,6 +98,7 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     description, 
     onClick, 
     disabled = false,
+    dashed = false,
 }) => {
     const theme = useTheme();
     
@@ -109,7 +109,7 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
             sx={{
                 p: 1.5,
                 cursor: disabled ? 'not-allowed' : 'pointer',
-                border: `1px solid ${borderColor.divider}`,
+                border: `1px ${dashed ? 'dashed' : 'solid'} ${borderColor.divider}`,
                 borderRadius: radius.sm,
                 opacity: disabled ? 0.5 : 1,
                 display: 'flex',
@@ -176,19 +176,38 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
     return uniqueName;
 };
 
+/** A registered connector instance from GET /api/connectors */
+export interface ConnectorInstance {
+    id: string;
+    source_type: string;
+    display_name: string;
+    icon: string;
+    connected: boolean;
+    deletable?: boolean;
+    params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    pinned_params: Record<string, string>;
+    hierarchy: Array<{key: string; label: string}>;
+    effective_hierarchy: Array<{key: string; label: string}>;
+    auth_mode?: string;
+    auth_instructions?: string;
+    delegated_login?: { login_url: string; label?: string } | null;
+}
+
 // Reusable Data Load Menu Component
 export interface DataLoadMenuProps {
     onSelectTab: (tab: UploadTabType) => void;
     serverConfig?: { WORKSPACE_BACKEND?: string };
     variant?: 'dialog' | 'page'; // 'dialog' uses smaller cards, 'page' uses larger cards
     hideSampleDatasets?: boolean;
+    connectors?: ConnectorInstance[];
 }
 
 export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({ 
     onSelectTab, 
     serverConfig = { WORKSPACE_BACKEND: 'local' },
     variant = 'dialog',
-    hideSampleDatasets = false
+    hideSampleDatasets = false,
+    connectors = [],
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -226,7 +245,8 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 
     const enabledPlugins = getEnabledPlugins((serverConfig as any)?.PLUGINS);
 
-    const liveDataSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean }> = [
+    // All connectors get cards — connected ones show status, disconnected show type
+    const liveDataSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; dashed?: boolean }> = [
         { 
             value: 'url' as UploadTabType, 
             title: t('upload.loadFromUrl'), 
@@ -234,12 +254,24 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             icon: <LinkIcon />, 
             disabled: false
         },
-        { 
-            value: 'database' as UploadTabType, 
-            title: t('upload.database'), 
-            description: t('upload.databaseDesc'),
-            icon: <StorageIcon />, 
-            disabled: false
+        // Per-connector cards — all instances
+        ...connectors.map((conn) => ({
+            value: `connector:${conn.id}` as UploadTabType,
+            title: conn.display_name,
+            description: conn.connected
+                ? t('upload.connectorConnected', { defaultValue: 'Connected' })
+                : conn.source_type || t('upload.connectorDisconnected', { defaultValue: 'Not connected' }),
+            icon: <StorageIcon />,
+            disabled: false,
+        })),
+        // "Add Connection" card (dashed style)
+        {
+            value: 'add-connection' as UploadTabType,
+            title: t('upload.addConnection', { defaultValue: 'Add Connection' }),
+            description: t('upload.addConnectionDesc', { defaultValue: 'Connect to a new database or data service' }),
+            icon: <AddIcon />,
+            disabled: false,
+            dashed: true,
         },
         ...enabledPlugins.map(({ module, config }) => ({
             value: `plugin:${module.id}` as UploadTabType,
@@ -338,6 +370,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             description={source.description}
                             onClick={() => onSelectTab(source.value)}
                             disabled={source.disabled}
+                            dashed={source.dashed}
                         />
                     </Box>
                 ))}
@@ -444,8 +477,219 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         description={source.description}
                         onClick={() => onSelectTab(source.value)}
                         disabled={source.disabled}
+                        dashed={source.dashed}
                     />
                 ))}
+            </Box>
+        </Box>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// AddConnectionPanel — left sidebar lists loader types, right shows DataLoaderForm
+// ---------------------------------------------------------------------------
+
+interface LoaderType {
+    type: string;
+    name: string;
+    params: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    hierarchy: Array<{key: string; label: string}>;
+    auth_mode?: string;
+    auth_instructions?: string;
+    delegated_login?: { login_url: string; label?: string } | null;
+}
+
+const AddConnectionPanel: React.FC<{
+    onCreated: (connector: ConnectorInstance) => void;
+}> = ({ onCreated }) => {
+    const { t } = useTranslation();
+    const [loaderTypes, setLoaderTypes] = useState<LoaderType[]>([]);
+    const [disabledLoaders, setDisabledLoaders] = useState<Record<string, {install_hint: string}>>({});
+    const [selectedType, setSelectedType] = useState<string>('');
+    const [displayName, setDisplayName] = useState('');
+    const dispatch = useDispatch<AppDispatch>();
+    // Track the created connector ID so DataLoaderForm can use it
+    const createdIdRef = useRef<string | null>(null);
+
+    // Fetch available loader types
+    useEffect(() => {
+        fetchWithIdentity(CONNECTOR_URLS.DATA_LOADERS, { method: 'GET' })
+            .then(r => r.json())
+            .then(data => {
+                setLoaderTypes(data.loaders || []);
+                setDisabledLoaders(data.disabled || {});
+                if (data.loaders?.length > 0) {
+                    setSelectedType(data.loaders[0].type);
+                    setDisplayName(data.loaders[0].name);
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    const selectedLoader = loaderTypes.find(l => l.type === selectedType);
+
+    const handleSelectLoader = (loader: LoaderType) => {
+        setSelectedType(loader.type);
+        setDisplayName(loader.name);
+        createdIdRef.current = null;
+    };
+
+    // Called by DataLoaderForm before connecting — creates the connector and returns its ID
+    const handleBeforeConnect = useCallback(async (params: Record<string, any>): Promise<string> => {
+        // If already created (e.g. retry after failed connect), reuse the ID
+        if (createdIdRef.current) return createdIdRef.current;
+
+        const resp = await fetchWithIdentity(CONNECTOR_URLS.CREATE, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                loader_type: selectedType,
+                display_name: displayName.trim() || selectedLoader?.name || selectedType,
+                icon: selectedType,
+                params,
+                persist: true,
+            }),
+        });
+        const data = await resp.json();
+        if (data.status === 'error') {
+            throw new Error(data.message || 'Failed to create connector');
+        }
+        createdIdRef.current = data.id;
+        return data.id;
+    }, [selectedType, displayName, selectedLoader]);
+
+    // After DataLoaderForm successfully connects, fetch full connector info and notify parent
+    const handleConnected = useCallback(async () => {
+        const cid = createdIdRef.current;
+        if (!cid) return;
+        try {
+            const listResp = await fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' });
+            const listData = await listResp.json();
+            const created = (listData.connectors || []).find((c: ConnectorInstance) => c.id === cid);
+            if (created) {
+                onCreated({ ...created, connected: true });
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), component: 'connector', type: 'success',
+                    value: `Connected to "${created.display_name}"`,
+                }));
+            }
+        } catch {
+            // Connection succeeded even if list fetch fails
+        }
+    }, [onCreated, dispatch]);
+
+    // Shared input style
+    const inputSx = {
+        '& .MuiInput-underline:before': { borderBottomColor: 'rgba(0,0,0,0.15)' },
+        '& .MuiInputBase-root': { fontSize: 12, mt: 1.5 },
+        '& .MuiInputBase-input': { fontSize: 12, py: 0.5, px: 0 },
+        '& .MuiInputBase-input::placeholder': { fontSize: 11, opacity: 0.45 },
+        '& .MuiInputLabel-root': { fontSize: 11, color: 'text.secondary', fontWeight: 500 },
+        '& .MuiInputLabel-root.Mui-focused': { color: 'primary.main' },
+    };
+
+    // Left sidebar button style
+    const sidebarButtonSx = (typeKey: string) => ({
+        fontSize: 12,
+        textTransform: 'none' as const,
+        width: '100%',
+        justifyContent: 'flex-start',
+        textAlign: 'left' as const,
+        borderRadius: 0,
+        py: 1,
+        px: 2,
+        color: selectedType === typeKey ? 'primary.main' : 'text.secondary',
+        borderRight: selectedType === typeKey ? 2 : 0,
+        borderColor: 'primary.main',
+    });
+
+    return (
+        <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+            {/* Left sidebar: loader types */}
+            <Box sx={{
+                display: 'flex', flexDirection: 'column',
+                width: 160, minWidth: 160, maxWidth: 160,
+                borderRight: `1px solid ${borderColor.divider}`,
+                overflowY: 'auto', overflowX: 'hidden',
+                pt: 1,
+            }}>
+                <Typography variant="caption" sx={{
+                    px: 2, pb: 0.5, color: 'text.disabled',
+                    fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+                }}>
+                    {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
+                </Typography>
+                {loaderTypes.map((loader) => (
+                    <Button
+                        key={loader.type}
+                        variant="text" size="small" color="primary"
+                        onClick={() => handleSelectLoader(loader)}
+                        sx={sidebarButtonSx(loader.type)}
+                    >
+                        {loader.name}
+                    </Button>
+                ))}
+                {Object.entries(disabledLoaders).map(([name, { install_hint }]) => (
+                    <Tooltip key={name} title={install_hint} placement="right" arrow>
+                        <span style={{ width: '100%' }}>
+                            <Button
+                                variant="text" size="small" disabled
+                                sx={{
+                                    fontSize: 12, textTransform: 'none', width: '100%',
+                                    justifyContent: 'flex-start', textAlign: 'left',
+                                    borderRadius: 0, py: 1, px: 2,
+                                    color: 'text.disabled !important',
+                                }}
+                            >
+                                {name}
+                            </Button>
+                        </span>
+                    </Tooltip>
+                ))}
+            </Box>
+
+            {/* Right panel: display name + DataLoaderForm */}
+            <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
+                {selectedLoader ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        {/* Connection name + DataLoaderForm */}
+                        <Box sx={{ px: 2, pt: 1.5, pb: 2, flex: 1, minHeight: 0, overflow: 'auto' }}>
+                            <TextField
+                                sx={{ ...inputSx, maxWidth: 300 }}
+                                variant="standard" size="small"
+                                slotProps={{ inputLabel: { shrink: true } }}
+                                label={t('upload.connectionNameLabel', { defaultValue: 'connection name' })}
+                                value={displayName}
+                                placeholder={selectedLoader.name}
+                                onChange={(e) => setDisplayName(e.target.value)}
+                                style={{ width: 280, marginBottom: 8 }}
+                            />
+                            <DataLoaderForm
+                                dataLoaderType={selectedType}
+                                paramDefs={selectedLoader.params}
+                                authInstructions={selectedLoader.auth_instructions || ''}
+                                delegatedLogin={selectedLoader.delegated_login}
+                                authMode={selectedLoader.auth_mode}
+                                onImport={() => {}}
+                                onFinish={(status, message) => {
+                                    dispatch(dfActions.addMessages({
+                                        timestamp: Date.now(), component: 'connector',
+                                        type: status === 'success' ? 'success' : 'error',
+                                        value: message,
+                                    }));
+                                }}
+                                onConnected={handleConnected}
+                                onBeforeConnect={handleBeforeConnect}
+                            />
+                        </Box>
+                    </Box>
+                ) : (
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'text.disabled' }}>
+                        <Typography variant="body2" sx={{ fontStyle: 'italic', fontSize: 12 }}>
+                            {t('upload.selectDataSourceType', { defaultValue: 'Select a data source type' })}
+                        </Typography>
+                    </Box>
+                )}
             </Box>
         </Box>
     );
@@ -470,12 +714,29 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
-    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 50000);
+    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
     const existingNames = new Set(existingTables.map(t => t.id));
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
+
+    // Connector instances fetched from GET /api/connectors
+    const [connectorInstances, setConnectorInstances] = useState<ConnectorInstance[]>([]);
+
+    // Fetch connector list when dialog opens
+    const refreshConnectors = useCallback(() => {
+        fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
+            .then(r => r.json())
+            .then(data => setConnectorInstances(data.connectors || []))
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        if (open) {
+            refreshConnectors();
+        }
+    }, [open, refreshConnectors]);
 
     // Storage is determined by backend config — no user toggle
     const isEphemeral = serverConfig.WORKSPACE_BACKEND === 'ephemeral';
@@ -1056,6 +1317,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             const found = enabledPluginsForDialog.find(p => p.module.id === pluginId);
             return found?.config.name || pluginId;
         }
+        if (activeTab.startsWith('connector:')) {
+            const connId = activeTab.slice(10);
+            const found = connectorInstances.find(c => c.id === connId);
+            return found?.display_name || connId;
+        }
+        if (activeTab === 'add-connection') {
+            return t('upload.addConnection', { defaultValue: 'Add Connection' });
+        }
         const tabTitles: Record<string, string> = {
             'menu': t('upload.title'),
             'explore': t('upload.sampleDatasets'),
@@ -1075,9 +1344,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             maxWidth={false}
             sx={{ 
                 '& .MuiDialog-paper': { 
-                    width: 1100,
+                    width: 1200,
                     maxWidth: '95vw',
-                    height: 600, 
+                    height: 700, 
                     maxHeight: '90vh',
                     display: 'flex',
                     flexDirection: 'column',
@@ -1158,6 +1427,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             serverConfig={serverConfig}
                             variant="dialog"
                             hideSampleDatasets={hideSampleDatasets}
+                            connectors={connectorInstances}
                         />
                     </Box>
                 </TabPanel>
@@ -1175,9 +1445,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     }}>
                         <Box sx={{ width: '100%', maxWidth: showFilePreview ? '60%' : 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <Input
-                            inputProps={{ 
-                                accept: '.csv,.tsv,.json,.xlsx,.xls',
-                                multiple: true,
+                            slotProps={{
+                                input: {
+                                    accept: '.csv,.tsv,.json,.xlsx,.xls',
+                                    multiple: true,
+                                },
                             }}
                             id="unified-upload-data-file"
                             type="file"
@@ -1544,8 +1816,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 value={pasteContent}
                                 onChange={handleContentChange}
                                 placeholder={t('upload.placeholder.paste')}
-                                InputProps={{
-                                    readOnly: isLargeContent && !showFullContent,
+                                slotProps={{
+                                    input: { readOnly: isLargeContent && !showFullContent },
                                 }}
                                 sx={{
                                     flex: hasPasteContent ? 1 : 'none',
@@ -1595,9 +1867,77 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     </Box>
                 </TabPanel>
 
-                {/* Database Tab */}
-                <TabPanel value={activeTab} index="database">
-                    <DBManagerPane onClose={handleClose} />
+                {/* Per-connector Tabs — one per registered instance */}
+                {connectorInstances.map((conn) => (
+                    <TabPanel key={conn.id} value={activeTab} index={`connector:${conn.id}` as UploadTabType}>
+                        <Box sx={{ p: 2, height: '100%', boxSizing: 'border-box' }}>
+                            <DataLoaderForm
+                                dataLoaderType={conn.id}
+                                paramDefs={conn.params_form}
+                                authInstructions={conn.auth_instructions || ''}
+                                connectorId={conn.id}
+                                autoConnect={conn.connected}
+                                delegatedLogin={conn.delegated_login}
+                                authMode={conn.auth_mode}
+                                onImport={() => {}}
+                                onFinish={(status, message) => {
+                                    dispatch(dfActions.addMessages({
+                                        timestamp: Date.now(),
+                                        component: 'connector',
+                                        type: status === 'success' ? 'success' : 'error',
+                                        value: message,
+                                    }));
+                                }}
+                                onConnected={() => {
+                                    setConnectorInstances(prev =>
+                                        prev.map(c => c.id === conn.id ? { ...c, connected: true } : c)
+                                    );
+                                }}
+                                onDelete={conn.deletable ? async (cid) => {
+                                    try {
+                                        const resp = await fetchWithIdentity(CONNECTOR_URLS.DELETE(cid), { method: 'DELETE' });
+                                        const data = await resp.json();
+                                        if (data.status === 'deleted') {
+                                            setConnectorInstances(prev => prev.filter(c => c.id !== cid));
+                                            setActiveTab('menu');
+                                            dispatch(dfActions.addMessages({
+                                                timestamp: Date.now(), component: 'connector', type: 'success',
+                                                value: `Deleted connector "${conn.display_name}"`,
+                                            }));
+                                        } else {
+                                            dispatch(dfActions.addMessages({
+                                                timestamp: Date.now(), component: 'connector', type: 'error',
+                                                value: data.message || 'Failed to delete connector',
+                                            }));
+                                        }
+                                    } catch (err: any) {
+                                        dispatch(dfActions.addMessages({
+                                            timestamp: Date.now(), component: 'connector', type: 'error',
+                                            value: err.message || 'Failed to delete connector',
+                                        }));
+                                    }
+                                } : undefined}
+                            />
+                        </Box>
+                    </TabPanel>
+                ))}
+
+                {/* Add Connection Tab */}
+                <TabPanel value={activeTab} index="add-connection">
+                    <AddConnectionPanel
+                        onCreated={(newConnector) => {
+                            // Update connector list — card will appear on menu
+                            setConnectorInstances(prev => {
+                                const exists = prev.find(c => c.id === newConnector.id);
+                                if (exists) {
+                                    return prev.map(c => c.id === newConnector.id ? newConnector : c);
+                                }
+                                return [...prev, newConnector];
+                            });
+                            // Jump to the new connector's tab
+                            setActiveTab(`connector:${newConnector.id}` as UploadTabType);
+                        }}
+                    />
                 </TabPanel>
 
                 {/* Plugin Tabs */}

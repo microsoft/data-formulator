@@ -76,3 +76,10 @@ TALISMAN_ENABLED = False
 # CORS is configured via environment variables in docker-compose.yml
 # (SUPERSET_CORS_ENABLED / SUPERSET_CORS_ORIGINS).
 # Do NOT set ENABLE_CORS here — the official image lacks flask-cors.
+
+# Feature flags — ensure native dashboard filters are enabled for filter testing.
+FEATURE_FLAGS = {
+    "DASHBOARD_NATIVE_FILTERS": True,
+    "DASHBOARD_CROSS_FILTERS": True,
+    "DASHBOARD_NATIVE_FILTERS_SET": True,
+}

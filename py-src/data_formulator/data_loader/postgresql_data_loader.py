@@ -5,7 +5,7 @@ from typing import Any
 import pyarrow as pa
 import psycopg2
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, build_where_clause_inline, _esc_id, _esc_str
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             columns_query = f"""
                 SELECT column_name, udt_name
                 FROM information_schema.columns
-                WHERE table_schema = '{schema}' AND table_name = '{table_name}'
+                WHERE table_schema = '{_esc_str(schema)}' AND table_name = '{_esc_str(table_name)}'
                 ORDER BY ordinal_position
             """
             cols_arrow = self._read_sql(columns_query)
@@ -118,11 +118,11 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             for _, r in cols_df.iterrows():
                 col, dtype = r['column_name'], r['udt_name'].lower()
                 if dtype in self._SPATIAL_TYPES:
-                    parts.append(f'ST_AsText("{col}") AS "{col}"')
+                    parts.append(f'ST_AsText({_esc_id(col, chr(34))}) AS {_esc_id(col, chr(34))}')
                 elif dtype in self._OTHER_UNSUPPORTED:
-                    parts.append(f'"{col}"::text AS "{col}"')
+                    parts.append(f'{_esc_id(col, chr(34))}::text AS {_esc_id(col, chr(34))}')
                 else:
-                    parts.append(f'"{col}"')
+                    parts.append(_esc_id(col, chr(34)))
             return ', '.join(parts)
         except Exception:
             return "*"
@@ -139,6 +139,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         size = opts.get("size", 1000000)
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
+        conditions = opts.get("conditions", [])
 
         if not source_table:
             raise ValueError("source_table must be provided")
@@ -154,16 +155,21 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         else:
             col_list = self._safe_select_list('public', table_ref.strip('"'))
         base_query = f"SELECT {col_list} FROM {table_ref}"
+
+        # Add WHERE clause from filter conditions
+        where_clause = build_where_clause_inline(conditions, quote_char='"')
+        if where_clause:
+            base_query = f"{base_query} {where_clause}"
         
         # Add ORDER BY if sort columns specified
         order_by_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "DESC" if sort_order == 'desc' else "ASC"
-            sanitized_cols = [f'"{col}" {order_direction}' for col in sort_columns]
+            sanitized_cols = [f'{_esc_id(col, chr(34))} {order_direction}' for col in sort_columns]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
         
         # Build full query with limit
-        query = f"{base_query}{order_by_clause} LIMIT {size}"
+        query = f"{base_query}{order_by_clause} LIMIT {int(size)}"
         
         logger.info(f"Executing PostgreSQL query: {query[:200]}...")
         
@@ -213,7 +219,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                     columns_query = f"""
                         SELECT column_name, data_type 
                         FROM information_schema.columns 
-                        WHERE table_schema = '{schema}' AND table_name = '{table_name}'
+                        WHERE table_schema = '{_esc_str(schema)}' AND table_name = '{_esc_str(table_name)}'
                         ORDER BY ordinal_position
                     """
                     columns_arrow = self._read_sql(columns_query)
@@ -228,7 +234,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                     
                     # Get sample data
                     sample_rows = []
-                    sample_query = f'SELECT {col_list} FROM "{schema}"."{table_name}" LIMIT 10'
+                    sample_query = f'SELECT {col_list} FROM {_esc_id(schema, chr(34))}.{_esc_id(table_name, chr(34))} LIMIT 10'
                     try:
                         sample_arrow = self._read_sql(sample_query)
                         sample_df = sample_arrow.to_pandas()
@@ -237,7 +243,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                         logger.warning(f"Could not sample {full_table_name}: {sample_err}")
                     
                     # Get row count
-                    count_query = f'SELECT COUNT(*) as cnt FROM "{schema}"."{table_name}"'
+                    count_query = f'SELECT COUNT(*) as cnt FROM {_esc_id(schema, chr(34))}.{_esc_id(table_name, chr(34))}'
                     count_arrow = self._read_sql(count_query)
                     row_count = count_arrow.to_pandas()['cnt'].iloc[0]
                     
@@ -249,6 +255,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                     
                     results.append({
                         "name": full_table_name,
+                        "path": [schema, table_name],
                         "metadata": table_metadata
                     })
                     
@@ -369,7 +376,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             query = f"""
                 SELECT table_name
                 FROM information_schema.tables
-                WHERE table_schema = '{schema}'
+                WHERE table_schema = '{_esc_str(schema)}'
                   AND table_type = 'BASE TABLE'
                   AND table_name NOT LIKE '%%/%%'
                 ORDER BY table_name
@@ -411,7 +418,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             cols_query = f"""
                 SELECT column_name, data_type
                 FROM information_schema.columns
-                WHERE table_schema = '{schema}' AND table_name = '{table_name}'
+                WHERE table_schema = '{_esc_str(schema)}' AND table_name = '{_esc_str(table_name)}'
                 ORDER BY ordinal_position
             """
             cols_df = self._read_sql_on(cols_query, db).to_pandas()
@@ -420,12 +427,12 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 for _, r in cols_df.iterrows()
             ]
             count_df = self._read_sql_on(
-                f'SELECT COUNT(*) AS cnt FROM "{schema}"."{table_name}"', db
+                f'SELECT COUNT(*) AS cnt FROM {_esc_id(schema, chr(34))}.{_esc_id(table_name, chr(34))}', db
             ).to_pandas()
             row_count = int(count_df["cnt"].iloc[0])
             col_list = self._safe_select_list(schema, table_name)
             sample_df = self._read_sql_on(
-                f'SELECT {col_list} FROM "{schema}"."{table_name}" LIMIT 5', db
+                f'SELECT {col_list} FROM {_esc_id(schema, chr(34))}.{_esc_id(table_name, chr(34))} LIMIT 5', db
             ).to_pandas()
             sample_rows = json.loads(sample_df.to_json(orient="records"))
             return {

@@ -1,6 +1,6 @@
 # Generalized Data Source Plugins — Unifying DataLoader + Plugin into a Lifecycle-Managed Connection
 
-## Status: Phase 3 complete (legacy data-loader endpoints removed)
+## Status: Phase 3 complete (legacy data-loader endpoints + plugin system removed)
 
 ## 1. Problem
 
@@ -1539,8 +1539,9 @@ For sources that can't filter server-side (e.g., some REST APIs), the framework 
     - 16 verification tests confirm catalog_hierarchy, effective_hierarchy, scope pinning, auth_mode, list_params, blueprint generation for all 10 loaders
     - Also found and fixed operator-precedence bug in `_build_source_specs` YAML ID assignment
 
-### Phase 3: Cleanup + Unified Panel ✅ (partial)
+### Phase 3: Cleanup + Unified Panel ✅
 
+#### 3a: Legacy route removal ✅
 - ✅ Removed 8 legacy `/api/tables/data-loader/*` backend routes from `tables_routes.py`
 - ✅ Removed 9 `DATA_LOADER_*` URL constants from frontend `utils.tsx`
 - ✅ `DBTableManager` now uses only `serverConfig.SOURCES` (DataConnector) for data source discovery
@@ -1550,8 +1551,38 @@ For sources that can't filter server-side (e.g., some REST APIs), the framework 
 - ✅ Added `connectorId` to `DataSourceConfig` so tables remember their source
 - ✅ Added `DISABLED_SOURCES` to app-config for greyed-out UI entries
 - ✅ Enhanced `data/preview` route to support full `import_options` (sort, limit)
-- [ ] Remove `DataSourcePlugin` base class, `plugins/` directory, and per-plugin `__init__.py` files
+
+#### 3b: Connection model (doc 9.1) ✅
+- ✅ Vault-based credential persistence wired into `DataConnector` (`_vault_store`, `_vault_retrieve`, `_vault_delete`)
+- ✅ Auto-reconnect from vault on server restart (lazy, on first `/get-status` or catalog/data call)
+- ✅ Disconnect preserves vault credentials (fast reconnect), Delete clears them
+- ✅ Multi-user isolation via `(user_identity, connector_id)` composite key
+- ✅ Centralized `credentials.db` at `DATA_FORMULATOR_HOME/` with Fernet encryption
+
+#### 3c: Promoted data source cards (doc 9.3) ✅
+- ✅ Single shared `connectors_bp` blueprint — all action routes take `connector_id` in JSON body
+- ✅ `GET /api/data-loaders`, `GET /api/connectors`, `POST /api/connectors`, `DELETE /api/connectors/{id}`
+- ✅ Action routes: `/connect`, `/disconnect`, `/get-status`, `/get-catalog`, `/get-catalog-tree`, `/preview-data`, `/import-data`, `/import-group`, `/refresh-data`
+- ✅ Connected sources promoted as top-level cards on Load Data menu
+- ✅ "Add Connection" card with type picker + param form
+- ✅ Removed legacy "Database" tab from UI
+
+#### 3d: Remove legacy plugin system ✅
+- ✅ Relocated `SupersetClient` + `SupersetAuthBridge` from `plugins/superset/` to `data_loader/superset/` (used by `SupersetLoader`)
+- ✅ Deleted `py-src/data_formulator/plugins/` directory (base classes, discovery engine, Superset plugin, all routes)
+- ✅ Deleted `src/plugins/` directory (frontend plugin host, registry, Superset UI components)
+- ✅ Removed plugin registration from `app.py` (`discover_and_register`, `ENABLED_PLUGINS`)
+- ✅ Removed frontend plugin imports (`getEnabledPlugins`, `PluginHost`, `registerPluginTranslations`)
+- ✅ Deleted legacy plugin tests
 - [ ] Integrate with unified data source panel ([doc #8](8-unified-data-source-panel.md))
+
+### Sub-doc Summary (9.1–9.3)
+
+| Doc | Title | Status | Key Deliverables |
+|-----|-------|--------|------------------|
+| [9.1](9.1-data-source-connection-model.md) | Connection Model | Complete | Vault credential persistence, auto-reconnect, multi-user isolation, centralized `credentials.db` |
+| [9.2](9.2-table-group-bundle-loading.md) | TableGroup Bundle Loading | Draft (design only) | `table_group` node type for BI dashboards, source filters, group load API — not yet implemented |
+| [9.3](9.3-promoted-data-source-cards.md) | Promoted Data Source Cards | Complete | Single shared blueprint API, promoted cards UI, "Add Connection" flow, legacy "Database" tab removed |
 
 ### Phase 4: Advanced Features
 

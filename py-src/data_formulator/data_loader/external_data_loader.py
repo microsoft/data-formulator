@@ -16,6 +16,148 @@ logger = logging.getLogger(__name__)
 # Sensitive parameter names that should be excluded from stored metadata
 SENSITIVE_PARAMS = {'password', 'api_key', 'secret', 'token', 'access_token', 'refresh_token', 'access_key', 'secret_key'}
 
+# Valid operators for filter conditions (prevents SQL injection via operator field)
+_VALID_OPERATORS = frozenset({
+    '=', '!=', '<>', '>', '<', '>=', '<=',
+    'LIKE', 'NOT LIKE', 'IN', 'NOT IN',
+    'BETWEEN', 'IS NULL', 'IS NOT NULL',
+})
+
+# Identifier-name validation: reject characters that could indicate SQL injection
+# even after quote-doubling (semicolons, comment markers, null bytes).
+import re
+_DANGEROUS_IDENT_RE = re.compile(r'[;\x00]|--|/\*')
+
+
+def _esc_id(name: str, quote_char: str) -> str:
+    """Quote a SQL identifier, escaping embedded quote characters.
+
+    E.g. ``_esc_id('col`name', '`')`` → `` `col``name` ``
+    Rejects names with semicolons, null bytes, or SQL comment sequences.
+    """
+    if not name or _DANGEROUS_IDENT_RE.search(name):
+        raise ValueError(f"Invalid identifier: {name!r}")
+    escaped = name.replace(quote_char, quote_char * 2)
+    return f"{quote_char}{escaped}{quote_char}"
+
+
+def _esc_str(value: str) -> str:
+    """Escape a string literal for SQL single-quote interpolation.
+
+    Doubles single-quotes and strips null bytes.
+    """
+    return value.replace('\x00', '').replace("'", "''")
+
+
+def build_where_clause(
+    conditions: list[dict[str, Any]],
+    quote_char: str = '`',
+) -> tuple[str, list[Any]]:
+    """Build a WHERE clause from structured filter conditions.
+
+    Each condition is a dict with:
+        - column (str): column name
+        - operator (str): one of _VALID_OPERATORS
+        - value: single value, list (IN/NOT IN), or [lo, hi] (BETWEEN)
+
+    Returns (clause_str, params) where clause_str is like
+    "WHERE `col1` > ? AND `col2` IN (?, ?)" and params is the flat list of
+    bind values.  Returns ("", []) if conditions is empty.
+
+    The caller is responsible for using parameterized execution with the
+    returned params list.  For loaders that use string interpolation (e.g.
+    ADBC), use :func:`build_where_clause_inline` instead.
+    """
+    if not conditions:
+        return "", []
+
+    parts: list[str] = []
+    params: list[Any] = []
+    for cond in conditions:
+        col = cond.get("column", "")
+        op = (cond.get("operator") or "").upper().strip()
+        val = cond.get("value")
+
+        if not col or op not in _VALID_OPERATORS:
+            continue
+
+        try:
+            qcol = _esc_id(col, quote_char)
+        except ValueError:
+            continue
+
+        if op in ("IS NULL", "IS NOT NULL"):
+            parts.append(f"{qcol} {op}")
+        elif op in ("IN", "NOT IN"):
+            vals = val if isinstance(val, (list, tuple)) else [val]
+            placeholders = ", ".join("?" for _ in vals)
+            parts.append(f"{qcol} {op} ({placeholders})")
+            params.extend(vals)
+        elif op == "BETWEEN":
+            if isinstance(val, (list, tuple)) and len(val) == 2:
+                parts.append(f"{qcol} BETWEEN ? AND ?")
+                params.extend(val)
+        else:
+            parts.append(f"{qcol} {op} ?")
+            params.append(val)
+
+    if not parts:
+        return "", []
+    return "WHERE " + " AND ".join(parts), params
+
+
+def build_where_clause_inline(
+    conditions: list[dict[str, Any]],
+    quote_char: str = '`',
+) -> str:
+    """Build a WHERE clause with values inlined (for ADBC drivers that don't
+    support parameterized queries).
+
+    Values are escaped: strings are single-quoted with internal quotes doubled;
+    numbers are passed as-is; None becomes NULL.
+    """
+    if not conditions:
+        return ""
+
+    def _lit(v: Any) -> str:
+        if v is None:
+            return "NULL"
+        if isinstance(v, bool):
+            return "TRUE" if v else "FALSE"
+        if isinstance(v, (int, float)):
+            return str(v)
+        s = str(v).replace('\x00', '').replace("'", "''")
+        return f"'{s}'"
+
+    parts: list[str] = []
+    for cond in conditions:
+        col = cond.get("column", "")
+        op = (cond.get("operator") or "").upper().strip()
+        val = cond.get("value")
+
+        if not col or op not in _VALID_OPERATORS:
+            continue
+
+        try:
+            qcol = _esc_id(col, quote_char)
+        except ValueError:
+            continue
+
+        if op in ("IS NULL", "IS NOT NULL"):
+            parts.append(f"{qcol} {op}")
+        elif op in ("IN", "NOT IN"):
+            vals = val if isinstance(val, (list, tuple)) else [val]
+            parts.append(f"{qcol} {op} ({', '.join(_lit(v) for v in vals)})")
+        elif op == "BETWEEN":
+            if isinstance(val, (list, tuple)) and len(val) == 2:
+                parts.append(f"{qcol} BETWEEN {_lit(val[0])} AND {_lit(val[1])}")
+        else:
+            parts.append(f"{qcol} {op} {_lit(val)}")
+
+    if not parts:
+        return ""
+    return "WHERE " + " AND ".join(parts)
+
 
 def sanitize_table_name(name_as: str) -> str:
     """Backward-compatible alias; see :func:`sanitize_external_loader_table_name`."""
@@ -30,11 +172,14 @@ def sanitize_table_name(name_as: str) -> str:
 class CatalogNode:
     """A node in the data source's catalog tree.
 
-    Only two kinds of node:
+    Three kinds of node:
 
     * ``"namespace"`` — expandable container (database, schema, bucket, …).
       The hierarchy's ``label`` tells the UI what to call it.
     * ``"table"`` — importable leaf (table, file, dataset, …).
+    * ``"table_group"`` — a loadable bundle of related tables with optional
+      shared filters (e.g. a BI dashboard).  Rendered as a non-expandable
+      leaf in the tree; member tables are listed in ``metadata["tables"]``.
 
     The *level name* (e.g. "Database", "Schema") comes from
     :meth:`ExternalDataLoader.catalog_hierarchy`, not from the node itself.
@@ -242,8 +387,16 @@ class ExternalDataLoader(ABC):
         that haven't implemented hierarchical browsing yet.
 
         Returns:
-            List of dicts with: name (table/file identifier),
-            metadata (row_count, columns, sample_rows).
+            List of dicts, each with:
+
+            * ``name`` — the table identifier used for import
+              (e.g. ``"public.users"``).
+            * ``metadata`` — dict with ``row_count``, ``columns``,
+              ``sample_rows``.
+            * ``path`` *(optional)* — explicit hierarchy path as a list
+              of segments (e.g. ``["public", "users"]``).  When present,
+              :meth:`list_tables_tree` uses it directly to build the
+              tree instead of splitting ``name`` on dots.
         """
         pass
 
@@ -391,6 +544,104 @@ class ExternalDataLoader(ABC):
             if n.name == path[-1]:
                 return n.metadata or {}
         return {}
+
+    def list_tables_tree(self, table_filter: str | None = None) -> dict:
+        """Build a nested tree from :meth:`list_tables` results.
+
+        Returns ``{"hierarchy": [...], "effective_hierarchy": [...],
+        "tree": [...]}``.  Each table entry keeps the full metadata
+        (columns, sample_rows, row_count) from ``list_tables()`` plus
+        ``_source_name`` (the original name used for import).
+
+        If a table entry includes an explicit ``path`` list, it is used
+        directly to place the table in the tree.  Otherwise the ``name``
+        is split on ``"."`` as a fallback.
+        """
+        eff = self.effective_hierarchy()
+        num_ns = len(eff) - 1  # namespace levels before the leaf
+
+        tables = self.list_tables(table_filter=table_filter)
+
+        # Normalise each entry into a (path_segments, original_name, metadata) tuple.
+        # If the path has more segments than the effective hierarchy depth,
+        # strip leading segments (they correspond to pinned levels the
+        # loader included).  If it matches or is shorter, use as-is.
+        eff_depth = len(eff)  # expected number of segments (namespace levels + leaf)
+
+        entries: list[tuple[list[str], str, dict | None]] = []
+        for t in tables:
+            orig_name: str = t["name"]
+            meta = t.get("metadata")
+            if "path" in t and isinstance(t["path"], list) and t["path"]:
+                segments = list(t["path"])
+                # Strip leading segments if path is longer than effective hierarchy
+                if len(segments) > eff_depth:
+                    segments = segments[len(segments) - eff_depth:]
+            else:
+                # Fallback: split dotted name to fill num_ns namespace levels + leaf
+                segments = orig_name.split(".", maxsplit=num_ns) if num_ns > 0 else [orig_name]
+            entries.append((segments, orig_name, meta))
+
+        # Build tree by grouping on successive path segments.
+        def _build(items: list[tuple[list[str], str, dict | None]], depth: int, prefix: list[str]) -> list[dict]:
+            if depth >= num_ns:
+                # Leaf level — use last segment as the table name
+                return [
+                    {
+                        "name": segs[-1] if segs else orig,
+                        "node_type": "table",
+                        "path": prefix + [segs[-1] if segs else orig],
+                        "metadata": {
+                            **(meta or {}),
+                            "_source_name": orig,
+                        },
+                    }
+                    for segs, orig, meta in items
+                ]
+
+            # Group by first path segment
+            from collections import OrderedDict
+            groups: OrderedDict[str, list[tuple[list[str], str, dict | None]]] = OrderedDict()
+            ungrouped: list[tuple[list[str], str, dict | None]] = []
+
+            for segs, orig, meta in items:
+                if len(segs) > 1:
+                    ns = segs[0]
+                    rest = segs[1:]
+                    groups.setdefault(ns, []).append((rest, orig, meta))
+                else:
+                    ungrouped.append((segs, orig, meta))
+
+            nodes: list[dict] = []
+            for ns, children in groups.items():
+                ns_path = prefix + [ns]
+                nodes.append({
+                    "name": ns,
+                    "node_type": "namespace",
+                    "path": ns_path,
+                    "metadata": None,
+                    "children": _build(children, depth + 1, ns_path),
+                })
+            for segs, orig, meta in ungrouped:
+                leaf_name = segs[0] if segs else orig
+                nodes.append({
+                    "name": leaf_name,
+                    "node_type": "table",
+                    "path": prefix + [leaf_name],
+                    "metadata": {
+                        **(meta or {}),
+                        "_source_name": orig,
+                    },
+                })
+            return nodes
+
+        tree = _build(entries, 0, [])
+
+        return {
+            "hierarchy": self.catalog_hierarchy(),
+            "effective_hierarchy": eff,
+            "tree": tree,
+        }
 
     def test_connection(self) -> bool:
         """Validate the connection is alive.

@@ -22,6 +22,7 @@ from data_formulator.agents.agent_data_transform import DataTransformationAgent
 from data_formulator.agents.agent_data_rec import DataRecAgent
 
 from data_formulator.agents.agent_sort_data import SortDataAgent
+from data_formulator.agents.agent_simple import SimpleAgents
 from data_formulator.security.auth import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
 from data_formulator.datalake.workspace import Workspace
@@ -1004,42 +1005,57 @@ def workspace_summary():
 
     try:
         client = get_client(content['model'])
-
         ctx = content.get('context', {})
-        table_names = ctx.get('tables', [])
-        user_query = ctx.get('userQuery', '')
 
-        prompt_parts = []
-        if table_names:
-            prompt_parts.append(f"Data tables: {', '.join(table_names)}")
-        if user_query:
-            prompt_parts.append(f"User's first request: {user_query}")
-
-        context_str = '. '.join(prompt_parts) if prompt_parts else 'A data analysis session'
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a helpful assistant. Generate a very short name (3-5 words) "
-                    "for a data analysis workspace based on the context below. "
-                    "Return ONLY the name, no quotes, no explanation."
-                ),
-            },
-            {
-                "role": "user",
-                "content": context_str,
-            },
-        ]
-
-        response = client.get_completion(messages)
-        summary = response.choices[0].message.content.strip().strip('"\'')
-        # Truncate if too long
-        if len(summary) > 60:
-            summary = summary[:57] + "..."
-
+        agent = SimpleAgents(client=client)
+        summary = agent.workspace_summary(
+            table_names=ctx.get('tables', []),
+            user_query=ctx.get('userQuery', ''),
+        )
         return jsonify(status="ok", summary=summary)
 
     except Exception as e:
         logger.warning(f"Failed to generate workspace summary: {e}")
         return jsonify(status="error", summary=""), 500
+
+
+# ---------------------------------------------------------------------------
+# NL → structured filter conditions
+# ---------------------------------------------------------------------------
+
+@agent_bp.route('/nl-to-filter', methods=['POST'])
+def nl_to_filter():
+    """Translate a natural language filter instruction to structured conditions.
+
+    Request body:
+        model: model config object (same as other agent routes)
+        columns: [{name, type}, ...]  — the table's column schema
+        instruction: str — the user's NL filter description
+
+    Response:
+        {status, conditions, sort_columns?, sort_order?, limit?}
+    """
+    try:
+        content = request.get_json() or {}
+        instruction = (content.get("instruction") or "").strip()
+        columns = content.get("columns") or []
+        model_config = content.get("model")
+
+        if not instruction:
+            return jsonify(status="ok", conditions=[], sort_columns=[], sort_order=None, limit=None)
+
+        if not model_config:
+            return jsonify(status="error", message="No model configured"), 400
+
+        client = get_client(model_config)
+        agent = SimpleAgents(client=client)
+        result = agent.nl_to_filter(columns=columns, instruction=instruction)
+
+        return jsonify(status="ok", **result)
+
+    except json.JSONDecodeError:
+        return jsonify(status="error", message="Failed to parse LLM response as JSON"), 422
+    except Exception as e:
+        logger.warning(f"NL-to-filter failed: {e}")
+        safe_msg = classify_llm_error(e)
+        return jsonify(status="error", message=safe_msg), 500

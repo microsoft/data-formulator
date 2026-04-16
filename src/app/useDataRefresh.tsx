@@ -7,7 +7,7 @@ import { DataFormulatorState, dfActions, selectRefreshConfigs } from './dfSlice'
 import { AppDispatch } from './store';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
-import { fetchWithIdentity, getUrls, getConnectorUrls, computeContentHash } from './utils';
+import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash } from './utils';
 
 /** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
 async function compressBlob(data: string): Promise<Blob> {
@@ -123,10 +123,10 @@ export function useDataRefresh() {
         try {
             console.log(`[DataRefresh] Requesting connector '${connectorId}' to refresh "${tableName}"...`);
             
-            const refreshResponse = await fetchWithIdentity(getConnectorUrls(connectorId).DATA_REFRESH, {
+            const refreshResponse = await fetchWithIdentity(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table_name: tableName })
+                body: JSON.stringify({ connector_id: connectorId, table_name: tableName })
             });
 
             const refreshData = await refreshResponse.json();

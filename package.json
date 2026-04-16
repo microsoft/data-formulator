@@ -11,6 +11,7 @@
         "@mui/icons-material": "^7.1.1",
         "@mui/lab": "^7.0.1-beta.18",
         "@mui/material": "^7.1.1",
+        "@mui/x-tree-view": "^9.0.1",
         "@reduxjs/toolkit": "^1.8.6",
         "@tiptap/extension-image": "^3.22.2",
         "@tiptap/pm": "^3.22.2",

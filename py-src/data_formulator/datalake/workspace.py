@@ -84,6 +84,30 @@ def get_default_workspace_root() -> Path:
     return get_data_formulator_home() / "workspaces"
 
 
+def get_user_home(identity_id: str) -> Path:
+    """Return the per-user home directory: DATA_FORMULATOR_HOME/users/<safe_id>/.
+
+    Shared helper used by workspace_factory, data_connector, and any
+    code that needs per-user storage paths.
+    """
+    safe_id = _sanitize_identity_id(identity_id)
+    return get_data_formulator_home() / "users" / safe_id
+
+
+def _sanitize_identity_id(identity_id: str) -> str:
+    """Sanitize identity_id for use as a directory name.
+
+    Uses ``secure_filename`` to produce a safe single-component name.
+    Raises ``ValueError`` if the result is empty or too long.
+    """
+    if len(identity_id) > 256:
+        raise ValueError("identity_id too long")
+    result = secure_filename(identity_id)
+    if not result:
+        raise ValueError("identity_id sanitized to empty string")
+    return result
+
+
 def cleanup_stale_temp_files(workspace_path: Path, max_age_hours: int = 24) -> int:
     """
     Remove stale temporary files from workspace directory.
@@ -204,18 +228,11 @@ class Workspace:
     
     @staticmethod
     def _sanitize_identity_id(identity_id: str) -> str:
-        """
-        Sanitize identity_id for use as a directory name.
+        """Sanitize identity_id for use as a directory name.
         
-        Uses ``secure_filename`` to produce a safe single-component name.
-        Raises ``ValueError`` if the result is empty or too long.
+        Delegates to module-level :func:`_sanitize_identity_id`.
         """
-        if len(identity_id) > 256:
-            raise ValueError("identity_id too long")
-        result = secure_filename(identity_id)
-        if not result:
-            raise ValueError("identity_id sanitized to empty string")
-        return result
+        return _sanitize_identity_id(identity_id)
     
     def _init_metadata(self) -> None:
         """Initialize a new workspace with empty metadata."""

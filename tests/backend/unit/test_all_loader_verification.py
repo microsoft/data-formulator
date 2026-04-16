@@ -205,22 +205,22 @@ class TestDataConnectorWrapping:
             assert len(cfg["params_form"]) > 0
 
     def test_all_loaders_blueprints_have_all_routes(self):
-        """Each wrapped loader should have 9 routes."""
+        """The shared connectors blueprint should have all expected action routes."""
         import flask
-        from data_formulator.data_connector import DataConnector
-        expected_suffixes = [
-            "/auth/connect", "/auth/disconnect", "/auth/status",
-            "/catalog/ls", "/catalog/metadata", "/catalog/list_tables",
-            "/data/import", "/data/refresh", "/data/preview",
+        from data_formulator.data_connector import connectors_bp
+        expected_routes = [
+            "/api/connectors/connect",
+            "/api/connectors/get-status",
+            "/api/connectors/get-catalog",
+            "/api/connectors/get-catalog-tree",
+            "/api/connectors/import-data",
+            "/api/connectors/refresh-data",
+            "/api/connectors/preview-data",
+            "/api/connectors/import-group",
         ]
-        for key, cls in _get_available_loaders().items():
-            app = flask.Flask(__name__)
-            app.config["TESTING"] = True
-            source = DataConnector.from_loader(cls, source_id=key)
-            app.register_blueprint(source.create_blueprint())
-            rules = [rule.rule for rule in app.url_map.iter_rules()]
-            for suffix in expected_suffixes:
-                expected_rule = f"/api/connectors/{key}{suffix}"
-                assert expected_rule in rules, (
-                    f"{key}: missing route {expected_rule}"
-                )
+        app = flask.Flask(__name__)
+        app.config["TESTING"] = True
+        app.register_blueprint(connectors_bp)
+        rules = [rule.rule for rule in app.url_map.iter_rules()]
+        for route in expected_routes:
+            assert route in rules, f"missing shared route {route}"

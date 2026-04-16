@@ -99,6 +99,7 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Lea
                             
                             results.append({
                                 "name": full_table_name,
+                                "path": [dataset_id, table.table_id],
                                 "metadata": {
                                     "row_count": table_ref.num_rows or 0,
                                     "columns": columns,
@@ -110,6 +111,7 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Lea
                             # Add table without detailed schema
                             results.append({
                                 "name": full_table_name,
+                                "path": [dataset_id, table.table_id],
                                 "metadata": {
                                     "row_count": 0,
                                     "columns": [],

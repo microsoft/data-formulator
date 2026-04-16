@@ -36,6 +36,20 @@ Spin up a local Apache Superset instance with sample data and connect it to Data
 
 Plus Superset's built-in example datasets (if `load_examples` succeeds).
 
+### Test Dashboard: "DF Filter Test"
+
+A dashboard named **DF Filter Test** (slug: `df-filter-test`) is automatically created with native filters configured on the sample datasets:
+
+| Filter | Type | Dataset | Column | Multi | Default |
+|--------|------|---------|--------|-------|---------|
+| Region | `filter_select` | df_test_sales | region | Yes | North, South |
+| Product | `filter_select` | df_test_sales | product | No | Widget A |
+| Sale Date | `filter_time` | df_test_sales | date | — | Last quarter |
+| Quantity Range | `filter_range` | df_test_sales | quantity | — | [5, 30] |
+| Department | `filter_select` | df_test_employees | department | Yes | Engineering |
+
+This dashboard enables end-to-end testing of the predefined filter feature in the Superset plugin.
+
 ## Testing the Plugin
 
 1. Start both services: `./tests/superset/start.sh`
@@ -44,6 +58,20 @@ Plus Superset's built-in example datasets (if `load_examples` succeeds).
 4. Under **Connect to Live Data**, you should see an **Apache Superset** card
 5. Click it, then log in with `admin` / `admin`
 6. Browse datasets and load one into Data Formulator
+
+### Testing Predefined Filters
+
+1. Start both services: `./tests/superset/start.sh`
+2. Open http://localhost:5567 and connect to Superset (login with `admin` / `admin`)
+3. In the Superset plugin panel, switch to the **Dashboards** view
+4. Select the **DF Filter Test** dashboard
+5. Pick a dataset (e.g. `df_test_sales`)
+6. The filter dialog should appear showing the predefined filters:
+   - **Region**: multi-select dropdown with options loaded from Superset
+   - **Product**: single-select dropdown
+   - **Sale Date**: time/date range picker
+   - **Quantity Range**: numeric range input
+7. Adjust filter values and click Load — verify the loaded data is filtered correctly
 
 ### Token-based Login (via Superset)
 

@@ -5,7 +5,7 @@ from typing import Any
 import pyarrow as pa
 import pymysql
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, build_where_clause_inline, _esc_id, _esc_str
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class MySQLDataLoader(ExternalDataLoader):
     _GEOMETRY_TYPES = {'geometry', 'point', 'linestring', 'polygon',
                            'multipoint', 'multilinestring', 'multipolygon',
                            'geometrycollection'}
-    _OTHER_UNSUPPORTED = {'bit'}
+    _OTHER_UNSUPPORTED = {'bit', 'blob', 'tinyblob', 'mediumblob', 'longblob', 'binary', 'varbinary'}
     _UNSUPPORTED_TYPES = _GEOMETRY_TYPES | _OTHER_UNSUPPORTED
 
     def _read_sql(self, query: str) -> pa.Table:
@@ -110,7 +110,7 @@ class MySQLDataLoader(ExternalDataLoader):
             columns_query = f"""
                 SELECT COLUMN_NAME, DATA_TYPE
                 FROM information_schema.columns
-                WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
+                WHERE TABLE_SCHEMA = '{_esc_str(schema)}' AND TABLE_NAME = '{_esc_str(table_name)}'
                 ORDER BY ORDINAL_POSITION
             """
             cols_arrow = self._read_sql(columns_query)
@@ -143,6 +143,7 @@ class MySQLDataLoader(ExternalDataLoader):
         size = opts.get("size", 1000000)
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
+        conditions = opts.get("conditions", [])
 
         if not source_table:
             raise ValueError("source_table must be provided")
@@ -156,14 +157,19 @@ class MySQLDataLoader(ExternalDataLoader):
             col_list = self._safe_select_list(self.database, source_table.strip('`'))
             base_query = f"SELECT {col_list} FROM `{source_table}`"
         
+        # Add WHERE clause from filter conditions
+        where_clause = build_where_clause_inline(conditions, quote_char='`')
+        if where_clause:
+            base_query = f"{base_query} {where_clause}"
+        
         # Add ORDER BY if sort columns specified
         order_by_clause = ""
         if sort_columns and len(sort_columns) > 0:
             order_direction = "DESC" if sort_order == 'desc' else "ASC"
-            sanitized_cols = [f'`{col}` {order_direction}' for col in sort_columns]
+            sanitized_cols = [f'{_esc_id(col, "`")} {order_direction}' for col in sort_columns]
             order_by_clause = f" ORDER BY {', '.join(sanitized_cols)}"
         
-        query = f"{base_query}{order_by_clause} LIMIT {size}"
+        query = f"{base_query}{order_by_clause} LIMIT {int(size)}"
         
         logger.info(f"Executing MySQL query: {query[:200]}...")
         
@@ -182,7 +188,7 @@ class MySQLDataLoader(ExternalDataLoader):
         try:
             # If database is pinned, list only that database; otherwise all user-accessible DBs
             if self.database:
-                db_filter = f"TABLE_SCHEMA = '{self.database}'"
+                db_filter = f"TABLE_SCHEMA = '{_esc_str(self.database)}'"
             else:
                 db_filter = "TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')"
             tables_query = f"""
@@ -213,7 +219,7 @@ class MySQLDataLoader(ExternalDataLoader):
                     columns_query = f"""
                         SELECT COLUMN_NAME, DATA_TYPE 
                         FROM information_schema.columns 
-                        WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
+                        WHERE TABLE_SCHEMA = '{_esc_str(schema)}' AND TABLE_NAME = '{_esc_str(table_name)}'
                         ORDER BY ORDINAL_POSITION
                     """
                     columns_arrow = self._read_sql(columns_query)
@@ -228,7 +234,7 @@ class MySQLDataLoader(ExternalDataLoader):
                     
                     # Get sample data
                     sample_rows = []
-                    sample_query = f"SELECT {col_list} FROM `{schema}`.`{table_name}` LIMIT 10"
+                    sample_query = f"SELECT {col_list} FROM {_esc_id(schema, '`')}.{_esc_id(table_name, '`')} LIMIT 10"
                     try:
                         sample_arrow = self._read_sql(sample_query)
                         sample_df = sample_arrow.to_pandas()
@@ -237,7 +243,7 @@ class MySQLDataLoader(ExternalDataLoader):
                         logger.warning(f"Could not sample {full_table_name}: {sample_err}")
                     
                     # Get row count
-                    count_query = f"SELECT COUNT(*) as cnt FROM `{schema}`.`{table_name}`"
+                    count_query = f"SELECT COUNT(*) as cnt FROM {_esc_id(schema, '`')}.{_esc_id(table_name, '`')}"
                     count_arrow = self._read_sql(count_query)
                     row_count = int(count_arrow.to_pandas()['cnt'].iloc[0])
                     
@@ -249,6 +255,7 @@ class MySQLDataLoader(ExternalDataLoader):
                     
                     results.append({
                         "name": full_table_name,
+                        "path": [schema, table_name],
                         "metadata": table_metadata
                     })
                 except Exception as e:
@@ -305,7 +312,7 @@ class MySQLDataLoader(ExternalDataLoader):
             query = f"""
                 SELECT TABLE_NAME
                 FROM information_schema.tables
-                WHERE TABLE_SCHEMA = '{db}' AND TABLE_TYPE = 'BASE TABLE'
+                WHERE TABLE_SCHEMA = '{_esc_str(db)}' AND TABLE_TYPE = 'BASE TABLE'
                 ORDER BY TABLE_NAME
             """
             rows = self._read_sql(query).to_pandas()
@@ -338,7 +345,7 @@ class MySQLDataLoader(ExternalDataLoader):
             cols_query = f"""
                 SELECT COLUMN_NAME, DATA_TYPE
                 FROM information_schema.columns
-                WHERE TABLE_SCHEMA = '{db}' AND TABLE_NAME = '{table_name}'
+                WHERE TABLE_SCHEMA = '{_esc_str(db)}' AND TABLE_NAME = '{_esc_str(table_name)}'
                 ORDER BY ORDINAL_POSITION
             """
             cols_df = self._read_sql(cols_query).to_pandas()
@@ -347,12 +354,12 @@ class MySQLDataLoader(ExternalDataLoader):
                 for _, r in cols_df.iterrows()
             ]
             count_df = self._read_sql(
-                f"SELECT COUNT(*) AS cnt FROM `{db}`.`{table_name}`"
+                f"SELECT COUNT(*) AS cnt FROM {_esc_id(db, '`')}.{_esc_id(table_name, '`')}"
             ).to_pandas()
             row_count = int(count_df["cnt"].iloc[0])
             col_list = self._safe_select_list(db, table_name)
             sample_df = self._read_sql(
-                f"SELECT {col_list} FROM `{db}`.`{table_name}` LIMIT 5"
+                f"SELECT {col_list} FROM {_esc_id(db, '`')}.{_esc_id(table_name, '`')} LIMIT 5"
             ).to_pandas()
             sample_rows = json.loads(sample_df.to_json(orient="records", date_format="iso"))
             return {
