@@ -32,15 +32,15 @@ tests/
     contract/                          # API boundary guarantees
     benchmarks/                        # performance benchmarks (not in CI)
   plugin/                              # data loader tests (requires Docker, run separately)
-    test_mysql/                        # MySQL loader (Dockerfile + init.sql)
-    test_mongodb/                      # MongoDB loader (Dockerfile + init_data.js)
-    test_postgres/                     # PostgreSQL loader (Dockerfile + init.sql)
-    test_bigquery/                     # BigQuery emulator (Dockerfile + init_data.yaml)
-    test_mysql_datalake.py             # MySQL → workspace round-trip
+    mysql/                             # MySQL loader (Dockerfile + init.sql)
+    mongodb/                           # MongoDB loader (Dockerfile + init_data.js)
+    postgres/                          # PostgreSQL loader (Dockerfile + init.sql)
+    bigquery/                          # BigQuery emulator (Dockerfile + init_data.yaml)
+    cosmosdb/                          # Cosmos DB emulator (Dockerfile + seed_data.py)
+    run_test_dbs.sh                    # unified script to start/stop/test databases
   frontend/
     setup.ts                           # jest-dom matchers
     unit/                              # vitest tests for src/
-docker-compose.test.yml                # unified Docker stack for plugin test databases
 ```
 
 ### Running tests
@@ -50,24 +50,24 @@ docker-compose.test.yml                # unified Docker stack for plugin test da
 pytest
 
 # Plugin tests: data loader integrations (requires Docker)
-./tests/run_test_dbs.sh start          # start all test databases
-pytest tests/plugin/ -v                # run all loader tests
-./tests/run_test_dbs.sh stop           # tear down
+./tests/database-dockers/run_test_dbs.sh start    # start all test databases
+./tests/database-dockers/run_test_dbs.sh test      # run all loader tests
+./tests/database-dockers/run_test_dbs.sh stop      # tear down
 
 # Or one-shot per service
-./tests/run_test_dbs.sh test mysql
+./tests/database-dockers/run_test_dbs.sh test mysql
 ```
 
 ### What exists today
 
 | Layer | Location | Runner | Count |
 |-------|----------|--------|-------|
-| Backend unit | `tests/backend/unit/` | pytest | 17 files |
+| Backend unit | `tests/backend/unit/` | pytest | 20 files |
 | Backend security | `tests/backend/security/` | pytest | 6 files |
-| Backend integration | `tests/backend/integration/` | pytest | 7 files (6 route tests + sandbox) |
+| Backend integration | `tests/backend/integration/` | pytest | 8 files (7 route tests + sandbox) |
 | Backend contract | `tests/backend/contract/` | pytest | 2 files |
 | Backend benchmarks | `tests/backend/benchmarks/` | manual | 2 files |
-| Plugin (data loaders) | `tests/plugin/` | pytest (manual) | 5 suites (requires Docker) |
+| Plugin (data loaders) | `tests/plugin/` | pytest (manual) | 7 suites (requires Docker) |
 | Frontend unit | `tests/frontend/unit/` | vitest | 4 files |
 
 `tests/backend/` runs by default with `pytest` — no Docker required.

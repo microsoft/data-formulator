@@ -43,6 +43,7 @@ dependencies = [
     "yfinance",
     # Data-loader deps (all included by default; try/except keeps things safe)
     "pymongo",                  # mongodb
+    "azure-cosmos",             # cosmosdb
     "azure-storage-blob",       # azure_blob
     "azure-identity",           # azure_blob, kusto
     "azure-kusto-data",         # kusto
@@ -56,7 +57,7 @@ dependencies = [
     "db-dtypes",                # bigquery
     # SSO / Auth deps
     "PyJWT[crypto]>=2.8.0",     # OIDC JWT verification (includes cryptography)
-    "requests",                 # GitHub OAuth code exchange, plugin HTTP calls
+    "requests",                 # GitHub OAuth code exchange, Superset API calls
 ]
 
 [project.urls]

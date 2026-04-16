@@ -1,0 +1,56 @@
+# Superset test instance for Data Formulator plugin testing.
+# Usage:  docker compose -f tests/superset/docker-compose.yml up -d
+#
+# Default credentials:  admin / admin
+# Superset UI:         http://localhost:8088
+
+services:
+  superset:
+    image: apache/superset:4.1.1
+    container_name: df-test-superset
+    ports:
+      - "8088:8088"
+    environment:
+      # Required secret key
+      SUPERSET_SECRET_KEY: "df-test-secret-key-change-in-prod-1234567890"
+      # Disable CSP / CSRF for local testing
+      TALISMAN_ENABLED: "False"
+      # Allow CORS from DF dev server
+      SUPERSET_CORS_ENABLED: "true"
+      SUPERSET_CORS_ORIGINS: '["http://localhost:5567","http://127.0.0.1:5567","http://localhost:5173","http://127.0.0.1:5173"]'
+      # Enable public role access for guest browsing
+      PUBLIC_ROLE_LIKE: "Gamma"
+    volumes:
+      - superset-data:/app/superset_home
+      - ./init-superset.sh:/docker-entrypoint-initdb.d/init-superset.sh:ro
+      - ./sample_data.py:/tmp/sample_data.py:ro
+      - ./superset_config.py:/app/pythonpath/superset_config.py:ro
+    # Override entrypoint to run init then start
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        # Run DB migration and create admin user
+        superset db upgrade
+        superset fab create-admin \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --email admin@example.com \
+          --password admin || true
+        superset init
+
+        # Load sample data (bundled examples + our custom datasets)
+        superset load_examples --force || echo "Examples load failed (non-fatal)"
+        python /tmp/sample_data.py || echo "Custom sample data load failed (non-fatal)"
+
+        # Start the server
+        superset run -h 0.0.0.0 -p 8088 --with-threads --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  superset-data:

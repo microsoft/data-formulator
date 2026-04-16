@@ -41,7 +41,8 @@ export interface SSEMessage {
 // Add interface for app configuration
 export interface ServerConfig {
     DISABLE_DISPLAY_KEYS: boolean;
-    DISABLE_FILE_UPLOAD: boolean;
+    DISABLE_DATA_CONNECTORS: boolean;
+    DISABLE_CUSTOM_MODELS: boolean;
     PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
     AVAILABLE_LANGUAGES: string[];
@@ -54,7 +55,23 @@ export interface ServerConfig {
         label?: string;
         [key: string]: unknown;
     };
-    PLUGINS?: Record<string, import('../plugins/types').PluginConfig>;
+    CONNECTORS?: Array<{
+        source_id: string;
+        source_type: string;
+        name: string;
+        icon: string;
+        params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+        pinned_params: Record<string, string>;
+        hierarchy: Array<{key: string; label: string}>;
+        effective_hierarchy: Array<{key: string; label: string}>;
+        auth_instructions: string;
+        auth_mode?: string;
+        delegated_login?: { login_url: string; label?: string } | null;
+    }>;
+    DISABLED_SOURCES?: Record<string, {install_hint: string}>;
+    CONNECTED_CONNECTORS?: string[];
+    IDENTITY?: { type: string; id: string };
+    CREDENTIAL_VAULT_ENABLED?: boolean;
 }
 
 export interface ModelConfig {
@@ -74,6 +91,9 @@ export type FocusedId =
     | { type: 'chart'; chartId: string }
     | { type: 'report'; reportId: string }
     | undefined;
+
+export const DEFAULT_ROW_LIMIT = 2_000_000;
+export const DEFAULT_ROW_LIMIT_EPHEMERAL = 20_000;
 
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
@@ -105,8 +125,8 @@ export interface DataFormulatorState {
         exploration: string;
     };
 
-    // Identity management: user identity (if logged in) or browser identity (localStorage-based)
-    // Always initialized with browser identity, updated to user identity if logged in
+    // Identity management: local (localhost), user (SSO), or browser (anonymous multi-user)
+    // Initialized with browser identity, then updated from server config or auth provider
     identity: Identity;
     /**
      * Server-managed global models loaded from the backend on every app start.
@@ -193,7 +213,8 @@ const initialState: DataFormulatorState = {
 
     serverConfig: {
         DISABLE_DISPLAY_KEYS: false,
-        DISABLE_FILE_UPLOAD: false,
+        DISABLE_DATA_CONNECTORS: false,
+        DISABLE_CUSTOM_MODELS: false,
         PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
         AVAILABLE_LANGUAGES: ['en', 'zh'],
@@ -206,7 +227,7 @@ const initialState: DataFormulatorState = {
         defaultChartWidth: 400,
         defaultChartHeight: 300,
         maxStretchFactor: 2.0,
-        frontendRowLimit: 50000,
+        frontendRowLimit: DEFAULT_ROW_LIMIT,
         paletteKey: 'fluent',
     },
 
@@ -584,6 +605,10 @@ export const dataFormulatorSlice = createSlice({
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
             state.serverConfig = action.payload;
+            // Auto-adjust frontendRowLimit for ephemeral mode if still at default
+            if (action.payload.WORKSPACE_BACKEND === 'ephemeral' && state.config.frontendRowLimit === DEFAULT_ROW_LIMIT) {
+                state.config.frontendRowLimit = DEFAULT_ROW_LIMIT_EPHEMERAL;
+            }
         },
         setConfig: (state, action: PayloadAction<ClientConfig>) => {
             state.config = action.payload;

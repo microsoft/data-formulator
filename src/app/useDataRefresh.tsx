@@ -7,7 +7,7 @@ import { DataFormulatorState, dfActions, selectRefreshConfigs } from './dfSlice'
 import { AppDispatch } from './store';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
-import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
+import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash } from './utils';
 
 /** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
 async function compressBlob(data: string): Promise<Blob> {
@@ -105,9 +105,8 @@ export function useDataRefresh() {
 
     /**
      * Refreshes a virtual table from its original database source.
-     * Backend stores connection info and knows how to refresh - frontend just triggers it.
+     * Uses the connected source refresh endpoint when available.
      * Backend returns data_changed flag - if false, skip resampling to avoid unnecessary work.
-     * DuckDB views that depend on this table will auto-recalculate only if data changed.
      */
     const refreshDatabaseTable = useCallback(async (table: DictTable): Promise<RefreshResult> => {
         if (!table.virtual?.tableId) {
@@ -115,30 +114,33 @@ export function useDataRefresh() {
         }
 
         const tableName = table.virtual.tableId;
+        const connectorId = table.source?.connectorId;
+
+        if (!connectorId) {
+            return { tableId: table.id, success: false, message: 'No connector for this table. Please reconnect to the data source.' };
+        }
 
         try {
-            // Tell backend to refresh the table - it has the connection info stored
-            console.log(`[DataRefresh] Requesting backend to refresh "${tableName}" from external source...`);
+            console.log(`[DataRefresh] Requesting connector '${connectorId}' to refresh "${tableName}"...`);
             
-            const refreshResponse = await fetchWithIdentity(getUrls().DATA_LOADER_REFRESH_TABLE, {
+            const refreshResponse = await fetchWithIdentity(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table_name: tableName })
+                body: JSON.stringify({ connector_id: connectorId, table_name: tableName })
             });
 
             const refreshData = await refreshResponse.json();
             
             if (refreshData.status !== 'success') {
-                // Backend doesn't have connection info for this table
                 console.log(`[DataRefresh] Cannot refresh "${tableName}": ${refreshData.message}`);
                 return {
                     tableId: table.id,
                     success: false,
-                    message: refreshData.message || 'No connection info stored for this table'
+                    message: refreshData.message || 'Refresh failed. You may need to reconnect to the data source.'
                 };
             }
             
-            console.log(`[DataRefresh] Backend refreshed "${tableName}" (${refreshData.row_count} rows, data_changed=${refreshData.data_changed}, hash=${refreshData.content_hash?.slice(0, 8)})`);
+            console.log(`[DataRefresh] Backend refreshed "${tableName}" (${refreshData.row_count} rows, data_changed=${refreshData.data_changed})`);
 
             // If data hasn't changed, skip resampling - no need to update frontend
             if (!refreshData.data_changed) {
@@ -147,7 +149,6 @@ export function useDataRefresh() {
                     tableId: table.id,
                     success: true,
                     message: `Data unchanged (${refreshData.row_count} rows)`,
-                    // Don't include newRows - signals no update needed
                 };
             }
 

@@ -210,6 +210,7 @@ class TableMetadata:
     loader_params: dict | None = None
     source_table: str | None = None
     source_query: str | None = None
+    import_options: dict | None = None
     last_synced: datetime | None = None
     row_count: int | None = None
     columns: list[ColumnInfo] | None = None
@@ -237,6 +238,8 @@ class TableMetadata:
             result["source_table"] = self.source_table
         if self.source_query is not None:
             result["source_query"] = self.source_query
+        if self.import_options is not None:
+            result["import_options"] = make_json_safe(self.import_options)
         if self.last_synced is not None:
             result["last_synced"] = self.last_synced.isoformat()
         if self.row_count is not None:
@@ -277,6 +280,7 @@ class TableMetadata:
             loader_params=data.get("loader_params"),
             source_table=data.get("source_table"),
             source_query=data.get("source_query"),
+            import_options=data.get("import_options"),
             last_synced=last_synced,
             row_count=data.get("row_count"),
             columns=columns,

@@ -40,7 +40,7 @@ import { DataThread } from './DataThread';
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
-import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu } from './UnifiedDataUploadDialog';
+import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import YouTubeIcon from '@mui/icons-material/YouTube';
@@ -48,7 +48,7 @@ import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSe
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import type { DictTable } from '../components/ComponentType';
 import { useTranslation } from 'react-i18next';
-import { fetchWithIdentity, getUrls } from '../app/utils';
+import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace } from '../app/workspaceService';
 import { AppDispatch } from '../app/store';
 import Card from '@mui/material/Card';
@@ -91,6 +91,15 @@ export const DataFormulatorFC = ({ }) => {
             dispatch(dfActions.setFocused({ type: 'table', tableId: tables[0].id }));
         }
     }, [focusedId, tables, dispatch]);
+
+    // ── Connector instances (for landing page menu) ─────────────
+    const [pageConnectors, setPageConnectors] = useState<ConnectorInstance[]>([]);
+    useEffect(() => {
+        fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
+            .then(r => r.json())
+            .then(data => setPageConnectors(data.connectors || []))
+            .catch(() => {});
+    }, []);
 
     // ── Workspace list (shown on landing page) ────────────────────
     const [savedWorkspaces, setSavedWorkspaces] = useState<{id: string, display_name: string, saved_at: string | null}[]>([]);
@@ -497,6 +506,7 @@ export const DataFormulatorFC = ({ }) => {
                     onSelectTab={(tab) => openUploadDialog(tab)}
                     serverConfig={serverConfig}
                     variant="page"
+                    connectors={pageConnectors}
                 />
             </Box>
             {/* ── Saved workspaces section ──────────────────────────── */}

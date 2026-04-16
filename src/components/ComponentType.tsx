@@ -133,6 +133,9 @@ export interface DataSourceConfig {
     // Whether this table can be refreshed (backend has connection info)
     canRefresh?: boolean;
 
+    // Connector ID (for tables loaded via a DataConnector)
+    connectorId?: string;
+
     // The original table name before backend sanitization (e.g. "Sales Report 2024")
     originalTableName?: string;
 }

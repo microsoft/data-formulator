@@ -10,6 +10,8 @@ import {
     dfActions,
     dfSelectors,
     fetchGlobalModelList,
+    DEFAULT_ROW_LIMIT,
+    DEFAULT_ROW_LIMIT_EPHEMERAL,
 } from './dfSlice'
 import { getBrowserId } from './identity';
 import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
@@ -470,13 +472,16 @@ const ConfigDialog: React.FC = () => {
     const dispatch = useDispatch();
     const { t } = useTranslation();
     const config = useSelector((state: DataFormulatorState) => state.config);
+    const isEphemeral = useSelector((state: DataFormulatorState) => state.serverConfig?.WORKSPACE_BACKEND === 'ephemeral');
+    const rowLimitDefault = isEphemeral ? DEFAULT_ROW_LIMIT_EPHEMERAL : DEFAULT_ROW_LIMIT;
+    const rowLimitMax = DEFAULT_ROW_LIMIT;
 
 
     const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 60);
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
     const [maxStretchFactor, setMaxStretchFactor] = useState(config.maxStretchFactor ?? 2.0);
-    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? 50000);
+    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? rowLimitDefault);
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
@@ -605,12 +610,12 @@ const ConfigDialog: React.FC = () => {
                                         input: {
                                             inputProps: {
                                                 min: 100,
-                                                max: 1000000
+                                                max: rowLimitMax
                                             }
                                         }
                                     }}
-                                    error={frontendRowLimit < 100 || frontendRowLimit > 1000000}
-                                    helperText={frontendRowLimit < 100 || frontendRowLimit > 1000000 ? 
+                                    error={frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
+                                    helperText={frontendRowLimit < 100 || frontendRowLimit > rowLimitMax ? 
                                         t('config.localRowLimitRangeError') : ""}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
@@ -682,7 +687,7 @@ const ConfigDialog: React.FC = () => {
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
                         setMaxStretchFactor(2.0);
-                        setFrontendRowLimit(50000);
+                        setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
                     }}>{t('session.resetToDefault')}</Button>
                     <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
@@ -692,7 +697,7 @@ const ConfigDialog: React.FC = () => {
                             || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
                             || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
-                            || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
+                            || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
                             dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
                             setOpen(false);
@@ -942,50 +947,61 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         }
     }, [configLoaded]);
 
-    // Unified auth initialisation — driven by /api/auth/info
+    // Unified auth initialisation — driven by /api/auth/info and server IDENTITY
     const [authChecked, setAuthChecked] = useState(false);
     const [migrationBrowserId, setMigrationBrowserId] = useState<string | null>(null);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
 
     useEffect(() => {
+        if (!configLoaded) return;
+
         (async () => {
             const prevType = localStorage.getItem('df_identity_type');
             const prevBrowserId = localStorage.getItem('df_browser_id');
 
-            let resolvedIdentity: { type: 'user' | 'browser'; id: string; displayName?: string } | null = null;
+            let resolvedIdentity: { type: 'user' | 'browser' | 'local'; id: string; displayName?: string } | null = null;
 
-            try {
-                const info: AuthInfo | null = await getAuthInfo();
+            // Check if the server assigned a fixed identity (e.g. localhost mode)
+            const serverIdentity = serverConfig?.IDENTITY;
+            if (serverIdentity?.type === 'local' && serverIdentity?.id) {
+                resolvedIdentity = { type: 'local', id: serverIdentity.id };
+            }
 
-                if (info?.action === 'frontend') {
-                    // OIDC PKCE — check for an existing session
-                    const user = await getOidcUser();
-                    if (user && !user.expired) {
-                        resolvedIdentity = {
-                            type: 'user',
-                            id: user.profile.sub,
-                            displayName: user.profile.name ?? undefined,
-                        };
-                    }
-                } else if (info?.action === 'transparent') {
-                    // Azure App Service EasyAuth — headers injected by Azure
-                    try {
-                        const resp = await fetch('/.auth/me');
-                        const result = await resp.json();
-                        if (Array.isArray(result) && result.length > 0) {
-                            const authData = result[0];
-                            const name = authData['user_claims']?.find((item: any) => item.typ === 'name')?.val || '';
-                            const userId = authData['user_id'];
-                            if (userId) {
-                                resolvedIdentity = { type: 'user', id: userId, displayName: name };
-                            }
+            if (!resolvedIdentity) {
+                try {
+                    const info: AuthInfo | null = await getAuthInfo();
+
+                    if (info?.action === 'frontend') {
+                        // OIDC PKCE — check for an existing session
+                        const user = await getOidcUser();
+                        if (user && !user.expired) {
+                            resolvedIdentity = {
+                                type: 'user',
+                                id: user.profile.sub,
+                                displayName: user.profile.name ?? undefined,
+                            };
                         }
-                    } catch {
-                        // fall through to browser identity
+                    } else if (info?.action === 'transparent') {
+                        // Azure App Service EasyAuth — headers injected by Azure
+                        try {
+                            const resp = await fetch('/.auth/me');
+                            const result = await resp.json();
+                            if (Array.isArray(result) && result.length > 0) {
+                                const authData = result[0];
+                                const name = authData['user_claims']?.find((item: any) => item.typ === 'name')?.val || '';
+                                const userId = authData['user_id'];
+                                if (userId) {
+                                    resolvedIdentity = { type: 'user', id: userId, displayName: name };
+                                }
+                            }
+                        } catch {
+                            // fall through to browser identity
+                        }
                     }
+                    // 'redirect' and 'none' → browser identity (resolvedIdentity stays null)
+                } catch {
+                    // fall through to browser identity
                 }
-                // 'redirect' and 'none' → browser identity (resolvedIdentity stays null)
-            } catch {
-                // fall through to browser identity
             }
 
             if (!resolvedIdentity) {
@@ -1011,7 +1027,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
             setAuthChecked(true);
         })();
-    }, []);
+    }, [configLoaded]);
 
     useEffect(() => {
         document.title = toolName;

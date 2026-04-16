@@ -1193,7 +1193,7 @@ let SingleThreadGroupView: FC<{
             const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
             const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
             if (clarifyInteraction && clarifyInteraction.length > 0) {
-                pushInteractionEntries(clarifyInteraction, tableId, triggerType, highlighted, 'agent-clarify-entry', { isClarifying: false });
+                pushInteractionEntries(clarifyInteraction, tableId, triggerType, highlighted, 'agent-clarify-entry', { isClarifying: false, tableId });
                 // Mark the last clarify entry with isClarifying so the gutter shows the hourglass
                 const lastItem = timelineItems[timelineItems.length - 1];
                 if (lastItem?.interactionEntry?.role === 'clarify') lastItem.isClarifying = true;
@@ -1203,6 +1203,7 @@ let SingleThreadGroupView: FC<{
                     type: 'chart',
                     highlighted,
                     isClarifying: true,
+                    tableId,
                     element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
                 });
             }
@@ -1547,8 +1548,15 @@ let SingleThreadGroupView: FC<{
                         ? getEntryGutterIcon(entry, iconColor)
                         : getDefaultGutterIcon(iconColor);
 
+            // Clarification items are clickable to focus on the associated table
+            const clarifyClickHandler = (item.isClarifying && item.tableId)
+                ? () => dispatch(dfActions.setFocused({ type: 'table', tableId: item.tableId! }))
+                : undefined;
+
             return (
-                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx,
+                    ...(clarifyClickHandler ? { cursor: 'pointer', '&:hover': { backgroundColor: 'rgba(0,0,0,0.02)' } } : {}),
+                }} onClick={clarifyClickHandler}>
                     <Box sx={{ 
                         width: TIMELINE_WIDTH, flexShrink: 0, 
                         display: 'flex', flexDirection: 'column', alignItems: 'center',

@@ -399,7 +399,7 @@ class AzureBlobWorkspace(Workspace):
         table: pa.Table,
         table_name: str,
         compression: str = DEFAULT_COMPRESSION,
-        loader_metadata: Optional[dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
     ) -> TableMetadata:
         safe_name = sanitize_table_name(table_name)
         filename = f"{safe_name}.parquet"
@@ -431,11 +431,12 @@ class AzureBlobWorkspace(Workspace):
             last_synced=now,
         )
 
-        if loader_metadata:
-            table_metadata.loader_type = loader_metadata.get("loader_type")
-            table_metadata.loader_params = loader_metadata.get("loader_params")
-            table_metadata.source_table = loader_metadata.get("source_table")
-            table_metadata.source_query = loader_metadata.get("source_query")
+        if source_info:
+            table_metadata.loader_type = source_info.get("loader_type")
+            table_metadata.loader_params = source_info.get("loader_params")
+            table_metadata.source_table = source_info.get("source_table")
+            table_metadata.source_query = source_info.get("source_query")
+            table_metadata.import_options = source_info.get("import_options")
 
         self.add_table_metadata(table_metadata)
         logger.info(
@@ -449,7 +450,7 @@ class AzureBlobWorkspace(Workspace):
         df: pd.DataFrame,
         table_name: str,
         compression: str = DEFAULT_COMPRESSION,
-        loader_metadata: Optional[dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
     ) -> TableMetadata:
         safe_name = sanitize_table_name(table_name)
         filename = f"{safe_name}.parquet"
@@ -482,11 +483,12 @@ class AzureBlobWorkspace(Workspace):
             last_synced=now,
         )
 
-        if loader_metadata:
-            table_metadata.loader_type = loader_metadata.get("loader_type")
-            table_metadata.loader_params = loader_metadata.get("loader_params")
-            table_metadata.source_table = loader_metadata.get("source_table")
-            table_metadata.source_query = loader_metadata.get("source_query")
+        if source_info:
+            table_metadata.loader_type = source_info.get("loader_type")
+            table_metadata.loader_params = source_info.get("loader_params")
+            table_metadata.source_table = source_info.get("source_table")
+            table_metadata.source_query = source_info.get("source_query")
+            table_metadata.import_options = source_info.get("import_options")
 
         self.add_table_metadata(table_metadata)
         logger.info(
