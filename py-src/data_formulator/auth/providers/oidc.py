@@ -6,13 +6,17 @@
 Supports both standards-compliant OIDC Identity Providers (with auto-discovery)
 and plain OAuth2 servers (with manually configured endpoint URLs).
 
+Discovery strategy depends on AUTH_PROVIDER:
+    AUTH_PROVIDER=oidc   → tries /.well-known/openid-configuration
+    AUTH_PROVIDER=oauth2 → tries /.well-known/oauth-authorization-server
+
 Minimal configuration::
 
     OIDC_ISSUER_URL   — IdP issuer URL  (e.g. https://keycloak.example.com/realms/main)
     OIDC_CLIENT_ID    — Registered client / application ID
 
-When the IdP exposes ``/.well-known/openid-configuration``, all endpoints are
-auto-discovered.  Otherwise, set the endpoints manually::
+When discovery succeeds, all endpoints are auto-discovered.
+Otherwise, set the endpoints manually::
 
     OIDC_AUTHORIZE_URL  — Authorization endpoint
     OIDC_TOKEN_URL      — Token endpoint
@@ -22,6 +26,9 @@ auto-discovered.  Otherwise, set the endpoints manually::
                           JWT signature verification)
 
 Manual values take precedence over discovery.
+
+Security: the frontend uses PKCE (Public Client). OIDC_CLIENT_SECRET is kept
+for server-side operations only and is NEVER sent to the browser.
 """
 
 from __future__ import annotations
@@ -29,6 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import ssl
 import urllib.request
 from typing import Any, Optional
 
@@ -39,6 +47,12 @@ from flask import Flask, Request
 from .base import AuthProvider, AuthResult, AuthenticationError
 
 logger = logging.getLogger(__name__)
+
+# Discovery path per protocol
+_DISCOVERY_PATHS: dict[str, str] = {
+    "oidc": "/.well-known/openid-configuration",
+    "oauth2": "/.well-known/oauth-authorization-server",
+}
 
 
 class OIDCProvider(AuthProvider):
@@ -54,6 +68,14 @@ class OIDCProvider(AuthProvider):
         self._userinfo_url = os.environ.get("OIDC_USERINFO_URL", "").strip()
         self._jwks_url = os.environ.get("OIDC_JWKS_URL", "").strip()
         self._scopes = os.environ.get("OIDC_SCOPES", "").strip()
+
+        self._protocol = os.environ.get("AUTH_PROVIDER", "oidc").strip().lower()
+        if self._protocol not in _DISCOVERY_PATHS:
+            self._protocol = "oidc"
+
+        self._verify_ssl = os.environ.get(
+            "OIDC_VERIFY_SSL", "true"
+        ).strip().lower() not in ("false", "0", "no")
 
         self._jwks_client: Optional[PyJWKClient] = None
         self._algorithms: list[str] = ["RS256"]
@@ -71,6 +93,37 @@ class OIDCProvider(AuthProvider):
 
     # -- lifecycle ---------------------------------------------------------
 
+    def _build_ssl_context(self) -> ssl.SSLContext | None:
+        """Return an unverified SSL context when OIDC_VERIFY_SSL=false."""
+        if self._verify_ssl:
+            return None
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
+    def _try_discovery(self, discovery_url: str) -> dict[str, Any] | None:
+        """Fetch and validate a discovery document. Returns None on failure."""
+        ssl_ctx = self._build_ssl_context()
+        try:
+            with urllib.request.urlopen(
+                discovery_url, timeout=10, context=ssl_ctx,
+            ) as resp:
+                doc: dict[str, Any] = json.loads(resp.read())
+
+            if "authorization_endpoint" not in doc:
+                logger.warning(
+                    "Discovery response from %s missing authorization_endpoint "
+                    "(likely not a valid discovery document), ignoring",
+                    discovery_url,
+                )
+                return None
+
+            return doc
+        except Exception as exc:
+            logger.warning("Discovery request failed for %s: %s", discovery_url, exc)
+            return None
+
     def on_configure(self, app: Flask) -> None:
         if not self.enabled:
             logger.info(
@@ -79,12 +132,23 @@ class OIDCProvider(AuthProvider):
             )
             return
 
-        # 1) Try OpenID Discovery
-        try:
-            discovery_url = f"{self._issuer}/.well-known/openid-configuration"
-            with urllib.request.urlopen(discovery_url, timeout=10) as resp:
-                discovery: dict[str, Any] = json.loads(resp.read())
+        # 1) Try discovery based on protocol (oidc or oauth2)
+        primary_path = _DISCOVERY_PATHS[self._protocol]
+        fallback_path = (
+            _DISCOVERY_PATHS["oauth2"]
+            if self._protocol == "oidc"
+            else _DISCOVERY_PATHS["oidc"]
+        )
 
+        discovery = self._try_discovery(f"{self._issuer}{primary_path}")
+        if not discovery:
+            logger.info(
+                "Primary discovery (%s) failed, trying fallback (%s)",
+                primary_path, fallback_path,
+            )
+            discovery = self._try_discovery(f"{self._issuer}{fallback_path}")
+
+        if discovery:
             if not self._authorize_url:
                 self._authorize_url = discovery.get("authorization_endpoint", "")
             if not self._token_url:
@@ -93,15 +157,13 @@ class OIDCProvider(AuthProvider):
                 self._userinfo_url = discovery.get("userinfo_endpoint", "")
             if not self._jwks_url:
                 self._jwks_url = discovery.get("jwks_uri", "")
-
             if "id_token_signing_alg_values_supported" in discovery:
                 self._algorithms = discovery["id_token_signing_alg_values_supported"]
-
             self._discovery_ok = True
-            logger.info("OIDC discovery succeeded: %s", discovery_url)
-        except Exception as exc:
+            logger.info("Discovery succeeded for issuer %s", self._issuer)
+        else:
             logger.warning(
-                "OIDC discovery unavailable (%s) — using manual endpoints", exc,
+                "All discovery attempts failed — using manual endpoints"
             )
 
         # 2) Initialise JWKS client (from discovery or manual OIDC_JWKS_URL)
@@ -118,8 +180,8 @@ class OIDCProvider(AuthProvider):
         )
         logger.info(
             "OIDC provider ready: issuer=%s, client_id=%s, "
-            "discovery=%s, token_validation=%s",
-            self._issuer, self._client_id,
+            "protocol=%s, discovery=%s, token_validation=%s",
+            self._issuer, self._client_id, self._protocol,
             "ok" if self._discovery_ok else "manual",
             mode,
         )
@@ -136,8 +198,6 @@ class OIDCProvider(AuthProvider):
             return self._scopes
         if self._jwks_client:
             return "openid profile email offline_access"
-        # No JWKS → SSO likely doesn't issue JWT id_tokens;
-        # requesting 'openid' would cause oidc-client-ts to fail parsing.
         return "profile email offline_access"
 
     def get_auth_info(self) -> dict:
@@ -151,21 +211,22 @@ class OIDCProvider(AuthProvider):
             },
         }
 
-        if not self._discovery_ok:
-            metadata: dict[str, str] = {}
-            if self._authorize_url:
-                metadata["authorization_endpoint"] = self._authorize_url
-            if self._token_url:
-                metadata["token_endpoint"] = self._token_url
-            if self._userinfo_url:
-                metadata["userinfo_endpoint"] = self._userinfo_url
-            if self._jwks_url:
-                metadata["jwks_uri"] = self._jwks_url
-            if metadata:
-                info["oidc"]["metadata"] = metadata
+        # Always pass metadata so the browser never needs to fetch discovery
+        # itself (avoids CORS / certificate issues in the browser).
+        metadata: dict[str, str] = {}
+        if self._authorize_url:
+            metadata["authorization_endpoint"] = self._authorize_url
+        if self._token_url:
+            metadata["token_endpoint"] = self._token_url
+        if self._userinfo_url:
+            metadata["userinfo_endpoint"] = self._userinfo_url
+        if self._jwks_url:
+            metadata["jwks_uri"] = self._jwks_url
+        if metadata:
+            info["oidc"]["metadata"] = metadata
 
-        if self._client_secret:
-            info["oidc"]["clientSecret"] = self._client_secret
+        # NOTE: client_secret is intentionally NOT sent to the frontend.
+        # The browser uses PKCE (Public Client) for secure token exchange.
 
         return info
 
