@@ -16,11 +16,11 @@ From repo root:
 
    ```bash
    # Option A: start all test databases at once
-   ./tests/run_test_dbs.sh start
+   ./tests/database-dockers/run_test_dbs.sh start
 
    # Option B: start only BigQuery
-   ./tests/run_test_dbs.sh start bigquery
-   # or: docker compose -f docker-compose.test.yml up -d bigquery
+   ./tests/database-dockers/run_test_dbs.sh start bigquery
+   # or: cd tests/database-dockers/bigquery && docker compose up -d
    ```
 
 2. Run tests:
@@ -32,7 +32,7 @@ From repo root:
 3. Tear down:
 
    ```bash
-   ./tests/run_test_dbs.sh stop
+   ./tests/database-dockers/run_test_dbs.sh stop
    ```
 
 ## Commands (run_test_dbs.sh)

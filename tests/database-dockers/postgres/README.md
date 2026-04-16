@@ -13,17 +13,17 @@ From repo root:
 
 ```bash
 # Option A: start all test databases at once
-./tests/run_test_dbs.sh start
+./tests/database-dockers/run_test_dbs.sh start
 
 # Option B: start only PostgreSQL
-./tests/run_test_dbs.sh start postgres
-# or: docker compose -f docker-compose.test.yml up -d postgres
+./tests/database-dockers/run_test_dbs.sh start postgres
+# or: cd tests/database-dockers/postgres && docker compose up -d
 
 # Run tests
-pytest tests/backend/integration/test_postgres/ -v
+pytest tests/database-dockers/postgres/ -v
 
 # Tear down
-./tests/run_test_dbs.sh stop
+./tests/database-dockers/run_test_dbs.sh stop
 ```
 
 ## Env vars

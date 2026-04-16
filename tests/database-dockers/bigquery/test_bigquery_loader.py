@@ -5,7 +5,7 @@
 Tests for BigQuery Data Loader using BigQuery Emulator and the workspace/datalake design.
 
 Requires:
-  - BigQuery emulator running (e.g. ./tests/run_test_dbs.sh start bigquery)
+  - BigQuery emulator running (e.g. ./tests/database-dockers/run_test_dbs.sh start bigquery)
   - google-cloud-bigquery installed
 
 Environment variables:

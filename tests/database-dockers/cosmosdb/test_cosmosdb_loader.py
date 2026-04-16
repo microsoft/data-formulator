@@ -2,13 +2,15 @@
 # Licensed under the MIT License.
 
 """
-Tests for MongoDB data loader using workspace/datalake design.
+Tests for Cosmos DB data loader using workspace/datalake design.
 
-Requires MongoDB running (e.g. ./tests/database-dockers/run_test_dbs.sh start mongodb).
-Environment: MONGO_HOST, MONGO_PORT (default 27018), MONGO_USERNAME, MONGO_PASSWORD, MONGO_DATABASE (default testdb).
+Requires the Cosmos DB emulator running:
+  ./tests/database-dockers/run_test_dbs.sh start cosmosdb
+
+Environment: COSMOS_ENDPOINT, COSMOS_KEY, COSMOS_DATABASE (default testdb).
 
 Run from repo root:
-  python -m pytest tests/plugin/test_mongodb/ -v
+  python -m pytest tests/database-dockers/cosmosdb/test_cosmosdb_loader.py -v
 """
 
 import os
@@ -16,46 +18,48 @@ import shutil
 import unittest
 from pathlib import Path
 from typing import Any, Dict
-import pymongo
 
+import urllib3
 
-from data_formulator.data_loader.mongodb_data_loader import MongoDBDataLoader
+from data_formulator.data_loader.cosmosdb_data_loader import CosmosDBDataLoader
 
 import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 log = logging.getLogger(__name__)
 
+EMULATOR_KEY = "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
+
 
 def get_test_config() -> Dict[str, Any]:
     return {
-        "host": os.getenv("MONGO_HOST", "localhost"),
-        "port": int(os.getenv("MONGO_PORT", "27018")),
-        "username": os.getenv("MONGO_USERNAME", "testuser"),
-        "password": os.getenv("MONGO_PASSWORD", "testpass"),
-        "database": os.getenv("MONGO_DATABASE", "testdb"),
-        "collection": "",
+        "endpoint": os.getenv("COSMOS_ENDPOINT", "https://localhost:8081"),
+        "key": os.getenv("COSMOS_KEY", EMULATOR_KEY),
+        "database": os.getenv("COSMOS_DATABASE", "testdb"),
+        "container": "",
     }
 
 
-def mongo_available() -> bool:
+def cosmos_available() -> bool:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     try:
+        from azure.cosmos import CosmosClient
         cfg = get_test_config()
-        client = pymongo.MongoClient(
-            host=cfg["host"],
-            port=cfg["port"],
-            username=cfg["username"],
-            password=cfg["password"],
-            serverSelectionTimeoutMS=3000,
+        client = CosmosClient(
+            url=cfg["endpoint"],
+            credential=cfg["key"],
+            connection_verify=False,
         )
-        client.admin.command("ping")
+        # Check if the database exists (seed_data.py must have run)
+        db = client.get_database_client(cfg["database"])
+        db.read()
         client.close()
         return True
     except Exception:
         return False
 
 
-class TestMongoDBDataLoader(unittest.TestCase):
-    """Test MongoDBDataLoader against test DB using workspace/datalake."""
+class TestCosmosDBDataLoader(unittest.TestCase):
+    """Test CosmosDBDataLoader against the emulator using workspace/datalake."""
 
     def setUp(self) -> None:
         self._workspace_root = None
@@ -63,7 +67,7 @@ class TestMongoDBDataLoader(unittest.TestCase):
 
     def _workspace_root_path(self) -> str:
         if self._workspace_root is None:
-            self._workspace_root = __import__("tempfile").mkdtemp(prefix="df_test_mongo_")
+            self._workspace_root = __import__("tempfile").mkdtemp(prefix="df_test_cosmos_")
             self.addCleanup(self._cleanup_workspace)
         return self._workspace_root
 
@@ -73,9 +77,9 @@ class TestMongoDBDataLoader(unittest.TestCase):
             if p.exists():
                 shutil.rmtree(p, ignore_errors=True)
 
-    def _get_loader(self) -> MongoDBDataLoader:
+    def _get_loader(self) -> CosmosDBDataLoader:
         if self._loader is None:
-            self._loader = MongoDBDataLoader(get_test_config())
+            self._loader = CosmosDBDataLoader(get_test_config())
             self.addCleanup(self._close_loader)
         return self._loader
 
@@ -86,7 +90,7 @@ class TestMongoDBDataLoader(unittest.TestCase):
 
     def _get_workspace(self):
         from data_formulator.datalake.workspace import Workspace
-        return Workspace("test-identity-mongo", root_dir=self._workspace_root_path())
+        return Workspace("test-identity-cosmos", root_dir=self._workspace_root_path())
 
     def test_list_tables(self) -> None:
         loader = self._get_loader()
@@ -96,7 +100,7 @@ class TestMongoDBDataLoader(unittest.TestCase):
         self.assertGreater(len(tables), 0)
         names = [t["name"] for t in tables]
         for expected in ["products", "customers", "orders", "app_settings"]:
-            self.assertIn(expected, names, f"Should find collection '{expected}'")
+            self.assertIn(expected, names, f"Should find container '{expected}'")
         for t in tables:
             self.assertIn("name", t)
             self.assertIn("metadata", t)
@@ -110,10 +114,10 @@ class TestMongoDBDataLoader(unittest.TestCase):
         for t in tables:
             self.assertIn("prod", t["name"].lower())
 
-    def test_list_tables_specific_collection(self) -> None:
+    def test_list_tables_specific_container(self) -> None:
         config = get_test_config()
-        config = {**config, "collection": "products"}
-        loader = MongoDBDataLoader(config)
+        config = {**config, "container": "products"}
+        loader = CosmosDBDataLoader(config)
         self.addCleanup(loader.close)
         tables = loader.list_tables()
         self.assertEqual(len(tables), 1)
@@ -204,75 +208,125 @@ class TestMongoDBDataLoader(unittest.TestCase):
         self.assertGreater(len(df), 0)
 
     def test_connection_close(self) -> None:
-        loader = MongoDBDataLoader(get_test_config())
-        self.assertIsNotNone(loader.mongo_client)
+        loader = CosmosDBDataLoader(get_test_config())
+        self.assertIsNotNone(loader.client)
         loader.close()
-        self.assertIsNone(loader.mongo_client)
+        self.assertIsNone(loader.client)
 
     def test_context_manager(self) -> None:
-        with MongoDBDataLoader(get_test_config()) as loader:
+        with CosmosDBDataLoader(get_test_config()) as loader:
             tables = loader.list_tables()
             self.assertGreater(len(tables), 0)
-        self.assertIsNone(loader.mongo_client)
+        self.assertIsNone(loader.client)
 
     def test_flatten_document(self) -> None:
         doc = {
+            "id": "1",
             "name": "Test",
             "nested": {"level1": "value1", "deeper": {"level2": "value2"}},
             "array": [1, 2, 3],
+            "_rid": "should_be_skipped",
+            "_self": "should_be_skipped",
+            "_etag": "should_be_skipped",
         }
-        result = MongoDBDataLoader._flatten_document(doc)
+        result = CosmosDBDataLoader._flatten_document(doc)
         self.assertEqual(result["name"], "Test")
         self.assertEqual(result["nested_level1"], "value1")
         self.assertEqual(result["nested_deeper_level2"], "value2")
         self.assertEqual(result["array_1"], 1)
         self.assertEqual(result["array_2"], 2)
         self.assertEqual(result["array_3"], 3)
+        # Internal Cosmos fields should be stripped
+        self.assertNotIn("_rid", result)
+        self.assertNotIn("_self", result)
+        self.assertNotIn("_etag", result)
 
     def test_convert_special_types(self) -> None:
-        from bson import ObjectId
         from datetime import datetime
 
         doc = {
-            "_id": ObjectId(),
             "created_at": datetime(2024, 1, 15, 10, 30, 0),
             "data": b"binary data",
         }
-        result = MongoDBDataLoader._convert_special_types(doc)
-        self.assertIsInstance(result["_id"], str)
+        result = CosmosDBDataLoader._convert_special_types(doc)
         self.assertIsInstance(result["created_at"], str)
         self.assertIn("2024-01-15", result["created_at"])
         self.assertIsInstance(result["data"], str)
 
+    def test_catalog_hierarchy(self) -> None:
+        hierarchy = CosmosDBDataLoader.catalog_hierarchy()
+        self.assertEqual(len(hierarchy), 2)
+        self.assertEqual(hierarchy[0]["key"], "database")
+        self.assertEqual(hierarchy[1]["key"], "container")
 
-class TestMongoDBDataLoaderStatic(unittest.TestCase):
+    def test_ls_containers(self) -> None:
+        loader = self._get_loader()
+        # database is pinned, so ls([]) should return containers
+        nodes = loader.ls([])
+        self.assertGreater(len(nodes), 0)
+        names = [n.name for n in nodes]
+        self.assertIn("products", names)
+        # All should be table type (leaf nodes)
+        for node in nodes:
+            self.assertEqual(node.node_type, "table")
+
+    def test_test_connection(self) -> None:
+        loader = self._get_loader()
+        self.assertTrue(loader.test_connection())
+
+    def test_get_metadata(self) -> None:
+        loader = self._get_loader()
+        meta = loader.get_metadata(["products"])
+        self.assertIn("row_count", meta)
+        self.assertIn("columns", meta)
+        self.assertEqual(meta["row_count"], 12)
+
+
+class TestCosmosDBDataLoaderStatic(unittest.TestCase):
     """Static methods (no DB required)."""
 
     def test_list_params(self) -> None:
-        params = MongoDBDataLoader.list_params()
+        params = CosmosDBDataLoader.list_params()
         self.assertIsInstance(params, list)
         self.assertGreater(len(params), 0)
         names = [p["name"] for p in params]
-        self.assertIn("host", names)
-        self.assertIn("port", names)
+        self.assertIn("endpoint", names)
+        self.assertIn("key", names)
         self.assertIn("database", names)
-        self.assertIn("collection", names)
-        host_param = next(p for p in params if p["name"] == "host")
-        self.assertTrue(host_param["required"])
+        self.assertIn("container", names)
+        endpoint_param = next(p for p in params if p["name"] == "endpoint")
+        self.assertTrue(endpoint_param["required"])
 
     def test_auth_instructions(self) -> None:
-        instructions = MongoDBDataLoader.auth_instructions()
+        instructions = CosmosDBDataLoader.auth_instructions()
         self.assertIsInstance(instructions, str)
-        self.assertGreater(len(instructions), 100)
-        self.assertIn("MongoDB", instructions)
-        self.assertIn("host", instructions)
+        self.assertGreater(len(instructions), 50)
+        self.assertIn("Cosmos", instructions)
+        self.assertIn("endpoint", instructions)
+
+    def test_flatten_strips_cosmos_metadata(self) -> None:
+        """_flatten_document should skip internal Cosmos fields."""
+        doc = {
+            "id": "1",
+            "name": "test",
+            "_rid": "abc",
+            "_self": "dbs/testdb/colls/products/docs/1",
+            "_etag": "\"00000000-0000-0000-0000-000000000000\"",
+            "_attachments": "attachments/",
+            "_ts": 1700000000,
+        }
+        result = CosmosDBDataLoader._flatten_document(doc)
+        self.assertEqual(result["id"], "1")
+        self.assertEqual(result["name"], "test")
+        for key in ("_rid", "_self", "_etag", "_attachments", "_ts"):
+            self.assertNotIn(key, result)
 
 
 def run_tests() -> bool:
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
-    suite.addTests(loader.loadTestsFromTestCase(TestMongoDBDataLoaderStatic))
-    suite.addTests(loader.loadTestsFromTestCase(TestMongoDBDataLoader))
+    suite.addTests(loader.loadTestsFromTestCase(TestCosmosDBDataLoaderStatic))
+    suite.addTests(loader.loadTestsFromTestCase(TestCosmosDBDataLoader))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return len(result.failures) == 0 and len(result.errors) == 0
 

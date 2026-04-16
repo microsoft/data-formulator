@@ -13,17 +13,17 @@ From repo root:
 
 ```bash
 # Option A: start all test databases at once
-./tests/run_test_dbs.sh start
+./tests/database-dockers/run_test_dbs.sh start
 
 # Option B: start only MongoDB
-./tests/run_test_dbs.sh start mongodb
-# or: docker compose -f docker-compose.test.yml up -d mongodb
+./tests/database-dockers/run_test_dbs.sh start mongodb
+# or: cd tests/database-dockers/mongodb && docker compose up -d
 
 # Run tests
-pytest tests/backend/integration/test_mongodb/ -v
+pytest tests/database-dockers/mongodb/ -v
 
 # Tear down
-./tests/run_test_dbs.sh stop
+./tests/database-dockers/run_test_dbs.sh stop
 ```
 
 ## Env vars

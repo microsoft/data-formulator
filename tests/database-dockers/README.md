@@ -8,27 +8,31 @@ explicitly.
 
 ```bash
 # Start all test databases
-./tests/run_test_dbs.sh start
+./tests/database-dockers/run_test_dbs.sh start
 
 # Run all plugin tests
-pytest tests/plugin/ -v
+./tests/database-dockers/run_test_dbs.sh test
 
 # Run one loader
-./tests/run_test_dbs.sh test mysql
+./tests/database-dockers/run_test_dbs.sh test mysql
+
+# Or use docker compose directly in each folder
+cd tests/database-dockers/mysql && docker compose up -d
 
 # Tear down
-./tests/run_test_dbs.sh stop
+./tests/database-dockers/run_test_dbs.sh stop
 ```
 
 ## Structure
 
-Each `test_<db>/` directory contains a Dockerfile, init script, and test module.
-All services are managed by `docker-compose.test.yml` at the repo root.
+Each subdirectory is self-contained with its own `docker-compose.yml`, Dockerfile,
+init script, and test module. The `run_test_dbs.sh` script provides a convenience
+wrapper to manage them all.
 
 | Directory | Service | Default Port |
 |-----------|---------|-------------|
-| `test_mysql/` | MySQL 8.0 | 3307 |
-| `test_postgres/` | PostgreSQL 16 | 5433 |
-| `test_mongodb/` | MongoDB 7 | 27018 |
-| `test_bigquery/` | BigQuery emulator | 9050 |
-| `test_mysql_datalake.py` | MySQL (standalone) | 3306 |
+| `mysql/` | MySQL 8.0 | 3307 |
+| `postgres/` | PostgreSQL 16 | 5433 |
+| `mongodb/` | MongoDB 7 | 27018 |
+| `bigquery/` | BigQuery emulator | 9050 |
+| `cosmosdb/` | Cosmos DB emulator | 8081 |

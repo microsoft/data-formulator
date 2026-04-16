@@ -43,6 +43,7 @@ dependencies = [
     "yfinance",
     # Data-loader deps (all included by default; try/except keeps things safe)
     "pymongo",                  # mongodb
+    "azure-cosmos",             # cosmosdb
     "azure-storage-blob",       # azure_blob
     "azure-identity",           # azure_blob, kusto
     "azure-kusto-data",         # kusto

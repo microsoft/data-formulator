@@ -22,6 +22,7 @@ yfinance
 
 # Data-loader deps (all included; try/except at import time keeps things safe)
 pymongo
+azure-cosmos
 azure-storage-blob
 azure-identity
 azure-kusto-data

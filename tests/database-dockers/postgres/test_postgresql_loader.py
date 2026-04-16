@@ -4,7 +4,7 @@
 """
 Tests for PostgreSQL data loader using workspace/datalake design.
 
-Requires PostgreSQL running (e.g. ./tests/run_test_dbs.sh start postgres).
+Requires PostgreSQL running (e.g. ./tests/database-dockers/run_test_dbs.sh start postgres).
 Environment: PG_HOST, PG_PORT (default 5433), PG_USER, PG_PASSWORD, PG_DATABASE (default testdb).
 
 Run from repo root:
@@ -53,7 +53,7 @@ def postgres_available() -> bool:
 
 @unittest.skipUnless(
     postgres_available(),
-    "PostgreSQL not available (start with ./tests/run_test_dbs.sh start postgres).",
+    "PostgreSQL not available (start with ./tests/database-dockers/run_test_dbs.sh start postgres).",
 )
 class TestPostgreSQLDataLoader(unittest.TestCase):
     """Test PostgreSQLDataLoader against test DB using workspace/datalake."""
