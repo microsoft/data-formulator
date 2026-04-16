@@ -124,7 +124,6 @@ def seed(endpoint: str, key: str) -> None:
 
         log.info("  Seeded %d items into '%s'", len(spec["items"]), container_name)
 
-    client.close()
     log.info("Seed complete: products(12), customers(10), orders(10), app_settings(4)")
 
 

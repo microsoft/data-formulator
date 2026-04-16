@@ -13,6 +13,7 @@ services:
     environment:
       AZURE_COSMOS_EMULATOR_PARTITION_COUNT: 10
       AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "true"
+      AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE: "127.0.0.1"
     healthcheck:
       test: ["CMD-SHELL", "curl -k https://localhost:8081/_explorer/emulator.pem || exit 1"]
       interval: 10s
