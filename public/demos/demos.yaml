@@ -1,0 +1,30 @@
+- id: stock-prices
+  title: Stock Prices
+  description: Stock prices for different companies
+  preview: /demos/screenshot-stock-price-live-thumbnail.webp
+  workspace: /demos/demo_stock-prices.zip
+  live: false
+- id: gas-prices
+  title: Gas Prices
+  description: Weekly gas prices across different grades and formulations
+  preview: /demos/gas_prices-thumbnail.webp
+  workspace: /demos/demo_gas-prices.zip
+  live: false
+- id: global-energy
+  title: Global Energy
+  description: Global energy consumption and CO2 emissions data
+  preview: /demos/global_energy-thumbnail.webp
+  workspace: /demos/demo_global-energy.zip
+  live: false
+- id: movies
+  title: Movies
+  description: Analyze movie performance, budgets, and ratings data
+  preview: /demos/movies-thumbnail.webp
+  workspace: /demos/demo_movies.zip
+  live: false
+- id: unemployment
+  title: Unemployment
+  description: Unemployment rates across different industries over time
+  preview: /demos/unemployment-thumbnail.webp
+  workspace: /demos/demo_unemployment.zip
+  live: false

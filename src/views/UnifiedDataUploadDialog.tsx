@@ -25,8 +25,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import LinkIcon from '@mui/icons-material/Link';
-import { StreamIcon } from '../icons';
-import StorageIcon from '@mui/icons-material/Storage';
+import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
 import ImageSearchIcon from '@mui/icons-material/ImageSearch';
 import ExploreIcon from '@mui/icons-material/Explore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -89,6 +88,7 @@ interface DataSourceCardProps {
     onClick: () => void;
     disabled?: boolean;
     dashed?: boolean;
+    badge?: React.ReactNode;
 }
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
@@ -98,6 +98,7 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     onClick, 
     disabled = false,
     dashed = false,
+    badge,
 }) => {
     const theme = useTheme();
     
@@ -135,15 +136,18 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
                 {icon}
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography 
-                    variant="body2" 
-                    sx={{ 
-                        fontWeight: 500,
-                        color: disabled ? 'text.disabled' : 'text.primary',
-                    }}
-                >
-                    {title}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                    <Typography 
+                        variant="body2" 
+                        sx={{ 
+                            fontWeight: 500,
+                            color: disabled ? 'text.disabled' : 'text.primary',
+                        }}
+                    >
+                        {title}
+                    </Typography>
+                    {badge}
+                </Box>
                 <Typography
                     variant="caption"
                     sx={{
@@ -190,6 +194,31 @@ export interface ConnectorInstance {
     auth_mode?: string;
     auth_instructions?: string;
     delegated_login?: { login_url: string; label?: string } | null;
+}
+
+// Map connector source_type (class name) to action-oriented description
+const CONNECTOR_TYPE_DESCRIPTIONS: Record<string, string> = {
+    MySQLDataLoader: 'Query tables from a MySQL database',
+    PostgreSQLDataLoader: 'Query tables from a PostgreSQL database',
+    MSSQLDataLoader: 'Query tables from Microsoft SQL Server',
+    CosmosDBDataLoader: 'Query containers from Azure Cosmos DB',
+    MongoDBDataLoader: 'Query collections from MongoDB',
+    BigQueryDataLoader: 'Query datasets from Google BigQuery',
+    AthenaDataLoader: 'Query data via Amazon Athena',
+    KustoDataLoader: 'Query data from Azure Data Explorer (Kusto)',
+    SupersetLoader: 'Browse datasets from Apache Superset',
+    AzureBlobDataLoader: 'Load files from Azure Blob Storage',
+    S3DataLoader: 'Load files from Amazon S3',
+};
+
+function getConnectorTypeDescription(sourceType: string, connected: boolean, t: (key: string, options?: any) => string): string {
+    const typeDesc = CONNECTOR_TYPE_DESCRIPTIONS[sourceType];
+    if (typeDesc) {
+        return connected ? typeDesc : t('upload.connectorDisconnected', { defaultValue: 'Not connected' });
+    }
+    return connected
+        ? sourceType || t('upload.connectorConnected', { defaultValue: 'Connected' })
+        : t('upload.connectorDisconnected', { defaultValue: 'Not connected' });
 }
 
 // Reusable Data Load Menu Component
@@ -240,25 +269,28 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             icon: <ImageSearchIcon />, 
             disabled: false
         },
-    ].filter(source => !(hideSampleDatasets && source.value === 'explore'));
-
-    // All connectors get cards — connected ones show status, disconnected show type
-    const liveDataSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; dashed?: boolean }> = [
         { 
             value: 'url' as UploadTabType, 
             title: t('upload.loadFromUrl'), 
             description: t('upload.loadFromUrlDesc'),
             icon: <LinkIcon />, 
-            disabled: false
+            disabled: false,
+            badge: <StreamIcon sx={{ fontSize: 14, color: 'success.main', animation: 'pulse 2s infinite', '@keyframes pulse': {
+                '0%': { opacity: 1 },
+                '50%': { opacity: 0.4 },
+                '100%': { opacity: 1 },
+            } }} />,
         },
+    ].filter(source => !(hideSampleDatasets && source.value === 'explore'));
+
+    // Data connections — persistent configured sources (databases, services, etc.)
+    const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; dashed?: boolean }> = [
         // Per-connector cards — all instances
         ...connectors.map((conn) => ({
             value: `connector:${conn.id}` as UploadTabType,
             title: conn.display_name,
-            description: conn.connected
-                ? t('upload.connectorConnected', { defaultValue: 'Connected' })
-                : conn.source_type || t('upload.connectorDisconnected', { defaultValue: 'Not connected' }),
-            icon: <StorageIcon />,
+            description: getConnectorTypeDescription(conn.source_type, conn.connected, t),
+            icon: getConnectorIcon(conn.icon || conn.source_type),
             disabled: false,
         })),
         // "Add Connection" card (dashed style)
@@ -273,88 +305,79 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     ];
 
     if (variant === 'page') {
-        // Page variant: 3-column grid, first column for liveDataSources, second 2 columns for regularDataSources
+        // Page variant: two sections stacked, local data in 3 columns, live sources in 2 columns with wrap
         return (
             <Box sx={{ 
                 width: '100%',
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1fr) repeat(2, minmax(0, 1fr))',
-                gridTemplateRows: 'auto repeat(2, auto)',
-                gap: 1.5,
-                rowGap: 2,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
                 mx: 0,
                 textAlign: 'left',
             }}>
-                {/* Section Titles */}
+                {/* Local Data Sources */}
                 <Typography 
                     variant="body2" 
                     color="text.secondary" 
                     sx={{ 
-                        gridColumn: 1,
-                        gridRow: 1,
                         textAlign: 'left',
-                        letterSpacing: '0.02em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        position: 'relative',
-                        zIndex: 1,
-                        marginRight: 3, // Extra space between first column and other columns
-                    }}
-                >
-                    <StreamIcon sx={{ fontSize: 14, animation: 'pulse 2s infinite', '@keyframes pulse': {
-                        '0%': { opacity: 1, color: 'primary.main' },
-                        '50%': { opacity: 0.5, color: 'primary.light' },
-                        '100%': { opacity: 1, color: 'primary.main' },
-                    }, }} /> {t('upload.connectToLiveData')}
-                </Typography>
-                <Typography 
-                    variant="body2" 
-                    color="text.secondary" 
-                    sx={{ 
-                        gridColumn: '2 / 3',
-                        gridRow: 1,
-                        textAlign: 'left',
+                        mb: 0.5,
+                        opacity: 0.6,
+                        fontSize: '0.75rem',
                         letterSpacing: '0.02em'
                     }}
                 >
-                    {t('upload.loadLocalData')}
+                    {t('upload.importData')}
                 </Typography>
-                
-                {/* Background for Live Data Column */}
-                <Box
-                    sx={{
-                        gridColumn: 1,
-                        gridRow: '1 / -1',
-                        backgroundColor: alpha(theme.palette.primary.main, 0.03),
-                        borderRadius: 1,
-                        position: 'relative',
-                        zIndex: 0,
-                        // Extend into gaps to create continuous background
-                        marginTop: '-16px', // Extend into row gaps (2 * 8px = 16px)
-                        marginBottom: '-16px',
-                        marginLeft: '-12px', // Extend into left column gap (1.5 * 8px = 12px)
-                        marginRight: '12px', // Extra space between first column and other columns (3 * 8px = 24px total)
-                        paddingTop: '16px',
-                        paddingBottom: '16px',
-                        paddingLeft: '12px',
-                        paddingRight: '12px',
-                    }}
-                />
-                
-                {/* Live Data Sources - fill last column, 2 rows */}
-                {liveDataSources.map((source, index) => (
-                    <Box
-                        key={source.value}
-                        sx={{
-                            gridColumn: 1,
-                            gridRow: index + 2, // Start from row 2 (after title row)
-                            position: 'relative',
-                            zIndex: 1,
-                            marginRight: 3, // Extra space between first column and other columns
-                        }}
-                    >
+                <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: 1.5,
+                }}>
+                    {regularDataSources.map((source) => (
                         <DataSourceCard
+                            key={source.value}
+                            icon={source.icon}
+                            title={source.title}
+                            description={source.description}
+                            onClick={() => onSelectTab(source.value)}
+                            disabled={source.disabled}
+                            badge={source.badge}
+                        />
+                    ))}
+                </Box>
+
+                {/* Data Connections */}
+                <Typography 
+                    variant="body2" 
+                    color="text.secondary" 
+                    sx={{ 
+                        textAlign: 'left',
+                        mt: 1,
+                        mb: 0.5,
+                        opacity: 0.6,
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.02em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                    }}
+                >
+                    <StreamIcon sx={{ fontSize: 12, animation: 'pulse 2s infinite', '@keyframes pulse': {
+                        '0%': { opacity: 1 },
+                        '50%': { opacity: 0.4 },
+                        '100%': { opacity: 1 },
+                    } }} />
+                    {t('upload.dataConnections')}
+                </Typography>
+                <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: 1.5,
+                }}>
+                    {connectionSources.map((source) => (
+                        <DataSourceCard
+                            key={source.value}
                             icon={source.icon}
                             title={source.title}
                             description={source.description}
@@ -362,32 +385,13 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             disabled={source.disabled}
                             dashed={source.dashed}
                         />
-                    </Box>
-                ))}
-                {/* Regular Data Sources - fill first 2 columns, 2 rows */}
-                {regularDataSources.map((source, index) => (
-                    <Box
-                        key={source.value}
-                        sx={{
-                            gridColumn: (index % 2) + 2,
-                            gridRow: Math.floor(index / 2) + 2, // Start from row 2 (after title row)
-                        }}
-                    >
-                        <DataSourceCard
-                            icon={source.icon}
-                            title={source.title}
-                            description={source.description}
-                            onClick={() => onSelectTab(source.value)}
-                            disabled={source.disabled}
-                        />
-                    </Box>
-                ))}
-                
+                    ))}
+                </Box>
             </Box>
         );
     }
 
-    // Dialog variant: original two-section layout
+    // Dialog variant: two-section layout
     return (
         <Box sx={{ 
             width: '100%',
@@ -398,7 +402,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             mx: 0,
             textAlign: 'left',
         }}>
-            {/* Local Data Sources */}
+            {/* Import Data */}
             <Typography 
                 variant="body2" 
                 color="text.secondary" 
@@ -411,7 +415,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     letterSpacing: '0.02em'
                 }}
             >
-                {t('upload.localData')}
+                {t('upload.importData')}
             </Typography>
 
             <Box sx={{ 
@@ -428,11 +432,12 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         description={source.description}
                         onClick={() => onSelectTab(source.value)}
                         disabled={source.disabled}
+                        badge={source.badge}
                     />
                 ))}
             </Box>
 
-            {/* Live Data Sources */}
+            {/* Data Connections */}
             <Typography 
                 variant="body2" 
                 color="text.secondary" 
@@ -444,14 +449,15 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     letterSpacing: '0.02em',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 1,
+                    gap: 0.5,
                 }}
             >
-                <StreamIcon sx={{ fontSize: 14, animation: 'pulse 2s infinite', '@keyframes pulse': {
-                    '0%': { opacity: 1, color: 'primary.main' },
-                    '50%': { opacity: 0.5, color: 'primary.light' },
-                    '100%': { opacity: 1, color: 'primary.main' },
-                }, }} /> {t('upload.orConnectToDataSource')}
+                <StreamIcon sx={{ fontSize: 12, animation: 'pulse 2s infinite', '@keyframes pulse': {
+                    '0%': { opacity: 1 },
+                    '50%': { opacity: 0.4 },
+                    '100%': { opacity: 1 },
+                } }} />
+                {t('upload.dataConnections')}
             </Typography>
 
             <Box sx={{ 
@@ -459,7 +465,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                 gap: 1.5,
             }}>
-                {liveDataSources.map((source) => (
+                {connectionSources.map((source) => (
                     <DataSourceCard
                         key={source.value}
                         icon={source.icon}
@@ -598,7 +604,7 @@ const AddConnectionPanel: React.FC<{
             {/* Left sidebar: loader types */}
             <Box sx={{
                 display: 'flex', flexDirection: 'column',
-                width: 160, minWidth: 160, maxWidth: 160,
+                width: 180, minWidth: 180, maxWidth: 180,
                 borderRight: `1px solid ${borderColor.divider}`,
                 overflowY: 'auto', overflowX: 'hidden',
                 pt: 1,
@@ -609,17 +615,18 @@ const AddConnectionPanel: React.FC<{
                 }}>
                     {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
                 </Typography>
-                {loaderTypes.map((loader) => (
+                {[...loaderTypes].sort((a, b) => connectorSortOrder(a.type, b.type)).map((loader) => (
                     <Button
                         key={loader.type}
                         variant="text" size="small" color="primary"
                         onClick={() => handleSelectLoader(loader)}
                         sx={sidebarButtonSx(loader.type)}
+                        startIcon={getConnectorIcon(loader.type, { sx: { fontSize: 16, opacity: 0.7 } })}
                     >
                         {loader.name}
                     </Button>
                 ))}
-                {Object.entries(disabledLoaders).map(([name, { install_hint }]) => (
+                {Object.entries(disabledLoaders).sort(([a], [b]) => connectorSortOrder(a, b)).map(([name, { install_hint }]) => (
                     <Tooltip key={name} title={install_hint} placement="right" arrow>
                         <span style={{ width: '100%' }}>
                             <Button
@@ -630,6 +637,7 @@ const AddConnectionPanel: React.FC<{
                                     borderRadius: 0, py: 1, px: 2,
                                     color: 'text.disabled !important',
                                 }}
+                                startIcon={getConnectorIcon(name, { sx: { fontSize: 16, opacity: 0.4 } })}
                             >
                                 {name}
                             </Button>

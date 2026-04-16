@@ -36,6 +36,8 @@
     "showPreview": "显示预览",
     "showFull": "显示完整",
     "uploadData": "上传数据",
+    "importData": "导入数据",
+    "dataConnections": "数据连接",
     "connectToLiveData": "连接实时数据源",
     "loadLocalData": "加载本地数据",
     "localData": "本地数据",

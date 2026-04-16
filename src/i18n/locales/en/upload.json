@@ -36,6 +36,8 @@
     "showPreview": "Show Preview",
     "showFull": "Show Full",
     "uploadData": "Upload Data",
+    "importData": "Import data",
+    "dataConnections": "Data connections",
     "connectToLiveData": "Connect to live data sources",
     "loadLocalData": "Load local data",
     "localData": "Local data",

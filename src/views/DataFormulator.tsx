@@ -44,7 +44,7 @@ import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance
 import { ReportView } from './ReportView';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import YouTubeIcon from '@mui/icons-material/YouTube';
-import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
+import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import type { DictTable } from '../components/ComponentType';
 import { useTranslation } from 'react-i18next';
@@ -99,6 +99,14 @@ export const DataFormulatorFC = ({ }) => {
             .then(r => r.json())
             .then(data => setPageConnectors(data.connectors || []))
             .catch(() => {});
+    }, []);
+
+    // ── Demo sessions (loaded from manifest, fallback to hardcoded) ─────
+    const [demoSessions, setDemoSessions] = useState<ExampleSession[]>(exampleSessions);
+    useEffect(() => {
+        fetchExampleSessions().then(sessions => {
+            if (sessions.length > 0) setDemoSessions(sessions);
+        });
     }, []);
 
     // ── Workspace list (shown on landing page) ────────────────────
@@ -191,7 +199,7 @@ export const DataFormulatorFC = ({ }) => {
         setUploadDialogOpen(true);
     };
 
-    const handleLoadExampleSession = (session: ExampleSession) => {
+    const handleLoadExampleSession = async (session: ExampleSession) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('messages.loadingExample', { title: session.title }) }));
 
         dispatch(dfActions.addMessages({
@@ -200,34 +208,38 @@ export const DataFormulatorFC = ({ }) => {
             component: 'data formulator',
             value: t('messages.loadingExample', { title: session.title }),
         }));
-        
-        // Load the complete state from the JSON file
-        fetch(session.dataFile)
-            .then(res => res.json())
-            .then(savedState => {
-                // Use loadState to restore the complete session state
-                dispatch(dfActions.loadState(savedState));
-                
-                
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'success',
-                    component: 'data formulator',
-                    value: t('messages.loadSuccess', { title: session.title }),
-                }));
-            })
-            .catch(error => {
-                console.error('Error loading session:', error);
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'error',
-                    component: 'data formulator',
-                    value: t('messages.loadFailed', { title: session.title, error: error.message }),
-                }));
-            })
-            .finally(() => {
-                dispatch(dfActions.setSessionLoading({ loading: false }));
-            });
+
+        try {
+            // Fetch the workspace zip
+            const res = await fetch(session.workspace);
+            if (!res.ok) throw new Error(`Failed to fetch ${session.workspace}`);
+            const blob = await res.blob();
+            const file = new File([blob], `${session.id}.zip`, { type: 'application/zip' });
+
+            // Import via the standard workspace import flow (parquet + state)
+            const wsId = generateSessionId();
+            // Set workspace ID first so fetchWithIdentity sends X-Workspace-Id header
+            dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: session.title }));
+            const state = await importWorkspace(file, wsId, session.title);
+            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: session.title } }));
+
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data formulator',
+                value: t('messages.loadSuccess', { title: session.title }),
+            }));
+        } catch (error: any) {
+            console.error('Error loading session:', error);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data formulator',
+                value: t('messages.loadFailed', { title: session.title, error: error.message }),
+            }));
+        } finally {
+            dispatch(dfActions.setSessionLoading({ loading: false }));
+        }
     };
 
     useEffect(() => {
@@ -470,7 +482,7 @@ export const DataFormulatorFC = ({ }) => {
             backgroundSize: '16px 16px',
             width: 'calc(100vw - 16px)', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
-        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center" }}>
+        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
             <Box sx={{display: 'flex', mx: 'auto'}}>
                 <Typography fontSize={84} sx={{ml: 2, letterSpacing: '0.05em'}}>{toolName}</Typography> 
             </Box>
@@ -562,11 +574,11 @@ export const DataFormulatorFC = ({ }) => {
                     <Card variant="outlined" onClick={() => importRef.current?.click()} sx={{
                         textAlign: 'center', borderStyle: 'dashed',
                         cursor: 'pointer',
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        gap: 0.5, py: 1.5,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: 1, px: 2, py: 1.5,
                         '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
                     }}>
-                        <UploadFileIcon sx={{ color: 'text.secondary' }} />
+                        <UploadFileIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
                         <Typography variant="caption" color="text.secondary">Import workspace (.zip)</Typography>
                         <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                     </Card>
@@ -599,7 +611,7 @@ export const DataFormulatorFC = ({ }) => {
                     gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
                     gap: 2,
                 }}>
-                    {exampleSessions.map((session) => (
+                    {demoSessions.map((session) => (
                         <ExampleSessionCard
                             key={session.id}
                             session={session}
