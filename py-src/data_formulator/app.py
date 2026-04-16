@@ -118,18 +118,18 @@ def _register_blueprints():
         return
     _blueprints_registered = True
     # Import tables routes (imports database connectors)
-    print("  Loading data connectors...", flush=True)
-    from data_formulator.tables_routes import tables_bp
+    print("  Loading data loader drivers...", flush=True)
+    from data_formulator.routes.tables import tables_bp
     
     # Import agent routes (imports AI/ML libraries: litellm, sklearn, etc.)
     print("  Loading AI agents...", flush=True)
-    from data_formulator.agent_routes import agent_bp
+    from data_formulator.routes.agents import agent_bp
     
     # Import session routes
-    from data_formulator.session_routes import session_bp
+    from data_formulator.routes.sessions import session_bp
 
     # Import demo stream routes
-    from data_formulator.demo_stream_routes import demo_stream_bp, limiter as demo_stream_limiter, start_iss_collector
+    from data_formulator.routes.demo_stream import demo_stream_bp, limiter as demo_stream_limiter, start_iss_collector
     demo_stream_limiter.init_app(app)
     
     # Register blueprints
@@ -142,23 +142,18 @@ def _register_blueprints():
     start_iss_collector()
 
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
-    from data_formulator.security.auth import init_auth, get_active_provider
+    from data_formulator.auth.identity import init_auth, get_active_provider
     init_auth(app)
 
     # Register auth gateway blueprints for stateful providers (e.g. GitHub OAuth)
     provider = get_active_provider()
     if provider and provider.name == "github":
-        from data_formulator.auth_gateways.github_gateway import github_bp
+        from data_formulator.auth.gateways.github_gateway import github_bp
         app.register_blueprint(github_bp)
 
     # Register credential vault API (safe even when vault is not configured)
-    from data_formulator.credential_routes import credential_bp
+    from data_formulator.routes.credentials import credential_bp
     app.register_blueprint(credential_bp)
-
-    # Auto-discover and register data source plugins
-    print("  Loading plugins...", flush=True)
-    from data_formulator.plugins import discover_and_register
-    discover_and_register(app)
 
     # Auto-register all installed data loaders as DataConnector instances
     if not app.config['CLI_ARGS'].get('disable_data_connectors'):
@@ -202,7 +197,7 @@ def get_auth_info():
     The response tells the frontend how to initiate login based on the
     active provider (OIDC PKCE, GitHub redirect, transparent, or none).
     """
-    from data_formulator.security.auth import get_active_provider
+    from data_formulator.auth.identity import get_active_provider
     provider = get_active_provider()
     if provider:
         return flask.jsonify(provider.get_auth_info())
@@ -231,7 +226,7 @@ def get_app_config():
         from data_formulator.datalake.workspace import get_data_formulator_home
         config["DATA_FORMULATOR_HOME"] = str(get_data_formulator_home())
 
-    from data_formulator.security.auth import get_active_provider
+    from data_formulator.auth.identity import get_active_provider
     provider = get_active_provider()
     if provider:
         config["AUTH_PROVIDER"] = provider.name
@@ -241,7 +236,7 @@ def get_app_config():
     # For localhost mode this is the fixed local:<os_username> identity;
     # for anonymous mode the server echoes back the browser-provided UUID.
     try:
-        from data_formulator.security.auth import get_identity_id
+        from data_formulator.auth.identity import get_identity_id
         identity = get_identity_id()
         id_type, _, id_value = identity.partition(':')
         config["IDENTITY"] = {"type": id_type, "id": id_value}
@@ -249,26 +244,8 @@ def get_app_config():
         pass  # No identity available (e.g. during startup)
 
     # Expose credential vault availability to the frontend
-    from data_formulator.credential_vault import get_credential_vault
+    from data_formulator.auth.vault import get_credential_vault
     config["CREDENTIAL_VAULT_ENABLED"] = get_credential_vault() is not None
-
-    # Expose enabled data source plugins to the frontend
-    from data_formulator.plugins import ENABLED_PLUGINS
-    if ENABLED_PLUGINS:
-        plugins_info: dict[str, dict] = {}
-        for pid, plugin in ENABLED_PLUGINS.items():
-            manifest = plugin.manifest()
-            frontend_cfg = plugin.get_frontend_config()
-            plugins_info[pid] = {
-                "id": manifest.get("id", pid),
-                "name": manifest.get("name", pid),
-                "icon": manifest.get("icon"),
-                "description": manifest.get("description"),
-                "capabilities": manifest.get("capabilities", []),
-                "auth_modes": manifest.get("auth_modes", []),
-                **frontend_cfg,
-            }
-        config["PLUGINS"] = plugins_info
 
     # Expose data connectors to the frontend
     from data_formulator.data_connector import DATA_CONNECTORS
@@ -281,7 +258,7 @@ def get_app_config():
     # Tell the frontend which connectors the current user has vault credentials for
     # so it can render "Connected" vs "Available" without N status calls.
     try:
-        from data_formulator.security.auth import get_identity_id
+        from data_formulator.auth.identity import get_identity_id
         identity = get_identity_id()
         connected_ids: list[str] = []
         for sid, src in DATA_CONNECTORS.items():

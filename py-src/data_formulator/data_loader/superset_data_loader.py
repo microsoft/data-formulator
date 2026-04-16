@@ -7,8 +7,7 @@ Treats Superset as a hierarchical data source:
   dashboard (table_group) → dataset (table)
 
 Authentication is JWT-based (``auth_mode() = "token"``).  Data is fetched
-via Superset's SQL Lab API, reusing the existing ``SupersetClient`` and
-``SupersetAuthBridge`` from the legacy plugin.
+via Superset's SQL Lab API.
 """
 
 import json
@@ -22,25 +21,14 @@ from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
 )
+from data_formulator.data_loader.superset_client import SupersetClient
+from data_formulator.data_loader.superset_auth_bridge import SupersetAuthBridge
 
 logger = logging.getLogger(__name__)
 
-# Lazy-imported Superset helpers (only if the plugin deps are available)
-_SupersetClient = None
-_SupersetAuthBridge = None
-
-
-def _ensure_imports():
-    global _SupersetClient, _SupersetAuthBridge
-    if _SupersetClient is None:
-        from data_formulator.plugins.superset.superset_client import SupersetClient
-        from data_formulator.plugins.superset.auth_bridge import SupersetAuthBridge
-        _SupersetClient = SupersetClient
-        _SupersetAuthBridge = SupersetAuthBridge
-
 
 # ---------------------------------------------------------------------------
-# SQL building helpers (extracted from plugins/superset/routes/data.py)
+# SQL building helpers
 # ---------------------------------------------------------------------------
 
 def _quote_identifier(name: str) -> str:
@@ -133,7 +121,6 @@ class SupersetLoader(ExternalDataLoader):
         ]
 
     def __init__(self, params: dict[str, Any]):
-        _ensure_imports()
         self.params = params
 
         self.url = (params.get("url") or "").rstrip("/")
@@ -145,8 +132,8 @@ class SupersetLoader(ExternalDataLoader):
         if not self.url:
             raise ValueError("Superset URL is required")
 
-        self._client = _SupersetClient(self.url)
-        self._bridge = _SupersetAuthBridge(self.url)
+        self._client = SupersetClient(self.url)
+        self._bridge = SupersetAuthBridge(self.url)
 
         # Authenticate immediately
         self._access_token: str | None = params.get("access_token")

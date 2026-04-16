@@ -22,6 +22,7 @@ Usage::
 import dataclasses
 import json as _json
 import logging
+from pathlib import Path
 from typing import Any
 
 from flask import Blueprint, Flask, jsonify, request
@@ -42,19 +43,37 @@ DATA_CONNECTORS: dict[str, "DataConnector"] = {}
 # ---------------------------------------------------------------------------
 
 def _sanitize_error(error: Exception) -> tuple[str, int]:
-    """Return a safe error message + HTTP status code.
+    """Return a user-facing error message + HTTP status code.
 
-    Never leaks internal details to the client.
+    Preserves actionable detail from known error categories while
+    stripping internal stack traces and implementation details.
     """
     logger.error("DataConnector error", exc_info=error)
-    msg = str(error).lower()
-    if "required" in msg or "invalid" in msg:
-        return "Invalid connection parameters", 400
-    if "permission" in msg or "access" in msg:
-        return "Access denied", 403
-    if "connect" in msg or "refused" in msg:
-        return "Connection failed", 502
-    return "An unexpected error occurred", 500
+    raw = str(error)
+    msg = raw.lower()
+
+    # Auth / credential errors — tell the user what went wrong
+    if any(kw in msg for kw in ("authenticat", "login", "credential",
+                                 "unauthorized", "401", "forbidden", "403")):
+        return f"Authentication failed: {raw}", 401
+    if any(kw in msg for kw in ("expired", "token")):
+        return f"Token expired or invalid: {raw}", 401
+    if any(kw in msg for kw in ("permission", "access denied", "denied")):
+        return f"Access denied: {raw}", 403
+
+    # Connection errors — actionable (wrong host, port, firewall)
+    if any(kw in msg for kw in ("connect", "refused", "unreachable",
+                                 "resolve", "dns", "network", "socket")):
+        return f"Connection failed: {raw}", 502
+    if "timeout" in msg or "timed out" in msg:
+        return f"Connection timed out: {raw}", 504
+
+    # Validation errors
+    if "required" in msg or "invalid" in msg or "missing" in msg:
+        return f"Invalid parameters: {raw}", 400
+
+    # Unknown — still include the raw message so the user can report it
+    return f"Unexpected error: {raw}", 500
 
 
 def _node_to_dict(node: CatalogNode) -> dict[str, Any]:
@@ -122,7 +141,7 @@ class DataConnector:
             icon=icon,
         )
 
-    # -- DataSourcePlugin interface ----------------------------------------
+    # -- Manifest / config interface ----------------------------------------
 
     def _manifest(self) -> dict[str, Any]:
         return {
@@ -195,13 +214,13 @@ class DataConnector:
 
     @staticmethod
     def _get_identity() -> str:
-        from data_formulator.security.auth import get_identity_id
+        from data_formulator.auth.identity import get_identity_id
         return get_identity_id()
 
     @staticmethod
     def _get_vault():
         """Return the credential vault (or None if unavailable)."""
-        from data_formulator.credential_vault import get_credential_vault
+        from data_formulator.auth.vault import get_credential_vault
         return get_credential_vault()
 
     def _vault_store(self, identity: str, user_params: dict[str, Any]) -> bool:
@@ -383,7 +402,7 @@ def list_data_loaders():
 @connectors_bp.route("/api/connectors", methods=["GET"])
 def list_connectors():
     """List all registered connector instances (admin + user) with connection status."""
-    from data_formulator.security.auth import get_identity_id
+    from data_formulator.auth.identity import get_identity_id
 
     try:
         identity = get_identity_id()
@@ -440,7 +459,7 @@ def create_connector():
     Persists to ``DATA_FORMULATOR_HOME/users/<identity>/connectors.yaml``.
     """
     from data_formulator.data_loader import DATA_LOADERS
-    from data_formulator.security.auth import get_identity_id
+    from data_formulator.auth.identity import get_identity_id
 
     data = request.get_json() or {}
     loader_type = data.get("loader_type")
@@ -553,7 +572,7 @@ def delete_connector(connector_id: str):
 
     Admin connectors cannot be deleted (returns 403).
     """
-    from data_formulator.security.auth import get_identity_id
+    from data_formulator.auth.identity import get_identity_id
 
     if connector_id in _ADMIN_CONNECTOR_IDS:
         return jsonify({"status": "error", "message": "Admin connectors cannot be deleted"}), 403
@@ -773,7 +792,7 @@ def connector_import_data():
         table_name = data.get("table_name")
         import_options = data.get("import_options", {})
 
-        from data_formulator.security.auth import get_identity_id
+        from data_formulator.auth.identity import get_identity_id
         from data_formulator.workspace_factory import get_workspace
         from data_formulator.datalake.parquet_utils import sanitize_table_name
 
@@ -815,7 +834,7 @@ def connector_refresh_data():
         if not table_name:
             return jsonify({"status": "error", "message": "table_name is required"}), 400
 
-        from data_formulator.security.auth import get_identity_id
+        from data_formulator.auth.identity import get_identity_id
         from data_formulator.workspace_factory import get_workspace
 
         workspace = get_workspace(get_identity_id())
@@ -898,7 +917,7 @@ def connector_import_group():
         source_filters = data.get("source_filters", [])
         group_name = data.get("group_name", "")
 
-        from data_formulator.security.auth import get_identity_id
+        from data_formulator.auth.identity import get_identity_id
         from data_formulator.workspace_factory import get_workspace
         from data_formulator.datalake.parquet_utils import sanitize_table_name
 
@@ -986,7 +1005,7 @@ def _resolve_env_refs(params: dict[str, Any]) -> dict[str, Any]:
     return resolved
 
 
-def _get_df_home() -> "Path":
+def _get_df_home() -> Path:
     """Return DATA_FORMULATOR_HOME as a Path."""
     from data_formulator.datalake.workspace import get_data_formulator_home
     return get_data_formulator_home()
@@ -1013,7 +1032,6 @@ def _load_connectors_yaml(path: "Path") -> list[dict]:
 
 def _save_user_connectors(identity: str, specs: list[SourceSpec]) -> None:
     """Write user-created connectors to DATA_FORMULATOR_HOME/users/<identity>/connectors.yaml."""
-    from pathlib import Path
     from data_formulator.datalake.workspace import get_user_home
     user_dir = get_user_home(identity)
     user_dir.mkdir(parents=True, exist_ok=True)
@@ -1044,7 +1062,6 @@ def _save_user_connectors(identity: str, specs: list[SourceSpec]) -> None:
 def _load_admin_specs() -> list[SourceSpec]:
     """Load admin connectors from DATA_FORMULATOR_HOME/connectors.yaml + env vars."""
     import os
-    from pathlib import Path
 
     specs: list[SourceSpec] = []
 

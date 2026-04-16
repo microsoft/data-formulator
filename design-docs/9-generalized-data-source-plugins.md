@@ -1,6 +1,6 @@
 # Generalized Data Source Plugins — Unifying DataLoader + Plugin into a Lifecycle-Managed Connection
 
-## Status: Phase 3 complete (legacy data-loader endpoints + plugin system removed)
+## Status: Phase 3 complete (legacy plugins removed, backend restructured)
 
 ## 1. Problem
 
@@ -1568,13 +1568,58 @@ For sources that can't filter server-side (e.g., some REST APIs), the framework 
 - ✅ Removed legacy "Database" tab from UI
 
 #### 3d: Remove legacy plugin system ✅
-- ✅ Relocated `SupersetClient` + `SupersetAuthBridge` from `plugins/superset/` to `data_loader/superset/` (used by `SupersetLoader`)
+- ✅ Relocated `SupersetClient` + `SupersetAuthBridge` from `plugins/superset/` to `data_loader/` (used by `SupersetLoader`)
 - ✅ Deleted `py-src/data_formulator/plugins/` directory (base classes, discovery engine, Superset plugin, all routes)
 - ✅ Deleted `src/plugins/` directory (frontend plugin host, registry, Superset UI components)
 - ✅ Removed plugin registration from `app.py` (`discover_and_register`, `ENABLED_PLUGINS`)
 - ✅ Removed frontend plugin imports (`getEnabledPlugins`, `PluginHost`, `registerPluginTranslations`)
 - ✅ Deleted legacy plugin tests
+
+#### 3e: Backend restructuring ✅
+- ✅ Created `auth/` package — merged `security/auth.py` → `auth/identity.py`, `auth_providers/` → `auth/providers/`, `auth_gateways/` → `auth/gateways/`, `credential_vault/` → `auth/vault/`
+- ✅ Created `routes/` package — moved `tables_routes.py` → `routes/tables.py`, `agent_routes.py` → `routes/agents.py`, `session_routes.py` → `routes/sessions.py`, `credential_routes.py` → `routes/credentials.py`, `demo_stream_routes.py` → `routes/demo_stream.py`
+- ✅ `security/` kept for non-auth concerns: `code_signing.py`, `sanitize.py`, `url_allowlist.py`
+- ✅ Updated all import paths + patch targets across ~30 files
+- ✅ Improved `_sanitize_error()` to preserve actionable detail in connector error messages
+- ✅ Moved Docker-gated integration tests to `tests/database-dockers/` (mysql, postgres, bigquery, mongodb, superset)
+- ✅ Fixed `test_auth_provider_chain` missing `_localhost_identity` reset
 - [ ] Integrate with unified data source panel ([doc #8](8-unified-data-source-panel.md))
+
+#### Post-restructuring backend layout
+
+```
+py-src/data_formulator/
+├── app.py                         ← Flask app + bootstrap
+├── __main__.py                    ← CLI entry point
+├── data_connector.py              ← DataConnector framework + shared routes
+├── workspace_factory.py           ← Workspace resolution
+├── model_registry.py              ← AI model config
+├── example_datasets_config.py     ← Sample dataset config
+│
+├── auth/                          ← Identity, providers, gateways, vault
+│   ├── identity.py                ← init_auth, get_identity_id, get_active_provider
+│   ├── providers/                 ← AuthProvider subclasses (github, oidc, azure)
+│   ├── gateways/                  ← OAuth callback routes (github)
+│   └── vault/                     ← Fernet-encrypted credential storage
+│
+├── routes/                        ← Flask blueprints
+│   ├── tables.py                  ← Table CRUD, file upload, parsing
+│   ├── agents.py                  ← AI agent endpoints
+│   ├── sessions.py                ← Workspace session management
+│   ├── credentials.py             ← Vault API routes
+│   └── demo_stream.py             ← ISS demo + streaming
+│
+├── security/                      ← Non-auth security utilities
+│   ├── code_signing.py            ← HMAC signing for AI-generated code
+│   ├── sanitize.py                ← Error message scrubbing
+│   └── url_allowlist.py           ← API base URL validation
+│
+├── agents/                        ← AI agent implementations
+├── data_loader/                   ← ExternalDataLoader drivers (10 sources)
+├── datalake/                      ← Workspace storage layer
+├── sandbox/                       ← Code execution sandboxes
+└── workflows/                     ← Chart/viz generation
+```
 
 ### Sub-doc Summary (9.1–9.3)
 
@@ -1596,45 +1641,14 @@ For sources that can't filter server-side (e.g., some REST APIs), the framework 
 
 ### Q1: What happens to `DataSourcePlugin` and the `plugins/` directory?
 
-They go away after migration. The auth and lifecycle components move into DF core:
+**Done.** The entire `plugins/` directory and `DataSourcePlugin` base class have been removed (Phase 3d). The architecture is now:
 
-```
-py-src/data_formulator/
-  auth/                              ← NEW: DF's auth layer (extracted from plugins/)
-    __init__.py
-    credentials.py                   ← encrypt/decrypt passwords & tokens at rest
-    connection_store.py              ← read/write workspace/connections/{id}.json
-    token_manager.py                 ← token refresh, expiry checking (for token-mode sources)
-    sso.py                           ← SSO/OIDC provider (AuthProvider, extracted from plugins/)
-  data_loader/                       ← EXISTING: all ExternalDataLoader subclasses
-    external_data_loader.py          ← revised interface (§3.5)
-    mysql_data_loader.py
-    postgresql_data_loader.py
-    ...
-  data_connector.py                ← NEW: DataConnector framework
-                                       (route generation, form computation, lifecycle)
-  plugins/                           ← REMOVED after Phase 3
-```
+- **`data_loader/`** — all `ExternalDataLoader` subclasses (the driver layer), including `SupersetLoader` with its `superset_client.py` and `superset_auth_bridge.py`
+- **`data_connector.py`** — generic lifecycle wrapper with shared routes (the framework layer)
+- **`auth/`** — identity, providers, gateways, credential vault (the auth layer)
+- **`routes/`** — all Flask blueprints
 
-Post-migration architecture:
-
-```
-ExternalDataLoader (driver)       ← each source type implements this
-        ↓
-DataConnector (framework)   ← generic lifecycle wrapper, one implementation
-        ↓                            uses auth/ for credentials, tokens, SSO
-data-sources.yml / auto-discovery ← config, not code
-```
-
-There are no "plugins" anymore — just **loaders** (the driver layer) and the **framework** (the lifecycle layer). The `plugins/` directory, `DataSourcePlugin` base class, and per-plugin `__init__.py` files are all removed.
-
-**What's reused** from the current plugin system (relocated to `auth/`):
-- Credential encryption patterns → `auth/credentials.py`
-- Session helpers, token refresh logic → `auth/token_manager.py`
-- SSO bridge patterns (for token passthrough) → `auth/sso.py`
-- Workspace connection persistence → `auth/connection_store.py` (new)
-- Error isolation (one source failure doesn't crash others) — stays in framework
-- Frontend error boundaries — stays in frontend
+There are no "plugins" anymore — just loaders, the connector framework, and config-driven registration.
 
 ### Q2: Multiple connections to the same source type?
 
@@ -1688,13 +1702,7 @@ The `DataConnector` auth layer should support:
 
 ### Q6: Should the old `db-manager` endpoints remain?
 
-The existing `POST /api/db-manager/load-table` is a stateless, one-shot endpoint. Once `DataConnector` plugins exist, it's redundant. But we should keep it for backward compatibility and deprecate it gradually.
-
-```
-Phase 1-2: Both endpoints work
-Phase 3:   /api/db-manager/* shows deprecation warning in logs
-Phase 4:   Remove (or keep as thin wrapper that delegates to plugin)
-```
+**Done.** The legacy `/api/tables/data-loader/*` endpoints were removed in Phase 3a. All data loading flows through `/api/connectors/*` now.
 
 ## 9. Summary
 

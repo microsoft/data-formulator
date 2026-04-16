@@ -55,7 +55,6 @@ export interface ServerConfig {
         label?: string;
         [key: string]: unknown;
     };
-    PLUGINS?: Record<string, import('../plugins/types').PluginConfig>;
     CONNECTORS?: Array<{
         source_id: string;
         source_type: string;

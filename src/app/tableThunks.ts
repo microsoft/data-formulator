@@ -410,46 +410,6 @@ export function buildDictTableFromWorkspace(
 }
 
 /**
- * Load a table that a plugin has already written to the workspace.
- *
- * This is the canonical way for **any** data-source plugin to surface its
- * output in the app.  It fetches the workspace table listing, builds a
- * proper {@link DictTable} (with type inference, source config, etc.),
- * and dispatches it through the standard `loadTable` path.
- *
- * @param tableName  The workspace table name returned by the plugin backend.
- * @param pluginId   Plugin identifier (used in the `source` config).
- */
-export const loadPluginTable = createAsyncThunk<
-    LoadTableResult | null,
-    { tableName: string; pluginId: string },
-    { state: DataFormulatorState }
->(
-    'dataFormulator/loadPluginTable',
-    async ({ tableName, pluginId }, { dispatch }) => {
-        const listResp = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
-        const listData = await listResp.json();
-        if (listData.status !== 'success') return null;
-
-        const wsTable = listData.tables.find((t: any) => t.name === tableName);
-        if (!wsTable) return null;
-
-        const source: DataSourceConfig = {
-            type: 'database',
-            databaseTable: wsTable.name,
-            canRefresh: false,
-            lastRefreshed: Date.now(),
-            originalTableName: wsTable.name,
-        };
-        const tableObj = buildDictTableFromWorkspace(wsTable, source);
-
-        const result = await dispatch(loadTable({ table: tableObj })).unwrap();
-        return result;
-    },
-);
-
-
-/**
  * Check if any ancestor table of a given table is local-only (no virtual field).
  * A table without `virtual` has all its data in the browser only, not on the server.
  * Used by derivation code to decide whether derived results should also stay local.

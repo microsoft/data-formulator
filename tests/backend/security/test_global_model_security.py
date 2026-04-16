@@ -37,8 +37,8 @@ class TestGetClientGlobalResolution:
         resolved to the full config with the real api_key."""
         registry = ModelRegistry()
 
-        with patch("data_formulator.agent_routes.model_registry", registry):
-            from data_formulator.agent_routes import get_client
+        with patch("data_formulator.routes.agents.model_registry", registry):
+            from data_formulator.routes.agents import get_client
 
             client = get_client({
                 "id": "global-openai-gpt-4o",
@@ -55,8 +55,8 @@ class TestGetClientGlobalResolution:
         not touch the registry."""
         registry = ModelRegistry()
 
-        with patch("data_formulator.agent_routes.model_registry", registry):
-            from data_formulator.agent_routes import get_client
+        with patch("data_formulator.routes.agents.model_registry", registry):
+            from data_formulator.routes.agents import get_client
 
             client = get_client({
                 "id": "user-custom-model",
@@ -75,8 +75,8 @@ class TestGetClientGlobalResolution:
         still work (using whatever config was passed)."""
         registry = ModelRegistry()
 
-        with patch("data_formulator.agent_routes.model_registry", registry):
-            from data_formulator.agent_routes import get_client
+        with patch("data_formulator.routes.agents.model_registry", registry):
+            from data_formulator.routes.agents import get_client
 
             client = get_client({
                 "id": "global-nonexistent-model",
