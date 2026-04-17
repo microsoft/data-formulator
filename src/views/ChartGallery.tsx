@@ -22,6 +22,108 @@ import { Channel, EncodingItem } from '../components/ComponentType';
 import { channels } from '../components/ChartTemplates';
 import { ChartWarning, ChartEncoding, ChartAssemblyInput, assembleVegaLite, assembleECharts, assembleChartjs, assembleGoFish, GoFishSpec } from '../lib/agents-chart';
 import { TestCase, TEST_GENERATORS, GALLERY_SECTIONS } from '../lib/agents-chart/test-data';
+import { useTranslation } from 'react-i18next';
+
+const GALLERY_SECTION_LABEL_KEYS: Record<string, string> = {
+    'Semantic Context': 'chart.gallery.sectionLabels.semanticContext',
+    VegaLite: 'chart.gallery.sectionLabels.vegaLite',
+    Facets: 'chart.gallery.sectionLabels.facets',
+    'Stress Tests': 'chart.gallery.sectionLabels.stressTests',
+    'ECharts Backend': 'chart.gallery.sectionLabels.echartsBackend',
+    'Chart.js Backend': 'chart.gallery.sectionLabels.chartJsBackend',
+    'GoFish Basic': 'chart.gallery.sectionLabels.goFishBasic',
+};
+
+const GALLERY_SECTION_DESCRIPTION_KEYS: Record<string, string> = {
+    'Demonstrates how semantic type annotations improve chart output: formatting, domain constraints, axis reversal, scale type, and interpolation': 'chart.gallery.sectionDescriptions.semanticContext',
+    'Demos for every supported chart type': 'chart.gallery.sectionDescriptions.vegaLite',
+    'Faceting modes and feature combinations': 'chart.gallery.sectionDescriptions.facets',
+    'Overflow, elasticity, and temporal format stress tests': 'chart.gallery.sectionDescriptions.stressTests',
+    'Same inputs through ECharts backend — compare series-based output vs VL encoding-based output': 'chart.gallery.sectionDescriptions.echartsBackend',
+    'Same inputs through Chart.js backend — compare dataset-based output vs VL/EC output': 'chart.gallery.sectionDescriptions.chartJsBackend',
+    'All GoFish chart examples on one page': 'chart.gallery.sectionDescriptions.goFishBasic',
+};
+
+const GALLERY_ENTRY_LABEL_KEYS: Record<string, string> = {
+    'Semantic Context': 'chart.gallery.entryLabels.semanticContext',
+    'Snap-to-Bound': 'chart.gallery.entryLabels.snapToBound',
+    'Scatter Plot': 'chart.gallery.entryLabels.scatterPlot',
+    Regression: 'chart.gallery.entryLabels.regression',
+    'Bar Chart': 'chart.gallery.entryLabels.barChart',
+    'Stacked Bar Chart': 'chart.gallery.entryLabels.stackedBarChart',
+    'Grouped Bar Chart': 'chart.gallery.entryLabels.groupedBarChart',
+    Histogram: 'chart.gallery.entryLabels.histogram',
+    Heatmap: 'chart.gallery.entryLabels.heatmap',
+    'Line Chart': 'chart.gallery.entryLabels.lineChart',
+    'Dotted Line Chart': 'chart.gallery.entryLabels.dottedLineChart',
+    Boxplot: 'chart.gallery.entryLabels.boxplot',
+    'Pie Chart': 'chart.gallery.entryLabels.pieChart',
+    'Ranged Dot Plot': 'chart.gallery.entryLabels.rangedDotPlot',
+    'Area Chart': 'chart.gallery.entryLabels.areaChart',
+    Streamgraph: 'chart.gallery.entryLabels.streamgraph',
+    'Lollipop Chart': 'chart.gallery.entryLabels.lollipopChart',
+    'Density Plot': 'chart.gallery.entryLabels.densityPlot',
+    'Bump Chart': 'chart.gallery.entryLabels.bumpChart',
+    'Candlestick Chart': 'chart.gallery.entryLabels.candlestickChart',
+    'Waterfall Chart': 'chart.gallery.entryLabels.waterfallChart',
+    'Strip Plot': 'chart.gallery.entryLabels.stripPlot',
+    'Radar Chart': 'chart.gallery.entryLabels.radarChart',
+    'Pyramid Chart': 'chart.gallery.entryLabels.pyramidChart',
+    'Rose Chart': 'chart.gallery.entryLabels.roseChart',
+    'Custom Charts': 'chart.gallery.entryLabels.customCharts',
+    'Facet: Columns': 'chart.gallery.entryLabels.facetColumns',
+    'Facet: Rows': 'chart.gallery.entryLabels.facetRows',
+    'Facet: Cols+Rows': 'chart.gallery.entryLabels.facetColsRows',
+    'Facet: Small': 'chart.gallery.entryLabels.facetSmall',
+    'Facet: Wrap': 'chart.gallery.entryLabels.facetWrap',
+    'Facet: Clip': 'chart.gallery.entryLabels.facetClip',
+    'Facet: Overflowed Col': 'chart.gallery.entryLabels.facetOverflowedCol',
+    'Facet: Overflowed Col+Row': 'chart.gallery.entryLabels.facetOverflowedColRow',
+    'Facet: Overflowed Row': 'chart.gallery.entryLabels.facetOverflowedRow',
+    'Facet: Dense Line': 'chart.gallery.entryLabels.facetDenseLine',
+    Overflow: 'chart.gallery.entryLabels.overflow',
+    'Elasticity & Stretch': 'chart.gallery.entryLabels.elasticityStretch',
+    'Discrete Axis Sizing': 'chart.gallery.entryLabels.discreteAxisSizing',
+    'Gas Pressure (§2)': 'chart.gallery.entryLabels.gasPressure',
+    'Line/Area Stretch': 'chart.gallery.entryLabels.lineAreaStretch',
+    'Dates: Year': 'chart.gallery.entryLabels.datesYear',
+    'Dates: Month': 'chart.gallery.entryLabels.datesMonth',
+    'Dates: Year-Month': 'chart.gallery.entryLabels.datesYearMonth',
+    'Dates: Decade': 'chart.gallery.entryLabels.datesDecade',
+    'Dates: Date/DateTime': 'chart.gallery.entryLabels.datesDateTime',
+    'Dates: Hours': 'chart.gallery.entryLabels.datesHours',
+    'ECharts: Facet Small': 'chart.gallery.entryLabels.echartsFacetSmall',
+    'ECharts: Facet Wrap': 'chart.gallery.entryLabels.echartsFacetWrap',
+    'ECharts: Facet Clip': 'chart.gallery.entryLabels.echartsFacetClip',
+    'ECharts: Gauge': 'chart.gallery.entryLabels.echartsGauge',
+    'ECharts: Funnel': 'chart.gallery.entryLabels.echartsFunnel',
+    'ECharts: Treemap': 'chart.gallery.entryLabels.echartsTreemap',
+    'ECharts: Sunburst': 'chart.gallery.entryLabels.echartsSunburst',
+    'ECharts: Sankey': 'chart.gallery.entryLabels.echartsSankey',
+    'ECharts: Unique Stress': 'chart.gallery.entryLabels.echartsUniqueStress',
+    'ECharts: Stress Tests': 'chart.gallery.entryLabels.echartsStressTests',
+    'Chart.js: Scatter': 'chart.gallery.entryLabels.chartJsScatter',
+    'Chart.js: Line': 'chart.gallery.entryLabels.chartJsLine',
+    'Chart.js: Bar': 'chart.gallery.entryLabels.chartJsBar',
+    'Chart.js: Stacked Bar': 'chart.gallery.entryLabels.chartJsStackedBar',
+    'Chart.js: Grouped Bar': 'chart.gallery.entryLabels.chartJsGroupedBar',
+    'Chart.js: Area': 'chart.gallery.entryLabels.chartJsArea',
+    'Chart.js: Pie': 'chart.gallery.entryLabels.chartJsPie',
+    'Chart.js: Histogram': 'chart.gallery.entryLabels.chartJsHistogram',
+    'Chart.js: Radar': 'chart.gallery.entryLabels.chartJsRadar',
+    'Chart.js: Rose': 'chart.gallery.entryLabels.chartJsRose',
+    'Chart.js: Stress Tests': 'chart.gallery.entryLabels.chartJsStressTests',
+    'GoFish Basic': 'chart.gallery.entryLabels.goFishBasic',
+};
+
+const translateGalleryLabel = (t: (key: string) => string, label: string) =>
+    GALLERY_ENTRY_LABEL_KEYS[label] ? t(GALLERY_ENTRY_LABEL_KEYS[label]) : label;
+
+const translateGallerySectionLabel = (t: (key: string) => string, label: string) =>
+    GALLERY_SECTION_LABEL_KEYS[label] ? t(GALLERY_SECTION_LABEL_KEYS[label]) : label;
+
+const translateGallerySectionDescription = (t: (key: string) => string, description: string) =>
+    GALLERY_SECTION_DESCRIPTION_KEYS[description] ? t(GALLERY_SECTION_DESCRIPTION_KEYS[description]) : description;
 
 // Register all Chart.js components
 Chart.register(...registerables);
@@ -37,6 +139,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
     const [warnings, setWarnings] = useState<ChartWarning[]>([]);
     const [specOptions, setSpecOptions] = useState<string>('');
     const [inferredSize, setInferredSize] = useState<string>('');
+    const { t } = useTranslation();
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -65,7 +168,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
             );
 
             if (!vlSpec) {
-                setError('assembleVegaChart returned no spec');
+                setError(t('chart.gallery.noSpec', { assembler: 'assembleVegaChart' }));
                 return;
             }
 
@@ -147,12 +250,12 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 actions: { export: true, source: true, compiled: true, editor: true },
                 renderer: 'svg',
             }).catch(err => {
-                setError(`Vega embed error: ${err.message}`);
+                setError(t('chart.gallery.embedError', { backend: 'Vega', message: err.message }));
             });
         } catch (err: any) {
-            setError(`Assembly error: ${err.message}`);
+            setError(t('chart.gallery.assemblyError', { message: err.message }));
         }
-    }, [testCase]);
+    }, [testCase, t]);
 
     return (
         <Paper
@@ -178,7 +281,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 </Box>
                 {inferredSize && (
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
-                        Inferred size: {inferredSize}
+                        {t('chart.gallery.inferredSize', { size: inferredSize })}
                     </Typography>
                 )}
             </Box>
@@ -192,7 +295,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
             {warnings.length > 0 && (
                 <Box sx={{ mt: 1, p: 1, bgcolor: '#fff3e0', borderLeft: '3px solid #ff9800', width: 0, minWidth: '100%' }}>
                     <Typography variant="body2" color="warning.dark" sx={{ fontSize: 11, fontWeight: 600, mb: 0.5 }}>
-                        Warning:
+                        {t('chart.gallery.warningLabel')}
                     </Typography>
                     {warnings.map((w, i) => (
                         <Typography key={i} variant="body2" color="warning.dark" sx={{ fontSize: 11 }}>
@@ -212,23 +315,23 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                         onClick={() => {
                             const parts: string[] = [];
                             if (specOptions) {
-                                parts.push('## agents-chart input spec\n' + specOptions);
+                                parts.push(`${t('chart.gallery.copyMarkdownAgentsInputHeading')}\n${specOptions}`);
                             }
                             if (specJson) {
                                 const vlLines = specJson.split('\n').slice(0, 50).join('\n');
-                                parts.push('## vega-lite output spec (first 50 lines)\n' + vlLines);
+                                parts.push(`${t('chart.gallery.copyMarkdownVegaLiteOutputHeading')}\n${vlLines}`);
                             }
                             navigator.clipboard.writeText(parts.join('\n\n'));
                         }}
                     >
-                        Copy Spec + VL
+                        {t('chart.gallery.copySpecVL')}
                     </Button>
                 </Box>
             )}
             {specOptions && (
                 <details style={{ marginTop: 8, width: 0, minWidth: '100%', overflow: 'hidden' }}>
                     <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        Spec
+                        {t('chart.gallery.spec')}
                     </summary>
                     <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f0f4ff', padding: 8, borderRadius: 4 }}>
                         {specOptions}
@@ -337,7 +440,7 @@ function testCaseToEChartsInput(testCase: TestCase, canvasSize: { width: number;
 }
 
 /** Stable default so useEffect dependencies don't change on every render. */
-const DEFAULT_CANVAS_SIZE = { width: 400, height: 300 } as const;
+const DEFAULT_CANVAS_SIZE = { width: 300, height: 300 } as const;
 
 const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number } }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -345,16 +448,20 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
     const [error, setError] = useState<string | null>(null);
     const [warnings, setWarnings] = useState<ChartWarning[]>([]);
     const [specJson, setSpecJson] = useState<string>('');
+    const [inputSpec, setInputSpec] = useState<string>('');
     const [inferredSize, setInferredSize] = useState<string>('');
+    const { t } = useTranslation();
 
     useEffect(() => {
         if (!containerRef.current) return;
 
         try {
-            const ecOption = assembleECharts(testCaseToEChartsInput(testCase, canvasSize));
+            const ecInput = testCaseToEChartsInput(testCase, canvasSize);
+            setInputSpec(buildSharedInputSpec(testCase).compact);
+            const ecOption = assembleECharts(ecInput);
 
             if (!ecOption) {
-                setError('assembleECharts returned no option');
+                setError(t('chart.gallery.noOption', { assembler: 'assembleECharts' }));
                 return;
             }
 
@@ -392,7 +499,7 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             chart.setOption(cleanOption);
             setError(null);
         } catch (err: any) {
-            setError(`ECharts error: ${err.message}`);
+            setError(t('chart.gallery.backendError', { backend: 'ECharts', message: err.message }));
         }
 
         return () => {
@@ -401,17 +508,17 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
                 chartRef.current = null;
             }
         };
-    }, [testCase, canvasSize]);
+    }, [testCase, canvasSize, t]);
 
     return (
         <Box sx={{ width: 'fit-content' }}>
             <Typography variant="caption" fontWeight={600} color="#e65100"
                 sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
-                ECharts
+                {t('chart.gallery.echartsLabel')}
             </Typography>
             {inferredSize && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
-                    Inferred size: {inferredSize}
+                    {t('chart.gallery.inferredSize', { size: inferredSize })}
                 </Typography>
             )}
             {error ? (
@@ -430,10 +537,20 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
                     ))}
                 </Box>
             )}
+            {inputSpec && (
+                <details style={{ marginTop: 8, width: 0, minWidth: '100%', overflow: 'hidden' }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
+                        {t('chart.gallery.spec')}
+                    </summary>
+                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4 }}>
+                        {inputSpec}
+                    </pre>
+                </details>
+            )}
             {specJson && (
                 <details style={{ marginTop: 8 }}>
                     <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        ECharts Option
+                        {t('chart.gallery.echartsOption')}
                     </summary>
                     <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#fff3e0', padding: 8, borderRadius: 4 }}>
                         {specJson}
@@ -450,6 +567,7 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
 
 const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
     const sharedSpec = useMemo(() => buildSharedInputSpec(testCase), [testCase]);
+    const { t } = useTranslation();
     return (
         <Paper
             elevation={1}
@@ -472,7 +590,7 @@ const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
             </Box>
             <details style={{ marginBottom: 12 }}>
                 <summary style={{ cursor: 'pointer', fontSize: 11, color: '#666', fontWeight: 600 }}>
-                    Spec
+                    {t('chart.gallery.spec')}
                 </summary>
                 <pre style={{ fontSize: 10, maxHeight: 220, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4, marginTop: 4 }}>
                     {sharedSpec.compact}
@@ -496,6 +614,7 @@ const VegaChartInline: React.FC<{ testCase: TestCase; canvasSize?: { width: numb
     const [error, setError] = useState<string | null>(null);
     const [specJson, setSpecJson] = useState<string>('');
     const [inferredSize, setInferredSize] = useState<string>('');
+    const { t } = useTranslation();
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -516,7 +635,7 @@ const VegaChartInline: React.FC<{ testCase: TestCase; canvasSize?: { width: numb
                 testCase.assembleOptions?.maxStretch,
                 testCase.assembleOptions,
             );
-            if (!vlSpec) { setError('No VL spec'); return; }
+            if (!vlSpec) { setError(t('chart.gallery.noVLSpec')); return; }
 
             const specAny = vlSpec as any;
             setInferredSize(`${specAny._width ?? '?'} × ${specAny._height ?? '?'}`);
@@ -535,21 +654,21 @@ const VegaChartInline: React.FC<{ testCase: TestCase; canvasSize?: { width: numb
             embed(containerRef.current, spec, {
                 actions: { export: true, source: true, compiled: true, editor: true },
                 renderer: 'svg',
-            }).catch(err => setError(`VL embed error: ${err.message}`));
+            }).catch(err => setError(t('chart.gallery.embedError', { backend: 'VL', message: err.message })));
         } catch (err: any) {
-            setError(`VL error: ${err.message}`);
+            setError(t('chart.gallery.backendError', { backend: 'VL', message: err.message }));
         }
-    }, [testCase, canvasSize]);
+    }, [testCase, canvasSize, t]);
 
     return (
         <Box sx={{ width: 'fit-content' }}>
             <Typography variant="caption" fontWeight={600} color="#1565c0"
                 sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
-                Vega-Lite
+                {t('chart.gallery.vegaLiteLabel')}
             </Typography>
             {inferredSize && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
-                    Inferred size: {inferredSize}
+                    {t('chart.gallery.inferredSize', { size: inferredSize })}
                 </Typography>
             )}
             {error ? (
@@ -562,7 +681,7 @@ const VegaChartInline: React.FC<{ testCase: TestCase; canvasSize?: { width: numb
             {specJson && (
                 <details style={{ marginTop: 8 }}>
                     <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        Vega-Lite Spec
+                        {t('chart.gallery.vegaLiteSpec')}
                     </summary>
                     <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f0f4ff', padding: 8, borderRadius: 4 }}>
                         {specJson}
@@ -623,6 +742,7 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
     const [warnings, setWarnings] = useState<ChartWarning[]>([]);
     const [specJson, setSpecJson] = useState<string>('');
     const [inferredSize, setInferredSize] = useState<string>('');
+    const { t } = useTranslation();
 
     useEffect(() => {
         if (!canvasRef.current) return;
@@ -631,7 +751,7 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             const cjsConfig = assembleChartjs(testCaseToChartJsInput(testCase, canvasSize));
 
             if (!cjsConfig) {
-                setError('assembleChartjs returned no config');
+                setError(t('chart.gallery.noConfig', { assembler: 'assembleChartjs' }));
                 return;
             }
 
@@ -647,15 +767,12 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             delete displayConfig._height;
             setSpecJson(JSON.stringify(displayConfig, null, 2));
 
-            // Set container size — Chart.js responsive mode will fill it
+            // Set canvas size directly — responsive mode causes Chart.js to
+            // shrink when the flex container can't fit all three backends.
             const w = cjsConfig._width || 400;
             const h = cjsConfig._height || 300;
-            const container = canvasRef.current.parentElement;
-            if (container) {
-                container.style.width = `${w}px`;
-                container.style.height = `${h}px`;
-                container.style.position = 'relative';
-            }
+            canvasRef.current.width = w;
+            canvasRef.current.height = h;
 
             // Destroy previous chart
             if (chartRef.current) {
@@ -673,13 +790,12 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             // Ensure animation is disabled for gallery rendering
             if (!cleanConfig.options) cleanConfig.options = {};
             cleanConfig.options.animation = false;
-            cleanConfig.options.responsive = true;
-            cleanConfig.options.maintainAspectRatio = false;
+            cleanConfig.options.responsive = false;
 
             chartRef.current = new Chart(canvasRef.current, cleanConfig);
             setError(null);
         } catch (err: any) {
-            setError(`Chart.js error: ${err.message}`);
+            setError(t('chart.gallery.backendError', { backend: 'Chart.js', message: err.message }));
         }
 
         return () => {
@@ -688,17 +804,17 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
                 chartRef.current = null;
             }
         };
-    }, [testCase, canvasSize]);
+    }, [testCase, canvasSize, t]);
 
     return (
         <Box sx={{ width: 'fit-content' }}>
             <Typography variant="caption" fontWeight={600} color="#2e7d32"
                 sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
-                Chart.js
+                {t('chart.gallery.chartJsLabel')}
             </Typography>
             {inferredSize && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
-                    Inferred size: {inferredSize}
+                    {t('chart.gallery.inferredSize', { size: inferredSize })}
                 </Typography>
             )}
             {error ? (
@@ -722,7 +838,7 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             {specJson && (
                 <details style={{ marginTop: 8 }}>
                     <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        Chart.js Config
+                        {t('chart.gallery.chartJsConfig')}
                     </summary>
                     <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#e8f5e9', padding: 8, borderRadius: 4 }}>
                         {specJson}
@@ -743,7 +859,7 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
         <Paper
             elevation={1}
             sx={{
-                p: 2, mb: 2, maxWidth: 900,
+                p: 2, mb: 2,
                 border: '1px solid #e0e0e0',
             }}
         >
@@ -768,9 +884,9 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
                 </pre>
             </details>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                <VegaChartInline testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
-                <EChartsChart testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
-                <ChartJsChart testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
+                <VegaChartInline testCase={testCase} />
+                <EChartsChart testCase={testCase} />
+                <ChartJsChart testCase={testCase} />
             </Box>
         </Paper>
     );
@@ -825,6 +941,7 @@ const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; 
     const [warnings, setWarnings] = useState<ChartWarning[]>([]);
     const [specDescription, setSpecDescription] = useState<string>('');
     const [inferredSize, setInferredSize] = useState<string>('');
+    const { t } = useTranslation();
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -833,7 +950,7 @@ const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; 
             const gfSpec = assembleGoFish(testCaseToGoFishInput(testCase, canvasSize));
 
             if (!gfSpec) {
-                setError('assembleGoFish returned no spec');
+                setError(t('chart.gallery.noSpec', { assembler: 'assembleGoFish' }));
                 return;
             }
 
@@ -853,19 +970,19 @@ const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; 
             gfSpec.render(containerRef.current);
             setError(null);
         } catch (err: any) {
-            setError(`GoFish error: ${err.message}`);
+            setError(t('chart.gallery.backendError', { backend: 'GoFish', message: err.message }));
         }
-    }, [testCase, canvasSize]);
+    }, [testCase, canvasSize, t]);
 
     return (
         <Box sx={{ width: 'fit-content' }}>
             <Typography variant="caption" fontWeight={600} color="#6a1b9a"
                 sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
-                GoFish
+                {t('chart.gallery.goFishLabel')}
             </Typography>
             {inferredSize && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
-                    Inferred size: {inferredSize}
+                    {t('chart.gallery.inferredSize', { size: inferredSize })}
                 </Typography>
             )}
             {error ? (
@@ -887,7 +1004,7 @@ const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; 
             {specDescription && (
                 <details style={{ marginTop: 8 }}>
                     <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        GoFish Spec
+                        {t('chart.gallery.goFishSpec')}
                     </summary>
                     <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f3e5f5', padding: 8, borderRadius: 4 }}>
                         {specDescription}
@@ -936,6 +1053,8 @@ const QuadChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
 // ============================================================================
 
 const ChartTypeTestPanel: React.FC<{ chartGroup: string; sectionLabel?: string }> = ({ chartGroup, sectionLabel }) => {
+    const { t } = useTranslation();
+    const displayChartGroup = translateGalleryLabel(t, chartGroup);
     const tests = useMemo(() => {
         const gen = TEST_GENERATORS[chartGroup];
         return gen ? gen() : [];
@@ -950,7 +1069,7 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string; sectionLabel?: string }
     if (tests.length === 0) {
         return (
             <Box sx={{ p: 4, textAlign: 'center' }}>
-                <Typography color="text.secondary">No test cases defined for "{chartGroup}"</Typography>
+                <Typography color="text.secondary">{t('chart.gallery.noTestCases', { chartGroup: displayChartGroup })}</Typography>
             </Box>
         );
     }
@@ -979,6 +1098,7 @@ const ChartTypeTestPanel: React.FC<{ chartGroup: string; sectionLabel?: string }
 const ChartGallery: React.FC = () => {
     const [activeSection, setActiveSection] = useState(0);
     const [activeCategory, setActiveCategory] = useState(0);
+    const { t } = useTranslation();
 
     const section = GALLERY_SECTIONS[activeSection];
     const activeCategoryName = section?.entries[activeCategory] ?? '';
@@ -996,7 +1116,7 @@ const ChartGallery: React.FC = () => {
                     }}
                 >
                     {GALLERY_SECTIONS.map((s, i) => (
-                        <Tab key={s.label} label={s.label} value={i} />
+                        <Tab key={s.label} label={translateGallerySectionLabel(t, s.label)} value={i} />
                     ))}
                 </Tabs>
             </Box>
@@ -1004,12 +1124,12 @@ const ChartGallery: React.FC = () => {
             {/* Category chips within the active section */}
             <Box sx={{ px: 2, py: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap', bgcolor: '#f5f5f5', borderBottom: 1, borderColor: 'divider' }}>
                 <Typography variant="caption" color="text.secondary" sx={{ mr: 1, lineHeight: '28px' }}>
-                    {section.description}:
+                    {translateGallerySectionDescription(t, section.description)}:
                 </Typography>
                 {section.entries.map((entry, ei) => (
                     <Chip
                         key={entry}
-                        label={entry}
+                        label={translateGalleryLabel(t, entry)}
                         size="small"
                         onClick={() => setActiveCategory(ei)}
                         variant={ei === activeCategory ? 'filled' : 'outlined'}

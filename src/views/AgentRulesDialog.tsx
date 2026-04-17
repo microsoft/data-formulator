@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { radius } from '../app/tokens';
 import {
     Button,
@@ -27,6 +28,7 @@ export const AgentRulesDialog: React.FC<{
     externalOpen?: boolean;
     onExternalClose?: () => void;
 }> = ({ externalOpen, onExternalClose }) => {
+    const { t } = useTranslation();
     const theme = useTheme();
     const [internalOpen, setInternalOpen] = useState(false);
     const open = externalOpen !== undefined ? externalOpen : internalOpen;
@@ -130,7 +132,7 @@ export const AgentRulesDialog: React.FC<{
                         onClick={() => setInternalOpen(true)}
                         startIcon={<RuleIcon />}
                     >
-                        Agent Rules
+                        {t('agentRules.title')}
                     </Button>
                 </Badge>
             )}
@@ -141,9 +143,9 @@ export const AgentRulesDialog: React.FC<{
                 maxWidth={false}
             >
                 <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6">Agent Rules</Typography>
-                    <IconButton
-                        aria-label="close"
+                    <Typography variant="h6">{t('agentRules.title')}</Typography>
+                        <IconButton
+                        aria-label={t('app.close')}
                         onClick={handleClose}
                         sx={{ color: (theme) => theme.palette.grey[500] }}
                     >
@@ -154,9 +156,9 @@ export const AgentRulesDialog: React.FC<{
                     {/* Coding Agent Rules Section */}
                     <Box sx={{ mb: 3 }}>
                         <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: 'primary.main' }}>
-                            Coding Rules
+                            {t('agentRules.codingRules')}
                             <Typography variant="body2" component="span" color="text.secondary" sx={{ ml: 1, fontSize: 12 }}>
-                                (Rules that guide AI agents when generating code to transform data and recommend visualizations.)
+                                {t('agentRules.codingRulesHint')}
                             </Typography>
                         </Typography>
                         
@@ -203,9 +205,9 @@ export const AgentRulesDialog: React.FC<{
                     {/* Exploration Agent Rules Section */}
                     <Box>
                         <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: 'secondary.main' }}>
-                            Exploration Rules
+                            {t('agentRules.explorationRules')}
                             <Typography variant="body2" component="span" color="text.secondary" sx={{ ml: 1, fontSize: 12 }}>
-                                (Rules that guide AI agents when exploring datasets, generating questions, and discovering insights)
+                                {t('agentRules.explorationRulesHint')}
                             </Typography>
                         </Typography>
                         <Box
@@ -251,7 +253,7 @@ export const AgentRulesDialog: React.FC<{
                                 onClick={handleSaveCoding}
                                 sx={{ textTransform: 'none' }}
                             >
-                                Save Coding Rules
+                                {t('agentRules.saveCodingRules')}
                             </Button>
                             <Button
                                 variant="text"
@@ -260,7 +262,7 @@ export const AgentRulesDialog: React.FC<{
                                 color="secondary"
                                 sx={{ textTransform: 'none' }}
                             >
-                                Save Exploration Rules
+                                {t('agentRules.saveExplorationRules')}
                             </Button>
                         </Box>
                     </Box>

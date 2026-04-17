@@ -1,0 +1,29 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+# Minimal sandbox image used by the Docker sandbox backend.
+# This image is intentionally small — it only needs the packages
+# required to execute user-generated data-transformation code.
+#
+# Build:
+#   docker build -t data-formulator-sandbox \
+#       -f py-src/data_formulator/sandbox/Dockerfile.sandbox .
+
+FROM python:3.11-slim
+
+# Ensure Unicode filenames work correctly (Chinese, Japanese, etc.)
+ENV LANG=C.UTF-8
+
+RUN pip install --no-cache-dir \
+    pandas \
+    numpy \
+    duckdb \
+    pyarrow \
+    scikit-learn \
+    scipy
+
+# Drop to a non-root user for extra isolation
+RUN useradd -m sandbox
+USER sandbox
+
+WORKDIR /sandbox/workdir

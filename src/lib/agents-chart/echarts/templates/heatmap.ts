@@ -51,8 +51,8 @@ export const ecHeatmapDef: ChartTemplateDef = {
     markCognitiveChannel: 'color',
     declareLayoutMode: () => ({
         axisFlags: { x: { banded: true }, y: { banded: true } },
-        // 不使用 paramOverrides，与 Vega-Lite heatmap 共用同一套 layout 默认值
-        //（minStep=6, defaultStepMultiplier=1），这样 ECharts 与 VL 的图表整体尺寸一致。
+        // No paramOverrides needed — uses the backend default band size
+        // (defaultBandSize=20, minStep=6), matching VL heatmap sizing.
     }),
     instantiate: (spec, ctx) => {
         const { channelSemantics, table, chartProperties, colorDecisions } = ctx;

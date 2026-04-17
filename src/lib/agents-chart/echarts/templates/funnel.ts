@@ -35,7 +35,7 @@ export const ecFunnelChartDef: ChartTemplateDef = {
     declareLayoutMode: () => ({
         axisFlags: { y: { banded: true } },
         paramOverrides: {
-            defaultStepMultiplier: 2.5,  // taller bands for funnel stages
+            defaultBandSize: 50,  // taller bands for funnel stages
         },
     }),
     instantiate: (spec, ctx) => {

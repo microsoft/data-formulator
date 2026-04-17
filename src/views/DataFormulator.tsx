@@ -9,7 +9,6 @@ import {
     DataFormulatorState,
     dfActions,
     dfSelectors,
-    ModelConfig,
 } from '../app/dfSlice'
 
 import _ from 'lodash';
@@ -28,9 +27,9 @@ import {
     CircularProgress,
     Backdrop,
 } from '@mui/material';
-import { borderColor, shadow, radius } from '../app/tokens';
+import { borderColor, shadow, radius, transition } from '../app/tokens';
 
-import { FreeDataViewFC } from './DataView';
+
 import { VisualizationViewFC } from './VisualizationView';
 
 import { DndProvider } from 'react-dnd'
@@ -41,26 +40,144 @@ import { DataThread } from './DataThread';
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
-import { getUrls, fetchWithIdentity } from '../app/utils';
-import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu } from './UnifiedDataUploadDialog';
+import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import YouTubeIcon from '@mui/icons-material/YouTube';
-import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
+import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import type { DictTable } from '../components/ComponentType';
+import { useTranslation } from 'react-i18next';
+import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace } from '../app/workspaceService';
+import { AppDispatch } from '../app/store';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import IconButton from '@mui/material/IconButton';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DownloadIcon from '@mui/icons-material/Download';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+
+/** Generate a session ID like session_20260408_193052_a1b2 */
+function generateSessionId(): string {
+    const now = new Date();
+    const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    const short = crypto.randomUUID().slice(0, 4);
+    return `session_${date}_${time}_${short}`;
+}
 
 export const DataFormulatorFC = ({ }) => {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
-    const models = useSelector((state: DataFormulatorState) => state.models);
+    const models = useSelector(dfSelectors.getAllModels);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const theme = useTheme();
 
-    const dispatch = useDispatch();
+    const dispatch = useDispatch<AppDispatch>();
+    const { t } = useTranslation();
+
+    // Auto-focus: when focusedId is undefined but tables exist, select the first table
+    useEffect(() => {
+        if (!focusedId && tables.length > 0) {
+            dispatch(dfActions.setFocused({ type: 'table', tableId: tables[0].id }));
+        }
+    }, [focusedId, tables, dispatch]);
+
+    // ── Connector instances (for landing page menu) ─────────────
+    const [pageConnectors, setPageConnectors] = useState<ConnectorInstance[]>([]);
+    useEffect(() => {
+        fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
+            .then(r => r.json())
+            .then(data => setPageConnectors(data.connectors || []))
+            .catch(() => {});
+    }, []);
+
+    // ── Demo sessions (loaded from manifest, fallback to hardcoded) ─────
+    const [demoSessions, setDemoSessions] = useState<ExampleSession[]>(exampleSessions);
+    useEffect(() => {
+        fetchExampleSessions().then(sessions => {
+            if (sessions.length > 0) setDemoSessions(sessions);
+        });
+    }, []);
+
+    // ── Workspace list (shown on landing page) ────────────────────
+    const [savedWorkspaces, setSavedWorkspaces] = useState<{id: string, display_name: string, saved_at: string | null}[]>([]);
+    const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null);
+
+    const fetchWorkspaces = useCallback(async () => {
+        try {
+            const sessions = await listWorkspaces();
+            setSavedWorkspaces(sessions);
+        } catch { /* ignore */ }
+    }, []);
+
+    useEffect(() => {
+        if (!activeWorkspace || tables.length === 0) {
+            fetchWorkspaces();
+        }
+    }, [activeWorkspace, tables.length, fetchWorkspaces]);
+
+    const handleOpenWorkspace = useCallback(async (name: string) => {
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
+        try {
+            const result = await loadWorkspace(name);
+            if (result && Object.keys(result.state).length > 0) {
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName: result.displayName } }));
+            } else {
+                dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'default' }));
+            }
+        } catch {
+            dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'default' }));
+        }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+    }, [dispatch]);
+
+    const handleDeleteWorkspace = useCallback(async (name: string) => {
+        try {
+            await deleteWorkspace(name);
+            setSavedWorkspaces(prev => prev.filter(w => w.id !== name));
+        } catch { /* ignore */ }
+        setConfirmDeleteWs(null);
+    }, []);
+
+    const handleExportWorkspace = useCallback(async (name: string) => {
+        try {
+            const blob = await exportWorkspace(name);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${name}.zip`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        } catch (e) {
+            console.warn('Failed to export workspace:', e);
+        }
+    }, []);
+
+    const importRef = useRef<HTMLInputElement>(null);
+    const handleImportWorkspace = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Importing ${file.name}...` }));
+        try {
+            const wsName = file.name.replace(/\.zip$/, '') || 'imported';
+            const wsId = generateSessionId();
+            const state = await importWorkspace(file, wsId, wsName);
+            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: wsName } }));
+        } catch (e) {
+            console.warn('Failed to import workspace:', e);
+        }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+        if (importRef.current) importRef.current.value = '';
+    }, [dispatch]);
     
     // Set up automatic refresh of derived tables when source data changes
     useDerivedTableRefresh();
@@ -74,46 +191,55 @@ export const DataFormulatorFC = ({ }) => {
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
     const openUploadDialog = (tab: UploadTabType) => {
+        // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
+        if (!activeWorkspace) {
+            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'default' }));
+        }
         setUploadDialogInitialTab(tab);
         setUploadDialogOpen(true);
     };
 
-    const handleLoadExampleSession = (session: ExampleSession) => {
-        dispatch(dfActions.setSessionLoading({ loading: true, label: `Loading ${session.title}...` }));
+    const handleLoadExampleSession = async (session: ExampleSession) => {
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('messages.loadingExample', { title: session.title }) }));
 
         dispatch(dfActions.addMessages({
             timestamp: Date.now(),
             type: 'info',
             component: 'data formulator',
-            value: `Loading example session: ${session.title}`,
+            value: t('messages.loadingExample', { title: session.title }),
         }));
-        
-        // Load the complete state from the JSON file
-        fetch(session.dataFile)
-            .then(res => res.json())
-            .then(savedState => {
-                // Use loadState to restore the complete session state
-                dispatch(dfActions.loadState(savedState));
-                
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'success',
-                    component: 'data formulator',
-                    value: `Successfully loaded ${session.title}`,
-                }));
-            })
-            .catch(error => {
-                console.error('Error loading session:', error);
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'error',
-                    component: 'data formulator',
-                    value: `Failed to load ${session.title}: ${error.message}`,
-                }));
-            })
-            .finally(() => {
-                dispatch(dfActions.setSessionLoading({ loading: false }));
-            });
+
+        try {
+            // Fetch the workspace zip
+            const res = await fetch(session.workspace);
+            if (!res.ok) throw new Error(`Failed to fetch ${session.workspace}`);
+            const blob = await res.blob();
+            const file = new File([blob], `${session.id}.zip`, { type: 'application/zip' });
+
+            // Import via the standard workspace import flow (parquet + state)
+            const wsId = generateSessionId();
+            // Set workspace ID first so fetchWithIdentity sends X-Workspace-Id header
+            dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: session.title }));
+            const state = await importWorkspace(file, wsId, session.title);
+            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: session.title } }));
+
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data formulator',
+                value: t('messages.loadSuccess', { title: session.title }),
+            }));
+        } catch (error: any) {
+            console.error('Error loading session:', error);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data formulator',
+                value: t('messages.loadFailed', { title: session.title, error: error.message }),
+            }));
+        } finally {
+            dispatch(dfActions.setSessionLoading({ loading: false }));
+        }
     };
 
     useEffect(() => {
@@ -148,71 +274,20 @@ export const DataFormulatorFC = ({ }) => {
     }, []);
 
     useEffect(() => {
-        const findWorkingModel = async () => {
-            let selectedModel = models.find(m => m.id == selectedModelId);
-            let otherModels = models.filter(m => m.id != selectedModelId);
-
-            let modelsToTest = [selectedModel, ...otherModels].filter(m => m != undefined);
-
-            let testModel = async (model: ModelConfig) => {
-                const message = {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', },
-                    body: JSON.stringify({ model }),
-                };
-                try {
-                    const response = await fetchWithIdentity(getUrls().TEST_MODEL, {...message });
-                    const data = await response.json();
-                    const status = data["status"] || 'error';
-                    return {model, status, message: data["message"] || ""};
-                } catch (error) {
-                    return {model, status: 'error', message: (error as Error).message || 'Failed to test model'};
-                }
-            }
-
-            // Then test unassigned models sequentially until one works
-            for (let model of modelsToTest) {
-                if (!model) continue;
-                let testResult = await testModel(model);
-                dispatch(dfActions.updateModelStatus({
-                    id: model.id, 
-                    status: testResult.status, 
-                    message: testResult.message
-                }));
-                if (testResult.status == 'ok') {
-                    dispatch(dfActions.selectModel(model.id));
-                    return;
-                };
-            }
-        };
-
-        if (models.length > 0) {
-            findWorkingModel();
+        // Auto-select the first available model when none is selected.
+        // No connectivity check on load — errors surface on first use,
+        // and the user can manually test via the model selection dialog.
+        if (selectedModelId === undefined && models.length > 0) {
+            dispatch(dfActions.selectModel(models[0].id));
         }
-    }, []);
+    }, [dispatch, models, selectedModelId]);
 
     const visPaneMain = (
-        <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+        <Box sx={{ width: "100%", height: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
             <VisualizationViewFC />
         </Box>);
 
-    const visPane = (
-        <Box className="inner-allotment" sx={{width: '100%', height: '100%', 
-            "& .split-view-view:first-of-type": {
-                display: 'flex',
-                overflow: 'hidden',
-        }}}>
-            <Allotment vertical>
-                <Allotment.Pane minSize={200} >
-                {visPaneMain}
-                </Allotment.Pane>
-                <Allotment.Pane minSize={0} preferredSize={180}>
-                    <Box className="table-box">
-                        <FreeDataViewFC />
-                    </Box>
-                </Allotment.Pane>
-            </Allotment>
-        </Box>);
+    const visPane = visPaneMain;
 
     let borderBoxStyle = {
         border: `1px solid ${borderColor.view}`, 
@@ -224,8 +299,8 @@ export const DataFormulatorFC = ({ }) => {
     const CARD_WIDTH = 220;
     const CARD_GAP = 12;
     const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-    const PANEL_PADDING = 32 ;
-    const columnSize = (n: number) => n * COLUMN_WIDTH + 2 * PANEL_PADDING;
+    const PANE_PADDING = 48;
+    const columnSize = (n: number) => n * COLUMN_WIDTH + PANE_PADDING;
     const allotmentRef = useRef<AllotmentHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -361,7 +436,6 @@ export const DataFormulatorFC = ({ }) => {
                                 overflow: 'hidden',
                                 alignContent: 'flex-start',
                                 height: '100%',
-                                mr: 0.5,
                             }}/>
                         </Allotment.Pane>
                     ) : null}
@@ -385,17 +459,17 @@ export const DataFormulatorFC = ({ }) => {
         <Button size="small" color="inherit" 
             sx={{ textTransform: 'none'}} 
             target="_blank" rel="noopener noreferrer" 
-            href="https://www.microsoft.com/en-us/privacy/privacystatement">Privacy & Cookies</Button>
+            href="https://www.microsoft.com/en-us/privacy/privacystatement">{t('footer.privacyCookies')}</Button>
         <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
         <Button size="small" color="inherit" 
             sx={{ textTransform: 'none'}} 
             target="_blank" rel="noopener noreferrer" 
-            href="https://www.microsoft.com/en-us/legal/intellectualproperty/copyright">Terms of Use</Button>
+            href="https://www.microsoft.com/en-us/legal/intellectualproperty/copyright">{t('footer.termsOfUse')}</Button>
         <Divider orientation="vertical" variant="middle" flexItem sx={{ mx: 1 }} />
         <Button size="small" color="inherit" 
             sx={{ textTransform: 'none'}} 
             target="_blank" rel="noopener noreferrer" 
-            href="https://github.com/microsoft/data-formulator/issues">Contact Us</Button>
+            href="https://github.com/microsoft/data-formulator/issues">{t('footer.contactUs')}</Button>
         <Typography sx={{ display: 'inline', fontSize: '12px', ml: 1 }}> @ {new Date().getFullYear()}</Typography>
     </Box>
 
@@ -408,14 +482,14 @@ export const DataFormulatorFC = ({ }) => {
             backgroundSize: '16px 16px',
             width: 'calc(100vw - 16px)', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
-        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center" }}>
+        <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
             <Box sx={{display: 'flex', mx: 'auto'}}>
                 <Typography fontSize={84} sx={{ml: 2, letterSpacing: '0.05em'}}>{toolName}</Typography> 
             </Box>
             <Typography sx={{ 
                 fontSize: 24, color: theme.palette.text.secondary, 
                 textAlign: 'center', mb: 2}}>
-                Explore data with visualizations, powered by AI agents. 
+                {t('landing.tagline')}
             </Typography>
             {serverConfig.PROJECT_FRONT_PAGE && (
             <Box component="nav" aria-label="Resources" sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 3, flexWrap: 'wrap' }}>
@@ -424,19 +498,19 @@ export const DataFormulatorFC = ({ }) => {
                     startIcon={<Box component="img" sx={{ width: 15, height: 15 }} alt="" aria-hidden="true" src="/pip-logo.svg" />}
                     target="_blank" rel="noopener noreferrer"
                     href="https://pypi.org/project/data-formulator/"
-                >Install Locally</Button>
+                >{t('about.installLocally')}</Button>
                 <Button size="small" variant="text" color="primary"
                     sx={{ textTransform: 'none', fontSize: 13 }}
                     startIcon={<YouTubeIcon sx={{ color: '#FF0000', fontSize: 17 }} aria-hidden="true" />}
                     target="_blank" rel="noopener noreferrer"
                     href="https://www.youtube.com/watch?v=GfTE2FLyMrs"
-                >Video</Button>
+                >{t('about.video')}</Button>
                 <Button size="small" variant="text" color="primary"
                     sx={{ textTransform: 'none', fontSize: 13 }}
                     startIcon={<GitHubIcon aria-hidden="true" sx={{ fontSize: 17 }} />}
                     target="_blank" rel="noopener noreferrer"
                     href="https://github.com/microsoft/data-formulator"
-                >GitHub</Button>
+                >{t('about.github')}</Button>
             </Box>
             )}
             <Box sx={{my: 4}}>
@@ -444,24 +518,103 @@ export const DataFormulatorFC = ({ }) => {
                     onSelectTab={(tab) => openUploadDialog(tab)}
                     serverConfig={serverConfig}
                     variant="page"
+                    connectors={pageConnectors}
                 />
             </Box>
+            {/* ── Saved workspaces section ──────────────────────────── */}
             <Box sx={{mt: 4}}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
                     <Typography sx={{ color: 'text.secondary' }}>
-                        demos
+                        Your Sessions
                     </Typography>
                 </Divider>
                 <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
                     gap: 2,
                 }}>
-                    {exampleSessions.map((session) => (
+                    {savedWorkspaces.map(w => (
+                        <Card key={w.id} variant="outlined" onClick={() => handleOpenWorkspace(w.id)} sx={{
+                            position: 'relative', textAlign: 'left',
+                            cursor: 'pointer',
+                            '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
+                            '&:hover .ws-actions': { opacity: 1 },
+                        }}>
+                            <CardContent sx={{ py: 1.5, px: 2 }}>
+                                <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
+                                    {w.display_name}
+                                </Typography>
+                                {w.saved_at && (
+                                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
+                                        {new Date(w.saved_at).toLocaleString()}
+                                    </Typography>
+                                )}
+                            </CardContent>
+                            <Box className="ws-actions" sx={{
+                                position: 'absolute', top: 4, right: 4,
+                                display: 'flex', gap: 0.25,
+                                opacity: 0, transition: 'opacity 0.15s',
+                            }}>
+                                <Tooltip title="Export">
+                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                        onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
+                                        <DownloadIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Delete">
+                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(w.id); }}>
+                                        <DeleteOutlineIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                        </Card>
+                    ))}
+                    {/* Import workspace card */}
+                    <Card variant="outlined" onClick={() => importRef.current?.click()} sx={{
+                        textAlign: 'center', borderStyle: 'dashed',
+                        cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: 1, px: 2, py: 1.5,
+                        '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
+                    }}>
+                        <UploadFileIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+                        <Typography variant="caption" color="text.secondary">Import workspace (.zip)</Typography>
+                        <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
+                    </Card>
+                </Box>
+            </Box>
+            {/* ── Delete workspace confirmation ────────────────────── */}
+            <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
+                <DialogTitle>Delete session?</DialogTitle>
+                <DialogContent>
+                    <Typography>
+                        This will permanently delete <strong>{savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs}</strong>{' '}
+                        ({confirmDeleteWs}) and all its data.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setConfirmDeleteWs(null)}>Cancel</Button>
+                    <Button color="error" onClick={() => confirmDeleteWs && handleDeleteWorkspace(confirmDeleteWs)}>
+                        Delete
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            <Box sx={{mt: 4}}>
+                <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
+                    <Typography sx={{ color: 'text.secondary' }}>
+                        {t('landing.demos')}
+                    </Typography>
+                </Divider>
+                <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                    gap: 2,
+                }}>
+                    {demoSessions.map((session) => (
                         <ExampleSessionCard
                             key={session.id}
                             session={session}
-                            theme={theme}
                             onClick={() => handleLoadExampleSession(session)}
                         />
                     ))}
@@ -495,7 +648,7 @@ export const DataFormulatorFC = ({ }) => {
                 >
                     <CircularProgress size={40} />
                     <Typography variant="body1" color="text.secondary">
-                        {sessionLoadingLabel || 'Loading session...'}
+                        {sessionLoadingLabel || t('session.loadingSessions')}
                     </Typography>
                     <Button
                         variant="text"
@@ -503,7 +656,7 @@ export const DataFormulatorFC = ({ }) => {
                         onClick={() => dispatch(dfActions.setSessionLoading({ loading: false }))}
                         sx={{ mt: 1, textTransform: 'none', color: 'text.secondary' }}
                     >
-                        Cancel
+                        {t('app.cancel')}
                     </Button>
                 </Backdrop>
                 {selectedModelId == undefined && (
@@ -525,9 +678,9 @@ export const DataFormulatorFC = ({ }) => {
                                 {toolName}
                             </Typography>
                             <Typography  variant="h4" sx={{mt: 3, fontSize: 28, letterSpacing: '0.02em'}}>
-                                First, let's <ModelSelectionButton />
+                                {t('landing.firstSelectModelPrefix')} <ModelSelectionButton />
                             </Typography>
-                            <Typography  color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>💡 Models with strong code generation capabilities (e.g., gpt-5, claude-sonnet-4-5) provide best experience with Data Formulator.</Typography>
+                            <Typography  color="text.secondary" variant="body1" sx={{mt: 2, width: 600}}>💡 {t('landing.modelTip')}</Typography>
                         </Box>
                         {footer}
                     </Box>

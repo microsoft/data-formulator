@@ -91,7 +91,7 @@ export function useFormulateData() {
         return triggers.map(trigger => ({
             name: trigger.resultTableId,
             rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-            description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
+            description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source}`,
         }));
     }
 
@@ -214,7 +214,7 @@ export function useFormulateData() {
      * Handles request building, dialog continuation, table/concept creation, and error handling.
      * Chart creation is delegated to the caller via the createChart callback.
      */
-    function formulateData(options: FormulateDataOptions): void {
+    async function formulateData(options: FormulateDataOptions): Promise<void> {
         const {
             instruction, mode, actionTableIds, currentTable,
             overrideTableId, currentVisualization, expectedVisualization,
@@ -310,6 +310,7 @@ export function useFormulateData() {
                     "type": "error",
                     "value": `Data formulation failed: ${data.error_message}`,
                 }));
+                onError?.(new Error(data.error_message));
                 return;
             }
 
@@ -320,10 +321,14 @@ export function useFormulateData() {
                     "type": "error",
                     "value": "No result is returned from the data formulation agent. Please try again.",
                 }));
+                onError?.(new Error("No results returned"));
                 return;
             }
 
-            if (data["token"] !== token) return;
+            if (data["token"] !== token) {
+                onError?.(new Error("Token mismatch"));
+                return;
+            }
 
             const candidates = data["results"].filter((item: any) => item["status"] === "ok");
 
@@ -335,7 +340,9 @@ export function useFormulateData() {
                     "value": "Data formulation failed, please try again.",
                     "code": data.results[0].code,
                     "detail": data.results[0].content,
+                    "diagnostics": data.results[0].diagnostics,
                 }));
+                onError?.(new Error("All candidates failed"));
                 return;
             }
 
@@ -361,10 +368,16 @@ export function useFormulateData() {
             // Create trigger
             const trigger: Trigger = {
                 tableId: currentTable.id,
-                instruction,
-                displayInstruction,
-                chart: triggerChart,
                 resultTableId: candidateTableId,
+                chart: triggerChart,
+                interaction: [{
+                    from: 'user' as const,
+                    to: 'datarec-agent' as const,
+                    role: 'instruction' as const,
+                    content: instruction,
+                    displayContent: displayInstruction,
+                    timestamp: Date.now(),
+                }],
             };
 
             // Create candidate table with derive info
@@ -435,7 +448,6 @@ export function useFormulateData() {
             // Delegate chart creation to the caller
             const focusedChartId = createChart({ candidateTable, refinedGoal, currentConcepts });
 
-            // Auto-generate chart insight after rendering
             if (focusedChartId) {
                 const chartIdForInsight = focusedChartId;
                 setTimeout(() => {

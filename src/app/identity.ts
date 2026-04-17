@@ -14,11 +14,12 @@
 
 const BROWSER_ID_KEY = 'df_browser_id';
 
-export type IdentityType = 'user' | 'browser';
+export type IdentityType = 'user' | 'browser' | 'local';
 
 export interface Identity {
     type: IdentityType;
     id: string;
+    displayName?: string;
 }
 
 export interface UserInfo {

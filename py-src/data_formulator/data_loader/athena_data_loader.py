@@ -7,7 +7,7 @@ import boto3
 import botocore.exceptions
 from pyarrow import fs as pa_fs
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, sanitize_table_name
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -60,15 +60,15 @@ class AthenaDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "aws_profile", "type": "string", "required": False, "default": "", "description": "AWS profile name from ~/.aws/credentials (if set, access key and secret are not required)"},
-            {"name": "aws_access_key_id", "type": "string", "required": False, "default": "", "description": "AWS access key ID (not required if using aws_profile)"},
-            {"name": "aws_secret_access_key", "type": "string", "required": False, "default": "", "description": "AWS secret access key (not required if using aws_profile)"},
-            {"name": "aws_session_token", "type": "string", "required": False, "default": "", "description": "AWS session token (required for temporary credentials)"},
-            {"name": "region_name", "type": "string", "required": True, "default": "us-east-1", "description": "AWS region name"},
-            {"name": "workgroup", "type": "string", "required": False, "default": "primary", "description": "Athena workgroup name (output location is fetched from workgroup configuration)"},
-            {"name": "output_location", "type": "string", "required": False, "default": "", "description": "S3 output location for query results (e.g., s3://bucket/path/). If empty, uses workgroup configuration."},
-            {"name": "database", "type": "string", "required": False, "default": "", "description": "Default database/catalog to use for queries"},
-            {"name": "query_timeout", "type": "number", "required": False, "default": 300, "description": "Query execution timeout in seconds (default: 300 = 5 minutes)"}
+            {"name": "aws_profile", "type": "string", "required": False, "default": "", "tier": "auth", "description": "AWS profile name from ~/.aws/credentials (if set, access key and secret are not required)"},
+            {"name": "aws_access_key_id", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS access key ID (not required if using aws_profile)"},
+            {"name": "aws_secret_access_key", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS secret access key (not required if using aws_profile)"},
+            {"name": "aws_session_token", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "AWS session token (required for temporary credentials)"},
+            {"name": "region_name", "type": "string", "required": True, "default": "us-east-1", "tier": "connection", "description": "AWS region name"},
+            {"name": "workgroup", "type": "string", "required": False, "default": "primary", "tier": "connection", "description": "Athena workgroup name (output location is fetched from workgroup configuration)"},
+            {"name": "output_location", "type": "string", "required": False, "default": "", "tier": "connection", "description": "S3 output location for query results (e.g., s3://bucket/path/). If empty, uses workgroup configuration."},
+            {"name": "database", "type": "string", "required": False, "default": "", "tier": "filter", "description": "Default database/catalog to use for queries"},
+            {"name": "query_timeout", "type": "number", "required": False, "default": 300, "tier": "connection", "description": "Query execution timeout in seconds (default: 300 = 5 minutes)"}
         ]
         return params_list
 
@@ -318,9 +318,7 @@ Enter `aws_access_key_id` and `aws_secret_access_key` directly. Add `aws_session
     def fetch_data_as_arrow(
         self,
         source_table: str,
-        size: int = 1000000,
-        sort_columns: list[str] | None = None,
-        sort_order: str = 'asc'
+        import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
         """
         Fetch data from Athena as a PyArrow Table.
@@ -328,6 +326,11 @@ Enter `aws_access_key_id` and `aws_secret_access_key` directly. Add `aws_session
         Executes the query on Athena and reads the CSV results from S3
         using PyArrow's S3 filesystem.
         """
+        opts = import_options or {}
+        size = opts.get("size", 1000000)
+        sort_columns = opts.get("sort_columns")
+        sort_order = opts.get("sort_order", "asc")
+
         if not source_table:
             raise ValueError("source_table must be provided")
         
@@ -413,6 +416,7 @@ Enter `aws_access_key_id` and `aws_secret_access_key` directly. Add `aws_session
 
                         results.append({
                             "name": full_table_name,
+                            "path": [db_name, table_name],
                             "metadata": {
                                 "row_count": 0,  # Athena doesn't provide row counts directly
                                 "columns": columns,
@@ -434,3 +438,89 @@ Enter `aws_access_key_id` and `aws_secret_access_key` directly. Add `aws_session
 
         log.info(f"Returning {len(results)} tables")
         return results
+
+    # -- Catalog tree API --------------------------------------------------
+
+    @staticmethod
+    def catalog_hierarchy() -> list[dict[str, str]]:
+        return [
+            {"key": "database", "label": "Database"},
+            {"key": "table", "label": "Table"},
+        ]
+
+    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+        path = path or []
+        eff = self.effective_hierarchy()
+        if len(path) >= len(eff):
+            return []
+        level_key = eff[len(path)]["key"]
+
+        if level_key == "database":
+            try:
+                resp = self.athena_client.list_databases(CatalogName="AwsDataCatalog")
+                databases = resp.get("DatabaseList", [])
+                if self.database:
+                    databases = [d for d in databases if d["Name"] == self.database]
+            except botocore.exceptions.ClientError:
+                databases = []
+            nodes = []
+            for db in databases:
+                name = db["Name"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="namespace", path=path + [name]))
+            return nodes
+
+        if level_key == "table":
+            pinned = self.pinned_scope()
+            db_name = pinned.get("database") or (path[0] if path else None)
+            if not db_name:
+                return []
+            try:
+                resp = self.athena_client.list_table_metadata(
+                    CatalogName="AwsDataCatalog", DatabaseName=db_name, MaxResults=200,
+                )
+            except botocore.exceptions.ClientError:
+                return []
+            nodes = []
+            for t in resp.get("TableMetadataList", []):
+                name = t["Name"]
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(name=name, node_type="table", path=path + [name]))
+            return nodes
+
+        return []
+
+    def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        if not path:
+            return {}
+        pinned = self.pinned_scope()
+        remaining = list(path)
+        db_name = pinned.get("database")
+        if not db_name:
+            if not remaining:
+                return {}
+            db_name = remaining.pop(0)
+        if not remaining:
+            return {}
+        table_name = remaining[0]
+        try:
+            resp = self.athena_client.get_table_metadata(
+                CatalogName="AwsDataCatalog", DatabaseName=db_name, TableName=table_name,
+            )
+            t = resp.get("TableMetadata", {})
+            columns = [{"name": c["Name"], "type": c.get("Type", "unknown")} for c in t.get("Columns", [])]
+            for c in t.get("PartitionKeys", []):
+                columns.append({"name": c["Name"], "type": c.get("Type", "unknown") + " (partition)"})
+            return {"row_count": 0, "columns": columns, "sample_rows": []}
+        except Exception as e:
+            log.warning(f"get_metadata failed for {path}: {e}")
+            return {}
+
+    def test_connection(self) -> bool:
+        try:
+            self.athena_client.list_databases(CatalogName="AwsDataCatalog", MaxResults=1)
+            return True
+        except Exception:
+            return False

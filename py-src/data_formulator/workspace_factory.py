@@ -9,12 +9,20 @@ Reads the workspace backend configuration from Flask's ``current_app.config``
 :class:`Workspace` subclass.  This keeps the data-layer modules
 (``datalake.workspace``, ``datalake.azure_blob_workspace``) free of any
 Flask dependency.
+
+Multi-workspace support:
+  - Each user has a WorkspaceManager with multiple named workspaces.
+  - ``get_workspace()`` returns the active workspace (read from X-Workspace-Id header).
+  - ``get_workspace_manager()`` returns the WorkspaceManager for workspace CRUD.
+  - Backend is stateless: workspace ID comes from the frontend on every request.
 """
 
 import os
 import logging
+from pathlib import Path
 
-from data_formulator.datalake.workspace import Workspace
+from data_formulator.datalake.workspace import Workspace, get_data_formulator_home, get_user_home
+from data_formulator.datalake.workspace_manager import WorkspaceManager
 
 logger = logging.getLogger(__name__)
 
@@ -67,62 +75,89 @@ def _build_azure_container_client(cfg: dict):
     )
 
 
-def get_workspace(identity_id: str) -> Workspace:
+def _get_user_workspaces_root(identity_id: str) -> Path:
+    """Return the workspaces root for a user: <home>/users/<safe_id>/workspaces/."""
+    return get_user_home(identity_id) / "workspaces"
+
+
+def _get_backend() -> str:
+    """Read workspace backend from Flask config."""
+    from flask import current_app
+    cfg = current_app.config.get("CLI_ARGS", {})
+    return cfg.get("workspace_backend", os.getenv("WORKSPACE_BACKEND", "local"))
+
+
+def get_workspace_manager(identity_id: str) -> WorkspaceManager:
     """
-    Return a :class:`Workspace` (or subclass) for *identity_id*.
+    Return a :class:`WorkspaceManager` (or Azure subclass) for the given user.
 
-    The backend is selected via the running Flask app's ``CLI_ARGS`` config,
-    which mirrors CLI flags and environment variables set in ``app.py``:
-
-    ================================= ================================ ==================
-    CLI flag                          Env var                          Default
-    ================================= ================================ ==================
-    ``--workspace-backend``           ``WORKSPACE_BACKEND``            ``local``
-    ``--azure-blob-connection-string````AZURE_BLOB_CONNECTION_STRING`` (none)
-    ``--azure-blob-account-url``      ``AZURE_BLOB_ACCOUNT_URL``       (none)
-    ``--azure-blob-container``        ``AZURE_BLOB_CONTAINER``         ``data-formulator``
-    ================================= ================================ ==================
-
-    ``datalake_root`` reuses ``--data-dir`` / ``DATA_FORMULATOR_HOME``
-    (defaulting to ``"workspaces"``).
+    Not available for ephemeral mode — raises RuntimeError.
     """
     from flask import current_app
 
     cfg = current_app.config.get("CLI_ARGS", {})
-
     backend = cfg.get(
         "workspace_backend", os.getenv("WORKSPACE_BACKEND", "local")
     )
 
+    if backend == "ephemeral":
+        raise RuntimeError(
+            "get_workspace_manager() is not available for ephemeral backend. "
+            "Session management is handled client-side."
+        )
+
     if backend == "azure_blob":
-        from data_formulator.datalake.cached_azure_blob_workspace import (
-            CachedAzureBlobWorkspace,
+        from data_formulator.datalake.azure_blob_workspace_manager import (
+            AzureBlobWorkspaceManager,
         )
-
         client = _build_azure_container_client(cfg)
-        root = (
-            cfg.get("data_dir")
-            or os.getenv("DATA_FORMULATOR_HOME")
-            or "workspaces"
-        )
+        safe_id = Workspace._sanitize_identity_id(identity_id)
+        blob_prefix = f"users/{safe_id}/workspaces"
+        return AzureBlobWorkspaceManager(client, blob_prefix)
 
-        # Cache configuration from env vars / CLI args
-        max_cache_mb = int(
-            cfg.get("cache_max_mb", os.getenv("DF_CACHE_MAX_MB", "1024"))
-        )
-        max_global_cache_mb = int(
-            cfg.get(
-                "global_cache_max_mb",
-                os.getenv("DF_GLOBAL_CACHE_MAX_MB", "10240"),
-            )
-        )
-        return CachedAzureBlobWorkspace(
-            identity_id,
-            client,
-            datalake_root=root,
-            max_cache_bytes=max_cache_mb * 1024 * 1024,
-            max_global_cache_bytes=max_global_cache_mb * 1024 * 1024,
-        )
+    # Default: local filesystem
+    root = _get_user_workspaces_root(identity_id)
+    return WorkspaceManager(root)
 
-    # Default: local filesystem workspace
-    return Workspace(identity_id)
+
+def get_active_workspace_id() -> str | None:
+    """Read the active workspace ID from the current Flask request's X-Workspace-Id header."""
+    from flask import request
+    return request.headers.get("X-Workspace-Id") or None
+
+
+def get_workspace(identity_id: str) -> Workspace:
+    """
+    Return the active :class:`Workspace` for *identity_id*.
+
+    For local/Azure: uses WorkspaceManager with lazy creation.
+    For ephemeral: creates a scratch workspace and materializes table data
+    from ``_workspace_tables`` in the request body.  The frontend (IndexedDB)
+    owns all data and sends it with every request; the backend writes it to
+    temp parquet files so agents/DuckDB can read normally.
+    """
+    ws_id = get_active_workspace_id()
+    if not ws_id:
+        raise ValueError("No active workspace. X-Workspace-Id header is required.")
+
+    backend = _get_backend()
+
+    if backend == "ephemeral":
+        from data_formulator.datalake.ephemeral_workspace import construct_scratch_workspace
+
+        # Extract workspace tables from the request body
+        workspace_tables = []
+        from flask import request
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            workspace_tables = data.get("_workspace_tables") or []
+
+        return construct_scratch_workspace(identity_id, ws_id, workspace_tables)
+
+    mgr = get_workspace_manager(identity_id)
+
+    # Lazy creation: frontend generates the ID, backend creates on first use
+    if not mgr.workspace_exists(ws_id):
+        mgr.create_workspace(ws_id)
+
+    return mgr.open_workspace(ws_id, identity_id)

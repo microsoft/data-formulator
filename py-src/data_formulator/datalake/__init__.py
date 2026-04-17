@@ -39,18 +39,23 @@ from data_formulator.datalake.workspace import (
     WorkspaceWithTempData,
     get_data_formulator_home,
     get_default_workspace_root,
+    get_user_home,
 )
+from data_formulator.datalake.workspace_manager import WorkspaceManager
 from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
 from data_formulator.datalake.cached_azure_blob_workspace import CachedAzureBlobWorkspace
 from data_formulator.datalake.cache_manager import GlobalCacheManager
 
 # Metadata types and operations
-from data_formulator.datalake.metadata import (
+from data_formulator.datalake.workspace_metadata import (
     TableMetadata,
     ColumnInfo,
     WorkspaceMetadata,
+    ImportedFrom,
+    Derivation,
     load_metadata,
     save_metadata,
+    update_metadata,
     metadata_exists,
     METADATA_VERSION,
     METADATA_FILENAME,
@@ -68,8 +73,15 @@ from data_formulator.datalake.file_manager import (
 
 # Parquet utilities (pure helpers, no Workspace dependency)
 from data_formulator.datalake.parquet_utils import (
+    safe_data_filename,
     sanitize_table_name,
     DEFAULT_COMPRESSION,
+)
+from data_formulator.datalake.table_names import (
+    sanitize_workspace_parquet_table_name,
+    sanitize_upload_stem_table_name,
+    sanitize_external_loader_table_name,
+    sanitize_duckdb_sql_table_name,
 )
 
 __all__ = [
@@ -81,12 +93,17 @@ __all__ = [
     "GlobalCacheManager",
     "get_data_formulator_home",
     "get_default_workspace_root",
+    "get_user_home",
+    "WorkspaceManager",
     # Metadata
     "TableMetadata",
     "ColumnInfo",
     "WorkspaceMetadata",
+    "ImportedFrom",
+    "Derivation",
     "load_metadata",
     "save_metadata",
+    "update_metadata",
     "metadata_exists",
     "METADATA_VERSION",
     "METADATA_FILENAME",
@@ -99,6 +116,12 @@ __all__ = [
     "get_file_info",
     "SUPPORTED_EXTENSIONS",
     # Parquet utilities
+    "safe_data_filename",
     "sanitize_table_name",
     "DEFAULT_COMPRESSION",
+    # Table name sanitisation (single source of truth in table_names)
+    "sanitize_workspace_parquet_table_name",
+    "sanitize_upload_stem_table_name",
+    "sanitize_external_loader_table_name",
+    "sanitize_duckdb_sql_table_name",
 ]

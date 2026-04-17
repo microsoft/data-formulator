@@ -100,7 +100,9 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
                                                     sx={{ backgroundColor }}>
                                                     {column.format
                                                         ? column.format(value)
-                                                        : (typeof value === "boolean" ? `${value}` : value)}
+                                                        : (value != null && typeof value === 'object'
+                                                            ? String(value)
+                                                            : (typeof value === "boolean" ? `${value}` : value))}
                                                 </TableCell>
                                             );
                                         })}

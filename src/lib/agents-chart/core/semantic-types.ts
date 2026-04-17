@@ -33,7 +33,7 @@ export type { VisCategory } from './type-registry';
  *          │                    │                     │
  *    ┌─────┴─────┐        ┌─────┴─────┐         ┌─────┴─────┐
  *    │           │        │           │         │           │
- *  Point     Granule    Measure   Discrete    Entity     Coded
+ *  DateTime     Granule    Measure   Discrete    Entity     Coded
  *    │           │        │           │         │           │
  * DateTime    Year     Quantity    Rank      Category   Status
  * Date        Month    Count       Score     Name       Boolean

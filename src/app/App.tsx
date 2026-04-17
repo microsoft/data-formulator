@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useCallback, useEffect, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import '../scss/App.scss';
 
 import { useDispatch, useSelector } from "react-redux";
@@ -9,9 +9,16 @@ import {
     DataFormulatorState,
     dfActions,
     dfSelectors,
-    fetchAvailableModels,
+    fetchGlobalModelList,
+    DEFAULT_ROW_LIMIT,
+    DEFAULT_ROW_LIMIT_EPHEMERAL,
 } from './dfSlice'
 import { getBrowserId } from './identity';
+import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
+import type { AuthInfo } from './oidcConfig';
+import { OidcCallback } from './OidcCallback';
+import { AuthButton } from './AuthButton';
+import { IdentityMigrationDialog } from './IdentityMigrationDialog';
 
 import { red, purple, blue, brown, yellow, orange, } from '@mui/material/colors';
 import { palettes, defaultPaletteKey, paletteKeys, bgAlpha } from './tokens';
@@ -45,23 +52,31 @@ import {
     ListItemText,
     CircularProgress,
     LinearProgress,
+    Switch,
+    FormControlLabel,
 } from '@mui/material';
 
 
 import MuiAppBar from '@mui/material/AppBar';
-import { alpha, createTheme, styled, ThemeProvider } from '@mui/material/styles';
+import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
 
-import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
+import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { DataFormulatorFC } from '../views/DataFormulator';
+import { useAutoSave } from './useAutoSave';
+import { useWorkspaceAutoName } from './useWorkspaceAutoName';
 
 import GridViewIcon from '@mui/icons-material/GridView';
 import ViewSidebarIcon from '@mui/icons-material/ViewSidebar';
 import SettingsIcon from '@mui/icons-material/Settings';
 import {
     createBrowserRouter,
+    Link as RouterLink,
+    Outlet,
     RouterProvider,
+    useLocation,
 } from "react-router-dom";
 import { About } from '../views/About';
 import ChartGallery from '../views/ChartGallery';
@@ -70,6 +85,7 @@ import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
+import { AnvilLoader } from '../components/AnvilLoader';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -78,7 +94,9 @@ import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls, fetchWithIdentity } from './utils';
-import { persistor } from './store';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState } from './workspaceService';
+import { getSerializableState } from './useAutoSave';
+import store, { persistor } from './store';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -89,6 +107,7 @@ import UploadIcon from '@mui/icons-material/Upload';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import YouTubeIcon from '@mui/icons-material/YouTube';
 import PublicIcon from '@mui/icons-material/Public';
+import { useTranslation } from 'react-i18next';
 
 // Discord Icon Component
 const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
@@ -107,6 +126,39 @@ const AppBar = styled(MuiAppBar)(({ theme }) => ({
         duration: theme.transitions.duration.leavingScreen,
     }),
 }));
+
+const TopNavButton: FC<{ to: string; label: string; selected: boolean }> = ({ to, label, selected }) => (
+    <Button
+        component={RouterLink}
+        to={to}
+        aria-current={selected ? 'page' : undefined}
+        onClick={(event) => {
+            if (selected) {
+                event.preventDefault();
+            }
+        }}
+        sx={{
+            textDecoration: 'none',
+            textTransform: 'none',
+            fontSize: '13px',
+            fontWeight: 400,
+            border: 'none',
+            borderRadius: 0,
+            px: 1.5,
+            py: 0.5,
+            minWidth: 'auto',
+            cursor: selected ? 'default' : 'pointer',
+            color: selected ? 'text.primary' : 'text.secondary',
+            backgroundColor: selected ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
+            '&:hover': {
+                color: 'text.primary',
+                backgroundColor: selected ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+            },
+        }}
+    >
+        {label}
+    </Button>
+);
 
 declare module '@mui/material/styles' {
     interface PaletteColor {
@@ -129,12 +181,57 @@ declare module '@mui/material/styles' {
 
 export const toolName = "Data Formulator"
 
+const LANGUAGE_LABELS: Record<string, string> = {
+    en: 'EN',
+    zh: '中文',
+    ja: '日本語',
+    ko: '한국어',
+    fr: 'FR',
+    de: 'DE',
+};
+
+const LanguageSwitcher: React.FC = () => {
+    const { i18n } = useTranslation();
+    const availableLanguages = useSelector(
+        (state: DataFormulatorState) => state.serverConfig.AVAILABLE_LANGUAGES
+    );
+
+    if (!availableLanguages || availableLanguages.length <= 1) return null;
+
+    return (
+        <ToggleButtonGroup
+            value={i18n.language.split('-')[0]}
+            exclusive
+            onChange={(_, value) => value && i18n.changeLanguage(value)}
+            size="small"
+            sx={{ 
+                height: '28px', 
+                my: 'auto',
+                mr: 1,
+                '& .MuiToggleButton-root': {
+                    textTransform: 'none',
+                    fontSize: '12px',
+                    py: 0,
+                    minWidth: '40px',
+                },
+            }}
+        >
+            {availableLanguages.map(lang => (
+                <ToggleButton key={lang} value={lang}>
+                    {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
+                </ToggleButton>
+            ))}
+        </ToggleButtonGroup>
+    );
+};
+
 export interface AppFCProps {
 }
 
 // Extract menu components into separate components to prevent full app re-renders
 const TableMenu: React.FC = () => {
     const [dialogOpen, setDialogOpen] = useState<boolean>(false);
+    const { t } = useTranslation();
     
     return (
         <>
@@ -143,7 +240,7 @@ const TableMenu: React.FC = () => {
                 onClick={() => setDialogOpen(true)}
                 sx={{ textTransform: 'none' }}
             >
-                Data
+                {t('appBar.data')}
             </Button>
             
             {/* Unified Data Upload Dialog */}
@@ -156,127 +253,63 @@ const TableMenu: React.FC = () => {
     );
 };
 
-const SaveSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
-    const [sessionName, setSessionName] = useState('');
-    const [saving, setSaving] = useState(false);
-    const dispatch = useDispatch();
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
 
-    const fullState = useSelector((state: DataFormulatorState) => {
-        const excludedFields = new Set([
-            'models', 'selectedModelId', 'testedModels',
-            'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
-        ]);
-        const stateToSerialize: any = {};
-        for (const [key, value] of Object.entries(state)) {
-            if (!excludedFields.has(key)) {
-                stateToSerialize[key] = value;
-            }
-        }
-        return stateToSerialize;
-    });
-
-    const handleSave = async () => {
-        if (!sessionName.trim()) return;
-        setSaving(true);
-        try {
-            const res = await fetchWithIdentity(getUrls().SESSION_SAVE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: sessionName.trim(), state: fullState }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${sessionName}" saved` }));
-                onClose();
-            } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Save failed' }));
-            }
-        } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to save session' }));
-        }
-        setSaving(false);
-    };
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>Save Session</DialogTitle>
-            <DialogContent>
-                <TextField
-                    autoFocus fullWidth margin="dense" label="Session name"
-                    value={sessionName} onChange={(e) => setSessionName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
-                    helperText={`${tables.length} table(s) will be saved`}
-                />
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button onClick={handleSave} disabled={!sessionName.trim() || saving}>
-                    {saving ? 'Saving...' : 'Save'}
-                </Button>
-            </DialogActions>
-        </Dialog>
-    );
-};
-
-const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
-    const [sessions, setSessions] = useState<{name: string, saved_at: string}[]>([]);
+const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({open, onClose}) => {
+    const [workspaces, setWorkspaces] = useState<{id: string, display_name: string, saved_at: string}[]>([]);
     const [loading, setLoading] = useState(false);
     const [listLoading, setListLoading] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
     const dispatch = useDispatch();
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const { t } = useTranslation();
 
-    const fetchSessions = useCallback(async () => {
+    const fetchWsList = useCallback(async () => {
         setListLoading(true);
         try {
-            const res = await fetchWithIdentity(getUrls().SESSION_LIST);
-            const data = await res.json();
-            if (data.status === 'ok') setSessions(data.sessions);
+            const sessions = await listWorkspaces();
+            setWorkspaces(sessions as any);
         } catch (e) { /* ignore */ }
         setListLoading(false);
     }, []);
 
     useEffect(() => {
         if (!open) return;
-        fetchSessions();
-    }, [open, fetchSessions]);
+        fetchWsList();
+    }, [open, fetchWsList]);
 
-    const handleLoad = async (name: string) => {
+    const handleOpen = async (wsId: string) => {
+        if (activeWorkspace?.id === wsId) { onClose(); return; }
+        try { await saveWorkspaceState(getSerializableState(store.getState())); } catch { /* best effort */ }
+        const wsEntry = workspaces.find(w => w.id === wsId);
         setLoading(true);
-        dispatch(dfActions.setSessionLoading({ loading: true, label: `Loading session "${name}"...` }));
+        dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
         onClose();
         try {
-            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                dispatch(dfActions.loadState(data.state));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" loaded` }));
+            const result = await loadWorkspace(wsId);
+            if (result) {
+                const displayName = result.displayName || wsEntry?.display_name || wsId;
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: wsId, displayName } }));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: `Opened session "${displayName}"` }));
             } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Load failed' }));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: 'Failed to open workspace' }));
             }
         } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to load session' }));
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: 'Failed to open workspace' }));
         }
         setLoading(false);
         dispatch(dfActions.setSessionLoading({ loading: false }));
     };
 
-    const handleDelete = async (name: string) => {
+    const handleCreate = () => {
+        dispatch(dfActions.resetState());
+        onClose();
+    };
+
+    const handleDelete = async (workspaceId: string) => {
         try {
-            const res = await fetchWithIdentity(getUrls().SESSION_DELETE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                setSessions(prev => prev.filter(s => s.name !== name));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" deleted` }));
-            }
+            await deleteWorkspace(workspaceId);
+            setWorkspaces(prev => prev.filter(s => s.id !== workspaceId));
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: `Deleted session "${workspaceId}"` }));
         } catch (e) { /* ignore */ }
         setConfirmDelete(null);
     };
@@ -284,55 +317,78 @@ const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                Load Session
-                <Tooltip title="Refresh session list">
-                    <IconButton size="small" onClick={fetchSessions} disabled={listLoading}>
+                Sessions
+                <Tooltip title="Refresh list">
+                    <IconButton size="small" onClick={fetchWsList} disabled={listLoading} sx={{ color: 'text.secondary' }}>
                         {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
                     </IconButton>
                 </Tooltip>
             </DialogTitle>
             <DialogContent sx={{ px: 1 }}>
-                {listLoading && sessions.length === 0 ? (
+                {listLoading && workspaces.length === 0 ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 1.5 }}>
                         <CircularProgress size={28} />
                         <Typography variant="body2" color="text.secondary">Loading sessions...</Typography>
                     </Box>
-                ) : sessions.length === 0 ? (
-                    <DialogContentText sx={{ px: 1 }}>No saved sessions found.</DialogContentText>
                 ) : (
-                    sessions.map(s => (
+                    <>
+                        {/* New session — same row style as session items */}
                         <Box
-                            key={s.name}
                             sx={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                display: 'flex', alignItems: 'center',
                                 px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
                                 '&:hover': { backgroundColor: 'action.hover' },
                                 transition: 'background-color 0.15s',
                             }}
-                            onClick={() => handleLoad(s.name)}
+                            onClick={handleCreate}
+                        >
+                            <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
+                                + New Session
+                            </Typography>
+                        </Box>
+                        {workspaces.length > 0 && <Divider sx={{ my: 0.5 }} />}
+                        {workspaces.map(s => (
+                        <Box
+                            key={s.id}
+                            sx={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                px: 1.5, py: 1, mx: 0, my: 0.5, borderRadius: 1, cursor: 'pointer',
+                                backgroundColor: activeWorkspace?.id === s.id ? 'action.selected' : 'transparent',
+                                '&:hover': { backgroundColor: activeWorkspace?.id === s.id ? 'action.selected' : 'action.hover' },
+                                transition: 'background-color 0.15s',
+                            }}
+                            onClick={() => handleOpen(s.id)}
                         >
                             <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Typography variant="body2" fontWeight="bold" noWrap>{s.name}</Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                    {new Date(s.saved_at).toLocaleString()}
+                                <Typography variant="body2" fontWeight={activeWorkspace?.id === s.id ? 'bold' : 'normal'} noWrap>
+                                    {s.display_name} {activeWorkspace?.id === s.id ? '(active)' : ''}
                                 </Typography>
+                                {s.saved_at && (
+                                    <Typography variant="caption" color="text.secondary">
+                                        {new Date(s.saved_at).toLocaleString()}
+                                    </Typography>
+                                )}
                             </Box>
-                            {confirmDelete === s.name ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
-                                    <Button size="small" color="error" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
-                                        onClick={() => handleDelete(s.name)}>delete</Button>
-                                    <Button size="small" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
-                                        onClick={() => setConfirmDelete(null)}>cancel</Button>
-                                </Box>
-                            ) : (
-                                <Tooltip title="Delete session">
-                                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.name); }}>
-                                        <ClearIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
+                            {activeWorkspace?.id !== s.id && (
+                                confirmDelete === s.id ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
+                                        <Button size="small" color="error" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                            onClick={() => handleDelete(s.id)}>Delete</Button>
+                                        <Button size="small" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
+                                            onClick={() => setConfirmDelete(null)}>Cancel</Button>
+                                    </Box>
+                                ) : (
+                                    <Tooltip title="Delete session">
+                                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.id); }} sx={{ color: 'text.secondary' }}>
+                                            <ClearIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                )
                             )}
                         </Box>
                     ))
+                    }
+                    </>
                 )}
             </DialogContent>
             <DialogActions>
@@ -342,306 +398,94 @@ const LoadSessionDialog: React.FC<{open: boolean, onClose: () => void}> = ({open
     );
 };
 
-const SessionMenu: React.FC = () => {
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-    const [loadDialogOpen, setLoadDialogOpen] = useState(false);
-    const [recentSessions, setRecentSessions] = useState<{name: string, saved_at: string}[]>([]);
-    const [exporting, setExporting] = useState(false);
-    const importRef = React.useRef<HTMLInputElement>(null);
-    const open = Boolean(anchorEl);
-    const dispatch = useDispatch();
+const WorkspaceMenu: React.FC = () => {
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const diskPersistenceDisabled = serverConfig.DISABLE_DATABASE;
+    const diskPersistenceDisabled = false; // all backends support workspace switching
 
-    const fullState = useSelector((state: DataFormulatorState) => {
-        const excludedFields = new Set([
-            'models', 'selectedModelId', 'testedModels',
-            'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
-        ]);
-        const obj: any = {};
-        for (const [key, value] of Object.entries(state)) {
-            if (!excludedFields.has(key)) obj[key] = value;
-        }
-        return obj;
-    });
+    console.log('Rendering WorkspaceMenu, activeWorkspace:', activeWorkspace, 'serverConfig:', serverConfig); // Debug log for rendering and state
+    console.log(serverConfig); // Debug log for serverConfig
+    console.log(activeWorkspace); // Debug log for activeWorkspace
 
-    // Fetch recent sessions when the menu opens
-    useEffect(() => {
-        if (!open || diskPersistenceDisabled) return;
-        (async () => {
-            try {
-                const res = await fetchWithIdentity(getUrls().SESSION_LIST);
-                const data = await res.json();
-                if (data.status === 'ok') setRecentSessions(data.sessions.slice(0, 3));
-            } catch (e) { /* ignore */ }
-        })();
-    }, [open]);
-
-    const closeMenu = () => setAnchorEl(null);
-
-    const handleLoadSession = async (name: string) => {
-        closeMenu();
-        dispatch(dfActions.setSessionLoading({ loading: true, label: `Loading session "${name}"...` }));
-        try {
-            const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name }),
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                dispatch(dfActions.loadState(data.state));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session "${name}" loaded` }));
-            } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Load failed' }));
-            }
-        } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to load session' }));
-        }
-        dispatch(dfActions.setSessionLoading({ loading: false }));
-    };
-
-    const handleExport = async () => {
-        closeMenu();
-        setExporting(true);
-        try {
-            const res = await fetchWithIdentity(getUrls().SESSION_EXPORT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ state: fullState }),
-            });
-            if (!res.ok) throw new Error('Export failed');
-            const blob = await res.blob();
-            const disposition = res.headers.get('content-disposition');
-            const match = disposition?.match(/filename="?(.+?)"?$/);
-            const filename = match?.[1] || 'session.dfsession';
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(a.href);
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: "Session exported" }));
-        } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to export session' }));
-        }
-        setExporting(false);
-    };
-
-    const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        closeMenu();
-        dispatch(dfActions.setSessionLoading({ loading: true, label: `Importing session from ${file.name}...` }));
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-            const res = await fetchWithIdentity(getUrls().SESSION_IMPORT, {
-                method: 'POST',
-                body: formData,
-            });
-            const data = await res.json();
-            if (data.status === 'ok') {
-                dispatch(dfActions.loadState(data.state));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "success", value: `Session imported from ${file.name}` }));
-            } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: data.message || 'Import failed' }));
-            }
-        } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Session", type: "error", value: 'Failed to import session' }));
-        }
-        dispatch(dfActions.setSessionLoading({ loading: false }));
-        if (importRef.current) importRef.current.value = '';
-    };
+    if (!activeWorkspace) return null;
 
     return (
         <>
-            <Button 
-                variant="text" 
-                onClick={(e) => setAnchorEl(e.currentTarget)} 
-                endIcon={<KeyboardArrowDownIcon />} 
-                sx={{ textTransform: 'none' }}
-            >
-                Session
-            </Button>
-            <Menu
-                anchorEl={anchorEl}
-                open={open}
-                onClose={closeMenu}
-                slotProps={{ paper: { sx: { minWidth: 200 } } }}
-            >
-                <Tooltip title={diskPersistenceDisabled ? "Install locally to use this feature" : ""} placement="right">
-                    <span>
-                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setSaveDialogOpen(true); closeMenu(); }}
-                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <SaveIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Save session
-                        </MenuItem>
-                    </span>
-                </Tooltip>
-                <Tooltip title={diskPersistenceDisabled ? "Install locally to use this feature" : ""} placement="right">
-                    <span>
-                        <MenuItem disabled={diskPersistenceDisabled} onClick={() => { setLoadDialogOpen(true); closeMenu(); }}
-                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <FolderOpenIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Open session...
-                        </MenuItem>
-                    </span>
-                </Tooltip>
-
-                {!diskPersistenceDisabled && recentSessions.length > 0 && [
-                    <Divider key="div-recent" />,
-                    <Typography key="label-recent" variant="caption" sx={{ px: 2, py: 0.5, color: 'text.secondary', display: 'block', fontSize: 10 }}>
-                        Quick resume
-                    </Typography>,
-                    ...recentSessions.map(s => (
-                        <MenuItem key={s.name} onClick={() => handleLoadSession(s.name)}
-                            sx={{ pl: 4, py: 0.25, minHeight: 0, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-                            <Typography noWrap sx={{ fontSize: 12 }}>{s.name}</Typography>
-                            <Typography noWrap sx={{ fontSize: 10, color: 'text.secondary', flexShrink: 0 }}>
-                                {new Date(s.saved_at).toLocaleDateString()}
-                            </Typography>
-                        </MenuItem>
-                    )),
-                ]}
-
-                <Divider />
-                <MenuItem onClick={handleExport} disabled={exporting}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <DownloadIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> {exporting ? 'Exporting...' : 'Export to file'}
-                </MenuItem>
-                <MenuItem onClick={() => importRef.current?.click()}
-                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <UploadFileIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> Import from file
-                    <input
-                        type="file"
-                        hidden
-                        accept=".dfsession,.zip"
-                        ref={importRef}
-                        onChange={handleImport}
-                    />
-                </MenuItem>
-            </Menu>
-            <SaveSessionDialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} />
-            <LoadSessionDialog open={loadDialogOpen} onClose={() => setLoadDialogOpen(false)} />
+            <Tooltip title={`Session: ${activeWorkspace?.id || ''}`} placement="bottom">
+                <Box 
+                    onClick={() => !diskPersistenceDisabled && setPickerOpen(true)}
+                    sx={{ 
+                        display: 'flex', alignItems: 'center', gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 1,
+                        '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+                        '&:hover .ws-chevron': { opacity: 1 },
+                    }}
+                >
+                    <Typography noWrap sx={{ 
+                        fontSize: 14, 
+                        fontWeight: 500, 
+                        color: 'text.primary',
+                        maxWidth: 280,
+                        letterSpacing: '0.01em',
+                    }}>
+                        {activeWorkspace?.displayName || activeWorkspace?.id}
+                    </Typography>
+                    <KeyboardArrowDownIcon className="ws-chevron" sx={{ fontSize: 16, color: 'text.secondary', opacity: 0.4, transition: 'opacity 0.15s' }} />
+                </Box>
+            </Tooltip>
+            <WorkspacePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} />
         </>
     );
 };
 
-const ResetDialog: React.FC = () => {
-    const [open, setOpen] = useState(false);
-    const [exiting, setExiting] = useState(false);
+const CloseWorkspaceButton: React.FC = () => {
     const dispatch = useDispatch();
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const state = useSelector((s: DataFormulatorState) => s);
 
-    const handleExit = async () => {
-        setExiting(true);
-        // Clear workspace on server first
-        try {
-            await fetchWithIdentity(getUrls().RESET_DB_FILE, { method: 'POST' });
-        } catch (e) {
-            console.warn('Failed to reset server workspace:', e);
-        }
+    if (!activeWorkspace || tables.length === 0) return null;
+
+    const handleClose = async () => {
+        try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
         dispatch(dfActions.resetState());
-
-        // Flush the reset state to IndexedDB so the persisted
-        // state matches (preserves models, config, agentRules).
-        await persistor.flush();
-        window.location.reload();
     };
 
     return (
-        <>
-            <Button 
-                variant="text" 
-                sx={{textTransform: 'none'}}
-                onClick={() => setOpen(true)} 
-                endIcon={<PowerSettingsNewIcon />}
-            >
-                Exit
-            </Button>
-            <Dialog onClose={exiting ? undefined : () => setOpen(false)} open={open} 
-                sx={{ '& .MuiDialog-paper': { position: 'relative', overflow: 'hidden' } }}>
-                <DialogTitle sx={{ display: "flex", alignItems: "center" }}>Exit Session?</DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
-                        All unsaved content (data, charts, reports) will be lost. Make sure to save your session before exiting.
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button 
-                        disabled={exiting}
-                        onClick={handleExit}
-                        endIcon={<PowerSettingsNewIcon />}
-                    >
-                        Exit session
-                    </Button>
-                    <Button onClick={() => setOpen(false)} disabled={exiting}>cancel</Button>
-                </DialogActions>
-                {/* Cleaning overlay on top of dialog */}
-                {exiting && (
-                    <Box sx={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        backgroundColor: 'rgba(255, 255, 255, 0.92)',
-                        backdropFilter: 'blur(4px)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 2,
-                        zIndex: 1,
-                        borderRadius: 'inherit',
-                    }}>
-                        <Typography sx={{
-                            fontSize: 36,
-                            animation: 'sweepBroom 1.2s ease-in-out infinite',
-                            '@keyframes sweepBroom': {
-                                '0%, 100%': {
-                                    transform: 'rotate(-15deg) translateX(0px)',
-                                },
-                                '25%': {
-                                    transform: 'rotate(-5deg) translateX(8px)',
-                                },
-                                '50%': {
-                                    transform: 'rotate(-15deg) translateX(0px)',
-                                },
-                                '75%': {
-                                    transform: 'rotate(-25deg) translateX(-8px)',
-                                },
-                            },
-                            transformOrigin: 'top center',
-                        }}>
-                            🧹
-                        </Typography>
-                        <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
-                            Cleaning workspace...
-                        </Typography>
-                        <LinearProgress sx={{ width: 200, mt: 1, borderRadius: 1 }} />
-                    </Box>
-                )}
-            </Dialog>
-        </>
+        <Button 
+            variant="text" 
+            sx={{ textTransform: 'none' }}
+            onClick={handleClose} 
+            endIcon={<ExitToAppIcon sx={{ fontSize: 18 }} />}
+        >
+            Exit
+        </Button>
     );
 };
 
 const ConfigDialog: React.FC = () => {
     const [open, setOpen] = useState(false);
     const dispatch = useDispatch();
+    const { t } = useTranslation();
     const config = useSelector((state: DataFormulatorState) => state.config);
+    const isEphemeral = useSelector((state: DataFormulatorState) => state.serverConfig?.WORKSPACE_BACKEND === 'ephemeral');
+    const rowLimitDefault = isEphemeral ? DEFAULT_ROW_LIMIT_EPHEMERAL : DEFAULT_ROW_LIMIT;
+    const rowLimitMax = DEFAULT_ROW_LIMIT;
 
 
-    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 30);
-
+    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 60);
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
     const [maxStretchFactor, setMaxStretchFactor] = useState(config.maxStretchFactor ?? 2.0);
-    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? 50000);
+    const [frontendRowLimit, setFrontendRowLimit] = useState(config.frontendRowLimit ?? rowLimitDefault);
     const [paletteKey, setPaletteKey] = useState(
         (config.paletteKey && palettes[config.paletteKey]) ? config.paletteKey : defaultPaletteKey
     );
 
-    // Add check for changes
     const hasChanges = formulateTimeoutSeconds !== config.formulateTimeoutSeconds || 
                       defaultChartWidth !== config.defaultChartWidth ||
                       defaultChartHeight !== config.defaultChartHeight ||
@@ -652,10 +496,10 @@ const ConfigDialog: React.FC = () => {
     return (
         <>
             <Button variant="text" sx={{textTransform: 'none'}} onClick={() => setOpen(true)} startIcon={<SettingsIcon />}>
-                Settings
+                {t('app.settings')}
             </Button>
             <Dialog onClose={() => setOpen(false)} open={open}>
-                <DialogTitle>Settings</DialogTitle>
+                <DialogTitle>{t('app.settings')}</DialogTitle>
                 <DialogContent>
                     <Box sx={{ 
                         display: 'flex', 
@@ -663,13 +507,13 @@ const ConfigDialog: React.FC = () => {
                         gap: 3,
                         maxWidth: 400
                     }}>
-                        <Divider><Typography variant="caption">Frontend</Typography></Divider>
+                        <Divider><Typography variant="caption">{t('config.frontend')}</Typography></Divider>
                         <FormControl fullWidth size="small">
-                            <InputLabel id="palette-select-label" sx={{ fontSize: 13 }}>Color Theme</InputLabel>
+                            <InputLabel id="palette-select-label" sx={{ fontSize: 13 }}>{t('config.colorTheme')}</InputLabel>
                             <Select
                                 labelId="palette-select-label"
                                 value={paletteKey}
-                                label="Color Theme"
+                                label={t('config.colorTheme')}
                                 onChange={(e) => setPaletteKey(e.target.value)}
                                 sx={{ fontSize: 13 }}
                                 renderValue={(key) => {
@@ -700,7 +544,7 @@ const ConfigDialog: React.FC = () => {
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
                                 <TextField
-                                    label="default chart width"
+                                    label={t('config.defaultChartWidth')}
                                     type="number"
                                     variant="outlined"
                                     value={defaultChartWidth}
@@ -719,7 +563,7 @@ const ConfigDialog: React.FC = () => {
                                     }}
                                     error={defaultChartWidth < 100 || defaultChartWidth > 1000}
                                     helperText={defaultChartWidth < 100 || defaultChartWidth > 1000 ? 
-                                        "Value must be between 100 and 1000 pixels" : ""}
+                                        t('config.chartSizeRangeError') : ""}
                                 />
                             </Box>
                             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
@@ -727,7 +571,7 @@ const ConfigDialog: React.FC = () => {
                             </Typography>
                             <Box sx={{ flex: 1 }}>
                                 <TextField
-                                    label="default chart height"
+                                    label={t('config.defaultChartHeight')}
                                     type="number"
                                     variant="outlined"
                                     value={defaultChartHeight}
@@ -746,14 +590,14 @@ const ConfigDialog: React.FC = () => {
                                     }}
                                     error={defaultChartHeight < 100 || defaultChartHeight > 1000}
                                     helperText={defaultChartHeight < 100 || defaultChartHeight > 1000 ? 
-                                        "Value must be between 100 and 1000 pixels" : ""}
+                                        t('config.chartSizeRangeError') : ""}
                                 />
                             </Box>
                         </Box>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
                                 <TextField
-                                    label="local-only row limit"
+                                    label={t('config.localRowLimit')}
                                     type="number"
                                     variant="outlined"
                                     value={frontendRowLimit}
@@ -766,23 +610,23 @@ const ConfigDialog: React.FC = () => {
                                         input: {
                                             inputProps: {
                                                 min: 100,
-                                                max: 1000000
+                                                max: rowLimitMax
                                             }
                                         }
                                     }}
-                                    error={frontendRowLimit < 100 || frontendRowLimit > 1000000}
-                                    helperText={frontendRowLimit < 100 || frontendRowLimit > 1000000 ? 
-                                        "Value must be between 100 and 1,000,000 rows" : ""}
+                                    error={frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
+                                    helperText={frontendRowLimit < 100 || frontendRowLimit > rowLimitMax ? 
+                                        t('config.localRowLimitRangeError') : ""}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                    Maximum number of rows kept when loading data locally (not stored on server).
+                                    {t('config.localRowLimitHint')}
                                 </Typography>
                             </Box>
                         </Box>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
                                 <TextField
-                                    label="max chart stretch factor"
+                                    label={t('config.maxStretchFactor')}
                                     type="number"
                                     variant="outlined"
                                     value={maxStretchFactor}
@@ -802,18 +646,18 @@ const ConfigDialog: React.FC = () => {
                                     }}
                                     error={isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5}
                                     helperText={isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5 ? 
-                                        "Value must be between 1.0 and 5.0" : ""}
+                                        t('config.maxStretchFactorRangeError') : ""}
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                    How much charts can grow beyond the base size (1.0 = no stretch, 2.0 = up to 2×).
+                                    {t('config.maxStretchFactorHint')}
                                 </Typography>
                             </Box>
                         </Box>
-                        <Divider><Typography variant="caption">Backend</Typography></Divider>
+                        <Divider><Typography variant="caption">{t('config.backend')}</Typography></Divider>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Box sx={{ flex: 1 }}>
                                 <TextField
-                                    label="formulate timeout (seconds)"
+                                    label={t('config.formulateTimeout')}
                                     type="number"
                                     variant="outlined"
                                     value={formulateTimeoutSeconds}
@@ -827,11 +671,11 @@ const ConfigDialog: React.FC = () => {
                                     }}
                                     error={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600}
                                     helperText={formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600 ? 
-                                        "Value must be between 1 and 3600 seconds" : ""}
+                                        t('config.formulateTimeoutRangeError') : ""}
                                     fullWidth
                                 />
                                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                    Maximum time allowed for the formulation process before timing out. 
+                                    {t('config.formulateTimeoutHint')}
                                 </Typography>
                             </Box>
                         </Box>
@@ -839,27 +683,27 @@ const ConfigDialog: React.FC = () => {
                 </DialogContent>
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
-                        setFormulateTimeoutSeconds(30);
+                        setFormulateTimeoutSeconds(60);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
                         setMaxStretchFactor(2.0);
-                        setFrontendRowLimit(50000);
+                        setFrontendRowLimit(rowLimitDefault);
                         setPaletteKey(defaultPaletteKey);
-                    }}>Reset to default</Button>
-                    <Button onClick={() => setOpen(false)}>Cancel</Button>
+                    }}>{t('session.resetToDefault')}</Button>
+                    <Button onClick={() => setOpen(false)}>{t('app.cancel')}</Button>
                     <Button 
                         variant={hasChanges ? "contained" : "text"}
                         disabled={!hasChanges || isNaN(formulateTimeoutSeconds) || formulateTimeoutSeconds <= 0 || formulateTimeoutSeconds > 3600
                             || isNaN(defaultChartWidth) || defaultChartWidth <= 0 || defaultChartWidth > 1000
                             || isNaN(defaultChartHeight) || defaultChartHeight <= 0 || defaultChartHeight > 1000
                             || isNaN(maxStretchFactor) || maxStretchFactor < 1 || maxStretchFactor > 5
-                            || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > 1000000}
+                            || isNaN(frontendRowLimit) || frontendRowLimit < 100 || frontendRowLimit > rowLimitMax}
                         onClick={() => {
                             dispatch(dfActions.setConfig({formulateTimeoutSeconds, defaultChartWidth, defaultChartHeight, maxStretchFactor, frontendRowLimit, paletteKey}));
                             setOpen(false);
                         }}
                     >
-                        Apply
+                        {t('app.apply')}
                     </Button>
                 </DialogActions>
             </Dialog>
@@ -867,67 +711,330 @@ const ConfigDialog: React.FC = () => {
     );  
 }
 
+const AppShell: FC = () => {
+    const dispatch = useDispatch<AppDispatch>();
+    const { t } = useTranslation();
+    const location = useLocation();
+    const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+
+    // Auto-persist session state to the active workspace (debounced)
+    useAutoSave();
+    // Auto-name workspace after first table + model are available
+    useWorkspaceAutoName();
+    const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
+    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+
+    const isAboutPage = location.pathname === '/about';
+    const isGalleryPage = location.pathname === '/gallery';
+    const isAppPage = !isAboutPage && !isGalleryPage;
+
+    return (
+        <Box sx={{
+            position: 'absolute',
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            overflow: 'auto',
+            '& > *': {
+                minWidth: '1000px',
+                minHeight: '600px'
+            },
+        }}>
+            <Box sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%',
+                width: '100%',
+                overflow: 'hidden'
+            }}>
+                <AppBar position="static">
+                    <Toolbar variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative' }}>
+                        <Button sx={{
+                            display: "flex", flexDirection: "row", textTransform: "none",
+                            alignItems: 'stretch',
+                            backgroundColor: 'transparent',
+                            "&:hover": {
+                                backgroundColor: "transparent"
+                            }
+                        }} color="inherit">
+                            <Box component="img" sx={{ height: 20, mr: 0.5 }} alt="" src={dfLogo} />
+                            <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
+                                {toolName}
+                            </Typography>
+                        </Button>
+                        <Box
+                            sx={{
+                                ml: 2,
+                                height: '28px',
+                                my: 'auto',
+                                display: 'flex',
+                            }}
+                        >
+                            <TopNavButton to="/about" label={t('appBar.about')} selected={isAboutPage} />
+                            <TopNavButton to="/app" label={t('appBar.app')} selected={isAppPage} />
+                            <TopNavButton to="/gallery" label={t('appBar.gallery')} selected={isGalleryPage} />
+                        </Box>
+                        {tables.length === 0 && !activeWorkspace && (
+                            <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.disabled', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                                {t('appBar.microsoftResearch')}
+                            </Typography>
+                        )}
+                        {/* Centered workspace name — acts as session indicator/switcher */}
+                        {activeWorkspace && isAppPage && (
+                            <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
+                                <WorkspaceMenu />
+                            </Box>
+                        )}
+                        {isAppPage && (
+                            <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
+                                <LanguageSwitcher />
+                                {focusedId !== undefined && <React.Fragment>
+                                <ConfigDialog />
+                                <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
+                                <ModelSelectionButton />
+                                <Divider orientation="vertical" variant="middle" flexItem />
+
+                                <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <TableMenu />
+                                </Typography>
+                                {activeWorkspace && <>
+                                    <Divider orientation="vertical" variant="middle" flexItem />
+                                    <CloseWorkspaceButton />
+                                </>}
+                            </Box>
+                        )}
+                        {isAboutPage && (
+                            <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
+                                <LanguageSwitcher />
+                                <Tooltip title={t('appBar.watchVideo')}>
+                                    <IconButton
+                                        component="a"
+                                        href="https://youtu.be/3ndlwt0Wi3c"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={t('appBar.watchVideo')}
+                                        sx={{
+                                            color: 'inherit',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <YouTubeIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title={t('appBar.viewOnGitHub')}>
+                                    <IconButton
+                                        component="a"
+                                        href="https://github.com/microsoft/data-formulator"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={t('appBar.viewOnGitHub')}
+                                        sx={{
+                                            color: 'inherit',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <GitHubIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title={t('appBar.pipInstall')}>
+                                    <IconButton
+                                        component="a"
+                                        href="https://pypi.org/project/data-formulator/"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={t('appBar.pipInstall')}
+                                        sx={{
+                                            color: 'inherit',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <Box component="img" src="/pip-logo.svg" sx={{ width: 20, height: 20 }} alt="pip logo" />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title={t('appBar.joinDiscord')}>
+                                    <IconButton
+                                        component="a"
+                                        href="https://discord.gg/mYCZMQKYZb"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={t('appBar.joinDiscord')}
+                                        sx={{
+                                            color: 'inherit',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <DiscordIcon sx={{ fontSize: 20 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                        )}
+                        {isAppPage && (
+                            <Tooltip title={t('appBar.viewOnGitHub')}>
+                                <Button
+                                    component="a"
+                                    href="https://github.com/microsoft/data-formulator"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    sx={{
+                                        minWidth: 'auto',
+                                        color: 'inherit',
+                                        '&:hover': {
+                                            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                        }
+                                    }}
+                                >
+                                    <GitHubIcon fontSize="medium" />
+                                </Button>
+                            </Tooltip>
+                        )}
+                        <AuthButton />
+                    </Toolbar>
+                </AppBar>
+                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', '& > div': { height: '100%' } }}>
+                    <Outlet />
+                </Box>
+                <MessageSnackbar />
+                <ChartRenderService />
+            </Box>
+        </Box>
+    );
+}
+
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const dispatch = useDispatch<AppDispatch>();
-    const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
-    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
+
+    const [configLoaded, setConfigLoaded] = useState(false);
 
     useEffect(() => {
         fetchWithIdentity(getUrls().APP_CONFIG)
             .then(response => response.json())
             .then(data => {
                 dispatch(dfActions.setServerConfig(data));
+                setConfigLoaded(true);
             });
     }, []);
 
-    // User authentication state
-    const [userInfo, setUserInfo] = useState<{ name: string, userId: string } | undefined>(undefined);
-    const [authChecked, setAuthChecked] = useState(false);
-
-    // Check for authenticated user first
+    // Validate persisted workspace still exists on the backend
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const tables = useSelector((state: DataFormulatorState) => state.tables);
+    
+    // Debug: log persisted state on startup
     useEffect(() => {
-        fetch('/.auth/me')
-            .then(function (response) { return response.json(); })
-            .then(function (result) {
-                if (Array.isArray(result) && result.length > 0) {
-                    let authInfo = result[0];
-                    let userInfo = {
-                        name: authInfo['user_claims'].find((item: any) => item.typ == 'name')?.val || '',
-                        userId: authInfo['user_id']
-                    }
-                    setUserInfo(userInfo);
-                }
-            }).catch(err => {
-                // User is not logged in, will use browser identity
-            }).finally(() => {
-                setAuthChecked(true);
-            });
-    }, []);
-
-    // Initialize identity after auth check completes
-    // No server round-trip needed - identity is determined client-side:
-    // Priority: user identity (if logged in) > browser identity (localStorage-based, shared across tabs)
-    useEffect(() => {
-        if (authChecked) {
-            if (userInfo?.userId) {
-                // User is logged in - use their user ID
-                dispatch(dfActions.setIdentity({ type: 'user', id: userInfo.userId }));
-            } else {
-                // Not logged in - use browser ID (from localStorage, shared across tabs)
-                dispatch(dfActions.setIdentity({ type: 'browser', id: getBrowserId() }));
+        if (configLoaded) {
+            console.log('[DEBUG] activeWorkspace:', activeWorkspace);
+            console.log('[DEBUG] tables:', tables.length, tables.map(t => ({ id: t.id, virtual: t.virtual, rowLen: t.rows?.length })));
+            
+            // Recover orphaned state: tables exist but activeWorkspace was lost
+            if (!activeWorkspace && tables.length > 0) {
+                const recoveredId = `recovered_${Date.now()}`;
+                dispatch(dfActions.setActiveWorkspace({ id: recoveredId, displayName: 'Recovered Session' }));
             }
         }
-    }, [authChecked, userInfo?.userId]);
+    }, [configLoaded]);
+
+    // Unified auth initialisation — driven by /api/auth/info and server IDENTITY
+    const [authChecked, setAuthChecked] = useState(false);
+    const [migrationBrowserId, setMigrationBrowserId] = useState<string | null>(null);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+
+    useEffect(() => {
+        if (!configLoaded) return;
+
+        (async () => {
+            const prevType = localStorage.getItem('df_identity_type');
+            const prevBrowserId = localStorage.getItem('df_browser_id');
+
+            let resolvedIdentity: { type: 'user' | 'browser' | 'local'; id: string; displayName?: string } | null = null;
+
+            // Check if the server assigned a fixed identity (e.g. localhost mode)
+            const serverIdentity = serverConfig?.IDENTITY;
+            if (serverIdentity?.type === 'local' && serverIdentity?.id) {
+                resolvedIdentity = { type: 'local', id: serverIdentity.id };
+            }
+
+            if (!resolvedIdentity) {
+                try {
+                    const info: AuthInfo | null = await getAuthInfo();
+
+                    if (info?.action === 'frontend') {
+                        // OIDC PKCE — check for an existing session
+                        const user = await getOidcUser();
+                        if (user && !user.expired) {
+                            resolvedIdentity = {
+                                type: 'user',
+                                id: user.profile.sub,
+                                displayName: user.profile.name ?? undefined,
+                            };
+                        }
+                    } else if (info?.action === 'transparent') {
+                        // Azure App Service EasyAuth — headers injected by Azure
+                        try {
+                            const resp = await fetch('/.auth/me');
+                            const result = await resp.json();
+                            if (Array.isArray(result) && result.length > 0) {
+                                const authData = result[0];
+                                const name = authData['user_claims']?.find((item: any) => item.typ === 'name')?.val || '';
+                                const userId = authData['user_id'];
+                                if (userId) {
+                                    resolvedIdentity = { type: 'user', id: userId, displayName: name };
+                                }
+                            }
+                        } catch {
+                            // fall through to browser identity
+                        }
+                    }
+                    // 'redirect' and 'none' → browser identity (resolvedIdentity stays null)
+                } catch {
+                    // fall through to browser identity
+                }
+            }
+
+            if (!resolvedIdentity) {
+                resolvedIdentity = { type: 'browser', id: getBrowserId() };
+            }
+
+            dispatch(dfActions.setIdentity(resolvedIdentity));
+
+            // Persist current identity type for next page load
+            localStorage.setItem('df_identity_type', resolvedIdentity.type);
+            if (resolvedIdentity.type === 'browser') {
+                localStorage.setItem('df_browser_id', resolvedIdentity.id);
+            }
+
+            // Detect anonymous → authenticated transition
+            if (
+                prevType === 'browser' &&
+                resolvedIdentity.type === 'user' &&
+                prevBrowserId
+            ) {
+                setMigrationBrowserId(prevBrowserId);
+            }
+
+            setAuthChecked(true);
+        })();
+    }, [configLoaded]);
 
     useEffect(() => {
         document.title = toolName;
-        dispatch(fetchAvailableModels());
+        // Load all server-configured models instantly (no connectivity check).
+        // Users can verify connectivity via the "Test" button in the model dialog,
+        // or errors will surface naturally when a model is first used.
+        dispatch(fetchGlobalModelList());
     }, []);
 
     let theme = createTheme({
@@ -1000,313 +1107,68 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 },
             },
         },
+        transitions: {
+            duration: {
+                shortest: 100,
+                shorter: 100,
+                short: 100,
+                standard: 100,
+                complex: 150,
+                enteringScreen: 100,
+                leavingScreen: 100,
+            },
+        },
     });
 
-    // Check if we're on the about page
-    const isAboutPage = window.location.pathname === '/about';
-    const isGalleryPage = window.location.pathname === '/gallery';
-    const isAppPage = !isAboutPage && !isGalleryPage;
-
-    let appBar =  [
-        <AppBar position="static" key="app-bar-main" >
-            <Toolbar variant="dense" sx={{height: 40, minHeight: 36, position: 'relative'}}>
-                <Button sx={{
-                    display: "flex", flexDirection: "row", textTransform: "none",
-                    alignItems: 'stretch',
-                    backgroundColor: 'transparent',
-                    "&:hover": {
-                        backgroundColor: "transparent"
-                    }
-                }} color="inherit">
-                    <Box component="img" sx={{ height: 20, mr: 0.5 }} alt="" src={dfLogo} />
-                    <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
-                        {toolName}
-                    </Typography>
-                </Button>
-                <Box
-                    sx={{ 
-                        ml: 2,
-                        height: '28px', 
-                        my: 'auto',
-                        display: 'flex',
-                    }}
-                >
-                    <Button 
-                        component="a" 
-                        href="/about"
-                        sx={{ 
-                            textDecoration: 'none',
-                            textTransform: 'none',
-                            fontSize: '13px',
-                            fontWeight: 400,
-                            border: 'none',
-                            borderRadius: 0,
-                            px: 1.5,
-                            py: 0.5,
-                            minWidth: 'auto',
-                            color: isAboutPage ? 'text.primary' : 'text.secondary',
-                            backgroundColor: isAboutPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
-                            '&:hover': {
-                                color: 'text.primary',
-                                backgroundColor: isAboutPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
-                            },
-                        }}
-                    >
-                        About
-                    </Button>
-                    <Button 
-                        component="a" 
-                        href="/app"
-                        sx={{ 
-                            textDecoration: 'none',
-                            textTransform: 'none',
-                            fontSize: '13px',
-                            fontWeight: 400,
-                            border: 'none',
-                            borderRadius: 0,
-                            px: 1.5,
-                            py: 0.5,
-                            minWidth: 'auto',
-                            color: isAppPage ? 'text.primary' : 'text.secondary',
-                            backgroundColor: isAppPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
-                            '&:hover': {
-                                color: 'text.primary',
-                                backgroundColor: isAppPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
-                            },
-                        }}
-                    >
-                        App
-                    </Button>
-                    <Button 
-                        component="a" 
-                        href="/gallery"
-                        sx={{ 
-                            textDecoration: 'none',
-                            textTransform: 'none',
-                            fontSize: '13px',
-                            fontWeight: 400,
-                            border: 'none',
-                            borderRadius: 0,
-                            px: 1.5,
-                            py: 0.5,
-                            minWidth: 'auto',
-                            color: isGalleryPage ? 'text.primary' : 'text.secondary',
-                            backgroundColor: isGalleryPage ? 'rgba(0, 0, 0, 0.08)' : 'transparent',
-                            '&:hover': {
-                                color: 'text.primary',
-                                backgroundColor: isGalleryPage ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.04)',
-                            },
-                        }}
-                    >
-                        Gallery
-                    </Button>
-                </Box>
-                {tables.length === 0 && (
-                    <Typography noWrap sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', fontWeight: 500, fontSize: '0.65rem', color: 'text.disabled', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-                        Microsoft Research
-                    </Typography>
-                )}
-                {isAppPage && (
-                    <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
-                        {focusedId !== undefined && <React.Fragment><ToggleButtonGroup
-                            value={viewMode}
-                            exclusive
-                            onChange={(_, newMode) => {
-                                if (newMode !== null) {
-                                    dispatch(dfActions.setViewMode(newMode));
-                                }
-                            }}
-                            sx={{ 
-                                mr: 2,
-                                height: '28px', 
-                                my: 'auto',
-                                '& .MuiToggleButton-root': {
-                                    textTransform: 'none',
-                                    fontWeight: 500,
-                                    border: 'none',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                        color: 'text.primary',
-                                    },
-                                },
-                            }}
-                        >
-                            <ToggleButton value="editor">
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box component="span">Explore</Box>
-                                </Box>
-                            </ToggleButton>
-                            <ToggleButton value="report">
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box component="span">
-                                        {generatedReports.length > 0 ? `Reports (${generatedReports.length})` : 'Reports'}
-                                    </Box>
-                                </Box>
-                            </ToggleButton>
-                        </ToggleButtonGroup>
-                        <ConfigDialog />
-                        <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
-                        <ModelSelectionButton />
-                        <Divider orientation="vertical" variant="middle" flexItem />
-                        
-                        <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <TableMenu />
-                        </Typography>
-                        <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <SessionMenu />
-                        </Typography>
-                        {tables.length > 0 && <ResetDialog />}
-                    </Box>
-                )}
-                {isAboutPage && (
-                    <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
-                        <Tooltip title="Watch Video">
-                            <IconButton
-                                component="a"
-                                href="https://youtu.be/3ndlwt0Wi3c"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label="Watch Video"
-                                sx={{ 
-                                    color: 'inherit',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <YouTubeIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title="View on GitHub">
-                            <IconButton
-                                component="a"
-                                href="https://github.com/microsoft/data-formulator"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label="View on GitHub"
-                                sx={{ 
-                                    color: 'inherit',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <GitHubIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Pip Install">
-                            <IconButton
-                                component="a"
-                                href="https://pypi.org/project/data-formulator/"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label="Pip Install"
-                                sx={{ 
-                                    color: 'inherit',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <Box component="img" src="/pip-logo.svg" sx={{ width: 20, height: 20 }} alt="pip logo" />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Join Discord">
-                            <IconButton
-                                component="a"
-                                href="https://discord.gg/mYCZMQKYZb"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label="Join Discord"
-                                sx={{ 
-                                    color: 'inherit',
-                                    '&:hover': {
-                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                    }
-                                }}
-                            >
-                                <DiscordIcon sx={{ fontSize: 20 }} />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                )}
-                {isAppPage && (
-                    <Tooltip title="View on GitHub">
-                        <Button
-                            component="a"
-                            href="https://github.com/microsoft/data-formulator"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            sx={{ 
-                                minWidth: 'auto', 
-                                color: 'inherit',
-                                '&:hover': {
-                                    backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                                }
-                            }}
-                        >
-                            <GitHubIcon fontSize="medium" />
-                        </Button>
-                    </Tooltip>
-                )}
-            </Toolbar>
-        </AppBar>
-    ];
-
-    let router = createBrowserRouter([
+    const router = useMemo(() => createBrowserRouter([
         {
-            path: "/about",
-            element: <About />,
-        },
-        {
-            path: "/gallery",
-            element: <ChartGallery />,
+            path: "/callback",
+            element: <OidcCallback />,
         },
         {
             path: "/",
-            element: <DataFormulatorFC />,
-        }, {
-            path: "*",
-            element: <DataFormulatorFC />,
+            element: <AppShell />,
             errorElement: <Box sx={{ width: "100%", height: "100%", display: "flex" }}>
-                <Typography color="gray" sx={{ margin: "150px auto" }}>An error has occurred, please <Link href="/">refresh the session</Link>. If the problem still exists, click close session.</Typography>
-            </Box>
+                <Typography color="gray" sx={{ margin: "150px auto" }}>An error has occurred, please <Link href="/app">refresh the session</Link>. If the problem still exists, click close session.</Typography>
+            </Box>,
+            children: [
+                {
+                    index: true,
+                    element: <DataFormulatorFC />,
+                },
+                {
+                    path: "app",
+                    element: <DataFormulatorFC />,
+                },
+                {
+                    path: "about",
+                    element: <About />,
+                },
+                {
+                    path: "gallery",
+                    element: <ChartGallery />,
+                },
+                {
+                    path: "*",
+                    element: <DataFormulatorFC />,
+                },
+            ],
         }
-    ]);
-
-    let app =
-        <Box sx={{ 
-            position: 'absolute',
-            backgroundColor: 'rgba(255, 255, 255, 0.3)',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            overflow: 'auto',
-            '& > *': {
-                minWidth: '1000px',
-                minHeight: '600px'
-            },
-        }}>
-            <Box sx={{ 
-                display: 'flex',
-                flexDirection: 'column',
-                height: '100%',
-                width: '100%',
-                overflow: 'hidden'
-            }}>
-                {appBar}
-                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', '& > div': { height: '100%' } }}>
-                    <RouterProvider router={router} />
-                </Box>
-                <MessageSnackbar />
-                <ChartRenderService />
-            </Box>
-        </Box>;
+    ]), []);
 
     return (
         <ThemeProvider theme={theme}>
-            {app}
+            {configLoaded ? (
+                <RouterProvider router={router} />
+            ) : (
+                <AnvilLoader />
+            )}
+            {migrationBrowserId && (
+                <IdentityMigrationDialog
+                    oldBrowserId={migrationBrowserId}
+                    onDone={() => setMigrationBrowserId(null)}
+                />
+            )}
         </ThemeProvider>
     );
 }

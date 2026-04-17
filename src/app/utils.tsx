@@ -19,11 +19,15 @@ export function getUrls() {
         EXAMPLE_DATASETS: `/api/example-datasets`,
 
         // these functions involves ai agents
+        LIST_GLOBAL_MODELS: `/api/agent/list-global-models`,
         CHECK_AVAILABLE_MODELS: `/api/agent/check-available-models`,
         TEST_MODEL: `/api/agent/test-model`,
 
         SORT_DATA_URL: `/api/agent/sort-data`,
         CLEAN_DATA_URL: `/api/agent/clean-data-stream`,
+        DATA_LOADING_CHAT_URL: `/api/agent/data-loading-chat`,
+        SCRATCH_UPLOAD_URL: `/api/agent/workspace/scratch/upload`,
+        SCRATCH_BASE_URL: `/api/agent/workspace/scratch`,
         
         CODE_EXPL_URL: `/api/agent/code-expl`,
         CHART_INSIGHT_URL: `/api/agent/chart-insight`,
@@ -41,24 +45,21 @@ export function getUrls() {
         LIST_TABLES: `/api/tables/list-tables`,
         TABLE_DATA: `/api/tables/get-table`,
         CREATE_TABLE: `/api/tables/create-table`,
+        PARSE_FILE: `/api/tables/parse-file`,
         DELETE_TABLE: `/api/tables/delete-table`,
         GET_COLUMN_STATS: `/api/tables/analyze`,
         SAMPLE_TABLE: `/api/tables/sample-table`,
         SYNC_TABLE_DATA: `/api/tables/sync-table-data`,
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
-        DATA_LOADER_LIST_DATA_LOADERS: `/api/tables/data-loader/list-data-loaders`,
-        DATA_LOADER_LIST_TABLES: `/api/tables/data-loader/list-tables`,
-        DATA_LOADER_INGEST_DATA: `/api/tables/data-loader/ingest-data`,
-        DATA_LOADER_VIEW_QUERY_SAMPLE: `/api/tables/data-loader/view-query-sample`,
-        DATA_LOADER_INGEST_DATA_FROM_QUERY: `/api/tables/data-loader/ingest-data-from-query`,
-        DATA_LOADER_REFRESH_TABLE: `/api/tables/data-loader/refresh-table`,
-        DATA_LOADER_FETCH_DATA: `/api/tables/data-loader/fetch-data`,
-        DATA_LOADER_GET_TABLE_METADATA: `/api/tables/data-loader/get-table-metadata`,
-        DATA_LOADER_LIST_TABLE_METADATA: `/api/tables/data-loader/list-table-metadata`,
-
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
         GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
+
+        // Workspace summary (auto-naming)
+        WORKSPACE_SUMMARY: `/api/agent/workspace-summary`,
+
+        // NL-to-filter
+        NL_TO_FILTER: `/api/agent/nl-to-filter`,
 
         // Refresh data endpoint
         REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
@@ -75,6 +76,29 @@ export function getUrls() {
         OPEN_WORKSPACE: `/api/tables/open-workspace`,
     };
 }
+
+/**
+ * Static API URLs for connector actions.
+ * All action routes accept `connector_id` in the JSON body.
+ */
+export const CONNECTOR_ACTION_URLS = {
+    CONNECT: '/api/connectors/connect',
+    GET_STATUS: '/api/connectors/get-status',
+    GET_CATALOG: '/api/connectors/get-catalog',
+    GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',
+    IMPORT_DATA: '/api/connectors/import-data',
+    REFRESH_DATA: '/api/connectors/refresh-data',
+    PREVIEW_DATA: '/api/connectors/preview-data',
+    IMPORT_GROUP: '/api/connectors/import-group',
+} as const;
+
+/** Global connector management URLs. */
+export const CONNECTOR_URLS = {
+    DATA_LOADERS: '/api/data-loaders',
+    LIST: '/api/connectors',
+    CREATE: '/api/connectors',
+    DELETE: (id: string) => `/api/connectors/${id}`,
+} as const;
 
 /**
  * Get the current namespaced identity from the Redux store, or fall back to browser ID.
@@ -98,56 +122,137 @@ async function getCurrentNamespacedIdentity(): Promise<string> {
     return `browser:${getBrowserId()}`;
 }
 
+// getAccessToken / getUserManager are imported lazily to avoid circular deps
+// and to keep the module working when oidc-client-ts is not bundled.
+
 /**
- * Get auth token if available (for future JWT auth support).
- * Currently returns null - implement when adding custom auth.
+ * Get the active workspace ID from the Redux store.
+ * Returns null if no workspace is active.
  */
-function getAuthToken(): string | null {
-    // Future: retrieve JWT from localStorage or auth context
-    // Example: return localStorage.getItem('auth_token');
-    return null;
+async function getActiveWorkspaceId(): Promise<string | null> {
+    try {
+        const { store } = await import('./store');
+        const state = store.getState();
+        return state?.activeWorkspace?.id ?? null;
+    } catch {
+        return null;
+    }
 }
 
 /**
- * Enhanced fetch wrapper that automatically adds identity and auth headers for API requests.
- * 
+ * Build a request with identity / auth / workspace headers and ephemeral-mode
+ * body injection, then execute a single `fetch`.  This is the inner workhorse
+ * called by {@link fetchWithIdentity} (which wraps it with 401 retry).
+ */
+async function _doFetch(
+    url: string | URL,
+    options: RequestInit = {}
+): Promise<Response> {
+    const urlString = typeof url === 'string' ? url : url.toString();
+
+    if (urlString.startsWith('/api/')) {
+        const headers = new Headers(options.headers);
+
+        const namespacedIdentity = await getCurrentNamespacedIdentity();
+        headers.set('X-Identity-Id', namespacedIdentity);
+
+        const workspaceId = await getActiveWorkspaceId();
+        if (workspaceId) {
+            headers.set('X-Workspace-Id', workspaceId);
+        }
+
+        headers.set('Accept-Language', getAgentLanguage());
+
+        // Attach OIDC Bearer token when available
+        try {
+            const { getAccessToken } = await import('./oidcConfig');
+            const accessToken = await getAccessToken();
+            if (accessToken) {
+                headers.set('Authorization', `Bearer ${accessToken}`);
+            }
+        } catch {
+            // oidc-client-ts not available — anonymous mode
+        }
+
+        options = { ...options, headers };
+
+        console.log(
+            `[fetchWithIdentity] ${options.method || 'GET'} ${urlString} with headers:`,
+            Object.fromEntries(headers.entries()),
+        );
+
+        // Ephemeral mode: attach full table data from IndexedDB to JSON POST requests.
+        if (workspaceId && options.method?.toUpperCase() === 'POST') {
+            const isEphemeral = await _isEphemeralBackend();
+            if (isEphemeral && typeof options.body === 'string') {
+                try {
+                    const { tableDataDB } = await import('./workspaceDB');
+                    const workspaceTables = await tableDataDB.loadAll(workspaceId);
+                    const body = JSON.parse(options.body);
+                    body._workspace_tables = workspaceTables;
+                    options = { ...options, body: JSON.stringify(body) };
+                } catch (e) {
+                    console.warn('[fetchWithIdentity] Failed to attach workspace tables:', e);
+                }
+            }
+        }
+    }
+
+    return fetch(url, options);
+}
+
+/**
+ * Enhanced fetch wrapper that automatically adds identity and auth headers
+ * for API requests.
+ *
  * Security model:
- * - X-Identity-Id: Namespaced identity ("type:id" format) for all requests
- * - Authorization: Bearer token (when implementing custom JWT auth)
- * 
- * The backend prioritizes verified auth (Azure headers, JWT) over X-Identity-Id.
- * For anonymous users, X-Identity-Id is used with "browser:" namespace prefix.
- * 
- * Use this instead of native fetch() for all /api/ calls.
- * 
- * @param url - The URL to fetch
- * @param options - Fetch options (same as native fetch)
- * @returns Promise<Response>
+ * - `X-Identity-Id`: Namespaced identity (`"type:id"` format) for all requests
+ * - `Authorization: Bearer <token>`: OIDC access-token when available
+ *
+ * On a 401 response the function attempts a silent OIDC token refresh and
+ * retries the request exactly once.  If the retry also fails (or OIDC is not
+ * active) the original 401 response is returned.
+ *
+ * Use this instead of native `fetch()` for all `/api/` calls.
  */
 export async function fetchWithIdentity(
     url: string | URL,
     options: RequestInit = {}
 ): Promise<Response> {
-    const urlString = typeof url === 'string' ? url : url.toString();
-    
-    // Add identity and auth headers for all API requests
-    if (urlString.startsWith('/api/')) {
-        const headers = new Headers(options.headers);
-        
-        // Always send namespaced identity (fallback for backend)
-        const namespacedIdentity = await getCurrentNamespacedIdentity();
-        headers.set('X-Identity-Id', namespacedIdentity);
-        
-        // Send auth token if available (for custom JWT auth)
-        const authToken = getAuthToken();
-        if (authToken) {
-            headers.set('Authorization', `Bearer ${authToken}`);
+    const resp = await _doFetch(url, options);
+
+    if (resp.status === 401) {
+        try {
+            const { getUserManager } = await import('./oidcConfig');
+            const mgr = await getUserManager();
+            if (mgr) {
+                await mgr.signinSilent();
+                return _doFetch(url, options);
+            }
+        } catch {
+            // Silent renew failed or OIDC not available — return original 401
         }
-        
-        options = { ...options, headers };
     }
-    
-    return fetch(url, options);
+
+    return resp;
+}
+
+async function _isEphemeralBackend(): Promise<boolean> {
+    try {
+        const { store } = await import('./store');
+        return store.getState().serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
+    } catch {
+        return false;
+    }
+}
+
+import i18n from '../i18n';
+
+/**
+ * Returns the current UI language code (e.g. "zh", "en") for use in agent API requests.
+ */
+export function getAgentLanguage(): string {
+    return i18n.language.split('-')[0];
 }
 
 import * as vm from 'vm-browserify';
@@ -478,7 +583,7 @@ export const assembleVegaChart = (
 // resolveRecommendedChart & resolveChartFields remain in app layer (need generateFreshChart, Chart)
 export { resolveRecommendedChart, resolveChartFields } from './chartRecommendation';
 
-export let getTriggers = (leafTable: DictTable, tables: DictTable[]) => {
+export let getTriggers = (leafTable: DictTable, tables: DictTable[]): Trigger[] => {
     // recursively find triggers that ends in leafTable (if the leaf table is anchored, we will find till the previous table is anchored)
     let triggers : Trigger[] = [];
     let t = leafTable;

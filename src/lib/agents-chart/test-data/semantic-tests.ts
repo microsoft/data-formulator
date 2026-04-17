@@ -52,7 +52,7 @@ function genRevenueFormatTest(): TestCase {
     return {
         title: 'Revenue Formatting ($)',
         description:
-            'Semantic type "Revenue" adds currency prefix ($) and SI abbreviation to axis labels. ' +
+            'Semantic type "Revenue" with unit "USD" adds currency prefix ($) and SI abbreviation to axis labels. ' +
             'WITHOUT this: axis would show raw numbers like 1200000.',
         tags: ['semantic', 'format', 'currency', 'revenue'],
         chartType: 'Bar Chart',
@@ -61,6 +61,9 @@ function genRevenueFormatTest(): TestCase {
         metadata: {
             city:    { type: Type.String, semanticType: 'City',    levels: CITIES },
             revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
+        },
+        semanticAnnotations: {
+            revenue: { semanticType: 'Amount', unit: 'USD' },
         },
         encodingMap: {
             x: makeEncodingItem('city'),
@@ -343,7 +346,7 @@ function genRevenueVsPercentTest(): TestCase {
         title: 'Revenue vs Growth Rate (dual semantics)',
         description:
             'Two numeric columns with different semantics on the same data. ' +
-            'Revenue gets "$" prefix + SI abbreviation; growth_rate gets "%" format. ' +
+            'Revenue with unit "USD" gets "$" prefix + SI abbreviation; growth_rate gets "%" format. ' +
             'WITHOUT annotations: both axes show plain numbers.',
         tags: ['semantic', 'format', 'currency', 'percentage', 'dual'],
         chartType: 'Scatter Plot',
@@ -355,6 +358,7 @@ function genRevenueVsPercentTest(): TestCase {
             growth_rate: { type: Type.Number, semanticType: 'Percentage', levels: [] },
         },
         semanticAnnotations: {
+            revenue: { semanticType: 'Amount', unit: 'USD' },
             growth_rate: { semanticType: 'Percentage', intrinsicDomain: [0, 1] },
         },
         encodingMap: {
@@ -493,6 +497,9 @@ function genRevenueBarZeroTest(): TestCase {
         metadata: {
             product: { type: Type.String, semanticType: 'Category', levels: products },
             revenue: { type: Type.Number, semanticType: 'Amount',  levels: [] },
+        },
+        semanticAnnotations: {
+            revenue: { semanticType: 'Amount', unit: 'USD' },
         },
         encodingMap: {
             x: makeEncodingItem('product'),
@@ -641,15 +648,16 @@ export function genSemanticContextTests(): TestCase[] {
 }
 
 // ============================================================================
-// 9. Profit — signed currency format (+$120K / -$50K)
-//    Semantic type: "Profit"  →  signed-currency format class
+// 9. Profit — signed decimal format
+//    Semantic type: "Profit"  →  decimal format class
 //
 //    WITHOUT this annotation:
 //      Axis shows raw numbers: 120000, -50000. No sign prefix on positive
-//      values, no currency symbol. Hard to tell gains from losses at a glance.
+//      values. Hard to tell gains from losses at a glance.
 //
 //    WITH "Profit":
-//      Axis labels show: +$120K, -$50K. Sign always visible, currency prefix.
+//      Tooltip shows: +120,000, -50,000. Sign always visible in tooltips.
+//      Axis defers to VL defaults. Currency prefix requires unit annotation.
 // ============================================================================
 
 function genProfitSignedCurrencyTest(): TestCase {
@@ -662,18 +670,21 @@ function genProfitSignedCurrencyTest(): TestCase {
     }));
 
     return {
-        title: 'Profit Signed Currency (+$/-$)',
+        title: 'Profit Signed Decimal',
         description:
-            'Semantic type "Profit" uses signed-currency format: "+$120K" / "-$50K". ' +
-            'Sign is always visible on positive values, making gains vs losses obvious. ' +
-            'WITHOUT this: raw numbers without sign prefix or currency symbol.',
-        tags: ['semantic', 'format', 'signed-currency', 'profit'],
+            'Semantic type "Profit" with unit "USD" uses decimal format with currency in tooltip. ' +
+            'Sign is always visible in tooltips, making gains vs losses obvious. ' +
+            'WITHOUT this: raw numbers without sign prefix.',
+        tags: ['semantic', 'format', 'decimal', 'profit'],
         chartType: 'Bar Chart',
         data,
         fields: [makeField('quarter'), makeField('profit')],
         metadata: {
             quarter: { type: Type.String, semanticType: 'Category', levels: quarters },
             profit:  { type: Type.Number, semanticType: 'Profit',   levels: [] },
+        },
+        semanticAnnotations: {
+            profit: { semanticType: 'Profit', unit: 'USD' },
         },
         encodingMap: {
             x: makeEncodingItem('quarter'),
@@ -828,7 +839,7 @@ function genLatitudeDomainClampTest(): TestCase {
 
 // ============================================================================
 // 13. Percentage Change — signed percent (+12.3% / -5.1%)
-//     Semantic type: "PercentageChange"  →  signed-percent format
+//     Semantic type: "PercentageChange"  →  percent format
 //
 //     WITHOUT this annotation:
 //       Axis shows 0.12, -0.05 — no sign on positive, no % symbol.
@@ -851,10 +862,10 @@ function genPercentageChangeSignedTest(): TestCase {
     return {
         title: 'Percentage Change (signed ±%)',
         description:
-            'Semantic type "PercentageChange" uses signed-percent format: "+12.3%" / "-5.1%". ' +
+            'Semantic type "PercentageChange" uses percent format. ' +
             'Sign is always visible, making gains and losses instantly clear. ' +
             'WITHOUT this: raw decimals like 0.12 or -0.05 with no % symbol.',
-        tags: ['semantic', 'format', 'signed-percent', 'percentage-change'],
+        tags: ['semantic', 'format', 'percent', 'percentage-change'],
         chartType: 'Bar Chart',
         data,
         fields: [makeField('stock'), makeField('ytd_change'), makeField('market_cap_B')],
@@ -1104,7 +1115,7 @@ function genRevenueSequentialColorTest(): TestCase {
 // ============================================================================
 // 23. Correlation — diverging color + bounded domain [-1, 1]
 //     Semantic type: "Correlation" → domain [-1, 1], diverging color,
-//     clamped scale, signed-decimal format
+//     clamped scale, decimal format
 //
 //     WITHOUT this annotation:
 //       Color scale auto-fits to data range (e.g., [0.12, 0.89]).
@@ -1112,7 +1123,7 @@ function genRevenueSequentialColorTest(): TestCase {
 //
 //     WITH "Correlation":
 //       Domain clamped to [-1, 1], diverging color with midpoint at 0,
-//       signed-decimal format (+0.85 / -0.42). Full semantic context.
+//       decimal format (0.85 / -0.42). Full semantic context.
 // ============================================================================
 
 function genCorrelationDivergingTest(): TestCase {
@@ -1335,7 +1346,7 @@ function genCostCurrencyFormatTest(): TestCase {
     return {
         title: 'Cost Currency Format ($)',
         description:
-            'Semantic type "Cost" uses currency format ($450K, $1.2M). ' +
+            'Semantic type "Cost" with unit "USD" uses currency format ($450K, $1.2M). ' +
             'Cost is additive — department costs sum to total company cost. ' +
             'WITHOUT this: plain numbers without currency context.',
         tags: ['semantic', 'format', 'currency', 'cost'],
@@ -1345,6 +1356,9 @@ function genCostCurrencyFormatTest(): TestCase {
         metadata: {
             department:  { type: Type.String, semanticType: 'Category', levels: departments },
             annual_cost: { type: Type.Number, semanticType: 'Amount',     levels: [] },
+        },
+        semanticAnnotations: {
+            annual_cost: { semanticType: 'Amount', unit: 'USD' },
         },
         encodingMap: {
             x: makeEncodingItem('department'),
@@ -1722,10 +1736,10 @@ function genPriceEurCurrencyTest(): TestCase {
     return {
         title: 'Price with EUR Currency Override',
         description:
-            'Annotation unit "EUR" overrides default $ to show "€3.50" on axis. ' +
+            'Annotation unit "EUR" provides an explicit currency symbol, showing "€3.50" on axis. ' +
             'Price is intensive (average makes sense, sum doesn\'t) with 2 decimal ' +
             'places for cents. ' +
-            'WITHOUT this: default $ prefix or bare numbers.',
+            'WITHOUT this: bare numbers with no currency symbol.',
         tags: ['semantic', 'format', 'currency', 'price', 'unit-override'],
         chartType: 'Bar Chart',
         data,
@@ -1800,7 +1814,7 @@ function genYearOrdinalDisambiguationTest(): TestCase {
 // ============================================================================
 // 37. Profit on color — signed currency diverging color
 //     Semantic type: "Profit" on color → diverging color scheme
-//     centered at 0, signed-currency format
+//     centered at 0, decimal format
 //
 //     When Profit is on the color channel instead of axis, the diverging
 //     analysis applies to color: positive = one hue, negative = another,
@@ -1830,7 +1844,7 @@ function genProfitColorDivergingTest(): TestCase {
             'Profit on color channel triggers diverging color scheme (midpoint 0). ' +
             'Positive profit → one hue, negative → another, making P&L obvious. ' +
             'WITHOUT this: sequential gradient, losses and gains look alike.',
-        tags: ['semantic', 'colorScheme', 'diverging', 'profit', 'signed-currency'],
+        tags: ['semantic', 'colorScheme', 'diverging', 'profit', 'decimal'],
         chartType: 'Bar Chart',
         data,
         fields: [makeField('product'), makeField('revenue'), makeField('profit')],
@@ -2492,5 +2506,381 @@ export function genSnapToBoundTests(): TestCase[] {
         genSnapStackedSumExceedsTest(),
         genSnapStackedIndividualSnapButTotalsExceedTest(),
         genSnapStackedTotalsFarFromBoundTest(),
+    ];
+}
+
+// ############################################################################
+// SEMANTIC TYPE FALLBACK TESTS
+//
+// Demonstrate that the compiler handles wrong or overly generic semantic type
+// annotations gracefully. Each test uses data that is identical (or similar)
+// to a normal gallery example but deliberately assigns incorrect or
+// "Unknown" semantic types. The compiler should fall back via the type
+// hierarchy and produce a sensible chart from physical data characteristics.
+// ############################################################################
+
+// ============================================================================
+// F1. Grouped Bar — revenue labeled as "Count"
+//     Revenue should be "Amount" (gets $ prefix, sum aggregation). Labeled
+//     as "Count" instead — a plausible mistake since both are numeric measures.
+//     Loses currency formatting; gets integer formatting instead.
+// ============================================================================
+
+function genFallbackGroupedBarCountForRevenueTest(): TestCase {
+    const rand = seeded(8001);
+    const cities = ['Seattle', 'Austin', 'Boston', 'Denver', 'Miami'];
+    const segments = ['Online', 'Retail', 'Wholesale'];
+    const data: Record<string, any>[] = [];
+    for (const city of cities) {
+        for (const seg of segments) {
+            data.push({ city, segment: seg, revenue: Math.round(100000 + rand() * 900000) });
+        }
+    }
+
+    return {
+        title: 'Fallback: Grouped Bar — Count for Revenue',
+        description:
+            'Revenue should be "Amount" (currency prefix $, SI abbreviation) but is ' +
+            'labeled "Count" — a common near-miss since both are numeric measures. ' +
+            'The compiler accepts "Count" (it is a valid numeric type) but applies ' +
+            'integer formatting instead of currency formatting. Compare with the ' +
+            'Revenue Formatting test to see what "Amount" adds.',
+        tags: ['semantic', 'fallback', 'near-miss', 'grouped-bar', 'currency'],
+        chartType: 'Grouped Bar Chart',
+        data,
+        fields: [makeField('city'), makeField('segment'), makeField('revenue')],
+        metadata: {
+            city:    { type: Type.String, semanticType: 'City',     levels: cities },
+            segment: { type: Type.String, semanticType: 'Category', levels: segments },
+            revenue: { type: Type.Number, semanticType: 'Count',    levels: [] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('city'),
+            y:     makeEncodingItem('revenue'),
+            group: makeEncodingItem('segment'),
+        },
+    };
+}
+
+// ============================================================================
+// F2. Grouped Bar — quarters labeled as "Month"
+//     Quarters ("Q1"–"Q4") should be "Quarter" but labeled "Month" instead.
+//     Both are temporal granules, so this is a plausible near-miss. The
+//     compiler may apply month canonical ordering (Jan–Dec) which doesn't
+//     match the data; it falls back when values don't parse as months.
+// ============================================================================
+
+function genFallbackGroupedBarMonthForQuarterTest(): TestCase {
+    const rand = seeded(8002);
+    const departments = ['Engineering', 'Marketing', 'Sales', 'Support'];
+    const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+    const data: Record<string, any>[] = [];
+    for (const dept of departments) {
+        for (const q of quarters) {
+            data.push({ department: dept, quarter: q, headcount: Math.round(20 + rand() * 80) });
+        }
+    }
+
+    return {
+        title: 'Fallback: Grouped Bar — Month for Quarter',
+        description:
+            'Quarter values ("Q1"–"Q4") should be "Quarter" but labeled "Month". ' +
+            'Both are temporal granules — a plausible confusion. The compiler detects ' +
+            'that "Q1" doesn\'t parse as a month name, so Month\'s canonical ordering ' +
+            '(Jan–Dec) cannot apply. It falls back along the hierarchy: Month → ' +
+            'DateGranule → Temporal, then to data-driven ordering.',
+        tags: ['semantic', 'fallback', 'near-miss', 'grouped-bar', 'temporal'],
+        chartType: 'Grouped Bar Chart',
+        data,
+        fields: [makeField('department'), makeField('quarter'), makeField('headcount')],
+        metadata: {
+            department: { type: Type.String, semanticType: 'Category', levels: departments },
+            quarter:    { type: Type.String, semanticType: 'Month',    levels: quarters },
+            headcount:  { type: Type.Number, semanticType: 'Count',    levels: [] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('department'),
+            y:     makeEncodingItem('headcount'),
+            group: makeEncodingItem('quarter'),
+        },
+    };
+}
+
+// ============================================================================
+// F3. Heatmap — days labeled as "Category", hours labeled as "Category"
+//     Day-of-week ("Mon"–"Fri") should be "Day" for canonical ordering;
+//     hour slots should be "Hour". Both labeled as generic "Category" instead.
+//     Chart renders correctly but loses canonical Mon–Fri / 9am–5pm ordering.
+// ============================================================================
+
+function genFallbackHeatmapCategoryForDayTest(): TestCase {
+    const rand = seeded(8003);
+    const rows = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    const cols = Array.from({ length: 24 }, (_, hour) => `${hour.toString().padStart(2, '0')}:00`);
+    const data: Record<string, any>[] = [];
+    for (const r of rows) {
+        for (const c of cols) {
+            data.push({ day: r, hour: c, activity: Math.round(rand() * 100) });
+        }
+    }
+
+    return {
+        title: 'Fallback: Heatmap — Category for Day/Hour',
+        description:
+            'Day-of-week and hour-of-day are both labeled "Category" instead of "Day" ' +
+            'and "Hour". This is a common near-miss — the LLM treats temporal labels ' +
+            'as generic categories. The chart renders correctly, but loses the canonical ' +
+            'Mon–Fri and 00:00–23:00 ordering that "Day" and "Hour" would provide.',
+        tags: ['semantic', 'fallback', 'near-miss', 'heatmap', 'ordering'],
+        chartType: 'Heatmap',
+        data,
+        fields: [makeField('day'), makeField('hour'), makeField('activity')],
+        metadata: {
+            day:      { type: Type.String, semanticType: 'Category', levels: rows },
+            hour:     { type: Type.String, semanticType: 'Category', levels: cols },
+            activity: { type: Type.Number, semanticType: 'Score',    levels: [] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('hour'),
+            y:     makeEncodingItem('day'),
+            color: makeEncodingItem('activity'),
+        },
+    };
+}
+
+// ============================================================================
+// F4. Heatmap — sales labeled as "Percentage"
+//     Sales values (50–500) should be "Amount" but labeled "Percentage",
+//     which expects 0–100 or 0–1 range. The compiler applies percentage
+//     formatting ("50%"–"500%") which is wrong, but the chart still renders.
+//     The compiler detects the values are way outside [0, 1], so no snap
+//     fires, but the "%" suffix persists.
+// ============================================================================
+
+function genFallbackHeatmapPercentageForSalesTest(): TestCase {
+    const rand = seeded(8004);
+    const products = ['Widget', 'Gadget', 'Gizmo', 'Doohickey'];
+    const regions = ['North', 'South', 'East', 'West'];
+    const data: Record<string, any>[] = [];
+    for (const p of products) {
+        for (const r of regions) {
+            data.push({ product: p, region: r, sales: Math.round(50 + rand() * 450) });
+        }
+    }
+
+    return {
+        title: 'Fallback: Heatmap — Percentage for Sales',
+        description:
+            'Sales (50–500) labeled as "Percentage" instead of "Amount". A plausible ' +
+            'mistake when the LLM confuses revenue share with revenue. The compiler ' +
+            'applies percentage formatting, which adds a "%" suffix to axis labels. ' +
+            'Values are way outside the expected [0, 1] or [0, 100] range, so snap ' +
+            'doesn\'t fire, but the formatting is misleading.',
+        tags: ['semantic', 'fallback', 'near-miss', 'heatmap', 'format'],
+        chartType: 'Heatmap',
+        data,
+        fields: [makeField('product'), makeField('region'), makeField('sales')],
+        metadata: {
+            product: { type: Type.String, semanticType: 'Category',   levels: products },
+            region:  { type: Type.String, semanticType: 'Category',   levels: regions },
+            sales:   { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            sales: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('region'),
+            y:     makeEncodingItem('product'),
+            color: makeEncodingItem('sales'),
+        },
+    };
+}
+
+// ============================================================================
+// F5. Line Chart — months labeled as "Category"
+//     Month names ("Jan"–"Dec") should be "Month" for canonical ordering.
+//     Labeled as "Category" instead — the chart renders but months may
+//     appear in alphabetical or data order, not Jan→Dec order.
+// ============================================================================
+
+function genFallbackLineCategoryForMonthTest(): TestCase {
+    const rand = seeded(8005);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const data = months.map(m => ({
+        month: m,
+        signups: Math.round(50 + rand() * 200),
+    }));
+
+    return {
+        title: 'Fallback: Line — Category for Month',
+        description:
+            'Month names ("Jan"–"Dec") should be "Month" for canonical Jan→Dec ordering, ' +
+            'but labeled "Category". A very common LLM near-miss. The chart renders but ' +
+            'months may appear in data-insertion or alphabetical order rather than the ' +
+            'natural calendar order. Compare with the Month Canonical Order test.',
+        tags: ['semantic', 'fallback', 'near-miss', 'line', 'ordering'],
+        chartType: 'Line Chart',
+        data,
+        fields: [makeField('month'), makeField('signups')],
+        metadata: {
+            month:   { type: Type.String, semanticType: 'Category', levels: months },
+            signups: { type: Type.Number, semanticType: 'Count',    levels: [] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('month'),
+            y: makeEncodingItem('signups'),
+        },
+    };
+}
+
+// ============================================================================
+// F6. Line Chart — temperature labeled as "Quantity"
+//     Temperature should be "Temperature" (diverging detection, °C suffix).
+//     Labeled as "Quantity" instead — a sibling under the Physical T1 family.
+//     Loses the potential diverging color and degree formatting.
+// ============================================================================
+
+function genFallbackLineQuantityForTemperatureTest(): TestCase {
+    const rand = seeded(8006);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const data = months.map(m => ({
+        month: m,
+        temperature: Math.round(-5 + rand() * 40),
+    }));
+
+    return {
+        title: 'Fallback: Line — Quantity for Temperature',
+        description:
+            'Temperature (°C) labeled as "Quantity" instead of "Temperature". Both are ' +
+            'under the Physical T1 family, so this is a sibling near-miss. The compiler ' +
+            'treats it as a generic physical measure: no °C suffix formatting, no ' +
+            'freezing-point diverging detection. The chart shape is correct but loses ' +
+            'the temperature-specific formatting and semantic cues.',
+        tags: ['semantic', 'fallback', 'near-miss', 'line', 'format', 'diverging'],
+        chartType: 'Line Chart',
+        data,
+        fields: [makeField('month'), makeField('temperature')],
+        metadata: {
+            month:       { type: Type.String, semanticType: 'Month',    levels: months },
+            temperature: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+        },
+        encodingMap: {
+            x: makeEncodingItem('month'),
+            y: makeEncodingItem('temperature'),
+        },
+    };
+}
+
+// ============================================================================
+// F7. Area Chart — user counts labeled as "Amount"
+//     User counts should be "Count" (integer formatting, no currency prefix).
+//     Labeled as "Amount" instead — gets currency prefix ($) and SI
+//     abbreviation, which is misleading for a user count metric.
+// ============================================================================
+
+function genFallbackAreaAmountForCountTest(): TestCase {
+    const rand = seeded(8007);
+    const quarters = ['Q1 2023', 'Q2 2023', 'Q3 2023', 'Q4 2023',
+                      'Q1 2024', 'Q2 2024', 'Q3 2024', 'Q4 2024'];
+    const channels = ['Web', 'Mobile', 'Desktop'];
+    const data: Record<string, any>[] = [];
+    for (const q of quarters) {
+        for (const ch of channels) {
+            data.push({ period: q, channel: ch, users: Math.round(1000 + rand() * 9000) });
+        }
+    }
+
+    return {
+        title: 'Fallback: Area — Amount for Count',
+        description:
+            'User counts labeled as "Amount" instead of "Count". Both are numeric ' +
+            'measures with sum aggregation and meaningful zero, so the chart shape is ' +
+            'correct. But "Amount" still suggests a generic amount-style presentation, ' +
+            'typically abbreviated as "5.2K" rather than formatted as a plain count ' +
+            'like "5,200 users", which is a worse fit for this field.',
+        tags: ['semantic', 'fallback', 'near-miss', 'area', 'format', 'currency'],
+        chartType: 'Area Chart',
+        data,
+        fields: [makeField('period'), makeField('channel'), makeField('users')],
+        metadata: {
+            period:  { type: Type.String, semanticType: 'Category', levels: quarters },
+            channel: { type: Type.String, semanticType: 'Category', levels: channels },
+            users:   { type: Type.Number, semanticType: 'Amount',   levels: [] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('period'),
+            y:     makeEncodingItem('users'),
+            color: makeEncodingItem('channel'),
+        },
+    };
+}
+
+// ============================================================================
+// F8. Scatter Plot — score labeled as "Percentage"
+//     Exam scores (0–100) labeled as "Percentage" instead of "Score".
+//     Both have similar ranges, but "Percentage" adds "%" suffix and
+//     snap-to-bound behavior, while "Score" uses integer ticks with
+//     a fixed [0, 100] domain. The chart still renders, but axis
+//     labels show "85%" instead of "85".
+// ============================================================================
+
+function genFallbackScatterPercentageForScoreTest(): TestCase {
+    const rand = seeded(8008);
+    const teams = ['Alpha', 'Beta', 'Gamma', 'Delta'];
+    const data: Record<string, any>[] = [];
+    for (const team of teams) {
+        for (let i = 0; i < 15; i++) {
+            data.push({
+                team,
+                study_hours: Math.round(2 + rand() * 18),
+                exam_score: Math.round(55 + rand() * 40),
+            });
+        }
+    }
+
+    return {
+        title: 'Fallback: Scatter — Percentage for Score',
+        description:
+            'Exam scores (55–95) labeled as "Percentage" instead of "Score". Both have ' +
+            'similar numeric ranges, making this a very plausible LLM mistake. ' +
+            '"Percentage" adds "%" suffix (showing "85%" instead of "85") and applies ' +
+            'percentage snap-to-bound behavior. "Score" would use integer ticks and a ' +
+            'clean [0, 100] domain without "%" formatting.',
+        tags: ['semantic', 'fallback', 'near-miss', 'scatter', 'format', 'domain'],
+        chartType: 'Scatter Plot',
+        data,
+        fields: [makeField('team'), makeField('study_hours'), makeField('exam_score')],
+        metadata: {
+            team:       { type: Type.String, semanticType: 'Category',   levels: teams },
+            study_hours: { type: Type.Number, semanticType: 'Count',     levels: [] },
+            exam_score: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+        },
+        semanticAnnotations: {
+            exam_score: { semanticType: 'Percentage', intrinsicDomain: [0, 100] },
+        },
+        encodingMap: {
+            x:     makeEncodingItem('study_hours'),
+            y:     makeEncodingItem('exam_score'),
+            color: makeEncodingItem('team'),
+        },
+    };
+}
+
+// ============================================================================
+// Public generator: Semantic Fallback Tests
+// ============================================================================
+
+export function genSemanticFallbackTests(): TestCase[] {
+    return [
+        genFallbackGroupedBarCountForRevenueTest(),
+        genFallbackGroupedBarMonthForQuarterTest(),
+        genFallbackHeatmapCategoryForDayTest(),
+        genFallbackHeatmapPercentageForSalesTest(),
+        genFallbackLineCategoryForMonthTest(),
+        genFallbackLineQuantityForTemperatureTest(),
+        genFallbackAreaAmountForCountTest(),
+        genFallbackScatterPercentageForScoreTest(),
     ];
 }

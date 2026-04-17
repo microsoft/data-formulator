@@ -41,8 +41,8 @@ export type T1Category =
 export type DomainShape = 'open' | 'bounded' | 'fixed' | 'cyclic';
 export type AggRole = 'additive' | 'intensive' | 'signed-additive' | 'dimension' | 'identifier';
 export type DivergingClass = 'none' | 'inherent' | 'conditional';
-export type FormatClass = 'currency' | 'percent' | 'signed-percent' | 'signed-currency'
-    | 'signed-decimal' | 'unit-suffix' | 'integer' | 'decimal' | 'plain';
+export type FormatClass = 'currency' | 'percent'
+    | 'unit-suffix' | 'integer' | 'decimal' | 'plain';
 
 /**
  * Zero-baseline classification for quantitative axes.
@@ -112,10 +112,10 @@ const TYPE_REGISTRY: Record<string, TypeRegistryEntry> = {
     Percentage:    { t0: 'Measure', t1: 'Proportion', visEncodings: ['quantitative'],      aggRole: 'intensive',  domainShape: 'bounded', diverging: 'none',        formatClass: 'percent',    zeroBaseline: 'contextual', zeroPad: 0 },
 
     // --- Measure: SignedMeasure ---
-    Profit:             { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'signed-additive', domainShape: 'open', diverging: 'conditional', formatClass: 'signed-currency',  zeroBaseline: 'meaningful', zeroPad: 0 },
-    PercentageChange:   { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'open', diverging: 'conditional', formatClass: 'signed-percent',   zeroBaseline: 'contextual', zeroPad: 0.05 },
-    Sentiment:          { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'open', diverging: 'inherent',    formatClass: 'signed-decimal',   zeroBaseline: 'meaningful', zeroPad: 0 },
-    Correlation:        { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'bounded', diverging: 'inherent', formatClass: 'signed-decimal',   zeroBaseline: 'meaningful', zeroPad: 0 },
+    Profit:             { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'signed-additive', domainShape: 'open', diverging: 'conditional', formatClass: 'decimal',          zeroBaseline: 'meaningful', zeroPad: 0 },
+    PercentageChange:   { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'open', diverging: 'conditional', formatClass: 'percent',          zeroBaseline: 'contextual', zeroPad: 0.05 },
+    Sentiment:          { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'open', diverging: 'inherent',    formatClass: 'decimal',          zeroBaseline: 'meaningful', zeroPad: 0 },
+    Correlation:        { t0: 'Measure', t1: 'SignedMeasure', visEncodings: ['quantitative'], aggRole: 'intensive',       domainShape: 'bounded', diverging: 'inherent', formatClass: 'decimal',          zeroBaseline: 'meaningful', zeroPad: 0 },
 
     // --- Measure: GenericMeasure ---
     Count:         { t0: 'Measure', t1: 'GenericMeasure', visEncodings: ['quantitative'],  aggRole: 'additive',   domainShape: 'open',    diverging: 'none',        formatClass: 'integer',    zeroBaseline: 'meaningful', zeroPad: 0 },

@@ -75,7 +75,7 @@ class SortDataAgent(object):
             'value': values
         }
 
-        user_query = f"[INPUT]\n\n{json.dumps(input_obj)}\n\n[OUTPUT]"
+        user_query = f"[INPUT]\n\n{json.dumps(input_obj, ensure_ascii=False)}\n\n[OUTPUT]"
 
         logger.debug(user_query)
         logger.info(f"[SortDataAgent] run start")

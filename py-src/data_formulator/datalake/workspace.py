@@ -21,20 +21,22 @@ import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from data_formulator.datalake.metadata import (
+from data_formulator.datalake.workspace_metadata import (
     WorkspaceMetadata,
     TableMetadata,
     load_metadata,
     save_metadata,
+    update_metadata,
     metadata_exists,
 )
 from data_formulator.datalake.parquet_utils import (
+    safe_data_filename,
     sanitize_table_name,
     get_arrow_column_info,
     compute_arrow_table_hash,
@@ -80,6 +82,30 @@ def get_default_workspace_root() -> Path:
     Returns DATA_FORMULATOR_HOME / "workspaces".
     """
     return get_data_formulator_home() / "workspaces"
+
+
+def get_user_home(identity_id: str) -> Path:
+    """Return the per-user home directory: DATA_FORMULATOR_HOME/users/<safe_id>/.
+
+    Shared helper used by workspace_factory, data_connector, and any
+    code that needs per-user storage paths.
+    """
+    safe_id = _sanitize_identity_id(identity_id)
+    return get_data_formulator_home() / "users" / safe_id
+
+
+def _sanitize_identity_id(identity_id: str) -> str:
+    """Sanitize identity_id for use as a directory name.
+
+    Uses ``secure_filename`` to produce a safe single-component name.
+    Raises ``ValueError`` if the result is empty or too long.
+    """
+    if len(identity_id) > 256:
+        raise ValueError("identity_id too long")
+    result = secure_filename(identity_id)
+    if not result:
+        raise ValueError("identity_id sanitized to empty string")
+    return result
 
 
 def cleanup_stale_temp_files(workspace_path: Path, max_age_hours: int = 24) -> int:
@@ -138,13 +164,17 @@ class Workspace:
     All files are stored in a single flat directory per user.
     """
     
-    def __init__(self, identity_id: str, root_dir: Optional[str | Path] = None):
+    def __init__(self, identity_id: str, root_dir: Optional[str | Path] = None, *, workspace_path: Optional[str | Path] = None):
         """
         Initialize a workspace for a user.
         
         Args:
             identity_id: Unique identifier for the user (e.g., "user:123" or "browser:abc")
             root_dir: Root directory for all workspaces. If None, uses default.
+                      Ignored if workspace_path is provided.
+            workspace_path: Direct path to the workspace directory. When provided,
+                           root_dir and identity_id-based path resolution are skipped.
+                           Used by WorkspaceManager for multi-workspace support.
         """
         if not identity_id:
             raise ValueError("identity_id cannot be empty")
@@ -153,26 +183,29 @@ class Workspace:
         self._identity_id = identity_id
         self._safe_id = self._sanitize_identity_id(identity_id)
         
-        # Determine root directory
-        if root_dir is None:
-            self._root = get_default_workspace_root()
+        if workspace_path is not None:
+            # Direct path mode (used by WorkspaceManager)
+            self._path = Path(workspace_path)
+            self._root = self._path.parent
         else:
-            self._root = Path(root_dir)
-        
-        # Workspace path is root / sanitized_identity_id
-        self._path = self._root / self._safe_id
+            # Legacy mode: root_dir / sanitized_identity_id
+            if root_dir is None:
+                self._root = get_default_workspace_root()
+            else:
+                self._root = Path(root_dir)
+            self._path = self._root / self._safe_id
 
-        # Verify the constructed path hasn't escaped the root directory
-        resolved = self._path.resolve()
-        root_resolved = self._root.resolve()
-        if not str(resolved).startswith(str(root_resolved) + os.sep) and resolved != root_resolved:
-            raise ValueError(
-                f"Path traversal detected: workspace path escapes root directory"
-            )
-        if resolved == root_resolved:
-            raise ValueError(
-                "identity_id must not resolve to the workspace root itself"
-            )
+            # Verify the constructed path hasn't escaped the root directory
+            resolved = self._path.resolve()
+            root_resolved = self._root.resolve()
+            if not str(resolved).startswith(str(root_resolved) + os.sep) and resolved != root_resolved:
+                raise ValueError(
+                    f"Path traversal detected: workspace path escapes root directory"
+                )
+            if resolved == root_resolved:
+                raise ValueError(
+                    "identity_id must not resolve to the workspace root itself"
+                )
 
         # Ensure workspace directory exists
         self._path.mkdir(parents=True, exist_ok=True)
@@ -195,18 +228,11 @@ class Workspace:
     
     @staticmethod
     def _sanitize_identity_id(identity_id: str) -> str:
-        """
-        Sanitize identity_id for use as a directory name.
+        """Sanitize identity_id for use as a directory name.
         
-        Uses ``secure_filename`` to produce a safe single-component name.
-        Raises ``ValueError`` if the result is empty or too long.
+        Delegates to module-level :func:`_sanitize_identity_id`.
         """
-        if len(identity_id) > 256:
-            raise ValueError("identity_id too long")
-        result = secure_filename(identity_id)
-        if not result:
-            raise ValueError("identity_id sanitized to empty string")
-        return result
+        return _sanitize_identity_id(identity_id)
     
     def _init_metadata(self) -> None:
         """Initialize a new workspace with empty metadata."""
@@ -216,19 +242,31 @@ class Workspace:
     
     def get_file_path(self, filename: str) -> Path:
         """
-        Get the full path for a file in the workspace.
-        
+        Get the full path for a data file in the workspace.
+
+        Files are stored under the ``data/`` subdirectory of the workspace.
+
+        Uses :func:`safe_data_filename` for Unicode-safe sanitisation:
+        extracts the basename to prevent path traversal while preserving
+        non-ASCII characters (Chinese, Japanese, etc.).
+
         Args:
             filename: Name of the file
             
         Returns:
-            Full path to the file
+            Full path to the file under data/
         """
-        # secure_filename strips path separators and ".." components.
-        safe_filename = secure_filename(filename)
-        if not safe_filename:
-            raise ValueError(f"Invalid filename: {filename!r}")
-        return self._path / safe_filename
+        data_dir = self._path / "data"
+        data_dir.mkdir(exist_ok=True)
+
+        basename = safe_data_filename(filename)
+        result = data_dir / basename
+        try:
+            result.resolve().relative_to(data_dir.resolve())
+        except ValueError:
+            raise ValueError(f"Path traversal detected: {filename!r}")
+
+        return result
     
     def file_exists(self, filename: str) -> bool:
         """
@@ -259,18 +297,38 @@ class Workspace:
         if table is None:
             return False
         
-        # Delete the file
         file_path = self.get_file_path(table.filename)
         if file_path.exists():
             file_path.unlink()
         
-        # Remove from metadata
-        metadata.remove_table(table_name)
-        self.save_metadata(metadata)
+        removed = [False]
+
+        def _remove(m: WorkspaceMetadata) -> None:
+            removed[0] = m.remove_table(table_name)
+
+        self._atomic_update_metadata(_remove)
         
         logger.info(f"Deleted table {table_name} from workspace {self._safe_id}")
-        return True
-    
+        return removed[0]
+
+    # ── Metadata helpers ─────────────────────────────────────────────
+
+    def _atomic_update_metadata(
+        self,
+        updater: "Callable[[WorkspaceMetadata], None]",
+    ) -> WorkspaceMetadata:
+        """Atomically read → update → write workspace metadata.
+
+        Uses :func:`update_metadata` which holds a **single** file lock
+        across the entire read-modify-write cycle, preventing lost updates
+        when multiple requests modify metadata concurrently.
+
+        Subclasses (e.g. Azure Blob) should override this to provide
+        their own concurrency control.
+        """
+        self._metadata_cache = update_metadata(self._path, updater)
+        return self._metadata_cache
+
     def get_metadata(self) -> WorkspaceMetadata:
         if self._metadata_cache is not None:
             return self._metadata_cache
@@ -279,7 +337,6 @@ class Workspace:
     
     def save_metadata(self, metadata: WorkspaceMetadata) -> None:
         save_metadata(self._path, metadata)
-        # Update the cache with the just-saved metadata
         self._metadata_cache = metadata
 
     def invalidate_metadata_cache(self) -> None:
@@ -287,9 +344,8 @@ class Workspace:
         self._metadata_cache = None
     
     def add_table_metadata(self, table: TableMetadata) -> None:
-        metadata = self.get_metadata()
-        metadata.add_table(table)
-        self.save_metadata(metadata)
+        """Atomically add or update a table entry in workspace metadata."""
+        self._atomic_update_metadata(lambda m: m.add_table(table))
     
     def get_table_metadata(self, table_name: str) -> Optional[TableMetadata]:
         """Look up table metadata, falling back to sanitized name."""
@@ -329,6 +385,40 @@ class Workspace:
             counter += 1
         return f"{base}_{counter}"
     
+    def delete_tables_by_source_file(self, source_filename: str) -> list[str]:
+        """Delete all tables whose source filename matches.
+
+        Atomically removes the metadata entries, then deletes the
+        physical file.  Used when re-uploading a file so that sheets
+        removed in the new version don't linger as orphans.
+
+        Returns:
+            Names of the deleted tables.
+        """
+        safe_filename = safe_data_filename(source_filename)
+        deleted: list[str] = []
+
+        def _cleanup(metadata: WorkspaceMetadata) -> None:
+            for name, table in list(metadata.tables.items()):
+                if table.filename == safe_filename:
+                    metadata.remove_table(name)
+                    deleted.append(name)
+
+        self._atomic_update_metadata(_cleanup)
+
+        if deleted:
+            try:
+                file_path = self.get_file_path(safe_filename)
+                if file_path.exists():
+                    file_path.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete source file {safe_filename}: {e}")
+            logger.info(
+                f"Deleted {len(deleted)} table(s) for source file "
+                f"{safe_filename}: {deleted}"
+            )
+        return deleted
+
     def cleanup(self) -> None:
         """ Remove the entire workspace directory. """
         if self._path.exists():
@@ -356,7 +446,7 @@ class Workspace:
         metadata = self.get_table_metadata(table_name)
         if metadata is None:
             raise FileNotFoundError(f"Table not found: {table_name}")
-        return metadata.filename
+        return f"data/{metadata.filename}"
 
     def read_data_as_df(self, table_name: str) -> pd.DataFrame:
         """
@@ -411,7 +501,7 @@ class Workspace:
         table: pa.Table,
         table_name: str,
         compression: str = DEFAULT_COMPRESSION,
-        loader_metadata: Optional[dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
     ) -> TableMetadata:
         """
         Write a PyArrow Table directly to parquet.
@@ -445,17 +535,19 @@ class Workspace:
             last_synced=now,
         )
 
-        if loader_metadata:
-            table_metadata.loader_type = loader_metadata.get('loader_type')
-            table_metadata.loader_params = loader_metadata.get('loader_params')
-            table_metadata.source_table = loader_metadata.get('source_table')
-            table_metadata.source_query = loader_metadata.get('source_query')
+        if source_info:
+            table_metadata.loader_type = source_info.get('loader_type')
+            table_metadata.loader_params = source_info.get('loader_params')
+            table_metadata.source_table = source_info.get('source_table')
+            table_metadata.source_query = source_info.get('source_query')
+            table_metadata.import_options = source_info.get('import_options')
 
         self.add_table_metadata(table_metadata)
         logger.info(
             f"Wrote parquet {filename}: {table.num_rows} rows, "
             f"{table.num_columns} cols ({table_metadata.file_size} bytes) [Arrow]"
         )
+
         return table_metadata
 
     def write_parquet(
@@ -463,7 +555,7 @@ class Workspace:
         df: pd.DataFrame,
         table_name: str,
         compression: str = DEFAULT_COMPRESSION,
-        loader_metadata: Optional[dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
     ) -> TableMetadata:
         """Write a pandas DataFrame to parquet."""
         safe_name = sanitize_table_name(table_name)
@@ -495,17 +587,19 @@ class Workspace:
             last_synced=now,
         )
 
-        if loader_metadata:
-            table_metadata.loader_type = loader_metadata.get('loader_type')
-            table_metadata.loader_params = loader_metadata.get('loader_params')
-            table_metadata.source_table = loader_metadata.get('source_table')
-            table_metadata.source_query = loader_metadata.get('source_query')
+        if source_info:
+            table_metadata.loader_type = source_info.get('loader_type')
+            table_metadata.loader_params = source_info.get('loader_params')
+            table_metadata.source_table = source_info.get('source_table')
+            table_metadata.source_query = source_info.get('source_query')
+            table_metadata.import_options = source_info.get('import_options')
 
         self.add_table_metadata(table_metadata)
         logger.info(
             f"Wrote parquet {filename}: {len(df)} rows, "
             f"{len(df.columns)} cols ({table_metadata.file_size} bytes)"
         )
+
         return table_metadata
 
     def get_parquet_schema(self, table_name: str) -> dict:
@@ -592,7 +686,7 @@ class Workspace:
             logger.info(f"Table {table_name} unchanged (hash: {new_hash[:8]}…)")
             return old_meta, False
 
-        loader_metadata = {
+        source_info = {
             'loader_type': old_meta.loader_type,
             'loader_params': old_meta.loader_params,
             'source_table': old_meta.source_table,
@@ -602,7 +696,7 @@ class Workspace:
             table=table,
             table_name=table_name,
             compression=compression,
-            loader_metadata=loader_metadata,
+            source_info=source_info,
         )
         logger.info(f"Refreshed {table_name}: {old_meta.row_count} → {new_meta.row_count} rows")
         return new_meta, True
@@ -654,101 +748,14 @@ class Workspace:
             shutil.copytree(src, self._path, dirs_exist_ok=True)
 
     # ------------------------------------------------------------------
-    # Session management
+    # Export / Import
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _sanitize_session_name(name: str) -> str:
-        """Produce a storage-safe session name."""
-        return secure_filename(name) or 'unnamed'
-
-    def _get_sessions_root(self) -> Path:
-        """Return the per-user sessions directory on local filesystem."""
-        p = get_data_formulator_home() / "sessions" / self._safe_id
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-
-    def _session_dir(self, session_name: str) -> Path:
-        return self._get_sessions_root() / self._sanitize_session_name(session_name)
-
-    def save_session(self, session_name: str, state: dict) -> str:
-        """Save a session (state + workspace snapshot).
-
-        Returns the ISO timestamp of the save.
-        """
-        safe_name = self._sanitize_session_name(session_name)
-        sess_dir = self._session_dir(session_name)
-
-        # Wipe previous save with the same name
-        if sess_dir.exists():
-            shutil.rmtree(sess_dir)
-        sess_dir.mkdir(parents=True)
-
-        # 1. Workspace snapshot
-        self.save_workspace_snapshot(sess_dir / "workspace")
-
-        # 2. State JSON
-        (sess_dir / "state.json").write_text(
-            json.dumps(state, default=str), encoding="utf-8"
-        )
-
-        saved_at = datetime.now(timezone.utc).isoformat()
-        logger.info(f"Saved session '{safe_name}' for {self._identity_id}")
-        return saved_at
-
-    def load_session(self, session_name: str) -> dict | None:
-        """Load a session.  Restores workspace and returns the state dict.
-
-        Returns ``None`` if the session does not exist.
-        """
-        sess_dir = self._session_dir(session_name)
-        state_file = sess_dir / "state.json"
-        if not state_file.exists():
-            return None
-
-        # 1. Restore workspace
-        ws_saved = sess_dir / "workspace"
-        if ws_saved.exists():
-            self.restore_workspace_snapshot(ws_saved)
-
-        # 2. Return state
-        return json.loads(state_file.read_text(encoding="utf-8"))
-
-    def list_sessions(self) -> list[dict]:
-        """List saved sessions (newest first)."""
-        root = self._get_sessions_root()
-        sessions: list[dict] = []
-        if root.exists():
-            for child in sorted(root.iterdir()):
-                if not child.is_dir():
-                    continue
-                state_file = child / "state.json"
-                if not state_file.exists():
-                    continue
-                stat = state_file.stat()
-                sessions.append({
-                    "name": child.name,
-                    "saved_at": datetime.fromtimestamp(
-                        stat.st_mtime, tz=timezone.utc
-                    ).isoformat(),
-                })
-        sessions.sort(key=lambda s: s["saved_at"], reverse=True)
-        return sessions
-
-    def delete_session(self, session_name: str) -> bool:
-        """Delete a saved session.  Returns True if it existed."""
-        sess_dir = self._session_dir(session_name)
-        if not sess_dir.exists():
-            return False
-        shutil.rmtree(sess_dir)
-        logger.info(f"Deleted session '{session_name}' for {self._identity_id}")
-        return True
-
     def export_session_zip(self, state: dict) -> io.BytesIO:
-        """Export current state + workspace as a .dfsession zip."""
+        """Export current state + workspace as a zip."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("state.json", json.dumps(state, default=str))
+            zf.writestr("state.json", json.dumps(state, default=str, ensure_ascii=False))
             with tempfile.TemporaryDirectory(prefix="df_session_export_") as tmp_dir:
                 ws_snap = Path(tmp_dir) / "workspace"
                 self.save_workspace_snapshot(ws_snap)
@@ -761,7 +768,7 @@ class Workspace:
         return buf
 
     def import_session_zip(self, zip_data: io.BytesIO) -> dict:
-        """Import a .dfsession zip.  Restores workspace, returns state dict.
+        """Import a zip.  Restores workspace, returns state dict.
 
         Raises ``ValueError`` on invalid zip / missing state.json.
         """
@@ -781,13 +788,16 @@ class Workspace:
                     ws_tmp.mkdir(parents=True, exist_ok=True)
                     for entry in workspace_entries:
                         rel = entry[len("workspace/"):]
-                        # Guard against zip-slip: secure_filename strips
-                        # path separators and ".." components, and is
-                        # recognised by CodeQL as a path-injection sanitiser.
-                        safe_rel = secure_filename(rel)
-                        if not safe_rel:
-                            continue  # skip entries that sanitise to empty
-                        dest = ws_tmp / safe_rel
+                        if not rel:
+                            continue
+                        # Sanitize each path component individually to preserve
+                        # directory structure (e.g., "data/sales.parquet")
+                        # while still guarding against zip-slip / path traversal.
+                        parts = [secure_filename(p) for p in rel.split("/")]
+                        parts = [p for p in parts if p]
+                        if not parts:
+                            continue
+                        dest = ws_tmp.joinpath(*parts)
                         dest.parent.mkdir(parents=True, exist_ok=True)
                         dest.write_bytes(zf.read(entry))
                     self.restore_workspace_snapshot(ws_tmp)
@@ -875,8 +885,10 @@ class WorkspaceWithTempData:
 
     def __enter__(self) -> "WorkspaceWithTempData":
         if not self._temp_data:
+            logger.debug("[WorkspaceWithTempData] no temp data to mount")
             return self
 
+        logger.debug(f"[WorkspaceWithTempData] mounting {len(self._temp_data)} temp table(s)")
         for item in self._temp_data:
             base_name = item.get("name", "table")
             safe_name = sanitize_table_name(base_name)
@@ -895,13 +907,22 @@ class WorkspaceWithTempData:
 
             self._temp_table_names.append(safe_name)
             logger.debug(
-                f"Mounted temp table '{safe_name}' "
-                f"({len(df)} rows, in-memory metadata)"
+                f"[WorkspaceWithTempData] mounted temp table '{base_name}' -> '{safe_name}' "
+                f"({len(df)} rows, file={safe_name}.parquet)"
             )
+
+        # Debug: list all files in workspace after mounting
+        try:
+            ws_path = self._base._path
+            ws_files = [f for f in os.listdir(ws_path) if not f.startswith('.')]
+            logger.debug(f"[WorkspaceWithTempData] workspace files after mount: {ws_files}")
+        except Exception as e:
+            logger.debug(f"[WorkspaceWithTempData] could not list workspace files: {e}")
 
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        logger.debug(f"[WorkspaceWithTempData] cleaning up {len(self._temp_table_names)} temp table(s): {self._temp_table_names}")
         for name in self._temp_table_names:
             try:
                 self._base.delete_table(name)

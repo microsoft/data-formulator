@@ -150,6 +150,11 @@ export function vlApplyLayoutToSpec(
         if (stCategory !== 'temporal') return;
 
         const fieldVals = context.table.map((r: any) => r[enc.field]).filter((v: any) => v != null);
+
+        // Single unique value → no temporal formatting (would lose precision, e.g. "2007-12" → "2007")
+        const uniqueVals = new Set(fieldVals.map(String));
+        if (uniqueVals.size <= 1) return;
+
         const datelikeCnt = fieldVals.filter((v: any) =>
             typeof v !== 'string' || looksLikeDateString(String(v))
         ).length;
@@ -169,6 +174,7 @@ export function vlApplyLayoutToSpec(
 
         const expr = `isValid(toDate(datum.label)) ? timeFormat(toDate(datum.label), '${fmt}') : datum.label`;
         if (channel === 'x' || channel === 'y') {
+            if (enc.axis === null) return; // preserve axis suppression
             if (!enc.axis) enc.axis = {};
             enc.axis.labelExpr = expr;
         } else if (channel === 'color') {
@@ -436,6 +442,7 @@ export function vlApplyLayoutToSpec(
 
             // Axis/legend label color: grey for placeholder
             if (ch === 'x' || ch === 'y') {
+                if (enc.axis === null) continue; // preserve axis suppression
                 if (!enc.axis) enc.axis = {};
                 enc.axis.labelColor = {
                     condition: {
@@ -656,8 +663,10 @@ function vlApplyFieldContext(
             if (enc.bin && enc.type === 'temporal') {
                 enc.type = 'quantitative';
                 // Year/Decade values should show as plain integers, not "2,004"
-                if (!enc.axis) enc.axis = {};
-                if (!enc.axis.format) enc.axis.format = 'd';
+                if (enc.axis !== null) {
+                    if (!enc.axis) enc.axis = {};
+                    if (!enc.axis.format) enc.axis.format = 'd';
+                }
             }
 
             // ── 1. Number format (axis.format / axis.labelExpr) ──
@@ -668,7 +677,8 @@ function vlApplyFieldContext(
             // Without this: axes show raw numbers like "1000000" instead of "$1,000,000".
             if ((cs.format?.pattern || cs.format?.abbreviate) && (ch === 'x' || ch === 'y') && enc.type === 'quantitative' && !enc.bin) {
                 // Skip if the encoding already has an explicit format
-                if (!enc.axis?.format && !enc.axis?.labelExpr) {
+                if (enc.axis === null) { /* preserve axis suppression */ }
+                else if (!enc.axis?.format && !enc.axis?.labelExpr) {
                     if (!enc.axis) enc.axis = {};
                     const expr = formatSpecToLabelExpr(cs.format);
                     if (expr) {
@@ -844,6 +854,8 @@ function vlApplyFieldContext(
             // Without this: Rating 1-5 and Count axes show fractional ticks
             // like 1.5, 2.5, 3.5 that have no physical meaning.
             if (cs.tickConstraint && (ch === 'x' || ch === 'y') && enc.type === 'quantitative' && !enc.bin) {
+                if (enc.axis === null) { /* preserve axis suppression */ }
+                else {
                 if (!enc.axis) enc.axis = {};
                 if (cs.tickConstraint.integersOnly && enc.axis.tickMinStep === undefined) {
                     enc.axis.tickMinStep = cs.tickConstraint.minStep ?? 1;
@@ -874,6 +886,7 @@ function vlApplyFieldContext(
                         "format(datum.value, '$1d')",
                     );
                 }
+                } // close else (axis !== null)
             }
 
             // ── 5. Reversed axis (scale.reverse) ──
@@ -920,9 +933,12 @@ function vlApplyFieldContext(
                         // decade).  Make them very light so they convey the
                         // log-scale structure without competing with data.
                         if (ch === 'x' || ch === 'y') {
-                            if (!enc.axis) enc.axis = {};
-                            enc.axis.gridColor = '#e8e8e8';
-                            enc.axis.gridOpacity = 0.5;
+                            if (enc.axis === null) { /* preserve axis suppression */ }
+                            else {
+                                if (!enc.axis) enc.axis = {};
+                                enc.axis.gridColor = '#e8e8e8';
+                                enc.axis.gridOpacity = 0.5;
+                            }
                         }
                     }
                 }

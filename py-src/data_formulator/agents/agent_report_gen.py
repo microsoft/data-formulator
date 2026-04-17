@@ -52,9 +52,10 @@ Output markdown directly, do not need to include any other text.
 
 class ReportGenAgent(object):
 
-    def __init__(self, client, workspace):
+    def __init__(self, client, workspace, language_instruction=""):
         self.client = client
         self.workspace = workspace
+        self.language_instruction = language_instruction
 
     def get_data_summary(self, input_tables):
         return generate_data_summary(input_tables, self.workspace)
@@ -109,9 +110,13 @@ class ReportGenAgent(object):
             'content': content + [{'type': 'text', 'text': 'Now based off the data and visualizations provided by the user, generate a report in markdown. The style of the report should be ' + style + '.'}]
         }
 
+        prompt_text = SYSTEM_PROMPT
+        if self.language_instruction:
+            prompt_text = prompt_text + "\n\n" + self.language_instruction
+
         system_message = {
             'role': 'system',
-            'content': [ {'type': 'text', 'text': SYSTEM_PROMPT}]
+            'content': [ {'type': 'text', 'text': prompt_text}]
         }
 
         messages = [

@@ -30,13 +30,15 @@ import {
 
 
 import '../scss/VisualizationView.scss';
+import { useTranslation } from 'react-i18next';
 import { batch, useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, SSEMessage } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
-import { Chart, DictTable, Trigger } from "../components/ComponentType";
+import { Chart, DictTable, Trigger, InteractionEntry } from "../components/ComponentType";
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import StarIcon from '@mui/icons-material/Star';
+import PersonIcon from '@mui/icons-material/Person';
 import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
 
@@ -47,12 +49,11 @@ import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
-import { checkChartAvailability, generateChartSkeleton, getDataTable } from './VisualizationView';
+import { checkChartAvailability, generateChartSkeleton, getDataTable } from './ChartUtils';
 
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -60,65 +61,95 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { alpha } from '@mui/material/styles';
 
 import { RefreshDataDialog } from './RefreshDataDialog';
-import { AppDispatch } from '../app/store';
-import StopIcon from '@mui/icons-material/Stop';
-import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
-import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import { useDataRefresh } from '../app/useDataRefresh';
-import { buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
+import { buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
-import RuleIcon from '@mui/icons-material/Rule';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
-import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import ArticleIcon from '@mui/icons-material/Article';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import SearchIcon from '@mui/icons-material/Search';
+import AutoGraphIcon from '@mui/icons-material/AutoGraph';
+
+import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
 import { SimpleChartRecBox } from './SimpleChartRecBox';
-import { ChatThreadView } from './ChatThreadView';
+import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon } from './InteractionEntryCard';
+
+export const ThinkingBanner = (message: string, sx?: SxProps) => {
+    // Split message: first line is the title (with shimmer), rest is readable content
+    const newlineIdx = message.indexOf('\n');
+    const title = newlineIdx >= 0 ? message.slice(0, newlineIdx) : message;
+    const content = newlineIdx >= 0 ? message.slice(newlineIdx + 1).trim() : '';
+
+    // Pick icon based on title keywords
+    const titleLower = title.toLowerCase();
+    const IconComponent = titleLower.includes('code') || titleLower.includes('运行') ? TerminalIcon
+        : titleLower.includes('inspect') || titleLower.includes('检查') ? SearchIcon
+        : titleLower.includes('chart') || titleLower.includes('图表') ? AutoGraphIcon
+        : AutoAwesomeIcon;
+
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', ...sx }}>
+            {/* Title line with shimmer */}
+            <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                gap: '4px',
+                position: 'relative',
+                overflow: 'hidden',
+                '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
+                    animation: 'windowWipe 2s ease-in-out infinite',
+                    zIndex: 1,
+                    pointerEvents: 'none',
+                },
+                '@keyframes windowWipe': {
+                    '0%': { transform: 'translateX(-100%)' },
+                    '100%': { transform: 'translateX(100%)' },
+                },
+            }}>
+                <IconComponent sx={{ fontSize: 10, color: 'rgba(0, 0, 0, 0.5)' }} />
+                <Typography variant="body2" sx={{ fontSize: 10, color: 'rgba(0, 0, 0, 0.7) !important' }}>
+                    {title}
+                </Typography>
+            </Box>
+            {/* Content without shimmer — user wants to read this */}
+            {content && (
+                <Typography variant="body2" sx={{ 
+                    fontSize: 10, 
+                    color: 'rgba(0, 0, 0, 0.55)',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.4,
+                    maxHeight: 200,
+                    overflow: 'auto',
+                }}>
+                    {content}
+                </Typography>
+            )}
+        </Box>
+    );
+};
 
 
-export const ThinkingBanner = (message: string, sx?: SxProps) => (
-    <Box sx={{ 
-        display: 'flex', 
-        position: 'relative',
-        overflow: 'hidden',
-        '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
-            animation: 'windowWipe 2s ease-in-out infinite',
-            zIndex: 1,
-            pointerEvents: 'none',
-        },
-        '@keyframes windowWipe': {
-            '0%': {
-                transform: 'translateX(-100%)',
-            },
-            '100%': {
-                transform: 'translateX(100%)',
-            },
-        },
-        ...sx
-    }}>
-        <Typography variant="body2" sx={{ 
-            fontSize: 10, 
-            color: 'rgba(0, 0, 0, 0.7) !important'
-        }}>
-            {message}
-        </Typography>
-    </Box>
-);
 
+/** Seconds options for stream/database auto-refresh interval (labels in i18n: dataThread.refreshInterval.*). */
+const STREAM_REFRESH_INTERVAL_SECONDS = [1, 10, 30, 60, 300, 600, 1800, 3600, 86400] as const;
 
 // Streaming Settings Popup Component
 const StreamingSettingsPopup = memo<{
@@ -137,6 +168,7 @@ const StreamingSettingsPopup = memo<{
     );
     const [selectMenuOpen, setSelectMenuOpen] = useState<boolean>(false);
     const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+    const { t } = useTranslation();
 
     useEffect(() => {
         if (open) {
@@ -218,7 +250,7 @@ const StreamingSettingsPopup = memo<{
                                 }
                                 label={
                                     <Typography variant="body2" sx={{ fontSize: 11 }}>
-                                        Watch for updates
+                                        {t('dataThread.watchForUpdates')}
                                     </Typography>
                                 }
                                 sx={{ mr: 0 }}
@@ -226,7 +258,7 @@ const StreamingSettingsPopup = memo<{
                             {autoRefresh && (
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
                                     <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
-                                        every
+                                        {t('dataThread.every')}
                                     </Typography>
                                     <TextField
                                         select
@@ -246,15 +278,11 @@ const StreamingSettingsPopup = memo<{
                                             '& .MuiSelect-select': { py: 0.5 }
                                         }}
                                     >
-                                        <MenuItem value={1}>1s</MenuItem>
-                                        <MenuItem value={10}>10s</MenuItem>
-                                        <MenuItem value={30}>30s</MenuItem>
-                                        <MenuItem value={60}>1m</MenuItem>
-                                        <MenuItem value={300}>5m</MenuItem>
-                                        <MenuItem value={600}>10m</MenuItem>
-                                        <MenuItem value={1800}>30m</MenuItem>
-                                        <MenuItem value={3600}>1h</MenuItem>
-                                        <MenuItem value={86400}>24h</MenuItem>
+                                        {STREAM_REFRESH_INTERVAL_SECONDS.map((sec) => (
+                                            <MenuItem key={sec} value={sec}>
+                                                {t(`dataThread.refreshInterval.${sec}`)}
+                                            </MenuItem>
+                                        ))}
                                     </TextField>
                                 </Box>
                             )}
@@ -272,7 +300,7 @@ const StreamingSettingsPopup = memo<{
                                         alignSelf: 'flex-start'
                                     }}
                                 >
-                                    Refresh now
+                                    {t('dataThread.refreshNow')}
                                 </Button>
                             )}
                         </Box>
@@ -293,6 +321,7 @@ const MetadataPopup = memo<{
     tableName: string;
 }>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
     const [metadata, setMetadata] = useState(initialValue);
+    const { t } = useTranslation();
 
     let hasChanges = metadata !== initialValue;
 
@@ -337,12 +366,12 @@ const MetadataPopup = memo<{
                     }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                        Attach metadata to <Typography component="span" sx={{ fontSize: 'inherit', color: 'primary.main'}}>{tableName}</Typography>
+                        {t('dataThread.attachMetadataTo', { table: tableName })}
                     </Typography>
                     <TextField
                         autoFocus
-                        label="metadata"
-                        placeholder="Attach additional contexts or guidance so that AI agents can better understand and process the data."
+                        label={t('dataThread.metadata')}
+                        placeholder={t('dataThread.metadataPlaceholder')}
                         fullWidth
                         multiline
                         slotProps={{
@@ -358,8 +387,8 @@ const MetadataPopup = memo<{
                         sx={{ my: 1, '& .MuiInputBase-input': { fontSize: 12 } }}
                     />
                     <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <Button size="small" sx={{ml: 'auto'}} onClick={handleCancel} color="primary">Cancel</Button>
-                        <Button size="small" onClick={handleSave} color="primary" disabled={!hasChanges}>Save</Button>
+                        <Button size="small" sx={{ml: 'auto'}} onClick={handleCancel} color="primary">{t('app.cancel')}</Button>
+                        <Button size="small" onClick={handleSave} color="primary" disabled={!hasChanges}>{t('app.save')}</Button>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -379,6 +408,7 @@ const RenameTablePopup = memo<{
     tableName: string;
 }>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
     const [name, setName] = useState(initialValue);
+    const { t } = useTranslation();
 
     useEffect(() => {
         setName(initialValue);
@@ -413,7 +443,7 @@ const RenameTablePopup = memo<{
                     sx={{ width: 240, fontSize: 12, p: 1.5, mt: 1, ...ViewBorderStyle }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 0.5, fontSize: 12 }}>
-                        Rename table
+                        {t('dataThread.renameTable')}
                     </Typography>
                     <TextField
                         autoFocus
@@ -426,8 +456,8 @@ const RenameTablePopup = memo<{
                         sx={{ my: 0.5, '& .MuiInputBase-input': { fontSize: 12 } }}
                     />
                     <Box sx={{ mt: 0.5, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                        <Button size="small" onClick={onClose}>Cancel</Button>
-                        <Button size="small" onClick={handleSave} color="primary" disabled={name.trim() === '' || name.trim() === initialValue}>Save</Button>
+                        <Button size="small" onClick={onClose}>{t('app.cancel')}</Button>
+                        <Button size="small" onClick={handleSave} color="primary" disabled={name.trim() === '' || name.trim() === initialValue}>{t('app.save')}</Button>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -442,15 +472,18 @@ const WorkspacePanel: FC<{
     sx?: SxProps,
 }> = function ({ tables, chartElements, suppressScrollRef, sx }) {
     const theme = useTheme();
+    const { t } = useTranslation();
     const dispatch = useDispatch();
     const charts = useSelector(dfSelectors.getAllCharts);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        return undefined;
     }, [focusedId, charts]);
     const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -507,24 +540,32 @@ const WorkspacePanel: FC<{
         return encodings.slice(0, 3).join(', ') + (encodings.length > 3 ? '...' : '');
     };
 
-    const getTableSourceName = (table: DictTable) => {
-        // Get the source file name from table source
-        if (table.source?.type === 'file' && table.source?.fileName) {
-            return table.source.fileName;
-        }
-        if (table.source?.type === 'database' && table.source?.databaseTable) {
-            return table.source.databaseTable;
-        }
-        if (table.source?.type === 'stream' && table.source?.url) {
-            // Extract a meaningful name from URL
-            try {
-                const url = new URL(table.source.url);
-                return url.hostname;
-            } catch {
-                return 'stream';
+    const getOriginalTableName = (table: DictTable): string | null => {
+        if (table.derive) return null;
+        const name = table.source?.originalTableName;
+        if (!name || name === (table.displayId || table.id)) return null;
+        return name;
+    };
+
+    const getSourceTooltip = (table: DictTable): string | null => {
+        if (table.derive) return null;
+        const src = table.source;
+        if (!src) return null;
+        switch (src.type) {
+            case 'file': return src.fileName || t('dataThread.sourceFile');
+            case 'paste': return t('dataThread.sourcePaste');
+            case 'url': return src.url || t('dataThread.sourceUrl');
+            case 'stream': {
+                if (src.url) {
+                    try { return new URL(src.url).hostname; } catch { /* fall through */ }
+                }
+                return t('dataThread.sourceStream');
             }
+            case 'database': return src.databaseTable || t('dataThread.sourceDatabase');
+            case 'example': return t('dataThread.sourceExample');
+            case 'extract': return t('dataThread.sourceExtract');
+            default: return null;
         }
-        return null;
     };
 
     return (
@@ -556,7 +597,7 @@ const WorkspacePanel: FC<{
                         <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
                     }
                     <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
-                        Workspace
+                        {t('dataThread.workspace')}
                     </Typography>
                 </Box>
                 <Box
@@ -570,7 +611,7 @@ const WorkspacePanel: FC<{
                     }}
                 >
                     <AddIcon sx={{ fontSize: 14 }} />
-                    <Typography sx={{ fontSize: 11, fontWeight: 600 }}>add data</Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600 }}>{t('dataThread.addData')}</Typography>
                 </Box>
             </Box>
 
@@ -579,7 +620,8 @@ const WorkspacePanel: FC<{
                     {tables.map((table, tableIndex) => {
                         const isTableActive = focusedTableId === table.id;
                         const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
-                        const sourceName = getTableSourceName(table);
+                        const originalName = getOriginalTableName(table);
+                        const sourceTooltipText = getSourceTooltip(table);
                         const isLastTable = tableIndex === tables.length - 1;
 
                         const handleTableClick = () => {
@@ -613,36 +655,42 @@ const WorkspacePanel: FC<{
                                     }
                                 }}
                             >
-                                <Box
-                                    sx={fileItemSx(isTableActive)}
-                                    onClick={handleTableClick}
-                                >
-                                    {getTableIcon(table)}
-                                    <Typography sx={{
-                                        fontSize: 11,
-                                        fontWeight: isTableActive ? 600 : 400,
-                                        color: isTableActive ? 'primary.main' : 'text.primary',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        flex: 1,
-                                        minWidth: 0,
-                                    }}>
-                                        {table.displayId || table.id}
-                                        {sourceName && (
-                                            <Typography component="span" sx={{
-                                                fontSize: 10,
-                                                color: 'text.disabled',
-                                                ml: 0.5,
+                                <Tooltip title={sourceTooltipText || ''} placement="right" arrow disableHoverListener={!sourceTooltipText}>
+                                    <Box
+                                        sx={fileItemSx(isTableActive)}
+                                        onClick={handleTableClick}
+                                    >
+                                        {getTableIcon(table)}
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography sx={{
+                                                fontSize: 11,
+                                                fontWeight: isTableActive ? 600 : 400,
+                                                color: isTableActive ? 'primary.main' : 'text.primary',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
                                             }}>
-                                                ({sourceName})
+                                                {table.displayId || table.id}
                                             </Typography>
+                                            {originalName && (
+                                                <Typography sx={{
+                                                    fontSize: 9,
+                                                    color: 'text.disabled',
+                                                    lineHeight: 1.2,
+                                                    mt: '2px',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                }}>
+                                                    {originalName}
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                        {table.attachedMetadata && (
+                                            <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
                                         )}
-                                    </Typography>
-                                    {table.attachedMetadata && (
-                                        <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
-                                    )}
-                                </Box>
+                                    </Box>
+                                </Tooltip>
 
                                 {/* Show all charts for this table with vertical guide line */}
                                 {tableCharts.length > 0 && (
@@ -731,29 +779,6 @@ const WorkspacePanel: FC<{
     );
 };
 
-/** A status message that collapses to a single line on click, and expands back on click. */
-const CollapsibleStatusMessage: FC<{ text: string; color: string }> = ({ text, color }) => {
-    const [collapsed, setCollapsed] = useState(true);
-    return (
-        <Typography
-            variant="body2"
-            onClick={(e) => { e.stopPropagation(); setCollapsed(prev => !prev); }}
-            sx={{
-                fontSize: 10, color, px: 1, py: 0.5, cursor: 'pointer',
-                '&:hover': { textDecoration: 'underline', textDecorationStyle: 'dotted' },
-                ...(collapsed ? {
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    maxWidth: '100%',
-                } : {
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }),
-            }}
-        >
-            {text}
-        </Typography>
-    );
-};
-
 let SingleThreadGroupView: FC<{
     scrollRef: any,
     threadIdx: number,
@@ -783,6 +808,7 @@ let SingleThreadGroupView: FC<{
 }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    const { t } = useTranslation();
     const { manualRefresh } = useDataRefresh();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
 
@@ -796,7 +822,7 @@ let SingleThreadGroupView: FC<{
     const isAncestorThread = !threadHighlighted && globalHighlightedTableIds.length > 0
         && leafTables.some(lt => {
             const trigs = getTriggers(lt, tables);
-            const chainIds = [...trigs.map(t => t.tableId), lt.id];
+            const chainIds = [...trigs.map(tp => tp.tableId), lt.id];
             const ownedIds = chainIds.filter(id => !usedIntermediateTableIds.includes(id));
             return ownedIds.some(id => globalHighlightedTableIds.includes(id));
         });
@@ -810,53 +836,49 @@ let SingleThreadGroupView: FC<{
     let focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        return undefined;
     }, [focusedId, charts]);
-    let agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
+    let draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+    let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
 
-    // Pre-index running agent table IDs for O(1) lookup
+    // Build a map from chartId → reports anchored at that chart
+    const reportsByAnchorChart = useMemo(() => {
+        const map = new Map<string, GeneratedReport[]>();
+        for (const report of generatedReports) {
+            const anchor = report.anchorChartId;
+            if (!anchor) continue;
+            const list = map.get(anchor) || [];
+            list.push(report);
+            map.set(anchor, list);
+        }
+        return map;
+    }, [generatedReports]);
+
+    // Pre-index running/clarifying/completed status from DraftNodes
     const runningAgentTableIds = useMemo(() => {
-        const ids = new Map<string, typeof agentActions[0]>();
-        for (const a of agentActions) {
-            if (!a.hidden && a.status === 'running') {
-                // Find the last table created in the chain so far
-                const lastResultTableId = a.messages
-                    ?.filter(m => m.resultTableId)
-                    .pop()?.resultTableId;
-                ids.set(lastResultTableId || a.originTableId, a);
+        const ids = new Map<string, { description: string }>();
+        for (const d of draftNodes) {
+            if (d.derive?.status === 'running') {
+                ids.set(d.derive.trigger.tableId, { description: d.derive.runningPlan || '' });
             }
         }
         return ids;
-    }, [agentActions]);
+    }, [draftNodes]);
 
-    // Pre-index tables with pending clarification
     const clarifyAgentTableIds = useMemo(() => {
-        const ids = new Map<string, typeof agentActions[0]>();
-        for (const a of agentActions) {
-            if (!a.hidden && a.pendingClarification) {
-                const lastResultTableId = a.pendingClarification.lastCreatedTableId
-                    || a.messages?.filter(m => m.resultTableId).pop()?.resultTableId;
-                ids.set(lastResultTableId || a.originTableId, a);
+        const ids = new Map<string, { question: string }>();
+        for (const d of draftNodes) {
+            if (d.derive?.status === 'clarifying') {
+                const clarifyEntry = d.derive.trigger.interaction?.filter(e => e.role === 'clarify').pop();
+                ids.set(d.derive.trigger.tableId, { question: clarifyEntry?.content || '' });
             }
         }
         return ids;
-    }, [agentActions]);
-
-    // Pre-index tables with completed agent actions
-    const completedAgentTableIds = useMemo(() => {
-        const ids = new Map<string, typeof agentActions[0]>();
-        for (const a of agentActions) {
-            if (!a.hidden && (a.status === 'completed' || a.status === 'warning' || a.status === 'failed') && !a.pendingClarification) {
-                const lastResultTableId = a.messages
-                    ?.filter(m => m.resultTableId)
-                    .pop()?.resultTableId;
-                ids.set(lastResultTableId || a.originTableId, a);
-            }
-        }
-        return ids;
-    }, [agentActions]);
+    }, [draftNodes]);
 
     // Metadata popup state
     const [metadataPopupOpen, setMetadataPopupOpen] = useState(false);
@@ -1019,8 +1041,11 @@ let SingleThreadGroupView: FC<{
                         dispatch(dfActions.addMessages({
                             timestamp: Date.now(),
                             type: 'error',
-                            component: 'data refresh',
-                            value: `Failed to refresh derived table "${derivedTable.displayId || derivedTable.id}": ${result.message || 'Unknown error'}`
+                            component: t('messages.dataRefresh.component'),
+                            value: t('messages.dataRefresh.failedDerivedTable', {
+                                table: derivedTable.displayId || derivedTable.id,
+                                detail: result.message || t('messages.dataRefresh.unknownError'),
+                            }),
                         }));
                         return null;
                     }
@@ -1029,8 +1054,10 @@ let SingleThreadGroupView: FC<{
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(),
                         type: 'error',
-                        component: 'data refresh',
-                        value: `Error refreshing derived table "${derivedTable.displayId || derivedTable.id}"`
+                        component: t('messages.dataRefresh.component'),
+                        value: t('messages.dataRefresh.errorRefreshingDerivedTable', {
+                            table: derivedTable.displayId || derivedTable.id,
+                        }),
                     }));
                     return null;
                 }
@@ -1062,16 +1089,18 @@ let SingleThreadGroupView: FC<{
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'success',
-                component: 'data refresh',
-                value: `Successfully refreshed data for "${selectedTableForRefresh.displayId || selectedTableForRefresh.id}" and updated derived tables.`
+                component: t('messages.dataRefresh.component'),
+                value: t('messages.dataRefresh.successRefreshedWithDerived', {
+                    table: selectedTableForRefresh.displayId || selectedTableForRefresh.id,
+                }),
             }));
         } catch (error) {
             console.error('Error during refresh:', error);
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
-                component: 'data refresh',
-                value: `Error refreshing data: ${error}`
+                component: t('messages.dataRefresh.component'),
+                value: t('messages.dataRefresh.errorRefreshingData', { error: String(error) }),
             }));
         } finally {
             setIsRefreshing(false);
@@ -1088,12 +1117,12 @@ let SingleThreadGroupView: FC<{
 
     const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
     
-    let triggers = parentTable ? getTriggers(parentTable, tables) : [];
-    let tableIdList = parentTable ? [...triggers.map((trigger) => trigger.tableId), parentTable.id] : [];
+    let triggerPairs = parentTable ? getTriggers(parentTable, tables) : [];
+    let tableIdList = parentTable ? [...triggerPairs.map((tp) => tp.tableId), parentTable.id] : [];
 
     let usedTableIdsInThread = tableIdList.filter(id => usedIntermediateTableIds.includes(id));
     let newTableIds = tableIdList.filter(id => !usedTableIdsInThread.includes(id));
-    let newTriggers = triggers.filter(tg => newTableIds.includes(tg.resultTableId));
+    let newTriggerPairs = triggerPairs.filter(tp => newTableIds.includes(tp.resultTableId));
 
     // Use the global highlighted table IDs (computed at DataThread level from the focused table's full ancestor chain)
     let highlightedTableIds = globalHighlightedTableIds;
@@ -1108,6 +1137,7 @@ let SingleThreadGroupView: FC<{
         highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
         parentTable, tableIdList, collapsed, scrollRef, dispatch,
         handleOpenTableMenu, primaryBgColor: theme.palette.primary.bgcolor,
+        t,
     };
 
     let _buildTableCard = (tableId: string) => {
@@ -1115,14 +1145,192 @@ let SingleThreadGroupView: FC<{
     }
 
     let tableElementList = newTableIds.map((tableId, i) => _buildTableCard(tableId));
-    let triggerCards = newTriggers.map((trigger) => {
-        const triggerTableId = trigger.resultTableId;
-        const isHL = triggerTableId ? highlightedTableIds.includes(triggerTableId) : false;
-        return _buildTriggerCard(trigger, isHL);
+    let triggerCards = newTriggerPairs.map((tp) => {
+        const isHL = highlightedTableIds.includes(tp.resultTableId);
+        return _buildTriggerCard(tp, isHL);
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean }[] = [];
+    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string };
+    let timelineItems: TimelineItem[] = [];
+
+    // ── Shared helpers for building timeline items from interaction entries ──
+
+    /** Push visible interaction entries as timeline items. */
+    const pushInteractionEntries = (
+        entries: InteractionEntry[],
+        tableId: string,
+        triggerType: 'trigger' | 'leaf-trigger',
+        highlighted: boolean,
+        keyPrefix: string,
+        extraProps?: Partial<TimelineItem>,
+    ) => {
+        entries.forEach((entry, ei) => {
+            // A clarify entry is resolved if a user prompt follows it in the same entries array
+            const isResolved = entry.role === 'clarify' && entries.slice(ei + 1).some(e => e.from === 'user');
+            timelineItems.push({
+                key: `${keyPrefix}-${entry.role}-${tableId}-${ei}`,
+                type: triggerType,
+                highlighted,
+                element: <InteractionEntryCard entry={entry} highlighted={highlighted} resolved={isResolved} />,
+                interactionEntry: entry,
+                ...extraProps,
+            });
+        });
+    };
+
+    /** Split interaction at the last instruction boundary: entries before → rendered before table, after → rendered after. */
+    const splitAtLastInstruction = (interaction: InteractionEntry[]): [InteractionEntry[], InteractionEntry[]] => {
+        const lastInstrIdx = (() => { for (let i = interaction.length - 1; i >= 0; i--) { if (interaction[i].role === 'instruction') return i; } return -1; })();
+        return [
+            interaction.slice(0, lastInstrIdx + 1),
+            lastInstrIdx >= 0 ? interaction.slice(lastInstrIdx + 1) : [],
+        ];
+    };
+
+    /** Append timeline items for a running or clarifying agent draft. */
+    const pushAgentDraftItems = (
+        tableId: string,
+        triggerType: 'trigger' | 'leaf-trigger',
+        highlighted: boolean,
+    ) => {
+        if (runningAgentTableIds.has(tableId)) {
+            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
+            const draftInteraction = runningDraft?.derive?.trigger?.interaction;
+            if (draftInteraction && draftInteraction.length > 0) {
+                pushInteractionEntries(draftInteraction, tableId, triggerType, highlighted, 'agent-running-entry');
+                const runningPlan = runningDraft?.derive?.runningPlan;
+                timelineItems.push({
+                    key: `agent-thinking-placeholder-${tableId}`,
+                    type: triggerType,
+                    highlighted,
+                    isRunning: true,
+                    element: ThinkingBanner(runningPlan || t('dataThread.thinking'), { px: 1, py: 0.5 }),
+                });
+            } else {
+                const runningAction = runningAgentTableIds.get(tableId);
+                const message = runningAction?.description || t('dataThread.working');
+                timelineItems.push({
+                    key: `agent-running-${tableId}`,
+                    type: 'chart',
+                    highlighted,
+                    isRunning: true,
+                    element: ThinkingBanner(message, { px: 1, py: 0.5 }),
+                });
+            }
+        } else if (clarifyAgentTableIds.has(tableId)) {
+            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
+            const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
+            if (clarifyInteraction && clarifyInteraction.length > 0) {
+                pushInteractionEntries(clarifyInteraction, tableId, triggerType, highlighted, 'agent-clarify-entry', { isClarifying: false, tableId });
+                // Mark the last clarify entry with isClarifying so the gutter shows the hourglass
+                const lastItem = timelineItems[timelineItems.length - 1];
+                if (lastItem?.interactionEntry?.role === 'clarify') lastItem.isClarifying = true;
+            } else {
+                timelineItems.push({
+                    key: `agent-clarify-${tableId}`,
+                    type: 'chart',
+                    highlighted,
+                    isClarifying: true,
+                    tableId,
+                    element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
+                });
+            }
+        }
+    };
+
+    /** Push table card and its chart elements as timeline items. */
+    const pushTableAndChartItems = (
+        tableId: string,
+        tableCard: any,
+        tableType: 'table' | 'leaf-table',
+        highlighted: boolean,
+    ) => {
+        if (Array.isArray(tableCard)) {
+            tableCard.forEach((subItem: any, j: number) => {
+                if (!subItem) return;
+                const subKey = subItem?.key || `card-${tableId}-${j}`;
+                const isChart = subKey.includes('chart');
+                let itemChartType: string | undefined;
+                if (isChart) {
+                    const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
+                    if (cIdMatch) {
+                        const cObj = charts.find(c => c.id === cIdMatch[1]);
+                        itemChartType = cObj?.chartType;
+                    }
+                }
+                timelineItems.push({
+                    key: subKey,
+                    type: isChart ? 'chart' : tableType,
+                    tableId: isChart ? undefined : tableId,
+                    chartType: itemChartType,
+                    highlighted,
+                    element: subItem,
+                });
+            });
+        }
+    };
+
+    // Push report cards anchored to charts of the given table
+    const pushReportItems = (tableId: string, highlighted: boolean) => {
+        const tableCharts = charts.filter(c => c.tableRef === tableId);
+        for (const chart of tableCharts) {
+            const reports = reportsByAnchorChart.get(chart.id);
+            if (!reports) continue;
+            for (const report of reports) {
+                const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
+                const isGenerating = report.status === 'generating';
+                const selectedClassName = isFocused ? 'selected-report-card' : '';
+                timelineItems.push({
+                    key: `report-${report.id}`,
+                    type: 'report',
+                    reportId: report.id,
+                    highlighted: highlighted || isFocused,
+                    element: (
+                        <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
+                            sx={{
+                                width: '100%',
+                                backgroundColor: theme.palette.secondary.bgcolor,
+                                ...ComponentBorderStyle,
+                                ...(highlighted ? { borderLeft: '2px solid', borderLeftColor: 'secondary.main' } : {}),
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                            }}
+                            onClick={() => {
+                                dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
+                            }}
+                        >
+                            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0 }}>
+                                <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
+                                    <Typography sx={{
+                                        fontSize: 11,
+                                        fontWeight: 500,
+                                        color: 'text.primary',
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: 'vertical',
+                                        overflow: 'hidden',
+                                        wordBreak: 'break-all',
+                                    }}>
+                                        {report.title || report.style || t('report.untitled')}
+                                    </Typography>
+                                    <Typography sx={{
+                                        fontSize: 9,
+                                        color: 'text.disabled',
+                                        lineHeight: 1.3,
+                                        mt: 0.25,
+                                    }}>
+                                        {report.style}
+                                        {isGenerating && ` · ${t('report.composing')}`}
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        </Card>
+                    ),
+                });
+            }
+        }
+    };
 
     // Add used (shared) tables at the top
     // Only show the immediate parent + "..." for further ancestors
@@ -1166,154 +1374,83 @@ let SingleThreadGroupView: FC<{
     });
 
     // Interleave triggers and tables for the main thread body
+    const afterTableMap = new Map<string, InteractionEntry[]>();
     newTableIds.forEach((tableId, i) => {
-        const trigger = newTriggers.find(t => t.resultTableId === tableId);
+        const triggerPair = newTriggerPairs.find(tp => tp.resultTableId === tableId);
         const isHighlighted = highlightedTableIds.includes(tableId);
 
-        // Add trigger card if exists
-        if (trigger) {
-            const triggerCard = triggerCards[newTriggers.indexOf(trigger)];
-            if (triggerCard) {
-                timelineItems.push({
-                    key: triggerCard?.key || `woven-trigger-${tableId}`,
-                    type: 'trigger',
-                    highlighted: isHighlighted,
-                    element: triggerCard,
-                });
+        // Add trigger card (or interaction log entries) if exists
+        if (triggerPair) {
+            const interaction = triggerPair.interaction;
+            if (interaction && interaction.length > 0) {
+                const [beforeTable, afterTable] = splitAtLastInstruction(interaction);
+                pushInteractionEntries(beforeTable, tableId, 'trigger', isHighlighted, 'interaction');
+                if (afterTable.length > 0) afterTableMap.set(tableId, afterTable);
+            } else {
+                // No interaction log, use trigger card directly
+                const triggerCard = triggerCards[newTriggerPairs.indexOf(triggerPair)];
+                if (triggerCard) {
+                    timelineItems.push({
+                        key: triggerCard?.key || `woven-trigger-${tableId}`,
+                        type: 'trigger',
+                        highlighted: isHighlighted,
+                        element: triggerCard,
+                    });
+                }
             }
         }
 
         // Add table card and its charts
-        const tableCard = tableElementList[i];
-        if (Array.isArray(tableCard)) {
-            tableCard.forEach((subItem: any, j: number) => {
-                if (!subItem) return;
-                const subKey = subItem?.key || `woven-${tableId}-${j}`;
-                const isChart = subKey.includes('chart');
-                // Extract chartType from the key (pattern: 'relevant-chart-{chartId}')
-                let itemChartType: string | undefined;
-                if (isChart) {
-                    const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
-                    if (cIdMatch) {
-                        const cObj = charts.find(c => c.id === cIdMatch[1]);
-                        itemChartType = cObj?.chartType;
-                    }
-                }
-                timelineItems.push({
-                    key: subKey,
-                    type: isChart ? 'chart' : 'table',
-                    tableId: isChart ? undefined : tableId,
-                    chartType: itemChartType,
-                    highlighted: isHighlighted,
-                    element: subItem,
-                });
-            });
+        pushTableAndChartItems(tableId, tableElementList[i], 'table', isHighlighted);
+
+        // Add report cards anchored to charts of this table
+        pushReportItems(tableId, isHighlighted);
+
+        // After-table entries (e.g. summary)
+        const afterTable = afterTableMap.get(tableId);
+        if (afterTable && afterTable.length > 0) {
+            pushInteractionEntries(afterTable, tableId, 'trigger', isHighlighted, 'interaction-after');
         }
 
-        // If an agent is running on this table, add a "working..." indicator
-        if (runningAgentTableIds.has(tableId)) {
-            const runningAction = runningAgentTableIds.get(tableId);
-            const message = runningAction?.description || 'working...';
-            timelineItems.push({
-                key: `agent-running-${tableId}`,
-                type: 'chart',
-                highlighted: isHighlighted,
-                isRunning: true,
-                element: ThinkingBanner(message, { px: 1, py: 0.5 }),
-            });
-        } else if (clarifyAgentTableIds.has(tableId)) {
-            timelineItems.push({
-                key: `agent-clarify-${tableId}`,
-                type: 'chart',
-                highlighted: isHighlighted,
-                isClarifying: true,
-                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>waiting for clarification...</Typography>,
-            });
-        } else if (completedAgentTableIds.has(tableId)) {
-            const completedAction = completedAgentTableIds.get(tableId);
-            const completionMsg = completedAction?.messages?.filter(m => m.role === 'completion').pop();
-            if (completionMsg) {
-                const color = completedAction?.status === 'failed' ? theme.palette.error.main : theme.palette.success.main;
-                timelineItems.push({
-                    key: `agent-completed-${tableId}`,
-                    type: 'chart',
-                    highlighted: isHighlighted,
-                    isCompleted: true,
-                    element: <CollapsibleStatusMessage text={typeof completionMsg.content === 'string' ? completionMsg.content : String(completionMsg.content)} color={color} />,
-                });
-            }
-        }
+        // Running or clarifying agent state
+        pushAgentDraftItems(tableId, 'trigger', isHighlighted);
     });
 
     // Add leaf table components
+    const leafAfterTableMap = new Map<string, InteractionEntry[]>();
     leafTables.forEach((lt, i) => {
         let leafTrigger = lt.derive?.trigger;
-        if (leafTrigger) {
-            timelineItems.push({
-                key: `leaf-trigger-${lt.id}`,
-                type: 'leaf-trigger',
-                highlighted: highlightedTableIds.includes(lt.id),
-                element: _buildTriggerCard(leafTrigger, highlightedTableIds.includes(lt.id)),
-            });
-        }
-        let leafCards = _buildTableCard(lt.id);
-        if (Array.isArray(leafCards)) {
-            leafCards.forEach((subItem: any, j: number) => {
-                if (!subItem) return;
-                const subKey = subItem?.key || `leaf-card-${lt.id}-${j}`;
-                const isChart = subKey.includes('chart');
-                let leafChartType: string | undefined;
-                if (isChart) {
-                    const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
-                    if (cIdMatch) {
-                        const cObj = charts.find(c => c.id === cIdMatch[1]);
-                        leafChartType = cObj?.chartType;
-                    }
-                }
-                timelineItems.push({
-                    key: subKey,
-                    type: isChart ? 'chart' : 'leaf-table',
-                    tableId: isChart ? undefined : lt.id,
-                    chartType: leafChartType,
-                    highlighted: highlightedTableIds.includes(lt.id),
-                    element: subItem,
-                });
-            });
-        }
+        const isHL = highlightedTableIds.includes(lt.id);
 
-        // If an agent is running on this leaf table, add a "working..." indicator
-        if (runningAgentTableIds.has(lt.id)) {
-            const runningAction = runningAgentTableIds.get(lt.id);
-            const message = runningAction?.description || 'working...';
-            timelineItems.push({
-                key: `agent-running-${lt.id}`,
-                type: 'chart',
-                highlighted: highlightedTableIds.includes(lt.id),
-                isRunning: true,
-                element: ThinkingBanner(message, { px: 1, py: 0.5 }),
-            });
-        } else if (clarifyAgentTableIds.has(lt.id)) {
-            timelineItems.push({
-                key: `agent-clarify-${lt.id}`,
-                type: 'chart',
-                highlighted: highlightedTableIds.includes(lt.id),
-                isClarifying: true,
-                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>waiting for clarification...</Typography>,
-            });
-        } else if (completedAgentTableIds.has(lt.id)) {
-            const completedAction = completedAgentTableIds.get(lt.id);
-            const completionMsg = completedAction?.messages?.filter(m => m.role === 'completion').pop();
-            if (completionMsg) {
-                const color = completedAction?.status === 'failed' ? theme.palette.error.main : theme.palette.success.main;
+        if (leafTrigger) {
+            const interaction = leafTrigger.interaction;
+            if (interaction && interaction.length > 0) {
+                const [leafBefore, leafAfter] = splitAtLastInstruction(interaction);
+                pushInteractionEntries(leafBefore, lt.id, 'leaf-trigger', isHL, 'leaf-interaction');
+                if (leafAfter.length > 0) leafAfterTableMap.set(lt.id, leafAfter);
+            } else {
                 timelineItems.push({
-                    key: `agent-completed-${lt.id}`,
-                    type: 'chart',
-                    highlighted: highlightedTableIds.includes(lt.id),
-                    isCompleted: true,
-                    element: <CollapsibleStatusMessage text={typeof completionMsg.content === 'string' ? completionMsg.content : String(completionMsg.content)} color={color} />,
+                    key: `leaf-trigger-${lt.id}`,
+                    type: 'leaf-trigger',
+                    highlighted: isHL,
+                    element: _buildTriggerCard(leafTrigger, isHL),
                 });
             }
         }
+
+        pushTableAndChartItems(lt.id, _buildTableCard(lt.id), 'leaf-table', isHL);
+
+        // Add report cards anchored to charts of this leaf table
+        pushReportItems(lt.id, isHL);
+
+        // After-table entries (e.g. summary)
+        const leafAfterEntries = leafAfterTableMap.get(lt.id);
+        if (leafAfterEntries && leafAfterEntries.length > 0) {
+            pushInteractionEntries(leafAfterEntries, lt.id, 'leaf-trigger', isHL, 'leaf-after');
+        }
+
+        // Running or clarifying agent state
+        pushAgentDraftItems(lt.id, 'leaf-trigger', isHL);
     });
 
     // Timeline rendering helper
@@ -1328,6 +1465,15 @@ let SingleThreadGroupView: FC<{
             ? theme.palette.primary.main
             : 'rgba(0,0,0,0.15)';
 
+        // For report items, show an article icon or spinner if generating
+        if (item.type === 'report') {
+            const report = item.reportId ? generatedReports.find(r => r.id === item.reportId) : undefined;
+            if (report?.status === 'generating') {
+                return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />;
+            }
+            return <ArticleIcon sx={{ width: 14, height: 14, color: item.highlighted ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
+        }
+
         // For running agent items, show a spinner instead of a dot
         if (item.isRunning) {
             return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />;
@@ -1335,7 +1481,7 @@ let SingleThreadGroupView: FC<{
 
         // For clarification items, show an hourglass icon
         if (item.isClarifying) {
-            return <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main }} />;
+            return <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main, animation: 'spin 2s ease-in-out infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />;
         }
 
         // For completed items, show a checkmark icon
@@ -1405,30 +1551,48 @@ let SingleThreadGroupView: FC<{
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const isChart = item.type === 'chart';
         const dashedColor = item.highlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-        const dashedWidth = item.highlighted ? '2px' : '1px';
+        const dashedWidth = '2px';
         const dashedStyle = 'solid';
         // Bottom connector uses unhighlighted style if next item isn't highlighted
         const bottomHighlighted = item.highlighted && nextHighlighted;
         const bottomDashedColor = bottomHighlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-        const bottomDashedWidth = bottomHighlighted ? '2px' : '1px';
+        const bottomDashedWidth = '2px';
         const bottomDashedStyle = 'solid';
-        const triggerColor = item.highlighted 
-            ? theme.palette.custom.main
-            : 'rgba(0,0,0,0.15)';
         // Dim non-highlighted cards when chatbox is focused
         const rowHighlightSx = (chatboxFocused && hasHighlighting && !item.highlighted) ? { opacity: 0.35 } : {};
 
-        // Triggers: agent icon on the timeline
+        // Triggers: icon based on interaction entry's `from` actor
         if (isTrigger) {
+            const entry = item.interactionEntry;
+            const isFromUser = entry ? entry.from === 'user' : false;
+            // User → custom (orange), Agent → muted gray (supporting role)
+            const iconColor = item.highlighted
+                ? (isFromUser ? theme.palette.custom.main : theme.palette.text.disabled)
+                : 'rgba(0,0,0,0.15)';
+            const gutterIcon = item.isRunning
+                ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
+                : item.isClarifying
+                    ? <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main, animation: 'spin 2s ease-in-out infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
+                    : entry
+                        ? getEntryGutterIcon(entry, iconColor)
+                        : getDefaultGutterIcon(iconColor);
+
+            // Clarification items are clickable to focus on the associated table
+            const clarifyClickHandler = (item.isClarifying && item.tableId)
+                ? () => dispatch(dfActions.setFocused({ type: 'table', tableId: item.tableId! }))
+                : undefined;
+
             return (
-                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx,
+                    ...(clarifyClickHandler ? { cursor: 'pointer', '&:hover': { backgroundColor: 'rgba(0,0,0,0.02)' } } : {}),
+                }} onClick={clarifyClickHandler}>
                     <Box sx={{ 
                         width: TIMELINE_WIDTH, flexShrink: 0, 
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <AgentIcon sx={{ width: 14, height: 14, color: triggerColor }} />
+                            {gutterIcon}
                         </Box>
                         {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
                         {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
@@ -1475,7 +1639,7 @@ let SingleThreadGroupView: FC<{
                         // When connecting to the header (index 0, label visible), match the header's highlight state
                         const useHeader = index === 0 && !hideLabel;
                         const topColor = useHeader ? (headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)') : dashedColor;
-                        const topWidth = useHeader ? (headerHL ? '2px' : '1px') : dashedWidth;
+                        const topWidth = '2px';
                         const topStyle = 'solid';
                         return <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${topWidth} ${topStyle} ${topColor}` }} />;
                     })()}
@@ -1504,6 +1668,11 @@ let SingleThreadGroupView: FC<{
                 borderColor: 'transparent',
                 margin: '1px 0',
             },
+            '& .selected-report-card': { 
+                boxShadow: `0 0 0 2px ${theme.palette.secondary.light}`,
+                borderColor: 'transparent',
+                margin: '1px 0',
+            },
             padding: '6px',
             ...(chatboxFocused && focusedThreadLeafId && !shouldHighlightThread ? { opacity: 0.35 } : {}),
         }}
@@ -1513,7 +1682,7 @@ let SingleThreadGroupView: FC<{
                 const hlColor = theme.palette.primary.main;
                 const nhColor = 'rgba(0,0,0,0.35)';
                 const connColor = headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-                const connWidth = headerHL ? '2px' : '1px';
+                const connWidth = '2px';
                 const connStyle = 'solid';
                 return (
                 <Box sx={{ display: 'flex', flexDirection: 'row', ...(chatboxFocused && hasHighlighting && !headerHL ? { opacity: 0.35 } : {}) }}>
@@ -1536,7 +1705,7 @@ let SingleThreadGroupView: FC<{
                             textTransform: 'uppercase', letterSpacing: '0.02em',
                             color: headerHL ? hlColor : 'rgba(0,0,0,0.55)', 
                         }}>
-                            {threadLabel || (threadIdx === -1 ? 'Thread 0' : `Thread ${threadIdx + 1}`)}
+                            {threadLabel || (threadIdx === -1 ? t('dataThread.threadZero') : t('dataThread.threadIndex', { index: threadIdx + 1 }))}
                         </Typography>
                     </Box>
                 </Box>
@@ -1579,7 +1748,7 @@ let SingleThreadGroupView: FC<{
                 sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
             >
                 <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
-                Rename
+                {t('dataThread.rename')}
             </MenuItem>
             {/* Pin option - only for derived tables */}
             {selectedTableForMenu?.derive != undefined && (
@@ -1594,7 +1763,7 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <AnchorIcon sx={{ fontSize: 16, color: selectedTableForMenu?.anchored ? 'primary.main' : 'text.secondary' }}/>
-                    {selectedTableForMenu?.anchored ? "Unpin table" : "Pin table"}
+                    {selectedTableForMenu?.anchored ? t('dataThread.unpinTable') : t('dataThread.pinTable')}
                 </MenuItem>
             )}
             {/* Non-derived table options */}
@@ -1613,7 +1782,7 @@ let SingleThreadGroupView: FC<{
                         fontSize: 16,
                         color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
                     }}/>
-                    {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
+                    {selectedTableForMenu?.attachedMetadata ? t('dataThread.editMetadata') : t('dataThread.attachMetadata')}
                 </MenuItem>
             )}
             {/* Refresh settings - shown for stream/database sources to configure auto-refresh interval */}
@@ -1631,7 +1800,7 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <StreamIcon sx={{ fontSize: 16, color: selectedTableForMenu.source?.autoRefresh ? 'success.main' : 'text.secondary' }}/>
-                    {selectedTableForMenu.source?.autoRefresh ? 'Refresh settings' : 'Watch for updates'}
+                    {selectedTableForMenu.source?.autoRefresh ? t('dataThread.refreshSettings') : t('dataThread.watchForUpdates')}
                 </MenuItem>
             )}
             {/* Refresh data - hidden for database tables and derived tables */}
@@ -1646,7 +1815,7 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
-                    Replace data
+                    {t('dataThread.replaceData')}
                 </MenuItem>
             )}
             <MenuItem 
@@ -1663,7 +1832,7 @@ let SingleThreadGroupView: FC<{
                 sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
             >
                 <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>
-                Delete table
+                {t('dataThread.deleteTable')}
             </MenuItem>
         </Menu>
 
@@ -1699,16 +1868,16 @@ const ChartThumbnail: FC<{
     onChartClick: (chartId: string, tableId: string) => void;
     onDelete: (chartId: string) => void;
 }> = ({ chart, table, status, onChartClick, onDelete }) => {
+    const { t } = useTranslation();
 
-    let deleteButton = <Box className='data-thread-chart-card-action-button'
-        sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-        <Tooltip title="delete chart">
-            <IconButton size="small" color="warning" onClick={(event) => {
-                event.stopPropagation();
-                onDelete(chart.id);
-            }}><DeleteIcon fontSize="small" /></IconButton>
-        </Tooltip>
-    </Box>
+    let deleteButton = <Tooltip title={t('dataThread.deleteChart')}>
+        <IconButton className='data-thread-chart-card-action-button' size="small" color="warning"
+            aria-label={t('dataThread.deleteChart')}
+            sx={{ zIndex: 10, position: "absolute", right: 1, }}
+            onClick={(event) => { event.stopPropagation(); onDelete(chart.id); }}>
+            <DeleteIcon fontSize="small" />
+        </IconButton>
+    </Tooltip>
 
     const pendingOverlay = status == 'pending' ? <Box sx={{
         position: "absolute", top: 0, left: -8, right: -8, bottom: 0, zIndex: 20,
@@ -1771,7 +1940,7 @@ const ChartThumbnail: FC<{
                     >
                         <img 
                             src={chart.thumbnail} 
-                            alt={`${chart.chartType} chart`}
+                            alt={t('dataThread.chartAlt', { type: chart.chartType })}
                             style={{ maxWidth: 120, maxHeight: 100, objectFit: 'contain' }} 
                         />
                     </Box>
@@ -1812,17 +1981,17 @@ const ChartThumbnail: FC<{
 
 // Height estimation constants (px) – per-type heights + py:4px (8px) gap per row
 const LAYOUT_TABLE_HEIGHT = 28 + 8;     // table card + row padding
-const LAYOUT_TRIGGER_HEIGHT = 43 + 8;   // trigger card (2 lines) + row padding
+const LAYOUT_ENTRY_HEIGHT = 55 + 8;     // interaction entry (plan/summary text typically wraps 2-4 lines) + row padding
 const LAYOUT_CHART_HEIGHT = 90 + 8;     // chart card (~70-110) + row padding
 const LAYOUT_THREAD_OVERHEAD = 52;      // header divider + thread padding
 const LAYOUT_THREAD_GAP = 8;            // my: 0.5 = 4px top + 4px bottom between threads
 
 function estimateThreadHeight(
-    tableCount: number, triggerCount: number, chartCount: number
+    tableCount: number, entryCount: number, chartCount: number
 ): number {
     return LAYOUT_THREAD_OVERHEAD
         + tableCount * LAYOUT_TABLE_HEIGHT
-        + triggerCount * LAYOUT_TRIGGER_HEIGHT
+        + entryCount * LAYOUT_ENTRY_HEIGHT
         + chartCount * LAYOUT_CHART_HEIGHT;
 }
 
@@ -1984,19 +2153,31 @@ function chooseBestColumnLayout(
 }
 
 export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
+    const { t } = useTranslation();
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let charts = useSelector(dfSelectors.getAllCharts);
 
+    let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
+
     // Derive focusedTableId from focusedId for scroll/highlight logic
     let focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
-    }, [focusedId, charts]);
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        if (focusedId.type === 'report') {
+            const report = generatedReports.find(r => r.id === focusedId.reportId);
+            if (report?.anchorChartId) {
+                const chart = charts.find(c => c.id === report.anchorChartId);
+                return chart?.tableRef;
+            }
+        }
+        return undefined;
+    }, [focusedId, charts, generatedReports]);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
@@ -2008,9 +2189,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
     const [chatboxFocused, setChatboxFocused] = useState(false);
-    const [chatMode, setChatMode] = useState(false);
-
-    // Re-attach ResizeObserver whenever chatMode changes (containerRef moves to a different element)
+    // Re-attach ResizeObserver when containerRef changes
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
@@ -2021,7 +2200,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         });
         ro.observe(el);
         return () => ro.disconnect();
-    }, [chatMode]);
+    }, []);
 
     const theme = useTheme();
 
@@ -2116,36 +2295,37 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let leafTables = [ ...tables.filter(t => isLeafTable(t)) ];
 
     // Split long derivation chains by promoting intermediate tables as additional "leaves".
-    // If a chain has more than MAX_CHAIN_TABLES tables, we add a split point every
-    // MAX_CHAIN_TABLES steps. The sort (shorter chains first) ensures the intermediate
-    // leaf is processed before the real leaf, so its tables get claimed — making the
-    // real leaf's thread show only the remaining (new) tables.
-    // When counting chain length, exclude "used" tables (already claimed by an earlier
-    // chain) so that shared ancestors don't inflate the count. The first chain to
-    // contain a table still counts it as owned.
-    const MAX_CHAIN_TABLES = 5;
+    // Compute effective max chain length from container height using per-table height estimates.
+    const containerH = containerRef.current?.clientHeight ?? 600;
+    const maxChainHeight = containerH; // split before exceeding the viewport
 
-    // Process leaves in order, tracking claimed tables to simulate the later claim loop.
-    // A table is "used" for a chain only if a *previous* chain already claimed it.
+    // Estimate height for a single table node (its entries + table card + charts)
+    const estimateSingleTableH = (tableId: string): number => {
+        const table = tableById.get(tableId);
+        const entryCount = table?.derive?.trigger?.interaction?.length || 1;
+        const chartCount = chartElements.filter(ce => ce.tableId === tableId).length;
+        return LAYOUT_TABLE_HEIGHT + entryCount * LAYOUT_ENTRY_HEIGHT + Math.max(1, chartCount) * LAYOUT_CHART_HEIGHT;
+    };
+
     const claimedForSplit = new Set<string>();
     const extraLeaves: DictTable[] = [];
     for (const lt of leafTables) {
         const triggers = getCachedTriggers(lt);
-        const allChainIds = [lt.id, ...triggers.map(t => t.tableId)];
-        // Tables not yet claimed by an earlier chain count as owned
-        const ownedIds = allChainIds.filter(id => !claimedForSplit.has(id));
-        if (ownedIds.length > MAX_CHAIN_TABLES) {
-            // Walk only owned (unclaimed) triggers for split positions
-            const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.tableId));
-            for (let pos = MAX_CHAIN_TABLES - 1; pos < ownedTriggers.length; pos += MAX_CHAIN_TABLES) {
-                const midId = ownedTriggers[pos].tableId;
-                const midTable = tableById.get(midId);
+        const allChainIds = [lt.id, ...triggers.map(t => t.resultTableId)];
+        const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.resultTableId));
+
+        // Walk owned triggers, accumulating height and inserting split points
+        let accHeight = 0;
+        for (const tp of ownedTriggers) {
+            accHeight += estimateSingleTableH(tp.resultTableId);
+            if (accHeight >= maxChainHeight) {
+                const midTable = tableById.get(tp.resultTableId);
                 if (midTable && !leafTables.includes(midTable) && !extraLeaves.includes(midTable)) {
                     extraLeaves.push(midTable);
                 }
+                accHeight = 0;
             }
         }
-        // Claim all tables in this chain for subsequent chains
         allChainIds.forEach(id => claimedForSplit.add(id));
     }
     if (extraLeaves.length > 0) {
@@ -2158,7 +2338,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index + (table.anchored ? 1 : 0) * tables.length]));
     let getAncestorOrders = (leafTable: DictTable) => {
         let triggers = getCachedTriggers(leafTable);
-        return [...triggers.map(t => tableOrder[t.tableId]), tableOrder[leafTable.id]];
+        return [...triggers.map(t => tableOrder[t.resultTableId]), tableOrder[leafTable.id]];
     }
 
     leafTables.sort((a, b) => {
@@ -2203,7 +2383,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         // Otherwise, find the leaf table whose ancestor chain includes the focused table
         for (const lt of leafTables) {
             const triggers = getCachedTriggers(lt);
-            const chainIds = [...triggers.map(t => t.tableId), lt.id];
+            const chainIds = [...triggers.map(t => t.resultTableId), lt.id];
             if (chainIds.includes(focusedTableId)) {
                 return lt.id;
             }
@@ -2259,7 +2439,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         if (!extraLeafIds.has(lt.id)) {
             // This is a real leaf — find all extra leaves that are ancestors of it
             const triggers = getCachedTriggers(lt);
-            const chainIds = triggers.map(t => t.tableId);
+            const chainIds = triggers.map(t => t.resultTableId);
             const myExtras: string[] = [];
             for (const extraId of extraLeafIds) {
                 if (chainIds.includes(extraId)) {
@@ -2284,18 +2464,22 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
         // Collect all table IDs in this thread's chain
         let threadTableIds = new Set<string>();
-        triggers.forEach(t => threadTableIds.add(t.tableId));
+        triggers.forEach(t => threadTableIds.add(t.resultTableId));
         threadTableIds.add(lt.id);
 
         // Only new (unclaimed) tables contribute to this thread's height
         let newTableIds = [...threadTableIds].filter(id => !claimedTableIds.has(id));
 
-        let newTriggerCount = triggers.filter(t => newTableIds.includes(t.resultTableId)).length;
+        let newTriggerPairs = triggers.filter(tp => newTableIds.includes(tp.resultTableId));
         let chartCount = newTableIds.reduce((sum, tid) => sum + chartElements.filter(ce => ce.tableId === tid).length, 0);
 
-        // +1 table and +1 trigger for the leaf table itself
+        // Count actual interaction entries across all triggers (for height estimation)
+        let entryCount = newTriggerPairs.reduce((sum, tp) => sum + (tp.interaction?.length || 1), 0);
+        // +1 for the leaf table's own trigger
+        entryCount += lt.derive?.trigger?.interaction?.length || 1;
+
+        // +1 table for the leaf table itself
         let totalTables = newTableIds.length + 1;
-        let totalTriggers = newTriggerCount + 1;
 
         // Claim this thread's tables for subsequent threads
         threadTableIds.forEach(id => claimedTableIds.add(id));
@@ -2311,7 +2495,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             // Promoted intermediate — gets a main thread index
             realThreadIdx++;
             extraLeafToThreadIdx.set(lt.id, realThreadIdx);
-            threadLabel = `thread - ${realThreadIdx}`;
+            threadLabel = t('dataThread.threadIndex', { index: String(realThreadIdx) });
             threadIdxForEntry = realThreadIdx - 1;
         } else if (isContinuation) {
             // Real leaf whose chain was split — gets sub-index under the last extra leaf's index
@@ -2321,12 +2505,12 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             const parentIdx = extraLeafToThreadIdx.get(lastExtra) ?? realThreadIdx;
             const subIdx = (subThreadCounters.get(parentIdx) || 0) + 1;
             subThreadCounters.set(parentIdx, subIdx);
-            threadLabel = `thread - ${parentIdx}.${subIdx}`;
+            threadLabel = t('dataThread.threadIndex', { index: `${parentIdx}.${subIdx}` });
             threadIdxForEntry = i;
         } else {
             // Normal thread (no splitting involved)
             realThreadIdx++;
-            threadLabel = `thread - ${realThreadIdx}`;
+            threadLabel = t('dataThread.threadIndex', { index: String(realThreadIdx) });
             threadIdxForEntry = realThreadIdx - 1;
         }
 
@@ -2337,8 +2521,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             threadIdx: threadIdxForEntry,
             threadLabel,
             isSplitThread: isContinuation,
+            hideLabel: isContinuation,
         });
-        allThreadHeights.push(estimateThreadHeight(totalTables, totalTriggers, chartCount));
+        allThreadHeights.push(estimateThreadHeight(totalTables, entryCount, chartCount));
     });
 
     // Pre-compute usedTableIds for each entry (avoids quadratic recomputation in renderThreadEntry)
@@ -2348,7 +2533,11 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             entry.usedTableIds = [...accumulated];
             for (const lt of entry.leafTables) {
                 const triggers = getCachedTriggers(lt);
-                accumulated.push(...triggers.map(t => t.tableId), lt.id);
+                // Include both source (tableId) and result (resultTableId) IDs from the chain
+                for (const tp of triggers) {
+                    accumulated.push(tp.tableId, tp.resultTableId);
+                }
+                accumulated.push(lt.id);
             }
         }
     }
@@ -2362,14 +2551,14 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const CARD_WIDTH = 220;
     const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
 
-    // Determine how many columns fit in the available container width (1-3)
-    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING) / COLUMN_WIDTH)));
+    // n columns need: n*CARD_WIDTH + (n-1)*CARD_GAP + PANEL_PADDING
+    // Solving for n: n <= (containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH
+    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH)));
     const MAX_COLUMNS = fittableColumns;
     const columnLayout: number[][] = chooseBestColumnLayout(
         allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
-        /* minColumns */ Math.min(fittableColumns, hasMultipleThreads ? 2 : 1)
+        /* minColumns */ fittableColumns
     );
-    const actualColumns = columnLayout.length || 1;
 
     let renderThreadEntry = (entry: ThreadEntry) => {
         let usedTableIds = entry.usedTableIds || [];
@@ -2412,6 +2601,25 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             direction: 'ltr',
             height: 'calc(100% - 16px)',
             width: panelWidth,
+            '&::-webkit-scrollbar': {
+                width: '8px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+                backgroundColor: 'transparent',
+                borderRadius: '4px',
+                transition: 'background-color 0.2s',
+            },
+            '&:hover::-webkit-scrollbar-thumb': {
+                backgroundColor: 'rgba(0,0,0,0.2)',
+            },
+            '&::-webkit-scrollbar-track': {
+                backgroundColor: 'transparent',
+            },
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'transparent transparent',
+            '&:hover': {
+                scrollbarColor: 'rgba(0,0,0,0.2) transparent',
+            },
         }}>
             <Box sx={{
                 display: 'flex',
@@ -2460,36 +2668,15 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     return (
         <Box className="data-thread" sx={{ ...sx, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-            {/* Mode toggle button — floats on top-right corner */}
-            <Box sx={{ position: 'absolute', top: 4, right: 16, zIndex: 5 }}>
-                <Tooltip title={chatMode ? 'Switch to thread view' : 'Switch to chat view'}>
-                    <IconButton
-                        size="small"
-                        onClick={() => setChatMode(m => !m)}
-                        sx={{ p: 0.5, color: theme.palette.text.secondary,
-                            backgroundColor: alpha(theme.palette.action.selected, 0.04),
-                            borderRadius: '6px',
-                            '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.08) } }}
-                    >
-                        {chatMode ? <AccountTreeIcon sx={{ fontSize: 18 }} /> : <ForumOutlinedIcon sx={{ fontSize: 18 }} />}
-                    </IconButton>
-                </Tooltip>
+            <Box ref={containerRef} sx={{
+                    overflow: 'hidden', 
+                    direction: 'rtl', 
+                    display: 'block', 
+                    flex: 1,
+                    minHeight: 0,
+                }}>
+                {view}
             </Box>
-            {chatMode ? (
-                <Box ref={containerRef} sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <ChatThreadView />
-                </Box>
-            ) : (
-                <Box ref={containerRef} sx={{
-                        overflow: 'hidden', 
-                        direction: 'rtl', 
-                        display: 'block', 
-                        flex: 1,
-                        minHeight: 0,
-                    }}>
-                    {view}
-                </Box>
-            )}
             <SimpleChartRecBox />
         </Box>
     );

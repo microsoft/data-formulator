@@ -752,7 +752,8 @@ export function ecApplyLayoutToSpec(
     // 当存在调色板时，覆盖模板中的硬编码 itemStyle.color，
     // 让最终颜色真正由 colorDecisions / colormap 注册表驱动。
     if (effectivePalette && effectivePalette.length > 0 && Array.isArray(option.series)) {
-        const n = effectivePalette.length;
+        const palette_ = effectivePalette; // local const so TS narrows inside closures
+        const n = palette_.length;
         const schemeType = colorDecision?.schemeType;
 
         // 由 colorDecisions 实际使用的通道（color 或 group）来驱动语义判断，
@@ -782,13 +783,13 @@ export function ecApplyLayoutToSpec(
                 legendLabels.forEach((name, i) => {
                     if (!name) return;
                     const paletteIndex = spacedLegendIndices[i] ?? (i % n);
-                    categoryToColor.set(name, effectivePalette[paletteIndex]);
+                    categoryToColor.set(name, palette_[paletteIndex]);
                 });
             } else {
                 let colorIdx = 0;
                 for (const name of legendLabels) {
                     if (!name) continue;
-                    categoryToColor.set(name, effectivePalette[colorIdx % n]);
+                    categoryToColor.set(name, palette_[colorIdx % n]);
                     colorIdx += 1;
                 }
             }
@@ -806,7 +807,7 @@ export function ecApplyLayoutToSpec(
 
                 const mappedColor = baseName && categoryToColor.has(baseName)
                     ? categoryToColor.get(baseName)
-                    : effectivePalette[idx % n];
+                    : palette_[idx % n];
 
                 s.itemStyle = s.itemStyle || {};
                 s.itemStyle.color = mappedColor!;
@@ -819,7 +820,7 @@ export function ecApplyLayoutToSpec(
             const categoryToColor = new Map<string, string>();
             legendLabels.forEach((name, i) => {
                 if (!name) return;
-                categoryToColor.set(name, effectivePalette[i % n]);
+                categoryToColor.set(name, palette_[i % n]);
             });
             option.series.forEach((s: any, idx: number) => {
                 if (!s) return;
@@ -829,7 +830,7 @@ export function ecApplyLayoutToSpec(
                     : rawName;
                 const mappedColor = baseName && categoryToColor.has(baseName)
                     ? categoryToColor.get(baseName)
-                    : effectivePalette[idx % n];
+                    : palette_[idx % n];
                 s.itemStyle = s.itemStyle || {};
                 s.itemStyle.color = mappedColor!;
                 if (s.type === 'boxplot') {
@@ -852,7 +853,7 @@ export function ecApplyLayoutToSpec(
                 const categoryToColor = new Map<string, string>();
                 legendLabels.forEach((name, i) => {
                     if (!name) return;
-                    categoryToColor.set(name, effectivePalette[i % n]);
+                    categoryToColor.set(name, palette_[i % n]);
                 });
 
                 const radarSeries = Array.isArray(option.series)
@@ -864,7 +865,7 @@ export function ecApplyLayoutToSpec(
                         const rawName: string = typeof item.name === 'string' ? item.name : '';
                         const mapped = rawName && categoryToColor.has(rawName)
                             ? categoryToColor.get(rawName)
-                            : effectivePalette[i % n];
+                            : palette_[i % n];
                         const color = mapped!;
                         item.itemStyle = item.itemStyle || {};
                         if (item.itemStyle.color == null) item.itemStyle.color = color;
@@ -882,7 +883,7 @@ export function ecApplyLayoutToSpec(
                 // - 若模板已为某些 series 设置特殊颜色（透明底座、参考线等），则尊重模板设置。
                 const hasLegend = !!option.legend && Array.isArray(option.legend.data);
                 const rankLegendColorMap = (isRankLikeColor && hasLegend)
-                    ? buildRankColorLookupFromLegend(option.legend.data, effectivePalette)
+                    ? buildRankColorLookupFromLegend(option.legend.data, palette_)
                     : new Map<string, string>();
 
                 // 只对「需要上色」的 series 从 palette 取色，已设 color 的（如连接线、参考线）不占下标，使 Min/Max 等得到第 1、2 个颜色
@@ -915,7 +916,7 @@ export function ecApplyLayoutToSpec(
                     const paletteIndex = spacedIndices
                         ? (spacedIndices[colorIdx] ?? colorIdx % n)
                         : (colorIdx % n);
-                    const color = effectivePalette[paletteIndex];
+                    const color = palette_[paletteIndex];
                     s.itemStyle.color = color;
                     if (s.type === 'boxplot') {
                         s.itemStyle.borderColor = color;

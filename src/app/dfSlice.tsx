@@ -2,14 +2,15 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
-import { getDataTable } from '../views/VisualizationView';
+import { getDataTable } from '../views/ChartUtils';
 import { getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
+import { deleteTablesFromWorkspace } from './workspaceService';
 import { getChartPngDataUrl } from './chartCache';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
@@ -40,13 +41,37 @@ export interface SSEMessage {
 // Add interface for app configuration
 export interface ServerConfig {
     DISABLE_DISPLAY_KEYS: boolean;
-    DISABLE_DATABASE: boolean;
-    DISABLE_FILE_UPLOAD: boolean;
+    DISABLE_DATA_CONNECTORS: boolean;
+    DISABLE_CUSTOM_MODELS: boolean;
     PROJECT_FRONT_PAGE: boolean;
     MAX_DISPLAY_ROWS: number;
+    AVAILABLE_LANGUAGES: string[];
     DATA_FORMULATOR_HOME?: string;
     DEV_MODE: boolean;
-    WORKSPACE_BACKEND: string; // 'local' | 'azure_blob'
+    WORKSPACE_BACKEND: 'local' | 'azure_blob' | 'ephemeral';
+    AUTH_PROVIDER?: string;
+    AUTH_INFO?: {
+        action: 'frontend' | 'redirect' | 'transparent' | 'none';
+        label?: string;
+        [key: string]: unknown;
+    };
+    CONNECTORS?: Array<{
+        source_id: string;
+        source_type: string;
+        name: string;
+        icon: string;
+        params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+        pinned_params: Record<string, string>;
+        hierarchy: Array<{key: string; label: string}>;
+        effective_hierarchy: Array<{key: string; label: string}>;
+        auth_instructions: string;
+        auth_mode?: string;
+        delegated_login?: { login_url: string; label?: string } | null;
+    }>;
+    DISABLED_SOURCES?: Record<string, {install_hint: string}>;
+    CONNECTED_CONNECTORS?: string[];
+    IDENTITY?: { type: string; id: string };
+    CREDENTIAL_VAULT_ENABLED?: boolean;
 }
 
 export interface ModelConfig {
@@ -56,13 +81,19 @@ export interface ModelConfig {
     api_key?: string;
     api_base?: string;
     api_version?: string;
+    /** True for models configured server-side via .env. Their credentials never leave the server. */
+    is_global?: boolean;
 }
 
 
 export type FocusedId = 
     | { type: 'table'; tableId: string }
     | { type: 'chart'; chartId: string }
+    | { type: 'report'; reportId: string }
     | undefined;
+
+export const DEFAULT_ROW_LIMIT = 2_000_000;
+export const DEFAULT_ROW_LIMIT_EPHEMERAL = 20_000;
 
 export interface ClientConfig {
     formulateTimeoutSeconds: number;
@@ -79,6 +110,12 @@ export interface GeneratedReport {
     style: string;
     selectedChartIds: string[];
     createdAt: number;
+    title?: string;
+    updatedAt?: number;
+    anchorChartId?: string;
+    contentSnapshotHash?: string;
+    prompt?: string;
+    status?: 'generating' | 'completed' | 'error';
 }
 
 export interface DataFormulatorState {
@@ -88,14 +125,22 @@ export interface DataFormulatorState {
         exploration: string;
     };
 
-    // Identity management: user identity (if logged in) or browser identity (localStorage-based)
-    // Always initialized with browser identity, updated to user identity if logged in
+    // Identity management: local (localhost), user (SSO), or browser (anonymous multi-user)
+    // Initialized with browser identity, then updated from server config or auth provider
     identity: Identity;
+    /**
+     * Server-managed global models loaded from the backend on every app start.
+     * These are NOT persisted by redux-persist (blacklisted in store.ts) so they
+     * are always refreshed from the latest server configuration.
+     */
+    globalModels: ModelConfig[];
+    /** User-added models, persisted across browser sessions. */
     models: ModelConfig[];
     selectedModelId: string | undefined;
-    testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
+    testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}[];
 
     tables : DictTable[];
+    draftNodes: DraftNode[];
     charts: Chart[];
     
     conceptShelfItems: FieldItem[];
@@ -118,22 +163,14 @@ export interface DataFormulatorState {
     config: ClientConfig;
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
-    
-    // which table is the agent working on
-    agentActions: {
-        actionId: string, 
-        originTableId: string, // the table the user was focused on when they triggered this action sequence
-        description: string, 
-        status: 'running' | 'completed' | 'warning' | 'failed',
-        lastUpdate: number, // the time the action is last updated
-        hidden: boolean, // whether the action is hidden
-        messages: { content: string, role: 'user' | 'thinking' | 'action' | 'completion' | 'error' | 'clarify', observeTableId?: string, resultTableId?: string, timestamp: number }[], // accumulated messages from this action
-        pendingClarification?: { trajectory: any[], completedStepCount: number, lastCreatedTableId: string | null } | null, // stored when agent asks for clarification, cleared on resume/cancel
-    }[];
 
-    // Data cleaning dialog state
+    // Data cleaning dialog state (legacy, kept for migration)
     dataCleanBlocks: DataCleanBlock[];
     cleanInProgress: boolean;
+
+    // Conversational data loading chat
+    dataLoadingChatMessages: ChatMessage[];
+    dataLoadingChatInProgress: boolean;
 
     // Generated reports state
     generatedReports: GeneratedReport[];
@@ -141,6 +178,10 @@ export interface DataFormulatorState {
     // Session loading overlay
     sessionLoading: boolean;
     sessionLoadingLabel: string;
+
+    // Active workspace (null = show workspace picker)
+    // id: stable identifier (folder name), displayName: user-facing name (can be renamed)
+    activeWorkspace: { id: string; displayName: string } | null;
 }
 
 // Define the initial state using that type
@@ -152,11 +193,13 @@ const initialState: DataFormulatorState = {
     },
 
     identity: { type: 'browser', id: getBrowserId() },
+    globalModels: [],
     models: [],
-    selectedModelId: undefined,
+    selectedModelId: localStorage.getItem('df_selected_model') || undefined,
     testedModels: [],
 
     tables: [],
+    draftNodes: [],
     charts: [],
 
     conceptShelfItems: [],
@@ -174,10 +217,11 @@ const initialState: DataFormulatorState = {
 
     serverConfig: {
         DISABLE_DISPLAY_KEYS: false,
-        DISABLE_DATABASE: false, // will be overridden by /api/app-config
-        DISABLE_FILE_UPLOAD: false,
+        DISABLE_DATA_CONNECTORS: false,
+        DISABLE_CUSTOM_MODELS: false,
         PROJECT_FRONT_PAGE: false,
         MAX_DISPLAY_ROWS: 10000,
+        AVAILABLE_LANGUAGES: ['en', 'zh'],
         DEV_MODE: false,
         WORKSPACE_BACKEND: 'local',
     },
@@ -187,21 +231,24 @@ const initialState: DataFormulatorState = {
         defaultChartWidth: 400,
         defaultChartHeight: 300,
         maxStretchFactor: 2.0,
-        frontendRowLimit: 50000,
+        frontendRowLimit: DEFAULT_ROW_LIMIT,
         paletteKey: 'fluent',
     },
 
     dataLoaderConnectParams: {},
-    
-    agentActions: [],
 
     dataCleanBlocks: [],
     cleanInProgress: false,
+
+    dataLoadingChatMessages: [],
+    dataLoadingChatInProgress: false,
 
     generatedReports: [],
 
     sessionLoading: false,
     sessionLoadingLabel: '',
+
+    activeWorkspace: null,
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -214,25 +261,6 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
     return state.tables.filter(table => table.derive && !tableWithDescendants.includes(table.id) && !chartRefedTables.includes(table.id)).map(t => t.id);
 }
 
-/**
- * Fire-and-forget cleanup of virtual tables from the workspace backend.
- * Called when derived tables are removed from the frontend state.
- */
-export function cleanupVirtualTablesFromWorkspace(tables: DictTable[]) {
-    for (const table of tables) {
-        if (table.virtual?.tableId) {
-            fetchWithIdentity(getUrls().DELETE_TABLE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table_name: table.virtual.tableId }),
-            }).catch(err => {
-                console.warn(`Failed to clean up virtual table ${table.virtual?.tableId}:`, err);
-            });
-        }
-    }
-}
-
-// Helper function to auto-populate latitude/longitude encodings for map charts
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     let charts = state.charts.filter(c => !chartIds.includes(c.id));
     let currentFocusedChartId = state.focusedId?.type === 'chart' ? state.focusedId.chartId : undefined;
@@ -255,10 +283,46 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
     
     // Clean up virtual tables from workspace before removing from state
     let tablesToDelete = state.tables.filter(t => tableIdsToDelete.includes(t.id));
-    cleanupVirtualTablesFromWorkspace(tablesToDelete);
+    deleteTablesFromWorkspace(tablesToDelete.map(t => t.virtual.tableId));
 
     state.tables = state.tables.filter(t => !tableIdsToDelete.includes(t.id));
 }
+
+/**
+ * Remove a table from Redux state (tables, conceptShelf, charts, draftNodes, focus).
+ * Does NOT send any server-side delete requests — the caller decides whether
+ * server cleanup is needed.
+ */
+let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
+    const tableToDelete = state.tables.find(t => t.id === tableId);
+    if (!tableToDelete) return;
+
+    const directChildren = state.tables.filter(t =>
+        t.derive?.trigger.tableId === tableId ||
+        t.derive?.source.includes(tableId)
+    );
+
+    if (directChildren.length > 0 && tableToDelete.derive) {
+        const parentTriggerId = tableToDelete.derive.trigger.tableId;
+        state.tables = state.tables.map(t => {
+            if (!t.derive || t.derive.trigger.tableId !== tableId) return t;
+            return { ...t, derive: { ...t.derive, trigger: { ...t.derive.trigger, tableId: parentTriggerId } } };
+        });
+    }
+
+    state.tables = state.tables.filter(t => t.id !== tableId);
+    state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef !== tableId);
+
+    const chartIdsToDelete = state.charts.filter(c => c.tableRef === tableId).map(c => c.id);
+    deleteChartsRoutine(state, chartIdsToDelete);
+
+    // Also clean up any draft nodes that were chained from this table
+    state.draftNodes = state.draftNodes.filter(d => d.derive?.trigger.tableId !== tableId);
+
+    if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
+        state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
+    }
+};
 
 export const fetchFieldSemanticType = createAsyncThunk(
     "dataFormulatorSlice/fetchFieldSemanticType",
@@ -326,69 +390,91 @@ export const fetchChartInsight = createAsyncThunk(
     async (args: { chartId: string; tableId: string }, { getState }) => {
         console.log(">>> call agent to generate chart insight <<<");
 
-        let state = getState() as DataFormulatorState;
-        let chart = dfSelectors.getAllCharts(state).find(c => c.id === args.chartId);
-        if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
+        // Wrap entire thunk body in a race with a timeout to prevent indefinite stalls
+        const INSIGHT_TIMEOUT_MS = 60_000;
+        const result = await Promise.race([
+            (async () => {
+                let state = getState() as DataFormulatorState;
+                let chart = dfSelectors.getAllCharts(state).find(c => c.id === args.chartId);
+                if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
 
-        // Get high-res PNG from the rendered chart
-        let chartImage = await getChartPngDataUrl(args.chartId);
-        if (!chartImage) throw new Error(`No rendered chart image for: ${args.chartId}`);
+                // Get high-res PNG from the rendered chart
+                let chartImage = await getChartPngDataUrl(args.chartId);
+                if (!chartImage) throw new Error(`No rendered chart image for: ${args.chartId}`);
 
-        // Strip the data:image/png;base64, prefix for the backend
-        const base64Prefix = 'data:image/png;base64,';
-        if (chartImage.startsWith(base64Prefix)) {
-            chartImage = chartImage.substring(base64Prefix.length);
-        }
+                // Strip the data:image/png;base64, prefix for the backend
+                const base64Prefix = 'data:image/png;base64,';
+                if (chartImage.startsWith(base64Prefix)) {
+                    chartImage = chartImage.substring(base64Prefix.length);
+                }
 
-        // Collect field names from the encoding map
-        let fieldNames = Object.values(chart.encodingMap)
-            .map(enc => enc.fieldID)
-            .filter((id): id is string => !!id)
-            .map(id => {
-                let field = state.conceptShelfItems.find(f => f.id === id);
-                return field?.name || id;
-            });
+                // Collect field names from the encoding map
+                let fieldNames = Object.values(chart.encodingMap)
+                    .map(enc => enc.fieldID)
+                    .filter((id): id is string => !!id)
+                    .map(id => {
+                        let field = state.conceptShelfItems.find(f => f.id === id);
+                        return field?.name || id;
+                    });
 
-        // Collect input table info (include source tables for derived tables)
-        let table = state.tables.find(t => t.id === args.tableId);
-        let tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
-        let inputTables = [...new Set(tableIds)]
-            .map(tId => state.tables.find(t => t.id === tId))
-            .filter((t): t is DictTable => !!t)
-            .map(t => ({
-                name: t.id,
-                rows: t.rows,
-                attached_metadata: t.attachedMetadata,
-            }));
+                // Collect input table info (include source tables for derived tables)
+                let table = state.tables.find(t => t.id === args.tableId);
+                let tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
+                let inputTables = [...new Set(tableIds)]
+                    .map(tId => state.tables.find(t => t.id === tId))
+                    .filter((t): t is DictTable => !!t)
+                    .map(t => ({
+                        name: t.id,
+                        rows: t.rows,
+                        attached_metadata: t.attachedMetadata,
+                    }));
 
-        let message = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                token: Date.now(),
-                chart_image: chartImage,
-                chart_type: chart.chartType,
-                field_names: fieldNames,
-                input_tables: inputTables,
-                model: dfSelectors.getActiveModel(state),
-            }),
-        };
+                let message = {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token: Date.now(),
+                        chart_image: chartImage,
+                        chart_type: chart.chartType,
+                        field_names: fieldNames,
+                        input_tables: inputTables,
+                        model: dfSelectors.getActiveModel(state),
+                    }),
+                };
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        let response = await fetchWithIdentity(getUrls().CHART_INSIGHT_URL, { ...message, signal: controller.signal });
-        clearTimeout(timeoutId);
+                let response = await fetchWithIdentity(getUrls().CHART_INSIGHT_URL, { ...message, signal: controller.signal });
+                clearTimeout(timeoutId);
 
-        let result = await response.json();
-        return { ...result, chartId: args.chartId, insightKey: computeInsightKey(chart) };
+                let result = await response.json();
+                return { ...result, chartId: args.chartId, insightKey: computeInsightKey(chart) };
+            })(),
+            new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Chart insight timed out')), INSIGHT_TIMEOUT_MS)
+            ),
+        ]);
+        return result;
     }
 );
 
+/** Fast fetch: returns the list of server-configured models instantly (no
+ *  connectivity check).  The UI renders them immediately with a "testing"
+ *  spinner so the admin can see every configured model right away. */
+export const fetchGlobalModelList = createAsyncThunk(
+    "dataFormulatorSlice/fetchGlobalModelList",
+    async () => {
+        const response = await fetchWithIdentity(getUrls().LIST_GLOBAL_MODELS);
+        return response.json();
+    }
+);
+
+/** Slow fetch: runs parallel connectivity checks on all server-configured
+ *  models and returns each model's connected / disconnected status. */
 export const fetchAvailableModels = createAsyncThunk(
     "dataFormulatorSlice/fetchAvailableModels",
     async () => {
-        console.log(">>> call agent to fetch available models <<<")
         let message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
@@ -397,9 +483,10 @@ export const fetchAvailableModels = createAsyncThunk(
             }),
         };
 
-        // timeout the request after 20 seconds
+        // Backend checks run in parallel with max_tokens=3 + 10s timeout per
+        // model, so total wall-clock ≈ slowest single model (~10s worst case).
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 20000)
+        const timeoutId = setTimeout(() => controller.abort(), 30000)
 
         let response = await fetchWithIdentity(getUrls().CHECK_AVAILABLE_MODELS, {...message, signal: controller.signal })
 
@@ -422,6 +509,7 @@ export const dataFormulatorSlice = createSlice({
             //           config, dataLoaderConnectParams, identity
 
             state.tables = [];
+            state.draftNodes = [];
             state.charts = [];
 
             state.conceptShelfItems = [];
@@ -436,21 +524,29 @@ export const dataFormulatorSlice = createSlice({
             state.viewMode = 'editor';
 
             state.chartSynthesisInProgress = [];
+            state.chartInsightInProgress = [];
 
-            state.serverConfig = initialState.serverConfig;
+            // Preserve serverConfig — it reflects the actual server state, not user state
 
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
 
-            state.agentActions = [];
+            state.dataLoadingChatMessages = [];
+            state.dataLoadingChatInProgress = false;
 
             state.generatedReports = [];
+
+            // Clear active workspace so stale IDs don't persist across restarts
+            state.activeWorkspace = null;
             // Redux Persist will handle persistence automatically
             
         },
         setSessionLoading: (state, action: PayloadAction<{loading: boolean, label?: string}>) => {
             state.sessionLoading = action.payload.loading;
             state.sessionLoadingLabel = action.payload.label || '';
+        },
+        setActiveWorkspace: (state, action: PayloadAction<{ id: string; displayName: string } | null>) => {
+            state.activeWorkspace = action.payload;
         },
         loadState: (state, action: PayloadAction<any>) => {
             const saved = action.payload;
@@ -461,26 +557,47 @@ export const dataFormulatorSlice = createSlice({
                 // Preserve local-only / sensitive fields from current state
                 identity: state.identity,
                 agentRules: state.agentRules || initialState.agentRules,
+                globalModels: state.globalModels || [],
                 models: state.models || [],
                 selectedModelId: state.selectedModelId || undefined,
                 testedModels: state.testedModels || [],
                 dataLoaderConnectParams: state.dataLoaderConnectParams || {},
-                serverConfig: initialState.serverConfig,
+                serverConfig: state.serverConfig,
 
-                // Restore from saved payload
-                tables: saved.tables || [],
+                // Restore from saved payload (backfill virtual for old states)
+                tables: (saved.tables || []).map((t: any) => ({
+                    ...t,
+                    virtual: t.virtual || { tableId: t.id, rowCount: t.rows?.length || 0 },
+                })),
+                draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
+                    // Mark any running/clarifying drafts as interrupted (SSE connection lost)
+                    if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
+                        return {
+                            ...node,
+                            derive: {
+                                ...node.derive,
+                                status: 'interrupted' as const,
+                                trigger: {
+                                    ...node.derive.trigger,
+                                    interaction: [
+                                        ...(node.derive.trigger.interaction || []),
+                                        { from: 'data-agent' as const, to: 'user' as const, role: 'error' as const,
+                                          content: 'Interrupted by page refresh. You can retry or delete this step.',
+                                          timestamp: Date.now() }
+                                    ]
+                                }
+                            }
+                        };
+                    }
+                    return node;
+                }),
                 charts: saved.charts || [],
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
-                // Migrate from old focusedTableId/focusedChartId to new focusedId
-                focusedId: saved.focusedId || (
-                    saved.focusedChartId ? { type: 'chart' as const, chartId: saved.focusedChartId } :
-                    saved.focusedTableId ? { type: 'table' as const, tableId: saved.focusedTableId } :
-                    undefined
-                ),
+                focusedId: saved.focusedId || undefined,
                 config: { ...initialState.config, ...(saved.config || {}) },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
-                agentActions: saved.agentActions || [],
+                dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
                 generatedReports: saved.generatedReports || [],
 
                 // Reset transient fields
@@ -490,33 +607,20 @@ export const dataFormulatorSlice = createSlice({
                 chartSynthesisInProgress: [],
                 chartInsightInProgress: [],
                 cleanInProgress: false,
+                dataLoadingChatInProgress: false,
                 sessionLoading: false,
                 sessionLoadingLabel: '',
+
+                // Preserve or restore workspace name
+                activeWorkspace: saved.activeWorkspace ?? state.activeWorkspace ?? null,
             };
-        },
-        updateAgentWorkInProgress: (state, action: PayloadAction<{actionId: string, originTableId?: string, description: string, status: 'running' | 'completed' | 'warning' | 'failed', hidden: boolean, message?: { content: string, role: 'user' | 'thinking' | 'action' | 'completion' | 'error' | 'clarify', observeTableId?: string, resultTableId?: string }, pendingClarification?: { trajectory: any[], completedStepCount: number, lastCreatedTableId: string | null } | null }>) => {
-            const now = Date.now();
-            if (state.agentActions.some(a => a.actionId == action.payload.actionId)) {
-                state.agentActions = state.agentActions.map(a => {
-                    if (a.actionId != action.payload.actionId) return a;
-                    const updated = {...a, ...action.payload, lastUpdate: now};
-                    if (action.payload.message) {
-                        updated.messages = [...(a.messages || []), { ...action.payload.message, timestamp: now }];
-                    }
-                    return updated;
-                });
-            } else {
-                const messages = action.payload.message 
-                    ? [{ ...action.payload.message, timestamp: now }] 
-                    : [];
-                state.agentActions = [...state.agentActions, {...action.payload, originTableId: action.payload.originTableId || "", lastUpdate: now, hidden: action.payload.hidden, messages}];
-            }
-        },
-        deleteAgentWorkInProgress: (state, action: PayloadAction<string>) => {
-            state.agentActions = state.agentActions.filter(a => a.actionId != action.payload);
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
             state.serverConfig = action.payload;
+            // Auto-adjust frontendRowLimit for ephemeral mode if still at default
+            if (action.payload.WORKSPACE_BACKEND === 'ephemeral' && state.config.frontendRowLimit === DEFAULT_ROW_LIMIT) {
+                state.config.frontendRowLimit = DEFAULT_ROW_LIMIT_EPHEMERAL;
+            }
         },
         setConfig: (state, action: PayloadAction<ClientConfig>) => {
             state.config = action.payload;
@@ -529,6 +633,13 @@ export const dataFormulatorSlice = createSlice({
         },
         selectModel: (state, action: PayloadAction<string | undefined>) => {
             state.selectedModelId = action.payload;
+            try {
+                if (action.payload) {
+                    localStorage.setItem('df_selected_model', action.payload);
+                } else {
+                    localStorage.removeItem('df_selected_model');
+                }
+            } catch { /* localStorage unavailable */ }
         },
         addModel: (state, action: PayloadAction<ModelConfig>) => {
             state.models = [...state.models, action.payload];
@@ -537,9 +648,10 @@ export const dataFormulatorSlice = createSlice({
             state.models = state.models.filter(model => model.id != action.payload);
             if (state.selectedModelId == action.payload) {
                 state.selectedModelId = undefined;
+                try { localStorage.removeItem('df_selected_model'); } catch { /* */ }
             }
         },
-        updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}>) => {
+        updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}>) => {
             let id = action.payload.id;
             let status = action.payload.status;
             let message = action.payload.message;
@@ -551,83 +663,31 @@ export const dataFormulatorSlice = createSlice({
         },
         addTableToStore: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
-            // Compute content hash if not already set
             if (!table.contentHash) {
                 table = { ...table, contentHash: computeContentHash(table.rows, table.names) };
             }
-            state.tables = [...state.tables, table];
+
+            const existingIdx = state.tables.findIndex(t => t.id === table.id);
+            if (existingIdx >= 0) {
+                state.tables[existingIdx] = table;
+                state.conceptShelfItems = state.conceptShelfItems.filter(f => f.tableRef !== table.id);
+            } else {
+                state.tables = [...state.tables, table];
+            }
+
             state.charts = [...state.charts];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
-
             state.focusedId = { type: 'table', tableId: table.id };
         },
         deleteTable: (state, action: PayloadAction<string>) => {
-            let tableId = action.payload;
-            
-            // Find the table to delete
-            let tableToDelete = state.tables.find(t => t.id == tableId);
+            const tableId = action.payload;
+            const tableToDelete = state.tables.find(t => t.id === tableId);
             if (!tableToDelete) return;
-
-            // Clean up virtual table from workspace before removing from state
-            cleanupVirtualTablesFromWorkspace([tableToDelete]);
-
-            // Find direct children: tables derived from or triggered by this table
-            let directChildren = state.tables.filter(t => 
-                t.derive?.trigger.tableId === tableId || 
-                t.derive?.source.includes(tableId)
-            );
-
-            // If the deleted table is derived and has children, re-parent their triggers
-            if (directChildren.length > 0 && tableToDelete.derive) {
-                const parentTriggerId = tableToDelete.derive.trigger.tableId;
-
-                state.tables = state.tables.map(t => {
-                    if (!t.derive) return t;
-
-                    // Only update trigger.tableId — derive.source stays as-is
-                    // since each table has its own specific data sources
-                    if (t.derive.trigger.tableId !== tableId) return t;
-
-                    return {
-                        ...t,
-                        derive: {
-                            ...t.derive,
-                            trigger: {
-                                ...t.derive.trigger,
-                                tableId: parentTriggerId,
-                            }
-                        }
-                    };
-                });
-            }
-            
-            // Remove the table
-            state.tables = state.tables.filter(t => t.id != tableId);
-
-            // Clean up concept shelf items referencing this table
-            state.conceptShelfItems = state.conceptShelfItems.filter(f => !(f.tableRef == tableId));
-            
-            // Delete charts that refer to this table
-            let chartIdsToDelete = state.charts.filter(c => c.tableRef == tableId).map(c => c.id);
-            deleteChartsRoutine(state, chartIdsToDelete);
-
-            // Clean up agent actions: remove non-running actions whose originTableId is the deleted table
-            // AND whose resultTableIds all point to tables that no longer exist
-            const survivingTableIds = new Set(state.tables.map(t => t.id));
-            state.agentActions = state.agentActions.filter(a => {
-                if (a.status === 'running') return true; // never remove running actions
-                if (a.originTableId !== tableId) return true; // not related to deleted table
-                // Keep if any resultTableId still exists in surviving tables
-                const resultTableIds = a.messages
-                    ?.filter(m => m.resultTableId)
-                    .map(m => m.resultTableId!) ?? [];
-                return resultTableIds.some(id => survivingTableIds.has(id));
-            });
-
-            // If the deleted table was focused, reset focus
-            if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
-                state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
-            }
+            deleteTablesFromWorkspace([tableToDelete.virtual.tableId]);
+            removeTableStateRoutine(state, tableId);
+        },
+        removeTableLocally: (state, action: PayloadAction<string>) => {
+            removeTableStateRoutine(state, action.payload);
         },
         updateTableAnchored: (state, action: PayloadAction<{tableId: string, anchored: boolean}>) => {
             let tableId = action.payload.tableId;
@@ -668,7 +728,8 @@ export const dataFormulatorSlice = createSlice({
                     // Use provided content hash (from backend for virtual/DB tables) or compute locally
                     // For virtual tables, backend hash reflects full table; for stream tables, compute from actual rows
                     const newContentHash = providedContentHash || computeContentHash(newRows, t.names);
-                    return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash };
+                    const updatedVirtual = { ...t.virtual, rowCount: newRows.length };
+                    return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash, virtual: updatedVirtual };
                 }
                 return t;
             });
@@ -694,7 +755,8 @@ export const dataFormulatorSlice = createSlice({
                 }
                 const updatedSource = t.source ? { ...t.source, lastRefreshed: Date.now() } : undefined;
                 const newContentHash = providedContentHash || computeContentHash(newRows, t.names);
-                return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash };
+                const updatedVirtual = { ...t.virtual, rowCount: newRows.length };
+                return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash, virtual: updatedVirtual };
             });
         },
         updateTableSource: (state, action: PayloadAction<{tableId: string, source: DataSourceConfig}>) => {
@@ -1062,13 +1124,102 @@ export const dataFormulatorSlice = createSlice({
         insertDerivedTables: (state, action: PayloadAction<DictTable>) => {
             state.tables = [...state.tables, action.payload];
         },
+        // ── Draft node reducers ──────────────────────────────────
+        createDraftNode: (state, action: PayloadAction<{ id: string; displayId: string; parentTableId: string; source: string[]; interaction: InteractionEntry[]; chart?: Chart; actionId?: string }>) => {
+            const { id, displayId, parentTableId, source, interaction, chart, actionId } = action.payload;
+            const draft: DraftNode = {
+                kind: 'draft',
+                id,
+                displayId,
+                anchored: false,
+                derive: {
+                    source,
+                    trigger: {
+                        tableId: parentTableId,
+                        resultTableId: id,
+                        chart,
+                        interaction,
+                    },
+                    status: 'running',
+                },
+                actionId,
+            };
+            state.draftNodes = [...state.draftNodes, draft];
+        },
+        appendDraftInteraction: (state, action: PayloadAction<{ draftId: string; entry: InteractionEntry }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
+            if (draft?.derive?.trigger) {
+                draft.derive.trigger.interaction = [
+                    ...(draft.derive.trigger.interaction || []),
+                    action.payload.entry,
+                ];
+            }
+        },
+        updateDraftRunningPlan: (state, action: PayloadAction<{ draftId: string; plan: string }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
+            if (draft?.derive) {
+                draft.derive.runningPlan = action.payload.plan;
+            }
+        },
+        updateDeriveStatus: (state, action: PayloadAction<{ nodeId: string; status: DeriveStatus }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.nodeId);
+            if (draft?.derive) {
+                draft.derive.status = action.payload.status;
+            }
+        },
+        updateDraftClarification: (state, action: PayloadAction<{ draftId: string; pendingClarification: { trajectory: any[]; completedStepCount: number; lastCreatedTableId: string | null } | null }>) => {
+            const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
+            if (draft?.derive) {
+                draft.derive.pendingClarification = action.payload.pendingClarification;
+            }
+        },
+        promoteDraft: (state, action: PayloadAction<{ draftId: string; rows: any[]; names: string[]; metadata: any; code: string; codeSignature?: string; outputVariable?: string; dialog?: any[]; explanation?: any; virtual: { tableId: string; rowCount: number }; attachedMetadata?: string; source?: DataSourceConfig }>) => {
+            const { draftId, rows, names, metadata, code, codeSignature, outputVariable, dialog, explanation, virtual, attachedMetadata, source } = action.payload;
+            const draft = state.draftNodes.find(d => d.id === draftId);
+            if (!draft) return;
+            const table: DictTable = {
+                kind: 'table',
+                id: draft.id,
+                displayId: draft.displayId,
+                anchored: draft.anchored,
+                derive: {
+                    ...draft.derive,
+                    status: 'completed' as const,
+                    code,
+                    codeSignature,
+                    outputVariable: outputVariable || 'result_df',
+                    dialog: dialog || [],
+                    explanation,
+                },
+                rows,
+                names,
+                metadata,
+                virtual: virtual,
+                attachedMetadata: attachedMetadata || '',
+                source,
+            };
+            state.tables = [...state.tables, table];
+            state.draftNodes = state.draftNodes.filter(d => d.id !== draftId);
+        },
+        removeDraftNode: (state, action: PayloadAction<string>) => {
+            state.draftNodes = state.draftNodes.filter(d => d.id !== action.payload);
+        },
+        appendTriggerInteraction: (state, action: PayloadAction<{ tableId: string; entries: InteractionEntry[] }>) => {
+            const table = state.tables.find(t => t.id === action.payload.tableId);
+            if (table?.derive?.trigger) {
+                table.derive.trigger.interaction = [
+                    ...(table.derive.trigger.interaction || []),
+                    ...action.payload.entries,
+                ];
+            }
+        },
         overrideDerivedTables: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
             
             // Clean up old virtual table from workspace since it's being replaced
             let oldTable = state.tables.find(t => t.id == table.id);
             if (oldTable) {
-                cleanupVirtualTablesFromWorkspace([oldTable]);
+                deleteTablesFromWorkspace([oldTable.virtual.tableId]);
             }
             
             state.tables = [...state.tables.filter(t => t.id != table.id), table];
@@ -1080,7 +1231,7 @@ export const dataFormulatorSlice = createSlice({
             // Clean up virtual table from workspace before removing from state
             let tableToDelete = state.tables.find(t => t.derive && t.id == tableId);
             if (tableToDelete) {
-                cleanupVirtualTablesFromWorkspace([tableToDelete]);
+                deleteTablesFromWorkspace([tableToDelete.virtual.tableId]);
             }
             
             state.tables = state.tables.filter(t => !(t.derive && t.id == tableId));
@@ -1093,7 +1244,7 @@ export const dataFormulatorSlice = createSlice({
             let tablesToRemove = state.tables.filter(t => t.derive && !referredTableId.some(tableId => tableId == t.id));
             
             // Clean up virtual tables from workspace
-            cleanupVirtualTablesFromWorkspace(tablesToRemove);
+            deleteTablesFromWorkspace(tablesToRemove.map(t => t.virtual.tableId));
             
             state.tables = state.tables.filter(t => !tablesToRemove.some(tr => tr.id == t.id));
         },
@@ -1115,6 +1266,9 @@ export const dataFormulatorSlice = createSlice({
 
             if (action.payload?.type === 'chart' && state.viewMode == 'report') {
                 state.viewMode = 'editor';
+            }
+            if (action.payload?.type === 'report') {
+                state.viewMode = 'report';
             }
         },
         setFocusedDataCleanBlockId: (state, action: PayloadAction<{blockId: string, itemId: number} | undefined>) => {
@@ -1173,9 +1327,41 @@ export const dataFormulatorSlice = createSlice({
         setCleanInProgress: (state, action: PayloadAction<boolean>) => {
             state.cleanInProgress = action.payload;
         },
+        // Conversational data loading chat actions
+        addChatMessage: (state, action: PayloadAction<ChatMessage>) => {
+            state.dataLoadingChatMessages = [...state.dataLoadingChatMessages, action.payload];
+        },
+        updateLastChatMessage: (state, action: PayloadAction<Partial<ChatMessage>>) => {
+            if (state.dataLoadingChatMessages.length > 0) {
+                const lastIndex = state.dataLoadingChatMessages.length - 1;
+                state.dataLoadingChatMessages[lastIndex] = {
+                    ...state.dataLoadingChatMessages[lastIndex],
+                    ...action.payload,
+                };
+            }
+        },
+        clearChatMessages: (state) => {
+            state.dataLoadingChatMessages = [];
+        },
+        confirmTableLoad: (state, action: PayloadAction<{messageId: string, tableName: string}>) => {
+            const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
+            if (msg?.pendingLoads) {
+                const pending = msg.pendingLoads.find(p => p.name === action.payload.tableName);
+                if (pending) {
+                    pending.confirmed = true;
+                }
+            }
+        },
+        setDataLoadingChatInProgress: (state, action: PayloadAction<boolean>) => {
+            state.dataLoadingChatInProgress = action.payload;
+        },
         // Generated reports actions
         saveGeneratedReport: (state, action: PayloadAction<GeneratedReport>) => {
             const report = action.payload;
+            // Auto-set anchorChartId to the last selected chart if not provided
+            if (!report.anchorChartId && report.selectedChartIds.length > 0) {
+                report.anchorChartId = report.selectedChartIds[report.selectedChartIds.length - 1];
+            }
             // Check if report with same ID already exists and update it, otherwise add new
             const existingIndex = state.generatedReports.findIndex(r => r.id === report.id);
             if (existingIndex >= 0) {
@@ -1189,6 +1375,16 @@ export const dataFormulatorSlice = createSlice({
             const reportId = action.payload;
             state.generatedReports = state.generatedReports.filter(r => r.id !== reportId);
             // Redux Persist will handle persistence automatically
+        },
+        updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string }>) => {
+            const { id, content, status, title } = action.payload;
+            const report = state.generatedReports.find(r => r.id === id);
+            if (report) {
+                report.content = content;
+                if (title) report.title = title;
+                if (status) report.status = status;
+                report.updatedAt = Date.now();
+            }
         },
         clearGeneratedReports: (state) => {
             state.generatedReports = [];
@@ -1236,28 +1432,55 @@ export const dataFormulatorSlice = createSlice({
                 }
             }
         })
-        .addCase(fetchAvailableModels.fulfilled, (state, action) => {
-            let defaultModels = action.payload;
+        .addCase(fetchGlobalModelList.fulfilled, (state, action) => {
+            // Populate globalModels so the UI renders every configured model
+            // immediately.  Status starts as "unknown"; the user can click
+            // "Test" to verify connectivity, or errors surface on first use.
+            const models: ModelConfig[] = action.payload;
+            state.globalModels = models;
 
-            state.models = [
-                ...defaultModels, 
-                ...state.models.filter(e => !defaultModels.some((m: ModelConfig) => 
-                    m.endpoint === e.endpoint && m.model === e.model && 
-                    m.api_base === e.api_base && m.api_version === e.api_version
-                ))
+            // Reset all global model statuses to "configured" on every app start.
+            // "configured" means: admin has set this up in .env, ready to use,
+            // but connectivity has not been verified this session.
+            // testedModels is persisted by redux-persist, so without this reset
+            // stale "ok" statuses from a previous session would linger.
+            // User-added model test results are preserved.
+            const globalIds = new Set(models.map(m => m.id));
+            state.testedModels = [
+                ...models.map(m => ({ id: m.id, status: 'configured' as const, message: '' })),
+                ...state.testedModels.filter(t => !globalIds.has(t.id)),
             ];
-            
-            state.testedModels = [ 
-                ...defaultModels.map((m: ModelConfig) => {return {id: m.id, status: 'ok'}}) ,
-                ...state.testedModels.filter(t => !defaultModels.map((m: ModelConfig) => m.id).includes(t.id))
-            ]
 
-            if (defaultModels.length > 0 && state.selectedModelId == undefined) {
-                state.selectedModelId = defaultModels[0].id;
+            // Auto-select the first global model when nothing is selected.
+            if (state.selectedModelId == undefined && models.length > 0) {
+                state.selectedModelId = models[0].id;
             }
+        })
+        .addCase(fetchAvailableModels.fulfilled, (state, action) => {
+            // Phase 2 (after connectivity checks): update statuses for each model.
+            const serverModels: (ModelConfig & { status: string; error: string | null })[] = action.payload;
 
-            // console.log("load model complete");
-            // console.log("state.models", state.models);
+            // Update globalModels with the full response (may include extra fields).
+            state.globalModels = serverModels;
+
+            // Replace global model entries in testedModels with real statuses,
+            // preserving user-model test results.
+            state.testedModels = [
+                ...serverModels.map(m => ({
+                    id: m.id,
+                    status: (m.status === 'connected' ? 'ok' : 'error') as 'ok' | 'error' | 'testing' | 'unknown' | 'configured',
+                    message: m.error ?? '',
+                })),
+                ...state.testedModels.filter(t => !serverModels.some(m => m.id === t.id)),
+            ];
+
+            // Auto-select the first connected global model when nothing is selected.
+            if (state.selectedModelId == undefined) {
+                const firstConnected = serverModels.find(m => m.status === 'connected');
+                if (firstConnected) {
+                    state.selectedModelId = firstConnected.id;
+                }
+            }
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
             let codeExplResponse = action.payload;
@@ -1376,8 +1599,13 @@ const selectTriggerCharts = createSelector(
 );
 
 export const dfSelectors = {
-    getActiveModel: (state: DataFormulatorState) : ModelConfig => {
-        return state.models.find(m => m.id == state.selectedModelId) || state.models[0];
+    /** All models visible in the UI: global (server-managed) first, then user-added. */
+    getAllModels: (state: DataFormulatorState): ModelConfig[] => {
+        return [...(state.globalModels ?? []), ...state.models];
+    },
+    getActiveModel: (state: DataFormulatorState): ModelConfig | undefined => {
+        const all = [...(state.globalModels ?? []), ...state.models];
+        return all.find(m => m.id == state.selectedModelId) ?? all[0];
     },
     getEffectiveTableId: (state: DataFormulatorState): string | undefined => {
         if (!state.focusedId) return undefined;

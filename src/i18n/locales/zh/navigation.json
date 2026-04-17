@@ -1,0 +1,18 @@
+{
+  "navigation": {
+    "startExploration": "开始探索",
+    "installLocally": "本地安装",
+    "tryOnlineDemo": "在线试用",
+    "video": "视频",
+    "github": "GitHub",
+    "contactUs": "联系我们",
+    "termsOfUse": "使用条款",
+    "about": "关于",
+    "home": "首页",
+    "data": "数据",
+    "visualization": "可视化",
+    "report": "报告",
+    "chat": "对话",
+    "agentRules": "代理规则"
+  }
+}

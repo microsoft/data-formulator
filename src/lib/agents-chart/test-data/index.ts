@@ -36,32 +36,7 @@ export { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genCha
 export { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
-export { genSemanticContextTests, genSnapToBoundTests } from './semantic-tests';
-export { genDebugTests } from './debug-tests';
-export {
-    OMNI_VIZ_ROWS,
-    OMNI_VIZ_LEVELS,
-    OMNI_VIZ_PRODUCT_ORDER,
-    OMNI_VIZ_DIVISION_ORDER,
-    OMNI_VIZ_QUARTER_PERIOD_START,
-    omniVizDetailTable,
-    omniVizLineTable,
-    omniVizPyramidLongTable,
-    omniVizRoseTable,
-    omniVizSunburstTable,
-    omniVizWaterfallTable,
-    type OmniVizRow,
-} from './omni-viz-dataset';
-export {
-    genOmniVizGroupedBarTests,
-    genOmniVizScatterTests,
-    genOmniVizLineTests,
-    genOmniVizPyramidTests,
-    genOmniVizRoseTests,
-    genOmniVizSunburstTests,
-    genOmniVizWaterfallTests,
-    GALLERY_OMNI_VIZ_GENERATOR_KEYS,
-} from './omni-viz-tests';
+export { genSemanticContextTests, genSnapToBoundTests, genSemanticFallbackTests } from './semantic-tests';
 
 // ---------------------------------------------------------------------------
 // Master map & gallery sections
@@ -85,34 +60,10 @@ import { genGasPressureTests } from './gas-pressure-tests';
 import { genLineAreaStretchTests } from './line-area-stretch-tests';
 import { genDiscreteAxisTests } from './discrete-axis-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
-import { genSemanticContextTests, genSnapToBoundTests } from './semantic-tests';
-import { genDebugTests } from './debug-tests';
+import { genSemanticContextTests, genSnapToBoundTests, genSemanticFallbackTests } from './semantic-tests';
 import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests, genEChartsGaugeTests, genEChartsFunnelTests, genEChartsTreemapTests, genEChartsSunburstTests, genEChartsSankeyTests, genEChartsUniqueStressTests } from './echarts-tests';
 import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
 import { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
-import {
-    genGalleryRegionalSurveyScatterTests,
-    genGalleryRegionalSurveyLineTests,
-    genGalleryRegionalSurveyBarTests,
-    genGalleryRegionalSurveyStackedBarTests,
-    genGalleryRegionalSurveyGroupedBarTests,
-    genGalleryRegionalSurveyAreaTests,
-    genGalleryRegionalSurveyPieTests,
-    genGalleryRegionalSurveyHistogramTests,
-    genGalleryRegionalSurveyRadarTests,
-    genGalleryRegionalSurveyRoseTests,
-} from '../gallery/regional-survey-tests';
-import { GALLERY_REGIONAL_SURVEY_GENERATOR_KEYS } from '../gallery';
-import {
-    genOmniVizGroupedBarTests,
-    genOmniVizScatterTests,
-    genOmniVizLineTests,
-    genOmniVizPyramidTests,
-    genOmniVizRoseTests,
-    genOmniVizSunburstTests,
-    genOmniVizWaterfallTests,
-    GALLERY_OMNI_VIZ_GENERATOR_KEYS,
-} from './omni-viz-tests';
 
 /** All test generators mapped by chart group */
 export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
@@ -163,7 +114,7 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Line/Area Stretch': genLineAreaStretchTests,
     'Semantic Context': genSemanticContextTests,
     'Snap-to-Bound': genSnapToBoundTests,
-    'Debug Cases': genDebugTests,
+    'Semantic Fallback': genSemanticFallbackTests,
     'ECharts: Scatter': genEChartsScatterTests,
     'ECharts: Line': genEChartsLineTests,
     'ECharts: Bar': genEChartsBarTests,
@@ -199,23 +150,6 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Chart.js: Radar': genChartJsRadarTests,
     'Chart.js: Rose': genChartJsRoseTests,
     'Chart.js: Stress Tests': genChartJsStressTests,
-    'Gallery: Scatter': genGalleryRegionalSurveyScatterTests,
-    'Gallery: Line': genGalleryRegionalSurveyLineTests,
-    'Gallery: Bar': genGalleryRegionalSurveyBarTests,
-    'Gallery: Stacked Bar': genGalleryRegionalSurveyStackedBarTests,
-    'Gallery: Grouped Bar': genGalleryRegionalSurveyGroupedBarTests,
-    'Gallery: Area': genGalleryRegionalSurveyAreaTests,
-    'Gallery: Pie': genGalleryRegionalSurveyPieTests,
-    'Gallery: Histogram': genGalleryRegionalSurveyHistogramTests,
-    'Gallery: Radar': genGalleryRegionalSurveyRadarTests,
-    'Gallery: Rose': genGalleryRegionalSurveyRoseTests,
-    'Omni: Grouped Bar': genOmniVizGroupedBarTests,
-    'Omni: Scatter': genOmniVizScatterTests,
-    'Omni: Line': genOmniVizLineTests,
-    'Omni: Pyramid': genOmniVizPyramidTests,
-    'Omni: Rose': genOmniVizRoseTests,
-    'Omni: Sunburst': genOmniVizSunburstTests,
-    'Omni: Waterfall': genOmniVizWaterfallTests,
     'GoFish Basic': () => [
         ...genGoFishScatterTests(),
         ...genGoFishLineTests(),
@@ -235,12 +169,7 @@ export const GALLERY_SECTIONS: GallerySection[] = [
     {
         label: 'Semantic Context',
         description: 'Demonstrates how semantic type annotations improve chart output: formatting, domain constraints, axis reversal, scale type, and interpolation',
-        entries: ['Semantic Context', 'Snap-to-Bound'],
-    },
-    {
-        label: 'Debug Cases',
-        description: 'Regression tests from evaluation failures: log+bin+zeros, temporal+bin, single-point line',
-        entries: ['Debug Cases'],
+        entries: ['Semantic Context', 'Snap-to-Bound', 'Semantic Fallback'],
     },
     {
         label: 'VegaLite',
@@ -321,16 +250,6 @@ export const GALLERY_SECTIONS: GallerySection[] = [
             'Chart.js: Rose',
             'Chart.js: Stress Tests',
         ],
-    },
-    {
-        label: 'Regional Survey (Gallery)',
-        description: 'Fixed season/region/city panel — same encodings rendered with Vega-Lite, ECharts, and Chart.js',
-        entries: [...GALLERY_REGIONAL_SURVEY_GENERATOR_KEYS],
-    },
-    {
-        label: 'Omni Viz (Gallery)',
-        description: 'Single catalog (unix quarter starts + 8 products): grouped bar, scatter, line, pyramid, rose, sunburst, waterfall',
-        entries: [...GALLERY_OMNI_VIZ_GENERATOR_KEYS],
     },
     {
         label: 'GoFish Basic',

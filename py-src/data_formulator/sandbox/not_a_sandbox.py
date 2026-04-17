@@ -8,12 +8,15 @@ It is NOT exposed as a CLI option and should only be used to measure
 the raw execution overhead baseline in benchmarks.
 """
 
+import logging
 import os
 import warnings
 
 import pandas as pd
 
 from .base import Sandbox
+
+logger = logging.getLogger(__name__)
 
 
 class NotASandbox(Sandbox):
@@ -47,12 +50,22 @@ class NotASandbox(Sandbox):
 
                 output_df = namespace[output_variable]
                 if not isinstance(output_df, pd.DataFrame):
+                    df_names = [
+                        k for k, v in namespace.items()
+                        if isinstance(v, pd.DataFrame) and not k.startswith('_')
+                    ]
                     return {
                         "status": "error",
                         "content": (
                             f'Output variable "{output_variable}" is not a '
-                            f"DataFrame (type: {type(output_df).__name__})"
+                            f"DataFrame (type: {type(output_df).__name__}). "
+                            f"Available DataFrame variables in code: "
+                            f"{df_names if df_names else 'none'}. "
+                            f"This usually means the JSON spec's "
+                            f"output_variable does not match the variable "
+                            f"name actually used in the Python code."
                         ),
+                        "df_names": df_names,
                     }
                 return {"status": "ok", "content": output_df}
 

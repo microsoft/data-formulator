@@ -8,9 +8,13 @@ import CloseIcon from '@mui/icons-material/Close';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { Alert, Box, Paper, Tooltip, Typography } from '@mui/material';
-import { shadow, transition } from '../app/tokens';
 import InfoIcon from '@mui/icons-material/Info';
 import DeleteIcon from '@mui/icons-material/Delete';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import WarningIcon from '@mui/icons-material/Warning';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { useTranslation } from 'react-i18next';
 
 export interface Message {
     type: "success" | "info" | "error" | "warning",
@@ -18,7 +22,8 @@ export interface Message {
     timestamp: number,
     value: string,
     detail?: string, // error details
-    code?: string // if this message is related to a code error, include code as well
+    code?: string, // if this message is related to a code error, include code as well
+    diagnostics?: any, // full diagnostic payload from the backend agent pipeline
 }
 
 const TYPE_SYMBOLS: Record<string, string> = {
@@ -45,12 +50,63 @@ const formatTimestamp = (timestamp: number) => {
     });
 };
 
+const DiagnosticsViewer: React.FC<{ diagnostics: any }> = React.memo(({ diagnostics }) => {
+    const [expanded, setExpanded] = React.useState(false);
+    const [copied, setCopied] = React.useState(false);
+    const jsonStr = React.useMemo(() => JSON.stringify(diagnostics, null, 2), [diagnostics]);
+
+    const handleCopy = React.useCallback(() => {
+        navigator.clipboard.writeText(jsonStr).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        });
+    }, [jsonStr]);
+
+    return (
+        <div style={{ marginTop: 4 }}>
+            <Typography fontSize={10} sx={{ color: '#888', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <span
+                    style={{ color: '#6a1b9a', cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => setExpanded(prev => !prev)}
+                >
+                    {expanded ? '▾' : '▸'} diagnostics
+                </span>
+                {expanded && (
+                    <Tooltip title={copied ? 'Copied!' : 'Copy JSON'} placement="top">
+                        <IconButton size="small" onClick={handleCopy} sx={{ p: 0, ml: 0.5 }}>
+                            <ContentCopyIcon sx={{ fontSize: 12, color: copied ? '#2e7d32' : '#888' }} />
+                        </IconButton>
+                    </Tooltip>
+                )}
+            </Typography>
+            {expanded && (
+                <pre style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 9,
+                    margin: '2px 0',
+                    padding: '6px 8px',
+                    backgroundColor: '#f5f0ff',
+                    border: '1px solid #e0d4f5',
+                    borderRadius: 3,
+                    maxHeight: 400,
+                    overflow: 'auto',
+                    lineHeight: 1.4,
+                }}>
+                    {jsonStr}
+                </pre>
+            )}
+        </div>
+    );
+});
+
 export const MessageSnackbar = React.memo(function MessageSnackbar() {
   
     const messages = useSelector((state: DataFormulatorState) => state.messages);
     const displayedMessageIdx = useSelector((state: DataFormulatorState) => state.displayedMessageIdx);
     
     const dispatch = useDispatch();
+    const { t } = useTranslation();
 
     const [openLastMessage, setOpenLastMessage] = React.useState(false);
     const [latestMessage, setLatestMessage] = React.useState<Message | undefined>();
@@ -59,6 +115,14 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
     const [expandedMessages, setExpandedMessages] = React.useState<Set<number>>(new Set());
 
     const messagesScrollRef = React.useRef<HTMLDivElement>(null);
+
+    const buttonSeverity: "error" | "warning" | "info" | "success" | "default" = React.useMemo(() => {
+        if (messages.length === 0) return "default";
+        if (messages.some(m => m.type === "error")) return "error";
+        if (messages.some(m => m.type === "warning")) return "warning";
+        if (messages.some(m => m.type === "info")) return "info";
+        return "success";
+    }, [messages]);
 
     React.useEffect(()=>{
         if (displayedMessageIdx < messages.length) {
@@ -118,27 +182,32 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
     }, []);
 
     return (
-        <Box sx={{ '& .snackbar-button': {
-            width: 36,
-            height: 36,
-            zIndex: 10,
-            backgroundColor: 'white',
-            '&:hover': {
-                transform: 'scale(1.1)',
-                backgroundColor: 'white',
-            },
-            border: '1px solid',
-            boxShadow: shadow.xl,
-            transition: transition.slow
-        }}}>
-            <Tooltip placement="left" title="view system messages">
+        <Box>
+            <Tooltip placement="left" title={t('messages.viewSystemMessages')}>
                 <IconButton 
-                    className='snackbar-button'
-                    color="warning"
-                    sx={{position: "absolute", bottom: 16, right: 16 }}
+                    color={buttonSeverity === "default" ? "default" : buttonSeverity}
+                    sx={{
+                        position: "absolute", bottom: 16, right: 16,
+                        width: 30,
+                        height: 30,
+                        zIndex: 10,
+                        backgroundColor: 'white',
+                        border: '1px solid',
+                        borderColor: buttonSeverity === "default" ? 'grey.400' : `${buttonSeverity}.main`,
+                        boxShadow: '0 0 6px rgba(0,0,0,0.1)',
+                        opacity: buttonSeverity === "default" ? 0.6 : 1,
+                        transition: 'all 0.3s ease',
+                        '&:hover': {
+                            transform: 'scale(1.1)',
+                            backgroundColor: 'white',
+                        },
+                    }}
                     onClick={() => setOpenMessages(true)}
                 >
-                    <InfoIcon sx={{fontSize: 32}}/>
+                    {buttonSeverity === "error" ? <ErrorOutlineIcon sx={{fontSize: 20}}/> :
+                     buttonSeverity === "warning" ? <WarningIcon sx={{fontSize: 20}}/> :
+                     buttonSeverity === "success" ? <CheckCircleIcon sx={{fontSize: 20}}/> :
+                     <InfoIcon sx={{fontSize: 20}}/>}
                 </IconButton>
             </Tooltip>
             <Snackbar
@@ -157,9 +226,9 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                     {/* Header */}
                     <Box sx={{display: 'flex', alignItems: 'center', px: 1.5}}>
                         <Typography variant="subtitle1" sx={{fontSize: 12, flexGrow: 1, color: 'text.secondary'}}>
-                            system messages ({messages.length}){messages.length > MAX_DISPLAY_MESSAGES ? ` — showing latest ${MAX_DISPLAY_MESSAGES}` : ''}
+                            {t('messages.systemMessagesWithCount', { count: messages.length })}{messages.length > MAX_DISPLAY_MESSAGES ? ` — showing latest ${MAX_DISPLAY_MESSAGES}` : ''}
                         </Typography>
-                        <Tooltip title="clear all messages">
+                        <Tooltip title={t('messages.clearAllMessages')}>
                             <IconButton
                                 size="small"
                                 color="warning"
@@ -193,12 +262,12 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                         }}
                     >
                         {messages.length === 0 && (
-                            <Typography fontSize={10} sx={{ opacity: 0.5, fontStyle: 'italic' }}>No messages yet</Typography>
+                            <Typography fontSize={10} sx={{ opacity: 0.5, fontStyle: 'italic' }}>{t('messages.noMessages')}</Typography>
                         )}
                         {groupedMessages.map((msg, index) => {
                             const color = TYPE_COLORS[msg.type] || '#333';
                             const symbol = TYPE_SYMBOLS[msg.type] || '•';
-                            const hasDetails = !!(msg.detail || msg.code);
+                            const hasDetails = !!(msg.detail || msg.code || msg.diagnostics);
                             const isExpanded = expandedMessages.has(index);
                             return (
                                 <div key={index} style={{ borderBottom: '1px solid #f0f0f0', padding: '2px 0' }}>
@@ -218,7 +287,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                                                 style={{ color: '#0288d1', cursor: 'pointer', userSelect: 'none' }}
                                                 onClick={() => toggleExpand(index)}
                                             >
-                                                {isExpanded ? '▾ collapse' : '▸ details'}
+                                                {isExpanded ? `▾ ${t('messages.details')}` : `▸ ${t('messages.details')}`}
                                             </span>
                                         )}
                                     </Typography>
@@ -245,6 +314,9 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                                                         {msg.code.split('\n').filter(line => line.trim() !== '').join('\n')}
                                                     </pre>
                                                 </div>
+                                            )}
+                                            {msg.diagnostics && (
+                                                <DiagnosticsViewer diagnostics={msg.diagnostics} />
                                             )}
                                         </div>
                                     )}

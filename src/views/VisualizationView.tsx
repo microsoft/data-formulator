@@ -28,22 +28,25 @@ import {
     Popover,
     Snackbar,
     Alert,
-    Collapse,
     Fade,
     Grow,
+    alpha,
 } from '@mui/material';
 
 import _ from 'lodash';
 
-import { borderColor } from '../app/tokens';
+import { borderColor, transition } from '../app/tokens';
+import { WritingIndicator } from '../components/FunComponents';
 
 import ButtonGroup from '@mui/material/ButtonGroup';
 
 
 import '../scss/VisualizationView.scss';
+import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchChartInsight } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
+import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
 
@@ -53,11 +56,10 @@ import StarIcon from '@mui/icons-material/Star';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
-import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import InfoIcon from '@mui/icons-material/Info';
+import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import CasinoIcon from '@mui/icons-material/Casino';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -71,10 +73,15 @@ import 'prismjs/components/prism-markdown' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
+import { useTranslation } from 'react-i18next';
+
 import { ChatDialog } from './ChatDialog';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
 import { InsightIcon } from '../icons';
+import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
+import { FreeDataViewFC } from './DataView';
+
 
 import { dfSelectors } from '../app/dfSlice';
 import { ChartRecBox } from './ChartRecBox';
@@ -89,27 +96,9 @@ export interface VisPanelState {
     viewMode: "gallery" | "carousel";
 }
 
-export let generateChartSkeleton = (icon: any, width: number = 160, height: number = 160, opacity: number = 0.5) => (
-    <Box width={width} height={height} sx={{ display: "flex" }}>
-        {icon == undefined ?
-            <AddchartIcon sx={{ color: "lightgray", margin: "auto" }} /> :
-            typeof icon == 'string' ?
-                <Box width="100%" sx={{ display: "flex", opacity: opacity }}>
-                    <img height={Math.min(64, height)} width={Math.min(64, width)}
-                         style={{ maxHeight: Math.min(height, Math.max(32, 0.5 * height)), maxWidth: Math.min(width, Math.max(32, 0.5 * width)), margin: "auto" }} 
-                         src={icon} alt="" role="presentation" />
-                </Box> :
-                <Box width="100%" sx={{ display: "flex", opacity: opacity }}>
-                    {React.cloneElement(icon, {
-                        style: { 
-                            maxHeight: Math.min(height, 32),
-                            maxWidth: Math.min(width, 32), 
-                            margin: "auto" 
-                        }
-                    })}
-                </Box>}
-    </Box>
-)
+// Re-export shared utilities from ChartUtils (canonical location)
+import { generateChartSkeleton, getDataTable, checkChartAvailability } from './ChartUtils';
+export { generateChartSkeleton, getDataTable, checkChartAvailability };
 
 export let renderTableChart = (
     chart: Chart, conceptShelfItems: FieldItem[], extTable: any[], 
@@ -136,33 +125,6 @@ export let renderTableChart = (
     return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto' }}>
         <CustomReactTable rows={rows} columnDefs={colDefs} rowsPerPageNum={10} maxCellWidth={180} compact />
     </Box>
-}
-
-export let getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[], 
-                           conceptShelfItems: FieldItem[], ignoreTableRef = false) => {
-    // given a chart, determine which table would be used to visualize the chart
-
-    // return the table directly
-    if (chart.tableRef && !ignoreTableRef) {
-        return tables.find(t => t.id == chart.tableRef) as DictTable;
-    }
-
-    let activeFields = conceptShelfItems.filter((field) => Array.from(Object.values(chart.encodingMap)).map((enc: EncodingItem) => enc.fieldID).includes(field.id));
-
-    let workingTableCandidates = tables.filter(t => {
-        return activeFields.every(f => t.names.includes(f.name));
-    });
-    
-    let confirmedTableCandidates = workingTableCandidates.filter(t => !charts.some(c => c.saved && c.tableRef == t.id));
-    if(confirmedTableCandidates.length > 0) {
-        return confirmedTableCandidates[0];
-    } else if (workingTableCandidates.length > 0) {
-        return workingTableCandidates[0];
-    } else {
-        // sort base tables based on how many active fields are covered by existing tables
-        return tables.filter(t => t.derive == undefined).sort((a, b) => activeFields.filter(f => a.names.includes(f.name)).length 
-                                        - activeFields.filter(f => b.names.includes(f.name)).length).reverse()[0];
-    }
 }
 
 export let CodeBox : FC<{code: string, language: string, fontSize?: number}> = function  CodeBox({ code, language, fontSize = 10 }) {
@@ -196,20 +158,13 @@ export let checkChartAvailabilityOnPreparedData = (chart: Chart, conceptShelfIte
     return visFieldsFinalNames.length > 0 && visTableRows.length > 0 && visFieldsFinalNames.every(name => Object.keys(visTableRows[0]).includes(name));
 }
 
-export let checkChartAvailability = (chart: Chart, conceptShelfItems: FieldItem[], visTableRows: any[]) => {
-    let visFieldIds = Object.keys(chart.encodingMap)
-            .filter(key => chart.encodingMap[key as keyof EncodingMap].fieldID != undefined)
-            .map(key => chart.encodingMap[key as keyof EncodingMap].fieldID);
-    let visFields = conceptShelfItems.filter(f => visFieldIds.includes(f.id));
-    return visFields.length > 0 && visTableRows.length > 0 && visFields.every(f => Object.keys(visTableRows[0]).includes(f.name));
-}
-
 export let SampleSizeEditor: FC<{
     initialSize: number;
     totalSize: number;
     onSampleSizeChange: (newSize: number) => void;
 }> = function SampleSizeEditor({ initialSize, totalSize, onSampleSizeChange }) {
 
+    const { t } = useTranslation();
     const [localSampleSize, setLocalSampleSize] = useState<number>(initialSize);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const open = Boolean(anchorEl);
@@ -248,9 +203,9 @@ export let SampleSizeEditor: FC<{
                 horizontal: 'left',
             }}
         >
-            <Box sx={{ p: 2, width: 300 }}>
+            <Box sx={{ p: 2, width: 310 }}>
                 <Typography fontSize="small" gutterBottom>
-                    Adjust sample size: {localSampleSize} / {totalSize} rows
+                    {t('chart.adjustSampleSize', { sampleSize: localSampleSize, totalSize })}
                 </Typography>
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
                     <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>100</Typography>
@@ -262,14 +217,14 @@ export let SampleSizeEditor: FC<{
                         value={localSampleSize}
                         onChange={(_, value) => setLocalSampleSize(value as number)}
                         valueLabelDisplay="auto"
-                        aria-label="Sample size"
+                        aria-label={t('chart.sampleSizeAria')}
                     />
                     <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>{maxSliderSize}</Typography>
                     <Button sx={{ textTransform: 'none', ml: 2, fontSize: '12px' }} onClick={() => {
                         onSampleSizeChange(localSampleSize);
                         setAnchorEl(null);
                     }}>
-                        Resample
+                        {t('chart.resample')}
                     </Button>
                 </Box>
             </Box>
@@ -278,14 +233,11 @@ export let SampleSizeEditor: FC<{
 }
 
 /**
- * Module-level caches that persist across component remounts.
- * - displayRowsCache: avoids re-fetching server data when switching back to a chart
- * - displaySvgCache: avoids re-running toSVG when chart+data haven't changed
+ * Module-level cache: avoids re-fetching server data when switching back to a chart.
  */
 const displayRowsCache = new Map<string, { rows: any[], totalCount: number }>();
-const displaySvgCache = new Map<string, { specKey: string; svg: string; spec: any }>();
 
-// Simple component that only handles Vega chart rendering — now uses headless toSVG()
+/** Main chart uses vega-embed (interactive tooltips). Static toSVG() removes hover behavior. */
 const VegaChartRenderer: FC<{
     chart: Chart;
     conceptShelfItems: FieldItem[];
@@ -298,32 +250,27 @@ const VegaChartRenderer: FC<{
     chartUnavailable: boolean;
     onSpecReady?: (spec: any | null) => void;
 }> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady }) => {
-    
-    // Initialize from display SVG cache for instant display on chart switch
-    const svgCached = displaySvgCache.get(chart.id);
-    const [svgContent, setSvgContent] = useState<string | null>(svgCached?.svg ?? null);
-    const [assembledSpec, setAssembledSpec] = useState<any>(svgCached?.spec ?? null);
+
+    const elementId = `focused-chart-element-${chart.id}`;
 
     useEffect(() => {
-        
+
         if (chart.chartType === "Auto" || chart.chartType === "Table" || chartUnavailable) {
-            setSvgContent(null);
-            setAssembledSpec(null);
+            onSpecReady?.(null);
             return;
         }
 
-        // Skip rendering when we have no data yet (data is being fetched)
         if (visTableRows.length === 0) {
             return;
         }
 
         const spec = assembleVegaChart(
-            chart.chartType, 
-            chart.encodingMap, 
-            conceptShelfItems, 
-            visTableRows, 
-            tableMetadata, 
-            chartWidth, 
+            chart.chartType,
+            chart.encodingMap,
+            conceptShelfItems,
+            visTableRows,
+            tableMetadata,
+            chartWidth,
             chartHeight,
             true,
             chart.config,
@@ -332,111 +279,42 @@ const VegaChartRenderer: FC<{
         );
 
         if (!spec || spec === "Table") {
-            setSvgContent(null);
-            setAssembledSpec(null);
             onSpecReady?.(null);
             return;
         }
 
         spec['background'] = 'white';
-
-        // Check display SVG cache — skip toSVG entirely if spec matches
-        const specKey = JSON.stringify(spec);
-        const cached = displaySvgCache.get(chart.id);
-        if (cached && cached.specKey === specKey) {
-            setSvgContent(cached.svg);
-            setAssembledSpec(cached.spec);
-            onSpecReady?.(cached.spec);
-            return;
-        }
-
-        setAssembledSpec(spec);
         onSpecReady?.(spec);
 
-        // Headless render via Vega: compile VL → parse → View → toSVG()
+        const el = document.getElementById(elementId);
+        if (!el) return;
+
         let cancelled = false;
-        (async () => {
-            try {
-                const { compile: vlCompile } = await import('vega-lite');
-                const vega = await import('vega');
-                const vgSpec = vlCompile(spec as any).spec;
-                const runtime = vega.parse(vgSpec);
-                const view = new vega.View(runtime, { renderer: 'none' });
-                await view.runAsync();
-                const svg = await view.toSVG();
-                view.finalize();
-                if (!cancelled) {
-                    setSvgContent(svg);
-                    // Cache the rendered SVG for instant reuse on revisit
-                    displaySvgCache.set(chart.id, { specKey, svg, spec });
+        const embedResult: { current?: Awaited<ReturnType<typeof embed>> } = {};
+
+        el.innerHTML = '';
+        embed(el, { ...spec }, { actions: true, renderer: 'canvas' })
+            .then((result) => {
+                if (cancelled) {
+                    result.finalize();
+                    return;
                 }
-            } catch (err) {
-                console.warn('VegaChartRenderer: SVG render failed', err);
+                embedResult.current = result;
+            })
+            .catch((err) => {
                 if (!cancelled) {
-                    setSvgContent(null);
+                    console.warn('VegaChartRenderer: embed failed', err);
                 }
-            }
-        })();
+            });
 
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+            embedResult.current?.finalize();
+            embedResult.current = undefined;
+            el.innerHTML = '';
+        };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable]);
-
-    const handleSavePng = useCallback(async () => {
-        if (!assembledSpec) return;
-        try {
-            const { compile: vlCompile } = await import('vega-lite');
-            const vega = await import('vega');
-            const vgSpec = vlCompile(assembledSpec as any).spec;
-            const runtime = vega.parse(vgSpec);
-            const view = new vega.View(runtime, { renderer: 'none' });
-            await view.runAsync();
-            const pngUrl = await view.toImageURL('png', 2);
-            view.finalize();
-
-            // Trigger download
-            const link = document.createElement('a');
-            link.download = `${chart.chartType}-${chart.id}.png`;
-            link.href = pngUrl;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        } catch (err) {
-            console.error('Save PNG failed:', err);
-        }
-    }, [assembledSpec, chart.chartType, chart.id]);
-
-    const handleOpenInVegaEditor = useCallback(() => {
-        if (!assembledSpec) return;
-        // Use postMessage to pass spec to Vega Editor (same approach as vega-embed)
-        const editorUrl = 'https://vega.github.io/editor/';
-        const editor = window.open(editorUrl);
-        if (!editor) return;
-
-        const wait = 10_000;
-        const step = 250;
-        const { origin } = new URL(editorUrl);
-        let count = Math.floor(wait / step);
-
-        function listen(evt: MessageEvent) {
-            if (evt.source === editor) {
-                count = 0;
-                window.removeEventListener('message', listen, false);
-            }
-        }
-        window.addEventListener('message', listen, false);
-
-        function send() {
-            if (count <= 0) return;
-            editor!.postMessage({
-                spec: JSON.stringify(assembledSpec, null, 2),
-                mode: 'vega-lite',
-            }, origin);
-            setTimeout(send, step);
-            count -= 1;
-        }
-        setTimeout(send, step);
-    }, [assembledSpec]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady, elementId]);
 
     if (chart.chartType === "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -459,23 +337,13 @@ const VegaChartRenderer: FC<{
 
     return (
         <Box sx={{ mx: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '100%', overflow: 'hidden' }}>
-            {svgContent ? (
-                <Box 
-                    dangerouslySetInnerHTML={{ __html: svgContent }}
-                    sx={{
-                        maxWidth: '100%',
-                        '& svg': { display: 'block', maxWidth: '100%', height: 'auto' },
-                    }}
-                />
-            ) : (
-                <Box sx={{ 
-                    width: chartWidth, height: chartHeight, 
-                    display: 'flex', alignItems: 'center', justifyContent: 'center' 
-                }}>
-                    {generateChartSkeleton(chartTemplate?.icon, 48, 48, 0.3)}
-                </Box>
-            )}
-
+            <Box
+                id={elementId}
+                sx={{
+                    maxWidth: '100%',
+                    '& .vega-embed': { margin: 'auto' },
+                }}
+            />
         </Box>
     );
 });
@@ -483,12 +351,13 @@ const VegaChartRenderer: FC<{
 
 export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
+    const { t } = useTranslation();
     const config = useSelector((state: DataFormulatorState) => state.config);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const componentRef = useRef<HTMLHeadingElement>(null);
 
     // Add ref for the container box that holds all exploration components
-    const explanationComponentsRef = useRef<HTMLDivElement>(null);
+
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     
@@ -536,33 +405,18 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    const [codeViewOpen, setCodeViewOpen] = useState<boolean>(false);
-    const [conceptExplanationsOpen, setConceptExplanationsOpen] = useState<boolean>(false);
-    const [insightViewOpen, setInsightViewOpen] = useState<boolean>(false);
-    
-    const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
+    const [bottomTab, setBottomTab] = useState<string>('data');
     const [localScaleFactor, setLocalScaleFactor] = useState<number>(1);
+    const [chatDialogOpen, setChatDialogOpen] = useState<boolean>(false);
 
     // Reset local UI state when focused chart changes
     useEffect(() => {
-        setCodeViewOpen(false);
-        setConceptExplanationsOpen(false);
-        setInsightViewOpen(false);
-        setChatDialogOpen(false);
+        setBottomTab('data');
         setLocalScaleFactor(1);
+        setChatDialogOpen(false);
     }, [focusedChartId]);
 
-    // Combined useEffect to scroll to exploration components when any of them open
-    useEffect(() => {
-        if ((conceptExplanationsOpen || codeViewOpen || insightViewOpen) && explanationComponentsRef.current) {
-            setTimeout(() => {
-                explanationComponentsRef.current?.scrollIntoView({ 
-                    behavior: 'smooth', 
-                    block: 'start' 
-                });
-            }, 200); // Small delay to ensure the component is rendered
-        }
-    }, [conceptExplanationsOpen, codeViewOpen, insightViewOpen]);
+
 
     let table = getDataTable(focusedChart, tables, charts, conceptShelfItems);
 
@@ -584,7 +438,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
         dispatch(dfActions.addMessages({
             "timestamp": Date.now(),
-            "component": "Chart Builder",
+            "component": t('chart.chartBuilder'),
             "type": severity,
             "value": content
         }));
@@ -748,7 +602,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         return !(dataFieldsAllAvailable && table.rows.length > 0);
     }, [focusedChart.chartType, dataFieldsAllAvailable, table.rows.length]);
 
-    let resultTable = tables.find(t => t.id == trigger?.resultTableId);
+    let triggerTable = tables.find(t => t.derive?.trigger?.chart?.id == focusedChart?.id);
 
     // Chart insight
     const chartInsightInProgress = useSelector((state: DataFormulatorState) => state.chartInsightInProgress) || [];
@@ -771,7 +625,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     };
 
     let saveButton = (
-        <Tooltip key="save-copy-tooltip" title={focusedChart.saved ? "Not anymore" : "I like it!"}>
+        <Tooltip key="save-copy-tooltip" title={focusedChart.saved ? t('chart.notAnymore') : t('chart.iLikeIt')}>
             <span>
                 <IconButton key="unsave-btn" size="small" sx={actionBtnSx}
                     onClick={() => {
@@ -786,7 +640,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     );
 
     let deleteButton = (
-        <Tooltip title="Delete" key="delete-btn-tooltip">
+        <Tooltip title={t('chart.delete')} key="delete-btn-tooltip">
             <span>
                 <IconButton size="small" disabled={trigger != undefined}
                     sx={{ ...actionBtnSx, color: 'error.main', '&:hover': { backgroundColor: 'rgba(211, 47, 47, 0.08)', color: 'error.main' } }}
@@ -805,154 +659,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     // Check if concepts are available
     const availableConcepts = extractConceptExplanations(table);
     const hasConcepts = availableConcepts.length > 0;
+    const hasDerived = !!(triggerTable?.derive || table.derive);
 
-    let derivedTableItems = (resultTable?.derive || table.derive) ? [
-        <Box key="explanation-toggle-group" sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            mx: 0.5,
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderRadius: 1,
-            padding: '2px',
-            border: `1px solid ${borderColor.component}`
-        }}>
-            <ButtonGroup
-                key="explanation-button-group"
-                size="small"
-                sx={{
-                    '& .MuiButton-root': {
-                        textTransform: 'none',
-                        fontSize: '0.7rem',
-                        fontWeight: 500,
-                        border: 'none',
-                        borderRadius: '3px',
-                        padding: '2px 6px',
-                        minWidth: 'auto',
-                        color: 'text.secondary',
-                        '&:hover': {
-                            backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                        }
-                    }
-                }}
-            >
-                <Button 
-                    key="chat-dialog-btn"
-                    onClick={() => { setChatDialogOpen(!chatDialogOpen) }}
-                    sx={{
-                        backgroundColor: chatDialogOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                        color: chatDialogOpen ? 'primary.main' : 'text.secondary',
-                        fontWeight: chatDialogOpen ? 600 : 500,
-                        '&:hover': {
-                            backgroundColor: chatDialogOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                        },
-                    }}
-                >
-                    <QuestionAnswerIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                    log
-                </Button>
-                <Button 
-                    key="code-btn"
-                    onClick={() => {
-                        if (codeViewOpen) {
-                            setCodeViewOpen(false);
-                        } else {
-                            setCodeViewOpen(true);
-                            setConceptExplanationsOpen(false);
-                            setInsightViewOpen(false);
-                        }
-                    }}
-                    sx={{
-                        backgroundColor: codeViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                        color: codeViewOpen ? 'primary.main' : 'text.secondary',
-                        fontWeight: codeViewOpen ? 600 : 500,
-                        '&:hover': {
-                            backgroundColor: codeViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                        }
-                    }}
-                >
-                    <TerminalIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                    code
-                </Button>
-                {hasConcepts && (
-                    <Button 
-                        key="concepts-btn"
-                        onClick={() => {
-                            if (conceptExplanationsOpen) {
-                                setConceptExplanationsOpen(false);
-                            } else {
-                                setConceptExplanationsOpen(true);
-                                setCodeViewOpen(false);
-                                setInsightViewOpen(false);
-                            }
-                        }}
-                        sx={{
-                            backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                            color: conceptExplanationsOpen ? 'primary.main' : 'text.secondary',
-                            fontWeight: conceptExplanationsOpen ? 600 : 500,
-                            '&:hover': {
-                                backgroundColor: conceptExplanationsOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                            }
-                        }}
-                    >
-                        <InfoIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                        concepts
-                    </Button>
-                )}
-            </ButtonGroup>
-        </Box>,
-        <ChatDialog key="chat-dialog-button" open={chatDialogOpen} 
-                    handleCloseDialog={() => { setChatDialogOpen(false) }}
-                    code={transformCode}
-                    dialog={resultTable?.derive?.dialog || table.derive?.dialog as any[]} />
-    ] : [];
-
-    let insightButton = !chartUnavailable && focusedChart.chartType !== "Table" ? (
-        <Box key="insight-toggle-group" sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            mx: 0.5,
-            backgroundColor: 'rgba(0, 0, 0, 0.02)',
-            borderRadius: 1,
-            padding: '2px',
-            border: `1px solid ${borderColor.component}`
-        }}>
-            <Button 
-                key="insight-btn"
-                size="small"
-                onClick={() => {
-                    if (insightViewOpen) {
-                        setInsightViewOpen(false);
-                    } else {
-                        setInsightViewOpen(true);
-                        setCodeViewOpen(false);
-                        setConceptExplanationsOpen(false);
-                        if (!insightFresh && !insightLoading) {
-                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
-                        }
-                    }
-                }}
-                sx={{
-                    textTransform: 'none',
-                    fontSize: '0.7rem',
-                    fontWeight: insightViewOpen ? 600 : 500,
-                    minWidth: 'auto',
-                    padding: '2px 6px',
-                    borderRadius: '3px',
-                    backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                    color: insightViewOpen ? 'primary.main' : 'text.secondary',
-                    '&:hover': {
-                        backgroundColor: insightViewOpen ? 'rgba(25, 118, 210, 0.25)' : 'rgba(25, 118, 210, 0.08)',
-                    }
-                }}
-            >
-                <InsightIcon sx={{ fontSize: '14px', mr: 0.5 }} />
-                {insightLoading ? <CircularProgress size={10} sx={{ ml: 0.5 }} /> : 'insight'}
-            </Button>
-        </Box>
-    ) : null;
-    
     let vegaEditorButton = (
-        <Tooltip key="vega-editor-tooltip" title="Open in Vega Editor">
+        <Tooltip key="vega-editor-tooltip" title={t('chart.openInVegaEditor')}>
             <span>
                 <IconButton key="vega-editor-btn" size="small" sx={actionBtnSx}
                     disabled={!renderedSpec || focusedChart.chartType === "Table" || focusedChart.chartType === "Auto"}
@@ -963,28 +673,101 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         </Tooltip>
     );
 
+    // Toggle buttons for bottom-panel content (icon + text label)
+    const toggleBtnSx = (active: boolean) => ({
+        textTransform: 'none' as const,
+        fontSize: '0.7rem',
+        padding: '2px 8px',
+        borderRadius: '6px',
+        color: active ? 'primary.main' : 'text.secondary',
+        backgroundColor: active ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
+        transition: 'all 0.15s ease',
+        minWidth: 'auto',
+        '&:hover': {
+            backgroundColor: 'rgba(25, 118, 210, 0.08)',
+            color: 'primary.main',
+        },
+    });
+
+    let dataButton = (
+        <Button key="data-btn" size="small"
+            sx={toggleBtnSx(bottomTab === 'data')}
+            startIcon={<TableChartOutlinedIcon sx={{ fontSize: 14 }} />}
+            onClick={() => setBottomTab(prev => prev === 'data' ? '' : 'data')}>
+            {t('chart.data')}
+        </Button>
+    );
+
+    let derivedTableItems = hasDerived ? [
+        <Button key="code-btn" size="small"
+            sx={toggleBtnSx(bottomTab === 'code')}
+            startIcon={<TerminalIcon sx={{ fontSize: 14 }} />}
+            onClick={() => setBottomTab(prev => prev === 'code' ? '' : 'code')}>
+            {t('chart.code')}
+        </Button>,
+        ...(hasConcepts ? [
+            <Button key="concepts-btn" size="small"
+                sx={toggleBtnSx(bottomTab === 'concepts')}
+                startIcon={<AutoStoriesIcon sx={{ fontSize: 14 }} />}
+                onClick={() => setBottomTab(prev => prev === 'concepts' ? '' : 'concepts')}>
+                {t('chart.concepts')}
+            </Button>
+        ] : []),
+    ] : [];
+
+    let logButton = hasDerived ? (
+        <Tooltip key="log-btn-tooltip" title={t('chart.log')}>
+            <span>
+                <IconButton key="log-btn" size="small" sx={actionBtnSx}
+                    onClick={() => setChatDialogOpen(true)}>
+                    <QuestionAnswerIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+            </span>
+        </Tooltip>
+    ) : null;
+
+    let insightButton = (!chartUnavailable && focusedChart.chartType !== "Table") ? (
+        <Button key="insight-btn" size="small"
+            sx={toggleBtnSx(bottomTab === 'insight')}
+            startIcon={insightLoading ? <CircularProgress size={12} /> : <InsightIcon sx={{ fontSize: 14 }} />}
+            onClick={() => {
+                setBottomTab(prev => {
+                    if (prev === 'insight') return '';
+                    if (!insightFresh && !insightLoading) {
+                        dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
+                    }
+                    return 'insight';
+                });
+            }}>
+            {t('chart.insight')}
+        </Button>
+    ) : null;
+
     let chartActionButtons = [
-        ...derivedTableItems,
+        dataButton,
         insightButton,
+        ...derivedTableItems,
+        <Divider key="action-divider" orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />,
+        logButton,
         saveButton,
-        vegaEditorButton,
+        // vegaEditorButton,
         deleteButton,
     ]
 
 
     let chartMessage = "";
     if (focusedChart.chartType == "Table") {
-        chartMessage = "Tell me what you want to visualize!";
+        chartMessage = t('chart.msgTable');
     } else if (focusedChart.chartType == "Auto") {
-        chartMessage = "Say something to get chart recommendations!";
+        chartMessage = t('chart.msgAuto');
     } else if (encodingShelfEmpty) {
-        chartMessage = "Put data fields to chart builder or describe what you want!";
+        chartMessage = t('chart.msgEncodingEmpty');
     } else if (chartUnavailable) {
-        chartMessage = "Formulate data to create the visualization!";
+        chartMessage = t('chart.msgUnavailable');
     } else if (chartSynthesisInProgress.includes(focusedChart.id)) {
-        chartMessage = "Synthesis in progress...";
+        chartMessage = t('chart.msgSynthesizing');
     } else if (table.derive) {
-        chartMessage = "AI generated results can be inaccurate, inspect it!";
+        chartMessage = t('chart.msgWarning');
     }
 
     let chartActionItems = isDataStale ? [] : (
@@ -992,7 +775,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             {(table.virtual ? activeVisTableTotalRowCount > serverConfig.MAX_DISPLAY_ROWS : table.rows.length > serverConfig.MAX_DISPLAY_ROWS) && !(chartUnavailable || encodingShelfEmpty) ? (
                 <Box sx={{ display: 'flex', flexDirection: "row", margin: "auto", justifyContent: 'center', alignItems: 'center'}}>
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
-                        visualizing
+                        {t('chart.visualizing')}
                     </Typography>
                     <SampleSizeEditor 
                         initialSize={activeVisTableRows.length}
@@ -1002,9 +785,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         }}
                     />
                     <Typography component="span" fontSize="small" color="text.secondary" sx={{textAlign:'center'}}>
-                        sample rows
+                        {t('chart.sampleRows')}
                     </Typography>
-                    <Tooltip title="sample again!">
+                    <Tooltip title={t('chart.sampleAgain')}>
                         <IconButton size="small" color="primary" onClick={() => {
                             fetchDisplayRows(activeVisTableRows.length);
                         }}>
@@ -1024,7 +807,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
     let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
                             in={!isDataStale} timeout={600}>    
-                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%'}} className="chart-box">
+                            <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%', mt: 'max(120px, 4vh)', mb: 'max(120px, 4vh)'}} className="chart-box">
                                 {insightFresh && focusedChart.insight?.title && (
                                     <Typography fontSize="small" sx={{
                                         fontWeight: (focusedChart.encodingMap.column?.fieldID || focusedChart.encodingMap.row?.fieldID) ? 400 : 600,
@@ -1033,7 +816,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         {focusedChart.insight.title}
                                     </Typography>
                                 )}
-                                <Box sx={{m: 'auto', minHeight: 240, maxWidth: '100%', overflow: 'hidden'}}>
+                                <Box sx={{minHeight: 240, maxWidth: '100%', overflow: 'hidden'}}>
                                     <VegaChartRenderer
                                         key={focusedChart.id}
                                         chart={focusedChart}
@@ -1053,101 +836,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                         </Fade>;
 
     focusedComponent = [
-        <Box key="chart-focused-element"  sx={{ width: "100%", minHeight: "calc(100% - 40px)", margin: "auto", mt: 4, mb: 1, display: "flex", flexDirection: "column"}}>
-            {focusedElement}
-            <Box ref={explanationComponentsRef} sx={{width: "100%", mx: "auto"}}>
-                <Collapse in={conceptExplanationsOpen}>
-                    <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
-                        <ConceptExplCards 
-                            concepts={extractConceptExplanations(table)}
-                            title="Derived Concepts"
-                            maxCards={8}
-                        />
-                    </Box>
-                </Collapse>
-                <Collapse in={codeViewOpen}>
-                    <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
-                        <ButtonGroup sx={{position: 'absolute', right: 8, top: 1}}>
-                            <IconButton onClick={() => {
-                                setCodeViewOpen(false);
-                            }}  color='primary' aria-label="delete">
-                                <CloseIcon />
-                            </IconButton>
-                        </ButtonGroup>
-                        {/* <Typography fontSize="small" sx={{color: 'gray'}}>{table.derive?.source} → {table.id}</Typography> */}
-                        <CodeExplanationCard
-                            title="Data transformation code"
-                            icon={<CodeIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
-                        >
-                            <Box sx={{
-                                    maxHeight: '400px', 
-                                    overflow: 'auto', 
-                                    width: '100%', 
-                                    p: 0.5
-                                }}
-                            >   
-                                <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
-                            </Box>
-                        </CodeExplanationCard>
-                    </Box>
-                </Collapse>
-                <Collapse in={insightViewOpen}>
-                    <Box sx={{minWidth: 440, maxWidth: 800, padding: "0px 8px", position: 'relative', margin: '8px auto'}}>
-                        <ButtonGroup sx={{position: 'absolute', right: 8, top: 0}}>
-                            <IconButton onClick={() => {
-                                setInsightViewOpen(false);
-                            }}  color='primary' aria-label="close">
-                                <CloseIcon />
-                            </IconButton>
-                        </ButtonGroup>
-                        <CodeExplanationCard
-                            title="Chart insight"
-                            icon={<InsightIcon sx={{ fontSize: 16, color: 'primary.main' }} />}
-                        >
-                            {insightLoading ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1 }}>
-                                    <CircularProgress size={16} />
-                                    <Typography fontSize="small" color="text.secondary">Analyzing chart...</Typography>
-                                </Box>
-                            ) : insightFresh && focusedChart.insight ? (
-                                <Box sx={{ p: 0.5 }}>
-                                    <Typography fontSize="small" sx={{ fontWeight: 600, mb: 0.5 }}>
-                                        {focusedChart.insight.title}
-                                    </Typography>
-                                    {(focusedChart.insight.takeaways || []).map((t, i) => (
-                                        <Typography key={i} fontSize="small" color="text.secondary" sx={{ mb: 0.25, display: 'flex', alignItems: 'baseline' }}>
-                                            <span style={{ marginRight: 4, flexShrink: 0 }}>•</span>{t}
-                                        </Typography>
-                                    ))}
-                                    <Button 
-                                        size="small" 
-                                        sx={{ mt: 1, textTransform: 'none', fontSize: '0.7rem' }}
-                                        onClick={() => {
-                                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
-                                        }}
-                                    >
-                                        regenerate
-                                    </Button>
-                                </Box>
-                            ) : (
-                                <Box sx={{ p: 0.5 }}>
-                                    <Typography fontSize="small" color="text.secondary">
-                                        No insight available.
-                                    </Typography>
-                                    <Button 
-                                        size="small" 
-                                        sx={{ mt: 0.5, textTransform: 'none', fontSize: '0.7rem' }}
-                                        onClick={() => {
-                                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
-                                        }}
-                                    >
-                                        generate insight
-                                    </Button>
-                                </Box>
-                            )}
-                        </CodeExplanationCard>
-                    </Box>
-                </Collapse>
+        <Box key="chart-focused-element" className="chart-focused-box"  sx={{ minHeight: 'min(75vh, 800px)', width: "100%", display: "flex", flexDirection: "column", flexShrink: 0}}>
+            <Box sx={{ my: 'auto' }}>
+                {focusedElement}
             </Box>
             <Box key='chart-action-buttons' sx={{ 
                 display: 'flex', flexShrink: 0, flexDirection: "row", alignItems: 'center',
@@ -1155,13 +846,141 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             }}>
                 {chartActionButtons}
             </Box>
-        </Box>
+        </Box>,
+        <React.Fragment key="bottom-panels">
+            {(() => {
+                const panelBoxSx = {
+                    margin: '8px auto 24px auto', padding: '8px', borderRadius: '8px',
+                    border: `1px solid ${borderColor.divider}`,
+                    transition: 'box-shadow 0.2s ease',
+                    '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
+                };
+                return <Box sx={{ px: 2 }}>
+                    {bottomTab === 'data' && (() => {
+                        const ROW_HEIGHT = 25;
+                        const HEADER_HEIGHT = 32;
+                        const FOOTER_HEIGHT = 32;
+                        const MIN_TABLE_HEIGHT = 150;
+                        const MAX_TABLE_HEIGHT = 400;
+                        const MIN_TABLE_WIDTH = 300;
+                        const MAX_TABLE_WIDTH = 900;
+                        const rowCount = table.virtual?.rowCount || table.rows?.length || 0;
+                        const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + FOOTER_HEIGHT;
+                        const adaptiveHeight = Math.max(MIN_TABLE_HEIGHT, Math.min(MAX_TABLE_HEIGHT, contentHeight));
+
+                        // Estimate total width from columns (generous: account for type icons, sort arrows, padding)
+                        const ROW_ID_COL_WIDTH = 56;
+                        const sampleSize = Math.min(29, table.rows.length);
+                        const step = table.rows.length > sampleSize ? table.rows.length / sampleSize : 1;
+                        const sampledRows = Array.from({ length: sampleSize }, (_, i) => table.rows[Math.floor(i * step)]);
+                        const totalColWidth = table.names.reduce((sum, name) => {
+                            const values = sampledRows.map(row => String(row[name] || ''));
+                            const avgLen = values.length > 0
+                                ? values.reduce((s, v) => s + v.length, 0) / values.length
+                                : 0;
+                            const nameSegs = name.split(/[\s-]+/);
+                            const maxNameSegLen = nameSegs.reduce((m, seg) => Math.max(m, seg.length), 0);
+                            const contentLen = Math.max(maxNameSegLen, avgLen);
+                            return sum + Math.max(80, Math.min(280, contentLen * 10)) + 60;
+                        }, ROW_ID_COL_WIDTH);
+                        const SCROLLBAR_WIDTH = 17;
+                        const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16));
+
+                        return (
+                            <Box sx={{ ...panelBoxSx, padding: 0, height: adaptiveHeight, width: adaptiveWidth, overflow: 'hidden', flexShrink: 0 }}>
+                                <FreeDataViewFC />
+                            </Box>
+                        );
+                    })()}
+                    {bottomTab === 'code' && hasDerived && (
+                        <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
+                            <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                                <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
+                            </Box>
+                        </Box>
+                    )}
+                    {bottomTab === 'concepts' && hasConcepts && (
+                        <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
+                            <ConceptExplCards
+                                concepts={extractConceptExplanations(table)}
+                                title={t('chart.derivedConcepts')}
+                                maxCards={8}
+                            />
+                        </Box>
+                    )}
+                    {bottomTab === 'insight' && (
+                        <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
+                            {insightLoading ? (
+                                <Box sx={{ p: 2 }}>
+                                    <WritingIndicator label={t('chart.analyzingChart')} />
+                                </Box>
+                            ) : insightFresh && focusedChart.insight ? (
+                                <Box sx={{ p: 1.5 }}>
+                                    <Box sx={{ 
+                                        display: 'grid', 
+                                        gridTemplateColumns: 'repeat(2, 1fr)',
+                                        gap: 1,
+                                    }}>
+                                        {(focusedChart.insight.takeaways || []).map((takeaway, i) => (
+                                            <Box key={i} sx={{
+                                                padding: '8px 12px',
+                                                borderLeft: '3px solid',
+                                                borderLeftColor: 'primary.light',
+                                                borderRadius: '2px',
+                                                backgroundColor: (theme) => alpha(theme.palette.background.paper, 0.5),
+                                                transition: transition.normal,
+                                                '&:hover': {
+                                                    backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.04),
+                                                },
+                                            }}>
+                                                <Typography sx={{ fontSize: '12px', lineHeight: 1.5, color: 'text.primary' }}>
+                                                    {takeaway}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </Box>
+                                    <Button
+                                        size="small"
+                                        sx={{ mt: 1.5, textTransform: 'none', fontSize: '0.7rem' }}
+                                        onClick={() => {
+                                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
+                                        }}
+                                    >
+                                        {t('chart.regenerate')}
+                                    </Button>
+                                </Box>
+                            ) : (
+                                <Box sx={{ p: 1.5 }}>
+                                    <Typography fontSize="small" color="text.secondary">
+                                        {t('chart.noInsightAvailable')}
+                                    </Typography>
+                                    <Button
+                                        size="small"
+                                        sx={{ mt: 0.5, textTransform: 'none', fontSize: '0.7rem' }}
+                                        onClick={() => {
+                                            dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
+                                        }}
+                                    >
+                                        {t('chart.generateInsight')}
+                                    </Button>
+                                </Box>
+                            )}
+                        </Box>
+                    )}
+                </Box>;
+            })()}
+        </React.Fragment>,
+        <Box key="bottom-spacer" sx={{ flexShrink: 0, height: 16 }} />,
+        hasDerived ? <ChatDialog key="chat-dialog-overlay" open={chatDialogOpen}
+            handleCloseDialog={() => setChatDialogOpen(false)}
+            code={transformCode}
+            dialog={triggerTable?.derive?.dialog || table.derive?.dialog as any[]} /> : null,
     ]
     
-    const ENCODING_SHELF_WIDTH = 200;
+    const ENCODING_SHELF_WIDTH = 240;
 
     let content = [
-        <Box key='focused-box' className="vega-focused" sx={{ display: "flex", overflow: 'auto', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
+        <Box key='focused-box' className="vega-focused vis-scroll" sx={{ display: "flex", overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', position: 'relative', flex: 1, pr: `${ENCODING_SHELF_WIDTH}px` }}>
             {focusedComponent}
         </Box>,
         /* Floating encoding shelf panel */
@@ -1187,7 +1006,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         backgroundColor: 'rgba(255, 255, 255, 0.9)',
         borderRadius: '4px',
     }} alignItems="center">
-        <Tooltip key="zoom-out-tooltip" title="zoom out">
+        <Tooltip key="zoom-out-tooltip" title={t('chart.zoomOut')}>
             <span>
                 <IconButton color="primary" size='small' disabled={localScaleFactor <= scaleMin} onClick={() => {
                     setLocalScaleFactor(s => Math.max(scaleMin, Math.round((s - 0.1) * 10) / 10));
@@ -1196,11 +1015,11 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 </IconButton>
             </span>
         </Tooltip>
-        <Slider aria-label="chart-resize" size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
+        <Slider aria-label={t('chart.resizeSliderAria')} size='small' defaultValue={1} step={0.1} min={scaleMin} max={scaleMax} 
                 value={localScaleFactor} onChange={(event: Event, newValue: number | number[]) => {
             setLocalScaleFactor(newValue as number);
         }} />
-        <Tooltip key="zoom-in-tooltip" title="zoom in">
+        <Tooltip key="zoom-in-tooltip" title={t('chart.zoomIn')}>
             <span>
                 <IconButton color="primary" size='small' disabled={localScaleFactor >= scaleMax} onClick={() => {
                     setLocalScaleFactor(s => Math.min(scaleMax, Math.round((s + 0.1) * 10) / 10));
@@ -1209,7 +1028,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 </IconButton>
             </span>
         </Tooltip>
-    </Stack>, [localScaleFactor]);
+    </Stack>, [localScaleFactor, t]);
 
     return <Box ref={componentRef} sx={{overflow: "hidden", display: 'flex', flex: 1, position: 'relative'}}>
         {synthesisRunning ? <Box sx={{
@@ -1225,19 +1044,22 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
+    const { t } = useTranslation();
     let allCharts = useSelector(dfSelectors.getAllCharts);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     let focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
+        const chartId = (focusedId as { type: 'chart'; chartId: string }).chartId;
         const chart = allCharts.find(c => c.id === chartId);
         return chart?.tableRef;
     }, [focusedId, allCharts]);
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress) || [];
 
     const dispatch = useDispatch();
+
+    let tables = useSelector((state: DataFormulatorState) => state.tables);
 
     let focusedChart = allCharts.find(c => c.id == focusedChartId) as Chart;
     let synthesisRunning = focusedChartId ? chartSynthesisInProgress.includes(focusedChartId) : false;
@@ -1278,14 +1100,63 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
             }
         </Box>
         return (
-            <Box sx={{  margin: "auto" }}>
-                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
-                <Divider sx={{my: 3}} textAlign='left'>
-                    <Typography sx={{fontSize: 12, color: "text.secondary"}}>
-                        or, start with a chart type
-                    </Typography>
-                </Divider>
-                {chartSelectionBox}
+            <Box sx={{ width: "100%", overflow: "hidden", display: "flex", flexDirection: "row" }}>
+                <Box sx={{ overflow: "hidden", display: 'flex', flex: 1 }}>
+                    <Box className="vis-scroll" sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', flex: 1 }}>
+                        <Box sx={{ minHeight: 'min(75vh, 600px)', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                            <Box sx={{ margin: 'auto' }}>
+                                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
+                                <Divider sx={{my: 3}} textAlign='left'>
+                                    <Typography sx={{fontSize: 12, color: "text.secondary"}}>
+                                        {t('chart.orStartWithChartType')}
+                                    </Typography>
+                                </Divider>
+                                {chartSelectionBox}
+                            </Box>
+                        </Box>
+                        {focusedId?.type === 'table' && focusedTableId && (() => {
+                            const focusedTable = tables.find(t => t.id === focusedTableId);
+                            if (!focusedTable) return null;
+                            const ROW_HEIGHT = 25;
+                            const HEADER_HEIGHT = 32;
+                            const FOOTER_HEIGHT = 32;
+                            const MIN_TABLE_HEIGHT = 150;
+                            const MAX_TABLE_HEIGHT = 400;
+                            const MIN_TABLE_WIDTH = 300;
+                            const MAX_TABLE_WIDTH = 900;
+                            const rowCount = focusedTable.virtual?.rowCount || focusedTable.rows?.length || 0;
+                            const contentHeight = HEADER_HEIGHT + rowCount * ROW_HEIGHT + FOOTER_HEIGHT;
+                            const adaptiveHeight = Math.max(MIN_TABLE_HEIGHT, Math.min(MAX_TABLE_HEIGHT, contentHeight));
+                            const ROW_ID_COL_WIDTH = 56;
+                            const sampleSize = Math.min(29, focusedTable.rows.length);
+                            const step = focusedTable.rows.length > sampleSize ? focusedTable.rows.length / sampleSize : 1;
+                            const sampledRows = Array.from({ length: sampleSize }, (_, i) => focusedTable.rows[Math.floor(i * step)]);
+                            const totalColWidth = focusedTable.names.reduce((sum, name) => {
+                                const values = sampledRows.map(row => String(row[name] || ''));
+                                const avgLen = values.length > 0 ? values.reduce((s, v) => s + v.length, 0) / values.length : 0;
+                                const nameSegs = name.split(/[\s-]+/);
+                                const maxNameSegLen = nameSegs.reduce((m, seg) => Math.max(m, seg.length), 0);
+                                const contentLen = Math.max(maxNameSegLen, avgLen);
+                                return sum + Math.max(80, Math.min(280, contentLen * 10)) + 60;
+                            }, ROW_ID_COL_WIDTH);
+                            const SCROLLBAR_WIDTH = 17;
+                            const adaptiveWidth = Math.max(MIN_TABLE_WIDTH, Math.min(MAX_TABLE_WIDTH, totalColWidth + SCROLLBAR_WIDTH + 16));
+                            return (
+                                <Box sx={{
+                                    margin: '8px auto 24px auto', padding: 0,
+                                    height: adaptiveHeight, width: adaptiveWidth,
+                                    borderRadius: '8px',
+                                    border: `1px solid ${borderColor.divider}`,
+                                    transition: 'box-shadow 0.2s ease',
+                                    '&:hover': { boxShadow: '0 0 8px rgba(25, 118, 210, 0.25)' },
+                                    overflow: 'hidden', flexShrink: 0,
+                                }}>
+                                    <FreeDataViewFC />
+                                </Box>
+                            );
+                        })()}
+                    </Box>
+                </Box>
             </Box>
         )
     }

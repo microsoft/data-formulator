@@ -14,7 +14,7 @@ environments, cross-platform deploy issues, etc.).
 import importlib
 import logging
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
 
 _log = logging.getLogger(__name__)
 
@@ -30,8 +30,10 @@ _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("s3",         "data_formulator.data_loader.s3_data_loader",         "S3DataLoader",         "boto3"),
     ("azure_blob", "data_formulator.data_loader.azure_blob_data_loader", "AzureBlobDataLoader",  "azure-storage-blob"),
     ("mongodb",    "data_formulator.data_loader.mongodb_data_loader",    "MongoDBDataLoader",    "pymongo"),
+    ("cosmosdb",   "data_formulator.data_loader.cosmosdb_data_loader",  "CosmosDBDataLoader",   "azure-cosmos"),
     ("bigquery",   "data_formulator.data_loader.bigquery_data_loader",   "BigQueryDataLoader",   "google-cloud-bigquery"),
     ("athena",     "data_formulator.data_loader.athena_data_loader",     "AthenaDataLoader",     "boto3"),
+    ("superset",   "data_formulator.data_loader.superset_data_loader",   "SupersetLoader",       "requests"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -53,4 +55,4 @@ for _key, _module_path, _cls_name, _pip_pkg in _LOADER_SPECS:
             _key, exc.name, _install_hint,
         )
 
-__all__ = ["ExternalDataLoader", "DATA_LOADERS", "DISABLED_LOADERS"]
+__all__ = ["ExternalDataLoader", "CatalogNode", "DATA_LOADERS", "DISABLED_LOADERS"]

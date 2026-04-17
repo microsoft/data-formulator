@@ -51,31 +51,13 @@ export function cjsApplyLayoutToSpec(
     // ── Canvas dimensions ────────────────────────────────────────────────
     // Chart.js uses the canvas element dimensions.
     // For non-axis charts (pie, radar), templates set their own _width/_height.
+    // For axis charts, the core layout engine's subplotWidth/Height already
+    // accounts for discrete band sizing (step × count, floored at canvasSize),
+    // so we just add padding for axes/labels/legend.
     if (hasAxes && !config._width) {
-        const PADDING = 80; // approximate space for axes, labels, legend
-
-        const xIsDiscrete = layout.xNominalCount > 0 || layout.xContinuousAsDiscrete > 0;
-        const yIsDiscrete = layout.yNominalCount > 0 || layout.yContinuousAsDiscrete > 0;
-
-        let plotWidth: number;
-        let plotHeight: number;
-
-        if (xIsDiscrete && layout.xStepUnit !== 'group') {
-            const xItemCount = layout.xNominalCount || layout.xContinuousAsDiscrete || 0;
-            plotWidth = xItemCount > 0 ? layout.xStep * xItemCount : (layout.subplotWidth || canvasSize.width);
-        } else {
-            plotWidth = layout.subplotWidth || canvasSize.width;
-        }
-
-        if (yIsDiscrete && layout.yStepUnit !== 'group') {
-            const yItemCount = layout.yNominalCount || layout.yContinuousAsDiscrete || 0;
-            plotHeight = yItemCount > 0 ? layout.yStep * yItemCount : (layout.subplotHeight || canvasSize.height);
-        } else {
-            plotHeight = layout.subplotHeight || canvasSize.height;
-        }
-
-        config._width = plotWidth + PADDING;
-        config._height = plotHeight + PADDING;
+        const PADDING = 80;
+        config._width = (layout.subplotWidth || canvasSize.width) + PADDING;
+        config._height = (layout.subplotHeight || canvasSize.height) + PADDING;
     }
 
     // ── Bar sizing ───────────────────────────────────────────────────────

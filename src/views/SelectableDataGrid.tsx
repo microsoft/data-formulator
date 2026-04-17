@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { shadow, transition } from '../app/tokens';
 import { TableVirtuoso } from 'react-virtuoso';
 import Table from '@mui/material/Table';
@@ -104,6 +105,7 @@ interface DraggableHeaderProps {
 const DraggableHeader: React.FC<DraggableHeaderProps> = ({ 
     columnDef, orderBy, order, onSortClick, tableId 
 }) => {
+    const { t } = useTranslation();
     const theme = useTheme();
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
@@ -229,7 +231,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                 </Tooltip>
             </TableSortLabel>
             {/* Separate sort handler button */}
-            <Tooltip title={<Typography sx={{fontSize: 10}}>Sort by <b>{columnDef.label}</b></Typography>}>
+            <Tooltip title={<Typography sx={{fontSize: 10}}>{t('dataGrid.sortBy', { label: columnDef.label })}</Typography>}>
                 <IconButton
                     size="small"
                     onClick={(e) => {
@@ -257,6 +259,7 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
 export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ 
     tableId, rows, tableName, columnDefs, rowCount, virtual }) => {
 
+    const { t } = useTranslation();
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
     const [order, setOrder] = React.useState<'asc' | 'desc'>('asc');
 
@@ -284,13 +287,22 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         Scroller: React.forwardRef<HTMLDivElement>((props, ref) => (
             <TableContainer {...props} ref={ref} />
         )),
-        Table: (props: any) => <Table {...props} />,
-        TableHead: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
-            <TableHead {...props} ref={ref} className='table-header-container' />
+        Table: ({ children, style, ...rest }: any) => (
+            <Table {...rest} style={style} sx={{ tableLayout: 'fixed', width: '100%' }}>
+                <colgroup>
+                    {columnDefs.map(col => (
+                        <col key={col.id} style={col.id === '#rowId' ? { width: 56 } : undefined} />
+                    ))}
+                </colgroup>
+                {children}
+            </Table>
+        ),
+        TableHead: React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>((props, ref) => (
+            <TableHead {...props} ref={ref} className='table-header-container' style={{ ...props.style, display: 'table-header-group' }} />
         )),
         TableRow: (props: any) => {
             const index = props['data-index'];
-            return <TableRow {...props} style={{backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
+            return <TableRow {...props} style={{...props.style, backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
         },
         TableBody: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
             <TableBody {...props} ref={ref} />
@@ -344,7 +356,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         } : {
             table: tableId,
             size: 1000,
-            method: 'random'
+            method: 'head',
+            order_by_fields: ['#rowId']
         }
         
         // Use the SAMPLE_TABLE endpoint with appropriate ordering
@@ -358,7 +371,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                setRowsToDisplay(data.rows);
+                setRowsToDisplay(data.rows || []);
             }
             // Set loading to false when done
             setIsLoading(false);
@@ -399,7 +412,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                     borderTopRightRadius: '4px'
                 }}>
                     <CircularProgress size={24} sx={{ mr: 1, color: 'lightgray' }} />
-                    <Typography variant="body2" color="text.secondary">Loading ...</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('dataGrid.loading')}</Typography>
                 </Box>
             )}
             <Fade in={!isLoading} timeout={{appear: 300, enter: 300, exit: 2000}}>
@@ -417,33 +430,63 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                                             className='data-view-header-cell'
                                             key={columnDef.id}
                                             align={columnDef.align}
-                                            sx={{p: 0, minWidth: columnDef.minWidth, width: columnDef.width,}}
+                                            sx={{
+                                                p: columnDef.id === '#rowId' ? '0 2px' : 0,
+                                                minWidth: columnDef.minWidth,
+                                                width: columnDef.width,
+                                            }}
                                         >
-                                            <DraggableHeader
-                                                columnDef={columnDef}
-                                                orderBy={orderBy}
-                                                order={order}
-                                                tableId={tableId}
-                                                onSortClick={() => {
-                                                    let newOrder: 'asc' | 'desc' = 'asc';
-                                                    let newOrderBy : string | undefined = columnDef.id;
-                                                    if (orderBy === columnDef.id && order === 'asc') {
-                                                        newOrder = 'desc';
-                                                    } else if (orderBy === columnDef.id && order === 'desc') {
-                                                        newOrder = 'asc';
-                                                        newOrderBy = undefined;
-                                                    } else {
-                                                        newOrder = 'asc';
-                                                    }
+                                            {columnDef.id === '#rowId' ? (
+                                                <Box
+                                                    className="data-view-header-container"
+                                                    sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        borderBottomWidth: '2px',
+                                                        borderBottomStyle: 'solid',
+                                                        borderBottomColor: 'rgba(0,0,0,0.2)',
+                                                        padding: '4px 4px',
+                                                        margin: '0 2px 0 0',
+                                                    }}
+                                                >
+                                                    <Typography
+                                                        sx={{
+                                                            fontSize: 12,
+                                                            color: 'text.secondary',
+                                                            whiteSpace: 'nowrap',
+                                                        }}
+                                                    >
+                                                        {columnDef.label}
+                                                    </Typography>
+                                                </Box>
+                                            ) : (
+                                                <DraggableHeader
+                                                    columnDef={columnDef}
+                                                    orderBy={orderBy}
+                                                    order={order}
+                                                    tableId={tableId}
+                                                    onSortClick={() => {
+                                                        let newOrder: 'asc' | 'desc' = 'asc';
+                                                        let newOrderBy : string | undefined = columnDef.id;
+                                                        if (orderBy === columnDef.id && order === 'asc') {
+                                                            newOrder = 'desc';
+                                                        } else if (orderBy === columnDef.id && order === 'desc') {
+                                                            newOrder = 'asc';
+                                                            newOrderBy = undefined;
+                                                        } else {
+                                                            newOrder = 'asc';
+                                                        }
 
-                                                    setOrder(newOrder);
-                                                    setOrderBy(newOrderBy);
-                                                    
-                                                    if (virtual) {
-                                                        fetchVirtualData(newOrderBy ? [newOrderBy] : [], newOrder);
-                                                    }
-                                                }}
-                                            />
+                                                        setOrder(newOrder);
+                                                        setOrderBy(newOrderBy);
+                                                        
+                                                        if (virtual) {
+                                                            fetchVirtualData(newOrderBy ? [newOrderBy] : [], newOrder);
+                                                        }
+                                                    }}
+                                                />
+                                            )}
                                         </TableCell>
                                     );
                                 })}
@@ -467,7 +510,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                                             sx={{backgroundColor}}
                                             align={column.align || 'left'}
                                         >
-                                            {column.format ? column.format(data[column.id]) : data[column.id]}
+                                            {column.format
+                                                ? column.format(data[column.id])
+                                                : (data[column.id] != null && typeof data[column.id] === 'object'
+                                                    ? String(data[column.id])
+                                                    : data[column.id])}
                                         </TableCell>
                                     )
                                 })}
@@ -478,14 +525,14 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 </Box>
             </Fade>
             <Paper variant="outlined"
-                sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 12 }}>
+                sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 25 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
                         {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }
-                        {`${rowCount} rows`}
+                        {t('dataGrid.rowCount', { count: rowCount })}
                     </Typography>
                     {virtual && rowCount > 10000 && (
-                        <Tooltip title="view 10000 random rows from this table">
+                        <Tooltip title={t('dataGrid.viewRandomRows')}>
                             <IconButton 
                                 size="small" 
                                 color="primary" 
@@ -503,7 +550,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                             </IconButton>
                         </Tooltip>
                     )}
-                    <Tooltip title="Download as CSV">
+                    <Tooltip title={t('dataGrid.downloadAsCsv')}>
                         <IconButton 
                             size="small" 
                             color="primary" 

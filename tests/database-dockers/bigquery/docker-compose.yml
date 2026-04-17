@@ -1,0 +1,12 @@
+services:
+  bigquery:
+    build: .
+    container_name: df-test-bigquery
+    ports:
+      - "${BQ_PORT:-9050}:9050"
+      - "${BQ_GRPC_PORT:-9060}:9060"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9050 || exit 0"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

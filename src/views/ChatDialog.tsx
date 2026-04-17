@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { FC, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next';
 import { radius } from '../app/tokens';
 import { Divider } from "@mui/material";
 import {
@@ -115,6 +116,7 @@ export interface ChatDialogProps {
 }
 
 export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog, open, handleCloseDialog}) {
+    const { t } = useTranslation();
     let theme = useTheme();
     const dialogContentRef = useRef<HTMLDivElement>(null);
 
@@ -135,7 +137,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
         body = <Box sx={{display: "flex", overflowX: "auto", flexDirection: "column", 
                          justifyContent: "space-between", position: "relative", marginTop: "10px", minHeight: "50px"}}>
             <Typography sx={{ fontSize: 14 }}  color="text.secondary" gutterBottom>
-                {"There is no conversation history yet"}
+                {t('chatDialog.noHistory')}
             </Typography>
         </Box>
     } else {
@@ -183,7 +185,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.5px'
                             }} gutterBottom>
-                                {isUser ? 'You' : 'Assistant'}
+                                {isUser ? t('chatDialog.you') : t('chatDialog.assistant')}
                             </Typography>
                             <Box sx={{display: 'flex', flexDirection: "column", alignItems: "flex-start", flex: 'auto'}}>
                                 <Box sx={{maxWidth: 800, width: 'fit-content', display: 'flex', flexDirection: 'column'}}>
@@ -208,12 +210,12 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
             open={open}
             key="chat-dialog-dialog"
         >
-            <DialogTitle><Typography>Agent Log</Typography></DialogTitle>
+            <DialogTitle><Typography>{t('chatDialog.agentLog')}</Typography></DialogTitle>
             <DialogContent ref={dialogContentRef} sx={{overflowY: "auto", overflowX: "hidden"}} dividers>
                 {body}
             </DialogContent>
             <DialogActions>
-                <Button onClick={()=>{ handleCloseDialog() }}>Close</Button>
+                <Button onClick={()=>{ handleCloseDialog() }}>{t('app.close')}</Button>
             </DialogActions>
         </Dialog>
     );

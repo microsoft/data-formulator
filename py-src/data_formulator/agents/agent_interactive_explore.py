@@ -114,10 +114,11 @@ data: {"questions": [...], "goal": ..., "difficulty": ...}
 
 class InteractiveExploreAgent(object):
 
-    def __init__(self, client, workspace, agent_exploration_rules=""):
+    def __init__(self, client, workspace, agent_exploration_rules="", language_instruction=""):
         self.client = client
         self.agent_exploration_rules = agent_exploration_rules
         self.workspace = workspace  # when set (SQL/datalake mode), use parquet tables for summary
+        self.language_instruction = language_instruction
 
     def run(self, input_tables, start_question=None, exploration_thread=None, 
                   current_data_sample=None, current_chart=None, mode='interactive'):
@@ -167,6 +168,9 @@ class InteractiveExploreAgent(object):
         else:
             system_prompt = base_system_prompt
 
+        if self.language_instruction:
+            system_prompt = system_prompt + "\n\n" + self.language_instruction
+
         logger.debug(f"Interactive explore agent input: {context}")
         logger.info(f"[InteractiveExploreAgent] run start")
         
@@ -176,7 +180,7 @@ class InteractiveExploreAgent(object):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": [
                         {"type": "text", "text": context},
-                        {"type": "image_url", "image_url": {"url": current_chart, "detail": "high"}}
+                        {"type": "image_url", "image_url": {"url": current_chart, "detail": "low"}}
                     ]}
                 ]
             else:

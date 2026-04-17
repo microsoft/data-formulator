@@ -91,7 +91,7 @@ export function useFormulateData() {
         return triggers.map(trigger => ({
             name: trigger.resultTableId,
             rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-            description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
+            description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source}`,
         }));
     }
 
@@ -361,10 +361,16 @@ export function useFormulateData() {
             // Create trigger
             const trigger: Trigger = {
                 tableId: currentTable.id,
-                instruction,
-                displayInstruction,
-                chart: triggerChart,
                 resultTableId: candidateTableId,
+                chart: triggerChart,
+                interaction: [{
+                    from: 'user' as const,
+                    to: 'datarec-agent' as const,
+                    role: 'instruction' as const,
+                    content: instruction,
+                    displayContent: displayInstruction,
+                    timestamp: Date.now(),
+                }],
             };
 
             // Create candidate table with derive info
@@ -435,7 +441,6 @@ export function useFormulateData() {
             // Delegate chart creation to the caller
             const focusedChartId = createChart({ candidateTable, refinedGoal, currentConcepts });
 
-            // Auto-generate chart insight after rendering
             if (focusedChartId) {
                 const chartIdForInsight = focusedChartId;
                 setTimeout(() => {

@@ -28,11 +28,54 @@ export interface Trigger {
     tableId: string, // on which table this action is triggered
 
     chart?: Chart, // what's the intented chart from the user when running formulation
-    instruction: string,
-    displayInstruction: string, // the short instruction that will be displayed to the user
 
-    resultTableId: string,
+    resultTableId: string, // the table produced by this trigger (=== owning table's id)
+
+    // Rich interaction log
+    interaction?: InteractionEntry[];
 }
+
+// ── New interaction types ────────────────────────────────────
+
+export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-agent';
+
+export interface InteractionEntry {
+    from: Actor;
+    to: Actor;
+    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error';
+    plan?: string; // agent's reasoning / thought for this action
+    content: string;
+    displayContent?: string;
+    options?: string[]; // for clarification questions, the list of options presented to the user
+    timestamp?: number;
+}
+
+export type DeriveStatus = 'running' | 'clarifying' | 'completed' | 'error' | 'interrupted';
+
+export interface DraftNode {
+    kind: 'draft';
+    id: string;
+    displayId: string;
+    anchored: boolean;
+    derive: {
+        source: string[];
+        trigger: Trigger;
+        status: DeriveStatus;
+        runningPlan?: string; // live agent thought text while running
+        code?: string;
+        codeSignature?: string;
+        outputVariable?: string;
+        dialog?: any[];
+        pendingClarification?: {
+            trajectory: any[];
+            completedStepCount: number;
+            lastCreatedTableId: string | null;
+        } | null;
+    };
+    actionId?: string;
+}
+
+export type ThreadNode = DraftNode | DictTable;
 
 // Define data cleaning message types
 export type DataCleanTableOutput = {
@@ -58,6 +101,59 @@ export interface DataCleanBlock {
 
     // For output messages  
     dialogItem?: any; // Store the dialog item from the model response
+}
+
+// ── Conversational data loading chat types ────────────────────────────────
+
+export interface ChatAttachment {
+    type: 'image' | 'file' | 'text_file';
+    name: string;
+    url?: string;           // data URL or object URL for images
+    scratchPath?: string;   // path in workspace scratch folder (for large files)
+    preview?: string;       // first N lines for text files
+}
+
+export interface InlineTablePreview {
+    name: string;
+    columns: string[];
+    sampleRows: Record<string, any>[];  // first 5-10 rows
+    totalRows: number;
+    csvScratchPath?: string;
+}
+
+export interface CodeExecution {
+    code: string;
+    stdout?: string;
+    error?: string;
+    resultTable?: InlineTablePreview;
+}
+
+export interface PendingTableLoad {
+    name: string;
+    csvScratchPath: string;
+    preview: InlineTablePreview;
+    confirmed: boolean;
+    // For sample dataset loading
+    sampleDataset?: {
+        datasetName: string;
+        tables: Array<{
+            tableUrl: string;
+            format: string;
+        }>;
+        live?: boolean;
+        refreshIntervalSeconds?: number;
+    };
+}
+
+export interface ChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;                    // markdown text
+    attachments?: ChatAttachment[];     // images, files attached by user
+    tables?: InlineTablePreview[];      // tables to show inline (assistant only)
+    codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
+    pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
+    timestamp: number;
 }
 
 // Data source types for tracking where data originated
@@ -89,9 +185,16 @@ export interface DataSourceConfig {
     
     // Whether this table can be refreshed (backend has connection info)
     canRefresh?: boolean;
+
+    // Connector ID (for tables loaded via a DataConnector)
+    connectorId?: string;
+
+    // The original table name before backend sanitization (e.g. "Sales Report 2024")
+    originalTableName?: string;
 }
 
 export interface DictTable {
+    kind: 'table'; // discriminant for ThreadNode union
     id: string; // name/id of the table
     displayId: string; // display id of the table 
     
@@ -118,18 +221,14 @@ export interface DictTable {
             }[]
         },
         dialog: any[], // the log of how the data is derived with LLM (the LLM conversation log)
-        // tracks how this derivation is triggered, as we as user instruction used to do the formulation,
-        // there is a subtle difference between trigger and source, trigger identifies the occasion when the derivision is called,
-        // source specifies how the deriviation is done from the source tables, they may be the same, but not necessarily
-        // in fact, right now dict tables are all triggered from charts
         trigger: Trigger,
+        status?: DeriveStatus, // lifecycle state (new — completed tables may omit for backward compat)
     };
-    virtual?: {
-        tableId: string; // the id of the virtual table in the database
-        rowCount: number; // total number of rows in the full table
+    virtual: {
+        tableId: string; // the canonical server-side table name (sanitized)
+        rowCount: number; // total number of rows (rows.length may be a sample)
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
-    createdBy: 'user' | 'agent'; // whether this table is created by the user or the agent
     attachedMetadata: string; // a string of attached metadata explaining what the table is about (used for prompt)
     
     // New field: tracks the source of the data and refresh configuration
@@ -151,9 +250,8 @@ export function createDictTable(
             dialog: any[], 
             trigger: Trigger
         } | undefined = undefined,
-    virtual: {tableId: string, rowCount: number} | undefined = undefined,
+    virtual: {tableId: string, rowCount: number} = { tableId: id, rowCount: rows.length },
     anchored: boolean = false,
-    createdBy: 'user' | 'agent' = 'user', // by default, all tables are created by the user
     attachedMetadata: string = '',
     source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
@@ -161,6 +259,7 @@ export function createDictTable(
     let names = Object.keys(rows[0])
 
     return {
+        kind: 'table' as const,
         id,
         displayId: `${id}`,
         names, 
@@ -176,7 +275,6 @@ export function createDictTable(
         derive,
         virtual,
         anchored,
-        createdBy,
         attachedMetadata,
         source,
     }

@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { FC, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next';
 import { useSelector, useDispatch } from 'react-redux'
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { LinearProgress, styled, TextField, Tooltip } from '@mui/material';
@@ -53,13 +54,44 @@ import { Type } from '../data/types';
 
 
 
-let getChannelDisplay = (channel: Channel) => {
-    if (channel == "x") {
-        return "x-axis";
-    } else if (channel == "y") {
-        return "y-axis";
-    }
-    return channel;
+const channelKeyMap: Partial<Record<Channel, string>> = {
+    x: 'encoding.channelX',
+    y: 'encoding.channelY',
+    color: 'encoding.channelColor',
+    size: 'encoding.channelSize',
+    shape: 'encoding.channelShape',
+    opacity: 'encoding.channelOpacity',
+    column: 'encoding.channelColumn',
+    row: 'encoding.channelRow',
+    detail: 'encoding.channelDetail',
+    group: 'encoding.channelGroup',
+    radius: 'encoding.channelRadius',
+    strokeDash: 'encoding.channelStrokeDash',
+};
+
+const channelTipKeyMap: Partial<Record<Channel, string>> = {
+    x: 'encoding.channelX_tip',
+    y: 'encoding.channelY_tip',
+    color: 'encoding.channelColor_tip',
+    size: 'encoding.channelSize_tip',
+    shape: 'encoding.channelShape_tip',
+    opacity: 'encoding.channelOpacity_tip',
+    column: 'encoding.channelColumn_tip',
+    row: 'encoding.channelRow_tip',
+    detail: 'encoding.channelDetail_tip',
+    group: 'encoding.channelGroup_tip',
+    radius: 'encoding.channelRadius_tip',
+    strokeDash: 'encoding.channelStrokeDash_tip',
+};
+
+let getChannelDisplay = (channel: Channel, t: (key: string) => string) => {
+    const key = channelKeyMap[channel];
+    return key ? t(key) : channel;
+}
+
+let getChannelTip = (channel: Channel, t: (key: string) => string) => {
+    const key = channelTipKeyMap[channel];
+    return key ? t(key) : '';
 }
 
 export interface LittleConceptCardProps {
@@ -71,8 +103,8 @@ export interface LittleConceptCardProps {
 }
 
 export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConceptCard({ channel, field, encoding, handleUnbind, tableMetadata }) {
-    // concept cards are draggable cards that can be dropped into encoding shelf
 
+    const { t } = useTranslation();
     let theme = useTheme();
 
     const [{ isDragging }, drag] = useDrag(() => ({
@@ -97,6 +129,8 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
         backgroundColor = alpha(theme.palette.custom.main, 0.05);
     }
 
+    const meta = tableMetadata[field.name];
+
     return (
         <Chip
             ref={drag}
@@ -114,7 +148,7 @@ export const LittleConceptCard: FC<LittleConceptCardProps> = function LittleConc
             variant="filled"
             onClick={(event) => {}}
             onDelete={handleUnbind}
-            icon={getIconFromType(tableMetadata[field.name]?.type || Type.Auto)}
+            icon={getIconFromType(meta?.type || Type.Auto)}
         />
     )
 }
@@ -128,6 +162,7 @@ export interface EncodingBoxProps {
 
 // the encoding boxes, allows 
 export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel, chartId, tableId }) {
+    const { t } = useTranslation();
     let theme = useTheme();
 
     // use tables for infer domains
@@ -226,7 +261,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     )
 
     // define anchor open
-    let channelDisplay = getChannelDisplay(channel);
+    let channelDisplay = getChannelDisplay(channel, t);
+    let channelTip = getChannelTip(channel, t);
 
     let radioLabel = (label: string | React.ReactNode, value: any, key: string, width: number = 80, disabled: boolean = false, tooltip: string = "") => {
         let comp = <FormControlLabel sx={{ width: width, margin: 0 }} key={key}
@@ -248,7 +284,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
 
     let dataTypeOpt = [
-        <FormLabel key={`enc-box-${channel}-data-type-label`} sx={{ fontSize: "inherit" }} id="data-type-option-radio-buttons-group" >Data Type</FormLabel>,
+        <FormLabel key={`enc-box-${channel}-data-type-label`} sx={{ fontSize: "inherit" }} id="data-type-option-radio-buttons-group" >{t('encoding.dataType')}</FormLabel>,
         <FormControl
             key={`enc-box-${channel}-data-type-form-control`}
             sx={{
@@ -318,7 +354,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         "timestamp": Date.now(),
                         "component": "EncodingBox",
                         "type": "error",
-                        "value": "unable to perform auto-sort."
+                        "value": t('encoding.autoSortFailed')
                     }));
                     setAutoSortResult(undefined);
                 }
@@ -330,7 +366,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     "timestamp": Date.now(),
                     "component": "EncodingBox",
                     "type": "error",
-                    "value": "unable to perform auto-sort due to server issue."
+                    "value": t('encoding.autoSortServerError')
                 }));
             });
     }
@@ -364,7 +400,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
                 let autoSortOptTitle = <Box>
                         <Box>
-                            <Typography sx={{fontWeight: 'bold'}} component='span' fontSize='inherit'>Sort Order: </Typography> 
+                            <Typography sx={{fontWeight: 'bold'}} component='span' fontSize='inherit'>{t('encoding.sortOrderLabel')} </Typography> 
                              {autoSortResult.map(x => x ? x.toString() : 'null').join(", ")}
                         </Box>
                     </Box>
@@ -391,7 +427,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         value={JSON.stringify(autoSortResult)} control={<Radio size="small" sx={{ padding: "4px" }} />}
                         label={<Box sx={{width: '100%', display:'flex'}}>
                                     {autoSortOpt}
-                                    <Tooltip title='rerun smart sort'>
+                                    <Tooltip title={t('encoding.rerunSmartSort')}>
                                         <IconButton onClick={autoSortFunction} size='small' color='primary'>
                                             <RefreshIcon />
                                         </IconButton>
@@ -406,14 +442,14 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                         value={JSON.stringify(autoSortResult)} control={<Radio size="small" sx={{ padding: "4px" }} />}
                         label={<Button size="small" variant="text"
                                     sx={{ textTransform: "none", padding: "2px 4px", marginLeft: "0px", minWidth: 0 }}
-                                    onClick={autoSortFunction}>infer smart sort order</Button>} />
+                                    onClick={autoSortFunction}>{t('encoding.smartSort')}</Button>} />
                 ]
             }
         }
     }
 
     let sortByOpt = [
-        <FormLabel sx={{ fontSize: "inherit" }} key={`enc-box-${channel}-sort-label`} id="sort-option-radio-buttons-group" >Sort By</FormLabel>,
+        <FormLabel sx={{ fontSize: "inherit" }} key={`enc-box-${channel}-sort-label`} id="sort-option-radio-buttons-group" >{t('encoding.sortBy')}</FormLabel>,
         <FormControl
             key={`enc-box-${channel}-sort-form-control`}
             sx={{
@@ -435,7 +471,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
 
     let sortOrderOpt = [
         <FormLabel sx={{ fontSize: "inherit" }} key={`enc-box-${channel}-sort-order-label`} 
-                   id="sort-option-radio-buttons-group" >Sort Order</FormLabel>,
+                   id="sort-option-radio-buttons-group" >{t('encoding.sortOrder')}</FormLabel>,
         <FormControl
             key={`enc-box-${channel}-sort-order-form-control`}
             sx={{
@@ -451,8 +487,8 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 onChange={(event) => { updateEncProp("sortOrder", event.target.value) }}
             >
                 {radioLabel("auto", "auto", `sort-auto`, 60)}
-                {radioLabel("↑ asc", "ascending", `sort-ascending`, 60)}
-                {radioLabel("↓ desc", "descending", `sort-descending`, 60)}
+                {radioLabel(t('encoding.ascShort'), "ascending", `sort-ascending`, 60)}
+                {radioLabel(t('encoding.descShort'), "descending", `sort-descending`, 60)}
             </RadioGroup>
         </FormControl>
     ]
@@ -472,7 +508,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         "spectral"
     ]
     let colorSchemeOpt = channel == "color" ? [
-            <FormLabel sx={{ fontSize: "inherit" }} key={`enc-box-${channel}-color-scheme-label`} id="scheme-option-radio-buttons-group">Color scheme</FormLabel>,
+            <FormLabel sx={{ fontSize: "inherit" }} key={`enc-box-${channel}-color-scheme-label`} id="scheme-option-radio-buttons-group">{t('encoding.colorScheme')}</FormLabel>,
             <FormControl key="color-sel-form" fullWidth size="small" sx={{textAlign: "initial", fontSize: "12px"}}>
                 <Select
                     labelId="color-scheme-select-label"
@@ -483,9 +519,9 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                     value={encoding.scheme || "default"}
                     onChange={(event)=>{ updateEncProp("scheme", event.target.value) }}
                 >
-                    <MenuItem value={"default"} key={"color-scheme--1"}><em>default</em></MenuItem>
-                    {colorSchemeList.map((t, i) => (
-                        <MenuItem value={t} key={`color-scheme-${i}`}>{t}</MenuItem>
+                    <MenuItem value={"default"} key={"color-scheme--1"}><em>{t('encoding.default')}</em></MenuItem>
+                    {colorSchemeList.map((scheme, i) => (
+                        <MenuItem value={scheme} key={`color-scheme-${i}`}>{scheme}</MenuItem>
                     ))}
                 </Select>
             </FormControl>
@@ -629,7 +665,7 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
             if (groupItem && groupItem.field.name != "") {
                 return `${groupItem.group}`;
             } else {
-                return "create a new field"
+                return t('encoding.createNewFieldGroup')
             }         
         }}
         renderGroup={(params) => (
@@ -743,14 +779,14 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                             ...otherStyle
                         }}
                     >
-                        {renderOption || "type a new field name"}
+                        {renderOption || t('encoding.newFieldNamePlaceholder')}
                     </Typography>
                 );
             }
         }}
         freeSolo
         renderInput={(params) => (
-            <TextField {...params} variant="standard" autoComplete='off' placeholder='field'
+            <TextField {...params} variant="standard" autoComplete='off' placeholder={t('encoding.fieldPlaceholder')}
                 sx={{height: "24px", "& .MuiInput-root": {height: "24px", fontSize: "small"}}} />
         )}
         slotProps={{
@@ -791,20 +827,23 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
                 component="form" className="channel-shelf-box encoding-item">
                 <Card sx={{ width: "100%" }} variant="outlined">
                     <Box ref={drop} className="channel-encoded-field">
-                        <IconButton //className="encoding-shelf-action-button"
+                        <Tooltip title={channelTip} placement="left" arrow
+                            slotProps={{ tooltip: { sx: { bgcolor: 'rgba(97,97,97,0.92)' } } }}>
+                        <IconButton
                             onClick={() => { setEditMode(!editMode) }} color="default"
-                            aria-label="axis settings" component="span"
+                            aria-label={t('encoding.axisSettings')} component="span"
                             size="small" sx={{
                                 padding: "0px", borderRadius: 0, textAlign: "left", fontSize: "inherit", height: "auto",
-                                position: "relative", borderRight: "1px solid lightgray", width: '64px', 
+                                position: "relative", borderRight: "1px solid lightgray", width: '84px', 
                                 display: "flex", justifyContent: "space-between"
                             }}>
                             <Typography variant="caption" component="span" sx={{ padding: "0px 0px 0px 6px" }}>{channelDisplay}</Typography>
                             <ArrowDropDownIcon sx={{ position: "absolute", right: "0", 
                                 paddingLeft: "2px", transform: editMode ? "rotate(180deg)" : "" }} fontSize="inherit" />
                         </IconButton>
+                        </Tooltip>
                         <Box sx={{
-                            backgroundColor: backgroundColor, width: "calc(100% - 64px)",
+                            backgroundColor: backgroundColor, width: "calc(100% - 84px)",
                             display: "flex", borderBottom: (editMode ? "1px solid rgba(0, 0, 0, 0.12)" : undefined)
                         }}>
                             {encContent}

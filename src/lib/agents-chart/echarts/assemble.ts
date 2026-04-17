@@ -143,6 +143,10 @@ export function assembleECharts(input: ChartAssemblyInput): any {
 
     // Merge paramOverrides into effective options
     const effectiveOptions: AssembleOptions = {
+        // ECharts uses step × itemCount for discrete canvas sizing (like VL),
+        // but adds ~120-160px grid margins on top.  A 24px base band gives
+        // bars close to ECharts's native auto-sizing at typical category counts.
+        defaultBandSize: 24,
         ...options,
         ...(declaration.paramOverrides || {}),
     };
@@ -220,7 +224,6 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         encodings,
         channelSemantics,
         table: values,
-        backend: 'echarts',
         background: 'light',
     });
 

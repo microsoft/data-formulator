@@ -1,0 +1,64 @@
+---
+description: Frontend TypeScript test conventions (Vitest)
+globs: tests/frontend/**/*.test.{ts,tsx}
+alwaysApply: false
+---
+
+# Frontend Test Conventions
+
+## File Location & Naming
+
+- Place tests under `tests/frontend/unit/` mirroring the `src/` structure:
+  - `tests/frontend/unit/data/` → tests for `src/data/`
+  - `tests/frontend/unit/app/` → tests for `src/app/`
+  - `tests/frontend/unit/views/` → tests for `src/views/`
+- Name files `<functionOrFeature>.test.ts` (or `.test.tsx` for React rendering tests).
+
+## File Structure
+
+```typescript
+import { describe, it, expect } from 'vitest';
+// For React rendering tests:
+// import { render } from '@testing-library/react';
+
+import { myFunction } from '../../../../src/<path>';
+
+describe('myFunction', () => {
+  it('should handle <specific case>', () => {
+    expect(myFunction(input)).toBe(expected);
+  });
+});
+```
+
+## Conventions
+
+- Import `describe`, `it`, `expect` explicitly from `vitest` (globals are enabled but explicit imports improve readability).
+- Use `@testing-library/react` and `@testing-library/jest-dom` for component rendering tests.
+- Prefer testing **exported pure functions** over testing internal component state.
+- When component logic is complex, extract it into an exported helper and test that directly.
+- Group tests with `describe` blocks; use section comments (`// --- Null cases ---`) for clarity.
+- One assertion per `it` block when possible; name tests as `should <expected behavior>`.
+- Do **not** import from `node_modules` internals; only use public API.
+- Keep tests independent — no shared mutable state between `it` blocks.
+
+## Example
+
+```typescript
+// ❌ BAD – no describe, vague test name
+import { expect, test } from 'vitest';
+test('works', () => { expect(fn(1)).toBe(2); });
+
+// ✅ GOOD
+import { describe, it, expect } from 'vitest';
+import { checkIsLikelyTextOnlyModel } from '../../../../src/views/DataLoadingThread';
+
+describe('checkIsLikelyTextOnlyModel', () => {
+  it('returns true for deepseek-chat', () => {
+    expect(checkIsLikelyTextOnlyModel('deepseek-chat')).toBe(true);
+  });
+
+  it('returns false for undefined', () => {
+    expect(checkIsLikelyTextOnlyModel(undefined)).toBe(false);
+  });
+});
+```

@@ -38,9 +38,12 @@ dependencies = [
     "scikit-learn",
     "pyyaml",
     "pyarrow>=13.0.0",
+    "xlrd",
+    "openpyxl>=3.1.0",
     "yfinance",
     # Data-loader deps (all included by default; try/except keeps things safe)
     "pymongo",                  # mongodb
+    "azure-cosmos",             # cosmosdb
     "azure-storage-blob",       # azure_blob
     "azure-identity",           # azure_blob, kusto
     "azure-kusto-data",         # kusto
@@ -52,6 +55,9 @@ dependencies = [
     "google-cloud-bigquery",    # bigquery
     "google-auth",              # bigquery
     "db-dtypes",                # bigquery
+    # SSO / Auth deps
+    "PyJWT[crypto]>=2.8.0",     # OIDC JWT verification (includes cryptography)
+    "requests",                 # GitHub OAuth code exchange, Superset API calls
 ]
 
 [project.urls]
@@ -69,4 +75,5 @@ data_formulator = "data_formulator:run_app"
 [tool.uv]
 dev-dependencies = [
     "build",
+    "pytest",
 ]

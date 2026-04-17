@@ -1,0 +1,156 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+"""Lightweight single-turn agents that wrap a system prompt + one LLM call.
+
+Each method takes a ``Client`` instance plus task-specific parameters and
+returns a plain dict result (no streaming, no workspace access).
+"""
+
+import json
+import logging
+
+from data_formulator.agents.agent_utils import extract_json_objects
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# System prompts
+# ---------------------------------------------------------------------------
+
+_NL_FILTER_SYSTEM_PROMPT = """\
+You are a data loading assistant. The user wants to load a subset of a database table \
+based on a natural language description. Your job is to translate their request into a \
+structured JSON query specification (Selection, Projection-free, Join-free — SPJ without projection).
+
+You will be given:
+- A table's column schema (name + type)
+- A user's natural language description of what data they want
+
+Return a JSON object with:
+{
+  "conditions": [
+    {"column": "<col_name>", "operator": "<op>", "value": <val>}
+  ],
+  "sort_columns": ["<col>"],   // optional — include if the user mentions ordering
+  "sort_order": "asc" | "desc", // optional, default "asc"
+  "limit": <number>             // optional — include if the user mentions a row limit
+}
+
+All columns will be selected (no projection). Focus on filtering (WHERE), sorting (ORDER BY), and limiting (LIMIT).
+
+Valid operators: =, !=, >, <, >=, <=, LIKE, NOT LIKE, IN, NOT IN, BETWEEN, IS NULL, IS NOT NULL
+- For LIKE: use SQL wildcards (e.g. "value": "%pattern%")
+- For IN / NOT IN: "value" is an array
+- For BETWEEN: "value" is [lo, hi]
+- For IS NULL / IS NOT NULL: omit "value"
+
+Rules:
+- Only use column names from the provided schema.
+- Infer reasonable filter values from context (e.g. "recent" → sort by date desc + limit, \
+"last year" → date >= '2025-01-01').
+- If the user mentions sorting or limiting, include sort_columns/sort_order/limit.
+- If the instruction is empty or unclear, return {"conditions": []}.
+- Return ONLY the JSON object, no markdown fences or explanation."""
+
+_WORKSPACE_SUMMARY_SYSTEM_PROMPT = (
+    "You are a helpful assistant. Generate a very short name (3-5 words) "
+    "for a data analysis workspace based on the context below. "
+    "Return ONLY the name, no quotes, no explanation."
+)
+
+
+# ---------------------------------------------------------------------------
+# Class
+# ---------------------------------------------------------------------------
+
+class SimpleAgents:
+    """Collection of lightweight single-turn LLM agents."""
+
+    def __init__(self, client):
+        self.client = client
+
+    # -- NL → structured filter conditions ----------------------------------
+
+    def nl_to_filter(self, columns: list[dict], instruction: str) -> dict:
+        """Translate *instruction* into structured filter conditions.
+
+        Parameters
+        ----------
+        columns : list[dict]
+            Column schema, each entry ``{"name": ..., "type": ...}``.
+        instruction : str
+            Natural-language filter description from the user.
+
+        Returns
+        -------
+        dict with keys ``conditions``, ``sort_columns``, ``sort_order``, ``limit``.
+        """
+        col_desc = "\n".join(
+            f"  - {c['name']} ({c.get('type', 'unknown')})" for c in columns
+        )
+        user_msg = f"Table columns:\n{col_desc}\n\nFilter instruction: {instruction}"
+
+        messages = [
+            {"role": "system", "content": _NL_FILTER_SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ]
+
+        logger.info("[SimpleAgents.nl_to_filter] run start")
+        response = self.client.get_completion(messages=messages)
+        raw = response.choices[0].message.content.strip()
+
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            raw = raw.strip()
+
+        result = json.loads(raw)
+
+        # Validate: only allow known column names
+        known_cols = {c["name"] for c in columns}
+        valid_conditions = [
+            cond for cond in (result.get("conditions") or [])
+            if cond.get("column") in known_cols
+        ]
+
+        out = {
+            "conditions": valid_conditions,
+            "sort_columns": result.get("sort_columns"),
+            "sort_order": result.get("sort_order"),
+            "limit": result.get("limit"),
+        }
+        logger.info(f"[SimpleAgents.nl_to_filter] done | {len(valid_conditions)} conditions")
+        return out
+
+    # -- Workspace summary / auto-name --------------------------------------
+
+    def workspace_summary(self, table_names: list[str], user_query: str = "") -> str:
+        """Generate a short 3-5 word name for a workspace.
+
+        Returns the summary string (already truncated to 60 chars).
+        """
+        prompt_parts = []
+        if table_names:
+            prompt_parts.append(f"Data tables: {', '.join(table_names)}")
+        if user_query:
+            prompt_parts.append(f"User's first request: {user_query}")
+
+        context_str = ". ".join(prompt_parts) if prompt_parts else "A data analysis session"
+
+        messages = [
+            {"role": "system", "content": _WORKSPACE_SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": context_str},
+        ]
+
+        logger.info("[SimpleAgents.workspace_summary] run start")
+        response = self.client.get_completion(messages=messages)
+        summary = response.choices[0].message.content.strip().strip("\"'")
+        if len(summary) > 60:
+            summary = summary[:57] + "..."
+
+        logger.info(f"[SimpleAgents.workspace_summary] done | \"{summary}\"")
+        return summary
