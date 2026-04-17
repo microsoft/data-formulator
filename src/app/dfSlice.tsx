@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, DraftNode, InteractionEntry, DeriveStatus } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -164,9 +164,13 @@ export interface DataFormulatorState {
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
 
-    // Data cleaning dialog state
+    // Data cleaning dialog state (legacy, kept for migration)
     dataCleanBlocks: DataCleanBlock[];
     cleanInProgress: boolean;
+
+    // Conversational data loading chat
+    dataLoadingChatMessages: ChatMessage[];
+    dataLoadingChatInProgress: boolean;
 
     // Generated reports state
     generatedReports: GeneratedReport[];
@@ -235,6 +239,9 @@ const initialState: DataFormulatorState = {
 
     dataCleanBlocks: [],
     cleanInProgress: false,
+
+    dataLoadingChatMessages: [],
+    dataLoadingChatInProgress: false,
 
     generatedReports: [],
 
@@ -524,6 +531,9 @@ export const dataFormulatorSlice = createSlice({
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
 
+            state.dataLoadingChatMessages = [];
+            state.dataLoadingChatInProgress = false;
+
             state.generatedReports = [];
 
             // Clear active workspace so stale IDs don't persist across restarts
@@ -587,6 +597,7 @@ export const dataFormulatorSlice = createSlice({
                 focusedId: saved.focusedId || undefined,
                 config: { ...initialState.config, ...(saved.config || {}) },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
+                dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
                 generatedReports: saved.generatedReports || [],
 
                 // Reset transient fields
@@ -596,6 +607,7 @@ export const dataFormulatorSlice = createSlice({
                 chartSynthesisInProgress: [],
                 chartInsightInProgress: [],
                 cleanInProgress: false,
+                dataLoadingChatInProgress: false,
                 sessionLoading: false,
                 sessionLoadingLabel: '',
 
@@ -1314,6 +1326,34 @@ export const dataFormulatorSlice = createSlice({
         },
         setCleanInProgress: (state, action: PayloadAction<boolean>) => {
             state.cleanInProgress = action.payload;
+        },
+        // Conversational data loading chat actions
+        addChatMessage: (state, action: PayloadAction<ChatMessage>) => {
+            state.dataLoadingChatMessages = [...state.dataLoadingChatMessages, action.payload];
+        },
+        updateLastChatMessage: (state, action: PayloadAction<Partial<ChatMessage>>) => {
+            if (state.dataLoadingChatMessages.length > 0) {
+                const lastIndex = state.dataLoadingChatMessages.length - 1;
+                state.dataLoadingChatMessages[lastIndex] = {
+                    ...state.dataLoadingChatMessages[lastIndex],
+                    ...action.payload,
+                };
+            }
+        },
+        clearChatMessages: (state) => {
+            state.dataLoadingChatMessages = [];
+        },
+        confirmTableLoad: (state, action: PayloadAction<{messageId: string, tableName: string}>) => {
+            const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
+            if (msg?.pendingLoads) {
+                const pending = msg.pendingLoads.find(p => p.name === action.payload.tableName);
+                if (pending) {
+                    pending.confirmed = true;
+                }
+            }
+        },
+        setDataLoadingChatInProgress: (state, action: PayloadAction<boolean>) => {
+            state.dataLoadingChatInProgress = action.payload;
         },
         // Generated reports actions
         saveGeneratedReport: (state, action: PayloadAction<GeneratedReport>) => {

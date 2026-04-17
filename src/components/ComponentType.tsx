@@ -103,6 +103,59 @@ export interface DataCleanBlock {
     dialogItem?: any; // Store the dialog item from the model response
 }
 
+// ── Conversational data loading chat types ────────────────────────────────
+
+export interface ChatAttachment {
+    type: 'image' | 'file' | 'text_file';
+    name: string;
+    url?: string;           // data URL or object URL for images
+    scratchPath?: string;   // path in workspace scratch folder (for large files)
+    preview?: string;       // first N lines for text files
+}
+
+export interface InlineTablePreview {
+    name: string;
+    columns: string[];
+    sampleRows: Record<string, any>[];  // first 5-10 rows
+    totalRows: number;
+    csvScratchPath?: string;
+}
+
+export interface CodeExecution {
+    code: string;
+    stdout?: string;
+    error?: string;
+    resultTable?: InlineTablePreview;
+}
+
+export interface PendingTableLoad {
+    name: string;
+    csvScratchPath: string;
+    preview: InlineTablePreview;
+    confirmed: boolean;
+    // For sample dataset loading
+    sampleDataset?: {
+        datasetName: string;
+        tables: Array<{
+            tableUrl: string;
+            format: string;
+        }>;
+        live?: boolean;
+        refreshIntervalSeconds?: number;
+    };
+}
+
+export interface ChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;                    // markdown text
+    attachments?: ChatAttachment[];     // images, files attached by user
+    tables?: InlineTablePreview[];      // tables to show inline (assistant only)
+    codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
+    pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
+    timestamp: number;
+}
+
 // Data source types for tracking where data originated
 export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkIsLikelyTextOnlyModel } from '../../../../src/views/DataLoadingThread';
+import { checkIsLikelyTextOnlyModel } from '../../../../src/views/DataLoadingChat';
 
 describe('checkIsLikelyTextOnlyModel', () => {
   it('returns true for deepseek-chat', () => {

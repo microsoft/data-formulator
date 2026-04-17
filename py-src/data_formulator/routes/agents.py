@@ -29,6 +29,7 @@ from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
+from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_chart_insight import ChartInsightAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
@@ -1059,3 +1060,128 @@ def nl_to_filter():
         logger.warning(f"NL-to-filter failed: {e}")
         safe_msg = classify_llm_error(e)
         return jsonify(status="error", message=safe_msg), 500
+
+
+# ---------------------------------------------------------------------------
+# Scratch folder APIs (for conversational data loading)
+# ---------------------------------------------------------------------------
+
+@agent_bp.route('/workspace/scratch/upload', methods=['POST'])
+def scratch_upload():
+    """Upload a file to the workspace scratch/ folder.
+
+    Accepts multipart/form-data with a 'file' field.
+    Returns: { path: "scratch/<filename>", url: "/api/workspace/scratch/<filename>" }
+    """
+    import hashlib
+    from werkzeug.utils import secure_filename as _werkzeug_secure_filename
+
+    if 'file' not in request.files:
+        return jsonify(status="error", message="No file in request"), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify(status="error", message="No filename"), 400
+
+    identity_id = get_identity_id()
+    workspace = get_workspace(identity_id)
+    scratch_dir = workspace._path / "scratch"
+    scratch_dir.mkdir(exist_ok=True)
+
+    # Create safe filename with hash prefix
+    raw = file.read()
+    file_hash = hashlib.sha256(raw).hexdigest()[:8]
+    safe_name = _werkzeug_secure_filename(file.filename)
+    base, ext = os.path.splitext(safe_name)
+    final_name = f"{base}_{file_hash}{ext}"
+
+    dest = scratch_dir / final_name
+    dest.write_bytes(raw)
+
+    return jsonify(
+        status="ok",
+        path=f"scratch/{final_name}",
+        url=f"/api/workspace/scratch/{final_name}",
+    )
+
+
+@agent_bp.route('/workspace/scratch/<path:filename>', methods=['GET'])
+def scratch_serve(filename):
+    """Serve a file from the workspace scratch/ folder."""
+    from flask import send_from_directory as _send
+
+    identity_id = get_identity_id()
+    workspace = get_workspace(identity_id)
+    scratch_dir = workspace._path / "scratch"
+
+    # Security: confine to scratch dir
+    target = (scratch_dir / filename).resolve()
+    try:
+        target.relative_to(scratch_dir.resolve())
+    except ValueError:
+        return jsonify(status="error", message="Access denied"), 403
+
+    if not target.exists():
+        return jsonify(status="error", message="File not found"), 404
+
+    return _send(str(scratch_dir), filename)
+
+
+# ---------------------------------------------------------------------------
+# Conversational data loading agent (replaces old clean-data-stream)
+# ---------------------------------------------------------------------------
+
+@agent_bp.route('/data-loading-chat', methods=['POST'])
+def data_loading_chat():
+    """Conversational data loading agent endpoint.
+
+    Streams newline-delimited JSON events (SSE-style).
+    """
+    def generate():
+        try:
+            content = request.get_json()
+            logger.info("# data-loading-chat request")
+
+            client = get_client(content['model'])
+            identity_id = get_identity_id()
+            workspace = get_workspace(identity_id)
+
+            # Get available datasets for the agent
+            from data_formulator.example_datasets_config import EXAMPLE_DATASETS
+            available_datasets = [
+                {"name": ds["name"], "description": ds.get("description", "")}
+                for ds in EXAMPLE_DATASETS
+            ]
+
+            language_instruction = get_language_instruction()
+            agent = DataLoadingAgent(
+                client=client,
+                workspace=workspace,
+                available_datasets=available_datasets,
+                language_instruction=language_instruction,
+            )
+
+            messages = content.get("messages", [])
+            workspace_tables = content.get("workspace_tables", [])
+
+            for event in agent.stream(messages):
+                # NaN from pandas .to_dict() is not valid JSON; replace with null
+                raw = json.dumps(event, ensure_ascii=False, default=str)
+                raw = raw.replace(': NaN,', ': null,').replace(': NaN}', ': null}').replace(':NaN,', ':null,').replace(':NaN}', ':null}')
+                yield raw + "\n"
+
+        except Exception as e:
+            logger.exception("data-loading-chat error")
+            yield json.dumps({
+                "type": "error",
+                "error": str(e),
+            }, ensure_ascii=False) + "\n"
+            yield json.dumps({
+                "type": "done",
+                "full_text": f"Error: {e}",
+            }, ensure_ascii=False) + "\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='application/x-ndjson',
+    )

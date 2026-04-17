@@ -711,7 +711,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const dispatch = useDispatch<AppDispatch>();
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
+    const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
     const existingNames = new Set(existingTables.map(t => t.id));
 
@@ -1358,7 +1358,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 <Typography variant="h6" component="span">
                     {activeTab === 'menu' ? t('upload.title') : getCurrentTabTitle()}
                 </Typography>
-                {activeTab === 'extract' && dataCleanBlocks.length > 0 && (
+                {activeTab === 'extract' && dataLoadingChatMessages.length > 0 && (
                     <Tooltip title={t('upload.resetExtraction')}>
                         <IconButton 
                             size="small" 
@@ -1369,7 +1369,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)' 
                                 } 
                             }} 
-                            onClick={() => dispatch(dfActions.resetDataCleanBlocks())}
+                            onClick={() => dispatch(dfActions.clearChatMessages())}
                         >
                             <RestartAltIcon fontSize="small" />
                         </IconButton>

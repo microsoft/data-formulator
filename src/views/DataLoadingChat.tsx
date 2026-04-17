@@ -2,24 +2,47 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import Markdown from 'react-markdown';
 
-import { Box, Button, Divider, IconButton, Typography, Tooltip, CircularProgress, alpha, useTheme } from '@mui/material';
-import { borderColor, transition, radius } from '../app/tokens';
-
+import {
+    Box, Button, Chip, CircularProgress, IconButton,
+    Paper, Stack, Tooltip, Typography,
+    alpha, useTheme, Collapse, InputBase,
+} from '@mui/material';
+import SendIcon from '@mui/icons-material/Send';
+import StopIcon from '@mui/icons-material/Stop';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import CloseIcon from '@mui/icons-material/Close';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import LanguageIcon from '@mui/icons-material/Language';
+import ImageIcon from '@mui/icons-material/Image';
+import TextFieldsIcon from '@mui/icons-material/TextFields';
+import DatasetIcon from '@mui/icons-material/Dataset';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import AddIcon from '@mui/icons-material/Add';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
-import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
+import { borderColor, transition, radius, shadow } from '../app/tokens';
+import { getUrls, fetchWithIdentity } from '../app/utils';
+import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
+import { createTableFromFromObjectArray } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
-import { createOrderedThreadBlocks, DataLoadingInputBox, DataPreviewBox, SingleDataCleanThreadView } from './DataLoadingThread';
+import { TableIcon } from '../icons';
 
+/** Returns true when the model name suggests it does not support image input. */
+export function checkIsLikelyTextOnlyModel(modelName: string | undefined): boolean {
+    return (modelName || '').toLowerCase().includes('deepseek-chat');
+}
 
-const generateDefaultName = (seed: string) => {
-    const hash = seed.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0) | 0, 0);
-    return `data-${Math.abs(hash).toString(36).slice(0, 5)}`;
-};
+// ---------------------------------------------------------------------------
+// Helper: generate table name
+// ---------------------------------------------------------------------------
 
 const getUniqueTableName = (baseName: string, existingNames: Set<string>): string => {
     let uniqueName = baseName;
@@ -31,341 +54,1073 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
     return uniqueName;
 };
 
-export const DataLoadingChat: React.FC = () => {
+// ---------------------------------------------------------------------------
+// Markdown renderer for assistant messages — uses MUI Typography
+// ---------------------------------------------------------------------------
+
+// Modern monospace font stack for code blocks
+const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
+
+const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
+    return (
+        <Box sx={{ wordBreak: 'break-word' }}>
+            <Markdown
+                components={{
+                    // Block elements
+                    p: ({ children }) => (
+                        <Typography variant="body2" sx={{ fontSize: 13, lineHeight: 1.7, mb: 0.75, '&:last-child': { mb: 0 } }}>
+                            {children}
+                        </Typography>
+                    ),
+                    h1: ({ children }) => (
+                        <Typography variant="h6" sx={{ fontSize: 16, fontWeight: 600, mb: 0.5, mt: 1 }}>{children}</Typography>
+                    ),
+                    h2: ({ children }) => (
+                        <Typography variant="h6" sx={{ fontSize: 15, fontWeight: 600, mb: 0.5, mt: 0.75 }}>{children}</Typography>
+                    ),
+                    h3: ({ children }) => (
+                        <Typography variant="subtitle1" sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, mt: 0.75 }}>{children}</Typography>
+                    ),
+                    h4: ({ children }) => (
+                        <Typography variant="subtitle2" sx={{ fontSize: 13, fontWeight: 600, mb: 0.5, mt: 0.5 }}>{children}</Typography>
+                    ),
+                    // Lists
+                    ul: ({ children }) => (
+                        <Box component="ul" sx={{ m: 0, mb: 0.75, pl: 2.5, '&:last-child': { mb: 0 } }}>{children}</Box>
+                    ),
+                    ol: ({ children }) => (
+                        <Box component="ol" sx={{ m: 0, mb: 0.75, pl: 2.5, '&:last-child': { mb: 0 } }}>{children}</Box>
+                    ),
+                    li: ({ children }) => (
+                        <Typography component="li" variant="body2" sx={{ fontSize: 13, lineHeight: 1.7, mb: 0.25 }}>
+                            {children}
+                        </Typography>
+                    ),
+                    // Inline
+                    strong: ({ children }) => (
+                        <Typography component="span" variant="body2" sx={{ fontWeight: 600, fontSize: 'inherit' }}>{children}</Typography>
+                    ),
+                    em: ({ children }) => (
+                        <Typography component="span" variant="body2" sx={{ fontStyle: 'italic', fontSize: 'inherit' }}>{children}</Typography>
+                    ),
+                    a: ({ href, children }) => (
+                        <Typography component="a" variant="body2"
+                            href={href} target="_blank" rel="noopener noreferrer"
+                            sx={{ color: 'primary.main', fontSize: 'inherit', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                            {children}
+                        </Typography>
+                    ),
+                    // Code
+                    code: ({ className, children }) => {
+                        const isBlock = className?.startsWith('language-');
+                        if (isBlock) {
+                            return (
+                                <Box component="pre" sx={{
+                                    m: 0, my: 0.75, p: 1.5, borderRadius: 1.5,
+                                    bgcolor: '#f6f6f6', color: '#1a1a1a',
+                                    overflow: 'auto', maxHeight: 240,
+                                    border: '1px solid', borderColor: 'divider',
+                                }}>
+                                    <Typography component="code" sx={{
+                                        fontFamily: CODE_FONT, fontSize: 12,
+                                        whiteSpace: 'pre-wrap', lineHeight: 1.5,
+                                    }}>
+                                        {children}
+                                    </Typography>
+                                </Box>
+                            );
+                        }
+                        // Inline code: keep body font, just a subtle background
+                        return (
+                            <Typography component="code" sx={{
+                                fontSize: 'inherit', fontFamily: 'inherit',
+                                bgcolor: 'rgba(0,0,0,0.04)',
+                                px: 0.4, py: 0.1,
+                                borderRadius: 0.4,
+                            }}>
+                                {children}
+                            </Typography>
+                        );
+                    },
+                    pre: ({ children }) => <>{children}</>,
+                    // Divider
+                    hr: () => (
+                        <Box sx={{ border: 'none', borderTop: '1px solid', borderColor: 'divider', my: 1 }} />
+                    ),
+                    // Table
+                    table: ({ children }) => (
+                        <Box component="table" sx={{
+                            borderCollapse: 'collapse', width: '100%', my: 0.75,
+                            '& th, & td': { border: '1px solid', borderColor: 'divider', px: 1, py: 0.5, textAlign: 'left' },
+                            '& th': { bgcolor: 'action.hover', fontWeight: 600 },
+                        }}>
+                            {children}
+                        </Box>
+                    ),
+                    th: ({ children }) => (
+                        <Typography component="th" variant="caption" sx={{ fontWeight: 600, fontSize: 12 }}>{children}</Typography>
+                    ),
+                    td: ({ children }) => (
+                        <Typography component="td" variant="caption" sx={{ fontSize: 12 }}>{children}</Typography>
+                    ),
+                }}
+            >
+                {content}
+            </Markdown>
+        </Box>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Inline table preview — compact notebook-style
+// ---------------------------------------------------------------------------
+
+const MAX_PREVIEW_COLS = 6; // show first 3 + last 3 if > 6 columns
+
+const InlineTablePreviewView: React.FC<{
+    preview: InlineTablePreview;
+    onLoad?: () => void;
+    confirmed?: boolean;
+}> = ({ preview, onLoad, confirmed }) => {
+    const theme = useTheme();
+    const [expanded, setExpanded] = useState(true);
+
+    // Abbreviate columns: first 3 + ... + last 3
+    const allCols = preview.columns;
+    const needsEllipsis = allCols.length > MAX_PREVIEW_COLS;
+    const displayCols = needsEllipsis
+        ? [...allCols.slice(0, 3), '\u2026', ...allCols.slice(-3)]
+        : allCols;
+
+    const getCell = (row: Record<string, any>, col: string) => {
+        if (col === '\u2026') return '\u2026';
+        const v = row[col];
+        if (v == null) return '';
+        const s = String(v);
+        return s.length > 18 ? s.slice(0, 16) + '\u2026' : s;
+    };
+
+    const rowLabel = preview.totalRows > preview.sampleRows.length
+        ? `${preview.totalRows.toLocaleString()} rows`
+        : '';
+    const meta = [rowLabel, `${allCols.length} cols`].filter(Boolean).join(' · ');
+
+    // Pill colors
+    const pillBg = confirmed
+        ? alpha(theme.palette.success.main, 0.08)
+        : alpha(theme.palette.primary.main, 0.07);
+    const pillColor = confirmed
+        ? theme.palette.success.main
+        : theme.palette.text.primary;
+
+    return (
+        <Box sx={{ my: 0.75 }}>
+            {/* Pill row: pill + Load button inline */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                {/* Soft pill — click to expand/collapse */}
+                <Box
+                    onClick={() => setExpanded(!expanded)}
+                    sx={{
+                        display: 'inline-flex', alignItems: 'center', gap: 0.6,
+                        px: 1.25, py: 0.4,
+                        borderRadius: '99px',
+                        bgcolor: pillBg,
+                        cursor: 'pointer',
+                        transition: transition.fast,
+                        '&:hover': { bgcolor: confirmed
+                            ? alpha(theme.palette.success.main, 0.14)
+                            : alpha(theme.palette.primary.main, 0.12),
+                        },
+                        userSelect: 'none',
+                    }}
+                >
+                    {confirmed
+                        ? <CheckCircleIcon sx={{ fontSize: 13, color: 'success.main' }} />
+                        : <TableIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                    }
+                    <Typography sx={{ fontSize: 12, fontWeight: 600, color: pillColor, lineHeight: 1 }}>
+                        {preview.name}
+                    </Typography>
+                    {meta && (
+                        <Typography sx={{ fontSize: 10, color: 'text.disabled', lineHeight: 1 }}>
+                            {meta}
+                        </Typography>
+                    )}
+                    {preview.sampleRows.length > 0 && (
+                        expanded
+                            ? <ExpandLessIcon sx={{ fontSize: 14, color: 'text.disabled', ml: -0.25 }} />
+                            : <ExpandMoreIcon sx={{ fontSize: 14, color: 'text.disabled', ml: -0.25 }} />
+                    )}
+                </Box>
+
+                {/* Load button next to pill */}
+                {onLoad && !confirmed && (
+                    <Button size="small" variant="text" onClick={onLoad}
+                        sx={{ textTransform: 'none', fontSize: 11, py: 0, px: 1, minHeight: 0, color: 'primary.main' }}>
+                        Load
+                    </Button>
+                )}
+            </Box>
+
+            {/* Collapsible table rows */}
+            <Collapse in={expanded}>
+                {preview.sampleRows.length > 0 && (
+                    <Box sx={{ overflowX: 'auto', mt: 0.75, mb: 0.5 }}>
+                        <Box component="table" sx={{
+                            borderCollapse: 'collapse', fontSize: 12, fontFamily: CODE_FONT,
+                            '& th, & td': {
+                                px: 0.75, py: 0.3, textAlign: 'left', whiteSpace: 'nowrap',
+                                borderBottom: '1px solid', borderColor: 'divider',
+                            },
+                            '& th': { fontWeight: 600, color: 'text.secondary', fontSize: 10 },
+                            '& td': { color: 'text.primary' },
+                            '& tr:last-child td': { borderBottom: 'none' },
+                        }}>
+                            <thead>
+                                <tr>
+                                    {displayCols.map((col, i) => (
+                                        <Typography component="th" key={i} variant="caption" sx={{ fontWeight: 600, fontSize: 10 }}>
+                                            {col}
+                                        </Typography>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {preview.sampleRows.slice(0, 5).map((row, ri) => (
+                                    <tr key={ri}>
+                                        {displayCols.map((col, ci) => (
+                                            <Typography component="td" key={ci} variant="caption" sx={{ fontSize: 11 }}>
+                                                {getCell(row, col)}
+                                            </Typography>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Box>
+                    </Box>
+                )}
+            </Collapse>
+        </Box>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Code execution block
+// ---------------------------------------------------------------------------
+
+const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
+    const [expanded, setExpanded] = useState(false);
+    return (
+        <Paper variant="outlined" sx={{ my: 1, borderRadius: radius.md, overflow: 'hidden' }}>
+            <Box
+                sx={{
+                    display: 'flex', alignItems: 'center', px: 1.5, py: 0.5,
+                    cursor: 'pointer', bgcolor: 'rgba(0,0,0,0.03)',
+                    '&:hover': { bgcolor: 'rgba(0,0,0,0.05)' },
+                    transition: transition.fast,
+                }}
+                onClick={() => setExpanded(!expanded)}
+            >
+                <TerminalIcon sx={{ fontSize: 14, color: 'text.secondary', mr: 0.75 }} />
+                <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', flex: 1 }}>
+                    Ran Python code
+                </Typography>
+                {block.error && <Chip label="error" size="small" color="error" sx={{ height: 18, fontSize: 9, mr: 0.5 }} />}
+                {expanded ? <ExpandLessIcon sx={{ fontSize: 14 }} /> : <ExpandMoreIcon sx={{ fontSize: 14 }} />}
+            </Box>
+            <Collapse in={expanded}>
+                <Box sx={{ px: 1.5, py: 1, bgcolor: '#f6f6f6', overflow: 'auto', maxHeight: 200, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Typography component="pre" sx={{ fontFamily: CODE_FONT, fontSize: 12, m: 0, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                        {block.code}
+                    </Typography>
+                </Box>
+            </Collapse>
+            {block.stdout && (
+                <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: 'rgba(0,0,0,0.02)' }}>
+                    <Typography component="pre" sx={{
+                        fontFamily: CODE_FONT, fontSize: 11, m: 0,
+                        whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto', color: 'text.secondary', lineHeight: 1.5,
+                    }}>
+                        {block.stdout}
+                    </Typography>
+                </Box>
+            )}
+            {block.error && (
+                <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', bgcolor: '#fff5f5' }}>
+                    <Typography component="pre" sx={{
+                        fontFamily: CODE_FONT, fontSize: 11, m: 0,
+                        whiteSpace: 'pre-wrap', color: 'error.main', lineHeight: 1.5,
+                    }}>
+                        {block.error}
+                    </Typography>
+                </Box>
+            )}
+            {block.resultTable && <InlineTablePreviewView preview={block.resultTable} />}
+        </Paper>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Single chat message bubble
+// ---------------------------------------------------------------------------
+
+const ChatBubble: React.FC<{
+    message: ChatMessage;
+    existingNames: Set<string>;
+}> = ({ message, existingNames }) => {
     const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
-    const inputBoxRef = useRef<(() => void) | null>(null);
-    const abortControllerRef = useRef<AbortController | null>(null);
+    const isUser = message.role === 'user';
+    const [hovered, setHovered] = useState(false);
+    const [showDebug, setShowDebug] = useState(false);
 
-    const cleanInProgress = useSelector((state: DataFormulatorState) => state.cleanInProgress);
-    const existingTables = useSelector((state: DataFormulatorState) => state.tables);
-    const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
-    const focusedDataCleanBlockId = useSelector((state: DataFormulatorState) => state.focusedDataCleanBlockId);
-
-    const [streamingContent, setStreamingContent] = useState('');
-
-    const existingNames = new Set(existingTables.map(t => t.id));
-
-    let existOutputBlocks = dataCleanBlocks.length > 0;
-
-    let dataCleanBlocksThread = createOrderedThreadBlocks(dataCleanBlocks);
-    let threadsComponent = dataCleanBlocksThread.map((thread, i) => {
-        return <SingleDataCleanThreadView key={`data-clean-thread-${i}`} thread={thread} sx={{
-            backgroundColor: 'white', 
-            borderRadius: radius.md,
-            padding: 1,
-            flex:  'none',
-            display: 'flex',
-            flexDirection: 'column',
-            height: 'fit-content',
-            transition: transition.fast,
-        }} />
-    })
-
-    // Get the selected CSV data from Redux state
-    const selectedTable = (() => {
-        if (focusedDataCleanBlockId) {
-            let block = dataCleanBlocks.find(block => block.id === focusedDataCleanBlockId.blockId);
-            if (block) {
-                return block.items?.[focusedDataCleanBlockId.itemId];
+    const handleLoadTable = async (pending: PendingTableLoad) => {
+        const unique = getUniqueTableName(pending.name, existingNames);
+        try {
+            if (pending.sampleDataset) {
+                const ds = pending.sampleDataset;
+                for (const tableInfo of ds.tables) {
+                    const res = await fetch(tableInfo.tableUrl);
+                    const textData = await res.text();
+                    const tableName = tableInfo.tableUrl.split('/').pop()?.split('.')[0]?.split('?')[0] || unique;
+                    let dictTable;
+                    if (tableInfo.format === 'csv' || tableInfo.format === 'tsv') {
+                        dictTable = createTableFromText(tableName, textData);
+                    } else {
+                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
+                    }
+                    if (dictTable) {
+                        if (ds.live) {
+                            dictTable.source = {
+                                type: 'stream', url: tableInfo.tableUrl,
+                                autoRefresh: true, refreshIntervalSeconds: ds.refreshIntervalSeconds || 60,
+                                lastRefreshed: Date.now(),
+                            };
+                        } else {
+                            dictTable.source = { type: 'example', url: tableInfo.tableUrl };
+                        }
+                        await dispatch(loadTable({ table: dictTable }));
+                    }
+                }
+                dispatch(dfActions.confirmTableLoad({ messageId: message.id, tableName: pending.name }));
+            } else if (pending.csvScratchPath) {
+                const scratchUrl = `${getUrls().SCRATCH_BASE_URL}/${pending.csvScratchPath.replace(/^scratch\//, '')}`;
+                const res = await fetchWithIdentity(scratchUrl);
+                if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+                const csvText = await res.text();
+                const table = createTableFromText(unique, csvText);
+                if (table) {
+                    dispatch(loadTable({ table: { ...table, source: { type: 'extract' as const } } }));
+                    dispatch(dfActions.confirmTableLoad({ messageId: message.id, tableName: pending.name }));
+                }
             }
-        }
-        return undefined;
-    })();
-
-    const handleUpload = () => {
-        if (!selectedTable) return;
-
-        const suggestedName = selectedTable.name || generateDefaultName(selectedTable.content.value.slice(0, 96));
-        
-        console.log(selectedTable);
-
-        const base = suggestedName.trim();
-        const unique = getUniqueTableName(base, existingNames);
-        const table = createTableFromText(unique, selectedTable.content.value, selectedTable.context);
-        if (table) {
-            const tableWithSource = { ...table, source: { type: 'extract' as const } };
-            dispatch(loadTable({ table: tableWithSource }));
+        } catch (err) {
+            console.error('Failed to load table:', err);
         }
     };
 
-    const thinkingBanner = (
-        <Box sx={{ 
-            py: 0.5, 
-            display: 'flex', 
-            position: 'relative',
-            overflow: 'hidden',
-            '&::before': {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
-                animation: 'shimmer 2s ease-in-out infinite',
-                zIndex: 1,
-                pointerEvents: 'none',
-            },
-            '@keyframes shimmer': {
-                '0%': {
-                    transform: 'translateX(-100%)',
-                },
-                '100%': {
-                    transform: 'translateX(100%)',
-                },
-            }
-        }}>
-            <Box sx={{ 
-                py: 1, 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'left',
-            }}>
-                <CircularProgress size={10} sx={{ color: 'text.secondary' }} />
-                <Typography variant="body2" sx={{ 
-                    ml: 1, 
-                    fontSize: 10, 
-                    color: 'rgba(0, 0, 0, 0.7) !important'
-                }}>
-                    extracting data...
-                </Typography>
-            </Box>
-        </Box>
-    );
-
-    // Empty state - centered layout similar to upload dialog
-    if (!existOutputBlocks && !streamingContent) {
+    // User messages: compact right-aligned bubble
+    if (isUser) {
         return (
-            <Box sx={{ 
-                width: '100%', 
-                height: '100%', 
-                display: 'flex', 
-                justifyContent: 'center', 
-                alignItems: 'center',
-                p: 2,
-                boxSizing: 'border-box'
-            }}>
-                <Box sx={{ 
-                    width: '100%',
-                    maxWidth: 720,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 2,
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.5 }}
+                onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+                <Box sx={{
+                    maxWidth: '80%',
+                    px: 1.75, py: 1,
+                    borderRadius: '16px 16px 4px 16px',
+                    bgcolor: alpha(theme.palette.primary.main, 0.10),
+                    position: 'relative',
                 }}>
-                    <DataLoadingInputBox 
-                        maxLines={24} 
-                        onStreamingContentUpdate={setStreamingContent} 
-                        abortControllerRef={abortControllerRef} 
-                    />
+                    {/* Image attachments */}
+                    {message.attachments?.filter(a => a.type === 'image').map((att, i) => (
+                        <Box key={i} sx={{ mb: 0.75 }}>
+                            <Box component="img" src={att.url} alt={att.name}
+                                sx={{ maxWidth: '100%', maxHeight: 160, borderRadius: 1, objectFit: 'contain' }} />
+                        </Box>
+                    ))}
+                    {/* File attachments */}
+                    {message.attachments?.filter(a => a.type !== 'image').map((att, i) => (
+                        <Chip key={i} label={att.name} size="small" icon={<AttachFileIcon />}
+                            sx={{ mb: 0.5, mr: 0.5, fontSize: 11 }} />
+                    ))}
+                    {message.content && (
+                        <Typography sx={{ fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {message.content}
+                        </Typography>
+                    )}
+                    {/* Timestamp on hover */}
+                    {hovered && (
+                        <Typography sx={{
+                            fontSize: 10, color: 'text.disabled', position: 'absolute',
+                            bottom: -16, right: 4, whiteSpace: 'nowrap',
+                        }}>
+                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Typography>
+                    )}
                 </Box>
             </Box>
         );
     }
 
-    // Main layout with sidebar (similar to DBTablePane)
+    // Assistant messages: full-width, markdown rendered, no bubble border
     return (
-        <Box sx={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            bgcolor: 'white', 
-            flex: 1, 
-            overflow: 'hidden', 
-            height: '100%',
-            width: '100%'
-        }}>
-            <Box sx={{ 
-                display: 'flex', 
-                flexDirection: 'row', 
-                flex: 1, 
-                overflow: 'hidden', 
-                minHeight: 0, 
-                height: '100%' 
-            }}>
-                {/* Left sidebar - Thread list (similar to DBTablePane) */}
-                <Box sx={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    width: 240, 
-                    minWidth: 240, 
-                    maxWidth: 240, 
-                    overflow: 'hidden', 
-                    height: '100%',
-                    borderRight: `1px solid ${borderColor.view}`
-                }}>
-                    <Box sx={{ 
-                        display: 'flex',
-                        flexDirection: 'column',
-                        overflowY: 'auto',
-                        overflowX: 'hidden',
-                        flex: 1,
-                        minHeight: 0,
-                        height: '100%',
-                        position: 'relative',
-                        overscrollBehavior: 'contain',
-                        px: 0.5,
-                        pt: 1
-                    }}>
-                        {threadsComponent.length > 0 ? (
-                            threadsComponent
-                        ) : (
-                            <Typography variant="caption" sx={{ 
-                                color: "text.disabled", 
-                                px: 2, 
-                                py: 0.5, 
-                                fontStyle: "italic",
-                                textAlign: 'center'
-                            }}>
-                                No extraction threads yet
-                            </Typography>
-                        )}
-                    </Box>
-                    <Box sx={{ 
-                        borderTop: `1px solid ${borderColor.divider}`,
-                        p: 1
-                    }}>
-                        <DataLoadingInputBox 
-                            ref={inputBoxRef} 
-                            maxLines={4} 
-                            onStreamingContentUpdate={setStreamingContent} 
-                            abortControllerRef={abortControllerRef} 
-                        />
-                    </Box>
-                </Box>
+        <Box sx={{ display: 'flex', mb: 2, position: 'relative' }}
+            onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+            <Box sx={{ flex: 1, maxWidth: '100%', minWidth: 0 }}>
+                {message.content && <MarkdownContent content={message.content} />}
+                {message.codeBlocks?.map((block, i) => <CodeBlockView key={i} block={block} />)}
+                {message.tables?.map((table, i) => <InlineTablePreviewView key={i} preview={table} />)}
+                {message.pendingLoads?.map((pending, i) => (
+                    <InlineTablePreviewView key={i} preview={pending.preview}
+                        confirmed={pending.confirmed}
+                        onLoad={(message.pendingLoads && message.pendingLoads.length > 1) ? (() => handleLoadTable(pending)) : undefined} />
+                ))}
 
-                {/* Right content area */}
-                <Box sx={{ 
-                    flex: 1, 
-                    overflow: 'hidden', 
-                    minWidth: 0, 
-                    minHeight: 0, 
-                    height: '100%', 
-                    position: 'relative',
-                    display: 'flex',
-                    flexDirection: 'column'
-                }}>
-                    {streamingContent ? (
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                padding: 2,
-                                height: '100%',
-                                overflow: 'auto'
+                {/* Prominent load button at bottom — always shown when there are unloaded tables */}
+                {message.pendingLoads && message.pendingLoads.some(p => !p.confirmed) && (
+                    <Box sx={{ mt: 1 }}>
+                        <Button size="small" variant="contained"
+                            onClick={async () => {
+                                for (const pending of message.pendingLoads || []) {
+                                    if (!pending.confirmed) await handleLoadTable(pending);
+                                }
                             }}
-                        >
-                            {thinkingBanner}
-                            <Typography 
-                                variant="body2" 
-                                color="text.secondary" 
-                                sx={{ 
-                                    mt: 2, 
-                                    fontSize: '11px', 
-                                    whiteSpace: 'pre-wrap', 
-                                    overflow: 'clip', 
-                                    maxHeight: '100%', 
-                                    overflowY: 'auto' 
-                                }}
-                            >
-                                {streamingContent.trim()}
-                            </Typography>
-                        </Box>
-                    ) : existOutputBlocks ? (
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                padding: 2,
-                                height: '100%',
-                                overflow: 'hidden'
-                            }}
-                        >
-                            {selectedTable && (
-                                <Typography 
-                                    sx={{ 
-                                        fontSize: 14, 
-                                        marginBottom: 1,
-                                        fontWeight: 500,
-                                        color: 'text.primary',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 0.5
-                                    }}
-                                    gutterBottom
-                                >
-                                    {selectedTable?.name}
-                                </Typography>
-                            )}
-                            
-                            <Box 
-                                sx={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    flex: 1,
-                                    gap: 1,
-                                    overflow: 'hidden',
-                                    minHeight: 0
-                                }}
-                            >
-                                {selectedTable ? (
-                                    <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-                                        <DataPreviewBox />
-                                    </Box>
-                                ) : (
-                                    <Box sx={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        justifyContent: 'center',
-                                        flex: 1,
-                                        minHeight: 0
-                                    }}>
-                                        <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', fontSize: '11px' }}>
-                                            Select a table from the left to preview
-                                        </Typography>
-                                    </Box>
-                                )}
-
-                                {/* Bottom submit bar */}
-                                {selectedTable && (
-                                    <Box sx={{ 
-                                        mt: 'auto', 
-                                        pt: 1, 
-                                        display: 'flex', 
-                                        flexDirection: 'row', 
-                                        alignItems: 'center', 
-                                        gap: 1, 
-                                        borderTop: `1px solid ${borderColor.divider}`,
-                                        '& .MuiButton-root': { textTransform: 'none' } 
-                                    }}>
-                                        <Button
-                                            variant="contained"
-                                            onClick={() => {
-                                                if (inputBoxRef.current) {
-                                                    inputBoxRef.current();
-                                                }
-                                            }}
-                                            disabled={!selectedTable || selectedTable.content.type !== 'image_url' || cleanInProgress}
-                                            size="small"
-                                        >
-                                            Extract data from image
-                                        </Button>
-                                        <Button
-                                            variant="contained"
-                                            sx={{ ml: 'auto' }}
-                                            onClick={handleUpload}
-                                            disabled={!selectedTable || selectedTable.content.type !== 'csv'}
-                                            size="small"
-                                        >
-                                            Load table
-                                        </Button>
-                                    </Box>
-                                )}
-                            </Box>
-                        </Box>
-                    ) : null}
+                            sx={{ textTransform: 'none', fontSize: 12, py: 0.5, px: 2, minHeight: 0, borderRadius: 1.5, boxShadow: 'none' }}>
+                            {message.pendingLoads.length === 1
+                                ? 'Load table'
+                                : `Load all ${message.pendingLoads.filter(p => !p.confirmed).length} tables`}
+                        </Button>
+                    </Box>
+                )}
+                {/* Timestamp + debug — always reserves space, content visible on hover */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, height: 18, opacity: hovered ? 1 : 0, transition: 'opacity 0.15s' }}>
+                    <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
+                        {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Typography>
+                    <Tooltip title="Show raw message data" placement="top">
+                        <IconButton size="small" onClick={() => setShowDebug(!showDebug)}
+                            sx={{ width: 16, height: 16, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <TerminalIcon sx={{ fontSize: 12 }} />
+                        </IconButton>
+                    </Tooltip>
                 </Box>
+                {showDebug && (
+                    <Paper variant="outlined" sx={{ mt: 0.5, p: 1, borderRadius: 1, bgcolor: 'rgba(0,0,0,0.02)', maxHeight: 200, overflow: 'auto' }}>
+                        <Typography component="pre" sx={{ fontFamily: 'monospace', fontSize: 10, m: 0, whiteSpace: 'pre-wrap', color: 'text.secondary' }}>
+                            {JSON.stringify(message, null, 2)}
+                        </Typography>
+                    </Paper>
+                )}
             </Box>
         </Box>
     );
 };
 
+// ---------------------------------------------------------------------------
+// Tool call label mapping
+// ---------------------------------------------------------------------------
+
+const TOOL_LABELS: Record<string, string> = {
+    read_file: 'Reading file',
+    write_file: 'Writing file',
+    list_directory: 'Listing files',
+    execute_python: 'Running Python',
+    show_user_data_preview: 'Preparing preview',
+};
+
+// ---------------------------------------------------------------------------
+// Streaming indicator — shows tool calls with shimmer + text
+// ---------------------------------------------------------------------------
+
+interface ToolStep {
+    tool: string;
+    status: 'running' | 'done';
+    label: string;
+}
+
+const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> = ({ content, toolSteps }) => {
+    const theme = useTheme();
+    return (
+        <Box sx={{ mb: 2 }}>
+            {content ? <MarkdownContent content={content} /> : null}
+
+            {/* Tool call steps */}
+            {toolSteps.length > 0 && (
+                <Box sx={{ mt: content ? 0.75 : 0, mb: 0.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    {toolSteps.map((step, i) => (
+                        <Box key={i} sx={{
+                            display: 'inline-flex', alignItems: 'center', gap: 0.75,
+                            position: 'relative', overflow: 'hidden',
+                            py: 0.25, pr: 1,
+                            ...(step.status === 'running' ? {
+                                '&::after': {
+                                    content: '""', position: 'absolute',
+                                    top: 0, left: 0, width: '100%', height: '100%',
+                                    background: `linear-gradient(90deg, transparent 0%, ${alpha(theme.palette.primary.main, 0.06)} 50%, transparent 100%)`,
+                                    animation: 'shimmer 2s ease-in-out infinite',
+                                    pointerEvents: 'none',
+                                },
+                                '@keyframes shimmer': {
+                                    '0%': { transform: 'translateX(-100%)' },
+                                    '100%': { transform: 'translateX(100%)' },
+                                },
+                            } : {}),
+                        }}>
+                            {step.status === 'running' ? (
+                                <CircularProgress size={10} thickness={5} sx={{ color: 'text.disabled' }} />
+                            ) : (
+                                <CheckCircleIcon sx={{ fontSize: 12, color: 'success.main' }} />
+                            )}
+                            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                {step.label}
+                            </Typography>
+                        </Box>
+                    ))}
+                </Box>
+            )}
+
+            {/* Bouncing dots when no tool is running and no text yet */}
+            {toolSteps.every(s => s.status === 'done') && (
+                <Box sx={{
+                    display: 'inline-flex', gap: '3px', alignItems: 'center',
+                    mt: (content || toolSteps.length > 0) ? 0.5 : 0,
+                    '@keyframes blink': { '0%, 100%': { opacity: 0.3 }, '50%': { opacity: 1 } },
+                }}>
+                    {[0, 1, 2].map(i => (
+                        <Box key={i} sx={{
+                            width: 4, height: 4, borderRadius: '50%', bgcolor: 'text.disabled',
+                            animation: 'blink 1.2s ease-in-out infinite',
+                            animationDelay: `${i * 0.2}s`,
+                        }} />
+                    ))}
+                </Box>
+            )}
+        </Box>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Sample task card for empty state
+// ---------------------------------------------------------------------------
+
+const SampleTaskCard: React.FC<{
+    icon: React.ReactElement;
+    title: string;
+    description: string;
+    onClick: () => void;
+}> = ({ icon, title, description, onClick }) => {
+    const theme = useTheme();
+    return (
+        <Box onClick={onClick} sx={{
+            display: 'flex', alignItems: 'flex-start', gap: 1.25,
+            p: 1.5, borderRadius: radius.md,
+            border: `1px solid ${borderColor.component}`,
+            cursor: 'pointer', transition: transition.fast,
+            '&:hover': {
+                borderColor: alpha(theme.palette.primary.main, 0.4),
+                bgcolor: alpha(theme.palette.primary.main, 0.03),
+                boxShadow: shadow.sm,
+            },
+        }}>
+            <Box sx={{ color: 'text.secondary', mt: 0.25 }}>{icon}</Box>
+            <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>{title}</Typography>
+                <Typography sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.4, mt: 0.25 }}>{description}</Typography>
+            </Box>
+        </Box>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Main chat component
+// ---------------------------------------------------------------------------
+
+export const DataLoadingChat: React.FC = () => {
+    const theme = useTheme();
+    const dispatch = useDispatch<AppDispatch>();
+
+    const chatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
+    const chatInProgress = useSelector((state: DataFormulatorState) => state.dataLoadingChatInProgress);
+    const existingTables = useSelector((state: DataFormulatorState) => state.tables);
+    const activeModel = useSelector(dfSelectors.getActiveModel);
+    const existingNames = new Set(existingTables.map(t => t.id));
+
+    const [prompt, setPrompt] = useState('');
+    const [userImages, setUserImages] = useState<string[]>([]);
+    const [streamingContent, setStreamingContent] = useState('');
+    const [streamingToolSteps, setStreamingToolSteps] = useState<ToolStep[]>([]);
+    const [debugEvents, setDebugEvents] = useState<any[]>([]);
+    const [showDebugPanel] = useState(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+
+    // Auto-scroll to bottom
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages, streamingContent]);
+
+    // Auto-focus input
+    useEffect(() => { inputRef.current?.focus(); }, []);
+
+    const canSend = (prompt.trim().length > 0 || userImages.length > 0) && !chatInProgress;
+
+    // ---- Paste handler (images + text) ----
+    const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+        if (e.clipboardData?.files?.length) {
+            const imageFiles = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
+            if (imageFiles.length > 0) {
+                e.preventDefault();
+                imageFiles.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        if (reader.result) setUserImages(prev => [...prev, reader.result as string]);
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+        }
+    };
+
+    // ---- File upload handler ----
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                if (reader.result) setUserImages(prev => [...prev, reader.result as string]);
+            };
+            reader.readAsDataURL(file);
+        } else {
+            const formData = new FormData();
+            formData.append('file', file);
+            fetchWithIdentity(getUrls().SCRATCH_UPLOAD_URL, {
+                method: 'POST', body: formData,
+            }).then(res => res.json()).then(data => {
+                if (data.status === 'ok') {
+                    setPrompt(prev => prev + (prev ? '\n' : '') + `[Uploaded: ${file.name}]`);
+                }
+            }).catch(err => console.error('Upload failed:', err));
+        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const stopGeneration = () => { abortControllerRef.current?.abort(); };
+
+    // ---- Send message ----
+    const sendMessage = useCallback(() => {
+        const text = prompt.trim();
+        if (!text && userImages.length === 0) return;
+        if (chatInProgress) return;
+
+        const attachments: ChatAttachment[] = userImages.map((url, i) => ({
+            type: 'image' as const, name: `image-${i + 1}`, url,
+        }));
+
+        const userMsg: ChatMessage = {
+            id: `msg-${Date.now()}-user`, role: 'user',
+            content: text || (userImages.length > 0 ? 'Extract data from this image' : ''),
+            attachments: attachments.length > 0 ? attachments : undefined,
+            timestamp: Date.now(),
+        };
+
+        dispatch(dfActions.addChatMessage(userMsg));
+        dispatch(dfActions.setDataLoadingChatInProgress(true));
+        setPrompt('');
+        setUserImages([]);
+        setStreamingContent('');
+        setStreamingToolSteps([]);
+
+        const allMessages = [...chatMessages, userMsg].map(m => ({
+            role: m.role, content: m.content, attachments: m.attachments,
+        }));
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        fetchWithIdentity(getUrls().DATA_LOADING_CHAT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: activeModel,
+                messages: allMessages,
+                workspace_tables: existingTables.map(t => t.id),
+            }),
+            signal: controller.signal,
+        })
+        .then(async (response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const reader = response.body?.getReader();
+            if (!reader) throw new Error('No reader');
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let fullText = '';
+            const codeBlocks: CodeExecution[] = [];
+            const tables: InlineTablePreview[] = [];
+            const pendingLoads: PendingTableLoad[] = [];
+            const rawEvents: any[] = [];
+            let streamingToolStepsRef: ToolStep[] = [];
+
+            // Helper: process action objects (used in both tool_result and actions events)
+            const processActions = (actionList: any[]) => {
+                for (const action of actionList) {
+                    console.log('[DataLoadingChat] processing action:', action.type, action.name);
+                    if (action.type === 'preview_table') {
+                        const preview: InlineTablePreview = {
+                            name: action.name,
+                            columns: action.columns || [],
+                            sampleRows: action.sample_rows || [],
+                            totalRows: action.total_rows || 0,
+                            csvScratchPath: action.csv_scratch_path,
+                        };
+                        tables.push(preview);
+                        pendingLoads.push({
+                            name: action.name,
+                            csvScratchPath: action.csv_scratch_path || '',
+                            preview, confirmed: false,
+                        });
+                    } else if (action.type === 'load_sample_dataset') {
+                        const dsLive = action.live;
+                        const dsRefresh = action.refreshIntervalSeconds;
+                        for (const tbl of (action.tables || [])) {
+                            const tableName = tbl.table_url?.split('/').pop()?.split('.')[0]?.split('?')[0] || action.name || 'table';
+                            const cols = tbl.columns || (tbl.sample_rows?.[0] ? Object.keys(tbl.sample_rows[0]) : []);
+                            const sampleRows = tbl.sample_rows || [];
+                            const preview: InlineTablePreview = {
+                                name: tableName, columns: cols,
+                                sampleRows: sampleRows.slice(0, 5),
+                                totalRows: sampleRows.length,
+                            };
+                            tables.push(preview);
+                            pendingLoads.push({
+                                name: tableName, csvScratchPath: '', preview, confirmed: false,
+                                sampleDataset: {
+                                    datasetName: action.name || tableName,
+                                    tables: [{ tableUrl: tbl.table_url, format: tbl.format || 'json' }],
+                                    live: dsLive, refreshIntervalSeconds: dsRefresh,
+                                },
+                            });
+                        }
+                    }
+                }
+            };
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const event = JSON.parse(line);
+                            // Log all events for debug panel
+                            if (event.type !== 'text_delta') {
+                                rawEvents.push(event);
+                                setDebugEvents([...rawEvents]);
+                            }
+                            switch (event.type) {
+                                case 'text_delta':
+                                    fullText += event.content;
+                                    setStreamingContent(fullText);
+                                    break;
+                                case 'tool_start': {
+                                    const label = TOOL_LABELS[event.tool] || event.tool;
+                                    const newSteps = [...streamingToolStepsRef];
+                                    newSteps.push({ tool: event.tool, status: 'running', label });
+                                    streamingToolStepsRef = newSteps;
+                                    setStreamingToolSteps(newSteps);
+                                    if (event.tool === 'execute_python' && event.code) {
+                                        codeBlocks.push({ code: event.code });
+                                    }
+                                    break;
+                                }
+                                case 'tool_result': {
+                                    // Mark the tool as done
+                                    const updatedSteps = streamingToolStepsRef.map(s =>
+                                        s.tool === event.tool && s.status === 'running'
+                                            ? { ...s, status: 'done' as const } : s
+                                    );
+                                    streamingToolStepsRef = updatedSteps;
+                                    setStreamingToolSteps(updatedSteps);
+                                    if (event.tool === 'execute_python' && codeBlocks.length > 0) {
+                                        const last = codeBlocks[codeBlocks.length - 1];
+                                        last.stdout = event.stdout || '';
+                                        last.error = event.error || undefined;
+                                        if (event.table) last.resultTable = event.table;
+                                    }
+                                    // Also capture actions from tool_result (e.g. show_user_data_preview)
+                                    if (event.actions) {
+                                        console.log('[DataLoadingChat] actions from tool_result:', event.tool, event.actions.length);
+                                        processActions(event.actions);
+                                    }
+                                    break;
+                                }
+                                case 'actions':
+                                    // Only process if we haven't already captured from tool_result
+                                    if (pendingLoads.length === 0) {
+                                        console.log('[DataLoadingChat] actions event:', (event.actions || []).length, 'actions');
+                                        processActions(event.actions || []);
+                                    }
+                                    break;
+                                case 'done':
+                                    fullText = event.full_text || fullText;
+                                    break;
+                                case 'error':
+                                    fullText += `\n\n**Error:** ${event.error}`;
+                                    break;
+                            }
+                        } catch { /* skip unparseable */ }
+                    }
+                }
+            } finally { reader.releaseLock(); }
+
+            // Process any remaining data in the buffer after stream ends
+            if (buffer.trim()) {
+                for (const line of buffer.split('\n')) {
+                    if (!line.trim()) continue;
+                    try {
+                        const event = JSON.parse(line);
+                        if (event.type !== 'text_delta') {
+                            rawEvents.push(event);
+                            setDebugEvents([...rawEvents]);
+                        }
+                        if (event.type === 'actions' && pendingLoads.length === 0) processActions(event.actions || []);
+                        if (event.type === 'tool_result' && event.actions) processActions(event.actions);
+                        if (event.type === 'done') fullText = event.full_text || fullText;
+                        if (event.type === 'text_delta') fullText += event.content;
+                    } catch { /* skip */ }
+                }
+            }
+
+            const assistantMsg: ChatMessage = {
+                id: `msg-${Date.now()}-assistant`, role: 'assistant',
+                content: fullText,
+                codeBlocks: codeBlocks.length > 0 ? codeBlocks : undefined,
+                tables: tables.length > 0 && pendingLoads.length === 0 ? tables : undefined,
+                pendingLoads: pendingLoads.length > 0 ? pendingLoads : undefined,
+                timestamp: Date.now(),
+            };
+            dispatch(dfActions.addChatMessage(assistantMsg));
+            setStreamingContent('');
+            setStreamingToolSteps([]);
+        })
+        .catch((error) => {
+            const partialContent = streamingContent;
+            if (error.name === 'AbortError') {
+                if (partialContent) {
+                    dispatch(dfActions.addChatMessage({
+                        id: `msg-${Date.now()}-assistant`, role: 'assistant',
+                        content: partialContent + '\n\n*— stopped*',
+                        timestamp: Date.now(),
+                    }));
+                }
+            } else {
+                dispatch(dfActions.addChatMessage({
+                    id: `msg-${Date.now()}-assistant`, role: 'assistant',
+                    content: partialContent
+                        ? partialContent + `\n\n**Error:** ${error.message}`
+                        : `**Error:** ${error.message}`,
+                    timestamp: Date.now(),
+                }));
+            }
+            setStreamingContent('');
+            setStreamingToolSteps([]);
+        })
+        .finally(() => {
+            dispatch(dfActions.setDataLoadingChatInProgress(false));
+            abortControllerRef.current = null;
+        });
+    }, [prompt, userImages, chatInProgress, chatMessages, activeModel, existingTables, dispatch, streamingContent]);
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (canSend) sendMessage();
+        }
+    };
+
+    // Sample tasks for empty state
+    const sampleTasks = [
+        {
+            icon: <LanguageIcon sx={{ fontSize: 18 }} />,
+            title: 'Extract from a webpage',
+            description: 'Pull tables from any public URL',
+            action: () => { setPrompt('Extract all tables from https://'); setTimeout(() => inputRef.current?.focus(), 50); },
+        },
+        {
+            icon: <ImageIcon sx={{ fontSize: 18 }} />,
+            title: 'Extract from an image',
+            description: 'Paste a screenshot or photo of a table',
+            action: () => { fileInputRef.current?.click(); },
+        },
+        {
+            icon: <TextFieldsIcon sx={{ fontSize: 18 }} />,
+            title: 'Extract from text',
+            description: 'Paste raw text or a report with tables',
+            action: () => { setPrompt('Extract tables from this text:\n\n'); setTimeout(() => inputRef.current?.focus(), 50); },
+        },
+        {
+            icon: <DatasetIcon sx={{ fontSize: 18 }} />,
+            title: 'Load a sample dataset',
+            description: 'Browse available datasets to get started',
+            action: () => { setPrompt('What sample datasets are available?'); },
+        },
+    ];
+
+    const isEmpty = chatMessages.length === 0 && !streamingContent;
+
+    return (
+        <Box sx={{
+            display: 'flex', flexDirection: 'column',
+            height: '100%', width: '100%', overflow: 'hidden',
+        }}>
+            {/* ── Messages area ─────────────────────────────────── */}
+            <Box sx={{
+                flex: 1, overflow: 'auto',
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+            }}>
+              <Box sx={{
+                width: '100%', maxWidth: 640,
+                px: 2, py: 2,
+                display: 'flex', flexDirection: 'column',
+                ...(isEmpty ? { flex: 1, justifyContent: 'center', alignItems: 'center' } : {}),
+              }}>
+                {isEmpty ? (
+                    <Box sx={{ maxWidth: 480, width: '100%' }}>
+                        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
+                            Data Loading Assistant
+                        </Typography>
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2.5, textAlign: 'center', lineHeight: 1.5 }}>
+                            Extract data from images, files, webpages, or text. Generate synthetic datasets. Browse sample data.
+                        </Typography>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                            {sampleTasks.map((task, i) => (
+                                <SampleTaskCard key={i} icon={task.icon} title={task.title}
+                                    description={task.description} onClick={task.action} />
+                            ))}
+                        </Box>
+                    </Box>
+                ) : (
+                    <>
+                        {chatMessages.map((msg) => (
+                            <ChatBubble key={msg.id} message={msg} existingNames={existingNames} />
+                        ))}
+                        {streamingContent !== '' && <StreamingIndicator content={streamingContent} toolSteps={streamingToolSteps} />}
+                        {chatInProgress && !streamingContent && <StreamingIndicator content="" toolSteps={streamingToolSteps} />}
+                        <div ref={messagesEndRef} />
+                    </>
+                )}
+              </Box>
+            </Box>
+
+            {/* ── Input area ─────────────────────────────────────── */}
+            <Box sx={{ display: 'flex', justifyContent: 'center', px: 2, pb: 1.5, pt: 0.75 }}>
+              <Box sx={{ width: '100%', maxWidth: 640 }}>
+                <Box sx={{
+                    border: `1px solid ${borderColor.divider}`,
+                    borderRadius: '12px',
+                    bgcolor: theme.palette.background.paper,
+                    transition: transition.fast,
+                    '&:focus-within': {
+                        borderColor: theme.palette.primary.main,
+                        boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}`,
+                    },
+                    display: 'flex', flexDirection: 'column',
+                    overflow: 'hidden',
+                }}>
+                    {/* Image previews inside the input box */}
+                    {userImages.length > 0 && (
+                        <Box sx={{ display: 'flex', gap: 0.75, p: 1, pb: 0, flexWrap: 'wrap' }}>
+                            {userImages.map((img, i) => (
+                                <Box key={i} sx={{ position: 'relative', flexShrink: 0 }}>
+                                    <Box component="img" src={img}
+                                        sx={{
+                                            width: 56, height: 56, objectFit: 'cover',
+                                            borderRadius: 1, border: `1px solid ${borderColor.component}`,
+                                        }} />
+                                    <IconButton size="small"
+                                        onClick={() => setUserImages(prev => prev.filter((_, idx) => idx !== i))}
+                                        sx={{
+                                            position: 'absolute', top: -4, right: -4,
+                                            width: 18, height: 18,
+                                            bgcolor: 'rgba(0,0,0,0.55)', color: 'white',
+                                            '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' },
+                                        }}>
+                                        <CloseIcon sx={{ fontSize: 12 }} />
+                                    </IconButton>
+                                </Box>
+                            ))}
+                        </Box>
+                    )}
+
+                    {/* Text input row */}
+                    <Box sx={{ display: 'flex', alignItems: 'flex-end', px: 1, py: 0.5 }}>
+                        <input type="file" ref={fileInputRef} style={{ display: 'none' }}
+                            accept="image/*,.csv,.json,.xlsx,.xls,.txt,.tsv"
+                            onChange={handleFileUpload} />
+                        <Tooltip title="Attach file or image" placement="top">
+                            <IconButton size="small" onClick={() => fileInputRef.current?.click()}
+                                disabled={chatInProgress}
+                                sx={{ mb: 0.25, color: 'text.secondary' }}>
+                                <AddIcon sx={{ fontSize: 20 }} />
+                            </IconButton>
+                        </Tooltip>
+
+                        <InputBase
+                            inputRef={inputRef}
+                            multiline
+                            maxRows={8}
+                            value={prompt}
+                            onChange={(e) => setPrompt(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            onPaste={handlePaste}
+                            placeholder="Describe data to extract, upload, or generate..."
+                            disabled={chatInProgress}
+                            sx={{ flex: 1, px: 1, py: 0.75, fontSize: 13, lineHeight: 1.5 }}
+                        />
+
+                        {chatInProgress ? (
+                            <Tooltip title="Stop generation" placement="top">
+                                <IconButton size="small" onClick={stopGeneration}
+                                    sx={{
+                                        mb: 0.25, bgcolor: 'error.main', color: 'white',
+                                        width: 28, height: 28,
+                                        '&:hover': { bgcolor: 'error.dark' },
+                                    }}>
+                                    <StopIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                            </Tooltip>
+                        ) : (
+                            <Tooltip title="Send  (Enter)" placement="top">
+                                <span>
+                                    <IconButton size="small" onClick={sendMessage} disabled={!canSend}
+                                        sx={{
+                                            mb: 0.25, width: 28, height: 28,
+                                            bgcolor: canSend ? 'primary.main' : 'transparent',
+                                            color: canSend ? 'white' : 'text.disabled',
+                                            '&:hover': { bgcolor: canSend ? 'primary.dark' : 'transparent' },
+                                            '&.Mui-disabled': { bgcolor: 'transparent', color: 'text.disabled' },
+                                        }}>
+                                        <SendIcon sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                </span>
+                            </Tooltip>
+                        )}
+                    </Box>
+                </Box>
+
+                <Typography sx={{ fontSize: 10, color: 'text.disabled', textAlign: 'center', mt: 0.5 }}>
+                    Shift+Enter for new line
+                </Typography>
+              </Box>
+            </Box>
+        </Box>
+    );
+};
