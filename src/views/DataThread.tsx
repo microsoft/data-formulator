@@ -76,46 +76,75 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ArticleIcon from '@mui/icons-material/Article';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import SearchIcon from '@mui/icons-material/Search';
+import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 
 import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
 import { SimpleChartRecBox } from './SimpleChartRecBox';
 import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon } from './InteractionEntryCard';
 
-export const ThinkingBanner = (message: string, sx?: SxProps) => (
-    <Box sx={{ 
-        display: 'flex', 
-        position: 'relative',
-        overflow: 'hidden',
-        '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
-            animation: 'windowWipe 2s ease-in-out infinite',
-            zIndex: 1,
-            pointerEvents: 'none',
-        },
-        '@keyframes windowWipe': {
-            '0%': {
-                transform: 'translateX(-100%)',
-            },
-            '100%': {
-                transform: 'translateX(100%)',
-            },
-        },
-        ...sx
-    }}>
-        <Typography variant="body2" sx={{ 
-            fontSize: 10, 
-            color: 'rgba(0, 0, 0, 0.7) !important'
-        }}>
-            💭 {message}
-        </Typography>
-    </Box>
-);
+export const ThinkingBanner = (message: string, sx?: SxProps) => {
+    // Split message: first line is the title (with shimmer), rest is readable content
+    const newlineIdx = message.indexOf('\n');
+    const title = newlineIdx >= 0 ? message.slice(0, newlineIdx) : message;
+    const content = newlineIdx >= 0 ? message.slice(newlineIdx + 1).trim() : '';
+
+    // Pick icon based on title keywords
+    const titleLower = title.toLowerCase();
+    const IconComponent = titleLower.includes('code') || titleLower.includes('运行') ? TerminalIcon
+        : titleLower.includes('inspect') || titleLower.includes('检查') ? SearchIcon
+        : titleLower.includes('chart') || titleLower.includes('图表') ? AutoGraphIcon
+        : AutoAwesomeIcon;
+
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', ...sx }}>
+            {/* Title line with shimmer */}
+            <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                gap: '4px',
+                position: 'relative',
+                overflow: 'hidden',
+                '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
+                    animation: 'windowWipe 2s ease-in-out infinite',
+                    zIndex: 1,
+                    pointerEvents: 'none',
+                },
+                '@keyframes windowWipe': {
+                    '0%': { transform: 'translateX(-100%)' },
+                    '100%': { transform: 'translateX(100%)' },
+                },
+            }}>
+                <IconComponent sx={{ fontSize: 10, color: 'rgba(0, 0, 0, 0.5)' }} />
+                <Typography variant="body2" sx={{ fontSize: 10, color: 'rgba(0, 0, 0, 0.7) !important' }}>
+                    {title}
+                </Typography>
+            </Box>
+            {/* Content without shimmer — user wants to read this */}
+            {content && (
+                <Typography variant="body2" sx={{ 
+                    fontSize: 10, 
+                    color: 'rgba(0, 0, 0, 0.55)',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.4,
+                    maxHeight: 200,
+                    overflow: 'auto',
+                }}>
+                    {content}
+                </Typography>
+            )}
+        </Box>
+    );
+};
 
 
 

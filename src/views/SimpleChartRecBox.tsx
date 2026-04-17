@@ -376,31 +376,106 @@ export const SimpleChartRecBox: FC = function () {
             dispatch(dfActions.updateDeriveStatus({ nodeId: pendingClarification.draftId, status: 'running' }));
         }
 
-        // Collect previous conversation from trigger interaction chains
-        let conversationHistory: { role: string; content: string }[] | undefined = undefined;
+        // ── Build structured thread context (Tier 2 + Tier 3) ──
+        let focusedThread: any[] | undefined = undefined;
+        let otherThreads: any[] | undefined = undefined;
         if (!isResume) {
-            const history: { role: string; content: string }[] = [];
-            // Walk the ancestor chain from the focused table, collecting interaction entries
+            // Tier 2: Focused thread — detailed per-step info
+            const focusedSteps: any[] = [];
             let walkTable = tables.find(t => t.id === focusedTableId);
             const visited = new Set<string>();
+            const focusedChainIds = new Set<string>();
             while (walkTable?.derive?.trigger) {
                 if (visited.has(walkTable.id)) break;
                 visited.add(walkTable.id);
-                const interaction = walkTable.derive.trigger.interaction;
-                if (interaction && interaction.length > 0) {
-                    for (const entry of interaction) {
-                        if (entry.role === 'prompt') {
-                            history.unshift({ role: 'user', content: entry.content });
-                        } else if (entry.role === 'summary') {
-                            history.unshift({ role: 'assistant', content: entry.content });
-                        } else if (entry.plan) {
-                            history.unshift({ role: 'assistant', content: entry.plan });
-                        }
-                    }
+                focusedChainIds.add(walkTable.id);
+                const trigger = walkTable.derive.trigger;
+                const interaction = trigger.interaction || [];
+                const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
+                const instruction = interaction.find(e => e.role === 'instruction');
+                const summary = interaction.find(e => e.role === 'summary');
+
+                // Find the actual resolved chart (not the trigger's "Auto" stub)
+                const resolvedChart = charts.find(c => c.tableRef === walkTable!.id && c.source === 'trigger')
+                    || charts.find(c => c.tableRef === walkTable!.id);
+                const chartType = resolvedChart?.chartType || '';
+                const encodings = resolvedChart?.encodingMap
+                    ? Object.fromEntries(
+                        Object.entries(resolvedChart.encodingMap)
+                            .filter(([, v]: [string, any]) => v?.fieldID)
+                            .map(([k, v]: [string, any]) => [k, v.fieldID])
+                      )
+                    : {};
+
+                const step: any = {
+                    table_name: walkTable.virtual?.tableId || walkTable.id,
+                    columns: walkTable.names,
+                    row_count: walkTable.virtual?.rowCount ?? walkTable.rows.length,
+                    user_question: userPrompt || '',
+                    agent_thinking: instruction?.plan || '',
+                    display_instruction: instruction?.displayContent || instruction?.content || '',
+                    chart_type: chartType,
+                    encodings,
+                    agent_summary: summary?.content || '',
+                };
+
+                // Include chart thumbnail for the focused leaf table (the one the user is looking at)
+                if (walkTable.id === focusedTableId && resolvedChart?.thumbnail) {
+                    step.chart_thumbnail = resolvedChart.thumbnail;
                 }
-                walkTable = tables.find(t => t.id === walkTable!.derive!.trigger.tableId);
+
+                focusedSteps.unshift(step);
+
+                walkTable = tables.find(t => t.id === trigger.tableId);
             }
-            if (history.length > 0) conversationHistory = history;
+            if (focusedSteps.length > 0) focusedThread = focusedSteps;
+
+            // Tier 3: Peripheral threads — one-line summary per step
+            // Find all leaf tables (no children or all children are anchored)
+            const leafTables = tables.filter(t => {
+                const children = tables.filter(c => c.derive?.trigger.tableId === t.id);
+                return children.length === 0 || children.every(c => c.anchored);
+            });
+
+            const peripheralThreads: any[] = [];
+            for (const leaf of leafTables) {
+                // Skip the focused thread's leaf
+                if (focusedChainIds.has(leaf.id)) continue;
+                // Skip root/source tables
+                if (!leaf.derive) continue;
+
+                const triggers = getTriggers(leaf, tables);
+                if (triggers.length === 0) continue;
+
+                const steps: string[] = [];
+                for (const trig of triggers) {
+                    const tt = tables.find(t2 => t2.id === trig.resultTableId);
+                    const instr = trig.interaction?.find((e: InteractionEntry) => e.role === 'instruction');
+                    const label = instr?.displayContent || instr?.content || '';
+                    const chartForStep = charts.find(c => c.tableRef === trig.resultTableId && c.source === 'trigger')
+                        || trig.chart;
+                    const chartType = chartForStep?.chartType || '';
+                    const encStr = chartForStep?.encodingMap
+                        ? Object.entries(chartForStep.encodingMap)
+                            .filter(([, v]: [string, any]) => v?.fieldID)
+                            .map(([k, v]: [string, any]) => `${k}: ${v.fieldID}`)
+                            .join(', ')
+                        : '';
+                    steps.push(`${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`);
+                }
+
+                if (steps.length > 0) {
+                    const sourceTableId = triggers[0].tableId;
+                    const sourceTable = tables.find(t => t.id === sourceTableId);
+                    peripheralThreads.push({
+                        source_table: sourceTable?.virtual?.tableId || sourceTableId,
+                        leaf_table: leaf.virtual?.tableId || leaf.id,
+                        step_count: steps.length,
+                        steps,
+                    });
+                }
+            }
+            if (peripheralThreads.length > 0) otherThreads = peripheralThreads;
         }
 
         const token = String(Date.now());
@@ -408,7 +483,6 @@ export const SimpleChartRecBox: FC = function () {
             token,
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                rows: t.rows,
                 attached_metadata: t.attachedMetadata
             })),
             model: activeModel,
@@ -424,7 +498,8 @@ export const SimpleChartRecBox: FC = function () {
             requestBody.completed_step_count = clarificationContext!.completedStepCount;
         } else {
             requestBody.user_question = prompt;
-            if (conversationHistory) requestBody.conversation_history = conversationHistory;
+            if (focusedThread) requestBody.focused_thread = focusedThread;
+            if (otherThreads) requestBody.other_threads = otherThreads;
         }
 
         const messageBody = JSON.stringify(requestBody);
@@ -480,6 +555,8 @@ export const SimpleChartRecBox: FC = function () {
         // Track the last agent thought and display_instruction (from "action" events)
         let lastAgentThought: string | null = null;
         let lastAgentDisplayInstruction: string | null = null;
+        // Accumulated text from text_delta events (resets after each checkpoint)
+        let accumulatedText = '';
 
         const genTableId = () => {
             let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
@@ -492,18 +569,63 @@ export const SimpleChartRecBox: FC = function () {
         };
 
         const processStreamingResult = (result: any) => {
-            // Agent planning / choosing next action
-            if (result.type === "action" && result.action === "visualize") {
-                lastAgentThought = result.thought || null;
-                lastAgentDisplayInstruction = result.display_instruction || null;
-                // Plan is stored as a field on the upcoming instruction entry — not as a separate entry.
-                // Show the plan text on the running draft so the user sees live reasoning.
+            // ── text_delta: streamed text from the agent ──
+            if (result.type === "text_delta") {
+                accumulatedText += result.content || '';
                 if (currentDraftId) {
-                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: lastAgentThought || t('dataThread.thinking') }));
+                    // Title line = "thinking..." | Content = accumulated text
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: t('dataThread.thinking') + '\n' + accumulatedText }));
                 }
             }
-            // Visualization result (same shape as old data_transformation)
-            if (result.type === "result" && result.status === "success") {
+
+            // ── tool_start(explore): show code being run ──
+            if (result.type === "tool_start" && result.tool === "explore") {
+                if (currentDraftId) {
+                    const codePreview = result.code ? `\n${result.code}` : '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: t('dataThread.runningCode') + codePreview }));
+                }
+            }
+
+            // ── tool_start(inspect_source_data): show tables being inspected ──
+            if (result.type === "tool_start" && result.tool === "inspect_source_data") {
+                if (currentDraftId) {
+                    const tableNames = result.args?.table_names?.join(', ') || '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: t('dataThread.inspectingData') + (tableNames ? `\n${tableNames}` : '') }));
+                }
+            }
+
+            // ── tool_result(explore / inspect_source_data): save as intermediate reasoning ──
+            if (result.type === "tool_result" && (result.tool === "explore" || result.tool === "inspect_source_data")) {
+                // Save the accumulated text + explore result as an instruction entry
+                if (currentDraftId && accumulatedText.trim()) {
+                    const exploreEntry: InteractionEntry = {
+                        from: 'data-agent', to: 'user', role: 'instruction',
+                        content: accumulatedText.trim(),
+                        timestamp: Date.now(),
+                    };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: exploreEntry }));
+                    currentDraftInteraction.push(exploreEntry);
+                    accumulatedText = '';
+                }
+                // After tool completes, reset to "thinking..." while waiting for next text
+                if (currentDraftId) {
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: t('dataThread.thinking') }));
+                }
+            }
+
+            // ── tool_start(visualize): show display_instruction ──
+            if (result.type === "tool_start" && result.tool === "visualize") {
+                lastAgentDisplayInstruction = result.display_instruction || null;
+                // Use accumulated text as the thought/reasoning for this visualization
+                lastAgentThought = accumulatedText.trim() || null;
+                if (currentDraftId) {
+                    const vizLabel = lastAgentDisplayInstruction || t('dataThread.creatingChart');
+                    const reasoning = lastAgentThought ? `\n${lastAgentThought}` : '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: t('dataThread.creatingChart') + reasoning }));
+                }
+            }
+            // ── tool_result(visualize): checkpoint — create table + render chart ──
+            if (result.type === "tool_result" && result.tool === "visualize" && result.status === "ok") {
                 const transformResult = result.content.result;
                 if (!transformResult || transformResult.status !== 'ok') return;
 
@@ -532,12 +654,15 @@ export const SimpleChartRecBox: FC = function () {
                         tableId: triggerTableId,
                         resultTableId: candidateTableId,
                         chart: undefined,
-                        // Use the full interaction log accumulated in the DraftNode,
-                        // plus the instruction entry for this step
                         interaction: [
-                            // Use the local accumulator (avoids stale closure)
                             ...currentDraftInteraction,
-                            // The instruction to the sub-agent (plan folded in)
+                            // Pre-chart narration as visible summary (renders before the chart)
+                            ...(lastAgentThought ? [{
+                                from: 'data-agent' as const, to: 'user' as const, role: 'summary' as const,
+                                content: lastAgentThought,
+                                timestamp: Date.now(),
+                            }] : []),
+                            // The instruction entry for this step
                             {
                                 from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
                                 plan: lastAgentThought || undefined,
@@ -548,8 +673,9 @@ export const SimpleChartRecBox: FC = function () {
                         ],
                     }
                 };
-                lastAgentThought = null; // consumed
                 lastAgentDisplayInstruction = null; // consumed
+                accumulatedText = ''; // reset for next segment
+                lastAgentThought = null; // consumed
                 if (transformedData.virtual) {
                     candidateTable.virtual = { tableId: transformedData.virtual.table_name, rowCount: transformedData.virtual.row_count };
                 }
@@ -612,6 +738,7 @@ export const SimpleChartRecBox: FC = function () {
                     dispatch(dfActions.addConceptItems(conceptsToAdd));
                 }
                 dispatch(dfActions.insertDerivedTables(candidateTable));
+
                 dispatch(fetchFieldSemanticType(candidateTable));
                 dispatch(fetchCodeExpl(candidateTable));
 
@@ -638,6 +765,16 @@ export const SimpleChartRecBox: FC = function () {
                     }, 1500);
                 }
             }
+            // ── tool_result(visualize) error ──
+            if (result.type === "tool_result" && result.tool === "visualize" && result.status === "error") {
+                // Error in visualize — the agent loop will see the error and may retry
+                // Just update the running plan to show the error briefly
+                if (currentDraftId) {
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: result.error_message || t('chartRec.errorDuringExploration') }));
+                }
+                accumulatedText = ''; // reset
+            }
+
             // Agent asks for clarification — pause and let user respond
             if (result.type === "clarify") {
                 const clarifyMsg = result.message || t('chartRec.couldYouClarify');
@@ -671,22 +808,22 @@ export const SimpleChartRecBox: FC = function () {
                 isCompleted = true; // prevent handleCompletion from firing
             }
 
-            // ── Capture completion summary (with plan folded in) on the last created table's trigger ──
-            if (result.type === "completion") {
-                if (lastCreatedTableId) {
-                    const summary = result.status === "max_iterations"
-                        ? t('chartRec.maxIterationsReached')
-                        : (result.content?.summary || result.content?.message || "");
-                    if (summary) {
+            // ── done: turn complete — save any remaining accumulated text as summary ──
+            if (result.type === "done") {
+                if (lastCreatedTableId && accumulatedText.trim()) {
+                    // Only save concise summaries — skip if it looks like a recap
+                    // (multiple sentences or excessively long)
+                    const trimmed = accumulatedText.trim();
+                    if (trimmed.length <= 300) {
                         const entry: InteractionEntry = {
                             from: 'data-agent', to: 'user', role: 'summary',
-                            plan: result.content?.thought || undefined,
-                            content: summary,
+                            content: trimmed,
                             timestamp: Date.now(),
                         };
                         dispatch(dfActions.appendTriggerInteraction({ tableId: lastCreatedTableId, entries: [entry] }));
                     }
                 }
+                accumulatedText = '';
             }
         };
 
@@ -703,7 +840,7 @@ export const SimpleChartRecBox: FC = function () {
                 currentDraftId = null;
             }
 
-            const completionResult = allResults.find((r: any) => r.type === "completion");
+            const completionResult = allResults.find((r: any) => r.type === "done");
             if (completionResult) {
                 setChatPrompt("");
             }
@@ -739,7 +876,7 @@ export const SimpleChartRecBox: FC = function () {
                                     if (data.status === "ok" && data.result) {
                                         allResults.push(data.result);
                                         processStreamingResult(data.result);
-                                        if (data.result.type === "completion" || data.result.type === "clarify") { handleCompletion(); return; }
+                                        if (data.result.type === "done" || data.result.type === "clarify") { handleCompletion(); return; }
                                     } else if (data.status === "error") {
                                         setIsChatFormulating(false);
                                         clearTimeout(timeoutId);

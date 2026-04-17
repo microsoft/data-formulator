@@ -443,15 +443,19 @@ def derive_data():
 
 @agent_bp.route('/data-agent-streaming', methods=['GET', 'POST'])
 def data_agent_streaming():
-    """Autonomous data exploration agent endpoint (SWE-agent style).
+    """Streaming tool-calling data exploration agent endpoint.
 
-    Accepts a user question, runs the DataAgent observe-think-act loop,
-    and streams events back as newline-delimited JSON.
+    The agent streams events as newline-delimited JSON:
+        text_delta  – streamed text from the agent (narration)
+        tool_start  – agent is about to call a tool (explore/visualize/clarify)
+        tool_result – tool execution result (visualize results match DataRecAgent format)
+        clarify     – clarification question (loop pauses)
+        done        – turn complete
+        error       – error information
 
     To resume after a clarification, the client sends:
         - trajectory: the trajectory list returned in the clarify event
         - clarification_response: the user's answer (string)
-    The server appends the answer to the trajectory and continues the loop.
     """
     def generate():
         if request.is_json:
@@ -467,7 +471,8 @@ def data_agent_streaming():
             max_repair_attempts = content.get("max_repair_attempts", 1)
             agent_exploration_rules = content.get("agent_exploration_rules", "")
             agent_coding_rules = content.get("agent_coding_rules", "")
-            conversation_history = content.get("conversation_history", None)
+            focused_thread = content.get("focused_thread", None)
+            other_threads = content.get("other_threads", None)
 
             # Stateless resume: client sends back the trajectory + user answer
             resume_trajectory = content.get("trajectory", None)
@@ -476,8 +481,7 @@ def data_agent_streaming():
 
             logger.debug("== input tables ===>")
             for table in input_tables:
-                logger.debug(f"===> Table: {table['name']} (first 5 rows)")
-                logger.debug(table['rows'][:5])
+                logger.debug(f"===> Table: {table['name']}")
 
             logger.debug(f"== user question ===> {user_question}")
 
@@ -523,7 +527,8 @@ def data_agent_streaming():
                 for event in agent.run(
                     input_tables=input_tables,
                     user_question=user_question,
-                    conversation_history=conversation_history,
+                    focused_thread=focused_thread,
+                    other_threads=other_threads,
                     trajectory=trajectory,
                     completed_step_count=completed_step_count,
                 ):
@@ -534,7 +539,7 @@ def data_agent_streaming():
                     }, ensure_ascii=False) + '\n'
 
                     # Stop streaming after terminal events
-                    if event.get("type") in ("completion", "clarify"):
+                    if event.get("type") in ("done", "clarify"):
                         break
 
             except Exception as e:
