@@ -13,11 +13,20 @@
  * Data model (long format):
  *   x (nominal): angular category (direction, month, etc.)
  *   y (quantitative): value mapped to wedge radius
- *   color (nominal, optional): stack / group variable
+ *   color (nominal, optional): stack / group variable — stacked rose (one series per group).
+ *   Without color: single polar bar series with one data item per category (each item named for
+ *   legend). Multiple series would be grouped by ECharts and shrink each petal — wrong geometry.
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, groupBy, computeCircumferencePressure } from './utils';
+
+/**
+ * Invisible pie series: polar `bar` has no `legendVisualProvider`, so ECharts would draw zero
+ * legend rows (see LegendView.renderInner). Slices are not shown (radius 0); only names/colors
+ * feed the legend. Must match `ecApplyLayoutToSpec` / facet polar merge.
+ */
+export const EC_ROSE_LEGEND_BRIDGE_SERIES_NAME = '__dfRoseLegendBridge__';
 
 export const ecRoseChartDef: ChartTemplateDef = {
     chart: 'Rose Chart',
@@ -67,7 +76,8 @@ export const ecRoseChartDef: ChartTemplateDef = {
                 });
             }
         } else {
-            // Single series: one value per category
+            // No color channel: one series, one value per angle — full wedge width. Per-item colors
+            // + legend are applied in ecApplyLayoutToSpec (multi-series would trigger grouped barWidth).
             const catAgg = new Map<string, number>();
             for (const row of table) {
                 const cat = String(row[catField] ?? '');
@@ -76,11 +86,37 @@ export const ecRoseChartDef: ChartTemplateDef = {
             }
 
             const values = categories.map(c => catAgg.get(c) ?? 0);
+            for (const c of categories) {
+                legendData.push(String(c));
+            }
 
             seriesArr.push({
                 type: 'bar',
-                data: values,
+                data: categories.map((c, i) => ({
+                    value: values[i],
+                    name: String(c),
+                })),
                 coordinateSystem: 'polar',
+                emphasis: { focus: 'series' },
+            });
+            // Legend binding (bar alone does not implement legendVisualProvider in ECharts).
+            seriesArr.push({
+                type: 'pie',
+                name: EC_ROSE_LEGEND_BRIDGE_SERIES_NAME,
+                z: -10,
+                silent: true,
+                tooltip: { show: false },
+                radius: 0,
+                center: ['50%', '50%'],
+                label: { show: false },
+                labelLine: { show: false },
+                emphasis: { disabled: true },
+                data: categories.map(c => ({
+                    name: String(c),
+                    value: 1,
+                    label: { show: false },
+                    labelLine: { show: false },
+                })),
             });
         }
 

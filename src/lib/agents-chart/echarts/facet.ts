@@ -93,8 +93,10 @@ function combineRadarFacetPanels(panels: any[][], config: FacetConfig): any {
 
     const radarRadiusRatio = 0.38;
     const headerFontSize = 11;
-    const hStyle = { fontSize: headerFontSize, fontWeight: 'bold' as const, fill: '#555',
-                     textAlign: 'center' as const, textVerticalAlign: 'middle' as const };
+    const hStyle = {
+        fontSize: headerFontSize, fontWeight: 'bold' as const, fill: '#555',
+        textAlign: 'center' as const, textVerticalAlign: 'middle' as const
+    };
     const graphics: any[] = [];
 
     let radarIdx = 0;
@@ -155,7 +157,7 @@ function combineRadarFacetPanels(panels: any[][], config: FacetConfig): any {
 }
 
 /** Polar (Rose) radius as fraction of cell min dimension. */
-const POLAR_RADIUS_RATIO = 0.42;
+const POLAR_RADIUS_RATIO = 0.38;
 
 /**
  * Combine faceted polar (Rose) panels: one polar + angleAxis + radiusAxis per cell, series use polarIndex.
@@ -168,7 +170,7 @@ function combinePolarFacetPanels(panels: any[][], config: FacetConfig): any {
 
     const plotW = ref._plotWidth || ref._width || 400;
     const plotH = ref._plotHeight || ref._height || 300;
-    const GAP = 6;
+    const GAP = 14;
     const COL_HEADER_H = config.colField ? 18 : 0;
     const ROW_HEADER_W = config.rowField ? 18 : 0;
     const colHeaderPerRow = config.colHeaderPerRow ?? false;
@@ -195,8 +197,10 @@ function combinePolarFacetPanels(panels: any[][], config: FacetConfig): any {
     if (ref.legend) combined.legend = { ...ref.legend };
 
     const headerFontSize = 11;
-    const hStyle = { fontSize: headerFontSize, fontWeight: 'bold' as const, fill: '#555',
-                     textAlign: 'center' as const, textVerticalAlign: 'middle' as const };
+    const hStyle = {
+        fontSize: headerFontSize, fontWeight: 'bold' as const, fill: '#555',
+        textAlign: 'center' as const, textVerticalAlign: 'middle' as const
+    };
     const graphics: any[] = [];
 
     let polarIdx = 0;
@@ -233,7 +237,12 @@ function combinePolarFacetPanels(panels: any[][], config: FacetConfig): any {
 
             if (Array.isArray(panel.series)) {
                 for (const s of panel.series) {
-                    combined.series.push({ ...s, polarIndex: polarIdx });
+                    // Only polar coordinateSystem belongs to this polarIndex (e.g. rose legend-bridge pie has none).
+                    if (s && s.coordinateSystem === 'polar') {
+                        combined.series.push({ ...s, polarIndex: polarIdx });
+                    } else {
+                        combined.series.push({ ...s });
+                    }
                 }
             }
 
@@ -258,6 +267,7 @@ function combinePolarFacetPanels(panels: any[][], config: FacetConfig): any {
         }
     }
     if (graphics.length > 0) combined.graphic = graphics;
+    repositionFacetedPolarLegend(combined);
     return combined;
 }
 
@@ -317,14 +327,14 @@ export function ecCombineFacetPanels(
     // The assembler's refGrid margins include CANVAS_BUFFER (16px) meant
     // for standalone charts.  In a faceted layout the grids are internal
     // elements — no buffer needed. Use tighter margins based on content.
-    const mLeft   = hasYTitle && !sharedYTitle ? 55 : 35;  // y-axis labels (+ title if not shared)
+    const mLeft = hasYTitle && !sharedYTitle ? 55 : 35;  // y-axis labels (+ title if not shared)
     const mBottom = 22;                                     // x-axis labels
     const PAD = 4;                                          // minimal padding for inner panels
 
     // Cell widths differ: first column includes y-axis label margin,
     // inner columns use minimal padding.  Row heights differ: only the
     // bottom row reserves mBottom for x-axis labels.
-    const col0W     = mLeft + plotW + PAD;
+    const col0W = mLeft + plotW + PAD;
     const colInnerW = PAD + plotW + PAD;
     const rowInnerH = PAD + plotH + PAD;       // non-bottom rows: compact
     const rowBottomH = PAD + plotH + mBottom;  // bottom row: x-axis labels
@@ -431,8 +441,10 @@ export function ecCombineFacetPanels(
 
     // ── Facet headers — positioned from actual grids ─────────────────────
     const graphics: any[] = [];
-    const hStyle = { fontSize: headerFontSize, fontWeight: 'bold' as const, fill: '#555',
-                     textAlign: 'center' as const, textVerticalAlign: 'middle' as const };
+    const hStyle = {
+        fontSize: headerFontSize, fontWeight: 'bold' as const, fill: '#555',
+        textAlign: 'center' as const, textVerticalAlign: 'middle' as const
+    };
 
     // Column headers
     if (config.colField) {
@@ -468,8 +480,10 @@ export function ecCombineFacetPanels(
         if (first && last) {
             graphics.push({
                 type: 'text', left: SHARED_Y_W / 2, top: (gCY(first) + gCY(last)) / 2,
-                style: { text: sharedYTitle, fontSize: headerFontSize, fill: '#333',
-                         textAlign: 'center', textVerticalAlign: 'middle' },
+                style: {
+                    text: sharedYTitle, fontSize: headerFontSize, fill: '#333',
+                    textAlign: 'center', textVerticalAlign: 'middle'
+                },
                 rotation: Math.PI / 2,
             });
         }
@@ -484,5 +498,86 @@ export function ecCombineFacetPanels(
     }
 
     if (graphics.length > 0) combined.graphic = graphics;
+
+    // Per-panel ecApplyLayoutToSpec positions legend using a single subplot width, so after
+    // merging grids the legend's `left` often lands in the inter-column gap and overlaps plots.
+    repositionFacetedLegendBesideGrids(combined);
+
     return combined;
+}
+
+/** Move categorical legend to the right of the rightmost grid; widen canvas so it is not clipped. */
+function repositionFacetedLegendBesideGrids(combined: any): void {
+    const grids = combined.grid;
+    if (!combined.legend || !Array.isArray(grids) || grids.length <= 1) return;
+
+    const rawData = combined.legend.data || [];
+    const legendLabels: string[] = rawData.map((d: any) => (typeof d === 'string' ? d : (d?.name ?? '')));
+    if (legendLabels.length === 0) return;
+
+    const maxLabelLen = Math.max(...legendLabels.map((l: string) => l.length), 3);
+    const highCardinality = legendLabels.length >= 16;
+    const legendSymbolWidth = highCardinality ? 12 : 14;
+    const legendItemGap = 5;
+    const estimatedTextWidth = Math.min(120, maxLabelLen * 7 + 30);
+    const legendW = legendSymbolWidth + legendItemGap + estimatedTextWidth;
+    const GAP = 12;
+    const BUFFER = 16;
+
+    const rightMost = Math.max(...grids.map((g: any) => (g.left ?? 0) + (g.width ?? 0)));
+    combined.legend = {
+        ...combined.legend,
+        left: rightMost + GAP,
+        top: combined.legend.top ?? 20,
+        orient: combined.legend.orient || 'vertical',
+        align: 'left',
+        right: undefined,
+        textStyle: {
+            fontSize: highCardinality ? 8 : 11,
+            ...(combined.legend.textStyle || {}),
+        },
+        ...(legendLabels.length > 10 ? { type: 'scroll' } : {}),
+        ...(highCardinality ? { itemWidth: 12, itemHeight: 12 } : {}),
+    };
+    combined._width = Math.max(combined._width || 0, rightMost + GAP + legendW + BUFFER);
+}
+
+/** Move faceted polar legend to the right of rightmost polar circle and widen canvas. */
+function repositionFacetedPolarLegend(combined: any): void {
+    const polars = combined.polar;
+    if (!combined.legend || !Array.isArray(polars) || polars.length <= 1) return;
+
+    const rawData = combined.legend.data || [];
+    const legendLabels: string[] = rawData.map((d: any) => (typeof d === 'string' ? d : (d?.name ?? '')));
+    if (legendLabels.length === 0) return;
+
+    const maxLabelLen = Math.max(...legendLabels.map((l: string) => l.length), 3);
+    const highCardinality = legendLabels.length >= 16;
+    const legendSymbolWidth = highCardinality ? 12 : 14;
+    const legendItemGap = 5;
+    const estimatedTextWidth = Math.min(120, maxLabelLen * 7 + 30);
+    const legendW = legendSymbolWidth + legendItemGap + estimatedTextWidth;
+    const GAP = 15;
+    const BUFFER = 16;
+
+    const rightMost = Math.max(...polars.map((p: any) => {
+        const cx = Array.isArray(p?.center) ? Number(p.center[0]) : 0;
+        const r = Number(p?.radius) || 0;
+        return cx + r;
+    }));
+    combined.legend = {
+        ...combined.legend,
+        left: rightMost + GAP,
+        top: combined.legend.top ?? 20,
+        orient: combined.legend.orient || 'vertical',
+        align: 'left',
+        right: undefined,
+        textStyle: {
+            fontSize: highCardinality ? 8 : 11,
+            ...(combined.legend.textStyle || {}),
+        },
+        ...(legendLabels.length > 10 ? { type: 'scroll' } : {}),
+        ...(highCardinality ? { itemWidth: 12, itemHeight: 12 } : {}),
+    };
+    combined._width = Math.max(combined._width || 0, rightMost + GAP + legendW + BUFFER);
 }

@@ -2,176 +2,105 @@
 // Licensed under the MIT License.
 
 /**
- * Chart Gallery cases: one synthetic “division × product × quarter × channel” dataset
- * rendered as Grouped Bar, Scatter, Line (unix periodStart), Pyramid, Rose, Sunburst, Waterfall.
- * In Chart Gallery, `Omni:*` keys use TripleChart — same Vega-Lite + ECharts + Chart.js row as Regional Survey.
+ * Omni game-ops gallery — three-phase narrative (overview → change → composition).
+ * TripleChart: Vega-Lite + ECharts + Chart.js. Sunburst is ECharts-first (no native VL sunburst).
  */
 
 import { Type } from '../../../data/types';
 import { TestCase, makeField, makeEncodingItem } from './types';
+import type { SemanticAnnotation } from '../core/field-semantics';
 import {
     OMNI_VIZ_LEVELS,
-    omniVizDetailTable,
+    omniVizGroupedBarRegionGameTypeTable,
+    omniVizHeatmapGameMonthTable,
     omniVizLineTable,
-    omniVizPyramidLongTable,
-    omniVizRoseTable,
     omniVizSunburstTable,
     omniVizWaterfallTable,
 } from './omni-viz-dataset';
 
-const META_DETAIL: Record<string, { type: Type; semanticType: string; levels: any[] }> = {
-    division: { type: Type.String, semanticType: 'Category', levels: [...OMNI_VIZ_LEVELS.divisions] },
-    product: { type: Type.String, semanticType: 'Category', levels: [...OMNI_VIZ_LEVELS.products] },
-    quarter: { type: Type.String, semanticType: 'Category', levels: [...OMNI_VIZ_LEVELS.quarters] },
-    periodStart: { type: Type.Number, semanticType: 'Date', levels: [...OMNI_VIZ_LEVELS.periodStarts] },
-    channel: { type: Type.String, semanticType: 'Category', levels: [...OMNI_VIZ_LEVELS.channels] },
-    revenue: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-    units: { type: Type.Number, semanticType: 'Quantity', levels: [] },
-    marginPct: { type: Type.Number, semanticType: 'Percentage', levels: [] },
+const META: Record<string, { type: Type; semanticType: string; levels: any[] }> = {
+    period: { type: Type.String, semanticType: 'YearMonth', levels: [...OMNI_VIZ_LEVELS.periodStarts] },
+    game: { type: Type.String, semanticType: 'Category', levels: [...OMNI_VIZ_LEVELS.games] },
+    gameType: { type: Type.String, semanticType: 'Category', levels: [...OMNI_VIZ_LEVELS.gameTypes] },
+    newUsers: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+    totalUsers: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+    region: { type: Type.String, semanticType: 'Category', levels: [...OMNI_VIZ_LEVELS.regions] },
 };
 
-export function genOmniVizGroupedBarTests(): TestCase[] {
-    const data = omniVizPyramidLongTable();
-    return [{
-        title: 'Omni: Grouped bar — product × revenue (by channel)',
-        description: 'Totals across quarters: 8 products × 2 channels; x = product, y = revenue, group = channel.',
-        tags: ['omni-viz', 'grouped-bar', 'gallery'],
-        chartType: 'Grouped Bar Chart',
-        data,
-        fields: [makeField('product'), makeField('revenue'), makeField('channel')],
-        metadata: {
-            product: META_DETAIL.product,
-            revenue: META_DETAIL.revenue,
-            channel: META_DETAIL.channel,
-        },
-        encodingMap: {
-            x: makeEncodingItem('product'),
-            y: makeEncodingItem('revenue'),
-            group: makeEncodingItem('channel'),
-        },
-    }];
-}
+const WF_STEPS = [
+    'Opening MAU (year start)',
+    ...OMNI_VIZ_LEVELS.months,
+    'Closing MAU (year end)',
+] as const;
 
-export function genOmniVizScatterTests(): TestCase[] {
-    const data = omniVizDetailTable();
-    return [{
-        title: 'Omni: Scatter — units × margin % (by product)',
-        description: 'Detail rows (64): unit volume vs margin %, colored by one of 8 product lines.',
-        tags: ['omni-viz', 'scatter', 'gallery'],
-        chartType: 'Scatter Plot',
-        data,
-        fields: [makeField('units'), makeField('marginPct'), makeField('product'), makeField('periodStart')],
-        metadata: {
-            units: META_DETAIL.units,
-            marginPct: META_DETAIL.marginPct,
-            product: META_DETAIL.product,
-            periodStart: META_DETAIL.periodStart,
-        },
-        encodingMap: {
-            x: makeEncodingItem('units'),
-            y: makeEncodingItem('marginPct'),
-            color: makeEncodingItem('product'),
-        },
-    }];
-}
+const HEATMAP_NEW_USERS_ANNOTATION: SemanticAnnotation = {
+    /** Signed net flow → diverging color with meaningful zero (see color-decisions). */
+    semanticType: 'Profit',
+};
 
 export function genOmniVizLineTests(): TestCase[] {
     const data = omniVizLineTable();
     return [{
-        title: 'Omni: Line — revenue by quarter start (unix, by product)',
-        description: 'x = periodStart (Unix sec, UTC quarter starts); y = revenue; 32 points, 8 series.',
-        tags: ['omni-viz', 'line', 'multi-series', 'temporal', 'gallery'],
+        title: 'Phase 1 — Line: MAU trend by month × gameType (facet region)',
+        description:
+            'Overview: column = region (N/E/S/W); x = month; y = totalUsers (summed across games in each gameType); color = gameType. '
+            + 'Spikes differ by type (e.g. mobile summer lift vs PC patch months) — compare panels.',
+        tags: ['omni-viz', 'phase-1', 'line', 'facet', 'gallery', 'game-ops'],
         chartType: 'Line Chart',
         data,
-        fields: [makeField('periodStart'), makeField('revenue'), makeField('product')],
+        fields: [
+            makeField('period'),
+            makeField('totalUsers'),
+            makeField('gameType'),
+            makeField('region'),
+        ],
         metadata: {
-            periodStart: META_DETAIL.periodStart,
-            revenue: META_DETAIL.revenue,
-            product: META_DETAIL.product,
+            period: META.period,
+            totalUsers: META.totalUsers,
+            gameType: META.gameType,
+            region: META.region,
         },
         encodingMap: {
-            x: makeEncodingItem('periodStart', { dtype: 'temporal' }),
-            y: makeEncodingItem('revenue'),
-            color: makeEncodingItem('product'),
+            column: makeEncodingItem('region'),
+            x: makeEncodingItem('period', { dtype: 'temporal' }),
+            y: makeEncodingItem('totalUsers'),
+            color: makeEncodingItem('gameType'),
         },
     }];
 }
 
-export function genOmniVizPyramidTests(): TestCase[] {
-    const data = omniVizPyramidLongTable();
+export function genOmniVizGroupedBarTests(): TestCase[] {
+    const data = omniVizGroupedBarRegionGameTypeTable();
     return [{
-        title: 'Omni: Pyramid — product × revenue (by channel)',
-        description: 'Mirror bars: y = product, x = revenue (totals), color = Direct vs Partner.',
-        tags: ['omni-viz', 'pyramid', 'gallery'],
-        chartType: 'Pyramid Chart',
+        title: 'Phase 1 — Grouped bar: MAU by month × gameType',
+        description:
+            'Same story, monthly lens: x = month; y = sum(totalUsers) across all regions/games; color = gameType; group = gameType.',
+        tags: ['omni-viz', 'phase-1', 'grouped-bar', 'gallery', 'game-ops'],
+        chartType: 'Grouped Bar Chart',
         data,
-        fields: [makeField('product'), makeField('revenue'), makeField('channel')],
+        fields: [makeField('period'), makeField('totalUsers'), makeField('gameType')],
         metadata: {
-            product: META_DETAIL.product,
-            revenue: META_DETAIL.revenue,
-            channel: META_DETAIL.channel,
+            period: META.period,
+            totalUsers: META.totalUsers,
+            gameType: META.gameType,
         },
         encodingMap: {
-            y: makeEncodingItem('product'),
-            x: makeEncodingItem('revenue'),
-            color: makeEncodingItem('channel'),
+            x: makeEncodingItem('period', { dtype: 'temporal' }),
+            y: makeEncodingItem('totalUsers'),
+            color: makeEncodingItem('gameType'),
+            group: makeEncodingItem('gameType'),
         },
     }];
 }
-
-export function genOmniVizRoseTests(): TestCase[] {
-    const data = omniVizRoseTable();
-    return [{
-        title: 'Omni: Rose — total revenue by product',
-        description: 'Eight petals with large spread (Lake vs Sensor Hub etc.): totals over quarters + channels.',
-        tags: ['omni-viz', 'rose', 'gallery'],
-        chartType: 'Rose Chart',
-        data,
-        fields: [makeField('product'), makeField('revenue')],
-        metadata: {
-            product: META_DETAIL.product,
-            revenue: META_DETAIL.revenue,
-        },
-        encodingMap: {
-            x: makeEncodingItem('product'),
-            y: makeEncodingItem('revenue'),
-        },
-        chartProperties: { alignment: 'center' },
-    }];
-}
-
-export function genOmniVizSunburstTests(): TestCase[] {
-    const data = omniVizSunburstTable();
-    return [{
-        title: 'Omni: Sunburst — division × product × quarter (revenue)',
-        description: 'Three rings: division → product → quarter; size = revenue (channels aggregated).',
-        tags: ['omni-viz', 'sunburst', 'echarts', 'gallery'],
-        chartType: 'Sunburst Chart',
-        data,
-        fields: [makeField('division'), makeField('product'), makeField('quarter'), makeField('revenue')],
-        metadata: {
-            division: META_DETAIL.division,
-            product: META_DETAIL.product,
-            quarter: META_DETAIL.quarter,
-            revenue: META_DETAIL.revenue,
-        },
-        encodingMap: {
-            color: makeEncodingItem('division'),
-            detail: makeEncodingItem('product'),
-            group: makeEncodingItem('quarter'),
-            size: makeEncodingItem('revenue'),
-        },
-    }];
-}
-
-const WF_STEPS = ['Opening ARR', 'Cloud', 'Data', 'Edge', 'Closing ARR'] as const;
 
 export function genOmniVizWaterfallTests(): TestCase[] {
     const data = omniVizWaterfallTable();
     return [{
-        title: 'Omni: Waterfall — ARR bridge by division',
-        description: 'Opening → stacked Cloud/Data/Edge revenue → Closing; amounts from the same Omni panel totals.',
-        tags: ['omni-viz', 'waterfall', 'gallery'],
+        title: 'Phase 2 — Waterfall: portfolio net newUsers month over month',
+        description:
+            'Change: x = step (opening → each YYYY-MM → closing); y = Amount. Middle steps are monthly sum(newUsers) across all games/regions; '
+            + 'start/end are opening and December total MAU (portfolio sum). Good for exec-friendly “how we got here”.',
+        tags: ['omni-viz', 'phase-2', 'waterfall', 'gallery', 'game-ops'],
         chartType: 'Waterfall Chart',
         data,
         fields: [makeField('Step'), makeField('Amount'), makeField('Type')],
@@ -188,13 +117,66 @@ export function genOmniVizWaterfallTests(): TestCase[] {
     }];
 }
 
-/** Keys registered in `TEST_GENERATORS` for the Omni Viz gallery strip. */
+export function genOmniVizHeatmapTests(): TestCase[] {
+    const data = omniVizHeatmapGameMonthTable();
+    return [{
+        title: 'Phase 2 — Heatmap: net newUsers by game × month',
+        description:
+            'Change: x = game; y = month; color = newUsers (net adds summed over regions). '
+            + 'Diverging scale centered at 0 (red/blue). Vega-Lite rect + ECharts heatmap + Chart.js row.',
+        tags: ['omni-viz', 'phase-2', 'heatmap', 'gallery', 'game-ops'],
+        chartType: 'Heatmap',
+        data,
+        fields: [makeField('game'), makeField('period'), makeField('newUsers')],
+        metadata: {
+            game: META.game,
+            period: META.period,
+            newUsers: META.newUsers,
+        },
+        encodingMap: {
+            x: makeEncodingItem('period', { dtype: 'temporal' }),
+            y: makeEncodingItem('game'),
+            color: makeEncodingItem('newUsers'),
+        },
+        chartProperties: { colorScheme: 'redblue' },
+        semanticAnnotations: { newUsers: HEATMAP_NEW_USERS_ANNOTATION },
+    }];
+}
+
+export function genOmniVizSunburstTests(): TestCase[] {
+    const data = omniVizSunburstTable();
+    return [{
+        title: 'Phase 3 — Sunburst: MAU composition (region → gameType → game)',
+        description:
+            'Composition: hierarchy region → gameType → game; size = totalUsers on the latest month (Dec). '
+            + 'Vega-Lite has no first-class sunburst; ECharts (middle panel) carries this view. '
+            + 'Left: VL assembly fallback; right: Chart.js where supported.',
+        tags: ['omni-viz', 'phase-3', 'sunburst', 'echarts', 'gallery', 'game-ops'],
+        chartType: 'Sunburst Chart',
+        data,
+        fields: [makeField('region'), makeField('gameType'), makeField('game'), makeField('totalUsers')],
+        metadata: {
+            region: META.region,
+            gameType: META.gameType,
+            game: META.game,
+            totalUsers: META.totalUsers,
+        },
+        encodingMap: {
+            color: makeEncodingItem('region'),
+            group: makeEncodingItem('gameType'),
+            detail: makeEncodingItem('game'),
+            size: makeEncodingItem('totalUsers'),
+        },
+    }];
+}
+
+/** Keys in `TEST_GENERATORS` for the Omni gallery (charts only; data table chip is separate). */
 export const GALLERY_OMNI_VIZ_GENERATOR_KEYS = [
-    'Omni: Grouped Bar',
-    'Omni: Scatter',
     'Omni: Line',
-    'Omni: Pyramid',
-    'Omni: Rose',
-    'Omni: Sunburst',
+    'Omni: Grouped Bar',
     'Omni: Waterfall',
+    'Omni: Heatmap',
+    'Omni: Sunburst',
 ] as const;
+
+export const OMNI_VIZ_GALLERY_DATA_TABLE_ENTRY = 'Omni: Data Table Preview' as const;

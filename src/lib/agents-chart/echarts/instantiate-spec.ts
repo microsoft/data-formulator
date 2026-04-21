@@ -40,6 +40,7 @@ import {
 import { ColorDecisionResult } from '../core/color-decisions';
 import { getPaletteForScheme } from './colormap';
 import { DEFAULT_COLORS } from './templates/utils';
+import { EC_ROSE_LEGEND_BRIDGE_SERIES_NAME } from './templates/rose';
 
 /**
  * 在给定调色板长度和需要的颜色数量时，返回一组「在色带上尽量均匀分布」的索引。
@@ -190,6 +191,115 @@ function cleanAxisNumericFields(axis: any): void {
         if (typeof axis[key] === 'number') {
             axis[key] = roundAxisNumber(axis[key]);
         }
+    }
+}
+
+/**
+ * Match Vega-Lite pyramid panel height (vegalite/templates/bar.ts pyramidChartDef).
+ * computeLayout often shrinks yStep on short canvases, making EC much shorter than VL.
+ */
+function pyramidPanelHeightMatchVegaLite(
+    yCardinality: number,
+    canvasSize: { width: number; height: number },
+): number {
+    const baseWidth = canvasSize.width ?? 400;
+    const baseHeight = canvasSize.height ?? 320;
+    const baseRefSize = 300;
+    const sizeRatio = Math.max(baseWidth, baseHeight) / baseRefSize;
+    const defaultStep = Math.round(20 * Math.max(1, sizeRatio));
+    let panelHeight = baseHeight;
+    if (yCardinality > 0) {
+        const pressure = (yCardinality * defaultStep) / baseHeight;
+        if (pressure > 1) {
+            const stretch = Math.min(2, Math.pow(pressure, 0.5));
+            panelHeight = Math.round(baseHeight * stretch);
+        }
+    }
+    return panelHeight;
+}
+
+/**
+ * Horizontal bar pyramid: y category labels sit inside the grid on the left, so x=0 is not at the
+ * geometric grid midpoint. Estimate inset L, then zero-line px zX = gl + L + (gw-L)/2.
+ */
+function estimatePyramidYCategoryInsetPx(option: any, gw: number): number {
+    const data = option.yAxis?.data;
+    if (!Array.isArray(data) || data.length === 0) return 0;
+    const maxLen = Math.max(...data.map((d: any) => String(d).length), 1);
+    const est = Math.round(8 + maxLen * 7.5 + 4);
+    return Math.min(Math.max(0, est), Math.floor(gw * 0.45));
+}
+
+/** Symmetric “nice” max for pyramid x (e.g. 573260 → 600000). */
+function pyramidNiceSymmetricMax(absMax: number): number {
+    if (!Number.isFinite(absMax) || absMax <= 0) return 1;
+    const exp = Math.floor(Math.log10(absMax));
+    const f = absMax / 10 ** exp;
+    let ceilF: number;
+    if (f <= 1) ceilF = 1;
+    else if (f <= 2) ceilF = 2;
+    else if (f <= 3) ceilF = 3;
+    else if (f <= 5) ceilF = 5;
+    else if (f <= 6) ceilF = 6;
+    else if (f <= 10) ceilF = 10;
+    else ceilF = 10;
+    return ceilF * 10 ** exp;
+}
+
+/** Tick step so labels land on round values (prefer 200k steps when max is 600k). */
+function pyramidNiceTickStep(niceMax: number): number {
+    const candidates = [1, 2, 2.5, 5, 10].flatMap(m => [m, m * 10, m * 100, m * 1000, m * 10000, m * 100000, m * 1000000]);
+    const sorted = [...new Set(candidates)].filter(s => s > 0 && s <= niceMax / 2).sort((a, b) => b - a);
+    for (const step of sorted) {
+        const n = niceMax / step;
+        if (n >= 2 && n <= 8 && Number.isInteger(n)) return step;
+    }
+    return niceMax / 4;
+}
+
+/**
+ * Channel captions: Direct at grid left quarter. Partner uses mostly geometric right quarter
+ * (centerX + gw/4); a small blend toward inner positive-half center avoids mirroring about
+ * zero (2*zX - directX), which pushes Partner too far right.
+ */
+function placePyramidChannelHeaders(option: any): void {
+    const hdr = option._pyramidChannelHeader;
+    if (!hdr || !option.grid) return;
+    const cw = Number(option._width);
+    if (!Number.isFinite(cw) || cw <= 0) return;
+    delete option._pyramidChannelHeader;
+
+    const gl = Number(option.grid.left) || 0;
+    const gr = Number(option.grid.right) || 0;
+    const gt = Number(option.grid.top) || 0;
+    const gw = Math.max(0, cw - gl - gr);
+    const centerX = gl + gw / 2;
+    const dx = gw / 4;
+    const topY = Math.max(4, gt - 10);
+
+    const L = estimatePyramidYCategoryInsetPx(option, gw);
+    const innerW = Math.max(gw - L, 1);
+    const zX = gl + L + innerW / 2;
+
+    const style = {
+        fontSize: 11,
+        fontWeight: 'bold' as const,
+        fill: '#555',
+        textAlign: 'center' as const,
+        textVerticalAlign: 'bottom' as const,
+    };
+
+    if (hdr.mode === 'single') {
+        option.graphic = [{ type: 'text', left: zX, top: topY, z: 100, style: { ...style, text: hdr.text } }];
+    } else {
+        const directX = centerX - dx;
+        const geoPartnerX = centerX + dx;
+        const innerPartnerX = zX + innerW / 4;
+        const partnerX = 0.9 * geoPartnerX - 0.02 * innerPartnerX;
+        option.graphic = [
+            { type: 'text', left: directX, top: topY, z: 100, style: { ...style, text: hdr.left } },
+            { type: 'text', left: partnerX, top: topY, z: 100, style: { ...style, text: hdr.right } },
+        ];
     }
 }
 
@@ -441,6 +551,7 @@ export function ecApplyLayoutToSpec(
             ? (hasVisualMap ? VISUALMAP_RIGHT_OFFSET + visualMapWidth + VISUALMAP_GAP : 10)
             : (hasLegend ? legendWidth : (hasVisualMap ? visualMapWidth + VISUALMAP_GAP : 10)) + LEGEND_GAP;
     const bottomLegendExtra = isDualLegend ? 30 : 0;
+
     const gridMargin = {
         left: (hasYTitle ? 70 : 50) + CANVAS_BUFFER,
         right: rightMargin + CANVAS_BUFFER,
@@ -504,8 +615,22 @@ export function ecApplyLayoutToSpec(
             plotHeight = layout.subplotHeight || canvasSize.height;
         }
 
+        if (context.chartType === 'Pyramid Chart' && yIsDiscrete && layout.yStepUnit !== 'group') {
+            const yItemCount = layout.yNominalCount || layout.yContinuousAsDiscrete || 0;
+            if (yItemCount > 0) {
+                plotHeight = Math.max(
+                    plotHeight,
+                    pyramidPanelHeightMatchVegaLite(yItemCount, canvasSize),
+                );
+            }
+        }
+
         option._width = plotWidth + gridMargin.left + gridMargin.right;
         option._height = plotHeight + gridMargin.top + gridMargin.bottom;
+    }
+
+    if (context.chartType === 'Pyramid Chart') {
+        placePyramidChannelHeaders(option);
     }
 
     // ── Bar sizing ───────────────────────────────────────────────────────
@@ -526,12 +651,17 @@ export function ecApplyLayoutToSpec(
             // (barGap: '-100%'), not grouped-bar side-by-side layout.
             const isPyramidMirror =
                 context.chartType === 'Pyramid Chart' && barSeries.length === 2 && !isStacked;
+            // Rose: polar categorical bars — never use Cartesian grouped-barWidth (would split each
+            // angle into N thin slots when multiple series existed, or mis-size if layout sees >1 bar).
+            const isRosePolar =
+                context.chartType === 'Rose Chart'
+                && barSeries.every((s: any) => s.coordinateSystem === 'polar');
 
             if (step > 0) {
                 const bandPadding = layout.stepPadding;
                 const catGapPct = `${Math.round(bandPadding * 100)}%`;
 
-                if (!isStacked && (stepUnit === 'group' || barSeries.length > 1) && !isPyramidMirror) {
+                if (!isStacked && (stepUnit === 'group' || barSeries.length > 1) && !isPyramidMirror && !isRosePolar) {
                     // Grouped: each bar gets an equal share of the usable band.
                     // Use (seriesCount + 1) so total bar width stays strictly inside the slot and bars不会互相挤压重叠.
                     const usableStep = step * (1 - bandPadding);
@@ -599,6 +729,62 @@ export function ecApplyLayoutToSpec(
         }
         if (layout.yLabel.fontSize) {
             option.yAxis.axisLabel.fontSize = layout.yLabel.fontSize;
+        }
+    }
+
+    // Pyramid: keep x (value) and y (category) axis chrome aligned (line/tick/label).
+    if (context.chartType === 'Pyramid Chart') {
+        const lineStyle = { color: '#333', width: 1 };
+        const tickStyle = { color: '#333', width: 1 };
+        if (option.xAxis?.type === 'value') {
+            const xAxis = option.xAxis;
+            const rawAbs = Math.max(
+                Math.abs(Number(xAxis.min) || 0),
+                Math.abs(Number(xAxis.max) || 0),
+            );
+            if (rawAbs > 0 && Number.isFinite(rawAbs)) {
+                const nice = pyramidNiceSymmetricMax(rawAbs);
+                xAxis.min = -nice;
+                xAxis.max = nice;
+                xAxis.interval = pyramidNiceTickStep(nice);
+            }
+            xAxis.axisLine = { show: true, lineStyle: lineStyle, ...(xAxis.axisLine || {}) };
+            xAxis.axisLine.show = true;
+            xAxis.axisTick = {
+                show: true,
+                length: 6,
+                lineStyle: tickStyle,
+                ...(typeof xAxis.axisTick === 'object' ? xAxis.axisTick : {}),
+            };
+            xAxis.axisTick.show = true;
+            if (!xAxis.axisLabel) xAxis.axisLabel = {};
+            if (xAxis.axisLabel.fontSize == null) xAxis.axisLabel.fontSize = 11;
+            if (xAxis.axisLabel.color == null) xAxis.axisLabel.color = '#333';
+            if (!xAxis.nameTextStyle) xAxis.nameTextStyle = { fontSize: 12, color: '#333' };
+        }
+        if (option.yAxis?.type === 'category') {
+            const yAxis = option.yAxis;
+            if (yAxis.boundaryGap === undefined) yAxis.boundaryGap = true;
+            yAxis.axisLine = {
+                show: true,
+                onZero: false,
+                lineStyle,
+                ...(typeof yAxis.axisLine === 'object' && yAxis.axisLine ? yAxis.axisLine : {}),
+            };
+            yAxis.axisLine.show = true;
+            yAxis.axisTick = {
+                show: true,
+                alignWithLabel: true,
+                interval: 0,
+                length: 6,
+                lineStyle: tickStyle,
+                ...(typeof yAxis.axisTick === 'object' && yAxis.axisTick ? yAxis.axisTick : {}),
+            };
+            yAxis.axisTick.show = true;
+            if (!yAxis.axisLabel) yAxis.axisLabel = {};
+            if (yAxis.axisLabel.fontSize == null) yAxis.axisLabel.fontSize = 11;
+            if (yAxis.axisLabel.color == null) yAxis.axisLabel.color = '#333';
+            if (!yAxis.nameTextStyle) yAxis.nameTextStyle = { fontSize: 12, color: '#333' };
         }
     }
 
@@ -837,13 +1023,94 @@ export function ecApplyLayoutToSpec(
                     s.itemStyle.borderColor = mappedColor!;
                 }
             });
+        } else if (context.chartType === 'Pyramid Chart' && Array.isArray(option.series)) {
+            // ECharts default palette: first = blue (#5470c6), fourth = red (#ee6666) — not adjacent greens.
+            const pal = effectivePalette && effectivePalette.length > 0 ? effectivePalette : DEFAULT_COLORS;
+            const cLeft = pal[0];
+            const cRight = pal.length > 3 ? pal[3] : pal[Math.min(1, pal.length - 1)];
+            let barIdx = 0;
+            for (const s of option.series) {
+                if (!s || s.type !== 'bar') continue;
+                s.itemStyle = s.itemStyle || {};
+                s.itemStyle.color = barIdx === 0 ? cLeft : cRight;
+                barIdx += 1;
+                if (barIdx >= 2) break;
+            }
+        } else if (context.chartType === 'Rose Chart' && Array.isArray(option.series)) {
+            // 无 color：单条 polar bar + data 项带 name；按图例与角标对齐 palette（勿用多 series，否则分组 barWidth 破坏扇形）。
+            const polarBars = option.series.filter(
+                (s: any) => s && s.type === 'bar' && s.coordinateSystem === 'polar',
+            );
+            const stacked = polarBars.some((s: any) => s.stack != null && s.stack !== '');
+            const single = polarBars.length === 1 && !stacked;
+            if (single && Array.isArray(polarBars[0].data)) {
+                const legendLabels: string[] = option.legend?.data?.map((d: any) =>
+                    typeof d === 'string' ? d : (d?.name ?? ''),
+                ) ?? [];
+                const categoryToColor = new Map<string, string>();
+                legendLabels.forEach((name, i) => {
+                    if (!name) return;
+                    categoryToColor.set(name, effectivePalette[i % n]);
+                });
+                const s0 = polarBars[0];
+                s0.data.forEach((item: any, i: number) => {
+                    const rawName: string = typeof item === 'object' && item != null && typeof item.name === 'string'
+                        ? item.name
+                        : (legendLabels[i] ?? '');
+                    const mapped = rawName && categoryToColor.has(rawName)
+                        ? categoryToColor.get(rawName)
+                        : effectivePalette[i % n];
+                    const color = mapped!;
+                    if (item != null && typeof item === 'object') {
+                        item.itemStyle = item.itemStyle || {};
+                        if (item.itemStyle.color == null) item.itemStyle.color = color;
+                    } else {
+                        s0.data[i] = { value: item, name: String(rawName || i), itemStyle: { color } };
+                    }
+                });
+                const bridge = option.series.find(
+                    (s: any) => s && s.type === 'pie' && s.name === EC_ROSE_LEGEND_BRIDGE_SERIES_NAME,
+                );
+                if (bridge && Array.isArray(bridge.data)) {
+                    bridge.data.forEach((item: any, i: number) => {
+                        const rawName: string = typeof item === 'object' && item != null && typeof item.name === 'string'
+                            ? item.name
+                            : '';
+                        const color = (rawName && categoryToColor.get(rawName))
+                            ?? effectivePalette[i % n];
+                        if (item != null && typeof item === 'object') {
+                            item.itemStyle = item.itemStyle || {};
+                            if (item.itemStyle.color == null) item.itemStyle.color = color;
+                        }
+                    });
+                }
+                if (option.legend) {
+                    const order: string[] = Array.isArray(option.angleAxis?.data) && option.angleAxis.data.length > 0
+                        ? option.angleAxis.data.map((c: any) => String(c))
+                        : legendLabels.filter(Boolean);
+                    const names = order.length > 0
+                        ? order
+                        : s0.data.map((item: any, j: number) =>
+                            (typeof item === 'object' && item != null && item.name != null)
+                                ? String(item.name)
+                                : String(j));
+                    names.forEach((name: string, i: number) => {
+                        if (!name || categoryToColor.has(name)) return;
+                        categoryToColor.set(name, effectivePalette[i % n]);
+                    });
+                    option.legend.show = true;
+                    option.legend.selectedMode = false;
+                    option.legend.data = names;
+                }
+            }
         } else {
-            // Pie / Rose / Streamgraph / Sunburst：颜色在 data（或树节点）上，不要给 series 设 itemStyle.color，否则整图会变成一种颜色。
+            // Pie / Streamgraph / Sunburst，以及 Rose（叠堆或单角分类）：颜色多在 data / 节点上；
+            // 无 color 的多角分类 Rose 已在上面按系列赋色，此处勿给整图套单一 series 色。
             const colorByDataItem = context.chartType === 'Pie Chart' || context.chartType === 'Rose Chart'
                 || context.chartType === 'Streamgraph'
                 || context.chartType === 'Sunburst Chart';
             if (colorByDataItem) {
-                // option.color 已在上面设为 effectivePalette，ECharts 会按索引给每个扇区上色，无需再处理 series。
+                // Pie / Sunburst / Streamgraph：依赖 option.color 按扇区或数据项取色；Rose 叠堆依赖多 series 默认色带。
             } else if (context.chartType === 'Radar Chart') {
                 // Radar：通常是「单个 radar series + 多个 data item(类别)」。
                 // 颜色应按类别(data item)分配，而不是按 series 分配，否则所有多边形会共用同色。

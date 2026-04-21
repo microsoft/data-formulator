@@ -58,11 +58,11 @@ export interface EncodingTypeDecision {
 function visCategoryToVLType(vc: VisCategory): 'quantitative' | 'ordinal' | 'nominal' | 'temporal' {
     switch (vc) {
         case 'quantitative': return 'quantitative';
-        case 'ordinal':      return 'ordinal';
-        case 'temporal':     return 'temporal';
-        case 'geographic':   return 'quantitative';
+        case 'ordinal': return 'ordinal';
+        case 'temporal': return 'temporal';
+        case 'geographic': return 'quantitative';
         case 'nominal':
-        default:             return 'nominal';
+        default: return 'nominal';
     }
 }
 

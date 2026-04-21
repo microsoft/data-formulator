@@ -63,6 +63,35 @@ import {
 } from './decisions';
 
 // ---------------------------------------------------------------------------
+// Short discrete axis labels (align with echarts/templates/bar.ts)
+// ---------------------------------------------------------------------------
+
+const VL_SHORT_DISCRETE_CATEGORY_COUNT = 4;
+const VL_SHORT_DISCRETE_LABEL_MAX_LEN = 8;
+
+/** Few, short category strings → skip angled axis labels in Vega-Lite (config.axisX/Y). */
+function discreteAxisShouldUseHorizontalLabels(
+    field: string | undefined,
+    channelType: string | undefined,
+    table: any[],
+): boolean {
+    if (!field) return false;
+    if (channelType === 'quantitative') return true;
+
+    const uniques = new Set<string>();
+    for (const row of table) {
+        const v = row[field];
+        if (v == null || v === '') continue;
+        uniques.add(String(v));
+    }
+    if (uniques.size === 0) return false;
+    const labels = [...uniques];
+    if (labels.length > VL_SHORT_DISCRETE_CATEGORY_COUNT) return false;
+    const maxLen = Math.max(...labels.map(s => s.length));
+    return maxLen <= VL_SHORT_DISCRETE_LABEL_MAX_LEN;
+}
+
+// ---------------------------------------------------------------------------
 // Internal types
 // ---------------------------------------------------------------------------
 
@@ -132,7 +161,7 @@ export function computeLayout(
     // Facet overhead: fixed (axis labels, titles) + per-panel gap (spacing).
     const fixW = options.facetFixedPadding?.width ?? 0;
     const fixH = options.facetFixedPadding?.height ?? 0;
-    const gap  = options.facetGap ?? 0;
+    const gap = options.facetGap ?? 0;
 
     const baseRefSize = 300;
     const sizeRatio = Math.max(defaultChartWidth, defaultChartHeight) / baseRefSize;
@@ -412,12 +441,12 @@ export function computeLayout(
                 const perSubplotCanvasW = facetCols > 1
                     ? Math.max(minContinuousSizeX,
                         (defaultChartWidth * Math.min(maxStretchVal, Math.pow(facetCols, facetElasticityVal)) - fixW)
-                            / facetCols - gap)
+                        / facetCols - gap)
                     : defaultChartWidth;
                 const perSubplotCanvasH = facetRows > 1
                     ? Math.max(minContinuousSizeY,
                         (defaultChartHeight * Math.min(maxStretchVal, Math.pow(facetRows, facetElasticityVal)) - fixH)
-                            / facetRows - gap)
+                        / facetRows - gap)
                     : defaultChartHeight;
 
                 // --- Gas pressure: per-axis raw stretches ---
@@ -748,8 +777,34 @@ export function computeLayout(
     // --- Label sizing ---
     const xHasDiscreteItems = xTotalNominalCount > 0;
     const yHasDiscreteItems = yTotalNominalCount > 0;
-    const xLabel = computeLabelSizing(xStepSize, xHasDiscreteItems);
-    const yLabel = computeLabelSizing(yStepSize, yHasDiscreteItems);
+    let xLabel = computeLabelSizing(xStepSize, xHasDiscreteItems);
+    let yLabel = computeLabelSizing(yStepSize, yHasDiscreteItems);
+
+    if (xHasDiscreteItems) {
+        const xf = channelSemantics.x?.field;
+        const xt = effectiveTypes.x || channelSemantics.x?.type;
+        if (discreteAxisShouldUseHorizontalLabels(xf, xt, table)) {
+            // Must be explicit: omitting labelAngle leaves VL defaults (e.g. -45° on ordinal).
+            xLabel = {
+                ...xLabel,
+                labelAngle: 0,
+                labelAlign: 'center',
+                labelBaseline: 'top',
+            };
+        }
+    }
+    if (yHasDiscreteItems) {
+        const yf = channelSemantics.y?.field;
+        const yt = effectiveTypes.y || channelSemantics.y?.type;
+        if (discreteAxisShouldUseHorizontalLabels(yf, yt, table)) {
+            yLabel = {
+                ...yLabel,
+                labelAngle: 0,
+                labelAlign: 'right',
+                labelBaseline: 'middle',
+            };
+        }
+    }
 
     return {
         subplotWidth,
@@ -1014,7 +1069,7 @@ export function computeChannelBudgets(
 
     const fixW = options.facetFixedPadding?.width ?? 0;
     const fixH = options.facetFixedPadding?.height ?? 0;
-    const gap  = options.facetGap ?? 0;
+    const gap = options.facetGap ?? 0;
 
     const isDiscreteType = (t: string | undefined) => t === 'nominal' || t === 'ordinal';
     const effectiveType = (ch: string): string | undefined =>
@@ -1118,11 +1173,11 @@ export function computeChannelBudgets(
     // column+row (per-dimension cap) and column-only wrapping (total
     // panel count = grid cols × grid rows).  No multiplication needed.
     const maxValues: Record<string, number> = {
-        x:      maxXToKeep,
-        y:      maxYToKeep,
+        x: maxXToKeep,
+        y: maxYToKeep,
         column: facetGrid?.maxColumnValues ?? Infinity,
-        row:    facetGrid?.maxRowValues ?? Infinity,
-        color:  maxColorVal,
+        row: facetGrid?.maxRowValues ?? Infinity,
+        color: maxColorVal,
     };
 
     return { maxValues, facetGrid };
@@ -1160,7 +1215,7 @@ export function computeFacetGrid(
     const { maxStretch: ms = 2 } = options;
     const fixW = options.facetFixedPadding?.width ?? 0;
     const fixH = options.facetFixedPadding?.height ?? 0;
-    const gap  = options.facetGap ?? 0;
+    const gap = options.facetGap ?? 0;
     const minStep = options.minStep ?? 6;
     const stepPadding = options.stepPadding ?? 0.1;
     const baseMinSubplot = options.minSubplotSize ?? 60;

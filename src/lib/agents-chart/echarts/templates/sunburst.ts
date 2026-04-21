@@ -9,14 +9,15 @@
  * encodes value and ring level encodes hierarchy depth.
  *
  * Data model:
- *   color  (nominal): top-level category (outer ring or first ring)
- *   size   (quantitative): value (mapped to angular extent)
- *   detail (nominal, optional): sub-category for two-level hierarchy
+ *   color  (nominal): inner ring (top-level partition, drives palette)
+ *   size   (quantitative): value (mapped to angular extent on leaves)
+ *   group  (nominal, optional): middle ring — e.g. gameType under region
+ *   detail (nominal, optional): outer ring / leaves — e.g. game under gameType
  *
  * If only color + size: single-ring sunburst (same as pie but styled differently).
- * If color + size + detail: two-ring sunburst (color = inner, detail = outer).
- *   Hues follow inner palette; inner opacity 100%, outer 80%.
- * If color + size + detail + group: three-ring (inner → middle → outer).
+ * If color + size + group: two-ring (color = inner, group = outer).
+ * If color + size + detail (no group): two-ring (color = inner, detail = outer).
+ * If color + size + group + detail: three-ring (inner → middle → outer).
  *   Same base hue per inner branch: 100% / 80% / 60% opacity by depth.
  */
 
@@ -37,6 +38,12 @@ function collectSunburstLeafValues(nodes: any[]): number[] {
 const SUNBURST_OPACITY_L1 = 1;
 const SUNBURST_OPACITY_L2 = 0.8;
 const SUNBURST_OPACITY_L3 = 0.6;
+
+/** Outer ring only: hide label when sector angle (deg) is below this (ECharts label.minAngle). */
+const SUNBURST_OUTER_LABEL_MIN_ANGLE_DEG = 3;
+
+/** Enlarge sunburst canvas (_width/_height) and radius budget vs default gallery size. */
+const SUNBURST_CANVAS_SIZE_MULTIPLIER = 1.55;
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
     const s = hex.trim();
@@ -76,8 +83,8 @@ export const ecSunburstDef: ChartTemplateDef = {
         const { channelSemantics, table, chartProperties, colorDecisions } = ctx;
         const catField = channelSemantics.color?.field;
         const valField = channelSemantics.size?.field;
-        const subCatField = channelSemantics.detail?.field;
-        const leafField = channelSemantics.group?.field;
+        const middleField = channelSemantics.group?.field;
+        const leafField = channelSemantics.detail?.field;
 
         if (!catField) return;
 
@@ -102,15 +109,15 @@ export const ecSunburstDef: ChartTemplateDef = {
         // Build sunburst data (hierarchical tree structure)
         let sunburstData: any[];
 
-        if (subCatField && leafField) {
-            // Three-level: inner = color channel (100%), detail (80%), group leaves (60%)
+        if (middleField && leafField) {
+            // Three-level: color (100%) → group (80%) → detail leaves (60%)
             sunburstData = categories.map((cat, catIdx) => {
                 const base = palette![catIdx % palette!.length];
                 const catRows = table.filter(r => String(r[catField]) === cat);
-                const subCats = extractCategories(catRows, subCatField);
+                const subCats = extractCategories(catRows, middleField);
 
                 const children = subCats.map(sub => {
-                    const subRows = catRows.filter(r => String(r[subCatField]) === sub);
+                    const subRows = catRows.filter(r => String(r[middleField]) === sub);
                     const leaves = extractCategories(subRows, leafField);
                     const grandchildren = leaves.map(leaf => {
                         const leafRows = subRows.filter(r => String(r[leafField]) === leaf);
@@ -139,15 +146,43 @@ export const ecSunburstDef: ChartTemplateDef = {
                     itemStyle: { color: sunburstColorWithOpacity(base, SUNBURST_OPACITY_L1) },
                 };
             });
-        } else if (subCatField) {
-            // Two-level: inner 100%, outer 80%
+        } else if (middleField) {
+            // Two-level: color + group — inner 100%, outer 80%
             sunburstData = categories.map((cat, catIdx) => {
                 const base = palette![catIdx % palette!.length];
                 const catRows = table.filter(r => String(r[catField]) === cat);
-                const subCats = extractCategories(catRows, subCatField);
+                const subCats = extractCategories(catRows, middleField);
 
                 const children = subCats.map(sub => {
-                    const subRows = catRows.filter(r => String(r[subCatField]) === sub);
+                    const subRows = catRows.filter(r => String(r[middleField]) === sub);
+                    let value: number;
+                    if (valField) {
+                        value = subRows.reduce((sum, r) => sum + (Number(r[valField]) || 0), 0);
+                    } else {
+                        value = subRows.length;
+                    }
+                    return {
+                        name: sub,
+                        value,
+                        itemStyle: { color: sunburstColorWithOpacity(base, SUNBURST_OPACITY_L2) },
+                    };
+                });
+
+                return {
+                    name: cat,
+                    children,
+                    itemStyle: { color: sunburstColorWithOpacity(base, SUNBURST_OPACITY_L1) },
+                };
+            });
+        } else if (leafField) {
+            // Two-level: color + detail (no group) — inner 100%, outer 80%
+            sunburstData = categories.map((cat, catIdx) => {
+                const base = palette![catIdx % palette!.length];
+                const catRows = table.filter(r => String(r[catField]) === cat);
+                const subCats = extractCategories(catRows, leafField);
+
+                const children = subCats.map(sub => {
+                    const subRows = catRows.filter(r => String(r[leafField]) === sub);
                     let value: number;
                     if (valField) {
                         value = subRows.reduce((sum, r) => sum + (Number(r[valField]) || 0), 0);
@@ -195,21 +230,30 @@ export const ecSunburstDef: ChartTemplateDef = {
         // For two-level hierarchy: use the outer-ring leaves.
         // For flat: use slice values directly.
         let outerValues: number[];
-        if (subCatField) {
+        if (middleField || leafField) {
             outerValues = collectSunburstLeafValues(sunburstData);
         } else {
             outerValues = sunburstData.map((d: any) => d.value as number);
         }
         const effectiveCount = computeEffectiveBarCount(outerValues);
 
+        const sunburstCanvas = {
+            width: Math.round(ctx.canvasSize.width * SUNBURST_CANVAS_SIZE_MULTIPLIER),
+            height: Math.round(ctx.canvasSize.height * SUNBURST_CANVAS_SIZE_MULTIPLIER),
+        };
         const { radius: pressureRadius, canvasW, canvasH }
-            = computeCircumferencePressure(effectiveCount, ctx.canvasSize, {
+            = computeCircumferencePressure(effectiveCount, sunburstCanvas, {
                 minArcPx: 45,
-                minRadius: 80,
+                minRadius: Math.round(80 * SUNBURST_CANVAS_SIZE_MULTIPLIER),
+                maxRadius: Math.round(400 * SUNBURST_CANVAS_SIZE_MULTIPLIER),
                 maxStretch: ctx.assembleOptions?.maxStretch,
             });
 
-        const outerRadius = Math.max(80, Math.round(Math.min(pressureRadius, (Math.min(canvasW, canvasH) / 2 - 20))));
+        const minOuterR = Math.round(80 * SUNBURST_CANVAS_SIZE_MULTIPLIER);
+        const outerRadius = Math.max(
+            minOuterR,
+            Math.round(Math.min(pressureRadius, (Math.min(canvasW, canvasH) / 2 - 20))),
+        );
         const innerRadius = chartProperties?.innerRadius ?? Math.round(outerRadius * 0.15);
         const span = outerRadius - innerRadius;
         const ringThird1 = innerRadius + Math.round(span / 3);
@@ -242,7 +286,7 @@ export const ecSunburstDef: ChartTemplateDef = {
                     focus: 'ancestor',
                     label: { color: '#000000' },
                 },
-                levels: subCatField && leafField ? [
+                levels: middleField && leafField ? [
                     {},
                     {
                         r0: `${innerRadius}px`,
@@ -259,10 +303,14 @@ export const ecSunburstDef: ChartTemplateDef = {
                     {
                         r0: `${ringThird2}px`,
                         r: `${outerRadius}px`,
-                        label: { fontSize: 9, color: '#000000' },
+                        label: {
+                            fontSize: 9,
+                            color: '#000000',
+                            minAngle: SUNBURST_OUTER_LABEL_MIN_ANGLE_DEG,
+                        },
                         itemStyle: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
                     },
-                ] : subCatField ? [
+                ] : (middleField || leafField) ? [
                     {}, // root
                     {
                         // Inner ring (top-level categories)
@@ -275,13 +323,21 @@ export const ecSunburstDef: ChartTemplateDef = {
                         // Outer ring (sub-categories)
                         r0: `${ringHalf}px`,
                         r: `${outerRadius}px`,
-                        label: { fontSize: 10, color: '#000000' },
+                        label: {
+                            fontSize: 10,
+                            color: '#000000',
+                            minAngle: SUNBURST_OUTER_LABEL_MIN_ANGLE_DEG,
+                        },
                         itemStyle: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' },
                     },
                 ] : [
                     {}, // root
                     {
-                        label: { fontSize: 12, color: '#000000' },
+                        label: {
+                            fontSize: 12,
+                            color: '#000000',
+                            minAngle: SUNBURST_OUTER_LABEL_MIN_ANGLE_DEG,
+                        },
                         itemStyle: { borderWidth: 2, borderColor: '#fff' },
                     },
                 ],

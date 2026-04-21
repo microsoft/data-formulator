@@ -88,33 +88,71 @@ export const ecPyramidChartDef: ChartTemplateDef = {
 
         const maxAbs = Math.max(0, ...leftData.map(Math.abs), ...rightData.map(Math.abs));
 
+        // Shared axis look — x (value) and y (category) match.
+        const axisLineStyle = { color: '#333', width: 1 };
+        const tickLineStyle = { color: '#333', width: 1 };
+        const labelFont = { fontSize: 11, color: '#333' };
+
+        const yAxisStyle = {
+            type: 'category' as const,
+            data: categories,
+            name: catField,
+            nameLocation: 'middle' as const,
+            nameGap: 40,
+            nameTextStyle: { fontSize: 12, color: '#333' },
+            boundaryGap: true,
+            axisLine: { show: true, onZero: false, lineStyle: axisLineStyle },
+            axisTick: {
+                show: true,
+                alignWithLabel: true,
+                interval: 0,
+                length: 6,
+                lineStyle: tickLineStyle,
+            },
+            axisLabel: { ...labelFont },
+            splitLine: { show: false },
+        };
+
         const option: any = {
             tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
             xAxis: {
                 type: 'value',
                 name: valField,
-                axisTick: { show: true },
-                axisLabel: { formatter: (v: number) => Math.abs(v).toString() },
+                nameLocation: 'middle',
+                nameGap: 28,
+                nameTextStyle: { fontSize: 12, color: '#333' },
+                axisLine: { show: true, lineStyle: axisLineStyle },
+                axisTick: { show: true, length: 6, lineStyle: tickLineStyle },
+                axisLabel: {
+                    ...labelFont,
+                    formatter: (v: number) => Math.abs(v).toString(),
+                },
+                splitLine: { show: false },
                 ...(maxAbs > 0 ? { min: -maxAbs, max: maxAbs } : {}),
             },
-            yAxis: { type: 'category', data: categories, name: catField, axisTick: { show: true, alignWithLabel: true } },
+            yAxis: yAxisStyle,
             series: [
                 {
                     type: 'bar',
                     name: leftName,
                     data: leftData,
-                    itemStyle: { color: '#4e79a7' },
                     barGap: '-100%',
                 },
                 {
                     type: 'bar',
                     name: rightName,
                     data: rightData,
-                    itemStyle: { color: '#e15759' },
                     barGap: '-100%',
                 },
             ],
         };
+
+        // Channel titles: positioned in ecApplyLayoutToSpec from grid geometry (equal offset from x=0).
+        if (leftName != null && rightName != null) {
+            option._pyramidChannelHeader = leftName === rightName
+                ? { mode: 'single' as const, text: leftName }
+                : { mode: 'pair' as const, left: leftName, right: rightName };
+        }
 
         Object.assign(spec, option);
         delete spec.mark;

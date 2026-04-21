@@ -323,7 +323,11 @@ function buildCategoryAlignedData(
 ): (number | null)[] {
     const map = new Map<string, number>();
     for (const row of rows) {
-        map.set(String(row[xField]), row[yField]);
+        const v = row[yField];
+        if (v != null && !isNaN(Number(v))) {
+            const k = String(row[xField]);
+            map.set(k, (map.get(k) ?? 0) + Number(v));
+        }
     }
     return categories.map(cat => map.get(cat) ?? null);
 }
