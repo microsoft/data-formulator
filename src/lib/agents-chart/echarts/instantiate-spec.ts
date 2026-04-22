@@ -258,6 +258,31 @@ function pyramidNiceTickStep(niceMax: number): number {
 }
 
 /**
+ * Grouped boxplot needs enough per-category horizontal room; otherwise boxes overlap.
+ * Return a conservative minimum plot width for category x-axis grouped boxplots.
+ */
+function estimateGroupedBoxplotMinPlotWidth(option: any, layout: LayoutResult): number {
+    if (option?.xAxis?.type !== 'category' || !Array.isArray(option?.series)) return 0;
+    const boxplotSeriesCount = option.series.filter((s: any) => s?.type === 'boxplot').length;
+    if (boxplotSeriesCount <= 1) return 0;
+
+    let categoryCount = Array.isArray(option.xAxis?.data) ? option.xAxis.data.length : 0;
+    if (categoryCount <= 0 && layout.xNominalCount > 0) {
+        categoryCount = Math.max(1, Math.round(layout.xNominalCount / boxplotSeriesCount));
+    }
+    if (categoryCount <= 0) return 0;
+
+    const MIN_BOX_WIDTH = 10;
+    const MIN_INNER_GAP = 3;
+    const SIDE_PADDING = 6;
+    const perCategoryWidth =
+        boxplotSeriesCount * MIN_BOX_WIDTH
+        + (boxplotSeriesCount - 1) * MIN_INNER_GAP
+        + SIDE_PADDING * 2;
+    return categoryCount * perCategoryWidth;
+}
+
+/**
  * Channel captions: Direct at grid left quarter. Partner uses mostly geometric right quarter
  * (centerX + gw/4); a small blend toward inner positive-half center avoids mirroring about
  * zero (2*zX - directX), which pushes Partner too far right.
@@ -476,10 +501,10 @@ export function ecApplyLayoutToSpec(
                         }
                     }
                     plotW = xItemCount > 0 ? layout.xStep * xItemCount : plotW;
-                    const boxplotSeriesCount = option.series?.filter((s: any) => s.type === 'boxplot').length || 0;
-                    if (boxplotSeriesCount > 1) {
-                        plotW = plotW * boxplotSeriesCount;
-                    }
+                }
+                const boxplotMinWForLegend = estimateGroupedBoxplotMinPlotWidth(option, layout);
+                if (boxplotMinWForLegend > 0) {
+                    plotW = Math.max(plotW, boxplotMinWForLegend);
                 }
                 const effectiveChartWidth = plotW + gridLeft + rightMarginPx;
                 const legendLeftPx = Math.max(0, effectiveChartWidth - rightMarginPx);
@@ -598,10 +623,9 @@ export function ecApplyLayoutToSpec(
                 }
             }
             plotWidth = xItemCount > 0 ? layout.xStep * xItemCount : (layout.subplotWidth || canvasSize.width);
-            // Grouped boxplot: multiple boxplot series (e.g. by color) need more horizontal space so boxes don't overlap (same idea as grouped bar).
-            const boxplotSeriesCount = option.series?.filter((s: any) => s.type === 'boxplot').length || 0;
-            if (boxplotSeriesCount > 1) {
-                plotWidth = plotWidth * boxplotSeriesCount;
+            const boxplotMinW = estimateGroupedBoxplotMinPlotWidth(option, layout);
+            if (boxplotMinW > 0) {
+                plotWidth = Math.max(plotWidth, boxplotMinW);
             }
         } else {
             // Continuous axis — subplotWidth is already correct
