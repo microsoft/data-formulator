@@ -126,7 +126,7 @@ const FAMILY_FUNNEL: ChannelRoleMap = {
 
 /** Treemap / Sunburst */
 const FAMILY_TREEMAP: ChannelRoleMap = {
-    color: 'category', size: 'measure', detail: 'auxiliary',
+    color: 'category', size: 'measure', detail: 'auxiliary', group: 'auxiliary',
 };
 
 /** Sankey */

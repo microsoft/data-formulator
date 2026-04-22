@@ -9,7 +9,7 @@
  */
 
 // Shared types & helpers
-export type { TestCase, DateFormat, GallerySection } from './types';
+export type { TestCase, DateFormat } from './types';
 export { makeField, makeEncodingItem, inferType, buildMetadata } from './types';
 
 // Utilities
@@ -36,12 +36,51 @@ export { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genCha
 export { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
 export { genDiscreteAxisTests } from './discrete-axis-tests';
 export { genDateTests, genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
-export { genSemanticContextTests, genSnapToBoundTests, genSemanticFallbackTests } from './semantic-tests';
+export { genSemanticContextTests, genSnapToBoundTests } from './semantic-tests';
+export {
+    OMNI_VIZ_ROWS,
+    OMNI_VIZ_LEVELS,
+    OMNI_VIZ_MONTHS,
+    OMNI_VIZ_REGIONS,
+    OMNI_VIZ_GAME_TYPES,
+    OMNI_VIZ_GAME_ORDER,
+    omniVizDetailTable,
+    omniVizGroupedBarRegionGameTypeTable,
+    omniVizHeatmapGameMonthTable,
+    omniVizLineTable,
+    omniVizSunburstTable,
+    omniVizWaterfallTable,
+    type OmniVizRow,
+} from './omni-viz-dataset';
+export {
+    genOmniVizGroupedBarTests,
+    genOmniVizLineTests,
+    genOmniVizHeatmapTests,
+    genOmniVizSunburstTests,
+    genOmniVizWaterfallTests,
+    GALLERY_OMNI_VIZ_GENERATOR_KEYS,
+    OMNI_VIZ_GALLERY_DATA_TABLE_ENTRY,
+} from './omni-viz-tests';
+
+// Gallery navigation tree (language -> category -> page)
+export {
+    GALLERY_TREE,
+    DEFAULT_PATH,
+    findPage,
+    firstPagePath,
+} from './gallery-tree';
+export type {
+    GallerySection as GalleryTreeSection,
+    GalleryCategory,
+    GalleryPage,
+    GalleryPageRender,
+    SingleRenderLibrary,
+} from './gallery-tree';
 
 // ---------------------------------------------------------------------------
-// Master map & gallery sections
+// Master TEST_GENERATORS map
 // ---------------------------------------------------------------------------
-import { TestCase, GallerySection } from './types';
+import { TestCase } from './types';
 
 import { genScatterTests, genRegressionTests } from './scatter-tests';
 import { genBarTests, genStackedBarTests, genGroupedBarTests } from './bar-tests';
@@ -60,10 +99,31 @@ import { genGasPressureTests } from './gas-pressure-tests';
 import { genLineAreaStretchTests } from './line-area-stretch-tests';
 import { genDiscreteAxisTests } from './discrete-axis-tests';
 import { genDateYearTests, genDateMonthTests, genDateYearMonthTests, genDateDecadeTests, genDateDateTimeTests, genDateHoursTests } from './date-tests';
-import { genSemanticContextTests, genSnapToBoundTests, genSemanticFallbackTests } from './semantic-tests';
+import { genSemanticContextTests, genSnapToBoundTests } from './semantic-tests';
 import { genEChartsScatterTests, genEChartsLineTests, genEChartsBarTests, genEChartsStackedBarTests, genEChartsGroupedBarTests, genEChartsStressTests, genEChartsAreaTests, genEChartsPieTests, genEChartsHeatmapTests, genEChartsHistogramTests, genEChartsBoxplotTests, genEChartsRadarTests, genEChartsCandlestickTests, genEChartsStreamgraphTests, genEChartsFacetSmallTests, genEChartsFacetWrapTests, genEChartsFacetClipTests, genEChartsRoseTests, genEChartsGaugeTests, genEChartsFunnelTests, genEChartsTreemapTests, genEChartsSunburstTests, genEChartsSankeyTests, genEChartsUniqueStressTests } from './echarts-tests';
 import { genChartJsScatterTests, genChartJsLineTests, genChartJsBarTests, genChartJsStackedBarTests, genChartJsGroupedBarTests, genChartJsAreaTests, genChartJsPieTests, genChartJsHistogramTests, genChartJsRadarTests, genChartJsStressTests, genChartJsRoseTests } from './chartjs-tests';
 import { genGoFishScatterTests, genGoFishLineTests, genGoFishBarTests, genGoFishStackedBarTests, genGoFishGroupedBarTests, genGoFishAreaTests, genGoFishStackedAreaTests, genGoFishPieTests, genGoFishScatterPieTests, genGoFishStressTests } from './gofish-tests';
+import {
+    genGalleryRegionalSurveyScatterTests,
+    genGalleryRegionalSurveyLineTests,
+    genGalleryRegionalSurveyBarTests,
+    genGalleryRegionalSurveyStackedBarTests,
+    genGalleryRegionalSurveyGroupedBarTests,
+    genGalleryRegionalSurveyAreaTests,
+    genGalleryRegionalSurveyPieTests,
+    genGalleryRegionalSurveyHistogramTests,
+    genGalleryRegionalSurveyRadarTests,
+    genGalleryRegionalSurveyRoseTests,
+} from '../gallery/regional-survey-tests';
+import {
+    genOmniVizGroupedBarTests,
+    genOmniVizLineTests,
+    genOmniVizHeatmapTests,
+    genOmniVizSunburstTests,
+    genOmniVizWaterfallTests,
+    GALLERY_OMNI_VIZ_GENERATOR_KEYS,
+    OMNI_VIZ_GALLERY_DATA_TABLE_ENTRY,
+} from './omni-viz-tests';
 
 /** All test generators mapped by chart group */
 export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
@@ -114,7 +174,6 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Line/Area Stretch': genLineAreaStretchTests,
     'Semantic Context': genSemanticContextTests,
     'Snap-to-Bound': genSnapToBoundTests,
-    'Semantic Fallback': genSemanticFallbackTests,
     'ECharts: Scatter': genEChartsScatterTests,
     'ECharts: Line': genEChartsLineTests,
     'ECharts: Bar': genEChartsBarTests,
@@ -150,6 +209,21 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     'Chart.js: Radar': genChartJsRadarTests,
     'Chart.js: Rose': genChartJsRoseTests,
     'Chart.js: Stress Tests': genChartJsStressTests,
+    'Gallery: Scatter': genGalleryRegionalSurveyScatterTests,
+    'Gallery: Line': genGalleryRegionalSurveyLineTests,
+    'Gallery: Bar': genGalleryRegionalSurveyBarTests,
+    'Gallery: Stacked Bar': genGalleryRegionalSurveyStackedBarTests,
+    'Gallery: Grouped Bar': genGalleryRegionalSurveyGroupedBarTests,
+    'Gallery: Area': genGalleryRegionalSurveyAreaTests,
+    'Gallery: Pie': genGalleryRegionalSurveyPieTests,
+    'Gallery: Histogram': genGalleryRegionalSurveyHistogramTests,
+    'Gallery: Radar': genGalleryRegionalSurveyRadarTests,
+    'Gallery: Rose': genGalleryRegionalSurveyRoseTests,
+    'Omni: Line': genOmniVizLineTests,
+    'Omni: Grouped Bar': genOmniVizGroupedBarTests,
+    'Omni: Waterfall': genOmniVizWaterfallTests,
+    'Omni: Heatmap': genOmniVizHeatmapTests,
+    'Omni: Sunburst': genOmniVizSunburstTests,
     'GoFish Basic': () => [
         ...genGoFishScatterTests(),
         ...genGoFishLineTests(),
@@ -164,98 +238,3 @@ export const TEST_GENERATORS: Record<string, () => TestCase[]> = {
     ],
 };
 
-/** Gallery organised into three sections */
-export const GALLERY_SECTIONS: GallerySection[] = [
-    {
-        label: 'Semantic Context',
-        description: 'Demonstrates how semantic type annotations improve chart output: formatting, domain constraints, axis reversal, scale type, and interpolation',
-        entries: ['Semantic Context', 'Snap-to-Bound', 'Semantic Fallback'],
-    },
-    {
-        label: 'VegaLite',
-        description: 'Demos for every supported chart type',
-        entries: [
-            'Scatter Plot', 'Regression', 'Bar Chart', 'Stacked Bar Chart',
-            'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
-            'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
-            'Lollipop Chart', 'Density Plot', 'Bump Chart', 'Candlestick Chart', 'Waterfall Chart',
-            'Strip Plot', 'Radar Chart', 'Pyramid Chart', 'Rose Chart', 'Custom Charts',
-        ],
-    },
-    {
-        label: 'Facets',
-        description: 'Faceting modes and feature combinations',
-        entries: ['Facet: Columns', 'Facet: Rows', 'Facet: Cols+Rows', 'Facet: Small', 'Facet: Wrap', 'Facet: Clip', 'Facet: Overflowed Col', 'Facet: Overflowed Col+Row', 'Facet: Overflowed Row', 'Facet: Dense Line'],
-    },
-    {
-        label: 'Stress Tests',
-        description: 'Overflow, elasticity, and temporal format stress tests',
-        entries: [
-            'Overflow', 'Elasticity & Stretch', 'Discrete Axis Sizing', 'Gas Pressure (§2)',
-            'Line/Area Stretch',
-            'Dates: Year', 'Dates: Month', 'Dates: Year-Month',
-            'Dates: Decade', 'Dates: Date/DateTime', 'Dates: Hours',
-        ],
-    },
-    {
-        label: 'ECharts Backend',
-        description: 'Same inputs through ECharts backend — compare series-based output vs VL encoding-based output',
-        entries: [
-            // VegaLite 同款（同一批 test case 用 VL+EC 双端渲染）
-            'Scatter Plot', 'Regression', 'Bar Chart', 'Stacked Bar Chart',
-            'Grouped Bar Chart', 'Histogram', 'Heatmap', 'Line Chart', 'Dotted Line Chart',
-            'Boxplot', 'Pie Chart', 'Ranged Dot Plot', 'Area Chart', 'Streamgraph',
-            'Lollipop Chart', 'Density Plot', 'Bump Chart', 'Candlestick Chart', 'Waterfall Chart',
-            'Strip Plot', 'Radar Chart', 'Pyramid Chart', 'Rose Chart',
-            // ECharts 专属（Facet、Gauge、Funnel、Treemap、Sunburst、Sankey、Stress）
-            // 'ECharts: Scatter',      // 同 VegaLite 同款 Scatter Plot
-            // 'ECharts: Line',         // 同 VegaLite 同款 Line Chart
-            // 'ECharts: Bar',          // 同 VegaLite 同款 Bar Chart
-            // 'ECharts: Stacked Bar',  // 同 VegaLite 同款 Stacked Bar Chart
-            // 'ECharts: Grouped Bar',  // 同 VegaLite 同款 Grouped Bar Chart
-            // 'ECharts: Area',         // 同 VegaLite 同款 Area Chart
-            // 'ECharts: Pie',          // 同 VegaLite 同款 Pie Chart
-            // 'ECharts: Heatmap',      // 同 VegaLite 同款 Heatmap
-            // 'ECharts: Histogram',    // 同 VegaLite 同款 Histogram
-            // 'ECharts: Boxplot',      // 同 VegaLite 同款 Boxplot
-            // 'ECharts: Radar',        // 同 VegaLite 同款 Radar Chart
-            // 'ECharts: Candlestick',  // 同 VegaLite 同款 Candlestick Chart
-            // 'ECharts: Streamgraph',  // 同 VegaLite 同款 Streamgraph
-            // 'ECharts: Rose',         // 同 VegaLite 同款 Rose Chart
-            'ECharts: Facet Small',
-            'ECharts: Facet Wrap',
-            'ECharts: Facet Clip',
-            'ECharts: Gauge',
-            'ECharts: Funnel',
-            'ECharts: Treemap',
-            'ECharts: Sunburst',
-            'ECharts: Sankey',
-            'ECharts: Unique Stress',
-            'ECharts: Stress Tests',
-        ],
-    },
-    {
-        label: 'Chart.js Backend',
-        description: 'Same inputs through Chart.js backend — compare dataset-based output vs VL/EC output',
-        entries: [
-            'Chart.js: Scatter',
-            'Chart.js: Line',
-            'Chart.js: Bar',
-            'Chart.js: Stacked Bar',
-            'Chart.js: Grouped Bar',
-            'Chart.js: Area',
-            'Chart.js: Pie',
-            'Chart.js: Histogram',
-            'Chart.js: Radar',
-            'Chart.js: Rose',
-            'Chart.js: Stress Tests',
-        ],
-    },
-    {
-        label: 'GoFish Basic',
-        description: 'All GoFish chart examples on one page',
-        entries: [
-            'GoFish Basic',
-        ],
-    },
-];

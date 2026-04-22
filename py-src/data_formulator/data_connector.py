@@ -375,9 +375,13 @@ def list_data_loaders():
     connectors can be created.
     """
     from data_formulator.data_loader import DATA_LOADERS, DISABLED_LOADERS
+    from data_formulator.auth.identity import is_local_mode
 
     loaders = []
     for key, loader_class in DATA_LOADERS.items():
+        # local_folder has its own dedicated card — hide from Add Connection list
+        if key == "local_folder":
+            continue
         params = loader_class.list_params()
         # Append common table_filter param (same as DataConnector.get_frontend_config)
         params.append(DataConnector._TABLE_FILTER_PARAM)
@@ -397,6 +401,117 @@ def list_data_loaders():
     }
 
     return jsonify({"loaders": loaders, "disabled": disabled})
+
+
+@connectors_bp.route("/api/local/pick-directory", methods=["POST"])
+def pick_local_directory():
+    """Open a native OS directory picker and return the selected path.
+
+    Only available in local deployment mode (backend bound to localhost).
+
+    Strategy per platform (each uses tools that ship with the OS):
+
+    - **macOS**: ``osascript`` (AppleScript) — ships with every Mac.
+    - **Windows**: PowerShell ``System.Windows.Forms.FolderBrowserDialog``
+      — built into Windows 10+.
+    - **Linux**: tries in order: ``zenity`` (GNOME), ``kdialog`` (KDE),
+      ``tkinter`` (Python stdlib, if compiled with Tk).
+
+    If no dialog tool is available (headless server, minimal container),
+    returns ``501`` so the frontend can fall back to a text input.
+    """
+    import platform
+    import shutil
+    import subprocess
+
+    from data_formulator.auth.identity import is_local_mode
+
+    if not is_local_mode():
+        return jsonify({"error": "Not available in server mode"}), 404
+
+    folder: str | None = None
+    system = platform.system()
+
+    try:
+        if system == "Darwin":
+            # macOS: use osascript (AppleScript) — always available
+            script = (
+                'tell application "System Events"\n'
+                '  activate\n'
+                '  set theFolder to choose folder with prompt "Select data folder"\n'
+                '  return POSIX path of theFolder\n'
+                'end tell'
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                folder = result.stdout.strip().rstrip("/")
+            # returncode != 0 means user cancelled
+
+        elif system == "Windows":
+            # Windows: PowerShell folder browser dialog
+            ps_script = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "$f.Description = 'Select data folder'; "
+                "if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath } else { '' }"
+            )
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_script],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                folder = result.stdout.strip()
+
+        else:
+            # Linux: try zenity (GNOME) → kdialog (KDE) → tkinter
+            if shutil.which("zenity"):
+                result = subprocess.run(
+                    ["zenity", "--file-selection", "--directory",
+                     "--title=Select data folder"],
+                    capture_output=True, text=True, timeout=120,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    folder = result.stdout.strip()
+            elif shutil.which("kdialog"):
+                result = subprocess.run(
+                    ["kdialog", "--getexistingdirectory", ".",
+                     "--title", "Select data folder"],
+                    capture_output=True, text=True, timeout=120,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    folder = result.stdout.strip()
+            else:
+                try:
+                    import tkinter as tk
+                    from tkinter import filedialog
+                    root = tk.Tk()
+                    root.withdraw()
+                    root.attributes("-topmost", True)
+                    folder = filedialog.askdirectory(
+                        title="Select data folder") or None
+                    root.destroy()
+                except (ImportError, Exception):
+                    return jsonify({
+                        "error": "No dialog tool available. "
+                                 "Install zenity, kdialog, or python3-tk.",
+                        "path": None,
+                        "fallback": "text_input",
+                    }), 501
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Dialog timed out", "path": None}), 408
+    except Exception as exc:
+        logger.warning("Failed to open directory picker: %s", exc)
+        return jsonify({
+            "error": str(exc), "path": None, "fallback": "text_input",
+        }), 500
+
+    if not folder:
+        return jsonify({"path": None})  # user cancelled
+    return jsonify({"path": folder})
 
 
 @connectors_bp.route("/api/connectors", methods=["GET"])
@@ -885,12 +1000,15 @@ def connector_preview_data():
         rows = _json.loads(df.to_json(orient="records", date_format="iso"))
         columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
 
+        # Get actual total row count (some loaders store it before slicing)
+        total_row_count = getattr(loader, '_last_total_rows', None) or len(rows)
+
         return jsonify({
             "status": "success",
             "columns": columns,
             "rows": rows,
             "row_count": len(rows),
-            "total_row_count": len(rows),
+            "total_row_count": total_row_count,
         })
     except Exception as e:
         safe_msg, status_code = _sanitize_error(e)

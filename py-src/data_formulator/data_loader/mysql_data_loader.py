@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 from typing import Any
 
 import pyarrow as pa
@@ -77,7 +78,17 @@ class MySQLDataLoader(ExternalDataLoader):
         except Exception as e:
             logger.error(f"Failed to connect to MySQL ({self._sanitized_url}): {e}")
             raise ValueError(f"Failed to connect to MySQL on host '{self.host}': {e}") from e
+        self._connect_kwargs = connect_kwargs
+        self._lock = threading.Lock()
         logger.info(f"Successfully connected to MySQL: {self._sanitized_url}")
+
+    def _get_conn(self) -> pymysql.connections.Connection:
+        """Return a live connection, reconnecting if the previous one was lost."""
+        try:
+            self._conn.ping(reconnect=True)
+        except Exception:
+            self._conn = pymysql.connect(**self._connect_kwargs)
+        return self._conn
 
     # MySQL types that may need special handling
     _GEOMETRY_TYPES = {'geometry', 'point', 'linestring', 'polygon',
@@ -87,8 +98,12 @@ class MySQLDataLoader(ExternalDataLoader):
     _UNSUPPORTED_TYPES = _GEOMETRY_TYPES | _OTHER_UNSUPPORTED
 
     def _read_sql(self, query: str) -> pa.Table:
-        """Execute a query and return results as a PyArrow Table (no pandas)."""
-        cur = self._conn.cursor()
+        """Execute a query and return results as a PyArrow Table (no pandas).
+        
+        Caller must hold self._lock if thread safety is needed.
+        """
+        conn = self._get_conn()
+        cur = conn.cursor()
         try:
             cur.execute(query)
             if cur.description is None:
@@ -139,6 +154,14 @@ class MySQLDataLoader(ExternalDataLoader):
         """
         Fetch data from MySQL as a PyArrow Table.
         """
+        with self._lock:
+            return self._fetch_data_as_arrow(source_table, import_options)
+
+    def _fetch_data_as_arrow(
+        self,
+        source_table: str,
+        import_options: dict[str, Any] | None = None,
+    ) -> pa.Table:
         opts = import_options or {}
         size = opts.get("size", 1000000)
         sort_columns = opts.get("sort_columns")
@@ -181,7 +204,8 @@ class MySQLDataLoader(ExternalDataLoader):
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List available tables from MySQL database."""
-        return self._list_tables(table_filter)
+        with self._lock:
+            return self._list_tables(table_filter)
     
     def _list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List tables from MySQL database(s) within pinned scope."""
@@ -372,8 +396,9 @@ class MySQLDataLoader(ExternalDataLoader):
             return {}
 
     def test_connection(self) -> bool:
-        try:
-            self._read_sql("SELECT 1")
-            return True
-        except Exception:
-            return False
+        with self._lock:
+            try:
+                self._read_sql("SELECT 1")
+                return True
+            except Exception:
+                return False

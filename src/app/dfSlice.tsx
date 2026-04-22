@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, DraftNode, InteractionEntry, DeriveStatus } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -72,6 +72,7 @@ export interface ServerConfig {
     CONNECTED_CONNECTORS?: string[];
     IDENTITY?: { type: string; id: string };
     CREDENTIAL_VAULT_ENABLED?: boolean;
+    IS_LOCAL_MODE?: boolean;
 }
 
 export interface ModelConfig {
@@ -107,12 +108,11 @@ export interface ClientConfig {
 export interface GeneratedReport {
     id: string;
     content: string;
-    style: string;
     selectedChartIds: string[];
     createdAt: number;
     title?: string;
     updatedAt?: number;
-    anchorChartId?: string;
+    triggerTableId?: string;
     contentSnapshotHash?: string;
     prompt?: string;
     status?: 'generating' | 'completed' | 'error';
@@ -164,9 +164,13 @@ export interface DataFormulatorState {
 
     dataLoaderConnectParams: Record<string, Record<string, string>>; // {table_name: {param_name: param_value}}
 
-    // Data cleaning dialog state
+    // Data cleaning dialog state (legacy, kept for migration)
     dataCleanBlocks: DataCleanBlock[];
     cleanInProgress: boolean;
+
+    // Conversational data loading chat
+    dataLoadingChatMessages: ChatMessage[];
+    dataLoadingChatInProgress: boolean;
 
     // Generated reports state
     generatedReports: GeneratedReport[];
@@ -178,6 +182,9 @@ export interface DataFormulatorState {
     // Active workspace (null = show workspace picker)
     // id: stable identifier (folder name), displayName: user-facing name (can be renamed)
     activeWorkspace: { id: string; displayName: string } | null;
+
+    /** Whether the data source sidebar is expanded (true) or collapsed to rail (false) */
+    dataSourceSidebarOpen: boolean;
 }
 
 // Define the initial state using that type
@@ -236,12 +243,17 @@ const initialState: DataFormulatorState = {
     dataCleanBlocks: [],
     cleanInProgress: false,
 
+    dataLoadingChatMessages: [],
+    dataLoadingChatInProgress: false,
+
     generatedReports: [],
 
     sessionLoading: false,
     sessionLoadingLabel: '',
 
     activeWorkspace: null,
+
+    dataSourceSidebarOpen: false,
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -312,8 +324,20 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
     // Also clean up any draft nodes that were chained from this table
     state.draftNodes = state.draftNodes.filter(d => d.derive?.trigger.tableId !== tableId);
 
+    // Delete reports triggered from this table
+    state.generatedReports = state.generatedReports.filter(r => r.triggerTableId !== tableId);
+
     if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
         state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
+    }
+    // If a report triggered by this table was focused, fall back
+    if (state.focusedId?.type === 'report') {
+        const reportId = (state.focusedId as { type: 'report'; reportId: string }).reportId;
+        const focusedReport = state.generatedReports.find(r => r.id === reportId);
+        if (!focusedReport) {
+            state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[state.tables.length - 1].id } : undefined;
+            state.viewMode = 'editor';
+        }
     }
 };
 
@@ -524,6 +548,9 @@ export const dataFormulatorSlice = createSlice({
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
 
+            state.dataLoadingChatMessages = [];
+            state.dataLoadingChatInProgress = false;
+
             state.generatedReports = [];
 
             // Clear active workspace so stale IDs don't persist across restarts
@@ -537,6 +564,27 @@ export const dataFormulatorSlice = createSlice({
         },
         setActiveWorkspace: (state, action: PayloadAction<{ id: string; displayName: string } | null>) => {
             state.activeWorkspace = action.payload;
+        },
+        resetForNewWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) => {
+            // Fresh session data, but preserve user settings / server config / identity / view mode
+            return {
+                ...initialState,
+                identity: state.identity,
+                agentRules: state.agentRules,
+                globalModels: state.globalModels,
+                models: state.models,
+                selectedModelId: state.selectedModelId,
+                testedModels: state.testedModels,
+                serverConfig: state.serverConfig,
+                config: state.config,
+                viewMode: state.viewMode,
+                dataLoaderConnectParams: state.dataLoaderConnectParams,
+                dataSourceSidebarOpen: state.dataSourceSidebarOpen,
+                activeWorkspace: action.payload,
+            };
+        },
+        setDataSourceSidebarOpen: (state, action: PayloadAction<boolean>) => {
+            state.dataSourceSidebarOpen = action.payload;
         },
         loadState: (state, action: PayloadAction<any>) => {
             const saved = action.payload;
@@ -587,6 +635,7 @@ export const dataFormulatorSlice = createSlice({
                 focusedId: saved.focusedId || undefined,
                 config: { ...initialState.config, ...(saved.config || {}) },
                 dataCleanBlocks: saved.dataCleanBlocks || [],
+                dataLoadingChatMessages: saved.dataLoadingChatMessages || [],
                 generatedReports: saved.generatedReports || [],
 
                 // Reset transient fields
@@ -596,11 +645,14 @@ export const dataFormulatorSlice = createSlice({
                 chartSynthesisInProgress: [],
                 chartInsightInProgress: [],
                 cleanInProgress: false,
+                dataLoadingChatInProgress: false,
                 sessionLoading: false,
                 sessionLoadingLabel: '',
 
                 // Preserve or restore workspace name
                 activeWorkspace: saved.activeWorkspace ?? state.activeWorkspace ?? null,
+
+                dataSourceSidebarOpen: state.dataSourceSidebarOpen,
             };
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
@@ -1110,6 +1162,8 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         insertDerivedTables: (state, action: PayloadAction<DictTable>) => {
+            // Guard against duplicate IDs (e.g. race conditions or backend name collisions)
+            if (state.tables.some(t => t.id === action.payload.id)) return;
             state.tables = [...state.tables, action.payload];
         },
         // ── Draft node reducers ──────────────────────────────────
@@ -1315,13 +1369,37 @@ export const dataFormulatorSlice = createSlice({
         setCleanInProgress: (state, action: PayloadAction<boolean>) => {
             state.cleanInProgress = action.payload;
         },
+        // Conversational data loading chat actions
+        addChatMessage: (state, action: PayloadAction<ChatMessage>) => {
+            state.dataLoadingChatMessages = [...state.dataLoadingChatMessages, action.payload];
+        },
+        updateLastChatMessage: (state, action: PayloadAction<Partial<ChatMessage>>) => {
+            if (state.dataLoadingChatMessages.length > 0) {
+                const lastIndex = state.dataLoadingChatMessages.length - 1;
+                state.dataLoadingChatMessages[lastIndex] = {
+                    ...state.dataLoadingChatMessages[lastIndex],
+                    ...action.payload,
+                };
+            }
+        },
+        clearChatMessages: (state) => {
+            state.dataLoadingChatMessages = [];
+        },
+        confirmTableLoad: (state, action: PayloadAction<{messageId: string, tableName: string}>) => {
+            const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
+            if (msg?.pendingLoads) {
+                const pending = msg.pendingLoads.find(p => p.name === action.payload.tableName);
+                if (pending) {
+                    pending.confirmed = true;
+                }
+            }
+        },
+        setDataLoadingChatInProgress: (state, action: PayloadAction<boolean>) => {
+            state.dataLoadingChatInProgress = action.payload;
+        },
         // Generated reports actions
         saveGeneratedReport: (state, action: PayloadAction<GeneratedReport>) => {
             const report = action.payload;
-            // Auto-set anchorChartId to the last selected chart if not provided
-            if (!report.anchorChartId && report.selectedChartIds.length > 0) {
-                report.anchorChartId = report.selectedChartIds[report.selectedChartIds.length - 1];
-            }
             // Check if report with same ID already exists and update it, otherwise add new
             const existingIndex = state.generatedReports.findIndex(r => r.id === report.id);
             if (existingIndex >= 0) {
@@ -1333,8 +1411,29 @@ export const dataFormulatorSlice = createSlice({
         },
         deleteGeneratedReport: (state, action: PayloadAction<string>) => {
             const reportId = action.payload;
+            const report = state.generatedReports.find(r => r.id === reportId);
+            const wasFocused = state.focusedId?.type === 'report' && state.focusedId.reportId === reportId;
+
             state.generatedReports = state.generatedReports.filter(r => r.id !== reportId);
-            // Redux Persist will handle persistence automatically
+
+            // Fallback focus: trigger table's first chart, or the trigger table itself
+            if (wasFocused && report) {
+                const triggerTableId = report.triggerTableId;
+                if (triggerTableId) {
+                    const allCharts = dfSelectors.getAllCharts(state);
+                    const tableChart = allCharts.find(c => c.tableRef === triggerTableId && c.source === 'user');
+                    if (tableChart) {
+                        state.focusedId = { type: 'chart', chartId: tableChart.id };
+                    } else {
+                        state.focusedId = { type: 'table', tableId: triggerTableId };
+                    }
+                } else if (state.tables.length > 0) {
+                    state.focusedId = { type: 'table', tableId: state.tables[state.tables.length - 1].id };
+                } else {
+                    state.focusedId = undefined;
+                }
+                state.viewMode = 'editor';
+            }
         },
         updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string }>) => {
             const { id, content, status, title } = action.payload;

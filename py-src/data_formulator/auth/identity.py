@@ -56,6 +56,16 @@ _allow_anonymous: bool = True
 _localhost_identity: Optional[str] = None
 
 
+def is_local_mode() -> bool:
+    """True when running in single-user localhost mode.
+
+    This is the canonical check for features that should only be available
+    when the backend runs on the user's local machine (e.g. local folder
+    data source, native OS dialogs).
+    """
+    return _localhost_identity is not None
+
+
 def _validate_identity_value(value: str, source: str) -> str:
     """Validate and return a trimmed identity value.
 

@@ -35,7 +35,7 @@ export const regressionDef: ChartTemplateDef = {
             },
             {
                 mark: { type: "line", color: "red" },
-                transform: [{ regression: "field1", on: "field2", group: "field3" }],
+                transform: [{ regression: "field1", on: "field2" }],
                 encoding: { x: {}, y: {} },
             },
         ],

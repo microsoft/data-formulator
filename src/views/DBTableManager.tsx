@@ -15,7 +15,6 @@ import {
   MenuItem,
   Checkbox,
   FormControlLabel,
-  styled,
   useTheme,
   Tooltip,
 } from '@mui/material';
@@ -27,6 +26,7 @@ import Autocomplete from '@mui/material/Autocomplete';
 import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity } from '../app/utils';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
+import { DataFrameTable } from './DataFrameTable';
 import { DictTable } from '../components/ComponentType';
 import { useDispatch, useSelector } from 'react-redux';
 import { dfActions } from '../app/dfSlice';
@@ -38,23 +38,19 @@ import Markdown from 'markdown-to-jsx';
 
 import CheckIcon from '@mui/icons-material/Check';
 
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { TableIcon } from '../icons';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
-import { TreeItem, treeItemClasses } from '@mui/x-tree-view/TreeItem';
 
-// ---------- Catalog tree types & helpers ----------
-
-/** A node returned by the catalog/tree endpoint */
-interface CatalogTreeNode {
-    name: string;
-    node_type: 'namespace' | 'table' | 'table_group';
-    path: string[];
-    metadata: Record<string, any> | null;
-    children?: CatalogTreeNode[];
-}
+import {
+    CatalogTreeNode,
+    collectNamespaceIds,
+    findNodeByPath,
+    StyledTreeItem,
+    countBadgeSx,
+    renderCatalogTreeItems,
+} from '../components/CatalogTree';
 
 /** A source filter definition from the backend (e.g. Superset native filter). */
 interface SourceFilter {
@@ -68,63 +64,6 @@ interface SourceFilter {
     applies_to?: number[];
     options?: string[];
 }
-
-/** Collect all namespace item IDs for default-expanded state */
-function collectNamespaceIds(nodes: CatalogTreeNode[]): string[] {
-    const ids: string[] = [];
-    for (const n of nodes) {
-        if (n.node_type === 'namespace') {
-            ids.push(n.path.join('/'));
-            if (n.children) ids.push(...collectNamespaceIds(n.children));
-        }
-    }
-    return ids;
-}
-
-/** Find a node by path in the catalog tree */
-function findNodeByPath(nodes: CatalogTreeNode[], itemId: string): CatalogTreeNode | null {
-    for (const n of nodes) {
-        if (n.path.join('/') === itemId) return n;
-        if (n.children) {
-            const found = findNodeByPath(n.children, itemId);
-            if (found) return found;
-        }
-    }
-    return null;
-}
-
-/** Styled TreeItem — clean, compact, GitHub-flavoured. */
-const StyledTreeItem = styled(TreeItem)(({ theme }) => ({
-    [`& .${treeItemClasses.groupTransition}`]: {
-        marginLeft: 12,
-        paddingLeft: 8,
-        borderLeft: `1px solid ${theme.palette.divider}`,
-    },
-    [`& > .${treeItemClasses.content}`]: {
-        padding: '2px 6px',
-        borderRadius: 6,
-        gap: 4,
-        [`& .${treeItemClasses.iconContainer}`]: {
-            width: 16, minWidth: 16,
-            color: theme.palette.text.disabled,
-        },
-        // Hide the empty icon container on leaf items (no expand/collapse arrow)
-        [`& .${treeItemClasses.iconContainer}:empty`]: {
-            display: 'none',
-        },
-        [`& .${treeItemClasses.label}`]: {
-            fontSize: 13,
-        },
-        '&:hover': { backgroundColor: theme.palette.action.hover },
-    },
-    [`& > .${treeItemClasses.content}.Mui-selected`]: {
-        backgroundColor: theme.palette.action.selected,
-        fontWeight: 500,
-        '&:hover': { backgroundColor: theme.palette.action.selected },
-    },
-})) as typeof TreeItem;
-
-// ---------- End catalog tree ----------
 
 
 export const handleDBDownload = async (identityId: string) => {
@@ -1059,6 +998,46 @@ export const DataLoaderForm: React.FC<{
         }
     }, [selectedPreviewTable]);
 
+    // Fetch sample rows on demand when a table is selected but has no sample_rows.
+    // Debounced to avoid rapid-fire requests when clicking through many files.
+    useEffect(() => {
+        if (!selectedPreviewTable || !connectorIdRef.current) return;
+        const meta = tableMetadata[selectedPreviewTable];
+        if (!meta || meta.sample_rows) return; // already has sample rows
+
+        const controller = new AbortController();
+        const timerId = setTimeout(() => {
+            const sourceName = meta._source_name || meta._catalogName || selectedPreviewTable.split('/').pop() || selectedPreviewTable;
+            fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    connector_id: connectorIdRef.current,
+                    source_table: sourceName,
+                    limit: 10,
+                }),
+                signal: controller.signal,
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.rows && data.columns) {
+                        setTableMetadata(prev => ({
+                            ...prev,
+                            [selectedPreviewTable]: {
+                                ...prev[selectedPreviewTable],
+                                sample_rows: data.rows,
+                                columns: data.columns,
+                                row_count: data.total_row_count ?? prev[selectedPreviewTable]?.row_count,
+                            },
+                        }));
+                    }
+                })
+                .catch(() => {});
+        }, 300); // 300ms debounce
+
+        return () => { clearTimeout(timerId); controller.abort(); };
+    }, [selectedPreviewTable]);
+
     // Build preview DictTable for the selected table
     const previewTable: DictTable | null = useMemo(() => {
         if (!selectedPreviewTable || !tableMetadata[selectedPreviewTable]) return null;
@@ -1152,61 +1131,6 @@ export const DataLoaderForm: React.FC<{
 
 
     const isConnected = catalogTree.length > 0 || Object.keys(tableMetadata).length > 0;
-
-    /** Recursively render CatalogTreeNode[] as styled TreeItem elements */
-    const countBadgeSx = {
-        fontSize: 11, color: 'text.disabled', bgcolor: 'action.selected',
-        borderRadius: 10, px: 0.8, lineHeight: '18px', flexShrink: 0,
-        fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'center',
-    } as const;
-
-    const renderCatalogTreeItems = (nodes: CatalogTreeNode[], loadedMap: Record<string, string>, expandedSet: Set<string>): React.ReactNode =>
-        nodes.map((node) => {
-            const itemId = node.path.join('/');
-            const isTable = node.node_type === 'table';
-            const isGroup = node.node_type === 'table_group';
-            const loaded = isTable ? loadedMap[node.name] || loadedMap[itemId] : undefined;
-            const groupLoaded = isGroup ? loadedMap[itemId] : undefined;
-            const childCount = !isTable && !isGroup ? (node.children?.length ?? 0) : 0;
-            const tableCount = isGroup ? (node.metadata?.tables?.length ?? 0) : 0;
-            const isExpanded = expandedSet.has(itemId);
-
-            const labelContent = (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
-                    {isGroup
-                        ? <DashboardOutlinedIcon sx={{ fontSize: 16, color: groupLoaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                        : isTable
-                            ? <TableIcon sx={{ fontSize: 16, color: loaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                            : <FolderOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                    }
-                    <Typography noWrap component="span" sx={{ flex: 1, minWidth: 0, fontSize: 13 }}>
-                        {node.name}
-                    </Typography>
-                    {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: 13, color: 'success.main', flexShrink: 0 }} />}
-                    {isTable && node.metadata?.row_count != null && (
-                        <Typography component="span" sx={{ fontSize: 11, color: 'text.disabled', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                            {Number(node.metadata.row_count).toLocaleString()}
-                        </Typography>
-                    )}
-                    {isGroup && tableCount > 0 && (
-                        <Box component="span" sx={countBadgeSx}>
-                            {tableCount}
-                        </Box>
-                    )}
-                    {childCount > 0 && !isExpanded && (
-                        <Box component="span" sx={countBadgeSx}>
-                            {childCount}
-                        </Box>
-                    )}
-                </Box>
-            );
-
-            return (
-                <StyledTreeItem key={itemId} itemId={itemId} label={labelContent}>
-                    {!isGroup && node.children && renderCatalogTreeItems(node.children, loadedMap, expandedSet)}
-                </StyledTreeItem>
-            );
-        });
 
     return (
         <Box sx={{p: 0, pb: 2, display: 'flex', flexDirection: 'column', height: isConnected ? '100%' : 'auto' }}>
@@ -1304,7 +1228,7 @@ export const DataLoaderForm: React.FC<{
                                     itemChildrenIndentation={0}
                                     sx={{ px: 0.5 }}
                                 >
-                                    {renderCatalogTreeItems(catalogTree, effectiveLoadedTables, new Set(expandedItems))}
+                                    {renderCatalogTreeItems(catalogTree, { loadedMap: effectiveLoadedTables, expandedSet: new Set(expandedItems) })}
                                 </SimpleTreeView>
                             ) : (
                                 <Typography sx={{ fontSize: 11, color: 'text.disabled', p: 1.5, fontStyle: 'italic' }}>
@@ -1358,22 +1282,21 @@ export const DataLoaderForm: React.FC<{
                                                 ? t('db.rowsCount', { count: Number(metadata.row_count).toLocaleString() })
                                                 : t('db.sampleRowsCount', { count: previewTable.rows.length })
                                             } × {previewTable.names.length} {t('db.columns')}
+                                            {metadata?.row_count > 0 && previewTable.rows.length < metadata.row_count && (
+                                                <span style={{ opacity: 0.7, marginLeft: 4 }}>
+                                                    ({t('db.showingPreview', { count: previewTable.rows.length, defaultValue: `showing ${previewTable.rows.length} preview rows` })})
+                                                </span>
+                                            )}
                                         </Typography>
                                         {/* Preview table — scrolls when tall, shrink-wraps when short */}
                                         <Box sx={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto' }}>
-                                            <Card variant="outlined" sx={{ borderRadius: 1.5, overflow: 'hidden' }}>
-                                                <CustomReactTable
-                                                    rows={previewTable.rows.slice(0, 20)}
-                                                    columnDefs={previewTable.names.map(name => ({
-                                                        id: name,
-                                                        label: name,
-                                                        minWidth: 60,
-                                                    }))}
-                                                    rowsPerPageNum={-1}
-                                                    compact={false}
-                                                    isIncompleteTable={previewTable.rows.length > 20}
-                                                />
-                                            </Card>
+                                            <DataFrameTable
+                                                columns={previewTable.names}
+                                                rows={previewTable.rows}
+                                                totalRows={metadata?.row_count || undefined}
+                                                maxRows={10}
+                                                showIndex
+                                            />
                                         </Box>
 
                                         {/* Load & filter panel — pinned below table */}

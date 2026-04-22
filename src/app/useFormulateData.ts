@@ -10,8 +10,7 @@ import { getUrls, getTriggers, fetchWithIdentity } from './utils';
 export type IdeaItem = {
     text: string;
     goal: string;
-    difficulty: 'easy' | 'medium' | 'hard';
-    tag?: string;
+    tag: 'deep-dive' | 'pivot' | 'broaden' | 'cross-data' | 'statistical' | string;
 };
 
 export interface StreamIdeasOptions {
@@ -26,8 +25,6 @@ export interface StreamIdeasOptions {
     currentDataSample?: any[];
     /** Optional start question for idea generation */
     startQuestion?: string;
-    /** If true, only blocks with type==="question" are included (default: false) */
-    filterByType?: boolean;
 }
 
 export interface FormulateDataOptions {
@@ -83,7 +80,37 @@ export function useFormulateData() {
     const activeModel = useSelector(dfSelectors.getActiveModel);
 
     /**
-     * Build an exploration thread from the current table's derivation chain.
+     * Build a rich focused thread from the current table's derivation chain.
+     * Each step includes: user question, display instruction, chart type + encodings,
+     * created table metadata, and agent summary.
+     */
+    function buildFocusedThread(currentTable: DictTable): any[] {
+        if (!currentTable.derive || currentTable.anchored) return [];
+        const triggers = getTriggers(currentTable, tables);
+        return triggers.map(trigger => {
+            const resultTable = tables.find(t2 => t2.id === trigger.resultTableId);
+            const instruction = trigger.interaction?.find(e => e.role === 'instruction');
+            const summary = trigger.interaction?.find(e => e.role === 'summary');
+            const chart = trigger.chart;
+            return {
+                user_question: instruction?.content,
+                display_instruction: instruction?.displayContent || instruction?.content,
+                agent_thinking: instruction?.plan,
+                agent_summary: summary?.content,
+                table_name: trigger.resultTableId,
+                columns: resultTable?.names || [],
+                row_count: resultTable?.rows?.length || 0,
+                chart_type: chart?.chartType,
+                encodings: chart?.encodingMap ? Object.fromEntries(
+                    Object.entries(chart.encodingMap).filter(([, v]) => v != null && v.fieldID)
+                        .map(([k, v]) => [k, v.fieldID])
+                ) : {},
+            };
+        });
+    }
+
+    /**
+     * Build a legacy exploration thread (flat table list) for backward compatibility.
      */
     function buildExplorationThread(currentTable: DictTable): any[] {
         if (!currentTable.derive || currentTable.anchored) return [];
@@ -96,6 +123,67 @@ export function useFormulateData() {
     }
 
     /**
+     * Build peripheral thread summaries — sibling threads from the same source tables.
+     * Each thread is summarized as: source → leaf, step count, and one-line per step.
+     */
+    function buildOtherThreads(currentTable: DictTable): any[] {
+        // Find the root source table(s) for the current thread
+        const rootIds = new Set<string>();
+        if (currentTable.derive && !currentTable.anchored) {
+            const triggers = getTriggers(currentTable, tables);
+            if (triggers.length > 0) {
+                rootIds.add(triggers[0].tableId);
+            }
+        } else {
+            rootIds.add(currentTable.id);
+        }
+
+        // Collect all table IDs in the focused thread
+        const focusedIds = new Set<string>();
+        if (currentTable.derive && !currentTable.anchored) {
+            const triggers = getTriggers(currentTable, tables);
+            for (const t of triggers) {
+                focusedIds.add(t.resultTableId);
+            }
+        }
+        focusedIds.add(currentTable.id);
+
+        // Find leaf tables that share the same root but are not in the focused thread
+        const otherThreads: any[] = [];
+        for (const table of tables) {
+            if (focusedIds.has(table.id)) continue;
+            if (!table.derive || table.anchored) continue;
+            // Check if this table's chain leads back to the same root
+            const triggers = getTriggers(table, tables);
+            if (triggers.length === 0) continue;
+            const thisRoot = triggers[0].tableId;
+            if (!rootIds.has(thisRoot)) continue;
+
+            // Check this is a leaf (no other table derives from it)
+            const isLeaf = !tables.some(t2 => t2.derive?.trigger?.tableId === table.id && !t2.anchored);
+            if (!isLeaf) continue;
+
+            const steps = triggers.map(trigger => {
+                const instr = trigger.interaction?.find(e => e.role === 'instruction');
+                const chart = trigger.chart;
+                let line = instr?.displayContent || instr?.content || trigger.resultTableId;
+                if (chart?.chartType && chart.chartType !== 'Auto') {
+                    line += ` (${chart.chartType})`;
+                }
+                return line;
+            });
+
+            otherThreads.push({
+                source_table: thisRoot,
+                leaf_table: table.id,
+                step_count: triggers.length,
+                steps,
+            });
+        }
+        return otherThreads;
+    }
+
+    /**
      * Stream ideas/recommendations from the exploration agent via SSE.
      */
     async function streamIdeas(options: StreamIdeasOptions): Promise<void> {
@@ -103,7 +191,7 @@ export function useFormulateData() {
             actionTableIds, currentTable,
             onIdeas, onThinkingBuffer, onLoadingChange,
             currentChartImage, currentDataSample,
-            startQuestion, filterByType = false,
+            startQuestion,
         } = options;
 
         onLoadingChange(true);
@@ -111,21 +199,28 @@ export function useFormulateData() {
         onIdeas([]);
 
         try {
-            const explorationThread = buildExplorationThread(currentTable);
+            const focusedThread = buildFocusedThread(currentTable);
+            const otherThreads = buildOtherThreads(currentTable);
             const actionTables = actionTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
             const messageBody = JSON.stringify({
                 token: String(Date.now()),
                 model: activeModel,
-                mode: 'interactive',
                 input_tables: actionTables.map(t => ({
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                    rows: t.rows,
-                    attached_metadata: t.attachedMetadata,
                 })),
-                exploration_thread: explorationThread,
+                primary_tables: (() => {
+                    if (currentTable.derive && !currentTable.anchored) {
+                        return (currentTable.derive.source as string[]).map(id => {
+                            const t = tables.find(tbl => tbl.id === id);
+                            return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+                        });
+                    }
+                    return [currentTable.virtual?.tableId || currentTable.id.replace(/\.[^/.]+$/, "")];
+                })(),
+                ...(focusedThread.length > 0 ? { focused_thread: focusedThread } : {}),
+                ...(otherThreads.length > 0 ? { other_threads: otherThreads } : {}),
                 agent_exploration_rules: agentRules.exploration,
-                ...(currentDataSample ? { current_data_sample: currentDataSample } : {}),
                 ...(currentChartImage ? { current_chart: currentChartImage } : {}),
                 ...(startQuestion ? { start_question: startQuestion } : {}),
             });
@@ -161,12 +256,11 @@ export function useFormulateData() {
                     .map(line => { try { return JSON.parse(line.trim()); } catch (e) { return null; } })
                     .filter(block => block != null);
 
-                const questions = (filterByType ? dataBlocks.filter((block: any) => block.type === "question") : dataBlocks)
+                const questions = dataBlocks
                     .map((block: any) => ({
                         text: block.text,
                         goal: block.goal,
-                        difficulty: block.difficulty,
-                        tag: block.tag,
+                        tag: block.tag || 'deep-dive',
                     }));
 
                 onIdeas(questions);
@@ -236,11 +330,24 @@ export function useFormulateData() {
             attached_metadata: t.attachedMetadata,
         }));
 
+        // Determine primary table names for agent context prioritization
+        // For derived tables, all source tables are primary; for source tables, just the current one
+        const primaryTableNames = (() => {
+            if (currentTable.derive && !currentTable.anchored) {
+                return (currentTable.derive.source as string[]).map(id => {
+                    const t = tables.find(tbl => tbl.id === id);
+                    return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+                });
+            }
+            return [currentTable.virtual?.tableId || currentTable.id.replace(/\.[^/.]+$/, "")];
+        })();
+
         // Build base request body
         let messageBody: any = {
             token,
             mode,
             input_tables: inputTablesPayload,
+            primary_tables: primaryTableNames,
             extra_prompt: instruction,
             model: activeModel,
             agent_coding_rules: agentRules.coding,
@@ -366,6 +473,20 @@ export function useFormulateData() {
             }
 
             // Create trigger
+            // Resolve input table names from agent's response
+            const agentInputTables: string[] = refinedGoal['input_tables'] || [];
+            const resolvedSourceIds = agentInputTables.length > 0
+                ? actionTableIds.filter(id => {
+                    const t = tables.find(tbl => tbl.id === id);
+                    if (!t) return false;
+                    const name = t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, "");
+                    return agentInputTables.some((n: string) => n.replace(/\.[^/.]+$/, "") === name);
+                })
+                : actionTableIds;
+            const resolvedSourceNames = (resolvedSourceIds.length > 0 ? resolvedSourceIds : actionTableIds).map(id => {
+                const t = tables.find(tbl => tbl.id === id);
+                return t?.displayId || t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+            });
             const trigger: Trigger = {
                 tableId: currentTable.id,
                 resultTableId: candidateTableId,
@@ -376,6 +497,7 @@ export function useFormulateData() {
                     role: 'instruction' as const,
                     content: instruction,
                     displayContent: displayInstruction,
+                    inputTableNames: resolvedSourceNames,
                     timestamp: Date.now(),
                 }],
             };
@@ -385,7 +507,7 @@ export function useFormulateData() {
                 code,
                 codeSignature,
                 outputVariable: refinedGoal['output_variable'] || 'result_df',
-                source: actionTableIds,
+                source: resolvedSourceIds.length > 0 ? resolvedSourceIds : actionTableIds,
                 dialog,
                 trigger,
             });

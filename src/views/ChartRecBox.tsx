@@ -35,6 +35,11 @@ import { useFormulateData } from '../app/useFormulateData';
 
 import { AgentIcon as PrecisionManufacturing } from '../icons';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
+import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
+import SyncAltIcon from '@mui/icons-material/SyncAlt';
+import OpenInFullIcon from '@mui/icons-material/OpenInFull';
+import CallMergeIcon from '@mui/icons-material/CallMerge';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
 import { ThinkingBufferEffect } from '../components/FunComponents';
 
@@ -49,27 +54,22 @@ export interface ChartRecBoxProps {
 
 export const IdeaChip: FC<{
     mini?: boolean,
-    idea: {text?: string, questions?: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', type?: 'branch' | 'deep_dive'} 
+    idea: {text?: string, goal: string, tag?: string, type?: 'branch' | 'deep_dive'} 
     theme: Theme, 
     onClick: () => void, 
     sx?: SxProps,
     disabled?: boolean,
 }> = function ({mini, idea, theme, onClick, sx, disabled}) {
 
-    const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
-        switch (difficulty) {
-            case 'easy':
-                return theme.palette.success.main;
-            case 'medium':
-                return theme.palette.primary.main;
-            case 'hard':
-                return theme.palette.warning.main;
-            default:
-                return theme.palette.text.secondary;
-        }
+    const tagConfig: Record<string, { color: string; icon: React.ReactNode }> = {
+        'deep-dive': { color: theme.palette.primary.main, icon: <KeyboardDoubleArrowDownIcon sx={{ fontSize: 12 }} /> },
+        'pivot': { color: theme.palette.info.main, icon: <SyncAltIcon sx={{ fontSize: 12 }} /> },
+        'broaden': { color: theme.palette.success.main, icon: <OpenInFullIcon sx={{ fontSize: 12 }} /> },
+        'cross-data': { color: theme.palette.warning.main, icon: <CallMergeIcon sx={{ fontSize: 12, transform: 'rotate(180deg)' }} /> },
+        'statistical': { color: theme.palette.secondary.main, icon: <TrendingUpIcon sx={{ fontSize: 12 }} /> },
     };
-
-    let styleColor = getDifficultyColor(idea.difficulty || 'medium');
+    const cfg = tagConfig[idea.tag || 'deep-dive'] || tagConfig['deep-dive'];
+    let styleColor = cfg.color;
 
     let ideaText = idea.goal;
 
@@ -105,9 +105,12 @@ export const IdeaChip: FC<{
             }}
             onClick={disabled ? undefined : onClick}
         >
-            <Typography component="div" sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty || 'medium') }}>
-                {ideaTextComponent}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '4px', color: styleColor }}>
+                <Box sx={{ mt: '1px', flexShrink: 0 }}>{cfg.icon}</Box>
+                <Typography component="div" sx={{ fontSize: '11px', color: styleColor }}>
+                    {ideaTextComponent}
+                </Typography>
+            </Box>
         </Box>
     );
 };
@@ -127,7 +130,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
-    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
+    const [ideas, setIdeas] = useState<{text: string, goal: string, tag: string}[]>([]);
 
     const [thinkingBuffer, setThinkingBuffer] = useState<string>("");
 

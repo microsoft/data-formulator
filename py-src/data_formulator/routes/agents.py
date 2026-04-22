@@ -29,6 +29,7 @@ from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
+from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
 from data_formulator.agents.agent_chart_insight import ChartInsightAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
@@ -370,6 +371,7 @@ def derive_data():
 
         # If user provided chart encodings (via visualization context), use transform mode; otherwise recommendation
         mode = "transform" if current_visualization or expected_visualization else "recommendation"
+        primary_tables = content.get("primary_tables", None)
 
         try:
             identity_id = get_identity_id()
@@ -386,7 +388,7 @@ def derive_data():
 
             if mode == "recommendation":
                 agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
-                results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
+                results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages, primary_tables=primary_tables)
             else:
                 agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
                 results = agent.run(input_tables, instruction, prev_messages,
@@ -442,15 +444,19 @@ def derive_data():
 
 @agent_bp.route('/data-agent-streaming', methods=['GET', 'POST'])
 def data_agent_streaming():
-    """Autonomous data exploration agent endpoint (SWE-agent style).
+    """Streaming tool-calling data exploration agent endpoint.
 
-    Accepts a user question, runs the DataAgent observe-think-act loop,
-    and streams events back as newline-delimited JSON.
+    The agent streams events as newline-delimited JSON:
+        text_delta  – streamed text from the agent (narration)
+        tool_start  – agent is about to call a tool (explore/visualize/clarify)
+        tool_result – tool execution result (visualize results match DataRecAgent format)
+        clarify     – clarification question (loop pauses)
+        done        – turn complete
+        error       – error information
 
     To resume after a clarification, the client sends:
         - trajectory: the trajectory list returned in the clarify event
         - clarification_response: the user's answer (string)
-    The server appends the answer to the trajectory and continues the loop.
     """
     def generate():
         if request.is_json:
@@ -466,7 +472,10 @@ def data_agent_streaming():
             max_repair_attempts = content.get("max_repair_attempts", 1)
             agent_exploration_rules = content.get("agent_exploration_rules", "")
             agent_coding_rules = content.get("agent_coding_rules", "")
-            conversation_history = content.get("conversation_history", None)
+            focused_thread = content.get("focused_thread", None)
+            other_threads = content.get("other_threads", None)
+            primary_tables = content.get("primary_tables", None)
+            attached_images = content.get("attached_images", None)
 
             # Stateless resume: client sends back the trajectory + user answer
             resume_trajectory = content.get("trajectory", None)
@@ -475,10 +484,11 @@ def data_agent_streaming():
 
             logger.debug("== input tables ===>")
             for table in input_tables:
-                logger.debug(f"===> Table: {table['name']} (first 5 rows)")
-                logger.debug(table['rows'][:5])
+                logger.debug(f"===> Table: {table['name']}")
 
             logger.debug(f"== user question ===> {user_question}")
+            if attached_images:
+                logger.info(f"== attached_images ===> {len(attached_images)} image(s), sizes: {[len(img) for img in attached_images]}")
 
             client = get_client(content['model'])
             identity_id = get_identity_id()
@@ -522,9 +532,12 @@ def data_agent_streaming():
                 for event in agent.run(
                     input_tables=input_tables,
                     user_question=user_question,
-                    conversation_history=conversation_history,
+                    focused_thread=focused_thread,
+                    other_threads=other_threads,
                     trajectory=trajectory,
                     completed_step_count=completed_step_count,
+                    primary_tables=primary_tables,
+                    attached_images=attached_images,
                 ):
                     yield json.dumps({
                         "token": token,
@@ -737,23 +750,32 @@ def get_recommendation_questions():
             workspace = get_workspace(identity_id)
 
             agent_exploration_rules = content.get("agent_exploration_rules", "")
-            mode = content.get("mode", "interactive")
             start_question = content.get("start_question", None)
-            exploration_thread = content.get("exploration_thread", None)
             current_chart = content.get("current_chart", None)
-            current_data_sample = content.get("current_data_sample", None)
 
-            # Collect all tables that need to be in workspace:
-            # both the input tables and any tables from the exploration thread
-            all_tables = list(input_tables)
-            if exploration_thread:
-                all_tables.extend(exploration_thread)
+            # New tiered context params
+            focused_thread = content.get("focused_thread", None)
+            other_threads = content.get("other_threads", None)
+            primary_tables = content.get("primary_tables", None)
+
+            # Legacy params (backward compatibility)
+            exploration_thread = content.get("exploration_thread", None)
+            current_data_sample = content.get("current_data_sample", None)
 
             agent = InteractiveExploreAgent(client=client, workspace=workspace,
                                             agent_exploration_rules=agent_exploration_rules,
                                             language_instruction=get_language_instruction())
             try:
-                for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
+                for chunk in agent.run(
+                    input_tables,
+                    start_question=start_question,
+                    focused_thread=focused_thread,
+                    other_threads=other_threads,
+                    primary_tables=primary_tables,
+                    current_chart=current_chart,
+                    exploration_thread=exploration_thread,
+                    current_data_sample=current_data_sample,
+                ):
                     yield chunk
             except Exception as e:
                 logger.exception("get-recommendation-questions failed")
@@ -773,49 +795,61 @@ def get_recommendation_questions():
     )
     return response
 
-@agent_bp.route('/generate-report-stream', methods=['GET', 'POST'])
-def generate_report_stream():
+
+@agent_bp.route('/generate-report-chat', methods=['POST'])
+def generate_report_chat():
+    """Chat-driven report generation via @report-agent.
+
+    Accepts lightweight context + user prompt.  The agent inspects
+    charts/data on demand via tool calls and streams the report with
+    embed_chart / embed_table events.
+    """
     def generate():
         if request.is_json:
-            logger.info("# generate report stream request")
+            logger.info("# generate report chat request")
             content = request.get_json()
-            token = content.get("token", "")
 
             client = get_client(content['model'])
+            identity_id = get_identity_id()
+            workspace = get_workspace(identity_id)
 
             input_tables = content.get("input_tables", [])
             charts = content.get("charts", [])
-            style = content.get("style", "blog post")
-            identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
-            # Include both input tables and chart data tables as temp data
-            # so derived tables referenced by charts are also available
-            all_tables = list(input_tables)
-            for chart in charts:
-                chart_data = chart.get("chart_data")
-                if chart_data and chart_data.get("name") and chart_data.get("rows"):
-                    all_tables.append(chart_data)
+            user_prompt = content.get("user_prompt", "Create a report summarizing the exploration.")
+            focused_thread = content.get("focused_thread", None)
+            other_threads = content.get("other_threads", None)
+            primary_tables = content.get("primary_tables", None)
 
-            agent = ReportGenAgent(client=client, workspace=workspace,
-                                   language_instruction=get_language_instruction())
+            agent = ReportGenAgent(
+                client=client,
+                workspace=workspace,
+                language_instruction=get_language_instruction(),
+            )
             try:
-                for chunk in agent.stream(input_tables, charts, style):
-                    yield chunk
+                for event in agent.run(
+                    input_tables,
+                    charts,
+                    user_prompt=user_prompt,
+                    focused_thread=focused_thread,
+                    other_threads=other_threads,
+                    primary_tables=primary_tables,
+                ):
+                    yield 'data: ' + json.dumps(event, ensure_ascii=False) + '\n'
             except Exception as e:
-                logger.exception("generate-report-stream failed")
-                error_data = { 
-                    "content": classify_llm_error(e) 
-                }
-                yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
+                logger.exception("generate-report-chat failed")
+                yield 'data: ' + json.dumps({
+                    "type": "error",
+                    "content": classify_llm_error(e),
+                }, ensure_ascii=False) + '\n'
         else:
-            error_data = { 
-                "content": "Invalid request format" 
-            }
-            yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
+            yield 'data: ' + json.dumps({
+                "type": "error",
+                "content": "Invalid request format",
+            }, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),
-        mimetype='application/json',
+        mimetype='text/event-stream',
     )
     return response
 
@@ -1059,3 +1093,128 @@ def nl_to_filter():
         logger.warning(f"NL-to-filter failed: {e}")
         safe_msg = classify_llm_error(e)
         return jsonify(status="error", message=safe_msg), 500
+
+
+# ---------------------------------------------------------------------------
+# Scratch folder APIs (for conversational data loading)
+# ---------------------------------------------------------------------------
+
+@agent_bp.route('/workspace/scratch/upload', methods=['POST'])
+def scratch_upload():
+    """Upload a file to the workspace scratch/ folder.
+
+    Accepts multipart/form-data with a 'file' field.
+    Returns: { path: "scratch/<filename>", url: "/api/workspace/scratch/<filename>" }
+    """
+    import hashlib
+    from werkzeug.utils import secure_filename as _werkzeug_secure_filename
+
+    if 'file' not in request.files:
+        return jsonify(status="error", message="No file in request"), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify(status="error", message="No filename"), 400
+
+    identity_id = get_identity_id()
+    workspace = get_workspace(identity_id)
+    scratch_dir = workspace._path / "scratch"
+    scratch_dir.mkdir(exist_ok=True)
+
+    # Create safe filename with hash prefix
+    raw = file.read()
+    file_hash = hashlib.sha256(raw).hexdigest()[:8]
+    safe_name = _werkzeug_secure_filename(file.filename)
+    base, ext = os.path.splitext(safe_name)
+    final_name = f"{base}_{file_hash}{ext}"
+
+    dest = scratch_dir / final_name
+    dest.write_bytes(raw)
+
+    return jsonify(
+        status="ok",
+        path=f"scratch/{final_name}",
+        url=f"/api/workspace/scratch/{final_name}",
+    )
+
+
+@agent_bp.route('/workspace/scratch/<path:filename>', methods=['GET'])
+def scratch_serve(filename):
+    """Serve a file from the workspace scratch/ folder."""
+    from flask import send_from_directory as _send
+
+    identity_id = get_identity_id()
+    workspace = get_workspace(identity_id)
+    scratch_dir = workspace._path / "scratch"
+
+    # Security: confine to scratch dir
+    target = (scratch_dir / filename).resolve()
+    try:
+        target.relative_to(scratch_dir.resolve())
+    except ValueError:
+        return jsonify(status="error", message="Access denied"), 403
+
+    if not target.exists():
+        return jsonify(status="error", message="File not found"), 404
+
+    return _send(str(scratch_dir), filename)
+
+
+# ---------------------------------------------------------------------------
+# Conversational data loading agent (replaces old clean-data-stream)
+# ---------------------------------------------------------------------------
+
+@agent_bp.route('/data-loading-chat', methods=['POST'])
+def data_loading_chat():
+    """Conversational data loading agent endpoint.
+
+    Streams newline-delimited JSON events (SSE-style).
+    """
+    def generate():
+        try:
+            content = request.get_json()
+            logger.info("# data-loading-chat request")
+
+            client = get_client(content['model'])
+            identity_id = get_identity_id()
+            workspace = get_workspace(identity_id)
+
+            # Get available datasets for the agent
+            from data_formulator.example_datasets_config import EXAMPLE_DATASETS
+            available_datasets = [
+                {"name": ds["name"], "description": ds.get("description", "")}
+                for ds in EXAMPLE_DATASETS
+            ]
+
+            language_instruction = get_language_instruction()
+            agent = DataLoadingAgent(
+                client=client,
+                workspace=workspace,
+                available_datasets=available_datasets,
+                language_instruction=language_instruction,
+            )
+
+            messages = content.get("messages", [])
+            workspace_tables = content.get("workspace_tables", [])
+
+            for event in agent.stream(messages):
+                # NaN from pandas .to_dict() is not valid JSON; replace with null
+                raw = json.dumps(event, ensure_ascii=False, default=str)
+                raw = raw.replace(': NaN,', ': null,').replace(': NaN}', ': null}').replace(':NaN,', ':null,').replace(':NaN}', ':null}')
+                yield raw + "\n"
+
+        except Exception as e:
+            logger.exception("data-loading-chat error")
+            yield json.dumps({
+                "type": "error",
+                "error": str(e),
+            }, ensure_ascii=False) + "\n"
+            yield json.dumps({
+                "type": "done",
+                "full_text": f"Error: {e}",
+            }, ensure_ascii=False) + "\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='application/x-ndjson',
+    )

@@ -133,7 +133,7 @@ You will produce two outputs: a JSON spec (```json```) and a Python script (```p
 ```json
 {{{{
     "display_instruction": "", // short verb phrase (<12 words) capturing computation intent. Bold **column names** (semantic matches count). For follow-ups, describe only the new part.
-    "input_tables": [...],   // table names from [CONTEXT] to use. Table 1 is the currently viewed table — prioritize it.
+    "input_tables": [...],   // table names from [CONTEXT] to use
     "output_fields": [...],  // desired output fields (include intermediate fields)
     "chart": {{{{
         "chart_type": "",    // from [CHART TYPE REFERENCE]
@@ -401,19 +401,20 @@ class DataRecAgent(object):
         logger.info(f"[DataRecAgent] timing: llm={t_llm_val:.3f}s, supplement={t_supplement:.3f}s, exec={t_exec_total:.3f}s, total={t_total + t_llm_val:.3f}s{usage_str}")
         return candidates
 
-    def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):
+    def run(self, input_tables, description, n=1, prev_messages: list[dict] = [], primary_tables=None):
         """
         Args:
             input_tables: list[dict], each dict contains 'name' (table name in workspace) and 'rows'
             description: str, the description of what the user wants
             n: int, the number of candidates
             prev_messages: list[dict], the previous messages
+            primary_tables: list[str], names of the primary (focused) tables for context prioritization
         """
         table_names = [t.get('name', '?') for t in input_tables]
-        logger.info(f"[DataRecAgent] run start | tables={table_names}")
+        logger.info(f"[DataRecAgent] run start | tables={table_names} | primary={primary_tables}")
 
         # Generate data summary with file references
-        data_summary = generate_data_summary(input_tables, workspace=self.workspace)
+        data_summary = generate_data_summary(input_tables, workspace=self.workspace, primary_tables=primary_tables)
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
         if len(prev_messages) > 0:

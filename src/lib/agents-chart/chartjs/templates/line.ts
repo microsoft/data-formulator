@@ -17,6 +17,7 @@ import {
     DEFAULT_COLORS,
     getChartJsPalette,
     getSeriesBorderColor,
+    coerceUnixMsForChartJs,
 } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
@@ -40,6 +41,10 @@ export const cjsLineChartDef: ChartTemplateDef = {
         const yField = yCS.field;
 
         const xIsDiscrete = isDiscrete(xCS.type);
+        const xIsTemporal = xCS.type === 'temporal';
+
+        const mapContinuousX = (raw: unknown) =>
+            (xIsTemporal ? coerceUnixMsForChartJs(raw) : raw);
 
         const categories = xIsDiscrete
             ? extractCategories(table, xField, xCS.ordinalSortOrder)
@@ -70,10 +75,28 @@ export const cjsLineChartDef: ChartTemplateDef = {
                     x: {
                         type: xIsDiscrete ? 'category' : 'linear',
                         title: { display: true, text: xField },
+                        ticks: {
+                            font: { size: 10 },
+                            ...(xIsTemporal
+                                ? {
+                                    maxTicksLimit: 8,
+                                    callback(v: number | string) {
+                                        const n = typeof v === 'number' ? v : Number(v);
+                                        if (!Number.isFinite(n)) return String(v);
+                                        return new Date(n).toLocaleDateString(undefined, {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                        });
+                                    },
+                                }
+                                : {}),
+                        },
                     },
                     y: {
                         type: 'linear',
                         title: { display: true, text: yField },
+                        ticks: { font: { size: 10 } },
                     },
                 },
                 plugins: {
@@ -96,7 +119,9 @@ export const cjsLineChartDef: ChartTemplateDef = {
             for (const [name, rows] of groups) {
                 const data = xIsDiscrete
                     ? buildCategoryAlignedData(rows, xField, yField, categories!)
-                    : rows.map(r => ({ x: r[xField], y: r[yField] }));
+                    : rows
+                        .map(r => ({ x: mapContinuousX(r[xField]), y: r[yField] }))
+                        .filter(p => p.y != null && (xIsTemporal ? Number.isFinite(p.x as number) : true));
 
                 config.data.datasets.push({
                     label: name,
@@ -116,7 +141,9 @@ export const cjsLineChartDef: ChartTemplateDef = {
                     const row = table.find(r => String(r[xField]) === cat);
                     return row ? row[yField] : null;
                 })
-                : table.map(r => ({ x: r[xField], y: r[yField] }));
+                : table
+                    .map(r => ({ x: mapContinuousX(r[xField]), y: r[yField] }))
+                    .filter(p => p.y != null && (xIsTemporal ? Number.isFinite(p.x as number) : true));
 
             config.data.datasets.push({
                 label: yField,

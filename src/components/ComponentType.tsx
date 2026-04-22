@@ -46,6 +46,7 @@ export interface InteractionEntry {
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
+    inputTableNames?: string[]; // table names actually used for this derivation step
     options?: string[]; // for clarification questions, the list of options presented to the user
     timestamp?: number;
 }
@@ -101,6 +102,59 @@ export interface DataCleanBlock {
 
     // For output messages  
     dialogItem?: any; // Store the dialog item from the model response
+}
+
+// ── Conversational data loading chat types ────────────────────────────────
+
+export interface ChatAttachment {
+    type: 'image' | 'file' | 'text_file';
+    name: string;
+    url?: string;           // data URL or object URL for images
+    scratchPath?: string;   // path in workspace scratch folder (for large files)
+    preview?: string;       // first N lines for text files
+}
+
+export interface InlineTablePreview {
+    name: string;
+    columns: string[];
+    sampleRows: Record<string, any>[];  // first 5-10 rows
+    totalRows: number;
+    csvScratchPath?: string;
+}
+
+export interface CodeExecution {
+    code: string;
+    stdout?: string;
+    error?: string;
+    resultTable?: InlineTablePreview;
+}
+
+export interface PendingTableLoad {
+    name: string;
+    csvScratchPath: string;
+    preview: InlineTablePreview;
+    confirmed: boolean;
+    // For sample dataset loading
+    sampleDataset?: {
+        datasetName: string;
+        tables: Array<{
+            tableUrl: string;
+            format: string;
+        }>;
+        live?: boolean;
+        refreshIntervalSeconds?: number;
+    };
+}
+
+export interface ChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;                    // markdown text
+    attachments?: ChatAttachment[];     // images, files attached by user
+    tables?: InlineTablePreview[];      // tables to show inline (assistant only)
+    codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
+    pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
+    timestamp: number;
 }
 
 // Data source types for tracking where data originated
@@ -298,4 +352,21 @@ export type Channel = typeof channels[number];
 
 export interface EncodingDropResult {
     channel: Channel
+}
+
+/** A registered connector instance from GET /api/connectors */
+export interface ConnectorInstance {
+    id: string;
+    source_type: string;
+    display_name: string;
+    icon: string;
+    connected: boolean;
+    deletable?: boolean;
+    params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    pinned_params: Record<string, string>;
+    hierarchy: Array<{key: string; label: string}>;
+    effective_hierarchy: Array<{key: string; label: string}>;
+    auth_mode?: string;
+    auth_instructions?: string;
+    delegated_login?: { login_url: string; label?: string } | null;
 }

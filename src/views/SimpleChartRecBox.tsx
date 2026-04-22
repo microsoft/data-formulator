@@ -14,6 +14,11 @@ import {
     Card,
     LinearProgress,
     Button,
+    Chip,
+    Popper,
+    Paper,
+    MenuList,
+    MenuItem,
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -31,10 +36,16 @@ import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import ArticleIcon from '@mui/icons-material/Article';
 
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ClearIcon from '@mui/icons-material/Clear';
+import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
+import SyncAltIcon from '@mui/icons-material/SyncAlt';
+import OpenInFullIcon from '@mui/icons-material/OpenInFull';
+import CallMergeIcon from '@mui/icons-material/CallMerge';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import AutoGraphIcon from '@mui/icons-material/AutoGraph';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
 import { renderFieldHighlights } from './InteractionEntryCard';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
@@ -110,9 +121,14 @@ export const SimpleChartRecBox: FC = function () {
 
     const [chatPrompt, setChatPrompt] = useState("");
     const [isChatFormulating, setIsChatFormulating] = useState(false);
-    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
+    const [ideas, setIdeas] = useState<{text: string, goal: string, tag: string}[]>([]);
     const [isLoadingIdeas, setIsLoadingIdeas] = useState(false);
     const [thinkingBuffer, setThinkingBuffer] = useState('');
+    const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
+    const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
+    const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
+    const [selectedAgent, setSelectedAgent] = useState<'explore' | 'report'>('explore');
+    const [attachedImages, setAttachedImages] = useState<string[]>([]);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const agentAbortRef = useRef<AbortController | null>(null);
     const ideasAbortRef = useRef<AbortController | null>(null);
@@ -124,6 +140,8 @@ export const SimpleChartRecBox: FC = function () {
 
     const inputCardRef = useRef<HTMLDivElement>(null);
 
+    const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
+
     const focusedTableId = useCallback(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
@@ -131,8 +149,12 @@ export const SimpleChartRecBox: FC = function () {
             const chart = charts.find(c => c.id === focusedId.chartId);
             return chart?.tableRef;
         }
+        if (focusedId.type === 'report') {
+            const report = generatedReports.find(r => r.id === focusedId.reportId);
+            return report?.triggerTableId;
+        }
         return undefined;
-    }, [focusedId, charts])();
+    }, [focusedId, charts, generatedReports])();
 
     // Clear ideas when focused table changes — ideas are scoped per table
     useEffect(() => {
@@ -150,6 +172,90 @@ export const SimpleChartRecBox: FC = function () {
         ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
         ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
     ];
+
+    // Default primary tables: source tables the focused table uses (or the focused source table itself)
+    const defaultPrimaryTableIds = React.useMemo(() => {
+        if (!currentTable) return [];
+        if (currentTable.derive && !currentTable.anchored) {
+            // Derived table: all its source inputs that are root tables
+            return (currentTable.derive.source as string[]).filter(id => rootTables.some(t => t.id === id));
+        }
+        // Source table: just this table
+        return rootTables.some(t => t.id === currentTable.id) ? [currentTable.id] : [];
+    }, [currentTable, rootTables]);
+
+    // Combined primary table IDs: defaults + user @-mentioned (deduplicated, source tables only)
+    const primaryTableIds = React.useMemo(() => {
+        const ids = new Set(defaultPrimaryTableIds);
+        for (const id of mentionedTableIds) {
+            if (rootTables.some(t => t.id === id)) ids.add(id);
+        }
+        return [...ids];
+    }, [defaultPrimaryTableIds, mentionedTableIds, rootTables]);
+
+    // Extract the filter text from after the last @ in the prompt
+    const mentionFilter = React.useMemo(() => {
+        if (!mentionDropdownOpen) return "";
+        const lastAt = chatPrompt.lastIndexOf('@');
+        if (lastAt < 0) return "";
+        return chatPrompt.slice(lastAt + 1).toLowerCase();
+    }, [chatPrompt, mentionDropdownOpen]);
+
+    // Filtered available options for the @ dropdown (tables only)
+    const mentionAvailableTables = React.useMemo(() => {
+        return rootTables
+            .filter(t => !primaryTableIds.includes(t.id))
+            .filter(t => {
+                if (!mentionFilter) return true;
+                const name = (t.displayId || t.id).toLowerCase();
+                return name.includes(mentionFilter);
+            });
+    }, [rootTables, primaryTableIds, mentionFilter]);
+
+    // Reset highlight index when filter changes
+    React.useEffect(() => {
+        setMentionHighlightIdx(0);
+    }, [mentionFilter]);
+
+    // Helper: confirm selection of a mention (table only)
+    const confirmMention = (optionId: string) => {
+        const tbl = tables.find(t => t.id === optionId);
+        const tableName = tbl?.displayId || optionId;
+        setMentionedTableIds(prev => [...prev, optionId]);
+        setChatPrompt(prev => {
+            const lastAt = prev.lastIndexOf('@');
+            if (lastAt < 0) return prev + `@${tableName} `;
+            return prev.slice(0, lastAt) + `@${tableName} `;
+        });
+        setMentionDropdownOpen(false);
+        setMentionHighlightIdx(0);
+    };
+
+    // Reset @-mentions when focused table changes (keep images — user removes manually)
+    React.useEffect(() => {
+        setMentionedTableIds([]);
+        setMentionDropdownOpen(false);
+        setMentionHighlightIdx(0);
+    }, [focusedTableId]);
+
+    // Handle paste events to capture images
+    const handlePaste = React.useCallback((e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith('image/')) {
+                e.preventDefault();
+                const file = items[i].getAsFile();
+                if (!file) continue;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const dataUrl = reader.result as string;
+                    setAttachedImages(prev => [...prev, dataUrl]);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+    }, []);
 
     // Collect table IDs from root up to (and including) the focused table for agent action matching
     const threadTableIds = React.useMemo(() => {
@@ -276,7 +382,6 @@ export const SimpleChartRecBox: FC = function () {
             const messageBody = JSON.stringify({
                 token: String(Date.now()),
                 model: activeModel,
-                mode: 'interactive',
                 input_tables: sourceTables.map(t => ({
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
                     rows: t.rows,
@@ -318,7 +423,7 @@ export const SimpleChartRecBox: FC = function () {
                         const parsed = lines
                             .map(l => { try { return JSON.parse(l.trim()); } catch { return null; } })
                             .filter(Boolean)
-                            .map(b => ({ text: b.text, goal: b.goal, difficulty: b.difficulty }));
+                            .map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' }));
                         setIdeas(parsed);
                     }
                     setThinkingBuffer(buffer.replace(/^data: /, ''));
@@ -330,7 +435,7 @@ export const SimpleChartRecBox: FC = function () {
             const finalIdeas = lines
                 .map(l => { try { return JSON.parse(l.trim()); } catch { return null; } })
                 .filter(Boolean)
-                .map(b => ({ text: b.text, goal: b.goal, difficulty: b.difficulty }));
+                .map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' }));
             setIdeas(finalIdeas);
         } catch (error) {
             console.error('Error getting ideas:', error);
@@ -376,41 +481,130 @@ export const SimpleChartRecBox: FC = function () {
             dispatch(dfActions.updateDeriveStatus({ nodeId: pendingClarification.draftId, status: 'running' }));
         }
 
-        // Collect previous conversation from trigger interaction chains
-        let conversationHistory: { role: string; content: string }[] | undefined = undefined;
+        // ── Build structured thread context (Tier 2 + Tier 3) ──
+        let focusedThread: any[] | undefined = undefined;
+        let otherThreads: any[] | undefined = undefined;
         if (!isResume) {
-            const history: { role: string; content: string }[] = [];
-            // Walk the ancestor chain from the focused table, collecting interaction entries
+            // Tier 2: Focused thread — detailed per-step info
+            const focusedSteps: any[] = [];
             let walkTable = tables.find(t => t.id === focusedTableId);
             const visited = new Set<string>();
+            const focusedChainIds = new Set<string>();
             while (walkTable?.derive?.trigger) {
                 if (visited.has(walkTable.id)) break;
                 visited.add(walkTable.id);
-                const interaction = walkTable.derive.trigger.interaction;
-                if (interaction && interaction.length > 0) {
-                    for (const entry of interaction) {
-                        if (entry.role === 'prompt') {
-                            history.unshift({ role: 'user', content: entry.content });
-                        } else if (entry.role === 'summary') {
-                            history.unshift({ role: 'assistant', content: entry.content });
-                        } else if (entry.plan) {
-                            history.unshift({ role: 'assistant', content: entry.plan });
-                        }
-                    }
+                focusedChainIds.add(walkTable.id);
+                const trigger = walkTable.derive.trigger;
+                const interaction = trigger.interaction || [];
+                const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
+                const instruction = interaction.find(e => e.role === 'instruction');
+                const summary = interaction.find(e => e.role === 'summary');
+
+                // Find the actual resolved chart (not the trigger's "Auto" stub)
+                const resolvedChart = charts.find(c => c.tableRef === walkTable!.id && c.source === 'trigger')
+                    || charts.find(c => c.tableRef === walkTable!.id);
+                const chartType = resolvedChart?.chartType || '';
+                // Map field IDs to field names for readable context
+                const encodings = resolvedChart?.encodingMap
+                    ? Object.fromEntries(
+                        Object.entries(resolvedChart.encodingMap)
+                            .filter(([, v]: [string, any]) => v?.fieldID)
+                            .map(([k, v]: [string, any]) => {
+                                const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                                return [k, field?.name || v.fieldID];
+                            })
+                      )
+                    : {};
+
+                const step: any = {
+                    table_name: walkTable.virtual?.tableId || walkTable.id,
+                    columns: walkTable.names,
+                    row_count: walkTable.virtual?.rowCount ?? walkTable.rows.length,
+                    user_question: userPrompt || '',
+                    agent_thinking: instruction?.plan || '',
+                    display_instruction: instruction?.displayContent || instruction?.content || '',
+                    chart_type: chartType,
+                    encodings,
+                    agent_summary: summary?.content || '',
+                };
+
+                // Include chart thumbnail for the focused leaf table (the one the user is looking at)
+                if (walkTable.id === focusedTableId && resolvedChart?.thumbnail) {
+                    step.chart_thumbnail = resolvedChart.thumbnail;
                 }
-                walkTable = tables.find(t => t.id === walkTable!.derive!.trigger.tableId);
+
+                focusedSteps.unshift(step);
+
+                walkTable = tables.find(t => t.id === trigger.tableId);
             }
-            if (history.length > 0) conversationHistory = history;
+            if (focusedSteps.length > 0) focusedThread = focusedSteps;
+
+            // Tier 3: Peripheral threads — one-line summary per step
+            // Find all leaf tables (no children or all children are anchored)
+            const leafTables = tables.filter(t => {
+                const children = tables.filter(c => c.derive?.trigger.tableId === t.id);
+                return children.length === 0 || children.every(c => c.anchored);
+            });
+
+            const peripheralThreads: any[] = [];
+            for (const leaf of leafTables) {
+                // Skip the focused thread's leaf
+                if (focusedChainIds.has(leaf.id)) continue;
+                // Skip root/source tables
+                if (!leaf.derive) continue;
+
+                const triggers = getTriggers(leaf, tables);
+                if (triggers.length === 0) continue;
+
+                const steps: string[] = [];
+                for (const trig of triggers) {
+                    const tt = tables.find(t2 => t2.id === trig.resultTableId);
+                    const instr = trig.interaction?.find((e: InteractionEntry) => e.role === 'instruction');
+                    const label = instr?.displayContent || instr?.content || '';
+                    // Look up the actual resolved chart from state, not the trigger's "Auto" stub
+                    const chartForStep = charts.find(c => c.tableRef === trig.resultTableId && c.source === 'trigger')
+                        || charts.find(c => c.tableRef === trig.resultTableId);
+                    const chartType = chartForStep?.chartType || '';
+                    const encStr = chartForStep?.encodingMap
+                        ? Object.entries(chartForStep.encodingMap)
+                            .filter(([, v]: [string, any]) => v?.fieldID)
+                            .map(([k, v]: [string, any]) => {
+                                const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                                return `${k}: ${field?.name || v.fieldID}`;
+                            })
+                            .join(', ')
+                        : '';
+                    steps.push(`${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`);
+                }
+
+                if (steps.length > 0) {
+                    const sourceTableId = triggers[0].tableId;
+                    const sourceTable = tables.find(t => t.id === sourceTableId);
+                    peripheralThreads.push({
+                        source_table: sourceTable?.virtual?.tableId || sourceTableId,
+                        leaf_table: leaf.virtual?.tableId || leaf.id,
+                        step_count: steps.length,
+                        steps,
+                    });
+                }
+            }
+            if (peripheralThreads.length > 0) otherThreads = peripheralThreads;
         }
 
         const token = String(Date.now());
+        // Resolve primary table names from primaryTableIds (includes defaults + @-mentioned)
+        const primaryTableNames = primaryTableIds.map(id => {
+            const t = tables.find(tbl => tbl.id === id);
+            return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+        });
         const requestBody: any = {
             token,
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                rows: t.rows,
                 attached_metadata: t.attachedMetadata
             })),
+            primary_tables: primaryTableNames,
+            ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
             model: activeModel,
             max_iterations: 5,
             agent_exploration_rules: agentRules.exploration,
@@ -424,7 +618,8 @@ export const SimpleChartRecBox: FC = function () {
             requestBody.completed_step_count = clarificationContext!.completedStepCount;
         } else {
             requestBody.user_question = prompt;
-            if (conversationHistory) requestBody.conversation_history = conversationHistory;
+            if (focusedThread) requestBody.focused_thread = focusedThread;
+            if (otherThreads) requestBody.other_threads = otherThreads;
         }
 
         const messageBody = JSON.stringify(requestBody);
@@ -480,29 +675,84 @@ export const SimpleChartRecBox: FC = function () {
         // Track the last agent thought and display_instruction (from "action" events)
         let lastAgentThought: string | null = null;
         let lastAgentDisplayInstruction: string | null = null;
+        let lastAgentInputTables: string[] = [];
 
         const genTableId = () => {
             let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
             let tId = `table-${tableSuffix}`;
-            while (tables.find(t => t.id === tId) !== undefined) {
+            while (tables.find(t => t.id === tId) !== undefined || createdTables.some(t => t.id === tId)) {
                 tableSuffix += 1;
                 tId = `table-${tableSuffix}`;
             }
             return tId;
         };
 
+        // Accumulate thinking phase steps for progressive display
+        // Steps are joined with \x1E (Record Separator) to avoid splitting multi-line content
+        let thinkingSteps: string[] = [];
+        let pendingThought: string = ''; // accumulate thinking_text content (background reasoning)
+        const STEP_SEP = '\x1E';
+
         const processStreamingResult = (result: any) => {
-            // Agent planning / choosing next action
-            if (result.type === "action" && result.action === "visualize") {
-                lastAgentThought = result.thought || null;
-                lastAgentDisplayInstruction = result.display_instruction || null;
-                // Plan is stored as a field on the upcoming instruction entry — not as a separate entry.
-                // Show the plan text on the running draft so the user sees live reasoning.
-                if (currentDraftId) {
-                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: lastAgentThought || t('dataThread.thinking') }));
+            // ── thinking_text: LLM reasoning alongside tool calls ──
+            // Accumulate into pendingThought; don't create a visible step
+            if (result.type === "thinking_text") {
+                pendingThought += (pendingThought ? '\n' : '') + result.content;
+                // Only show as a step if there are no tool/action steps yet (initial thinking)
+                if (thinkingSteps.length === 0) {
+                    // Show a temporary "thinking..." indicator
+                    if (currentDraftId) {
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: t('dataThread.thinking') }));
+                    }
                 }
             }
-            // Visualization result (same shape as old data_transformation)
+
+            // ── tool_start: agent is calling a tool (explore/inspect) ──
+            // (think tool is handled via thinking_text event, not here)
+            if (result.type === "tool_start" && result.tool !== "think") {
+                // Flush any pending thought before the tool step
+                pendingThought = '';
+                if (result.tool === "explore") {
+                    const codePreview = result.code || '';
+                    thinkingSteps.push(t('dataThread.runningCode') + (codePreview ? `: ${codePreview.split('\n')[0]}...` : ''));
+                } else if (result.tool === "inspect_source_data") {
+                    const tableNames = result.table_names?.join(', ') || '';
+                    thinkingSteps.push(t('dataThread.inspectingData') + (tableNames ? ` ${tableNames}` : ''));
+                }
+                if (currentDraftId) {
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                }
+            }
+
+            // ── tool_result: mark the last tool step as done ──
+            // (skip for think tool — it doesn't add steps)
+            if (result.type === "tool_result" && result.tool !== "think") {
+                // Find the last non-✓ tool step (skip over any thinking entries)
+                for (let i = thinkingSteps.length - 1; i >= 0; i--) {
+                    if (!thinkingSteps[i].startsWith('✓')) {
+                        thinkingSteps[i] = '✓ ' + thinkingSteps[i];
+                        break;
+                    }
+                }
+                if (currentDraftId) {
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                }
+            }
+
+            // ── action: agent chose what to do ──
+            if (result.type === "action") {
+                lastAgentThought = result.thought || null;
+                lastAgentInputTables = result.input_tables || [];
+                if (result.action === "visualize") {
+                    lastAgentDisplayInstruction = result.display_instruction || null;
+                    thinkingSteps.push(t('dataThread.creatingChart') + (lastAgentDisplayInstruction ? ` ${lastAgentDisplayInstruction}` : ''));
+                    if (currentDraftId) {
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                    }
+                }
+            }
+
+            // ── result: visualization checkpoint — create table + render chart ──
             if (result.type === "result" && result.status === "success") {
                 const transformResult = result.content.result;
                 if (!transformResult || transformResult.status !== 'ok') return;
@@ -515,65 +765,76 @@ export const SimpleChartRecBox: FC = function () {
                 if (!transformedData || !transformedData.rows || transformedData.rows.length === 0) return;
 
                 const rows = transformedData.rows;
-                const candidateTableId = transformedData.virtual?.table_name || genTableId();
+                const backendTableName = transformedData.virtual?.table_name;
+                // Use backend name as ID only if it doesn't conflict with existing tables
+                let candidateTableId = backendTableName || genTableId();
+                if (tables.find(t => t.id === candidateTableId) || createdTables.some(t => t.id === candidateTableId)) {
+                    candidateTableId = genTableId();
+                }
                 const displayInstruction = lastAgentDisplayInstruction || refinedGoal?.display_instruction || t('chartRec.explorationStep', { step: createdTables.length + 1, question });
 
-                // Chain from last created table, or focused table if first
                 const triggerTableId = lastCreatedTableId || focusedTableId!;
 
                 const candidateTable = createDictTable(candidateTableId, rows, undefined);
+                // Resolve source tables from agent's input_tables (names it chose to use)
+                const agentInputNames = lastAgentInputTables.length > 0 ? lastAgentInputTables : (refinedGoal?.input_tables || []);
+                const resolvedSourceIds = (agentInputNames as string[]).length > 0
+                    ? selectedTableIds.filter((id: string) => {
+                        const tbl = tables.find(t2 => t2.id === id);
+                        if (!tbl) return false;
+                        const name = tbl.virtual?.tableId || tbl.id.replace(/\.[^/.]+$/, "");
+                        return (agentInputNames as string[]).some((n: string) => n.replace(/\.[^/.]+$/, "") === name);
+                    })
+                    : selectedTableIds;
+                const resolvedSourceNames = (resolvedSourceIds.length > 0 ? resolvedSourceIds : selectedTableIds).map((id: string) => {
+                    const tbl = tables.find(t2 => t2.id === id);
+                    return tbl?.displayId || tbl?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+                });
                 candidateTable.derive = {
                     code: code || t('chartRec.explorationStepCodeComment', { step: createdTables.length + 1 }),
                     codeSignature: result.content?.result?.code_signature,
                     outputVariable: refinedGoal?.output_variable || 'result_df',
-                    source: selectedTableIds,
+                    source: resolvedSourceIds.length > 0 ? resolvedSourceIds : selectedTableIds,
                     dialog: dialog || [],
                     trigger: {
                         tableId: triggerTableId,
                         resultTableId: candidateTableId,
                         chart: undefined,
-                        // Use the full interaction log accumulated in the DraftNode,
-                        // plus the instruction entry for this step
                         interaction: [
-                            // Use the local accumulator (avoids stale closure)
                             ...currentDraftInteraction,
-                            // The instruction to the sub-agent (plan folded in)
                             {
                                 from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
-                                plan: lastAgentThought || undefined,
+                                plan: [lastAgentThought, pendingThought, ...thinkingSteps.filter(s => s.trim())].filter(Boolean).join('\n') || undefined,
                                 content: question || displayInstruction,
                                 displayContent: displayInstruction,
+                                inputTableNames: resolvedSourceNames,
                                 timestamp: Date.now(),
                             },
                         ],
                     }
                 };
-                lastAgentThought = null; // consumed
-                lastAgentDisplayInstruction = null; // consumed
+                lastAgentThought = null;
+                lastAgentDisplayInstruction = null;
+                lastAgentInputTables = [];
+                thinkingSteps = []; // reset for next chart
+                pendingThought = ''; // reset for next chart
                 if (transformedData.virtual) {
                     candidateTable.virtual = { tableId: transformedData.virtual.table_name, rowCount: transformedData.virtual.row_count };
+                    // Use the backend name as display name even if ID was regenerated to avoid conflicts
+                    candidateTable.displayId = transformedData.virtual.table_name;
                 }
 
-                // Bootstrap metadata from agent field_metadata (temporary until fetchFieldSemanticType completes)
                 const fieldMetadata = refinedGoal?.['field_metadata'];
                 if (fieldMetadata && typeof fieldMetadata === 'object') {
                     for (const [fieldName, meta] of Object.entries(fieldMetadata)) {
                         if (!candidateTable.metadata[fieldName]) continue;
                         if (typeof meta === 'string') {
-                            // Plain string format: { "field": "SemanticType" }
                             candidateTable.metadata[fieldName].semanticType = meta;
                         } else if (typeof meta === 'object' && meta !== null) {
-                            // Dict format: { "field": { "semantic_type": "...", "unit": "...", ... } }
                             const m = meta as Record<string, any>;
-                            if (m['semantic_type']) {
-                                candidateTable.metadata[fieldName].semanticType = m['semantic_type'];
-                            }
-                            if (m['unit']) {
-                                candidateTable.metadata[fieldName].unit = m['unit'];
-                            }
-                            if (m['intrinsic_domain']) {
-                                candidateTable.metadata[fieldName].intrinsicDomain = m['intrinsic_domain'];
-                            }
+                            if (m['semantic_type']) candidateTable.metadata[fieldName].semanticType = m['semantic_type'];
+                            if (m['unit']) candidateTable.metadata[fieldName].unit = m['unit'];
+                            if (m['intrinsic_domain']) candidateTable.metadata[fieldName].intrinsicDomain = m['intrinsic_domain'];
                         }
                     }
                 }
@@ -600,8 +861,6 @@ export const SimpleChartRecBox: FC = function () {
                     candidateTable.derive.trigger.chart = triggerChart;
                 }
 
-                // DataRecAgent always returns a refined_goal (with chart info),
-                // so we can rely on it to create the chart for every step.
                 const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
                 let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
                 createdCharts.push(newChart);
@@ -615,20 +874,10 @@ export const SimpleChartRecBox: FC = function () {
                 dispatch(fetchFieldSemanticType(candidateTable));
                 dispatch(fetchCodeExpl(candidateTable));
 
-                // ── DraftNode: append instruction, remove draft, create next ──
                 if (currentDraftId) {
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
-                        from: 'data-agent', to: 'datarec-agent', role: 'instruction',
-                        plan: lastAgentThought || undefined,
-                        content: question || displayInstruction,
-                        displayContent: displayInstruction,
-                        timestamp: Date.now(),
-                    }}));
-                    // Remove the draft — the table was already inserted via insertDerivedTables
                     dispatch(dfActions.removeDraftNode(currentDraftId));
                     currentDraftId = null;
                 }
-                // Create a new draft for the next potential step, chained from this table
                 createNextDraft(candidateTableId, []);
 
                 if (createdCharts.length > 0) {
@@ -638,11 +887,11 @@ export const SimpleChartRecBox: FC = function () {
                     }, 1500);
                 }
             }
-            // Agent asks for clarification — pause and let user respond
+
+            // ── clarify: pause and let user respond ──
             if (result.type === "clarify") {
                 const clarifyMsg = result.message || t('chartRec.couldYouClarify');
                 const clarifyOptions: string[] = Array.isArray(result.options) ? result.options : [];
-                // Append clarify entry (with plan folded in) to draft
                 if (currentDraftId) {
                     const clarifyEntry: InteractionEntry = {
                         from: 'data-agent', to: 'user', role: 'clarify',
@@ -659,7 +908,6 @@ export const SimpleChartRecBox: FC = function () {
                         completedStepCount: result.completed_step_count || 0,
                         lastCreatedTableId,
                     }}));
-                    // Auto-focus the table that owns the clarification so the user sees the question
                     if (currentDraftParentTableId) {
                         dispatch(dfActions.setFocused({ type: 'table', tableId: currentDraftParentTableId }));
                     }
@@ -668,15 +916,16 @@ export const SimpleChartRecBox: FC = function () {
                 agentAbortRef.current = null;
                 clearTimeout(timeoutId);
                 setChatPrompt("");
-                isCompleted = true; // prevent handleCompletion from firing
+                setAttachedImages([]);
+                isCompleted = true;
             }
 
-            // ── Capture completion summary (with plan folded in) on the last created table's trigger ──
+            // ── completion: final summary ──
             if (result.type === "completion") {
                 if (lastCreatedTableId) {
                     const summary = result.status === "max_iterations"
                         ? t('chartRec.maxIterationsReached')
-                        : (result.content?.summary || result.content?.message || "");
+                        : (result.content?.summary || "");
                     if (summary) {
                         const entry: InteractionEntry = {
                             from: 'data-agent', to: 'user', role: 'summary',
@@ -706,6 +955,7 @@ export const SimpleChartRecBox: FC = function () {
             const completionResult = allResults.find((r: any) => r.type === "completion");
             if (completionResult) {
                 setChatPrompt("");
+                setAttachedImages([]);
             }
         };
 
@@ -787,19 +1037,176 @@ export const SimpleChartRecBox: FC = function () {
         });
     }, [focusedTableId, tables, draftNodes, activeModel, agentRules, config, conceptShelfItems, dispatch, t]);
 
+    // ── Report generation via report agent ──────────────────────────
+
+    const reportFromChat = useCallback(async (prompt: string) => {
+        if (!focusedTableId) return;
+
+        const cleanPrompt = prompt.trim() || 'Create a report summarizing the exploration.';
+
+        setChatPrompt('');
+        setIsChatFormulating(true);
+
+        // Build available charts list
+        const availableCharts = charts
+            .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
+            .filter(c => tables.some(t => t.id === c.tableRef))
+            .map(c => {
+                const tbl = tables.find(t => t.id === c.tableRef);
+                const encodings: Record<string, string> = {};
+                if (c.encodingMap) {
+                    for (const [ch, enc] of Object.entries(c.encodingMap)) {
+                        if ((enc as any)?.fieldID) {
+                            const field = conceptShelfItems.find(f => f.id === (enc as any).fieldID);
+                            if (field) encodings[ch] = field.name;
+                        }
+                    }
+                }
+                return {
+                    chart_id: c.id,
+                    chart_type: c.chartType,
+                    encodings,
+                    table_ref: tbl?.virtual?.tableId || c.tableRef,
+                    code: tbl?.derive?.code || '',
+                    chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
+                };
+            });
+
+        const selectedChartIds = availableCharts.map(c => c.chart_id);
+
+        // Create a report entry and switch to report view
+        const reportId = `report-${Date.now()}`;
+        const inProgressReport: GeneratedReport = {
+            id: reportId,
+            content: '',
+            selectedChartIds,
+            createdAt: Date.now(),
+            status: 'generating',
+            prompt: cleanPrompt,
+            triggerTableId: focusedTableId,
+        };
+        dispatch(dfActions.saveGeneratedReport(inProgressReport));
+        dispatch(dfActions.setFocused({ type: 'report', reportId }));
+        dispatch(dfActions.setViewMode('report'));
+
+        const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable).filter(Boolean);
+
+        const body = JSON.stringify({
+            model: activeModel,
+            input_tables: actionTables.map(t => ({
+                name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ''),
+            })),
+            primary_tables: primaryTableIds.map(id => {
+                const t = tables.find(tbl => tbl.id === id);
+                return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, '');
+            }),
+            charts: availableCharts,
+            user_prompt: cleanPrompt,
+        });
+
+        const controller = new AbortController();
+        agentAbortRef.current = controller;
+        let accumulatedMarkdown = '';
+
+        try {
+            const response = await fetchWithIdentity(getUrls().GENERATE_REPORT_CHAT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body,
+                signal: controller.signal,
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const reader = response.body?.getReader();
+            if (!reader) throw new Error('No reader');
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    try {
+                        const event = JSON.parse(line.slice(6));
+                        if (event.type === 'text_delta') {
+                            accumulatedMarkdown += event.content;
+                        } else if (event.type === 'error') {
+                            accumulatedMarkdown += `\n\n**Error:** ${event.content}`;
+                        }
+                        // Stream update to report view
+                        const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
+                        dispatch(dfActions.updateGeneratedReportContent({
+                            id: reportId,
+                            content: accumulatedMarkdown,
+                            title: titleMatch ? titleMatch[1].trim() : undefined,
+                        }));
+                    } catch { /* skip malformed lines */ }
+                }
+            }
+            reader.releaseLock();
+
+            // Final update with completed status
+            const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
+            dispatch(dfActions.updateGeneratedReportContent({
+                id: reportId,
+                content: accumulatedMarkdown,
+                status: 'completed',
+                title: titleMatch ? titleMatch[1].trim() : undefined,
+            }));
+        } catch (error: any) {
+            if (error.name !== 'AbortError') {
+                dispatch(dfActions.updateGeneratedReportContent({
+                    id: reportId,
+                    content: accumulatedMarkdown + `\n\n**Error:** ${error.message}`,
+                    status: 'error',
+                }));
+            }
+        } finally {
+            agentAbortRef.current = null;
+            setIsChatFormulating(false);
+        }
+    }, [focusedTableId, charts, tables, selectedTableIds, primaryTableIds, conceptShelfItems, activeModel, dispatch]);
+
+    // ── Unified submit handler ───────────────────────────────────────
+    const submitChat = useCallback((prompt: string, clarificationCtx?: any) => {
+        if (selectedAgent === 'report') {
+            reportFromChat(prompt);
+        } else if (clarificationCtx) {
+            exploreFromChat(prompt, clarificationCtx);
+        } else {
+            exploreFromChat(prompt);
+        }
+    }, [reportFromChat, exploreFromChat, selectedAgent]);
+
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
             agentAbortRef.current.abort();
             agentAbortRef.current = null;
         }
+        // Always clear busy state — the async finally blocks also clear this,
+        // but a direct cancel should guarantee the UI unblocks immediately.
+        setIsChatFormulating(false);
         // Also dismiss any pending clarification draft
         if (pendingClarification?.draftId) {
             dispatch(dfActions.removeDraftNode(pendingClarification.draftId));
         }
     }, [pendingClarification, dispatch, t]);
 
-    const gradientBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.6)}, ${alpha(theme.palette.secondary.main, 0.55)})`;
-    const workingBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
+    const isReportMode = selectedAgent === 'report';
+    const gradientBorder = isReportMode
+        ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.6)}, ${alpha(theme.palette.warning.dark, 0.5)})`
+        : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.6)}, ${alpha(theme.palette.secondary.main, 0.55)})`;
+    const workingBorder = isReportMode
+        ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.3)}, ${alpha(theme.palette.warning.dark, 0.25)})`
+        : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
 
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
@@ -812,11 +1219,15 @@ export const SimpleChartRecBox: FC = function () {
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
-            transition: 'box-shadow 0.25s ease, background-color 0.2s ease',
+            transition: 'box-shadow 0.25s ease, background-color 0.3s ease',
+            backgroundColor: isChatFormulating
+                ? alpha(theme.palette.action.disabledBackground, 0.06)
+                : isReportMode
+                    ? alpha(theme.palette.warning.main, 0.03)
+                    : 'transparent',
             '&:focus-within': {
-                boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.10)}`,
+                boxShadow: `0 0 0 3px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.10)}`,
             },
-            ...(isChatFormulating ? { backgroundColor: alpha(theme.palette.action.disabledBackground, 0.06) } : {}),
             // Gradient border via pseudo-element (works with border-radius)
             '&::before': {
                 content: '""',
@@ -920,9 +1331,15 @@ export const SimpleChartRecBox: FC = function () {
                     </Box>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                         {ideas.map((idea, idx) => {
-                            const color = idea.difficulty === 'easy' ? theme.palette.success.main
-                                : idea.difficulty === 'hard' ? theme.palette.warning.main
-                                : theme.palette.primary.main;
+                            const tagConfig: Record<string, { color: string; icon: React.ReactNode }> = {
+                                'deep-dive': { color: theme.palette.primary.main, icon: <KeyboardDoubleArrowDownIcon sx={{ fontSize: 10 }} /> },
+                                'pivot': { color: theme.palette.info.main, icon: <SyncAltIcon sx={{ fontSize: 10 }} /> },
+                                'broaden': { color: theme.palette.success.main, icon: <OpenInFullIcon sx={{ fontSize: 10 }} /> },
+                                'cross-data': { color: theme.palette.warning.main, icon: <CallMergeIcon sx={{ fontSize: 10, transform: 'rotate(180deg)' }} /> },
+                                'statistical': { color: theme.palette.secondary.main, icon: <TrendingUpIcon sx={{ fontSize: 10 }} /> },
+                            };
+                            const cfg = tagConfig[idea.tag] || tagConfig['deep-dive'];
+                            const color = cfg.color;
                             return (
                                 <Box key={idx} sx={{
                                     px: '6px', py: '3px',
@@ -931,8 +1348,10 @@ export const SimpleChartRecBox: FC = function () {
                                     backgroundColor: alpha(color, 0.04),
                                     cursor: 'pointer',
                                     transition: 'all 0.15s ease',
+                                    display: 'flex', alignItems: 'flex-start', gap: '3px',
                                     '&:hover': { borderColor: alpha(color, 0.6), backgroundColor: alpha(color, 0.08) },
                                 }} onClick={() => { setChatPrompt(idea.text); exploreFromChat(idea.text); }}>
+                                    <Box sx={{ color, mt: '1px', flexShrink: 0 }}>{cfg.icon}</Box>
                                     <Typography component="div" sx={{ fontSize: 10, lineHeight: 1.3, color }}>
                                         {renderTextWithEmphasis(idea.goal, {
                                             borderRadius: '0px', borderBottom: '1px solid',
@@ -946,6 +1365,72 @@ export const SimpleChartRecBox: FC = function () {
                     </Box>
                 </Box>
             )}
+            {/* Input area wrapper — ideas-loading overlay is scoped to this region */}
+            <Box sx={{ position: 'relative' }}>
+            {/* @-mention table chips and image attachments */}
+            {(primaryTableIds.length > 0 || attachedImages.length > 0) && !isChatFormulating && (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', px: 0.5, pb: '2px' }}>
+                    {primaryTableIds.map(id => {
+                        const tbl = tables.find(t => t.id === id);
+                        const isDefault = defaultPrimaryTableIds.includes(id);
+                        return (
+                            <Chip
+                                key={id}
+                                size="small"
+                                label={`@${tbl?.displayId || id}`}
+                                onDelete={isDefault ? undefined : () => setMentionedTableIds(prev => prev.filter(mid => mid !== id))}
+                                sx={{
+                                    height: 20,
+                                    fontSize: 10,
+                                    color: theme.palette.text.secondary,
+                                    backgroundColor: 'rgba(0,0,0,0.04)',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    '& .MuiChip-label': { px: '6px' },
+                                    '& .MuiChip-deleteIcon': { fontSize: 12, color: theme.palette.text.disabled, mr: '2px' },
+                                }}
+                            />
+                        );
+                    })}
+                    {attachedImages.map((_, idx) => (
+                        <Chip
+                            key={`img-${idx}`}
+                            size="small"
+                            icon={<Box component="img" src={attachedImages[idx]} sx={{ width: 14, height: 14, objectFit: 'cover', borderRadius: '2px' }} />}
+                            label={`image${attachedImages.length > 1 ? idx + 1 : ''}`}
+                            onDelete={() => setAttachedImages(prev => prev.filter((_, i) => i !== idx))}
+                            sx={{
+                                height: 20,
+                                fontSize: 10,
+                                color: theme.palette.text.secondary,
+                                backgroundColor: 'rgba(0,0,0,0.04)',
+                                border: 'none',
+                                borderRadius: '4px',
+                                '& .MuiChip-label': { px: '4px' },
+                                '& .MuiChip-icon': { ml: '4px', mr: '-2px' },
+                                '& .MuiChip-deleteIcon': { fontSize: 12, color: theme.palette.text.disabled, mr: '2px' },
+                            }}
+                        />
+                    ))}
+                </Box>
+            )}
+            {/* @-mention dropdown */}
+            <Popper open={mentionDropdownOpen && mentionAvailableTables.length > 0} anchorEl={inputCardRef.current} placement="top-start" style={{ zIndex: 1300 }}>
+                <Paper elevation={4} sx={{ maxHeight: 200, overflow: 'auto', minWidth: 180, mb: 0.5 }}>
+                    <MenuList dense sx={{ py: 0.5 }}>
+                        {mentionAvailableTables.map((opt, idx) => (
+                            <MenuItem
+                                key={opt.id}
+                                selected={idx === mentionHighlightIdx}
+                                sx={{ fontSize: 11, py: 0.5 }}
+                                onClick={() => confirmMention(opt.id)}
+                            >
+                                @{opt.displayId || opt.id}
+                            </MenuItem>
+                        ))}
+                    </MenuList>
+                </Paper>
+            </Popper>
             <TextField
                 variant="standard"
                 sx={{
@@ -959,23 +1444,76 @@ export const SimpleChartRecBox: FC = function () {
                         "& .MuiInput-input": { fontSize: '12px', lineHeight: 1.5, color: 'text.disabled' },
                     } : {}),
                 }}
-                onChange={(event: any) => { if (!isChatFormulating) setChatPrompt(event.target.value); }}
+                onChange={(event: any) => {
+                    if (isChatFormulating) return;
+                    const val = event.target.value;
+                    // Open dropdown when @ is typed
+                    if (!mentionDropdownOpen && val.includes('@')) {
+                        const lastAt = val.lastIndexOf('@');
+                        const afterAt = val.slice(lastAt + 1);
+                        // Only open if @ is at end or followed by partial filter (no space yet)
+                        if (!afterAt.includes(' ')) {
+                            setMentionDropdownOpen(true);
+                            setMentionHighlightIdx(0);
+                        }
+                    }
+                    // Close dropdown if no active @ remaining
+                    if (mentionDropdownOpen) {
+                        const lastAt = val.lastIndexOf('@');
+                        if (lastAt < 0 || val.slice(lastAt + 1).includes(' ')) {
+                            setMentionDropdownOpen(false);
+                            setMentionHighlightIdx(0);
+                        }
+                    }
+                    // Remove mentioned tables whose @name is no longer in the text
+                    setMentionedTableIds(prev => prev.filter(id => {
+                        const tbl = tables.find(t2 => t2.id === id);
+                        const name = tbl?.displayId || id;
+                        return val.includes(`@${name}`);
+                    }));
+                    setChatPrompt(val);
+                }}
                 onKeyDown={(event: any) => {
+                    // @-mention keyboard navigation
+                    if (mentionDropdownOpen && mentionAvailableTables.length > 0) {
+                        if (event.key === 'ArrowDown') {
+                            event.preventDefault();
+                            setMentionHighlightIdx(prev => Math.min(prev + 1, mentionAvailableTables.length - 1));
+                            return;
+                        }
+                        if (event.key === 'ArrowUp') {
+                            event.preventDefault();
+                            setMentionHighlightIdx(prev => Math.max(prev - 1, 0));
+                            return;
+                        }
+                        if (event.key === 'Tab' || event.key === 'Enter') {
+                            event.preventDefault();
+                            confirmMention(mentionAvailableTables[mentionHighlightIdx].id);
+                            return;
+                        }
+                        if (event.key === 'Escape') {
+                            event.preventDefault();
+                            setMentionDropdownOpen(false);
+                            setMentionHighlightIdx(0);
+                            return;
+                        }
+                    }
                     if (event.key === 'Tab' && !event.shiftKey && chatPrompt.trim() === '' && !isChatFormulating) {
                         event.preventDefault();
-                        setChatPrompt(t('chartRec.threadExplorePrompt'));
+                        setChatPrompt(isReportMode ? t('chartRec.threadReportPrompt') : t('chartRec.threadExplorePrompt'));
                     }
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
                         if (chatPrompt.trim().length > 0 && !isChatFormulating) {
                             if (pendingClarification) {
-                                exploreFromChat(chatPrompt, pendingClarification);
+                                submitChat(chatPrompt, pendingClarification);
                             } else {
-                                exploreFromChat(chatPrompt);
+                                submitChat(chatPrompt);
                             }
                         }
                     }
                 }}
+                onPaste={handlePaste}
                 onFocus={() => {
                     // Scroll to the focused table card, positioning it near the bottom of the visible area
                     const el = document.querySelector('.data-thread-card.selected-card') as HTMLElement | null;
@@ -1004,7 +1542,7 @@ export const SimpleChartRecBox: FC = function () {
                     input: { readOnly: isChatFormulating },
                 }}
                 value={chatPrompt}
-                placeholder={pendingClarification ? t('chartRec.replyPlaceholder') : t('chartRec.explorePlaceholder')}
+                placeholder={pendingClarification ? t('chartRec.replyPlaceholder') : isReportMode ? t('chartRec.reportPlaceholder') : t('chartRec.explorePlaceholder')}
                 fullWidth
                 multiline
                 minRows={2}
@@ -1024,12 +1562,39 @@ export const SimpleChartRecBox: FC = function () {
                             <AddIcon sx={{ fontSize: 12 }} />
                         </IconButton>
                     </Tooltip>
+                    {/* Agent mode toggle */}
+                    <Tooltip title={`Switch to ${selectedAgent === 'explore' ? 'Report' : 'Explore'} mode`}>
+                        <Button
+                            size="small"
+                            onClick={() => setSelectedAgent(prev => prev === 'explore' ? 'report' : 'explore')}
+                            sx={{
+                                textTransform: 'none',
+                                fontSize: 10,
+                                minWidth: 0,
+                                px: 0.75,
+                                py: 0,
+                                height: 20,
+                                color: isReportMode ? theme.palette.warning.main : theme.palette.primary.main,
+                                borderRadius: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '2px',
+                                '&:hover': { backgroundColor: alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.08) },
+                            }}
+                        >
+                            {selectedAgent === 'explore'
+                                ? <AutoGraphIcon sx={{ fontSize: '10px !important' }} />
+                                : <DescriptionOutlinedIcon sx={{ fontSize: '10px !important' }} />}
+                            {selectedAgent === 'explore' ? 'Explore' : 'Report'}
+                        </Button>
+                    </Tooltip>
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
                 {isChatFormulating ? (
                     <CircularProgress size={18} sx={{ m: 0.5 }} />
                 ) : (
                     <>
+                        {!isReportMode && (
                         <Tooltip title={t('chartRec.getIdeaSuggestions')}>
                             <span>
                                 <IconButton
@@ -1050,6 +1615,7 @@ export const SimpleChartRecBox: FC = function () {
                                 </IconButton>
                             </span>
                         </Tooltip>
+                        )}
                         {pendingClarification && !isChatFormulating && (
                             <Tooltip title={t('chartRec.endConversation')}>
                                 <IconButton
@@ -1061,21 +1627,6 @@ export const SimpleChartRecBox: FC = function () {
                                 </IconButton>
                             </Tooltip>
                         )}
-                        <Tooltip title={t('report.createNewReport')}>
-                            <span>
-                                <IconButton
-                                    size="small"
-                                    sx={{ p: 0.5, color: theme.palette.secondary.main }}
-                                    disabled={!focusedTableId || charts.filter(c => tables.some(t => t.id === c.tableRef)).length === 0}
-                                    onClick={() => {
-                                        dispatch(dfActions.setFocused(undefined));
-                                        dispatch(dfActions.setViewMode('report'));
-                                    }}
-                                >
-                                    <ArticleIcon sx={{ fontSize: 18 }} />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
                         <Tooltip title={pendingClarification ? t('chartRec.sendReply') : t('chartRec.explore')}>
                             <span>
                                 <IconButton
@@ -1085,9 +1636,9 @@ export const SimpleChartRecBox: FC = function () {
                                     disabled={chatPrompt.trim().length === 0 || !focusedTableId}
                                     onClick={() => {
                                         if (pendingClarification) {
-                                            exploreFromChat(chatPrompt, pendingClarification);
+                                            submitChat(chatPrompt, pendingClarification);
                                         } else {
-                                            exploreFromChat(chatPrompt);
+                                            submitChat(chatPrompt);
                                         }
                                     }}
                                 >
@@ -1099,15 +1650,22 @@ export const SimpleChartRecBox: FC = function () {
                 )}
                 </Box>
             </Box>
-            {/* Agent working overlay */}
-            {(isChatFormulating || isLoadingIdeas) && (
+            {/* Ideas-loading overlay — scoped to input area only, keeps idea chips visible */}
+            {isLoadingIdeas && !isChatFormulating && (
                 <AgentWorkingOverlay 
-                    message={isLoadingIdeas && !isChatFormulating 
-                        ? t('chartRec.generatingIdeas')
-                        : draftNodes.find(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId))
+                    message={t('chartRec.generatingIdeas')}
+                    theme={theme}
+                    onCancel={() => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); }}
+                />
+            )}
+            </Box>
+            {/* Agent working overlay — covers entire card during chat formulation */}
+            {isChatFormulating && (
+                <AgentWorkingOverlay 
+                    message={draftNodes.find(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId))
                             ?.derive?.runningPlan}
                     theme={theme}
-                    onCancel={isLoadingIdeas && !isChatFormulating ? () => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); } : cancelAgent}
+                    onCancel={cancelAgent}
                 />
             )}
         </Card>

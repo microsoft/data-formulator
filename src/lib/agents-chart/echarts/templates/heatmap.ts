@@ -102,11 +102,21 @@ export const ecHeatmapDef: ChartTemplateDef = {
 
         // Color scheme
         const schemeName = chartProperties?.colorScheme || 'viridis';
+        const decision = colorDecisions?.color ?? colorDecisions?.group;
+        const isDivergingScale =
+            decision?.schemeType === 'diverging'
+            || schemeName === 'blueorange'
+            || schemeName === 'redblue';
+        if (isDivergingScale && minVal < 0 && maxVal > 0) {
+            const sym = Math.max(Math.abs(minVal), Math.abs(maxVal));
+            minVal = -sym;
+            maxVal = sym;
+        }
+
         // 优先使用 backend-agnostic colorDecisions：
         //   - 若有显式 schemeId，则尝试该 id；
         //   - 否则依据 schemeType（sequential / diverging）选择默认连续 / 发散色带；
         //   - 都没有时，再退回到本地 SCHEME_COLORS（兼容旧行为）。
-        const decision = colorDecisions?.color ?? colorDecisions?.group;
         let schemeColors: string[];
 
         if (decision) {

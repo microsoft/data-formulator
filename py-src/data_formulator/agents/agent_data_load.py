@@ -18,9 +18,11 @@ SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based 
 Given a dataset provided by the user, 
 1. suggest a descriptive name for the table if the table name is a generic name like table-6, the suggested name should best capture meaning of the table but also very concise.
     - if the table already have a descriptive name provided in the bracket (...), use it; if the provided name is not descriptive, suggest a new name.
-    - format table name using '-' when it contains multiple words (e.g., "income", "weather-seattle-atlanta")
-    - the suggested table name should be similar to variable names that are very descriptive and concise, no more than 5 words.
-    - the suggested name should best be within 24 characters, be smart with abbreviations (yet still descriptive and follow common practices), when in doubt, use less words but less abbreviation.
+    - use Title Case with spaces, like naming a sheet in Excel or Tableau (e.g., "Income", "Seattle Weather", "US Trade Balance")
+    - think like a data analyst: name the table by what it contains, not how it was made.
+    - good names: "Monthly Sales", "Stock Prices", "Survey Responses", "US GDP Quarterly"
+    - bad names: "data", "result", "table1", "d_weekly_fuel_prices", "raw-data-filtered"
+    - aim for 2-4 words, no more than 24 characters. Be smart with abbreviations but keep it readable.
 2. identify their type and semantic type
 3. provide a very short summary of the dataset.
 

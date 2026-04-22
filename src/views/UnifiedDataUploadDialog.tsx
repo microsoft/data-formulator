@@ -25,9 +25,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import LinkIcon from '@mui/icons-material/Link';
-import { StreamIcon } from '../icons';
-import StorageIcon from '@mui/icons-material/Storage';
-import ImageSearchIcon from '@mui/icons-material/ImageSearch';
+import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import ExploreIcon from '@mui/icons-material/Explore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -40,7 +39,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
-import { DataSourceConfig, DictTable } from '../components/ComponentType';
+import { DataSourceConfig, DictTable, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
@@ -48,6 +47,7 @@ import { getUrls, fetchWithIdentity, CONNECTOR_URLS } from '../app/utils';
 import { DataLoaderForm } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
+    Checkbox,
     FormControlLabel,
     Switch,
 } from '@mui/material';
@@ -56,7 +56,7 @@ import CloudIcon from '@mui/icons-material/Cloud';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
 
-export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore' | 'add-connection' | `connector:${string}`;
+export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore' | 'local-folder' | 'add-connection' | `connector:${string}`;
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -89,6 +89,7 @@ interface DataSourceCardProps {
     onClick: () => void;
     disabled?: boolean;
     dashed?: boolean;
+    badge?: React.ReactNode;
 }
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
@@ -98,6 +99,7 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     onClick, 
     disabled = false,
     dashed = false,
+    badge,
 }) => {
     const theme = useTheme();
     
@@ -135,15 +137,18 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
                 {icon}
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography 
-                    variant="body2" 
-                    sx={{ 
-                        fontWeight: 500,
-                        color: disabled ? 'text.disabled' : 'text.primary',
-                    }}
-                >
-                    {title}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                    <Typography 
+                        variant="body2" 
+                        sx={{ 
+                            fontWeight: 500,
+                            color: disabled ? 'text.disabled' : 'text.primary',
+                        }}
+                    >
+                        {title}
+                    </Typography>
+                    {badge}
+                </Box>
                 <Typography
                     variant="caption"
                     sx={{
@@ -175,27 +180,226 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
     return uniqueName;
 };
 
-/** A registered connector instance from GET /api/connectors */
-export interface ConnectorInstance {
-    id: string;
-    source_type: string;
-    display_name: string;
-    icon: string;
-    connected: boolean;
-    deletable?: boolean;
-    params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
-    pinned_params: Record<string, string>;
-    hierarchy: Array<{key: string; label: string}>;
-    effective_hierarchy: Array<{key: string; label: string}>;
-    auth_mode?: string;
-    auth_instructions?: string;
-    delegated_login?: { login_url: string; label?: string } | null;
+// ── Local Folder Panel ──────────────────────────────────────────────────
+// Simple panel: "Select Folder" button + "Recursive" checkbox.
+// Creates a connector behind the scenes, then jumps to the connector tab.
+
+interface LocalFolderPanelProps {
+    onConnectorCreated: (conn: ConnectorInstance) => void;
+}
+
+const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated }) => {
+    const { t } = useTranslation();
+    const theme = useTheme();
+    const [recursive, setRecursive] = React.useState(true);
+    const [loading, setLoading] = React.useState(false);
+    const [error, setError] = React.useState<string | null>(null);
+    const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
+    const [showManualInput, setShowManualInput] = React.useState(false);
+    const [manualPath, setManualPath] = React.useState('');
+
+    // Create connector from a given path
+    const connectFolder = async (folderPath: string) => {
+        setError(null);
+        setLoading(true);
+        try {
+            const folderName = folderPath.split('/').pop() || folderPath.split('\\').pop() || 'Local Folder';
+            const createResp = await fetchWithIdentity(CONNECTOR_URLS.CREATE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    loader_type: 'local_folder',
+                    display_name: folderName,
+                    params: {
+                        root_dir: folderPath,
+                        recursive: recursive ? 'true' : 'false',
+                    },
+                }),
+            });
+            const createData = await createResp.json();
+            if (!createResp.ok) {
+                setError(createData.message || 'Failed to create connector');
+                return;
+            }
+
+            const listResp = await fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' });
+            const listData = await listResp.json();
+            const newConn = (listData.connectors || []).find((c: ConnectorInstance) => c.id === createData.id);
+            if (newConn) {
+                onConnectorCreated(newConn);
+            }
+        } catch (err: any) {
+            setError(err.message || 'Failed to connect folder');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSelectFolder = async () => {
+        setError(null);
+        setLoading(true);
+        try {
+            const pickResp = await fetchWithIdentity('/api/local/pick-directory', { method: 'POST' });
+            const pickData = await pickResp.json();
+
+            // If the picker isn't available, show manual text input
+            if (!pickResp.ok && pickData.fallback === 'text_input') {
+                setShowManualInput(true);
+                setLoading(false);
+                return;
+            }
+            if (!pickData.path) {
+                setLoading(false);
+                return; // user cancelled
+            }
+            setSelectedPath(pickData.path);
+            await connectFolder(pickData.path);
+        } catch (err: any) {
+            setError(err.message || 'Failed to open folder');
+            setShowManualInput(true);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleManualConnect = async () => {
+        const trimmed = manualPath.trim();
+        if (!trimmed) return;
+        setSelectedPath(trimmed);
+        await connectFolder(trimmed);
+    };
+
+    return (
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            boxSizing: 'border-box',
+            gap: 2,
+            p: 3,
+            justifyContent: 'center',
+            alignItems: 'center',
+        }}>
+            <Box sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 2,
+                maxWidth: 420,
+                width: '100%',
+            }}>
+                <FolderOpenIcon sx={{ fontSize: 48, color: 'text.secondary', opacity: 0.5 }} />
+                <Typography variant="body1" color="text.secondary" textAlign="center">
+                    {t('upload.localFolderHint', { defaultValue: 'Select a folder on your computer to browse and import data files.' })}
+                </Typography>
+
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={recursive}
+                            onChange={(e) => setRecursive(e.target.checked)}
+                            size="small"
+                        />
+                    }
+                    label={
+                        <Typography variant="body2">
+                            {t('upload.includeSubfolders', { defaultValue: 'Include subfolders' })}
+                        </Typography>
+                    }
+                />
+
+                {showManualInput ? (
+                    /* Text input fallback when native dialog is unavailable */
+                    <Box sx={{ display: 'flex', gap: 1, width: '100%', alignItems: 'flex-start' }}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            placeholder={t('upload.folderPathPlaceholder', { defaultValue: '/path/to/your/data/folder' })}
+                            value={manualPath}
+                            onChange={(e) => setManualPath(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleManualConnect(); }}
+                            sx={{ '& .MuiInputBase-input': { fontSize: '0.875rem' } }}
+                        />
+                        <Button
+                            variant="contained"
+                            onClick={handleManualConnect}
+                            disabled={loading || !manualPath.trim()}
+                            startIcon={loading ? <CircularProgress size={16} color="inherit" /> : undefined}
+                            sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                        >
+                            {t('upload.connect', { defaultValue: 'Connect' })}
+                        </Button>
+                    </Box>
+                ) : (
+                    <Button
+                        variant="contained"
+                        onClick={handleSelectFolder}
+                        disabled={loading}
+                        startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <FolderOpenIcon />}
+                        sx={{ textTransform: 'none', px: 3, py: 1 }}
+                    >
+                        {loading
+                            ? t('upload.opening', { defaultValue: 'Opening...' })
+                            : t('upload.selectFolder', { defaultValue: 'Select Folder' })}
+                    </Button>
+                )}
+
+                {/* Allow switching to manual input */}
+                {!showManualInput && (
+                    <Link
+                        component="button"
+                        variant="caption"
+                        color="text.secondary"
+                        onClick={() => setShowManualInput(true)}
+                        sx={{ fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                    >
+                        {t('upload.orTypePath', { defaultValue: 'or type a path manually' })}
+                    </Link>
+                )}
+
+                {error && (
+                    <Typography variant="body2" color="error" textAlign="center" sx={{ mt: 1 }}>
+                        {error}
+                    </Typography>
+                )}
+            </Box>
+        </Box>
+    );
+};
+
+// Re-export ConnectorInstance from shared types for backward compatibility
+export { type ConnectorInstance } from '../components/ComponentType';
+
+// Map connector source_type (class name) to action-oriented description
+const CONNECTOR_TYPE_DESCRIPTIONS: Record<string, string> = {
+    MySQLDataLoader: 'Query tables from a MySQL database',
+    PostgreSQLDataLoader: 'Query tables from a PostgreSQL database',
+    MSSQLDataLoader: 'Query tables from Microsoft SQL Server',
+    CosmosDBDataLoader: 'Query containers from Azure Cosmos DB',
+    MongoDBDataLoader: 'Query collections from MongoDB',
+    BigQueryDataLoader: 'Query datasets from Google BigQuery',
+    AthenaDataLoader: 'Query data via Amazon Athena',
+    KustoDataLoader: 'Query data from Azure Data Explorer (Kusto)',
+    SupersetLoader: 'Browse datasets from Apache Superset',
+    AzureBlobDataLoader: 'Load files from Azure Blob Storage',
+    S3DataLoader: 'Load files from Amazon S3',
+    LocalFolderDataLoader: 'Browse and import files from a local folder',
+};
+
+function getConnectorTypeDescription(sourceType: string, connected: boolean, t: (key: string, options?: any) => string): string {
+    const typeDesc = CONNECTOR_TYPE_DESCRIPTIONS[sourceType];
+    if (typeDesc) {
+        return connected ? typeDesc : t('upload.connectorDisconnected', { defaultValue: 'Not connected' });
+    }
+    return connected
+        ? sourceType || t('upload.connectorConnected', { defaultValue: 'Connected' })
+        : t('upload.connectorDisconnected', { defaultValue: 'Not connected' });
 }
 
 // Reusable Data Load Menu Component
 export interface DataLoadMenuProps {
     onSelectTab: (tab: UploadTabType) => void;
-    serverConfig?: { WORKSPACE_BACKEND?: string };
+    serverConfig?: { WORKSPACE_BACKEND?: string; IS_LOCAL_MODE?: boolean };
     variant?: 'dialog' | 'page'; // 'dialog' uses smaller cards, 'page' uses larger cards
     hideSampleDatasets?: boolean;
     connectors?: ConnectorInstance[];
@@ -237,30 +441,50 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             value: 'extract' as UploadTabType, 
             title: t('upload.extractData'), 
             description: t('upload.extractDataDesc'),
-            icon: <ImageSearchIcon />, 
+            icon: <SmartToyOutlinedIcon />, 
             disabled: false
         },
-    ].filter(source => !(hideSampleDatasets && source.value === 'explore'));
-
-    // All connectors get cards — connected ones show status, disconnected show type
-    const liveDataSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; dashed?: boolean }> = [
         { 
             value: 'url' as UploadTabType, 
             title: t('upload.loadFromUrl'), 
             description: t('upload.loadFromUrlDesc'),
             icon: <LinkIcon />, 
-            disabled: false
-        },
-        // Per-connector cards — all instances
-        ...connectors.map((conn) => ({
-            value: `connector:${conn.id}` as UploadTabType,
-            title: conn.display_name,
-            description: conn.connected
-                ? t('upload.connectorConnected', { defaultValue: 'Connected' })
-                : conn.source_type || t('upload.connectorDisconnected', { defaultValue: 'Not connected' }),
-            icon: <StorageIcon />,
             disabled: false,
-        })),
+            badge: <StreamIcon sx={{ fontSize: 14, color: 'success.main', animation: 'pulse 2s infinite', '@keyframes pulse': {
+                '0%': { opacity: 1 },
+                '50%': { opacity: 0.4 },
+                '100%': { opacity: 1 },
+            } }} />,
+        },
+    ].filter(source => !(hideSampleDatasets && source.value === 'explore'));
+
+    // Data connections — persistent configured sources (databases, services, etc.)
+    const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; dashed?: boolean }> = [
+        // Per-connector cards — all instances
+        ...connectors.map((conn) => {
+            const isLocalFolder = conn.source_type === 'LocalFolderDataLoader' || conn.id.startsWith('local_folder');
+            const folderPath = isLocalFolder ? (conn.pinned_params?.root_dir || '') : '';
+            return {
+                value: `connector:${conn.id}` as UploadTabType,
+                title: conn.display_name,
+                description: isLocalFolder
+                    ? (folderPath || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
+                    : getConnectorTypeDescription(conn.source_type, conn.connected, t),
+                icon: isLocalFolder
+                    ? <FolderOpenIcon />
+                    : getConnectorIcon(conn.icon || conn.source_type),
+                disabled: false,
+            };
+        }),
+        // "Local Folder" card (dashed, local mode only)
+        ...(serverConfig?.IS_LOCAL_MODE ? [{
+            value: 'local-folder' as UploadTabType,
+            title: t('upload.localFolder', { defaultValue: 'Connect Local Folder' }),
+            description: t('upload.localFolderDesc', { defaultValue: 'Connect to a local folder for fast imports' }),
+            icon: <AddIcon />,
+            disabled: false,
+            dashed: true,
+        }] : []),
         // "Add Connection" card (dashed style)
         {
             value: 'add-connection' as UploadTabType,
@@ -273,88 +497,79 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     ];
 
     if (variant === 'page') {
-        // Page variant: 3-column grid, first column for liveDataSources, second 2 columns for regularDataSources
+        // Page variant: two sections stacked, local data in 3 columns, live sources in 2 columns with wrap
         return (
             <Box sx={{ 
                 width: '100%',
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1fr) repeat(2, minmax(0, 1fr))',
-                gridTemplateRows: 'auto repeat(2, auto)',
-                gap: 1.5,
-                rowGap: 2,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
                 mx: 0,
                 textAlign: 'left',
             }}>
-                {/* Section Titles */}
+                {/* Local Data Sources */}
                 <Typography 
                     variant="body2" 
                     color="text.secondary" 
                     sx={{ 
-                        gridColumn: 1,
-                        gridRow: 1,
                         textAlign: 'left',
-                        letterSpacing: '0.02em',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        position: 'relative',
-                        zIndex: 1,
-                        marginRight: 3, // Extra space between first column and other columns
-                    }}
-                >
-                    <StreamIcon sx={{ fontSize: 14, animation: 'pulse 2s infinite', '@keyframes pulse': {
-                        '0%': { opacity: 1, color: 'primary.main' },
-                        '50%': { opacity: 0.5, color: 'primary.light' },
-                        '100%': { opacity: 1, color: 'primary.main' },
-                    }, }} /> {t('upload.connectToLiveData')}
-                </Typography>
-                <Typography 
-                    variant="body2" 
-                    color="text.secondary" 
-                    sx={{ 
-                        gridColumn: '2 / 3',
-                        gridRow: 1,
-                        textAlign: 'left',
+                        mb: 0.5,
+                        opacity: 0.6,
+                        fontSize: '0.75rem',
                         letterSpacing: '0.02em'
                     }}
                 >
-                    {t('upload.loadLocalData')}
+                    {t('upload.importData')}
                 </Typography>
-                
-                {/* Background for Live Data Column */}
-                <Box
-                    sx={{
-                        gridColumn: 1,
-                        gridRow: '1 / -1',
-                        backgroundColor: alpha(theme.palette.primary.main, 0.03),
-                        borderRadius: 1,
-                        position: 'relative',
-                        zIndex: 0,
-                        // Extend into gaps to create continuous background
-                        marginTop: '-16px', // Extend into row gaps (2 * 8px = 16px)
-                        marginBottom: '-16px',
-                        marginLeft: '-12px', // Extend into left column gap (1.5 * 8px = 12px)
-                        marginRight: '12px', // Extra space between first column and other columns (3 * 8px = 24px total)
-                        paddingTop: '16px',
-                        paddingBottom: '16px',
-                        paddingLeft: '12px',
-                        paddingRight: '12px',
-                    }}
-                />
-                
-                {/* Live Data Sources - fill last column, 2 rows */}
-                {liveDataSources.map((source, index) => (
-                    <Box
-                        key={source.value}
-                        sx={{
-                            gridColumn: 1,
-                            gridRow: index + 2, // Start from row 2 (after title row)
-                            position: 'relative',
-                            zIndex: 1,
-                            marginRight: 3, // Extra space between first column and other columns
-                        }}
-                    >
+                <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: 1.5,
+                }}>
+                    {regularDataSources.map((source) => (
                         <DataSourceCard
+                            key={source.value}
+                            icon={source.icon}
+                            title={source.title}
+                            description={source.description}
+                            onClick={() => onSelectTab(source.value)}
+                            disabled={source.disabled}
+                            badge={source.badge}
+                        />
+                    ))}
+                </Box>
+
+                {/* Data Connections */}
+                <Typography 
+                    variant="body2" 
+                    color="text.secondary" 
+                    sx={{ 
+                        textAlign: 'left',
+                        mt: 1,
+                        mb: 0.5,
+                        opacity: 0.6,
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.02em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                    }}
+                >
+                    <StreamIcon sx={{ fontSize: 12, animation: 'pulse 2s infinite', '@keyframes pulse': {
+                        '0%': { opacity: 1 },
+                        '50%': { opacity: 0.4 },
+                        '100%': { opacity: 1 },
+                    } }} />
+                    {t('upload.dataConnections')}
+                </Typography>
+                <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: 1.5,
+                }}>
+                    {connectionSources.map((source) => (
+                        <DataSourceCard
+                            key={source.value}
                             icon={source.icon}
                             title={source.title}
                             description={source.description}
@@ -362,32 +577,13 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             disabled={source.disabled}
                             dashed={source.dashed}
                         />
-                    </Box>
-                ))}
-                {/* Regular Data Sources - fill first 2 columns, 2 rows */}
-                {regularDataSources.map((source, index) => (
-                    <Box
-                        key={source.value}
-                        sx={{
-                            gridColumn: (index % 2) + 2,
-                            gridRow: Math.floor(index / 2) + 2, // Start from row 2 (after title row)
-                        }}
-                    >
-                        <DataSourceCard
-                            icon={source.icon}
-                            title={source.title}
-                            description={source.description}
-                            onClick={() => onSelectTab(source.value)}
-                            disabled={source.disabled}
-                        />
-                    </Box>
-                ))}
-                
+                    ))}
+                </Box>
             </Box>
         );
     }
 
-    // Dialog variant: original two-section layout
+    // Dialog variant: two-section layout
     return (
         <Box sx={{ 
             width: '100%',
@@ -398,7 +594,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             mx: 0,
             textAlign: 'left',
         }}>
-            {/* Local Data Sources */}
+            {/* Import Data */}
             <Typography 
                 variant="body2" 
                 color="text.secondary" 
@@ -411,7 +607,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     letterSpacing: '0.02em'
                 }}
             >
-                {t('upload.localData')}
+                {t('upload.importData')}
             </Typography>
 
             <Box sx={{ 
@@ -428,11 +624,12 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         description={source.description}
                         onClick={() => onSelectTab(source.value)}
                         disabled={source.disabled}
+                        badge={source.badge}
                     />
                 ))}
             </Box>
 
-            {/* Live Data Sources */}
+            {/* Data Connections */}
             <Typography 
                 variant="body2" 
                 color="text.secondary" 
@@ -444,14 +641,15 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     letterSpacing: '0.02em',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 1,
+                    gap: 0.5,
                 }}
             >
-                <StreamIcon sx={{ fontSize: 14, animation: 'pulse 2s infinite', '@keyframes pulse': {
-                    '0%': { opacity: 1, color: 'primary.main' },
-                    '50%': { opacity: 0.5, color: 'primary.light' },
-                    '100%': { opacity: 1, color: 'primary.main' },
-                }, }} /> {t('upload.orConnectToDataSource')}
+                <StreamIcon sx={{ fontSize: 12, animation: 'pulse 2s infinite', '@keyframes pulse': {
+                    '0%': { opacity: 1 },
+                    '50%': { opacity: 0.4 },
+                    '100%': { opacity: 1 },
+                } }} />
+                {t('upload.dataConnections')}
             </Typography>
 
             <Box sx={{ 
@@ -459,7 +657,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                 gap: 1.5,
             }}>
-                {liveDataSources.map((source) => (
+                {connectionSources.map((source) => (
                     <DataSourceCard
                         key={source.value}
                         icon={source.icon}
@@ -598,7 +796,7 @@ const AddConnectionPanel: React.FC<{
             {/* Left sidebar: loader types */}
             <Box sx={{
                 display: 'flex', flexDirection: 'column',
-                width: 160, minWidth: 160, maxWidth: 160,
+                width: 180, minWidth: 180, maxWidth: 180,
                 borderRight: `1px solid ${borderColor.divider}`,
                 overflowY: 'auto', overflowX: 'hidden',
                 pt: 1,
@@ -609,17 +807,18 @@ const AddConnectionPanel: React.FC<{
                 }}>
                     {t('upload.dataSourceTypes', { defaultValue: 'Data Sources' })}
                 </Typography>
-                {loaderTypes.map((loader) => (
+                {[...loaderTypes].sort((a, b) => connectorSortOrder(a.type, b.type)).map((loader) => (
                     <Button
                         key={loader.type}
                         variant="text" size="small" color="primary"
                         onClick={() => handleSelectLoader(loader)}
                         sx={sidebarButtonSx(loader.type)}
+                        startIcon={getConnectorIcon(loader.type, { sx: { fontSize: 16, opacity: 0.7 } })}
                     >
                         {loader.name}
                     </Button>
                 ))}
-                {Object.entries(disabledLoaders).map(([name, { install_hint }]) => (
+                {Object.entries(disabledLoaders).sort(([a], [b]) => connectorSortOrder(a, b)).map(([name, { install_hint }]) => (
                     <Tooltip key={name} title={install_hint} placement="right" arrow>
                         <span style={{ width: '100%' }}>
                             <Button
@@ -630,6 +829,7 @@ const AddConnectionPanel: React.FC<{
                                     borderRadius: 0, py: 1, px: 2,
                                     color: 'text.disabled !important',
                                 }}
+                                startIcon={getConnectorIcon(name, { sx: { fontSize: 16, opacity: 0.4 } })}
                             >
                                 {name}
                             </Button>
@@ -638,9 +838,16 @@ const AddConnectionPanel: React.FC<{
                 ))}
             </Box>
 
-            {/* Right panel: display name + DataLoaderForm */}
+            {/* Right panel: display name + DataLoaderForm (or simplified Local Folder panel) */}
             <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
-                {selectedLoader ? (
+                {selectedLoader && selectedType === 'local_folder' ? (
+                    /* Simplified Local Folder panel — no connection name, no form tiers */
+                    <LocalFolderPanel
+                        onConnectorCreated={(newConn) => {
+                            onCreated(newConn);
+                        }}
+                    />
+                ) : selectedLoader ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         {/* Connection name + DataLoaderForm */}
                         <Box sx={{ px: 2, pt: 1.5, pb: 2, flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -703,8 +910,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const dispatch = useDispatch<AppDispatch>();
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-    const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
+    const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const existingNames = new Set(existingTables.map(t => t.id));
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
@@ -1316,6 +1524,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             'extract': t('upload.extractFromDocuments'),
             'url': t('upload.loadFromUrl'),
             'database': t('upload.database'),
+            'local-folder': t('upload.localFolder', { defaultValue: 'Local Folder' }),
         };
         return tabTitles[activeTab] || t('upload.addData');
     };
@@ -1350,7 +1559,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 <Typography variant="h6" component="span">
                     {activeTab === 'menu' ? t('upload.title') : getCurrentTabTitle()}
                 </Typography>
-                {activeTab === 'extract' && dataCleanBlocks.length > 0 && (
+                {activeTab === 'extract' && dataLoadingChatMessages.length > 0 && (
                     <Tooltip title={t('upload.resetExtraction')}>
                         <IconButton 
                             size="small" 
@@ -1361,7 +1570,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)' 
                                 } 
                             }} 
-                            onClick={() => dispatch(dfActions.resetDataCleanBlocks())}
+                            onClick={() => dispatch(dfActions.clearChatMessages())}
                         >
                             <RestartAltIcon fontSize="small" />
                         </IconButton>
@@ -1928,6 +2137,22 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     <DataLoadingChat />
                 </TabPanel>
 
+                {/* Local Folder Tab */}
+                {serverConfig.IS_LOCAL_MODE && (
+                    <TabPanel value={activeTab} index="local-folder">
+                        <LocalFolderPanel
+                            onConnectorCreated={(newConn) => {
+                                setConnectorInstances(prev => {
+                                    const exists = prev.find(c => c.id === newConn.id);
+                                    if (exists) return prev.map(c => c.id === newConn.id ? newConn : c);
+                                    return [...prev, newConn];
+                                });
+                                setActiveTab(`connector:${newConn.id}` as UploadTabType);
+                            }}
+                        />
+                    </TabPanel>
+                )}
+
                 {/* Explore Sample Datasets Tab */}
                 <TabPanel value={activeTab} index="explore">
                     <Box sx={{ p: 2, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
@@ -1984,6 +2209,59 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             }
                             handleClose();
                         }}
+                        handleSelectDatasetNewSession={activeWorkspace ? async (dataset) => {
+                            const now = new Date();
+                            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+                            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+                            const short = crypto.randomUUID().slice(0, 4);
+                            const wsId = `session_${date}_${time}_${short}`;
+                            dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: dataset.name }));
+
+                            const isLiveDataset = dataset.live === true;
+
+                            setDatasetLoading(true);
+                            setDatasetLoadingLabel(t('upload.loadingDataset', { name: dataset.name }));
+
+                            try {
+                                const loadPromises = dataset.tables.map(async (table) => {
+                                    let fullUrl = table.url;
+                                    if (table.url.startsWith('/')) {
+                                        fullUrl = window.location.origin + table.url;
+                                    }
+
+                                    const res = await fetch(fullUrl);
+                                    const textData = await res.text();
+                                    let tableName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || 'table-' + Date.now().toString().substring(0, 8);
+                                    let dictTable;
+                                    if (table.format == "csv") {
+                                        dictTable = createTableFromText(tableName, textData);
+                                    } else if (table.format == "json") {
+                                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
+                                    }
+                                    if (dictTable) {
+                                        if (isLiveDataset) {
+                                            dictTable.source = {
+                                                type: 'stream',
+                                                url: fullUrl,
+                                                autoRefresh: true,
+                                                refreshIntervalSeconds: dataset.refreshIntervalSeconds || 60,
+                                                lastRefreshed: Date.now()
+                                            };
+                                        } else {
+                                            dictTable.source = { type: 'example', url: table.url };
+                                        }
+                                        await dispatch(loadTable({ table: dictTable }));
+                                    }
+                                });
+                                await Promise.all(loadPromises);
+                            } catch (error) {
+                                console.error('Failed to load dataset:', error);
+                            } finally {
+                                setDatasetLoading(false);
+                                setDatasetLoadingLabel('');
+                            }
+                            handleClose();
+                        } : undefined}
                         />
                     </Box>
                 </TabPanel>

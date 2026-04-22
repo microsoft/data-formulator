@@ -174,10 +174,10 @@ def create_workspace_route():
     identity_id = get_identity_id()
     mgr = get_workspace_manager(identity_id)
 
-    try:
-        mgr.create_workspace(workspace_id)
-    except ValueError:
+    if mgr.workspace_exists(workspace_id):
         return jsonify(status="error", message="Workspace already exists"), 409
+
+    mgr.create_workspace(workspace_id)
 
     return jsonify(status="ok", id=workspace_id)
 

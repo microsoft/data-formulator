@@ -129,7 +129,7 @@ def _register_blueprints():
     from data_formulator.routes.sessions import session_bp
 
     # Import demo stream routes
-    from data_formulator.routes.demo_stream import demo_stream_bp, limiter as demo_stream_limiter, start_iss_collector
+    from data_formulator.routes.demo_stream import demo_stream_bp, limiter as demo_stream_limiter
     demo_stream_limiter.init_app(app)
     
     # Register blueprints
@@ -137,9 +137,6 @@ def _register_blueprints():
     app.register_blueprint(agent_bp)
     app.register_blueprint(session_bp)
     app.register_blueprint(demo_stream_bp)
-    
-    # Start background ISS position collector
-    start_iss_collector()
 
     # Initialise pluggable authentication (reads AUTH_PROVIDER env var)
     from data_formulator.auth.identity import init_auth, get_active_provider
@@ -221,6 +218,9 @@ def get_app_config():
         "WORKSPACE_BACKEND": workspace_backend,
         "AVAILABLE_LANGUAGES": args.get('available_languages', ['en', 'zh']),
     }
+
+    from data_formulator.auth.identity import is_local_mode
+    config["IS_LOCAL_MODE"] = is_local_mode()
 
     if workspace_backend == 'local':
         from data_formulator.datalake.workspace import get_data_formulator_home

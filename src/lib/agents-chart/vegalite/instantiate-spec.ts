@@ -106,6 +106,9 @@ export function vlApplyLayoutToSpec(
             // Skip binned encodings — the bin axis represents data values,
             // not bar length, so zero-baseline is inappropriate (e.g. histograms).
             if (enc.bin) continue;
+            // Skip encodings using a private/synthetic field distinct from
+            // the channel's semantic field (e.g. Radar's `__y` polar coord).
+            if (cs.field && enc.field && enc.field !== cs.field) continue;
             if (!enc.scale) enc.scale = {};
             if (enc.scale.zero !== undefined) continue;
             if (enc.scale.domain && Array.isArray(enc.scale.domain)) continue;
@@ -303,15 +306,18 @@ export function vlApplyLayoutToSpec(
             : { step: layout.yStep };
     }
 
-    // Facet header sizing
+    // Facet header sizing — constrain labels to subplot width
     const totalFacets = (layout.facet?.columns ?? 1) * (layout.facet?.rows ?? 1);
-    if (totalFacets > 6) {
-        vgObj.config.header = { labelLimit: 120, labelFontSize: 9 };
-    }
-
-    // In faceted charts, use lighter axis title styling to reduce clutter
     const facetRows = layout.facet?.rows ?? 1;
     const facetCols = layout.facet?.columns ?? 1;
+    if (facetRows > 1 || facetCols > 1) {
+        const limit = Math.max(80, layout.subplotWidth + 20);
+        const headerCfg: Record<string, any> = { labelLimit: limit };
+        if (totalFacets > 6) {
+            headerCfg.labelFontSize = 9;
+        }
+        vgObj.config.header = { ...(vgObj.config.header || {}), ...headerCfg };
+    }
     const encTarget = vgObj.spec?.encoding || vgObj.encoding;
 
     if (facetRows > 1 || facetCols > 1) {
@@ -653,6 +659,13 @@ function vlApplyFieldContext(
 
         for (const enc of targets) {
             if (!enc.field) continue;
+
+            // Skip encodings whose field differs from the channel's semantic
+            // field. Templates (e.g. Radar) may inject private computed fields
+            // (e.g. `__x`, `__y` for polar coordinates) on the same VL channel;
+            // applying the user field's semantic context (domain, format, etc.)
+            // to those synthetic fields produces wrong scales.
+            if (cs.field && enc.field !== cs.field) continue;
 
             // ── 0. Temporal + bin incompatibility guard ──
             // VL's `bin` operates on numeric values. Setting `type: "temporal"`

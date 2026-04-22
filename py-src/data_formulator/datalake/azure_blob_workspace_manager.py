@@ -167,10 +167,10 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         Create a new empty workspace by uploading an initial workspace.yaml.
 
         Returns the workspace blob prefix.
-        Raises ValueError if the workspace already exists.
+        If the workspace already exists, returns its prefix without error.
         """
         if self.workspace_exists(workspace_id):
-            raise ValueError(f"Workspace '{workspace_id}' already exists")
+            return self._ws_prefix(workspace_id)
 
         # Upload a minimal workspace.yaml to mark the workspace as existing
         from data_formulator.datalake.workspace_metadata import WorkspaceMetadata

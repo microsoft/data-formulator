@@ -41,7 +41,7 @@
     "errorOccurred": "发生错误，请<refreshAction>刷新会话</refreshAction>。如果问题仍然存在，请点击关闭会话。",
     "about": "关于",
     "app": "应用",
-    "gallery": "图库",
+    "gallery": "Flint 图库",
     "data": "数据",
     "microsoftResearch": "微软研究院"
   },
@@ -116,7 +116,7 @@
     "tagline": "用 AI Agent 驱动可视化探索数据。",
     "demos": "示例",
     "firstSelectModelPrefix": "首先，请",
-    "modelTip": "具备较强代码生成能力的模型（例如 gpt-5、claude-sonnet-4-5）可提供更好的 Data Formulator 使用体验。"
+    "modelTip": "具备较强编程和多模态能力的模型可提供更好的 Data Formulator 使用体验。"
   },
   "about": {
     "startExploration": "开始探索",
@@ -352,6 +352,9 @@
     "completed": "已完成",
     "workspace": "工作区",
     "thinking": "思考中...",
+    "runningCode": "运行代码中...",
+    "creatingChart": "生成图表中...",
+    "inspectingData": "检查数据源中...",
     "jumpToThreadRange": "跳转到线程 {{label}}",
     "collapse": "收起",
     "expand": "展开",
@@ -375,7 +378,8 @@
     "sourceExample": "示例数据",
     "sourceExtract": "提取数据",
     "failedRefreshDerivedTable": "刷新派生表「{{table}}」失败：{{message}}",
-    "errorRefreshingDerivedTable": "刷新派生表「{{table}}」时出错"
+    "errorRefreshingDerivedTable": "刷新派生表「{{table}}」时出错",
+    "alsoUses": "还使用了"
   },
   "dataGrid": {
     "loading": "加载中...",
@@ -440,8 +444,12 @@
     "formulateAndOverride": "整理并覆盖",
     "agentWorking": "Agent 正在工作...",
     "replyPlaceholder": "回复 Agent 的问题...",
-    "explorePlaceholder": "让 Agent 探索新方向",
+    "explorePlaceholder": "描述想要探索的内容（用 @ 添加上下文）",
+    "reportPlaceholder": "描述要创建的报告（用 @ 添加上下文）",
     "addMoreData": "向工作区添加更多数据",
+    "mentionTable": "添加表到上下文 (@)",
+    "searchTables": "搜索表...",
+    "noMoreTables": "没有更多可用的表",
     "getIdeaSuggestions": "获取建议",
     "suggestExplorationDirections": "请帮我从这个线程中推荐一些探索方向",
     "endConversation": "结束对话",
@@ -460,7 +468,8 @@
     "couldYouClarify": "能否进一步说明？",
     "errorDuringExploration": "探索过程中出错",
     "explorationStep": "探索步骤 {{step}}：{{question}}",
-    "threadExplorePrompt": "请根据当前这条数据线程，给我一些可行的探索方向建议。",
+    "threadExplorePrompt": "探索这份数据中有趣的模式和趋势",
+    "threadReportPrompt": "总结本次探索的主要发现",
     "explorationThreadDeriveDescription": "从 {{source}} 派生，指令：{{instruction}}",
     "explorationStepCodeComment": "# 探索步骤 {{step}}",
     "maxIterationsReached": "已达到最大探索步数。"

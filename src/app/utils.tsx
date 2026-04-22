@@ -25,6 +25,9 @@ export function getUrls() {
 
         SORT_DATA_URL: `/api/agent/sort-data`,
         CLEAN_DATA_URL: `/api/agent/clean-data-stream`,
+        DATA_LOADING_CHAT_URL: `/api/agent/data-loading-chat`,
+        SCRATCH_UPLOAD_URL: `/api/agent/workspace/scratch/upload`,
+        SCRATCH_BASE_URL: `/api/agent/workspace/scratch`,
         
         CODE_EXPL_URL: `/api/agent/code-expl`,
         CHART_INSIGHT_URL: `/api/agent/chart-insight`,
@@ -50,7 +53,7 @@ export function getUrls() {
         EXPORT_TABLE_CSV: `/api/tables/export-table-csv`,
 
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
-        GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
+        GENERATE_REPORT_CHAT: `/api/agent/generate-report-chat`,
 
         // Workspace summary (auto-naming)
         WORKSPACE_SUMMARY: `/api/agent/workspace-summary`,
