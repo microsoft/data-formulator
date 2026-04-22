@@ -21,6 +21,11 @@ import {
     Divider,
     Popover,
     Button,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogContentText,
+    DialogActions,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
@@ -224,6 +229,10 @@ const DataSourceSidebarPanel: React.FC<{
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
     const [importing, setImporting] = useState(false);
+
+    // Delete connector confirmation
+    const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     // Session hover tooltip cache: sessionId → summary string
     const [sessionTooltips, setSessionTooltips] = useState<Record<string, string>>({});
@@ -581,6 +590,46 @@ const DataSourceSidebarPanel: React.FC<{
             .catch(() => {});
     }, [tableIdentities, dispatch]);
 
+    // ── Delete connector ──────────────────────────────────────────────────
+
+    const handleDeleteConnector = useCallback(async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
+        try {
+            const resp = await fetchWithIdentity(CONNECTOR_URLS.DELETE(deleteTarget.id), { method: 'DELETE' });
+            const data = await resp.json();
+            if (resp.ok || data.status === 'success') {
+                setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
+                setCatalogCache(prev => { const next = { ...prev }; delete next[deleteTarget.id]; return next; });
+                setExpandedSources(prev => { const next = new Set(prev); next.delete(deleteTarget.id); return next; });
+                setTreeExpanded(prev => { const next = { ...prev }; delete next[deleteTarget.id]; return next; });
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'success',
+                    component: 'data source sidebar',
+                    value: t('sidebar.connectorDeleted', { name: deleteTarget.display_name }),
+                }));
+            } else {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'error',
+                    component: 'data source sidebar',
+                    value: data.message || t('sidebar.failedDeleteConnector'),
+                }));
+            }
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: t('sidebar.failedDeleteConnector'),
+            }));
+        } finally {
+            setDeleting(false);
+            setDeleteTarget(null);
+        }
+    }, [deleteTarget, dispatch, t]);
+
     // ── Render ───────────────────────────────────────────────────────────────
 
     return (
@@ -670,6 +719,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     py: 0.75,
                                     cursor: 'pointer',
                                     '&:hover': { bgcolor: 'action.hover' },
+                                    '&:hover .delete-connector-btn': { visibility: 'visible' },
                                     userSelect: 'none',
                                 }}
                             >
@@ -695,6 +745,21 @@ const DataSourceSidebarPanel: React.FC<{
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: isExpanded ? 'visible' : 'hidden' }}
                                         >
                                             <RefreshIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                                {connector.deletable && (
+                                    <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
+                                        <IconButton
+                                            size="small"
+                                            className="delete-connector-btn"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDeleteTarget(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
+                                        >
+                                            <DeleteOutlineIcon sx={{ fontSize: 14 }} />
                                         </IconButton>
                                     </Tooltip>
                                 )}
@@ -1023,6 +1088,44 @@ const DataSourceSidebarPanel: React.FC<{
                     </Box>
                 )}
             </Popover>
+
+            {/* Delete connector confirmation dialog */}
+            <Dialog
+                open={!!deleteTarget}
+                onClose={() => { if (!deleting) setDeleteTarget(null); }}
+            >
+                <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
+                    {t('sidebar.deleteConnectorTitle', { defaultValue: 'Delete connector' })}
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ fontSize: 13 }}>
+                        {t('sidebar.deleteConnectorConfirm', {
+                            name: deleteTarget?.display_name,
+                            defaultValue: `Are you sure you want to delete "{{name}}"? Imported data will not be affected.`,
+                        })}
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setDeleteTarget(null)}
+                        disabled={deleting}
+                        sx={{ textTransform: 'none', fontSize: 12 }}
+                    >
+                        {t('app.cancel', { defaultValue: 'Cancel' })}
+                    </Button>
+                    <Button
+                        onClick={handleDeleteConnector}
+                        disabled={deleting}
+                        color="error"
+                        variant="contained"
+                        sx={{ textTransform: 'none', fontSize: 12 }}
+                    >
+                        {deleting
+                            ? t('sidebar.deletingEllipsis', { defaultValue: 'Deleting...' })
+                            : t('sidebar.deleteConfirmBtn', { defaultValue: 'Delete' })}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
         </Box>
     );

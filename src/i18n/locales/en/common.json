@@ -653,6 +653,13 @@
     "alreadyLoaded": "Already loaded",
     "loadInNewWorkspace": "Load in new workspace",
     "loadingEllipsis": "Loading...",
-    "load": "Load"
+    "load": "Load",
+    "deleteConnector": "Delete connector",
+    "deleteConnectorTitle": "Delete connector",
+    "deleteConnectorConfirm": "Are you sure you want to delete \"{{name}}\"? Imported data will not be affected.",
+    "connectorDeleted": "Connector \"{{name}}\" deleted",
+    "failedDeleteConnector": "Failed to delete connector",
+    "deletingEllipsis": "Deleting...",
+    "deleteConfirmBtn": "Delete"
   }
 }

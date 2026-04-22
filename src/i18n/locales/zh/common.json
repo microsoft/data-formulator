@@ -635,6 +635,13 @@
     "alreadyLoaded": "已加载",
     "loadInNewWorkspace": "在新工作区中加载",
     "loadingEllipsis": "加载中...",
-    "load": "加载"
+    "load": "加载",
+    "deleteConnector": "删除连接器",
+    "deleteConnectorTitle": "删除连接器",
+    "deleteConnectorConfirm": "确定要删除「{{name}}」吗？已导入的数据不会受到影响。",
+    "connectorDeleted": "连接器「{{name}}」已删除",
+    "failedDeleteConnector": "删除连接器失败",
+    "deletingEllipsis": "删除中...",
+    "deleteConfirmBtn": "删除"
   }
 }
