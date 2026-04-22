@@ -85,7 +85,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
             const { minWidth, width } = calculateColumnWidth(name);
             return {
                 id: name, 
-                label: name, 
+                label: targetTable?.metadata[name]?.displayName || name, 
                 minWidth, 
                 width, 
                 align: undefined, 

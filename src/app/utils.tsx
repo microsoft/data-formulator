@@ -598,6 +598,11 @@ export const assembleVegaChart = (
         effectiveMaxStretch = 1 + (effectiveMaxStretch - 1) * 0.3;
     }
 
+    const fieldDisplayNames: Record<string, string> = {};
+    for (const [name, meta] of Object.entries(tableMetadata)) {
+        if (meta.displayName) fieldDisplayNames[name] = meta.displayName;
+    }
+
     return assembleVegaLite({
         data: { values: workingTable },
         semantic_types: semanticTypes,
@@ -612,6 +617,7 @@ export const assembleVegaChart = (
             ...(effectiveMaxStretch != null ? { maxStretch: effectiveMaxStretch } : {}),
             ...assembleOptions,
         },
+        ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     });
 }
 

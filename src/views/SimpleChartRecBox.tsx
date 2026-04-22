@@ -839,6 +839,15 @@ export const SimpleChartRecBox: FC = function () {
                     }
                 }
 
+                const fieldDisplayNames = refinedGoal?.['field_display_names'];
+                if (fieldDisplayNames && typeof fieldDisplayNames === 'object') {
+                    for (const [fieldName, displayName] of Object.entries(fieldDisplayNames)) {
+                        if (candidateTable.metadata[fieldName] && typeof displayName === 'string') {
+                            candidateTable.metadata[fieldName].displayName = displayName;
+                        }
+                    }
+                }
+
                 createdTables.push(candidateTable);
                 lastCreatedTableId = candidateTableId;
 
@@ -1565,7 +1574,7 @@ export const SimpleChartRecBox: FC = function () {
                         </IconButton>
                     </Tooltip>
                     {/* Agent mode toggle */}
-                    <Tooltip title={`Switch to ${selectedAgent === 'explore' ? 'Report' : 'Explore'} mode`}>
+                    <Tooltip title={selectedAgent === 'explore' ? t('chartRec.switchToReport') : t('chartRec.switchToExplore')}>
                         <Button
                             size="small"
                             onClick={() => setSelectedAgent(prev => prev === 'explore' ? 'report' : 'explore')}
@@ -1587,7 +1596,7 @@ export const SimpleChartRecBox: FC = function () {
                             {selectedAgent === 'explore'
                                 ? <AutoGraphIcon sx={{ fontSize: '10px !important' }} />
                                 : <DescriptionOutlinedIcon sx={{ fontSize: '10px !important' }} />}
-                            {selectedAgent === 'explore' ? 'Explore' : 'Report'}
+                            {selectedAgent === 'explore' ? t('chartRec.modeExplore') : t('chartRec.modeReport')}
                         </Button>
                     </Tooltip>
                 </Box>

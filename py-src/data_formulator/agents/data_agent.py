@@ -165,7 +165,8 @@ are shown to the user and end the current turn.
         "encodings": {{"x": "<field>", "y": "<field>", ...}},
         "config": {{}}
     }},
-    "field_metadata": {{"<field>": "<SemanticType>", ...}}
+    "field_metadata": {{"<field>": "<SemanticType>", ...}},
+    "field_display_names": {{"<field>": "<human-readable display name for chart axes and table headers>", ...}}
 }}
 ```
 
@@ -390,6 +391,7 @@ class DataAgent:
                 output_variable = action.get("output_variable", "result_df")
                 chart_spec = action.get("chart", {})
                 field_metadata = action.get("field_metadata", {})
+                field_display_names = action.get("field_display_names", {})
                 display_instruction = action.get("display_instruction", "")
 
                 # Yield action event so the UI can show what the agent is doing
@@ -408,6 +410,7 @@ class DataAgent:
                     output_variable=output_variable,
                     chart_spec=chart_spec,
                     field_metadata=field_metadata,
+                    field_display_names=field_display_names,
                     display_instruction=display_instruction,
                     input_tables=input_tables,
                     messages=trajectory,
@@ -485,6 +488,7 @@ class DataAgent:
         output_variable: str,
         chart_spec: dict,
         field_metadata: dict,
+        field_display_names: dict,
         display_instruction: str,
         input_tables: list[dict[str, Any]],
         messages: list[dict],
@@ -495,6 +499,7 @@ class DataAgent:
             output_variable=output_variable,
             chart_spec=chart_spec,
             field_metadata=field_metadata,
+            field_display_names=field_display_names,
             display_instruction=display_instruction,
             messages=messages,
         )
@@ -524,6 +529,7 @@ class DataAgent:
                     output_variable=repair_action.get("output_variable", output_variable),
                     chart_spec=repair_action.get("chart", chart_spec),
                     field_metadata=repair_action.get("field_metadata", field_metadata),
+                    field_display_names=repair_action.get("field_display_names", field_display_names),
                     display_instruction=display_instruction,
                     messages=messages,
                 )
@@ -601,6 +607,7 @@ class DataAgent:
         output_variable: str,
         chart_spec: dict,
         field_metadata: dict,
+        field_display_names: dict,
         display_instruction: str,
         messages: list[dict] | None = None,
     ) -> dict[str, Any]:
@@ -687,6 +694,7 @@ class DataAgent:
                 "output_fields": list(query_output.columns),
                 "chart": chart_spec,
                 "field_metadata": field_metadata,
+                "field_display_names": field_display_names or {},
             }
 
             transform_result = {

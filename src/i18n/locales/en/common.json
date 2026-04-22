@@ -477,7 +477,11 @@
     "threadReportPrompt": "Summarize the key findings from this exploration",
     "explorationThreadDeriveDescription": "Derive from {{source}} with instruction: {{instruction}}",
     "explorationStepCodeComment": "# Exploration step {{step}}",
-    "maxIterationsReached": "Reached the maximum number of exploration steps."
+    "maxIterationsReached": "Reached the maximum number of exploration steps.",
+    "switchToReport": "Switch to Report mode",
+    "switchToExplore": "Switch to Explore mode",
+    "modeExplore": "Explore",
+    "modeReport": "Report"
   },
   "dataGrid": {
     "loading": "Loading ...",

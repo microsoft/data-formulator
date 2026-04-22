@@ -102,7 +102,8 @@ export { generateChartSkeleton, getDataTable, checkChartAvailability };
 
 export let renderTableChart = (
     chart: Chart, conceptShelfItems: FieldItem[], extTable: any[], 
-    width: number = 120, height: number = 120) => {
+    width: number = 120, height: number = 120,
+    fieldDisplayNames?: Record<string, string>) => {
 
     let fields = Object.entries(chart.encodingMap).filter(([channel, encoding]) => {
         return encoding.fieldID != undefined;
@@ -117,7 +118,7 @@ export let renderTableChart = (
     let colDefs = fields.map(field => {
         let name = field.name;
         return {
-            id: name, label: name, minWidth: 30, align: undefined, 
+            id: name, label: fieldDisplayNames?.[name] || name, minWidth: 30, align: undefined, 
             format: (value: any) => `${value}`, source: field.source
         }
     })
@@ -334,7 +335,13 @@ const VegaChartRenderer: FC<{
     }
 
     if (chart.chartType === "Table") {
-        return visTableRows.length > 0 ? renderTableChart(chart, conceptShelfItems, visTableRows) : <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
+        const displayNames: Record<string, string> = {};
+        if (tableMetadata) {
+            for (const [k, v] of Object.entries(tableMetadata)) {
+                if ((v as any)?.displayName) displayNames[k] = (v as any).displayName;
+            }
+        }
+        return visTableRows.length > 0 ? renderTableChart(chart, conceptShelfItems, visTableRows, 120, 120, Object.keys(displayNames).length > 0 ? displayNames : undefined) : <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
             <InsightIcon fontSize="large"/>
         </Box>;
     }

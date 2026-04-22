@@ -544,6 +544,15 @@ export function useFormulateData() {
                 }
             }
 
+            const fieldDisplayNames = refinedGoal['field_display_names'];
+            if (fieldDisplayNames && typeof fieldDisplayNames === 'object') {
+                for (const [fieldName, displayName] of Object.entries(fieldDisplayNames)) {
+                    if (candidateTable.metadata[fieldName] && typeof displayName === 'string') {
+                        candidateTable.metadata[fieldName].displayName = displayName;
+                    }
+                }
+            }
+
             // Insert or override table
             if (overrideTableId) {
                 dispatch(dfActions.overrideDerivedTables(candidateTable));

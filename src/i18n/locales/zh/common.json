@@ -476,7 +476,11 @@
     "threadReportPrompt": "总结本次探索的主要发现",
     "explorationThreadDeriveDescription": "从 {{source}} 派生，指令：{{instruction}}",
     "explorationStepCodeComment": "# 探索步骤 {{step}}",
-    "maxIterationsReached": "已达到最大探索步数。"
+    "maxIterationsReached": "已达到最大探索步数。",
+    "switchToReport": "切换到报告模式",
+    "switchToExplore": "切换到探索模式",
+    "modeExplore": "探索",
+    "modeReport": "报告"
   },
   "auth": {
     "loginTitle": "登录 Data Formulator",

@@ -243,9 +243,12 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
 
     // --- Build VL encodings (abstract semantics → VL encoding objects) ---
 
+    const fieldDisplayNames = input.field_display_names;
+
     const resolvedEncodings = buildVLEncodings(
         encodings, channelSemantics, declaration, data,
         canvasSize, semanticTypes, templateMarkType, chartTemplate,
+        fieldDisplayNames,
     );
 
     // --- Align sort/domain arrays to converted data types ---
@@ -456,6 +459,7 @@ function buildVLEncodings(
     semanticTypes: Record<string, string | SemanticAnnotation>,
     templateMarkType: string | undefined,
     chartTemplate: ChartTemplateDef,
+    fieldDisplayNames?: Record<string, string>,
 ): Record<string, any> {
     const resolvedEncodings: Record<string, any> = {};
 
@@ -650,6 +654,11 @@ function buildVLEncodings(
                     encodingObj.scale.domainMid = cs.colorScheme.domainMid;
                 }
             }
+        }
+
+        // Apply localized display name as axis/legend title
+        if (fieldDisplayNames && fieldName && fieldDisplayNames[fieldName] && !encodingObj.title) {
+            encodingObj.title = fieldDisplayNames[fieldName];
         }
 
         // --- Collect resolved encoding ---

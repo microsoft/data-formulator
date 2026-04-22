@@ -161,6 +161,7 @@ def _build_full(display_name: str, extra: str) -> str:
         '- `explanation`  (concept / code explanations)\n'
         '- `data_summary`  (dataset description)\n'
         '- `suggested_table_name`  (human-readable table name)\n'
+        '- `field_display_names`  (human-readable column names for chart axes and table headers)\n'
         '- Report markdown output  (entire content)\n'
         '- Any other free-text that the user will read\n'
         "\n"
