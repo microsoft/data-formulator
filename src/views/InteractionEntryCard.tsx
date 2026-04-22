@@ -6,9 +6,84 @@ import { Box, Collapse, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import SearchIcon from '@mui/icons-material/Search';
+import AutoGraphIcon from '@mui/icons-material/AutoGraph';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import CheckIcon from '@mui/icons-material/Check';
 import { InteractionEntry } from '../components/ComponentType';
-import { AgentIcon } from '../icons';
+import { AgentIcon, TableIcon } from '../icons';
 import { radius, borderColor } from '../app/tokens';
+
+/** Pick the icon component for a step line based on known prefixes. */
+export const getStepIconComponent = (line: string) => {
+    const stripped = line.startsWith('✓') ? line.slice(2) : line;
+    const lbl = stripped.toLowerCase();
+    if (lbl.startsWith('running code') || lbl.startsWith('运行')) return TerminalIcon;
+    if (lbl.startsWith('inspecting') || lbl.startsWith('检查')) return SearchIcon;
+    if (lbl.startsWith('creating chart') || lbl.startsWith('图表')) return AutoGraphIcon;
+    return AutoAwesomeIcon;
+};
+
+/** Shared component to render plan steps as a list with icons.
+ *  `activeLastStep` adds a shimmer animation to the last incomplete step (for streaming). 
+ *  `filterCreatingChart` hides "creating chart..." lines (already shown as instruction text). */
+export const PlanStepsView: React.FC<{
+    steps: string[];
+    activeLastStep?: boolean;
+    filterCreatingChart?: boolean;
+}> = ({ steps, activeLastStep = false, filterCreatingChart = false }) => {
+    const filtered = filterCreatingChart
+        ? steps.filter(l => {
+            const stripped = l.startsWith('✓') ? l.slice(2) : l;
+            const lbl = stripped.trim().toLowerCase();
+            return !(lbl.startsWith('creating chart') || lbl.startsWith('图表'));
+        })
+        : steps;
+
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {filtered.map((step, idx) => {
+                const isLast = idx === filtered.length - 1;
+                const isChecked = step.startsWith('✓');
+                const displayLine = isChecked ? step.slice(2) : step;
+                const IconComp = getStepIconComponent(step);
+                const showShimmer = activeLastStep && isLast && !isChecked;
+
+                return (
+                    <Box key={idx} sx={{
+                        display: 'flex', alignItems: 'flex-start', gap: '4px',
+                        position: 'relative', overflow: 'hidden',
+                        ...(showShimmer ? {
+                            '&::before': {
+                                content: '""',
+                                position: 'absolute',
+                                top: 0, left: 0, width: '100%', height: '100%',
+                                background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
+                                animation: 'windowWipe 2s ease-in-out infinite',
+                                zIndex: 1, pointerEvents: 'none',
+                            },
+                            '@keyframes windowWipe': {
+                                '0%': { transform: 'translateX(-100%)' },
+                                '100%': { transform: 'translateX(100%)' },
+                            },
+                        } : {}),
+                    }}>
+                        <IconComp sx={{ width: 10, height: 10, color: 'text.disabled', flexShrink: 0, mt: '2px' }} />
+                        <Typography component="span" sx={{
+                            fontSize: '10px',
+                            color: showShimmer ? 'text.secondary' : 'text.disabled',
+                            fontStyle: 'italic',
+                            lineHeight: 1.4,
+                        }}>
+                            {displayLine}
+                        </Typography>
+                    </Box>
+                );
+            })}
+        </Box>
+    );
+};
 
 /** Render text with **field** markers as styled spans with subtle background. */
 export function renderFieldHighlights(text: string, bgColor: string): React.ReactNode {
@@ -50,10 +125,25 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     if (entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')) {
         const palette = theme.palette.custom;
         const fieldBg = alpha(palette.main, 0.08);
+        const userInputTablesSuffix = entry.inputTableNames && entry.inputTableNames.length > 0 ? (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', mt: '2px' }}>
+                {entry.inputTableNames.map((name, idx) => (
+                    <React.Fragment key={name}>
+                        {idx > 0 && <Typography component="span" sx={{ fontSize: 9, color: theme.palette.text.disabled }}>,</Typography>}
+                        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                            <TableIcon sx={{ fontSize: 10, color: theme.palette.text.disabled }} />
+                            <Typography component="span" sx={{ fontSize: 9, color: theme.palette.text.disabled }}>
+                                {name}
+                            </Typography>
+                        </Box>
+                    </React.Fragment>
+                ))}
+            </Box>
+        ) : null;
         return (
-            <Typography component="div" onClick={handleClick} sx={{
+            <Box onClick={handleClick} sx={{
                 fontSize: '11px',
-                color: 'rgba(0,0,0,0.75)',
+                color: theme.palette.text.primary,
                 py: 0.5, px: 1,
                 borderRadius: radius.sm,
                 backgroundColor: palette.bgcolor,
@@ -61,8 +151,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 ...(highlighted ? { borderLeft: `2px solid ${palette.main}` } : {}),
                 ...clickSx,
             }}>
-                {renderFieldHighlights(text, fieldBg)}
-            </Typography>
+                <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit' }}>
+                    {renderFieldHighlights(text, fieldBg)}
+                </Typography>
+                {userInputTablesSuffix}
+            </Box>
         );
     }
 
@@ -71,9 +164,9 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     if (entry.from !== 'user') {
         const fieldBg = alpha(theme.palette.primary.main, 0.08);
 
-        // Role-specific color and collapsed label
+        // Role-specific color: secondary for content, semantic colors for status
         let color: string;
-        let collapsedLabel: string | null = null; // if set, show this when collapsed instead of the main text
+        let collapsedLabel: string | null = null;
         switch (entry.role) {
             case 'instruction':
                 color = theme.palette.text.secondary;
@@ -83,7 +176,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 if (resolved) collapsedLabel = 'asked for clarification';
                 break;
             case 'summary':
-                color = theme.palette.success.main;
+                color = theme.palette.text.secondary;
                 break;
             case 'error':
                 color = theme.palette.error.main;
@@ -99,6 +192,23 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         const isCollapsible = hasPlan || !!collapsedLabel;
         const [expanded, setExpanded] = useState(false);
 
+        // Render input table names suffix if available
+        const inputTablesSuffix = entry.inputTableNames && entry.inputTableNames.length > 0 ? (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', mt: '2px' }}>
+                {entry.inputTableNames.map((name, idx) => (
+                    <React.Fragment key={name}>
+                        {idx > 0 && <Typography component="span" sx={{ fontSize: 9, color: theme.palette.text.disabled }}>,</Typography>}
+                        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                            <TableIcon sx={{ fontSize: 10, color: theme.palette.text.disabled }} />
+                            <Typography component="span" sx={{ fontSize: 9, color: theme.palette.text.disabled }}>
+                                {name}
+                            </Typography>
+                        </Box>
+                    </React.Fragment>
+                ))}
+            </Box>
+        ) : null;
+
         return (
             <Box
                 sx={{
@@ -113,16 +223,14 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 onClick={() => isCollapsible && setExpanded(!expanded)}
             >
                 <Collapse in={expanded}>
-                    {hasPlan && (
-                        <Typography component="div" sx={{
-                            fontSize: '10px',
-                            color: theme.palette.text.disabled,
-                            fontStyle: 'italic',
-                            py: '2px',
-                        }}>
-                            💭 {entry.plan}
-                        </Typography>
-                    )}
+                    {hasPlan && (() => {
+                        const planLines = entry.plan!.split('\n').filter(l => l.trim());
+                        return (
+                            <Box sx={{ py: '2px' }}>
+                                <PlanStepsView steps={planLines} filterCreatingChart />
+                            </Box>
+                        );
+                    })()}
                     {hasPlan && <Box sx={{ borderBottom: `1px solid ${borderColor.component}`, my: '2px' }} />}
                     {collapsedLabel && (
                         <Typography component="div" sx={{
@@ -159,6 +267,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                             : displayText}
                     </Typography>
                 )}
+                {inputTablesSuffix}
             </Box>
         );
     }

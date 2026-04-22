@@ -311,7 +311,8 @@ def generate_data_summary(
     field_sample_size=7,
     row_sample_size=5,
     max_val_chars=140,
-    table_name_prefix="Table"
+    table_name_prefix="Table",
+    primary_tables=None,
 ):
     """
     Generate a natural, well-organized summary of input tables by reading workspace parquet files.
@@ -319,11 +320,10 @@ def generate_data_summary(
     All tables (including temp tables) should be in the workspace before calling this function.
     Use WorkspaceWithTempData context manager to mount temp tables to workspace.
 
-    Organization approach:
-    - Each table is clearly separated with a header
-    - Information flows logically: Overview → Schema → Examples
-    - Consistent section ordering for better readability
-    - Shows filename for workspace tables
+    When ``primary_tables`` is provided, the output is structured into tiered sections:
+    - **[PRIMARY TABLE]** / **[PRIMARY TABLES]**: Full detail for the tables the user is focused on.
+    - **[OTHER AVAILABLE TABLES]**: Full detail for the remaining tables.
+    Sections are omitted when empty.
 
     Args:
         input_tables: list of dicts with 'name' key
@@ -333,6 +333,7 @@ def generate_data_summary(
         row_sample_size: number of sample rows to show
         max_val_chars: max characters per value
         table_name_prefix: prefix for table headers
+        primary_tables: list of primary (focused) table names; enables tiered output
 
     Returns:
         Formatted string summary of all tables
@@ -385,8 +386,28 @@ def generate_data_summary(
     # Build summaries for all tables
     table_summaries = [assemble_table_summary(table, i) for i, table in enumerate(input_tables)]
 
-    # Join with visual separators
     separator = "\n" + "─" * 60 + "\n\n"
+
+    # If primary_tables is specified, organize into tiered sections
+    if primary_tables:
+        primary_names = set(primary_tables)
+        primary_parts = []
+        other_parts = []
+        for table, summary in zip(input_tables, table_summaries):
+            if table['name'] in primary_names:
+                primary_parts.append(summary)
+            else:
+                other_parts.append(summary)
+
+        sections = []
+        if primary_parts:
+            header = "[PRIMARY TABLE]" if len(primary_parts) == 1 else "[PRIMARY TABLES]"
+            sections.append(header + "\n\n" + separator.join(primary_parts))
+        if other_parts:
+            sections.append("[OTHER AVAILABLE TABLES]\n\n" + separator.join(other_parts))
+        return "\n\n".join(sections)
+
+    # Join with visual separators (no tiering)
     return separator.join(table_summaries)
 
 

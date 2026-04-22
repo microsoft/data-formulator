@@ -28,12 +28,14 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { borderColor, transition, radius, shadow } from '../app/tokens';
+import exampleImageTable from '../assets/example-image-table.png';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { createTableFromFromObjectArray } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
 import { TableIcon } from '../icons';
+import { DataFrameTable } from './DataFrameTable';
 
 /** Returns true when the model name suggests it does not support image input. */
 export function checkIsLikelyTextOnlyModel(modelName: string | undefined): boolean {
@@ -175,8 +177,6 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
 // Inline table preview — compact notebook-style
 // ---------------------------------------------------------------------------
 
-const MAX_PREVIEW_COLS = 6; // show first 3 + last 3 if > 6 columns
-
 const InlineTablePreviewView: React.FC<{
     preview: InlineTablePreview;
     onLoad?: () => void;
@@ -185,20 +185,7 @@ const InlineTablePreviewView: React.FC<{
     const theme = useTheme();
     const [expanded, setExpanded] = useState(true);
 
-    // Abbreviate columns: first 3 + ... + last 3
     const allCols = preview.columns;
-    const needsEllipsis = allCols.length > MAX_PREVIEW_COLS;
-    const displayCols = needsEllipsis
-        ? [...allCols.slice(0, 3), '\u2026', ...allCols.slice(-3)]
-        : allCols;
-
-    const getCell = (row: Record<string, any>, col: string) => {
-        if (col === '\u2026') return '\u2026';
-        const v = row[col];
-        if (v == null) return '';
-        const s = String(v);
-        return s.length > 18 ? s.slice(0, 16) + '\u2026' : s;
-    };
 
     const rowLabel = preview.totalRows > preview.sampleRows.length
         ? `${preview.totalRows.toLocaleString()} rows`
@@ -265,38 +252,15 @@ const InlineTablePreviewView: React.FC<{
             {/* Collapsible table rows */}
             <Collapse in={expanded}>
                 {preview.sampleRows.length > 0 && (
-                    <Box sx={{ overflowX: 'auto', mt: 0.75, mb: 0.5 }}>
-                        <Box component="table" sx={{
-                            borderCollapse: 'collapse', fontSize: 12, fontFamily: CODE_FONT,
-                            '& th, & td': {
-                                px: 0.75, py: 0.3, textAlign: 'left', whiteSpace: 'nowrap',
-                                borderBottom: '1px solid', borderColor: 'divider',
-                            },
-                            '& th': { fontWeight: 600, color: 'text.secondary', fontSize: 10 },
-                            '& td': { color: 'text.primary' },
-                            '& tr:last-child td': { borderBottom: 'none' },
-                        }}>
-                            <thead>
-                                <tr>
-                                    {displayCols.map((col, i) => (
-                                        <Typography component="th" key={i} variant="caption" sx={{ fontWeight: 600, fontSize: 10 }}>
-                                            {col}
-                                        </Typography>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {preview.sampleRows.slice(0, 5).map((row, ri) => (
-                                    <tr key={ri}>
-                                        {displayCols.map((col, ci) => (
-                                            <Typography component="td" key={ci} variant="caption" sx={{ fontSize: 11 }}>
-                                                {getCell(row, col)}
-                                            </Typography>
-                                        ))}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </Box>
+                    <Box sx={{ mt: 0.75, mb: 0.5 }}>
+                        <DataFrameTable
+                            columns={allCols}
+                            rows={preview.sampleRows}
+                            totalRows={preview.totalRows}
+                            maxRows={5}
+                            maxColumns={6}
+                            maxCellLength={18}
+                        />
                     </Box>
                 )}
             </Collapse>
@@ -600,32 +564,35 @@ const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> =
 };
 
 // ---------------------------------------------------------------------------
-// Sample task card for empty state
+// Sample task list item for empty state
 // ---------------------------------------------------------------------------
 
-const SampleTaskCard: React.FC<{
+const SampleTaskItem: React.FC<{
     icon: React.ReactElement;
     title: string;
-    description: string;
-    onClick: () => void;
-}> = ({ icon, title, description, onClick }) => {
+    example: string;
+    onClickExample: () => void;
+}> = ({ icon, title, example, onClickExample }) => {
     const theme = useTheme();
     return (
-        <Box onClick={onClick} sx={{
+        <Box sx={{
             display: 'flex', alignItems: 'flex-start', gap: 1.25,
-            p: 1.5, borderRadius: radius.md,
-            border: `1px solid ${borderColor.component}`,
-            cursor: 'pointer', transition: transition.fast,
-            '&:hover': {
-                borderColor: alpha(theme.palette.primary.main, 0.4),
-                bgcolor: alpha(theme.palette.primary.main, 0.03),
-                boxShadow: shadow.sm,
-            },
+            py: 0.75,
         }}>
-            <Box sx={{ color: 'text.secondary', mt: 0.25 }}>{icon}</Box>
-            <Box sx={{ minWidth: 0 }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>{title}</Typography>
-                <Typography sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.4, mt: 0.25 }}>{description}</Typography>
+            <Box sx={{ color: 'text.secondary', mt: 0.125 }}>{icon}</Box>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography component="span" sx={{ fontSize: 12, lineHeight: 1.5, color: 'text.secondary' }}>
+                    {title}
+                    {' — '}
+                </Typography>
+                <Typography component="span" onClick={onClickExample} sx={{
+                    fontSize: 12, lineHeight: 1.5,
+                    color: theme.palette.primary.main,
+                    cursor: 'pointer',
+                    '&:hover': { textDecoration: 'underline' },
+                }}>
+                    {example}
+                </Typography>
             </Box>
         </Box>
     );
@@ -947,30 +914,52 @@ export const DataLoadingChat: React.FC = () => {
     };
 
     // Sample tasks for empty state
+    const extractFromTextPrompt = `Extract revenue growth data from this text:\n\nBusiness Highlights\n\nMicrosoft Cloud revenue was $51.5 billion and increased 26% (up 24% in constant currency), and commercial remaining performance obligation increased 110% to $625 billion.\n\nRevenue in Productivity and Business Processes was $34.1 billion and increased 16% (up 14% in constant currency), with the following business highlights:\n\n·        Microsoft 365 Commercial cloud revenue increased 17% (up 14% in constant currency)\n\n·        Microsoft 365 Consumer cloud revenue increased 29% (up 27% in constant currency)\n\n·        LinkedIn revenue increased 11% (up 10% in constant currency)\n\n·        Dynamics 365 revenue increased 19% (up 17% in constant currency)\n\nRevenue in Intelligent Cloud was $32.9 billion and increased 29% (up 28% in constant currency), with the following business highlights:\n\n·        Azure and other cloud services revenue increased 39% (up 38% in constant currency)\n\nRevenue in More Personal Computing was $14.3 billion and decreased 3%, with the following business highlights:\n\n·        Windows OEM and Devices revenue increased 1% (relatively unchanged in constant currency)\n\n·        Xbox content and services revenue decreased 5% (down 6% in constant currency)\n\n·        Search and news advertising revenue excluding traffic acquisition costs increased 10% (up 9% in constant currency)\n\nMicrosoft returned $12.7 billion to shareholders in the form of dividends and share repurchases in the second quarter of fiscal year 2026, an increase of 32% compared to the second quarter of fiscal year 2025.`;
+
     const sampleTasks = [
+        // {
+        //     icon: <LanguageIcon sx={{ fontSize: 16 }} />,
+        //     title: 'Extract data from a webpage',
+        //     example: 'Extract earnings data from https://www.microsoft.com/en-us/investor/earnings/fy-2026-q2/press-release-webcast',
+        //     action: () => { setPrompt('Extract earnings data from https://www.microsoft.com/en-us/investor/earnings/fy-2026-q2/press-release-webcast'); setTimeout(() => inputRef.current?.focus(), 50); },
+        // },
         {
-            icon: <LanguageIcon sx={{ fontSize: 18 }} />,
-            title: 'Extract from a webpage',
-            description: 'Pull tables from any public URL',
-            action: () => { setPrompt('Extract all tables from https://'); setTimeout(() => inputRef.current?.focus(), 50); },
+            icon: <ImageIcon sx={{ fontSize: 16 }} />,
+            title: 'Extract data from an image',
+            example: 'Extract revenue data from this image',
+            action: () => {
+                fetch(exampleImageTable)
+                    .then(res => res.blob())
+                    .then(blob => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            if (reader.result) {
+                                setUserImages([reader.result as string]);
+                                setPrompt('Extract revenue data from this image');
+                                setTimeout(() => inputRef.current?.focus(), 50);
+                            }
+                        };
+                        reader.readAsDataURL(blob);
+                    });
+            },
         },
         {
-            icon: <ImageIcon sx={{ fontSize: 18 }} />,
-            title: 'Extract from an image',
-            description: 'Paste a screenshot or photo of a table',
-            action: () => { fileInputRef.current?.click(); },
+            icon: <TextFieldsIcon sx={{ fontSize: 16 }} />,
+            title: 'Extract data from text',
+            example: 'Extract revenue growth data from this text: Business Highlights ...',
+            action: () => { setPrompt(extractFromTextPrompt); setTimeout(() => inputRef.current?.focus(), 50); },
         },
         {
-            icon: <TextFieldsIcon sx={{ fontSize: 18 }} />,
-            title: 'Extract from text',
-            description: 'Paste raw text or a report with tables',
-            action: () => { setPrompt('Extract tables from this text:\n\n'); setTimeout(() => inputRef.current?.focus(), 50); },
+            icon: <DatasetIcon sx={{ fontSize: 16 }} />,
+            title: 'Generate synthetic data',
+            example: 'Generate a UK dynasty dataset with 20 rows',
+            action: () => { setPrompt('Generate a UK dynasty dataset with 20 rows'); setTimeout(() => inputRef.current?.focus(), 50); },
         },
         {
-            icon: <DatasetIcon sx={{ fontSize: 18 }} />,
-            title: 'Load a sample dataset',
-            description: 'Browse available datasets to get started',
-            action: () => { setPrompt('What sample datasets are available?'); },
+            icon: <DatasetIcon sx={{ fontSize: 16 }} />,
+            title: 'Browse sample datasets',
+            example: 'What sample datasets are available?',
+            action: () => { setPrompt('What sample datasets are available?'); setTimeout(() => inputRef.current?.focus(), 50); },
         },
     ];
 
@@ -997,13 +986,13 @@ export const DataLoadingChat: React.FC = () => {
                         <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
                             Data Loading Assistant
                         </Typography>
-                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2.5, textAlign: 'center', lineHeight: 1.5 }}>
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2, textAlign: 'center', lineHeight: 1.5 }}>
                             Extract data from images, files, webpages, or text. Generate synthetic datasets. Browse sample data.
                         </Typography>
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                             {sampleTasks.map((task, i) => (
-                                <SampleTaskCard key={i} icon={task.icon} title={task.title}
-                                    description={task.description} onClick={task.action} />
+                                <SampleTaskItem key={i} icon={task.icon} title={task.title}
+                                    example={task.example} onClickExample={task.action} />
                             ))}
                         </Box>
                     </Box>

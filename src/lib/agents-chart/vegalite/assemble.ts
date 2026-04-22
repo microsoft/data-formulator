@@ -365,36 +365,52 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         }
     }
 
-    // Independent y-axis scaling for faceted charts with vastly different ranges
+    // Independent y-axis scaling for faceted charts.
+    // For layered specs (e.g. Regression), y encoding lives inside layer items, not at the top.
     const effectiveEncoding = vgObj.spec?.encoding || vgObj.encoding;
+    const layerEncodings = (vgObj.spec?.layer || vgObj.layer || []).map((l: any) => l.encoding).filter(Boolean);
+    const yEnc = effectiveEncoding?.y || layerEncodings.find((e: any) => e.y)?.y;
     const effectiveFacet = vgObj.facet || vgObj.encoding?.facet;
-    if (effectiveFacet != undefined && effectiveEncoding?.y?.type === 'quantitative') {
-        const yField = effectiveEncoding.y.field;
-        const columnField = effectiveFacet.field;
+    const hasFacetedQuant = effectiveFacet != undefined && yEnc?.type === 'quantitative';
+    let computedIndependentYAxis = false;
+    if (hasFacetedQuant) {
+        const userChoice = chartProperties?.independentYAxis; // true | false | undefined
 
-        if (yField && columnField) {
-            const columnGroups = new Map<any, number>();
-            for (const row of data) {
-                const columnValue = row[columnField];
-                const yValue = row[yField];
-                if (yValue != null && !isNaN(yValue)) {
-                    const currentMax = columnGroups.get(columnValue) || 0;
-                    columnGroups.set(columnValue, Math.max(currentMax, Math.abs(yValue)));
+        if (userChoice === undefined) {
+            // Auto-heuristic: independent when value ranges differ by ≥100×
+            const yField = yEnc.field;
+            const columnField = effectiveFacet.field;
+
+            if (yField && columnField) {
+                const columnGroups = new Map<any, number>();
+                for (const row of data) {
+                    const columnValue = row[columnField];
+                    const yValue = row[yField];
+                    if (yValue != null && !isNaN(yValue)) {
+                        const currentMax = columnGroups.get(columnValue) || 0;
+                        columnGroups.set(columnValue, Math.max(currentMax, Math.abs(yValue)));
+                    }
+                }
+
+                const maxValues = Array.from(columnGroups.values()).filter(v => v > 0);
+                if (maxValues.length >= 2) {
+                    const maxValue = Math.max(...maxValues);
+                    const minValue = Math.min(...maxValues);
+                    const ratio = maxValue / minValue;
+                    const totalFacets = (layoutResult.facet?.columns ?? 1) * (layoutResult.facet?.rows ?? 1);
+                    if (ratio >= 100 && totalFacets < 6) {
+                        computedIndependentYAxis = true;
+                    }
                 }
             }
+        } else {
+            computedIndependentYAxis = !!userChoice;
+        }
 
-            const maxValues = Array.from(columnGroups.values()).filter(v => v > 0);
-            if (maxValues.length >= 2) {
-                const maxValue = Math.max(...maxValues);
-                const minValue = Math.min(...maxValues);
-                const ratio = maxValue / minValue;
-                const totalFacets = (layoutResult.facet?.columns ?? 1) * (layoutResult.facet?.rows ?? 1);
-                if (ratio >= 100 && totalFacets < 6) {
-                    if (!vgObj.resolve) vgObj.resolve = {};
-                    if (!vgObj.resolve.scale) vgObj.resolve.scale = {};
-                    vgObj.resolve.scale.y = "independent";
-                }
-            }
+        if (computedIndependentYAxis) {
+            if (!vgObj.resolve) vgObj.resolve = {};
+            if (!vgObj.resolve.scale) vgObj.resolve.scale = {};
+            vgObj.resolve.scale.y = "independent";
         }
     }
 
@@ -412,6 +428,13 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     }
     result._width = layoutResult.subplotWidth;
     result._height = layoutResult.subplotHeight;
+    // Expose computed config so the UI can seed toggle defaults from heuristic results.
+    // Only include keys when the corresponding property is relevant (e.g. faceted).
+    const computedConfig: Record<string, any> = {};
+    if (hasFacetedQuant) {
+        computedConfig.independentYAxis = computedIndependentYAxis;
+    }
+    result._computedConfig = computedConfig;
     return result;
 }
 

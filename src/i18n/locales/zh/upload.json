@@ -7,7 +7,7 @@
     "uploadFileDesc": "上传本地文件（CSV、TSV、JSON、Excel）",
     "pasteData": "粘贴数据",
     "pasteDataDesc": "直接从剪贴板粘贴表格数据",
-    "extractData": "提取非结构化数据",
+    "extractData": "数据提取代理",
     "extractDataDesc": "使用 AI 从图片或文本中提取表格",
     "loadFromUrl": "从 URL 加载",
     "loadFromUrlDesc": "从 URL 加载数据，支持自动刷新",

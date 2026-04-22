@@ -40,6 +40,14 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
     const [page, setPage] = React.useState(0);
     const [rowsPerPage, setRowsPerPage] = React.useState(rowsPerPageNum == -1 ? (rows.length > 500 ? 100 : rows.length) : rowsPerPageNum);
 
+    // Re-sync rowsPerPage when rows change and we're in "show all" mode
+    React.useEffect(() => {
+        if (rowsPerPageNum === -1) {
+            setRowsPerPage(rows.length > 500 ? 100 : rows.length);
+            setPage(0);
+        }
+    }, [rows.length, rowsPerPageNum]);
+
     const handleChangePage = (event: unknown, newPage: number) => {
         setPage(newPage);
     };

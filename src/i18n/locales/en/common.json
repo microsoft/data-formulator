@@ -114,9 +114,9 @@
   },
   "landing": {
     "tagline": "Explore data with visualizations, powered by AI agents.",
-    "demos": "demos",
+    "demos": "Demos",
     "firstSelectModelPrefix": "First, let's",
-    "modelTip": "Models with strong code generation capabilities (e.g., gpt-5, claude-sonnet-4-5) provide best experience with Data Formulator."
+    "modelTip": "Models with strong coding and multimodal capabilities provide best experience with Data Formulator."
   },
   "about": {
     "startExploration": "Start Exploration",
@@ -385,7 +385,8 @@
     "sourceExample": "Example",
     "sourceExtract": "Extracted",
     "failedRefreshDerivedTable": "Failed to refresh derived table \"{{table}}\": {{message}}",
-    "errorRefreshingDerivedTable": "Error refreshing derived table \"{{table}}\""
+    "errorRefreshingDerivedTable": "Error refreshing derived table \"{{table}}\"",
+    "alsoUses": "also uses"
   },
   "dataLoading": {
     "extractingData": "extracting data...",
@@ -445,8 +446,12 @@
     "formulateAndOverride": "formulate and override",
     "agentWorking": "Agent is working...",
     "replyPlaceholder": "Reply to agent's question...",
-    "explorePlaceholder": "Ask agent to explore a new direction",
+    "explorePlaceholder": "Describe what to explore (add context with @)",
+    "reportPlaceholder": "Describe what report to create (add context with @)",
     "addMoreData": "Add more data to the workspace",
+    "mentionTable": "Add a table to the context (@)",
+    "searchTables": "Search tables...",
+    "noMoreTables": "No more tables available",
     "getIdeaSuggestions": "Get idea suggestions",
     "suggestExplorationDirections": "help me suggest some exploration directions from this thread",
     "endConversation": "End conversation",
@@ -465,7 +470,8 @@
     "couldYouClarify": "Could you clarify?",
     "errorDuringExploration": "Error during exploration",
     "explorationStep": "Exploration step {{step}}: {{question}}",
-    "threadExplorePrompt": "Help me suggest some exploration directions based on this thread.",
+    "threadExplorePrompt": "Explore interesting patterns and trends in this data",
+    "threadReportPrompt": "Summarize the key findings from this exploration",
     "explorationThreadDeriveDescription": "Derive from {{source}} with instruction: {{instruction}}",
     "explorationStepCodeComment": "# Exploration step {{step}}",
     "maxIterationsReached": "Reached the maximum number of exploration steps."

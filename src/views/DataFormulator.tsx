@@ -42,6 +42,7 @@ import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
+import { DataSourceSidebar } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import YouTubeIcon from '@mui/icons-material/YouTube';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
@@ -94,12 +95,15 @@ export const DataFormulatorFC = ({ }) => {
 
     // ── Connector instances (for landing page menu) ─────────────
     const [pageConnectors, setPageConnectors] = useState<ConnectorInstance[]>([]);
-    useEffect(() => {
+    const refreshPageConnectors = useCallback(() => {
         fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(r => r.json())
             .then(data => setPageConnectors(data.connectors || []))
             .catch(() => {});
     }, []);
+    useEffect(() => {
+        refreshPageConnectors();
+    }, [refreshPageConnectors]);
 
     // ── Demo sessions (loaded from manifest, fallback to hardcoded) ─────
     const [demoSessions, setDemoSessions] = useState<ExampleSession[]>(exampleSessions);
@@ -422,9 +426,10 @@ export const DataFormulatorFC = ({ }) => {
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
+            <DataSourceSidebar onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)} />
             <Box ref={containerRef} className="outer-allotment" sx={{
                     margin: '4px 8px 8px 8px', backgroundColor: 'white',
-                    display: 'flex', height: 'calc(100% - 12px)', width: '100%', flexDirection: 'column',
+                    display: 'flex', height: 'calc(100% - 12px)', flex: 1, minWidth: 0, flexDirection: 'column',
                     overflow: 'hidden',
                     position: 'relative'}}>
                 <Allotment ref={allotmentRef} onDragEnd={snapToColumns} proportionalLayout={false}>
@@ -480,7 +485,7 @@ export const DataFormulatorFC = ({ }) => {
                 linear-gradient(0deg, ${alpha(theme.palette.text.secondary, 0.01)} 1px, transparent 1px)
             `,
             backgroundSize: '16px 16px',
-            width: 'calc(100vw - 16px)', overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
+            flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column', height: '100%',
         }}>
         <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center", maxWidth: 1024, width: '100%', px: 2, boxSizing: 'border-box' }}>
             <Box sx={{display: 'flex', mx: 'auto'}}>
@@ -627,10 +632,15 @@ export const DataFormulatorFC = ({ }) => {
     return (
         <Box sx={{ display: 'block', width: "100%", height: '100%', position: 'relative' }}>
             <DndProvider backend={HTML5Backend}>
-                {tables.length > 0 ? fixedSplitPane : dataUploadRequestBox}
+                {tables.length > 0 ? fixedSplitPane : (
+                    <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
+                        <DataSourceSidebar onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)} />
+                        {dataUploadRequestBox}
+                    </Box>
+                )}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
-                    onClose={() => setUploadDialogOpen(false)}
+                    onClose={() => { setUploadDialogOpen(false); refreshPageConnectors(); }}
                     initialTab={uploadDialogInitialTab}
                 />
                 {/* Loading overlay for session loading */}

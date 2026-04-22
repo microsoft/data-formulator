@@ -303,15 +303,18 @@ export function vlApplyLayoutToSpec(
             : { step: layout.yStep };
     }
 
-    // Facet header sizing
+    // Facet header sizing — constrain labels to subplot width
     const totalFacets = (layout.facet?.columns ?? 1) * (layout.facet?.rows ?? 1);
-    if (totalFacets > 6) {
-        vgObj.config.header = { labelLimit: 120, labelFontSize: 9 };
-    }
-
-    // In faceted charts, use lighter axis title styling to reduce clutter
     const facetRows = layout.facet?.rows ?? 1;
     const facetCols = layout.facet?.columns ?? 1;
+    if (facetRows > 1 || facetCols > 1) {
+        const limit = Math.max(80, layout.subplotWidth + 20);
+        const headerCfg: Record<string, any> = { labelLimit: limit };
+        if (totalFacets > 6) {
+            headerCfg.labelFontSize = 9;
+        }
+        vgObj.config.header = { ...(vgObj.config.header || {}), ...headerCfg };
+    }
     const encTarget = vgObj.spec?.encoding || vgObj.encoding;
 
     if (facetRows > 1 || facetCols > 1) {

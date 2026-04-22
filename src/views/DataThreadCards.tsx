@@ -53,6 +53,7 @@ export let buildTriggerCard = (
     trigger: Trigger,
     focusedChartId: string | undefined,
     highlighted: boolean = false,
+    dimmed: boolean = false,
 ) => {
     let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
     
@@ -61,6 +62,7 @@ export let buildTriggerCard = (
             <TriggerCard className={selectedClassName} trigger={trigger} 
                 hideFields={!!(trigger.interaction && trigger.interaction.length > 0)} 
                 highlighted={highlighted}
+                dimmed={dimmed}
                 sx={{
                     '& .MuiBox-root': { mx: 0.5, my: 0.25 },
                     '& .MuiSvgIcon-root': { width: '12px', height: '12px' },
@@ -95,6 +97,10 @@ export interface BuildTableCardProps {
     primaryBgColor: string | undefined;
     /** i18n `t` from `useTranslation()` */
     t: (key: string, options?: Record<string, unknown>) => string;
+    /** Whether to show the original file name under the table name (default: true) */
+    showOriginalName?: boolean;
+    /** Whether this card should appear dimmed (unfocused, not highlighted) */
+    dimmed?: boolean;
 }
 
 export let buildTableCard = (props: BuildTableCardProps) => {
@@ -102,7 +108,8 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         tableId, tables, charts, chartElements, usedIntermediateTableIds,
         highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
         parentTable, tableIdList, collapsed, scrollRef, dispatch,
-        handleOpenTableMenu, primaryBgColor, t,
+        handleOpenTableMenu, primaryBgColor, t, showOriginalName = true,
+        dimmed = false,
     } = props;
 
     const getOriginalName = (tbl: DictTable | undefined): string | null => {
@@ -217,7 +224,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                 overflow: 'hidden',
                 wordBreak: 'break-all',
             }}>{table?.displayId || tableId}</Typography>
-            {originalName && (
+            {showOriginalName && originalName && (
                 <Typography sx={{
                     fontSize: 10,
                     color: 'text.disabled',
@@ -234,10 +241,12 @@ export let buildTableCard = (props: BuildTableCardProps) => {
     );
 
     let regularTableBox = <Box key={`regular-table-box-${tableId}`} ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
-        sx={{ padding: '0px' }}>
+        className="data-thread-card-wrapper"
+        sx={{ padding: '0px', display: 'flex', alignItems: 'center', gap: '2px' }}>
         <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
             sx={{ width: '100%', 
                 backgroundColor: primaryBgColor,
+                ...(dimmed ? { opacity: 0.45 } : {}),
                 ...ComponentBorderStyle,
                 ...(isHighlighted ? { borderLeft: '2px solid', borderLeftColor: 'primary.main' } : {}),
                 borderRadius: '6px',
@@ -245,41 +254,47 @@ export let buildTableCard = (props: BuildTableCardProps) => {
             onClick={() => {
                 dispatch(dfActions.setFocused({ type: 'table', tableId }));
             }}>
-            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0 }}>
+            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
+                '& .delete-table-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                '&:hover .delete-table-btn': { opacity: 1 },
+            }}>
                 <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
                     {sourceTooltip
                         ? <Tooltip title={sourceTooltip} placement="top" arrow><span style={{ minWidth: 0, flex: 1 }}>{tableNameBlock}</span></Tooltip>
                         : tableNameBlock}
                 </Stack>
-                <ButtonGroup aria-label={t('dataThread.tableCardActionsAria')} variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto", flexShrink: 0 }}>
-                    <Tooltip key="create-chart-btn-tooltip" title={t('dataThread.createNewChart')}>
-                        <IconButton className="create-chart-btn" color="primary" aria-label={t('dataThread.createNewChart')} size="small" sx={{ padding: 0.25, '&:hover': {
-                            transform: 'scale(1.2)',
-                            transition: transition.fast
-                            } }}
+                {!table?.derive && (
+                    <ButtonGroup aria-label={t('dataThread.tableCardActionsAria')} variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto", flexShrink: 0 }}>
+                        <Tooltip key="more-options-btn-tooltip" title={t('dataThread.moreOptions')}>
+                            <IconButton className="more-options-btn" color="primary" aria-label={t('dataThread.moreOptions')} size="small" sx={{ padding: 0.25, '&:hover': {
+                                transform: 'scale(1.2)',
+                                transition: transition.fast
+                                } }}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleOpenTableMenu(table!, event.currentTarget);
+                                }}
+                            >
+                                <MoreVertIcon fontSize="small" sx={{ fontSize: 16 }} />
+                            </IconButton>
+                        </Tooltip>
+                    </ButtonGroup>
+                )}
+                {table?.derive && (
+                    <Tooltip title={t('dataThread.deleteTable')}>
+                        <IconButton className="delete-table-btn" aria-label={t('dataThread.deleteTable')} size="small" color="error" sx={{ 
+                            padding: 0.5, flexShrink: 0, mr: 0.25,
+                            '&:hover': { transform: 'scale(1.15)' },
+                        }}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                dispatch(dfActions.setFocused({ type: 'table', tableId }));
+                                dispatch(dfActions.deleteTable(tableId));
                             }}
                         >
-                            <AddchartIcon fontSize="small" sx={{ fontSize: 16 }} />
+                            <DeleteIcon sx={{ fontSize: 16 }} />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip key="more-options-btn-tooltip" title={t('dataThread.moreOptions')}>
-                        <IconButton className="more-options-btn" color="primary" aria-label={t('dataThread.moreOptions')} size="small" sx={{ padding: 0.25, '&:hover': {
-                            transform: 'scale(1.2)',
-                            transition: transition.fast
-                            } }}
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                handleOpenTableMenu(table!, event.currentTarget);
-                            }}
-                        >
-                            <MoreVertIcon fontSize="small" sx={{ fontSize: 16 }} />
-                        </IconButton>
-                    </Tooltip>
-
-                </ButtonGroup>
+                )}
             </Box>
         </Card>
     </Box>

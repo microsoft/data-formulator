@@ -14,6 +14,7 @@ export { default as StreamIcon } from '@mui/icons-material/Stream';
 export { default as AgentIcon } from '@mui/icons-material/PrecisionManufacturing';
 export { default as InsightIcon } from '@mui/icons-material/Insights';
 export { default as AnchorIcon } from '@mui/icons-material/Anchor';
+export { default as FolderOpenIcon } from '@mui/icons-material/FolderOpen';
 
 // ── Data-loader / connector category icons ──────────────────────────────
 // Generic icons representing data source *categories*, not brand logos.
@@ -75,6 +76,8 @@ const GenericDBIcon: React.FC<SvgIconProps> = (props) => (
     </SvgIcon>
 );
 
+import FolderOpenIconMui from '@mui/icons-material/FolderOpen';
+
 /** Map source_type string to a category icon. */
 const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     // Relational databases
@@ -93,10 +96,13 @@ const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     athena: QueryEngineIcon,
     // BI / dashboards
     superset: DashboardIcon,
+    // Local
+    local_folder: FolderOpenIconMui,
 };
 
 /** Category sort order for data source sidebar. Lower = higher in the list. */
 const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
+    local_folder: -1,                            // Local (top)
     mysql: 0, mssql: 0, postgresql: 0,       // Relational DB
     mongodb: 1, cosmosdb: 1,                  // Document Store
     s3: 2, azure_blob: 2,                     // Cloud Storage
@@ -120,6 +126,8 @@ export const getConnectorIcon = (sourceType: string, props?: SvgIconProps): Reac
     const Icon = CONNECTOR_ICON_MAP[sourceType] || GenericDBIcon;
     return <Icon {...(props || {})} />;
 };
+
+export { GenericDBIcon as DatabaseIcon };
 
 // ── Custom SVG domain icons ─────────────────────────────────────────────
 

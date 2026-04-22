@@ -67,16 +67,5 @@ export const candlestickChartDef: ChartTemplateDef = {
         }
 
         spec.layer[1].mark = { ...spec.layer[1].mark, size: barSize };
-
-        // Independent Y-axis for faceted candlestick charts
-        const config = ctx.chartProperties;
-        if (config?.independentYAxis) {
-            if (!spec.resolve) spec.resolve = {};
-            if (!spec.resolve.scale) spec.resolve.scale = {};
-            spec.resolve.scale.y = "independent";
-        }
     },
-    properties: [
-        { key: "independentYAxis", label: "Independent Y-Axis", type: "binary", defaultValue: false },
-    ],
 };

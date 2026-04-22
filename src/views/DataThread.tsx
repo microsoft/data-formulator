@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useMemo, useRef, useState, memo } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 
 import {
     Box,
@@ -35,6 +35,10 @@ import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
 import { Chart, DictTable, Trigger, InteractionEntry } from "../components/ComponentType";
+import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
+import type { CatalogTableDragItem } from '../components/DndTypes';
+import { loadTable } from '../app/tableThunks';
+import { AppDispatch } from '../app/store';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import StarIcon from '@mui/icons-material/Star';
@@ -82,66 +86,45 @@ import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 
 import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
 import { SimpleChartRecBox } from './SimpleChartRecBox';
-import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon } from './InteractionEntryCard';
+import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
 
-export const ThinkingBanner = (message: string, sx?: SxProps) => {
-    // Split message: first line is the title (with shimmer), rest is readable content
-    const newlineIdx = message.indexOf('\n');
-    const title = newlineIdx >= 0 ? message.slice(0, newlineIdx) : message;
-    const content = newlineIdx >= 0 ? message.slice(newlineIdx + 1).trim() : '';
+/** Pick the icon component for a step line based on known prefixes. */
+// Re-exported from InteractionEntryCard — kept here for backward compat with gutter icon logic
 
-    // Pick icon based on title keywords
-    const titleLower = title.toLowerCase();
-    const IconComponent = titleLower.includes('code') || titleLower.includes('运行') ? TerminalIcon
-        : titleLower.includes('inspect') || titleLower.includes('检查') ? SearchIcon
-        : titleLower.includes('chart') || titleLower.includes('图表') ? AutoGraphIcon
-        : AutoAwesomeIcon;
-
+/** Render a multi-step thinking banner as a single block with sectioned steps. */
+export const ThinkingStepsBanner = (steps: string[], sx?: SxProps) => {
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', ...sx }}>
-            {/* Title line with shimmer */}
-            <Box sx={{ 
-                display: 'flex', 
-                alignItems: 'center',
-                gap: '4px',
-                position: 'relative',
-                overflow: 'hidden',
+        <Box sx={sx}>
+            <PlanStepsView steps={steps} activeLastStep />
+        </Box>
+    );
+};
+
+/** Simple single-message thinking banner (used when no step breakdown is available). */
+export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = true) => {
+    return (
+        <Box sx={{
+            display: 'flex', alignItems: 'center', gap: '4px',
+            position: 'relative', overflow: 'hidden',
+            ...(active ? {
                 '&::before': {
                     content: '""',
                     position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
+                    top: 0, left: 0, width: '100%', height: '100%',
                     background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
                     animation: 'windowWipe 2s ease-in-out infinite',
-                    zIndex: 1,
-                    pointerEvents: 'none',
+                    zIndex: 1, pointerEvents: 'none',
                 },
                 '@keyframes windowWipe': {
                     '0%': { transform: 'translateX(-100%)' },
                     '100%': { transform: 'translateX(100%)' },
                 },
-            }}>
-                <IconComponent sx={{ fontSize: 10, color: 'rgba(0, 0, 0, 0.5)' }} />
-                <Typography variant="body2" sx={{ fontSize: 10, color: 'rgba(0, 0, 0, 0.7) !important' }}>
-                    {title}
-                </Typography>
-            </Box>
-            {/* Content without shimmer — user wants to read this */}
-            {content && (
-                <Typography variant="body2" sx={{ 
-                    fontSize: 10, 
-                    color: 'rgba(0, 0, 0, 0.55)',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    lineHeight: 1.4,
-                    maxHeight: 200,
-                    overflow: 'auto',
-                }}>
-                    {content}
-                </Typography>
-            )}
+            } : {}),
+            ...sx,
+        }}>
+            <Typography variant="body2" sx={{ fontSize: 10, color: 'text.secondary' }}>
+                {message}
+            </Typography>
         </Box>
     );
 };
@@ -845,15 +828,15 @@ let SingleThreadGroupView: FC<{
     let draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
     let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
 
-    // Build a map from chartId → reports anchored at that chart
-    const reportsByAnchorChart = useMemo(() => {
+    // Build a map from tableId → reports triggered from that table
+    const reportsByTriggerTable = useMemo(() => {
         const map = new Map<string, GeneratedReport[]>();
         for (const report of generatedReports) {
-            const anchor = report.anchorChartId;
-            if (!anchor) continue;
-            const list = map.get(anchor) || [];
+            const triggerId = report.triggerTableId;
+            if (!triggerId) continue;
+            const list = map.get(triggerId) || [];
             list.push(report);
-            map.set(anchor, list);
+            map.set(triggerId, list);
         }
         return map;
     }, [generatedReports]);
@@ -1138,6 +1121,7 @@ let SingleThreadGroupView: FC<{
         parentTable, tableIdList, collapsed, scrollRef, dispatch,
         handleOpenTableMenu, primaryBgColor: theme.palette.primary.bgcolor,
         t,
+        showOriginalName: threadIdx === -1,
     };
 
     let _buildTableCard = (tableId: string) => {
@@ -1151,12 +1135,15 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string };
+    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string };
     let timelineItems: TimelineItem[] = [];
 
     // ── Shared helpers for building timeline items from interaction entries ──
 
-    /** Push visible interaction entries as timeline items. */
+    /** Push visible interaction entries as timeline items.
+     *  Adaptively collapses: when a data-agent summary is immediately followed
+     *  by an instruction, the summary text is folded into the instruction's
+     *  `plan` (expandable) rather than shown as a separate entry. */
     const pushInteractionEntries = (
         entries: InteractionEntry[],
         tableId: string,
@@ -1165,18 +1152,45 @@ let SingleThreadGroupView: FC<{
         keyPrefix: string,
         extraProps?: Partial<TimelineItem>,
     ) => {
-        entries.forEach((entry, ei) => {
-            // A clarify entry is resolved if a user prompt follows it in the same entries array
+        // Enrich instruction entries with inputTableNames from derive.source if not already set
+        const derivedTable = tableById.get(tableId);
+        const deriveSourceNames = derivedTable?.derive?.source
+            ? (derivedTable.derive.source as string[]).map(sid => {
+                const st = tableById.get(sid);
+                return st?.displayId || sid.replace(/\.[^/.]+$/, "");
+            })
+            : undefined;
+
+        for (let ei = 0; ei < entries.length; ei++) {
+            const entry = entries[ei];
+            const nextEntry = ei + 1 < entries.length ? entries[ei + 1] : null;
+
+            // Collapse: summary from data-agent followed by instruction → fold into instruction's plan
+            if (entry.role === 'summary' && entry.from === 'data-agent'
+                && nextEntry?.role === 'instruction') {
+                // Merge: use the summary content as the plan on the next instruction
+                // (only if the instruction doesn't already have a plan)
+                if (!nextEntry.plan) {
+                    nextEntry.plan = entry.content;
+                }
+                continue; // skip rendering this summary entry
+            }
+
+            // Enrich instruction entries with source table names
+            const enrichedEntry = (entry.role === 'instruction' && !entry.inputTableNames && deriveSourceNames)
+                ? { ...entry, inputTableNames: deriveSourceNames }
+                : entry;
+
             const isResolved = entry.role === 'clarify' && entries.slice(ei + 1).some(e => e.from === 'user');
             timelineItems.push({
                 key: `${keyPrefix}-${entry.role}-${tableId}-${ei}`,
                 type: triggerType,
                 highlighted,
-                element: <InteractionEntryCard entry={entry} highlighted={highlighted} resolved={isResolved} />,
+                element: <InteractionEntryCard entry={enrichedEntry} highlighted={highlighted} resolved={isResolved} />,
                 interactionEntry: entry,
                 ...extraProps,
             });
-        });
+        }
     };
 
     /** Split interaction at the last instruction boundary: entries before → rendered before table, after → rendered after. */
@@ -1200,12 +1214,15 @@ let SingleThreadGroupView: FC<{
             if (draftInteraction && draftInteraction.length > 0) {
                 pushInteractionEntries(draftInteraction, tableId, triggerType, highlighted, 'agent-running-entry');
                 const runningPlan = runningDraft?.derive?.runningPlan;
+                // Split running plan into step lines (\x1E = Record Separator between steps)
+                const planLines = (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
+                // Single timeline entry with all steps rendered inside
                 timelineItems.push({
-                    key: `agent-thinking-placeholder-${tableId}`,
+                    key: `agent-thinking-${tableId}`,
                     type: triggerType,
                     highlighted,
                     isRunning: true,
-                    element: ThinkingBanner(runningPlan || t('dataThread.thinking'), { px: 1, py: 0.5 }),
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }),
                 });
             } else {
                 const runningAction = runningAgentTableIds.get(tableId);
@@ -1271,13 +1288,11 @@ let SingleThreadGroupView: FC<{
         }
     };
 
-    // Push report cards anchored to charts of the given table
+    // Push report cards triggered from the given table
     const pushReportItems = (tableId: string, highlighted: boolean) => {
-        const tableCharts = charts.filter(c => c.tableRef === tableId);
-        for (const chart of tableCharts) {
-            const reports = reportsByAnchorChart.get(chart.id);
-            if (!reports) continue;
-            for (const report of reports) {
+        const reports = reportsByTriggerTable.get(tableId);
+        if (!reports) return;
+        for (const report of reports) {
                 const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
                 const isGenerating = report.status === 'generating';
                 const selectedClassName = isFocused ? 'selected-report-card' : '';
@@ -1300,7 +1315,10 @@ let SingleThreadGroupView: FC<{
                                 dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
                             }}
                         >
-                            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0 }}>
+                            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
+                                '& .report-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                                '&:hover .report-delete-btn': { opacity: 1 },
+                            }}>
                                 <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
                                     <Typography sx={{
                                         fontSize: 11,
@@ -1312,28 +1330,42 @@ let SingleThreadGroupView: FC<{
                                         overflow: 'hidden',
                                         wordBreak: 'break-all',
                                     }}>
-                                        {report.title || report.style || t('report.untitled')}
+                                        {report.title || t('report.untitled')}
                                     </Typography>
-                                    <Typography sx={{
-                                        fontSize: 9,
-                                        color: 'text.disabled',
-                                        lineHeight: 1.3,
-                                        mt: 0.25,
-                                    }}>
-                                        {report.style}
-                                        {isGenerating && ` · ${t('report.composing')}`}
-                                    </Typography>
+                                    {isGenerating && (
+                                        <Typography sx={{
+                                            fontSize: 9,
+                                            color: 'text.disabled',
+                                            lineHeight: 1.3,
+                                            mt: 0.25,
+                                        }}>
+                                            {t('report.composing')}
+                                        </Typography>
+                                    )}
                                 </Box>
+                                <Tooltip title={t('dataThread.deleteReport')}>
+                                    <IconButton
+                                        className="report-delete-btn"
+                                        size="small"
+                                        color="error"
+                                        sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            dispatch(dfActions.deleteGeneratedReport(report.id));
+                                        }}
+                                    >
+                                        <DeleteIcon sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                </Tooltip>
                             </Box>
                         </Card>
                     ),
                 });
-            }
         }
     };
 
     // Add used (shared) tables at the top
-    // Only show the immediate parent + "..." for further ancestors
+    // Show the immediate parent as a full table card, with "..." for further ancestors
     let displayedUsedTableIds = usedTableIdsInThread;
     if (usedTableIdsInThread.length > 1) {
         // Keep only the last (immediate parent), prepend "..." placeholder
@@ -1350,27 +1382,8 @@ let SingleThreadGroupView: FC<{
         });
     }
     displayedUsedTableIds.forEach((tableId, i) => {
-        let table = tableById.get(tableId) as DictTable;
-        timelineItems.push({
-            key: `used-table-${tableId}-${i}`,
-            type: 'used-table',
-            tableId: tableId,
-            highlighted: highlightedTableIds.includes(tableId),
-            element: (
-                <Typography 
-                    sx={{
-                        fontSize: '10px',
-                        cursor: 'pointer',
-                        width: 'fit-content',
-                        '&:hover': {
-                            backgroundColor: alpha(theme.palette.primary.light, 0.1),
-                        },
-                    }} 
-                    onClick={() => { dispatch(dfActions.setFocused({ type: 'table', tableId })) }}>
-                    {table.displayId || tableId}
-                </Typography>
-            ),
-        });
+        const isHighlighted = highlightedTableIds.includes(tableId);
+        pushTableAndChartItems(tableId, _buildTableCard(tableId), 'table', isHighlighted);
     });
 
     // Interleave triggers and tables for the main thread body
@@ -1558,24 +1571,36 @@ let SingleThreadGroupView: FC<{
         const bottomDashedColor = bottomHighlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
         const bottomDashedWidth = '2px';
         const bottomDashedStyle = 'solid';
-        // Dim non-highlighted cards when chatbox is focused
-        const rowHighlightSx = (chatboxFocused && hasHighlighting && !item.highlighted) ? { opacity: 0.35 } : {};
+        // No dimming or background — rely on timeline color + card border for highlighting
+        const rowHighlightSx = {};
 
         // Triggers: icon based on interaction entry's `from` actor
         if (isTrigger) {
             const entry = item.interactionEntry;
             const isFromUser = entry ? entry.from === 'user' : false;
-            // User → custom (orange), Agent → muted gray (supporting role)
+            // User → custom (orange), Agent → secondary when highlighted, muted when not
             const iconColor = item.highlighted
-                ? (isFromUser ? theme.palette.custom.main : theme.palette.text.disabled)
+                ? (isFromUser ? theme.palette.custom.main : theme.palette.text.secondary)
                 : 'rgba(0,0,0,0.15)';
+            // Pick step-specific icon for completed thinking steps
+            const getStepIcon = (label: string, color: string) => {
+                const stripped = label.startsWith('✓') ? label.slice(2) : label;
+                const lbl = stripped.toLowerCase();
+                const iconSx = { width: 12, height: 12, color };
+                if (lbl.startsWith('running code') || lbl.startsWith('运行')) return <TerminalIcon sx={iconSx} />;
+                if (lbl.startsWith('inspecting') || lbl.startsWith('检查')) return <SearchIcon sx={iconSx} />;
+                if (lbl.startsWith('creating chart') || lbl.startsWith('图表')) return <AutoGraphIcon sx={iconSx} />;
+                return <AutoAwesomeIcon sx={iconSx} />;
+            };
             const gutterIcon = item.isRunning
                 ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
                 : item.isClarifying
                     ? <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main, animation: 'spin 2s ease-in-out infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
-                    : entry
-                        ? getEntryGutterIcon(entry, iconColor)
-                        : getDefaultGutterIcon(iconColor);
+                    : item.isCompleted && item.stepLabel
+                        ? getStepIcon(item.stepLabel, iconColor)
+                        : entry
+                            ? getEntryGutterIcon(entry, iconColor)
+                            : getDefaultGutterIcon(iconColor);
 
             // Clarification items are clickable to focus on the associated table
             const clarifyClickHandler = (item.isClarifying && item.tableId)
@@ -1871,11 +1896,18 @@ const ChartThumbnail: FC<{
     const { t } = useTranslation();
 
     let deleteButton = <Tooltip title={t('dataThread.deleteChart')}>
-        <IconButton className='data-thread-chart-card-action-button' size="small" color="warning"
+        <IconButton className='data-thread-chart-delete-btn' size="small" color="error"
             aria-label={t('dataThread.deleteChart')}
-            sx={{ zIndex: 10, position: "absolute", right: 1, }}
+            sx={{ 
+                zIndex: 10, position: "absolute", right: 1, top: 1,
+                p: 0.5,
+                opacity: 0, transition: 'opacity 0.15s',
+                backgroundColor: 'rgba(255,255,255,0.85)',
+                '&:hover': { transform: 'scale(1.15)', backgroundColor: 'rgba(255,255,255,0.95)' },
+                '.vega-thumbnail-box:hover &': { opacity: 1 },
+            }}
             onClick={(event) => { event.stopPropagation(); onDelete(chart.id); }}>
-            <DeleteIcon fontSize="small" />
+            <DeleteIcon sx={{ fontSize: 16 }} />
         </IconButton>
     </Tooltip>
 
@@ -2154,6 +2186,7 @@ function chooseBestColumnLayout(
 
 export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const { t } = useTranslation();
+    const dispatch = useDispatch<AppDispatch>();
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
@@ -2171,10 +2204,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         }
         if (focusedId.type === 'report') {
             const report = generatedReports.find(r => r.id === focusedId.reportId);
-            if (report?.anchorChartId) {
-                const chart = charts.find(c => c.id === report.anchorChartId);
-                return chart?.tableRef;
-            }
+            return report?.triggerTableId;
         }
         return undefined;
     }, [focusedId, charts, generatedReports]);
@@ -2189,6 +2219,65 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
     const [chatboxFocused, setChatboxFocused] = useState(false);
+    const [isDragOver, setIsDragOver] = useState(false);
+
+    // ── Drop handler for catalog table items from DataSourceSidebar ──────
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        if (e.dataTransfer.types.includes('application/json')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            setIsDragOver(true);
+        }
+    }, []);
+    const handleDragLeave = useCallback(() => setIsDragOver(false), []);
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        setIsDragOver(false);
+        try {
+            const raw = e.dataTransfer.getData('application/json');
+            if (!raw) return;
+            const item: CatalogTableDragItem = JSON.parse(raw);
+            if (item.type !== CATALOG_TABLE_ITEM) return;
+            e.preventDefault();
+
+            const tableObj: DictTable = {
+                kind: 'table' as const,
+                id: item.tableName,
+                displayId: item.tableName,
+                names: [],
+                metadata: {},
+                rows: [],
+                virtual: { tableId: item.tableName, rowCount: 0 },
+                anchored: true,
+                attachedMetadata: '',
+                source: {
+                    type: 'database' as const,
+                    databaseTable: item.tablePath.join('/'),
+                    canRefresh: true,
+                    lastRefreshed: Date.now(),
+                    connectorId: item.connectorId,
+                },
+            };
+
+            dispatch(loadTable({
+                table: tableObj,
+                connectorId: item.connectorId,
+                sourceTableName: item.tableName,
+                importOptions: {},
+            })).unwrap()
+                .then(() => {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'success',
+                        component: 'data thread', value: `Loaded table "${item.tableName}"`,
+                    }));
+                })
+                .catch((err) => {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'error',
+                        component: 'data thread', value: `Failed to load "${item.tableName}": ${err}`,
+                    }));
+                });
+        } catch { /* ignore bad data */ }
+    }, [dispatch]);
     // Re-attach ResizeObserver when containerRef changes
     useEffect(() => {
         const el = containerRef.current;
@@ -2212,8 +2301,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             }) 
         }
     }
-
-    const dispatch = useDispatch();
 
     // Track previous table/chart counts to detect agent additions
     const prevCountsRef = useRef({ tables: tables.length, charts: charts.length });
@@ -2357,21 +2444,34 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     });
 
     // Compute global highlighted table IDs from the focused table's full ancestor chain
+    // Also includes derive.source tables (all input tables used in computation)
     let globalHighlightedTableIds: string[] = useMemo(() => {
         if (!focusedTableId) return [];
         let focusedTable = tableById.get(focusedTableId);
         if (!focusedTable) return [];
         // Walk up the trigger chain from the focused table to collect all ancestor IDs
-        let ids: string[] = [focusedTableId];
+        let ids = new Set<string>([focusedTableId]);
         let current = focusedTable;
+        // Add derive.source tables for the focused table itself
+        if (current.derive?.source) {
+            for (const sid of current.derive.source as string[]) {
+                ids.add(sid);
+            }
+        }
         while (current.derive && !current.anchored) {
             let parentId = current.derive.trigger.tableId;
-            ids.unshift(parentId);
+            ids.add(parentId);
+            // Add derive.source tables for each ancestor
+            if (current.derive.source) {
+                for (const sid of current.derive.source as string[]) {
+                    ids.add(sid);
+                }
+            }
             let parent = tableById.get(parentId);
             if (!parent) break;
             current = parent;
         }
-        return ids;
+        return [...ids];
     }, [focusedTableId, tableById]);
 
     // Determine which leaf table's thread the focused table belongs to
@@ -2412,19 +2512,19 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // Track which table IDs have been claimed by earlier threads
     let claimedTableIds = new Set<string>();
 
-    // Hanging tables: source tables with no children — displayed as a group before thread 1
-    let hangingTables = leafTables.filter(lt => !lt.derive);
-    if (hangingTables.length > 0) {
-        hangingTables.forEach(lt => claimedTableIds.add(lt.id));
-        let hangingChartCount = hangingTables.reduce((sum, lt) => sum + chartElements.filter(ce => ce.tableId === lt.id).length, 0);
+    // Source tables: always displayed as a group at the top, showing all non-derived tables
+    let sourceTables = tables.filter(t => !t.derive);
+    if (sourceTables.length > 0) {
+        sourceTables.forEach(lt => claimedTableIds.add(lt.id));
+        let sourceChartCount = sourceTables.reduce((sum, lt) => sum + chartElements.filter(ce => ce.tableId === lt.id).length, 0);
         allThreadEntries.push({
-            key: 'hanging-tables',
-            groupId: 'hanging-tables',
-            leafTables: hangingTables,
+            key: 'source-tables',
+            groupId: 'source-tables',
+            leafTables: sourceTables,
             threadIdx: -1,
             hideLabel: true,
         });
-        allThreadHeights.push(estimateThreadHeight(hangingTables.length, 0, hangingChartCount));
+        allThreadHeights.push(estimateThreadHeight(sourceTables.length, 0, sourceChartCount));
     }
 
     // Regular threads: one per threaded leaf table
@@ -2667,7 +2767,24 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     ) : null;
 
     return (
-        <Box className="data-thread" sx={{ ...sx, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        <Box
+            className="data-thread"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            sx={{
+                ...sx,
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                ...(isDragOver && {
+                    outline: '2px dashed',
+                    outlineColor: 'primary.main',
+                    outlineOffset: -2,
+                    backgroundColor: 'action.hover',
+                }),
+            }}
+        >
             <Box ref={containerRef} sx={{
                     overflow: 'hidden', 
                     direction: 'rtl', 

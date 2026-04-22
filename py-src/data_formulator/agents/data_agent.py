@@ -1,17 +1,22 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Streaming tool-calling data exploration agent.
+"""Hybrid data exploration agent (Option A with tool-calling for data inspection).
 
-The agent is a single-turn, tool-calling agent that streams text + tool
-results to the frontend.  It has 3 tools (``explore``, ``visualize``,
-``clarify``) and generates its own code + chart specs directly — no
-sub-agent calls.
+Architecture:
+  - **Tools** (explore, inspect_source_data): Called via OpenAI tool-calling
+    API within a single LLM turn.  The agent gathers data silently — these
+    are internal to the agent and not surfaced to the user.
+  - **Actions** (visualize, clarify, present): Structured JSON output in
+    the LLM's text response.  These are externalized to the user — each
+    one ends the current turn and produces visible output.
 
-The agent's natural text output serves as narration/explanation (no
-separate ``chat`` or ``present`` actions).  Each ``visualize`` result is
-identical to the current ``DataRecAgent`` output, so the existing frontend
-checkpoint pipeline works unchanged.
+The server-side while loop handles one action per iteration:
+  1. Call LLM (with tools) → agent may call tools internally
+  2. Parse the structured JSON action from the text response
+  3. Execute the action (sandbox, chart assembly, etc.)
+  4. Append rich observation to trajectory
+  5. Repeat or terminate
 """
 
 import json
@@ -25,7 +30,14 @@ import pandas as pd
 
 from data_formulator.agents.agent_utils import (
     ensure_output_variable_in_code,
+    extract_json_objects,
     generate_data_summary,
+)
+from data_formulator.agents.context import (
+    build_focused_thread_context,
+    build_lightweight_table_context,
+    build_peripheral_thread_context,
+    handle_inspect_source_data,
 )
 from data_formulator.agents.client_utils import Client
 from data_formulator.prompts.chart_creation_guide import CHART_CREATION_GUIDE
@@ -40,47 +52,40 @@ from data_formulator.workflows.create_vl_plots import (
 
 logger = logging.getLogger(__name__)
 
-# ── Max tool calls per turn (safety) ──────────────────────────────────────
-MAX_TOOL_CALLS = 12
-
-# ── Threshold for switching between full summaries and lightweight schema ──
-SOURCE_TABLE_SUMMARY_THRESHOLD = 5
-
 # ── Tool definitions (OpenAI function-calling format) ─────────────────────
-
-INSPECT_SOURCE_DATA_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "inspect_source_data",
-        "description": (
-            "Get a detailed summary of one or more source tables — schema, "
-            "field-level statistics, and sample rows. Use this to understand "
-            "a table before writing visualize code. Much cheaper than explore()."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "table_names": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of table names from [SOURCE TABLES] to inspect.",
-                },
-            },
-            "required": ["table_names"],
-        },
-    },
-}
+# These are internal tools the agent can use freely within a turn to
+# gather data before committing to a user-visible action.
 
 TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "think",
+            "description": (
+                "Share your reasoning or findings with the user before taking "
+                "an action. Use this to explain what you discovered from the "
+                "data and what you plan to do next."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Your reasoning, findings, or plan.",
+                    },
+                },
+                "required": ["message"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "explore",
             "description": (
-                "Run Python code in a sandbox. Use for custom computations, "
-                "verifying assumptions, or anything beyond basic table inspection. "
-                "pandas, numpy, duckdb, sklearn, scipy are available. "
-                "Use print() to see results — stdout is returned."
+                "Run Python code to inspect data, compute statistics, or verify "
+                "assumptions.  Use print() to see results — stdout is returned. "
+                "pandas, numpy, duckdb, sklearn, scipy are available."
             ),
             "parameters": {
                 "type": "object",
@@ -97,81 +102,22 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "visualize",
+            "name": "inspect_source_data",
             "description": (
-                "Transform data and create a chart. Write a Python script that produces a "
-                "result DataFrame, and specify the chart type and encoding channels. "
-                "The code runs in a sandbox. The result is rendered as a Vega-Lite chart."
+                "Get a detailed summary of one or more source tables — schema, "
+                "field-level statistics, and sample rows.  Cheaper than explore() "
+                "for basic data inspection."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "code": {
-                        "type": "string",
-                        "description": "Python code that produces a DataFrame assigned to the variable named in output_variable.",
-                    },
-                    "output_variable": {
-                        "type": "string",
-                        "description": "Name of the variable holding the result DataFrame (e.g. 'revenue_by_year').",
-                    },
-                    "chart": {
-                        "type": "object",
-                        "description": "Chart specification with chart_type, encodings, and optional config.",
-                        "properties": {
-                            "chart_type": {
-                                "type": "string",
-                                "description": "Chart type (e.g. 'Bar Chart', 'Line Chart', 'Scatter Plot').",
-                            },
-                            "encodings": {
-                                "type": "object",
-                                "description": "Mapping of visual channels to field names (e.g. {\"x\": \"year\", \"y\": \"revenue\"}).",
-                            },
-                            "config": {
-                                "type": "object",
-                                "description": "Optional chart configuration (e.g. {\"colorScheme\": \"viridis\"}).",
-                            },
-                        },
-                        "required": ["chart_type", "encodings"],
-                    },
-                    "field_metadata": {
-                        "type": "object",
-                        "description": "Semantic type for each encoding field (e.g. {\"year\": \"Year\", \"revenue\": \"Amount\"}).",
-                    },
-                    "display_instruction": {
-                        "type": "string",
-                        "description": "Short verb phrase (<12 words) summarizing this visualization. Bold **column names**.",
-                    },
-                    "view": {
-                        "type": "boolean",
-                        "description": "If true, also return rendered chart image for verification. Default false.",
-                    },
-                },
-                "required": ["code", "output_variable", "chart", "field_metadata", "display_instruction"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "clarify",
-            "description": (
-                "Ask the user a clarification question. Use only when genuinely ambiguous. "
-                "Prefer making a reasonable assumption and proceeding."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": "A polite, concise clarification question.",
-                    },
-                    "options": {
+                    "table_names": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "2-4 short options covering the most likely interpretations.",
+                        "description": "List of table names from [SOURCE TABLES] to inspect.",
                     },
                 },
-                "required": ["question", "options"],
+                "required": ["table_names"],
             },
         },
     },
@@ -180,88 +126,84 @@ TOOLS = [
 
 # ── System prompt ─────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """\
-You are a data exploration agent.  Help the user answer their question by
-exploring data and creating visualizations.
+SYSTEM_PROMPT = '''\
+You are an autonomous data exploration agent.
 
-You have three tools:
+Your goal is to help the user answer their question by creating one or more
+data visualizations.  You operate in a loop.
 
-1. **explore(code)** — run Python code for custom computations or to
-   verify assumptions.  Use for anything beyond basic table inspection.
-2. **visualize(code, output_variable, chart, field_metadata, display_instruction)** —
-   transform data and create a chart.  The code must produce a DataFrame
-   assigned to `output_variable`.
-3. **clarify(question, options)** — ask the user a clarification question.
-   Only use when genuinely ambiguous; prefer assuming and proceeding.
-4. **inspect_source_data(table_names)** _(when available)_ — get a
-   detailed summary of source tables (schema, stats, sample rows).
-   Cheaper than `explore()` for basic inspection.
+## Tools (internal — for data gathering)
+
+You have tools you can call freely to gather data and share reasoning:
+
+- **think(message)** — share your reasoning or findings with the user
+  before taking an action.  Always call this before `visualize` to
+  explain what you found and why you chose this chart.
+- **explore(code)** — run Python code to inspect data, compute stats, etc.
+- **inspect_source_data(table_names)** — get schema, stats, and sample rows
+  for source tables (cheaper than explore for basic inspection).
+
+Call tools as many times as needed.  Tool results are returned to you
+before you produce your action.  Tools are NOT shown to the user.
+
+## Actions (external — shown to the user)
+
+After gathering data (or immediately if the data is clear), output
+**exactly one action** as a JSON object in your text response.  Actions
+are shown to the user and end the current turn.
+
+### `visualize`
+```json
+{{
+    "action": "visualize",
+    "display_instruction": "<casual first-person, ≤25 words. Bold **column names**. e.g. 'Plotting **fertility** vs **life_expect** by **cluster** to see how demographic groups differ'>",
+    "input_tables": ["<table names from [SOURCE TABLES] that the code reads>"],
+    "code": "<Python code producing a DataFrame assigned to output_variable>",
+    "output_variable": "<snake_case variable name>",
+    "chart": {{
+        "chart_type": "<from chart type reference>",
+        "encodings": {{"x": "<field>", "y": "<field>", ...}},
+        "config": {{}}
+    }},
+    "field_metadata": {{"<field>": "<SemanticType>", ...}}
+}}
+```
+
+### `clarify`
+```json
+{{
+    "action": "clarify",
+    "message": "<a polite, concise question>",
+    "options": ["<option 1>", "<option 2>", "<option 3>"]
+}}
+```
+
+### `present`
+```json
+{{
+    "action": "present",
+    "summary": "<one sentence (≤ 25 words) summarizing the key finding>"
+}}
+```
 
 ## Understanding your context
 
-- **[SOURCE TABLES]**: Schema of every source table.  When there are few
-  tables, full summaries with sample data are included.  When there are
-  many, only column names + types + row count are shown — use
-  `inspect_source_data()` to get details on tables you need.
-- **[FOCUSED THREAD]** (if present): The thread the user is continuing.
-  Build on this — do not repeat visualizations already created here.
-- **[OTHER THREADS]** (if present): Brief summaries of other exploration
-  threads.  Use these to avoid duplicating work done elsewhere.
-
-## Workflow — describe → visualize → takeaway → repeat
-
-Follow this interleaving pattern for each chart:
-
-1. **Describe** (text): ONE sentence stating what you will analyze and
-   why — e.g., "Cluster 0 has high fertility but low life expectancy —
-   let me see how it changed over time."
-2. **Visualize** (tool call): Create the chart.
-3. **Takeaway** (text): ONE sentence with the key insight from the
-   result — e.g., "Cluster 0 gained 15 years of life expectancy while
-   fertility dropped by half."
-4. **Repeat or stop**: If there is more to explore, go back to step 1
-   for the next chart.  If findings are sufficient, stop — do not add
-   extra text.
-
-For the first chart you may need to inspect data first (`explore` or
-`inspect_source_data`), but still follow describe → visualize → takeaway
-after that.
+{{context_guide}}
 
 ## Decision guidelines
 
-- **Start** by understanding the user question and the data.  If the
-  question is clear, go ahead and describe + visualize.  If it is
-  ambiguous, `clarify` first.
-- **After each visualization**, review the result (data sample), write
-  a takeaway, and decide your next move:
-  - Describe + visualize again to go deeper (drill into a subset, add a
-    breakdown, compare groups) if the question is not yet fully answered.
-  - Stop if the findings are sufficient.
-  - `clarify` if the result reveals the question needs scoping.
-- **Build a narrative**: each chart should follow logically from the
-  previous one — overview → drill-down → comparison.  Do not create
-  unrelated charts.
-- **Never** repeat a visualization that already exists in the trajectory.
+- **Start** by understanding the question and data.  Use tools if needed,
+  then `visualize`.  If ambiguous, `clarify`.
+- **After a visualization**, review the observation (data + chart) and:
+  - `visualize` again to go deeper (drill-down, breakdown, comparison).
+  - `present` if findings are sufficient.
+  - `clarify` if the question needs scoping.
+- **Build a narrative**: overview → drill-down → comparison.
+- **Never** repeat a visualization already in the trajectory.
+- Present after at most {max_iterations} visualization steps.
 
-## Text output rules
-
-- Each text output should be exactly **ONE sentence**.
-- **Before a visualize call** (describe): State what you will chart and
-  why.
-- **After a visualize result** (takeaway): State the single most
-  important finding from the result.
-- Your final text after the last chart is the takeaway for that chart.
-  Do not add extra summaries, do not recap, do not list follow-ups.
-- **Never** produce numbered lists, bullet points, markdown headers, or
-  multi-paragraph text.
-
-## Guidelines
-
-- **Always produce at least one visualization.**  Never end a turn with
-  only text.
-- If code fails, fix the error and retry within the same turn.
 {agent_exploration_rules}
-"""
+'''
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +212,7 @@ after that.
 
 
 class DataAgent:
-    """Streaming tool-calling data exploration agent."""
+    """Structured JSON data exploration agent."""
 
     def __init__(
         self,
@@ -279,9 +221,9 @@ class DataAgent:
         agent_exploration_rules: str = "",
         agent_coding_rules: str = "",
         language_instruction: str = "",
-        rec_language_instruction: str | None = None,
         max_iterations: int = 5,
         max_repair_attempts: int = 1,
+        **kwargs,  # absorb unused params (e.g. rec_language_instruction)
     ):
         self.client = client
         self.workspace = workspace
@@ -290,8 +232,6 @@ class DataAgent:
         self.language_instruction = language_instruction
         self.max_iterations = max_iterations
         self.max_repair_attempts = max_repair_attempts
-        # Tools list is built per-run based on number of source tables
-        self._tools = list(TOOLS)
 
     # ------------------------------------------------------------------
     # Public API
@@ -305,351 +245,224 @@ class DataAgent:
         other_threads: list[dict[str, Any]] | None = None,
         trajectory: list[dict] | None = None,
         completed_step_count: int = 0,
+        primary_tables: list[str] | None = None,
+        attached_images: list[str] | None = None,
     ) -> Generator[dict[str, Any], None, None]:
-        """Run the streaming tool-calling exploration loop.
+        """Run the structured exploration loop.
 
-        Yields SSE event dicts with ``type`` in:
-            ``"text_delta"``  – streamed text from the agent
-            ``"tool_start"`` – agent is about to call a tool
-            ``"tool_result"``– tool execution result
-            ``"clarify"``    – clarification question (loop pauses)
-            ``"done"``       – turn complete
-            ``"error"``      – error information
-
-        The ``"result"`` type (tool_result for visualize) produces a payload
-        identical to the current DataRecAgent result, so the existing
-        frontend checkpoint pipeline works unchanged.
+        Yields event dicts with ``type`` in:
+            ``"action"``      – the agent's chosen action (for UI)
+            ``"result"``      – a visualization result (data + chart)
+            ``"explore_result"`` – explore code output
+            ``"clarify"``     – clarification question (loop pauses)
+            ``"completion"``  – final summary (loop terminates)
+            ``"error"``       – error information
         """
-        messages = trajectory if trajectory is not None else self._build_initial_messages(
-            input_tables, user_question, focused_thread, other_threads
-        )
-
-        # Conditionally add inspect_source_data tool for large workspaces
-        source_count = sum(1 for t in input_tables if not t.get('name', '').startswith('d-'))
-        if source_count > SOURCE_TABLE_SUMMARY_THRESHOLD:
-            self._tools = [INSPECT_SOURCE_DATA_TOOL] + list(TOOLS)
-        else:
-            self._tools = list(TOOLS)
-
-        tool_call_count = 0
-        iteration = 0
-
-        while True:
-            iteration += 1
-
-            # ── Call LLM with streaming + tools ──
-            t_llm_start = time.time()
-            try:
-                stream = self._call_llm(messages, stream=True)
-            except Exception as e:
-                logger.error(f"[DataAgent] LLM call failed: {e}")
-                yield {"type": "error", "error_message": str(e)}
-                return
-
-            # ── Accumulate streamed response ──
-            collected_text: list[str] = []
-            tool_calls_acc: dict[int, dict] = {}
-
-            for chunk in stream:
-                delta = chunk.choices[0].delta if chunk.choices else None
-                if delta is None:
-                    continue
-
-                # Stream text deltas
-                if delta.content:
-                    collected_text.append(delta.content)
-                    yield {"type": "text_delta", "content": delta.content}
-
-                # Accumulate tool calls from streamed deltas
-                if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                    for tc_delta in delta.tool_calls:
-                        idx = tc_delta.index
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {
-                                "id": getattr(tc_delta, 'id', None) or f"call_{idx}",
-                                "name": "",
-                                "arguments": "",
-                            }
-                        if hasattr(tc_delta, 'id') and tc_delta.id:
-                            tool_calls_acc[idx]["id"] = tc_delta.id
-                        if hasattr(tc_delta.function, 'name') and tc_delta.function.name:
-                            tool_calls_acc[idx]["name"] = tc_delta.function.name
-                        if hasattr(tc_delta.function, 'arguments') and tc_delta.function.arguments:
-                            tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
-
-            t_llm_elapsed = time.time() - t_llm_start
-            logger.info(f"[DataAgent] iteration {iteration} LLM={t_llm_elapsed:.2f}s, "
-                        f"text_len={sum(len(t) for t in collected_text)}, "
-                        f"tool_calls={len(tool_calls_acc)}")
-
-            # ── No tool calls → agent is done ──
-            if not tool_calls_acc:
-                break
-
-            # ── Build assistant message for trajectory ──
-            assistant_msg: dict[str, Any] = {
-                "role": "assistant",
-                "content": "".join(collected_text) or None,
-            }
-            assistant_msg["tool_calls"] = []
-            for idx in sorted(tool_calls_acc.keys()):
-                tc = tool_calls_acc[idx]
-                assistant_msg["tool_calls"].append({
-                    "id": tc["id"],
-                    "type": "function",
-                    "function": {
-                        "name": tc["name"],
-                        "arguments": tc["arguments"],
-                    },
-                })
-            messages.append(assistant_msg)
-
-            # ── Execute each tool call ──
-            for idx in sorted(tool_calls_acc.keys()):
-                tc = tool_calls_acc[idx]
-                tool_name = tc["name"]
-                try:
-                    tool_args = json.loads(tc["arguments"])
-                except json.JSONDecodeError:
-                    tool_args = {}
-
-                tool_call_count += 1
-
-                if tool_name == "inspect_source_data":
-                    yield from self._handle_inspect_source_data(
-                        tc, tool_args, messages, input_tables
-                    )
-                elif tool_name == "explore":
-                    yield from self._handle_explore(
-                        tc, tool_args, messages, input_tables
-                    )
-                elif tool_name == "visualize":
-                    yield from self._handle_visualize(
-                        tc, tool_args, messages, input_tables
-                    )
-                elif tool_name == "clarify":
-                    yield from self._handle_clarify(
-                        tc, tool_args, messages
-                    )
-                    # Clarify pauses the loop
-                    return
-                else:
-                    # Unknown tool
-                    error_msg = f"Unknown tool: {tool_name}"
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": json.dumps({"error": error_msg}),
-                    })
-                    yield {"type": "error", "error_message": error_msg}
-
-            # ── Safety limit ──
-            if tool_call_count >= MAX_TOOL_CALLS:
-                logger.warning(f"[DataAgent] Hit max tool call limit ({MAX_TOOL_CALLS})")
-                yield {"type": "text_delta", "content": "\n\nReached the tool call limit. Stopping exploration."}
-                break
-
-        # ── Done ──
-        yield {
-            "type": "done",
-            "full_text": "".join(collected_text) if collected_text else "",
-        }
-
-    # ------------------------------------------------------------------
-    # Tool handlers
-    # ------------------------------------------------------------------
-
-    def _handle_inspect_source_data(
-        self,
-        tc: dict,
-        tool_args: dict,
-        messages: list[dict],
-        input_tables: list[dict[str, Any]],
-    ) -> Generator[dict[str, Any], None, None]:
-        """Handle the ``inspect_source_data`` tool call."""
-        table_names = tool_args.get("table_names", [])
-
-        yield {
-            "type": "tool_start",
-            "tool": "inspect_source_data",
-            "args": {"table_names": table_names},
-        }
-
-        # Filter input_tables to only those requested
-        tables_to_inspect = [
-            t for t in input_tables if t.get("name") in table_names
-        ]
-
-        if not tables_to_inspect:
-            result_content = f"No tables found matching: {table_names}"
-        else:
-            result_content = generate_data_summary(
-                tables_to_inspect, workspace=self.workspace
+        if trajectory is None:
+            trajectory = self._build_initial_messages(
+                input_tables, user_question, focused_thread, other_threads,
+                primary_tables=primary_tables,
+                attached_images=attached_images,
             )
 
+        completed_steps: list[dict[str, Any]] = []
+        iteration = completed_step_count
+
+        while iteration < self.max_iterations:
+            iteration += 1
+
+            # --- THINK: call LLM with tools, get action ---------------
+            # _get_next_action is a generator that yields tool events
+            # (for frontend visibility) and returns the final action as
+            # the last yielded item with type="agent_action".
+            t_start = time.time()
+            action = None
+            for event in self._get_next_action(trajectory, input_tables):
+                if event.get("type") == "agent_action":
+                    action = event.get("action_data")
+                else:
+                    # Forward tool events to the frontend
+                    yield event
+            logger.info(f"[DataAgent] iteration {iteration} total={time.time() - t_start:.2f}s")
+
+            if action is None:
+                yield self._error_event(iteration, "Failed to parse agent action from LLM response")
+                break
+
+            action_type = action.get("action")
+            logger.info(f"[DataAgent] Iteration {iteration}: action={action_type}")
+
+            # --- ACT (only user-visible actions reach here) ------------
+            if action_type == "clarify":
+                yield {
+                    "type": "clarify",
+                    "iteration": iteration,
+                    "thought": action.get("thought", ""),
+                    "message": action.get("message", ""),
+                    "options": action.get("options", []),
+                    "trajectory": self._strip_images(trajectory),
+                    "completed_step_count": len(completed_steps),
+                }
+                return
+
+            elif action_type == "present":
+                yield {
+                    "type": "completion",
+                    "iteration": iteration,
+                    "status": "success",
+                    "content": {
+                        "thought": action.get("thought", ""),
+                        "summary": action.get("summary", ""),
+                        "total_steps": len(completed_steps),
+                    },
+                }
+                return
+
+            elif action_type == "visualize":
+                code = action.get("code", "")
+                output_variable = action.get("output_variable", "result_df")
+                chart_spec = action.get("chart", {})
+                field_metadata = action.get("field_metadata", {})
+                display_instruction = action.get("display_instruction", "")
+
+                # Yield action event so the UI can show what the agent is doing
+                yield {
+                    "type": "action",
+                    "iteration": iteration,
+                    "action": "visualize",
+                    "thought": action.get("thought", ""),
+                    "display_instruction": display_instruction,
+                    "input_tables": action.get("input_tables", []),
+                }
+
+                # Execute with repair loop
+                viz_result = self._execute_visualize(
+                    code=code,
+                    output_variable=output_variable,
+                    chart_spec=chart_spec,
+                    field_metadata=field_metadata,
+                    display_instruction=display_instruction,
+                    input_tables=input_tables,
+                    messages=trajectory,
+                )
+
+                if viz_result["status"] != "ok":
+                    error_msg = viz_result.get("error_message", "Unknown error")
+                    observation = f"[OBSERVATION – Step {len(completed_steps) + 1} FAILED]\n\nError: {error_msg}"
+                    trajectory.append({"role": "user", "content": observation})
+                    yield self._error_event(iteration, error_msg, display_instruction=display_instruction)
+                    continue
+
+                # Successful visualization
+                transform_result = viz_result["transform_result"]
+                sign_result(transform_result)
+                transformed_data = transform_result["content"]
+
+                completed_steps.append({
+                    "display_instruction": display_instruction,
+                    "code": transform_result.get("code", ""),
+                })
+
+                # Yield the result to the frontend
+                yield {
+                    "type": "result",
+                    "iteration": iteration,
+                    "status": "success",
+                    "content": {
+                        "question": display_instruction,
+                        "result": transform_result,
+                    },
+                }
+
+                # Append rich observation to trajectory (data-only, no chart image —
+                # avoids rendering discrepancy between server and frontend)
+                observation_msg = self._format_observation(
+                    step_index=len(completed_steps),
+                    display_instruction=display_instruction,
+                    thought=action.get("thought", ""),
+                    code=transform_result.get("code", ""),
+                    data=transformed_data,
+                    chart_image=None,
+                )
+                trajectory.append(observation_msg)
+
+            else:
+                trajectory.append({
+                    "role": "user",
+                    "content": (
+                        f"[ERROR] Unknown action '{action_type}'. "
+                        "Please choose one of: visualize, clarify, present."
+                    ),
+                })
+                yield self._error_event(iteration, f"Unknown action: {action_type}")
+
+        # Exhausted max iterations
         yield {
-            "type": "tool_result",
-            "tool": "inspect_source_data",
-            "status": "ok",
-            "stdout": result_content,
+            "type": "completion",
+            "iteration": iteration,
+            "status": "max_iterations",
+            "content": {
+                "summary": "Reached the maximum number of exploration steps.",
+                "total_steps": len(completed_steps),
+            },
         }
 
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tc["id"],
-            "content": result_content,
-        })
+    # ------------------------------------------------------------------
+    # Visualize execution (with repair)
+    # ------------------------------------------------------------------
 
-    def _handle_explore(
+    def _execute_visualize(
         self,
-        tc: dict,
-        tool_args: dict,
-        messages: list[dict],
+        code: str,
+        output_variable: str,
+        chart_spec: dict,
+        field_metadata: dict,
+        display_instruction: str,
         input_tables: list[dict[str, Any]],
-    ) -> Generator[dict[str, Any], None, None]:
-        """Handle the ``explore`` tool call."""
-        code = tool_args.get("code", "")
-
-        yield {
-            "type": "tool_start",
-            "tool": "explore",
-            "code": code,
-        }
-
-        result = self._run_explore_code(code, input_tables)
-
-        yield {
-            "type": "tool_result",
-            "tool": "explore",
-            "status": result.get("status", "ok"),
-            "stdout": result.get("stdout", ""),
-            "error": result.get("error"),
-        }
-
-        # Append tool result to messages
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tc["id"],
-            "content": json.dumps(result, default=str),
-        })
-
-    def _handle_visualize(
-        self,
-        tc: dict,
-        tool_args: dict,
         messages: list[dict],
-        input_tables: list[dict[str, Any]],
-    ) -> Generator[dict[str, Any], None, None]:
-        """Handle the ``visualize`` tool call."""
-        code = tool_args.get("code", "")
-        output_variable = tool_args.get("output_variable", "result_df")
-        chart_spec = tool_args.get("chart", {})
-        field_metadata = tool_args.get("field_metadata", {})
-        display_instruction = tool_args.get("display_instruction", "")
-        view = tool_args.get("view", False)
-
-        yield {
-            "type": "tool_start",
-            "tool": "visualize",
-            "display_instruction": display_instruction,
-            "code": code,
-        }
-
-        # Execute code in sandbox
+    ) -> dict[str, Any]:
+        """Execute a visualize action with repair retries."""
         viz_result = self._run_visualize_code(
             code=code,
             output_variable=output_variable,
             chart_spec=chart_spec,
             field_metadata=field_metadata,
             display_instruction=display_instruction,
-            view=view,
-            input_tables=input_tables,
             messages=messages,
         )
 
-        if viz_result["status"] == "ok":
-            # Build a result payload identical to DataRecAgent output
-            transform_result = viz_result["transform_result"]
-            sign_result(transform_result)
-
-            yield {
-                "type": "tool_result",
-                "tool": "visualize",
-                "status": "ok",
-                "display_instruction": display_instruction,
-                "content": {
-                    "question": display_instruction,
-                    "result": transform_result,
-                },
-            }
-
-            # Provide a concise summary back to the LLM
-            data_content = transform_result["content"]
-            sample_rows = data_content.get("rows", [])[:5]
-            col_names = list(sample_rows[0].keys()) if sample_rows else []
-            row_count = data_content.get("virtual", {}).get("row_count", len(sample_rows))
-
-            tool_response: dict[str, Any] = {
-                "status": "ok",
-                "table_name": data_content.get("virtual", {}).get("table_name", output_variable),
-                "columns": col_names,
-                "row_count": row_count,
-                "sample": sample_rows,
-            }
-
-            # Optionally include chart image
-            if view and viz_result.get("chart_image"):
-                tool_response["chart_image_available"] = True
-
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": json.dumps(tool_response, default=str),
-            })
-        else:
+        attempt = 0
+        while viz_result["status"] != "ok" and attempt < self.max_repair_attempts:
+            attempt += 1
             error_msg = viz_result.get("error_message", "Unknown error")
-            yield {
-                "type": "tool_result",
-                "tool": "visualize",
-                "status": "error",
-                "error_message": error_msg,
-                "display_instruction": display_instruction,
-            }
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": json.dumps({"status": "error", "error": error_msg}),
+            logger.warning(f"[DataAgent] Repair attempt {attempt}/{self.max_repair_attempts}: {error_msg}")
+
+            # Ask LLM to fix the code
+            repair_messages = list(messages)
+            repair_messages.append({
+                "role": "user",
+                "content": (
+                    f"[CODE ERROR]\n\n{error_msg}\n\n"
+                    "Please fix the code and output a new visualize action."
+                ),
             })
+            repair_action = None
+            for evt in self._get_next_action(repair_messages, input_tables):
+                if evt.get("type") == "agent_action":
+                    repair_action = evt.get("action_data")
+            if repair_action and repair_action.get("action") == "visualize":
+                viz_result = self._run_visualize_code(
+                    code=repair_action.get("code", code),
+                    output_variable=repair_action.get("output_variable", output_variable),
+                    chart_spec=repair_action.get("chart", chart_spec),
+                    field_metadata=repair_action.get("field_metadata", field_metadata),
+                    display_instruction=display_instruction,
+                    messages=messages,
+                )
+            else:
+                break
 
-    def _handle_clarify(
-        self,
-        tc: dict,
-        tool_args: dict,
-        messages: list[dict],
-    ) -> Generator[dict[str, Any], None, None]:
-        """Handle the ``clarify`` tool call."""
-        question = tool_args.get("question", "")
-        options = tool_args.get("options", [])
-
-        # Append to messages for trajectory
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tc["id"],
-            "content": json.dumps({"status": "waiting_for_user"}),
-        })
-
-        yield {
-            "type": "clarify",
-            "thought": "",
-            "message": question,
-            "options": options,
-            "trajectory": self._strip_images(messages),
-            "completed_step_count": 0,
-        }
-
-    # ------------------------------------------------------------------
-    # Code execution
-    # ------------------------------------------------------------------
+        return viz_result
 
     def _run_explore_code(
         self,
@@ -721,8 +534,6 @@ class DataAgent:
         chart_spec: dict,
         field_metadata: dict,
         display_instruction: str,
-        view: bool,
-        input_tables: list[dict[str, Any]],
         messages: list[dict] | None = None,
     ) -> dict[str, Any]:
         """Run visualize code in sandbox and assemble chart."""
@@ -757,6 +568,30 @@ class DataAgent:
             full_df = execution_result['content']
             row_count = len(full_df)
 
+            # Validate that all encoding fields exist in the output DataFrame
+            chart_encodings = chart_spec.get("encodings", {})
+            missing_fields = [
+                f"{channel}: '{field}'"
+                for channel, field in chart_encodings.items()
+                if field and field not in full_df.columns
+            ]
+            if missing_fields:
+                available = list(full_df.columns)
+                return {
+                    "status": "error",
+                    "error_message": (
+                        f"Chart encoding fields not found in output DataFrame: "
+                        f"{', '.join(missing_fields)}. "
+                        f"Available columns: {available}"
+                    ),
+                }
+
+            if row_count == 0:
+                return {
+                    "status": "error",
+                    "error_message": "Output DataFrame is empty (0 rows). Check filters or data loading.",
+                }
+
             output_table_name = self.workspace.get_fresh_name(f"d-{output_variable}")
             self.workspace.write_parquet(full_df, output_table_name)
 
@@ -766,11 +601,10 @@ class DataAgent:
                 query_output = full_df
             query_output = query_output.loc[:, ~query_output.columns.duplicated()]
 
-            # Build chart
-            chart_image = self._create_chart(
-                {"rows": json.loads(query_output.to_json(orient='records'))},
-                chart_spec, field_metadata, view,
-            )
+            # Skip chart image generation for agent observation (avoids rendering
+            # discrepancy between server-side matplotlib and frontend Vega-Lite).
+            # User-submitted images (attached_images) and focused thread chart
+            # thumbnails (rendered by the frontend) are still passed through.
 
             # Build refined_goal for frontend compatibility
             refined_goal = {
@@ -799,7 +633,6 @@ class DataAgent:
             return {
                 "status": "ok",
                 "transform_result": transform_result,
-                "chart_image": chart_image,
             }
 
         except Exception as e:
@@ -811,9 +644,8 @@ class DataAgent:
         data: dict[str, Any],
         chart_spec: dict[str, Any],
         field_metadata: dict[str, Any] | None = None,
-        view: bool = False,
     ) -> str | None:
-        """Create a chart from data and return a base64 PNG string (if view=True)."""
+        """Create a chart and return a base64 PNG string for observation feedback."""
         chart_type = chart_spec.get("chart_type", "Bar Chart")
         chart_encodings = chart_spec.get("encodings", {})
         chart_config = chart_spec.get("config", {})
@@ -834,10 +666,7 @@ class DataAgent:
                 df, chart_type, encodings, config=chart_config,
                 semantic_types=field_metadata_to_semantic_types(field_metadata),
             )
-
-            if view and spec:
-                return spec_to_base64(spec)
-            return None
+            return spec_to_base64(spec) if spec else None
         except Exception as e:
             logger.error(f"[DataAgent] Chart creation error: {e}")
             return None
@@ -846,7 +675,13 @@ class DataAgent:
     # Message construction
     # ------------------------------------------------------------------
 
-    def _build_system_prompt(self) -> str:
+    def _build_system_prompt(
+        self,
+        has_primary_tables: bool = False,
+        has_focused_thread: bool = False,
+        has_other_threads: bool = False,
+        has_attached_images: bool = False,
+    ) -> str:
         rules_block = ""
         if self.agent_exploration_rules and self.agent_exploration_rules.strip():
             rules_block = (
@@ -854,8 +689,45 @@ class DataAgent:
                 + self.agent_exploration_rules.strip()
                 + "\n\nPlease follow the above rules when exploring data."
             )
+
+        # Build context guide dynamically based on what's actually present
+        context_lines = []
+        if has_primary_tables:
+            context_lines.append(
+                "- **[PRIMARY TABLE(S)]**: The table(s) the user is focused on. "
+                "Prioritize these, but freely use other available tables if needed."
+            )
+            context_lines.append(
+                "- **[OTHER AVAILABLE TABLES]**: Additional tables in the workspace."
+            )
+        else:
+            context_lines.append(
+                "- **[AVAILABLE TABLES]**: All tables in the workspace."
+            )
+        context_lines.append(
+            "  Use `inspect_source_data` to get detailed stats and sample rows. "
+            "Use `explore` for custom computations."
+        )
+        if has_focused_thread:
+            context_lines.append(
+                "- **[FOCUSED THREAD]**: The thread the user is continuing. "
+                "Build on this — do not repeat visualizations already created here."
+            )
+        if has_other_threads:
+            context_lines.append(
+                "- **[OTHER THREADS]**: Brief summaries of other exploration threads."
+            )
+        if has_attached_images:
+            context_lines.append(
+                "- **[USER ATTACHMENT(S)]**: Image(s) provided by the user. "
+                "Refer to these when relevant to the user's question."
+            )
+        context_guide = "\n".join(context_lines)
+
         prompt = SYSTEM_PROMPT.format(
+            max_iterations=self.max_iterations,
             agent_exploration_rules=rules_block,
+            context_guide=context_guide,
         )
         # Append the chart creation guide so the LLM knows chart types,
         # encoding channels, semantic types, and code rules from the start.
@@ -875,6 +747,8 @@ class DataAgent:
         user_question: str,
         focused_thread: list[dict[str, Any]] | None = None,
         other_threads: list[dict[str, Any]] | None = None,
+        primary_tables: list[str] | None = None,
+        attached_images: list[str] | None = None,
     ) -> list[dict]:
         """Build the initial messages with 3-tier context.
 
@@ -882,13 +756,9 @@ class DataAgent:
         Tier 2: Focused thread (detailed — per-step interaction history)
         Tier 3: Peripheral threads (minimal — one-line per step)
         """
-        # Tier 1: Source table context — full summaries for small workspaces,
-        # lightweight schema for large ones (agent uses inspect_source_data)
-        source_count = sum(1 for t in input_tables if not t.get('name', '').startswith('d-'))
-        if source_count <= SOURCE_TABLE_SUMMARY_THRESHOLD:
-            table_summaries = generate_data_summary(input_tables, workspace=self.workspace)
-        else:
-            table_summaries = self._build_lightweight_table_context(input_tables)
+        # Tier 1: Always lightweight schema — agent uses inspect_source_data
+        # tool for details on tables it needs
+        table_summaries = self._build_lightweight_table_context(input_tables, primary_tables=primary_tables)
 
         # Tier 2: Focused thread (detailed)
         focused_block = ""
@@ -900,149 +770,300 @@ class DataAgent:
         if other_threads:
             peripheral_block = self._build_peripheral_thread_context(other_threads)
 
-        user_content = (
-            f"[SOURCE TABLES]\n\n{table_summaries}\n\n"
-        )
+        # Use [SOURCE TABLES] when no tiering, omit section header when tiered
+        # (the tiers already have their own headers)
+        if primary_tables:
+            user_content = f"{table_summaries}\n\n"
+        else:
+            user_content = f"[AVAILABLE TABLES]\n\n{table_summaries}\n\n"
         if focused_block:
             user_content += f"{focused_block}\n\n"
         if peripheral_block:
             user_content += f"{peripheral_block}\n\n"
         user_content += f"[USER QUESTION]\n\n{user_question}"
 
-        return [
-            {"role": "system", "content": self._build_system_prompt()},
-            {"role": "user", "content": user_content},
-        ]
+        # Check if any step in the focused thread has a chart thumbnail
+        # (the focused leaf's chart image for visual context)
+        chart_thumbnail = None
+        if focused_thread:
+            for step in focused_thread:
+                if step.get("chart_thumbnail"):
+                    chart_thumbnail = step["chart_thumbnail"]
+
+        # Build system prompt with context-aware guide
+        system_prompt = self._build_system_prompt(
+            has_primary_tables=bool(primary_tables),
+            has_focused_thread=bool(focused_thread),
+            has_other_threads=bool(other_threads),
+            has_attached_images=bool(attached_images),
+        )
+
+        # Determine if we need multimodal content (chart thumbnail or user-attached images)
+        has_images = (chart_thumbnail and chart_thumbnail.startswith("data:")) or (attached_images and len(attached_images) > 0)
+
+        if has_images:
+            content_parts: list[dict] = [{"type": "text", "text": user_content}]
+            if chart_thumbnail and chart_thumbnail.startswith("data:"):
+                content_parts.append({"type": "text", "text": "\n[CURRENT CHART] (the chart the user is currently viewing):"})
+                content_parts.append({"type": "image_url", "image_url": {"url": chart_thumbnail, "detail": "low"}})
+            if attached_images:
+                label = "[USER ATTACHMENT]" if len(attached_images) == 1 else "[USER ATTACHMENTS]"
+                content_parts.append({"type": "text", "text": f"\n{label} (image(s) provided by the user):"})
+                for img in attached_images:
+                    if img.startswith("data:"):
+                        content_parts.append({"type": "image_url", "image_url": {"url": img, "detail": "low"}})
+            return [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content_parts},
+            ]
+        else:
+            return [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ]
 
     def _build_focused_thread_context(
         self, focused_thread: list[dict[str, Any]]
     ) -> str:
-        """Build Tier 2: detailed focused thread context.
-
-        Each step includes user question, agent reasoning, chart type +
-        encodings, created table metadata, and agent summary.
-        """
-        lines = ["[FOCUSED THREAD]"]
-        for i, step in enumerate(focused_thread, 1):
-            lines.append(f"\nStep {i}:")
-            if step.get("user_question"):
-                lines.append(f"  User: {step['user_question']}")
-            if step.get("agent_thinking"):
-                lines.append(f"  Agent thinking: {step['agent_thinking']}")
-            if step.get("display_instruction"):
-                lines.append(f"  Visualization: {step['display_instruction']}")
-            # Table info
-            table_name = step.get("table_name", "")
-            columns = step.get("columns", [])
-            row_count = step.get("row_count", 0)
-            if table_name:
-                col_str = ", ".join(columns[:15])
-                if len(columns) > 15:
-                    col_str += f", ... ({len(columns)} total)"
-                lines.append(f"  Created: {table_name} ({row_count:,} rows: {col_str})")
-            # Chart info
-            chart_type = step.get("chart_type", "")
-            encodings = step.get("encodings", {})
-            if chart_type:
-                enc_str = ", ".join(f"{k}: {v}" for k, v in encodings.items() if v)
-                lines.append(f"  Chart: {chart_type} ({enc_str})")
-            if step.get("agent_summary"):
-                lines.append(f"  Summary: {step['agent_summary']}")
-        return "\n".join(lines)
+        return build_focused_thread_context(focused_thread)
 
     def _build_peripheral_thread_context(
         self, other_threads: list[dict[str, Any]]
     ) -> str:
-        """Build Tier 3: minimal peripheral thread context.
-
-        One line per step, just display_instruction + chart type.
-        """
-        lines = ["[OTHER THREADS]"]
-        for thread in other_threads:
-            source = thread.get("source_table", "")
-            leaf = thread.get("leaf_table", "")
-            step_count = thread.get("step_count", 0)
-            steps = thread.get("steps", [])
-            lines.append(f"\nThread from {source} → {leaf} ({step_count} steps):")
-            for step_line in steps:
-                lines.append(f"  - {step_line}")
-        return "\n".join(lines)
+        return build_peripheral_thread_context(other_threads)
 
     def _build_lightweight_table_context(
-        self, input_tables: list[dict[str, Any]]
+        self, input_tables: list[dict[str, Any]], primary_tables: list[str] | None = None
     ) -> str:
-        """Build lightweight table context: name, filename, columns+types, row count.
+        return build_lightweight_table_context(input_tables, self.workspace, primary_tables)
 
-        The agent can ``explore()`` to inspect any table it needs in detail.
+    # ------------------------------------------------------------------
+    # LLM interaction (with internal tool-calling loop)
+    # ------------------------------------------------------------------
+
+    def _get_next_action(
+        self,
+        trajectory: list[dict],
+        input_tables: list[dict[str, Any]] | None = None,
+    ) -> Generator[dict[str, Any], None, None]:
+        """Call the LLM with tools, handle tool calls internally, then
+        parse the structured JSON action from the text response.
+
+        Yields:
+            - ``{"type": "tool_start", "tool": ..., ...}`` for each tool call
+            - ``{"type": "tool_result", "tool": ..., ...}`` for each tool result
+            - ``{"type": "agent_action", "action_data": dict}`` as the final yield
+              (or ``{"type": "agent_action", "action_data": None}`` on failure)
         """
-        sections = []
-        for table in input_tables:
-            table_name = table['name']
-            try:
-                df = self.workspace.read_data_as_df(table_name)
-                data_file_path = self.workspace.get_relative_data_file_path(table_name)
-                num_rows = len(df)
+        max_tool_rounds = 8
+        messages = trajectory
 
-                col_info = []
-                for col in df.columns:
-                    dtype = str(df[col].dtype)
-                    # Simplify dtype names
-                    if 'int' in dtype:
-                        dtype = 'int'
-                    elif 'float' in dtype:
-                        dtype = 'float'
-                    elif dtype == 'object':
-                        dtype = 'str'
-                    elif 'datetime' in dtype:
-                        dtype = 'datetime'
-                    elif 'bool' in dtype:
-                        dtype = 'bool'
-                    col_info.append(f"{col}({dtype})")
+        for _ in range(max_tool_rounds):
+            response = self._call_llm(messages)
 
-                section = (
-                    f"Table: {table_name} (file: {data_file_path}, {num_rows:,} rows)\n"
-                    f"  Columns: {', '.join(col_info)}"
-                )
-                sections.append(section)
-            except Exception as e:
-                logger.warning(f"[DataAgent] Could not read table {table_name}: {e}")
-                sections.append(f"Table: {table_name} (error reading schema)")
+            if isinstance(response, Exception):
+                logger.error(f"[DataAgent] LLM error: {response}")
+                yield {"type": "agent_action", "action_data": None}
+                return
+            if not response.choices:
+                yield {"type": "agent_action", "action_data": None}
+                return
 
-        load_hint = (
-            "\nTo load a table in code: pd.read_parquet('file.parquet') or "
-            "duckdb.sql(\"SELECT * FROM read_parquet('file.parquet')\")\n"
-            "Use the exact filename shown above."
-        )
-        return "\n\n".join(sections) + "\n" + load_hint
+            choice = response.choices[0]
+            content = choice.message.content or ""
+            tool_calls = getattr(choice.message, 'tool_calls', None)
 
-    # ------------------------------------------------------------------
-    # LLM call
-    # ------------------------------------------------------------------
+            if tool_calls:
+                # Yield any text the LLM produced alongside tool calls
+                if content.strip():
+                    yield {"type": "thinking_text", "content": content.strip()}
 
-    def _call_llm(self, messages: list[dict], stream: bool = True):
-        """Call the LLM with tool definitions and streaming."""
+                # Build assistant message with tool calls
+                assistant_msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": content or None,
+                }
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in tool_calls
+                ]
+                messages.append(assistant_msg)
+
+                # Execute each tool call and yield events
+                for tc in tool_calls:
+                    tool_name = tc.function.name
+                    try:
+                        tool_args = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        tool_args = {}
+
+                    # Yield tool_start event for frontend
+                    yield {
+                        "type": "tool_start",
+                        "tool": tool_name,
+                        "code": tool_args.get("code") if tool_name == "explore" else None,
+                        "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
+                    }
+
+                    if tool_name == "think":
+                        thought_msg = tool_args.get("message", "")
+                        tool_content = "ok"
+
+                        yield {
+                            "type": "thinking_text",
+                            "content": thought_msg,
+                        }
+                    elif tool_name == "explore":
+                        result = self._run_explore_code(
+                            tool_args.get("code", ""),
+                            input_tables or [],
+                        )
+                        tool_content = result.get("stdout", "")
+                        if result.get("error"):
+                            tool_content += f"\n\nError: {result['error']}"
+
+                        yield {
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "status": result.get("status", "ok"),
+                            "stdout": result.get("stdout", ""),
+                            "error": result.get("error"),
+                        }
+                    elif tool_name == "inspect_source_data":
+                        table_names = tool_args.get("table_names", [])
+                        tool_content = handle_inspect_source_data(
+                            table_names, input_tables or [], self.workspace
+                        )
+
+                        yield {
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "status": "ok",
+                            "stdout": tool_content,
+                        }
+                    else:
+                        tool_content = f"Unknown tool: {tool_name}"
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": tool_content,
+                    })
+
+                logger.info(f"[DataAgent] Executed {len(tool_calls)} tool call(s), looping back to LLM")
+                continue
+
+            # No tool calls — parse the JSON action from text
+            logger.debug(f"[DataAgent] Raw LLM response:\n{content}")
+            json_blocks = extract_json_objects(content)
+            if json_blocks:
+                messages.append({"role": "assistant", "content": content})
+                yield {"type": "agent_action", "action_data": json_blocks[0]}
+                return
+
+            logger.warning(f"[DataAgent] No JSON action found in response: {content[:200]}")
+            yield {"type": "agent_action", "action_data": None}
+            return
+
+        logger.warning("[DataAgent] Exceeded max tool rounds without producing an action")
+        yield {"type": "agent_action", "action_data": None}
+        return None
+
+    def _call_llm(self, messages: list[dict]):
+        """Call the LLM with tool definitions (non-streaming)."""
         if self.client.endpoint == "openai":
             client = openai.OpenAI(
                 base_url=self.client.params.get("api_base", None),
                 api_key=self.client.params.get("api_key", ""),
                 timeout=120,
             )
-            return client.chat.completions.create(
-                model=self.client.model,
-                messages=messages,
-                tools=self._tools,
-                stream=stream,
-            )
+            try:
+                return client.chat.completions.create(
+                    model=self.client.model,
+                    messages=messages,
+                    tools=TOOLS,
+                )
+            except Exception as e:
+                if self.client._is_image_deserialize_error(str(e)):
+                    sanitized = self.client._strip_images_from_messages(messages)
+                    return client.chat.completions.create(
+                        model=self.client.model,
+                        messages=sanitized,
+                        tools=TOOLS,
+                    )
+                raise
         else:
             params = self.client.params.copy()
-            return litellm.completion(
-                model=self.client.model,
-                messages=messages,
-                tools=self._tools,
-                drop_params=True,
-                stream=stream,
-                **params,
-            )
+            try:
+                return litellm.completion(
+                    model=self.client.model,
+                    messages=messages,
+                    tools=TOOLS,
+                    drop_params=True,
+                    **params,
+                )
+            except Exception as e:
+                if self.client._is_image_deserialize_error(str(e)):
+                    sanitized = self.client._strip_images_from_messages(messages)
+                    return litellm.completion(
+                        model=self.client.model,
+                        messages=sanitized,
+                        tools=TOOLS,
+                        drop_params=True,
+                        **params,
+                    )
+                raise
+
+    # ------------------------------------------------------------------
+    # Observation formatting
+    # ------------------------------------------------------------------
+
+    def _format_observation(
+        self,
+        step_index: int,
+        display_instruction: str,
+        thought: str,
+        code: str,
+        data: dict[str, Any],
+        chart_image: str | None,
+    ) -> dict:
+        """Format a rich observation for the trajectory.
+
+        Includes data summary, code, and optionally the chart image
+        so the agent can make informed decisions about the next step.
+        """
+        data_summary = generate_data_summary(
+            [{"name": data.get("virtual", {}).get("table_name", f"step_{step_index}"),
+              "rows": data["rows"]}],
+            workspace=self.workspace,
+        )
+
+        text = (
+            f"[OBSERVATION – Step {step_index}]\n\n"
+            f"**Visualization**: {display_instruction}\n\n"
+            f"**Code**:\n```python\n{code}\n```\n\n"
+            f"**Transformed Data**:\n{data_summary}"
+        )
+
+        if chart_image:
+            content: list[dict[str, Any]] = [
+                {"type": "text", "text": text + "\n\n**Chart**:"},
+            ]
+            if chart_image.startswith("data:") or chart_image.startswith("http"):
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": chart_image, "detail": "low"},
+                })
+            return {"role": "user", "content": content}
+
+        return {"role": "user", "content": text}
 
     # ------------------------------------------------------------------
     # Helpers
@@ -1066,10 +1087,10 @@ class DataAgent:
 
     @staticmethod
     def _snapshot_dialog(messages: list[dict] | None) -> list[dict]:
-        """Snapshot the current conversation for the Agent Log dialog.
+        """Snapshot the conversation for the Agent Log dialog.
 
-        Strips images and tool_calls internals to keep the payload
-        manageable while preserving the full conversation flow.
+        Handles plain text, multimodal content, tool_calls on assistant
+        messages, and tool result messages.
         """
         if not messages:
             return []
@@ -1084,22 +1105,36 @@ class DataAgent:
                     p.get("text", "") for p in content if p.get("type") == "text"
                 )
 
-            # For assistant messages with tool_calls, summarize the calls
+            # Assistant messages with tool_calls — show tool call details
             if role == "assistant" and msg.get("tool_calls"):
-                tool_summaries = []
+                tool_details = []
                 for tc in msg["tool_calls"]:
                     fn = tc.get("function", {})
-                    tool_summaries.append(f"[tool call: {fn.get('name', '?')}]")
+                    name = fn.get("name", "?")
+                    args_str = fn.get("arguments", "{}")
+                    try:
+                        args_obj = json.loads(args_str)
+                        if name == "explore" and "code" in args_obj:
+                            tool_details.append(f"[tool: {name}]\n```python\n{args_obj['code']}\n```")
+                        else:
+                            formatted = json.dumps(args_obj, indent=2, ensure_ascii=False)
+                            tool_details.append(f"[tool: {name}]\n```json\n{formatted}\n```")
+                    except (json.JSONDecodeError, TypeError):
+                        tool_details.append(f"[tool: {name}]\n{args_str}")
                 text_part = content or ""
-                combined = (text_part + "\n" + "\n".join(tool_summaries)).strip()
+                combined = (text_part + "\n\n" + "\n\n".join(tool_details)).strip()
                 snapshot.append({"role": role, "content": combined})
+
+            # Tool result messages
             elif role == "tool":
-                # Show tool results as assistant context
                 tool_content = content or ""
-                # Truncate large tool results
-                if len(tool_content) > 2000:
-                    tool_content = tool_content[:2000] + "\n... (truncated)"
+                if isinstance(tool_content, str) and len(tool_content) > 3000:
+                    tool_content = tool_content[:3000] + "\n... (truncated)"
                 snapshot.append({"role": "assistant", "content": f"[tool result]\n{tool_content}"})
+
+            # Regular messages (system, user, assistant without tool_calls)
             elif content:
+                if isinstance(content, str) and len(content) > 4000:
+                    content = content[:4000] + "\n... (truncated)"
                 snapshot.append({"role": role, "content": content})
         return snapshot

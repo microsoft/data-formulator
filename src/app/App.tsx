@@ -752,16 +752,20 @@ const AppShell: FC = () => {
                 overflow: 'hidden'
             }}>
                 <AppBar position="static">
-                    <Toolbar variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative' }}>
+                    <Toolbar variant="dense" sx={{ height: 40, minHeight: 36, position: 'relative', pl: '0px !important' }}>
+                        <Box sx={{ width: 40, minWidth: 40, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                            <Box component="img" sx={{ height: 20 }} alt="" src={dfLogo} />
+                        </Box>
                         <Button sx={{
                             display: "flex", flexDirection: "row", textTransform: "none",
                             alignItems: 'stretch',
                             backgroundColor: 'transparent',
+                            minWidth: 0,
+                            px: 0.5,
                             "&:hover": {
                                 backgroundColor: "transparent"
                             }
                         }} color="inherit">
-                            <Box component="img" sx={{ height: 20, mr: 0.5 }} alt="" src={dfLogo} />
                             <Typography noWrap component="h1" sx={{ fontWeight: 300, display: { xs: 'none', sm: 'block' }, letterSpacing: '0.03em' }}>
                                 {toolName}
                             </Typography>
@@ -796,11 +800,6 @@ const AppShell: FC = () => {
                                 <ConfigDialog />
                                 <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
                                 <ModelSelectionButton />
-                                <Divider orientation="vertical" variant="middle" flexItem />
-
-                                <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <TableMenu />
-                                </Typography>
                                 {activeWorkspace && <>
                                     <Divider orientation="vertical" variant="middle" flexItem />
                                     <CloseWorkspaceButton />
