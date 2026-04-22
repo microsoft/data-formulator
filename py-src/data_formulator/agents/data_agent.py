@@ -223,7 +223,6 @@ class DataAgent:
         language_instruction: str = "",
         max_iterations: int = 5,
         max_repair_attempts: int = 2,
-        **kwargs,  # absorb unused params (e.g. rec_language_instruction)
     ):
         self.client = client
         self.workspace = workspace
@@ -292,7 +291,7 @@ class DataAgent:
                 if action_reason == "tool_rounds_exhausted":
                     steps_desc = "\n".join(
                         f"  • {s['display_instruction']}" for s in completed_steps
-                    ) if completed_steps else "(none yet)"
+                    ) or "(none yet)"
                     yield {
                         "type": "clarify",
                         "iteration": iteration,
@@ -303,10 +302,17 @@ class DataAgent:
                             f"{steps_desc}\n\n"
                             "How would you like to proceed?"
                         ),
+                        "message_code": "agent.clarifyExhausted",
+                        "message_params": {"steps": steps_desc},
                         "options": [
                             "Continue exploring",
                             "Simplify the task",
                             "Present what you have so far",
+                        ],
+                        "option_codes": [
+                            "agent.clarifyOptionContinue",
+                            "agent.clarifyOptionSimplify",
+                            "agent.clarifyOptionPresent",
                         ],
                         "trajectory": self._strip_images(trajectory),
                         "completed_step_count": len(completed_steps),
@@ -318,6 +324,7 @@ class DataAgent:
                     yield self._error_event(
                         iteration,
                         action_error or "LLM API error",
+                        message_code="agent.llmApiError",
                     )
                     break
 
@@ -345,6 +352,7 @@ class DataAgent:
                 yield self._error_event(
                     iteration,
                     action_error or "Failed to parse agent action from LLM response",
+                    message_code="agent.parseActionFailed",
                 )
                 break
 
@@ -453,7 +461,7 @@ class DataAgent:
                         "Please choose one of: visualize, clarify, present."
                     ),
                 })
-                yield self._error_event(iteration, f"Unknown action: {action_type}")
+                yield self._error_event(iteration, f"Unknown action: {action_type}", message_code="agent.unknownAction")
 
         # Exhausted max iterations
         yield {
@@ -462,6 +470,7 @@ class DataAgent:
             "status": "max_iterations",
             "content": {
                 "summary": "Reached the maximum number of exploration steps.",
+                "summary_code": "agent.maxIterationsSummary",
                 "total_steps": len(completed_steps),
             },
         }
@@ -643,12 +652,18 @@ class DataAgent:
                         f"{', '.join(missing_fields)}. "
                         f"Available columns: {available}"
                     ),
+                    "error_code": "agent.fieldsNotFound",
+                    "error_params": {
+                        "missing": ", ".join(missing_fields),
+                        "available": str(available),
+                    },
                 }
 
             if row_count == 0:
                 return {
                     "status": "error",
                     "error_message": "Output DataFrame is empty (0 rows). Check filters or data loading.",
+                    "error_code": "agent.emptyDataframe",
                 }
 
             output_table_name = self.workspace.get_fresh_name(f"d-{output_variable}")
@@ -1208,6 +1223,8 @@ class DataAgent:
         message: str,
         *,
         display_instruction: str = "",
+        message_code: str = "",
+        message_params: dict | None = None,
     ) -> dict[str, Any]:
         """Build an ``"error"`` event dict for the streaming response."""
         event: dict[str, Any] = {
@@ -1215,6 +1232,10 @@ class DataAgent:
             "iteration": iteration,
             "message": message,
         }
+        if message_code:
+            event["message_code"] = message_code
+        if message_params:
+            event["message_params"] = message_params
         if display_instruction:
             event["display_instruction"] = display_instruction
         return event

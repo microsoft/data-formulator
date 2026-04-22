@@ -247,7 +247,7 @@ class DataTransformationAgent(object):
                     _diag_exec = {"status": "exception", "error_message": str(e)}
 
             else:
-                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
+                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task.", 'content_code': 'agent.noCodeBlock'}
 
             _effective_content = choice.message.content
             if _supplement_content:

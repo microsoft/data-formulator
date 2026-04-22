@@ -344,10 +344,10 @@ class DataRecAgent(object):
                     logger.warning('Error occurred during code execution:')
                     error_message = traceback.format_exc()
                     logger.warning(error_message)
-                    result = {'status': 'other error', 'code': code, 'content': f"Unexpected error: {error_message}"}
+                    result = {'status': 'other error', 'code': code, 'content': f"Unexpected error: {error_message}", 'content_code': 'agent.unexpectedError'}
                     _diag_exec = {"status": "exception", "error_message": str(e)}
             else:
-                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
+                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task.", 'content_code': 'agent.noCodeBlock'}
 
             _effective_content = choice.message.content
             if _supplement_content:

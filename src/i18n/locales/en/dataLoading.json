@@ -1,0 +1,40 @@
+{
+  "dataLoading": {
+    "title": "Data Loading Assistant",
+    "subtitle": "Extract data from images, files, webpages, or text. Generate synthetic datasets. Browse sample data.",
+    "placeholder": "Describe data to extract, upload, or generate...",
+    "attachTooltip": "Attach file or image",
+    "stopTooltip": "Stop generation",
+    "sendTooltip": "Send  (Enter)",
+    "shiftEnterHint": "Shift+Enter for new line",
+    "load": "Load",
+    "loadTable": "Load table",
+    "loadAllTables": "Load all {{count}} tables",
+    "ranPythonCode": "Ran Python code",
+    "error": "error",
+    "rows": "rows",
+    "cols": "cols",
+    "showRawData": "Show raw message data",
+    "stopped": "— stopped",
+    "uploaded": "[Uploaded: {{name}}]",
+    "defaultImageMessage": "Extract data from this image",
+    "toolLabels": {
+      "readingFile": "Reading file",
+      "writingFile": "Writing file",
+      "listingFiles": "Listing files",
+      "runningPython": "Running Python",
+      "preparingPreview": "Preparing preview"
+    },
+    "examples": {
+      "extractFromImage": "Extract data from an image",
+      "extractFromImageExample": "Extract revenue data from this image",
+      "extractFromText": "Extract data from text",
+      "extractFromTextExample": "Extract revenue growth data from this text: Business Highlights ...",
+      "extractFromTextPrompt": "Extract revenue growth data from this text:\n\nBusiness Highlights\n\nMicrosoft Cloud revenue was $51.5 billion and increased 26% (up 24% in constant currency), and commercial remaining performance obligation increased 110% to $625 billion.\n\nRevenue in Productivity and Business Processes was $34.1 billion and increased 16% (up 14% in constant currency), with the following business highlights:\n\n·        Microsoft 365 Commercial cloud revenue increased 17% (up 14% in constant currency)\n\n·        Microsoft 365 Consumer cloud revenue increased 29% (up 27% in constant currency)\n\n·        LinkedIn revenue increased 11% (up 10% in constant currency)\n\n·        Dynamics 365 revenue increased 19% (up 17% in constant currency)\n\nRevenue in Intelligent Cloud was $32.9 billion and increased 29% (up 28% in constant currency), with the following business highlights:\n\n·        Azure and other cloud services revenue increased 39% (up 38% in constant currency)\n\nRevenue in More Personal Computing was $14.3 billion and decreased 3%, with the following business highlights:\n\n·        Windows OEM and Devices revenue increased 1% (relatively unchanged in constant currency)\n\n·        Xbox content and services revenue decreased 5% (down 6% in constant currency)\n\n·        Search and news advertising revenue excluding traffic acquisition costs increased 10% (up 9% in constant currency)\n\nMicrosoft returned $12.7 billion to shareholders in the form of dividends and share repurchases in the second quarter of fiscal year 2026, an increase of 32% compared to the second quarter of fiscal year 2025.",
+      "generateSynthetic": "Generate synthetic data",
+      "generateSyntheticExample": "Generate a UK dynasty dataset with 20 rows",
+      "browseSamples": "Browse sample datasets",
+      "browseSamplesExample": "What sample datasets are available?"
+    }
+  }
+}

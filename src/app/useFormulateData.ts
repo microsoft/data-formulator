@@ -5,7 +5,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType } from './dfSlice';
 import { AppDispatch } from './store';
 import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../components/ComponentType';
-import { getUrls, getTriggers, fetchWithIdentity } from './utils';
+import { getUrls, getTriggers, fetchWithIdentity, translateBackend } from './utils';
 
 export type IdeaItem = {
     text: string;
@@ -440,14 +440,15 @@ export function useFormulateData() {
             const candidates = data["results"].filter((item: any) => item["status"] === "ok");
 
             if (candidates.length === 0) {
+                const firstResult = data.results[0];
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "error",
                     "component": "chart builder",
                     "value": "Data formulation failed, please try again.",
-                    "code": data.results[0].code,
-                    "detail": data.results[0].content,
-                    "diagnostics": data.results[0].diagnostics,
+                    "code": firstResult.code,
+                    "detail": translateBackend(firstResult.content, firstResult.content_code),
+                    "diagnostics": firstResult.diagnostics,
                 }));
                 onError?.(new Error("All candidates failed"));
                 return;

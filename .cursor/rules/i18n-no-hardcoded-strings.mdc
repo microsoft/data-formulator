@@ -29,7 +29,7 @@ const { t } = useTranslation();
 
 - English: `src/i18n/locales/en/<namespace>.json`
 - Chinese: `src/i18n/locales/zh/<namespace>.json`
-- Namespaces: `common`, `upload`, `chart`, `model`, `encoding`, `messages`, `navigation`
+- Namespaces: `common`, `upload`, `chart`, `model`, `encoding`, `messages`, `navigation`, `dataLoading`
 
 When adding a new key, add it to **both** `en` and `zh` locale files. Pick the namespace that fits; create a new namespace only if none applies.
 
@@ -38,3 +38,19 @@ When adding a new key, add it to **both** `en` and `zh` locale files. Pick the n
 Must use `t()`: button labels, tooltips, placeholders, error messages, dialog titles, tab names, toast notifications, table headers, empty-state text.
 
 May stay hardcoded: log messages (`console.log`), error messages thrown but never displayed, internal constants, CSS class names, test IDs.
+
+## Backend Messages with message_code
+
+When the backend returns a user-visible message with a `message_code` (or `content_code`, `error_code`), use `translateBackend()` from `src/app/utils.tsx` to translate it:
+
+```tsx
+import { translateBackend } from '../app/utils';
+
+// Translate a backend error message
+const msg = translateBackend(event.message, event.message_code, event.message_params);
+
+// Translate options with parallel code arrays
+const options = translateBackendOptions(rawOptions, event.option_codes);
+```
+
+The translation keys live in `messages.json` under the `agent` section. Always add **both** `en` and `zh` entries.

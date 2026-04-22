@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { memo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Box, Collapse, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
@@ -115,6 +116,7 @@ export interface InteractionEntryCardProps {
 
 export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({ entry, highlighted = false, resolved = false, onClick }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const text = entry.displayContent || entry.content;
     const clickable = !!onClick;
     const clickSx = clickable ? { cursor: 'pointer', '&:hover': { opacity: 0.8 } } : {};
@@ -173,7 +175,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 break;
             case 'clarify':
                 color = resolved ? theme.palette.text.secondary : theme.palette.warning.main;
-                if (resolved) collapsedLabel = 'asked for clarification';
+                if (resolved) collapsedLabel = t('interaction.askedForClarification');
                 break;
             case 'summary':
                 color = theme.palette.text.secondary;

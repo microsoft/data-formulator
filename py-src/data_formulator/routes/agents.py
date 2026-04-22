@@ -45,13 +45,17 @@ from data_formulator.security.sanitize import classify_llm_error
 logger = logging.getLogger(__name__)
 
 
+def _get_ui_lang() -> str:
+    """Extract the primary language code from the Accept-Language header."""
+    return request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0].strip().lower()
+
+
 def get_language_instruction(*, mode: str = "full") -> str:
     """Read the UI language from the Accept-Language header and build the prompt instruction.
 
     mode: "full" for text-heavy agents, "compact" for code-generation agents.
     """
-    lang = request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0].strip().lower()
-    return build_language_instruction(lang, mode=mode)
+    return build_language_instruction(_get_ui_lang(), mode=mode)
 
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
@@ -323,7 +327,8 @@ def sort_data_request():
         try:
             client = get_client(content['model'])
 
-            agent = SortDataAgent(client=client)
+            language_instruction = get_language_instruction(mode="compact")
+            agent = SortDataAgent(client=client, language_instruction=language_instruction)
             candidates = agent.run(content['field'], content['items'])
 
             candidates = candidates if candidates != None else []
@@ -504,7 +509,6 @@ def data_agent_streaming():
             workspace = get_workspace(identity_id)
 
             language_instruction = get_language_instruction(mode="full")
-            rec_language_instruction = get_language_instruction(mode="compact")
 
             try:
                 agent = DataAgent(
@@ -513,7 +517,6 @@ def data_agent_streaming():
                     agent_exploration_rules=agent_exploration_rules,
                     agent_coding_rules=agent_coding_rules,
                     language_instruction=language_instruction,
-                    rec_language_instruction=rec_language_instruction,
                     max_iterations=max_iterations,
                     max_repair_attempts=max_repair_attempts,
                 )
@@ -1041,7 +1044,8 @@ def workspace_summary():
         client = get_client(content['model'])
         ctx = content.get('context', {})
 
-        agent = SimpleAgents(client=client)
+        language_instruction = get_language_instruction(mode="compact")
+        agent = SimpleAgents(client=client, language_instruction=language_instruction)
         summary = agent.workspace_summary(
             table_names=ctx.get('tables', []),
             user_query=ctx.get('userQuery', ''),

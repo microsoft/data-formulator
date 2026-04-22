@@ -24,7 +24,7 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers } from '../app/utils';
+import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers, translateBackend, translateBackendOptions } from '../app/utils';
 import { Chart, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
 
 import { alpha } from '@mui/material/styles';
@@ -890,8 +890,9 @@ export const SimpleChartRecBox: FC = function () {
 
             // ── clarify: pause and let user respond ──
             if (result.type === "clarify") {
-                const clarifyMsg = result.message || t('chartRec.couldYouClarify');
-                const clarifyOptions: string[] = Array.isArray(result.options) ? result.options : [];
+                const clarifyMsg = translateBackend(result.message, result.message_code, result.message_params) || t('chartRec.couldYouClarify');
+                const rawOptions: string[] = Array.isArray(result.options) ? result.options : [];
+                const clarifyOptions = translateBackendOptions(rawOptions, result.option_codes);
                 if (currentDraftId) {
                     const clarifyEntry: InteractionEntry = {
                         from: 'data-agent', to: 'user', role: 'clarify',
@@ -923,9 +924,10 @@ export const SimpleChartRecBox: FC = function () {
             // ── completion: final summary ──
             if (result.type === "completion") {
                 if (lastCreatedTableId) {
+                    const rawSummary = result.content?.summary || "";
                     const summary = result.status === "max_iterations"
-                        ? t('chartRec.maxIterationsReached')
-                        : (result.content?.summary || "");
+                        ? translateBackend(rawSummary, result.content?.summary_code) || t('chartRec.maxIterationsReached')
+                        : rawSummary;
                     if (summary) {
                         const entry: InteractionEntry = {
                             from: 'data-agent', to: 'user', role: 'summary',

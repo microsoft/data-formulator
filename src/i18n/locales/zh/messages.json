@@ -52,6 +52,26 @@
       "errorRefreshingDerivedTable": "刷新派生表（{{table}}）时出错",
       "successRefreshedWithDerived": "已成功刷新（{{table}}）的数据并更新派生表。",
       "errorRefreshingData": "刷新数据时出错：{{error}}"
+    },
+    "agent": {
+      "clarifyExhausted": "我已经进行了大量探索，但尚未得出结论。\n\n已完成的步骤：\n{{steps}}\n\n您希望如何继续？",
+      "clarifyOptionContinue": "继续探索",
+      "clarifyOptionSimplify": "简化任务",
+      "clarifyOptionPresent": "展示当前结果",
+      "maxIterationsSummary": "已达到最大探索步数。",
+      "emptyDataframe": "输出数据为空（0 行），请检查筛选条件或数据加载。",
+      "fieldsNotFound": "输出数据中未找到图表编码字段：{{missing}}。可用列：{{available}}",
+      "llmApiError": "LLM API 错误",
+      "llmEmptyResponse": "LLM 返回了空响应",
+      "parseActionFailed": "无法从 LLM 响应中解析操作",
+      "unknownAction": "未知操作：{{actionType}}",
+      "noCodeBlock": "响应中未找到代码块，模型无法生成代码来完成此任务。",
+      "unexpectedError": "意外错误",
+      "codeExecError": "代码执行出错。",
+      "unableExtractTables": "无法从响应中提取表格",
+      "unableExtractScript": "无法从响应中提取脚本",
+      "errorCallingModel": "调用模型出错：{{error}}",
+      "noModelConfigured": "未配置模型"
     }
   }
 }

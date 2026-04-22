@@ -68,6 +68,39 @@ LANGUAGE_EXTRA_RULES: dict[str, str] = {
 DEFAULT_LANGUAGE = "en"
 
 
+def inject_language_instruction(
+    system_prompt: str,
+    language_instruction: str,
+    *,
+    marker: str | None = None,
+) -> str:
+    """Inject a language instruction block into a system prompt.
+
+    Parameters
+    ----------
+    system_prompt : str
+        The base system prompt.
+    language_instruction : str
+        The ``[LANGUAGE INSTRUCTION]`` block (empty string = no-op).
+    marker : str | None
+        If provided, insert *before* this marker string.
+        Otherwise the instruction is appended at the end.
+    """
+    if not language_instruction:
+        return system_prompt
+
+    if marker:
+        idx = system_prompt.find(marker)
+        if idx > 0:
+            return (
+                system_prompt[:idx]
+                + language_instruction + "\n\n"
+                + system_prompt[idx:]
+            )
+
+    return system_prompt + "\n\n" + language_instruction
+
+
 def build_language_instruction(language: str, *, mode: str = "full") -> str:
     """Return a prompt instruction block for the given language code.
 

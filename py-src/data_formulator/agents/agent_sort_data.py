@@ -3,6 +3,7 @@
 
 import json
 from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_language import inject_language_instruction
 
 import logging
 
@@ -65,8 +66,9 @@ For example:
 
 class SortDataAgent(object):
 
-    def __init__(self, client):
+    def __init__(self, client, language_instruction: str = ""):
         self.client = client
+        self.language_instruction = language_instruction
 
     def run(self, name, values, n=1):
 
@@ -80,7 +82,11 @@ class SortDataAgent(object):
         logger.debug(user_query)
         logger.info(f"[SortDataAgent] run start")
 
-        messages = [{"role":"system", "content": SYSTEM_PROMPT},
+        system_prompt = inject_language_instruction(
+            SYSTEM_PROMPT, self.language_instruction,
+        )
+
+        messages = [{"role":"system", "content": system_prompt},
                     {"role":"user","content": user_query}]
         
         ###### the part that calls open_ai
@@ -103,7 +109,7 @@ class SortDataAgent(object):
                     json_block = json.loads(choice.message.content + "\n")
                     result = {'status': 'ok', 'content': json_block}
                 except:
-                    result = {'status': 'other error', 'content': 'unable to extract VegaLite script from response'}
+                    result = {'status': 'other error', 'content': 'unable to extract script from response', 'content_code': 'agent.unableExtractScript'}
             
             # individual dialog for the agent
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]

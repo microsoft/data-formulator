@@ -540,6 +540,27 @@
     "noDashboards": "No dashboards found.",
     "noDatasetsInDashboard": "No datasets in this dashboard."
   },
+  "workspace": {
+    "sessions": "Sessions",
+    "refreshList": "Refresh list",
+    "deleteSession": "Delete session",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "close": "Close",
+    "newSession": "+ New Session",
+    "loadingSessions": "Loading sessions...",
+    "active": "(active)",
+    "openingWorkspace": "Opening workspace...",
+    "openedSession": "Opened session \"{{name}}\"",
+    "failedToOpenWorkspace": "Failed to open workspace",
+    "deletedSession": "Deleted session \"{{name}}\"",
+    "sessionTooltip": "Session: {{name}}",
+    "exit": "Exit",
+    "recoveredSession": "Recovered Session",
+    "errorOccurred": "An error has occurred, please",
+    "refreshSession": "refresh the session",
+    "errorPersistHint": "If the problem still exists, click close session."
+  },
   "supersetCatalog": {
     "title": "Superset Datasets",
     "searchPlaceholder": "Search datasets...",
@@ -565,5 +586,57 @@
     "cancel": "Cancel",
     "confirmLoad": "Confirm & Load",
     "rowLimitTip": "Max rows to load"
+  },
+  "tableSelection": {
+    "noTables": "No tables available.",
+    "loadDataset": "load dataset",
+    "loadInNewSession": "load in new session",
+    "fromSource": "[from {{source}}]"
+  },
+  "interaction": {
+    "askedForClarification": "asked for clarification"
+  },
+  "concepts": {
+    "showFewer": "Show fewer concepts",
+    "showAll": "Show all concepts",
+    "showFirstN": "Show first {{count}} concepts",
+    "showAllN": "Show all {{count}} concepts"
+  },
+  "dataframe": {
+    "columnCount": "{{count}} columns"
+  },
+  "editor": {
+    "bold": "Bold (⌘B)",
+    "italic": "Italic (⌘I)",
+    "heading1": "Heading 1",
+    "heading2": "Heading 2",
+    "bulletList": "Bullet List",
+    "numberedList": "Numbered List",
+    "quote": "Quote",
+    "generating": "Generating…",
+    "writingReport": "Writing your report…"
+  },
+  "sidebar": {
+    "tableCount": "{{count}} table(s)",
+    "chartCount": "{{count}} chart(s)",
+    "andMore": "+{{count}} more",
+    "emptyWorkspace": "Empty workspace",
+    "unableToLoadInfo": "Unable to load info",
+    "openingWorkspace": "Opening workspace...",
+    "sessionDeleted": "Session deleted",
+    "failedDeleteSession": "Failed to delete session",
+    "loadedTable": "Loaded table \"{{name}}\"",
+    "failedLoadTable": "Failed to load \"{{name}}\": {{error}}",
+    "refreshedTable": "Refreshed \"{{name}}\"",
+    "currentSession": "Current session",
+    "currentSessionWithDate": "Current session · {{date}}",
+    "clickToOpen": "Click to open",
+    "previewRowCount": "{{count}} rows",
+    "previewColumnsHeader": "Columns ({{count}})",
+    "noPreviewAvailable": "No preview available",
+    "alreadyLoaded": "Already loaded",
+    "loadInNewWorkspace": "Load in new workspace",
+    "loadingEllipsis": "Loading...",
+    "load": "Load"
   }
 }

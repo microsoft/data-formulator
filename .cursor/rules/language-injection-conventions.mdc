@@ -1,6 +1,6 @@
 ---
 description: Language injection conventions for LLM Agent prompts
-globs: py-src/data_formulator/agents/**/*.py,py-src/data_formulator/agent_routes.py
+globs: py-src/data_formulator/agents/**/*.py,py-src/data_formulator/routes/agents.py
 alwaysApply: false
 ---
 
@@ -8,14 +8,37 @@ alwaysApply: false
 
 Language flows per-request: `Frontend i18n → Accept-Language header → get_language_instruction() → system prompt`.
 
-## Rules
+## LLM Prompt Language Injection
 
 1. **User-facing LLM output** MUST inject language via `get_language_instruction(mode=...)` in the route handler.
 2. **Mode selection:** `"full"` for text-heavy agents, `"compact"` for code-generation agents and short-text endpoints.
-3. **Inject into system prompt only** — append or insert before a marker, never into user messages.
+3. **Inject into system prompt only** — use `inject_language_instruction()` from `agent_language.py`. Never inject into user messages.
 4. **Do NOT inject** for non-user-facing calls (health checks, internal tool calls).
 5. **Do NOT duplicate** — if upstream messages already contain language instruction, skip.
 6. **Do NOT** use env vars, global interceptors, or hardcoded language strings (e.g. `"回答请使用中文"`) — always use `build_language_instruction()`.
 7. **New language?** Add to `LANGUAGE_DISPLAY_NAMES` in `agents/agent_language.py` and add locale files in `src/i18n/locales/<lang>/`.
 
-For detailed architecture, code examples, and anti-pattern explanations, see the language-injection skill.
+## Python-Side User-Visible Messages (message_code pattern)
+
+For **fixed strings in Python** that are shown in the UI (error messages, clarify options, completion summaries), do NOT translate in Python. Instead:
+
+1. Keep the English string as the default value.
+2. Add a `message_code` (or `content_code`, `error_code`, `summary_code`) field with a key like `"agent.someKey"`.
+3. Optionally add `message_params` for interpolation.
+4. The frontend translates using `translateBackend(fallback, code, params)` from `src/app/utils.tsx`.
+5. Add the translation key to `src/i18n/locales/{en,zh}/messages.json` under the `agent` section.
+
+```python
+# ✅ GOOD — backend returns code, frontend translates
+yield {
+    "type": "error",
+    "message": "Output DataFrame is empty (0 rows).",
+    "message_code": "agent.emptyDataframe",
+}
+
+# ❌ BAD — backend does the translation
+from agent_messages import get_msg
+yield {"message": get_msg("empty_df", lang)}
+```
+
+For detailed architecture and anti-pattern explanations, see the language-injection skill.

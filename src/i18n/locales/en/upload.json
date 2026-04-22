@@ -84,6 +84,21 @@
     "pastePreviewTruncatedSuffix": "... (truncated for performance)",
     "loadingData": "Loading data...",
     "loadingDataset": "Loading {{name}}...",
+    "connectorDesc": {
+      "mysql": "Query tables from a MySQL database",
+      "postgresql": "Query tables from a PostgreSQL database",
+      "mssql": "Query tables from Microsoft SQL Server",
+      "cosmosdb": "Query containers from Azure Cosmos DB",
+      "mongodb": "Query collections from MongoDB",
+      "bigquery": "Query datasets from Google BigQuery",
+      "athena": "Query data via Amazon Athena",
+      "kusto": "Query data from Azure Data Explorer (Kusto)",
+      "superset": "Browse datasets from Apache Superset",
+      "azure_blob": "Load files from Azure Blob Storage",
+      "s3": "Load files from Amazon S3",
+      "local_folder": "Browse and import files from a local folder"
+    },
+    "localFolderDefaultName": "Local Folder",
     "errors": {
       "fileTooLarge": "File {{name}} is too large ({{size}}MB). Use Database for large files.",
       "failedToParse": "Failed to parse {{name}}.",
@@ -91,7 +106,15 @@
       "failedToParseExcel": "Failed to parse Excel file {{name}}.",
       "unsupportedFormat": "Unsupported file format: {{name}}.",
       "unableToParseUrl": "Unable to parse data from the provided URL. Please ensure the URL points to CSV, JSON, or JSONL data.",
-      "failedToFetch": "Failed to fetch data: {{message}}. Please ensure the URL points to CSV, JSON, or JSONL data."
+      "failedToFetch": "Failed to fetch data: {{message}}. Please ensure the URL points to CSV, JSON, or JSONL data.",
+      "failedToCreateConnector": "Failed to create connector",
+      "failedToConnectFolder": "Failed to connect folder",
+      "failedToOpenFolder": "Failed to open folder",
+      "failedToDeleteConnector": "Failed to delete connector"
+    },
+    "messages": {
+      "connectedTo": "Connected to \"{{name}}\"",
+      "deletedConnector": "Deleted connector \"{{name}}\""
     }
   }
 }

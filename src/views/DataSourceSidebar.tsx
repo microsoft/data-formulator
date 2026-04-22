@@ -256,26 +256,26 @@ const DataSourceSidebarPanel: React.FC<{
                     const tables = (result.state.tables || []) as any[];
                     const charts = (result.state.charts || []) as any[];
                     const parts: string[] = [];
-                    parts.push(`${tables.length} table${tables.length !== 1 ? 's' : ''}`);
-                    if (charts.length > 0) parts.push(`${charts.length} chart${charts.length !== 1 ? 's' : ''}`);
+                    parts.push(t('sidebar.tableCount', { count: tables.length }));
+                    if (charts.length > 0) parts.push(t('sidebar.chartCount', { count: charts.length }));
                     if (tables.length > 0) {
                         const names = tables.slice(0, 3).map((t: any) => t.displayId || t.id || 'unknown');
-                        if (tables.length > 3) names.push(`+${tables.length - 3} more`);
+                        if (tables.length > 3) names.push(t('sidebar.andMore', { count: tables.length - 3 }));
                         parts.push(names.join(', '));
                     }
                     setSessionTooltips(prev => ({ ...prev, [sessionId]: parts.join(' · ') }));
                 } else {
-                    setSessionTooltips(prev => ({ ...prev, [sessionId]: 'Empty workspace' }));
+                    setSessionTooltips(prev => ({ ...prev, [sessionId]: t('sidebar.emptyWorkspace') }));
                 }
             })
             .catch(() => {
-                setSessionTooltips(prev => ({ ...prev, [sessionId]: 'Unable to load info' }));
+                setSessionTooltips(prev => ({ ...prev, [sessionId]: t('sidebar.unableToLoadInfo') }));
             })
             .finally(() => sessionTooltipFetching.current.delete(sessionId));
     }, [sessionTooltips]);
 
     const handleOpenSession = useCallback(async (sessionId: string) => {
-        dispatch(dfActions.setSessionLoading({ loading: true, label: 'Opening workspace...' }));
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('sidebar.openingWorkspace') }));
         try {
             const result = await loadWorkspace(sessionId);
             if (result && Object.keys(result.state).length > 0) {
@@ -317,14 +317,14 @@ const DataSourceSidebarPanel: React.FC<{
                 timestamp: Date.now(),
                 type: 'success',
                 component: 'data source sidebar',
-                value: 'Session deleted',
+                value: t('sidebar.sessionDeleted'),
             }));
         } catch {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
                 component: 'data source sidebar',
-                value: 'Failed to delete session',
+                value: t('sidebar.failedDeleteSession'),
             }));
         }
     }, [dispatch, activeWorkspace, handleOpenSession]);
@@ -530,7 +530,7 @@ const DataSourceSidebarPanel: React.FC<{
                     timestamp: Date.now(),
                     type: 'success',
                     component: 'data source sidebar',
-                    value: `Loaded table "${sourceName}"`,
+                    value: t('sidebar.loadedTable', { name: sourceName }),
                 }));
                 closePreview();
             })
@@ -539,7 +539,7 @@ const DataSourceSidebarPanel: React.FC<{
                     timestamp: Date.now(),
                     type: 'error',
                     component: 'data source sidebar',
-                    value: `Failed to load "${sourceName}": ${error}`,
+                    value: t('sidebar.failedLoadTable', { name: sourceName, error: String(error) }),
                 }));
             })
             .finally(() => setImporting(false));
@@ -574,7 +574,7 @@ const DataSourceSidebarPanel: React.FC<{
                         timestamp: Date.now(),
                         type: 'success',
                         component: 'data source sidebar',
-                        value: `Refreshed "${sourceName}"`,
+                        value: t('sidebar.refreshedTable', { name: sourceName }),
                     }));
                 }
             })
@@ -867,8 +867,8 @@ const DataSourceSidebarPanel: React.FC<{
                             title={(() => {
                                 const info = sessionTooltips[s.id];
                                 const date = s.saved_at ? new Date(s.saved_at).toLocaleDateString() : '';
-                                if (activeWorkspace?.id === s.id) return date ? `Current session · ${date}` : 'Current session';
-                                const base = info || 'Click to open';
+                                if (activeWorkspace?.id === s.id) return date ? t('sidebar.currentSessionWithDate', { date }) : t('sidebar.currentSession');
+                                const base = info || t('sidebar.clickToOpen');
                                 return date ? `${base} · ${date}` : base;
                             })()}
                             placement="right"
@@ -934,7 +934,7 @@ const DataSourceSidebarPanel: React.FC<{
                             <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{preview.node.name}</Typography>
                             {preview.rowCount != null && (
                                 <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-                                    {Number(preview.rowCount).toLocaleString()} rows
+                                    {t('sidebar.previewRowCount', { count: Number(preview.rowCount).toLocaleString() })}
                                 </Typography>
                             )}
                         </Box>
@@ -960,7 +960,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     ) : preview.columns.length > 0 ? (
                                         <Box sx={{ mb: 1.5 }}>
                                             <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.5 }}>
-                                                Columns ({preview.columns.length})
+                                                {t('sidebar.previewColumnsHeader', { count: preview.columns.length })}
                                             </Typography>
                                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                                                 {preview.columns.map((col, i) => (
@@ -977,7 +977,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         </Box>
                                     ) : (
                                         <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
-                                            No preview available
+                                            {t('sidebar.noPreviewAvailable')}
                                         </Typography>
                                     )}
                                 </>
@@ -993,7 +993,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     {alreadyLoaded ? (
                                         <Button size="small" disabled variant="outlined"
                                             sx={{ textTransform: 'none', fontSize: 12 }}>
-                                            Already loaded
+                                            {t('sidebar.alreadyLoaded')}
                                         </Button>
                                     ) : (
                                         <>
@@ -1004,7 +1004,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             onClick={() => handleImportTable(preview.connectorId, preview.node, true)}
                                             sx={{ textTransform: 'none', fontSize: 12 }}
                                         >
-                                            Load in new workspace
+                                            {t('sidebar.loadInNewWorkspace')}
                                         </Button>
                                         <Button
                                             size="small"
@@ -1013,7 +1013,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             onClick={() => handleImportTable(preview.connectorId, preview.node)}
                                             sx={{ textTransform: 'none', fontSize: 12 }}
                                         >
-                                            {importing ? 'Loading...' : 'Load'}
+                                            {importing ? t('sidebar.loadingEllipsis') : t('sidebar.load')}
                                         </Button>
                                         </>
                                     )}

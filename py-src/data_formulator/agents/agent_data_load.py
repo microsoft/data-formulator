@@ -215,7 +215,7 @@ class DataLoadAgent(object):
                     json_block = json.loads(choice.message.content + "\n")
                     result = {'status': 'ok', 'content': json_block}
                 except:
-                    result = {'status': 'other error', 'content': 'unable to extract VegaLite script from response'}
+                    result = {'status': 'other error', 'content': 'unable to extract script from response', 'content_code': 'agent.unableExtractScript'}
             
             # individual dialog for the agent
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]

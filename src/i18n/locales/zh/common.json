@@ -522,6 +522,27 @@
     "noDashboards": "未找到仪表盘。",
     "noDatasetsInDashboard": "该仪表盘中没有数据集。"
   },
+  "workspace": {
+    "sessions": "会话",
+    "refreshList": "刷新列表",
+    "deleteSession": "删除会话",
+    "delete": "删除",
+    "cancel": "取消",
+    "close": "关闭",
+    "newSession": "+ 新建会话",
+    "loadingSessions": "加载会话中...",
+    "active": "（当前）",
+    "openingWorkspace": "正在打开工作区...",
+    "openedSession": "已打开会话「{{name}}」",
+    "failedToOpenWorkspace": "打开工作区失败",
+    "deletedSession": "已删除会话「{{name}}」",
+    "sessionTooltip": "会话：{{name}}",
+    "exit": "退出",
+    "recoveredSession": "已恢复的会话",
+    "errorOccurred": "发生了错误，请",
+    "refreshSession": "刷新会话",
+    "errorPersistHint": "如果问题仍然存在，请点击关闭会话。"
+  },
   "supersetCatalog": {
     "title": "Superset 数据集",
     "searchPlaceholder": "搜索数据集...",
@@ -547,5 +568,57 @@
     "cancel": "取消",
     "confirmLoad": "确认加载",
     "rowLimitTip": "最大加载行数"
+  },
+  "tableSelection": {
+    "noTables": "暂无可用表格。",
+    "loadDataset": "加载数据集",
+    "loadInNewSession": "在新会话中加载",
+    "fromSource": "[来自 {{source}}]"
+  },
+  "interaction": {
+    "askedForClarification": "请求澄清"
+  },
+  "concepts": {
+    "showFewer": "收起概念",
+    "showAll": "显示所有概念",
+    "showFirstN": "显示前 {{count}} 个概念",
+    "showAllN": "显示全部 {{count}} 个概念"
+  },
+  "dataframe": {
+    "columnCount": "{{count}} 列"
+  },
+  "editor": {
+    "bold": "粗体 (⌘B)",
+    "italic": "斜体 (⌘I)",
+    "heading1": "标题 1",
+    "heading2": "标题 2",
+    "bulletList": "无序列表",
+    "numberedList": "有序列表",
+    "quote": "引用",
+    "generating": "生成中…",
+    "writingReport": "正在撰写报告…"
+  },
+  "sidebar": {
+    "tableCount": "{{count}} 个表格",
+    "chartCount": "{{count}} 个图表",
+    "andMore": "+{{count}} 更多",
+    "emptyWorkspace": "空工作区",
+    "unableToLoadInfo": "无法加载信息",
+    "openingWorkspace": "正在打开工作区...",
+    "sessionDeleted": "会话已删除",
+    "failedDeleteSession": "删除会话失败",
+    "loadedTable": "已加载表 \"{{name}}\"",
+    "failedLoadTable": "加载 \"{{name}}\" 失败：{{error}}",
+    "refreshedTable": "已刷新 \"{{name}}\"",
+    "currentSession": "当前会话",
+    "currentSessionWithDate": "当前会话 · {{date}}",
+    "clickToOpen": "点击打开",
+    "previewRowCount": "{{count}} 行",
+    "previewColumnsHeader": "列（{{count}}）",
+    "noPreviewAvailable": "无可用预览",
+    "alreadyLoaded": "已加载",
+    "loadInNewWorkspace": "在新工作区中加载",
+    "loadingEllipsis": "加载中...",
+    "load": "加载"
   }
 }
