@@ -481,7 +481,8 @@
     "sortBy": "Sort by {{label}}",
     "rowCount": "{{count}} rows",
     "viewRandomRows": "view 10000 random rows from this table",
-    "downloadAsCsv": "Download as CSV"
+    "downloadAsCsv": "Download as CSV",
+    "downloading": "Downloading..."
   },
   "chatDialog": {
     "noHistory": "There is no conversation history yet",

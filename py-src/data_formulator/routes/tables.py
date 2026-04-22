@@ -10,7 +10,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 import json
 import gzip
-from flask import request, jsonify, Blueprint, Response
+from flask import request, jsonify, Blueprint, Response, stream_with_context
 import pandas as pd
 from pathlib import Path
 from data_formulator.auth.identity import get_identity_id
@@ -623,6 +623,65 @@ def download_db_file():
     }), 410
 
 
+_CSV_STREAM_CHUNK_ROWS = 10_000
+
+
+def _stream_csv_from_duckdb(workspace, table_name: str, delimiter: str):
+    """Use DuckDB native COPY to export CSV — bypasses pandas entirely."""
+    import duckdb
+    import tempfile
+
+    parquet_path = workspace.get_parquet_path(table_name)
+    path_escaped = str(parquet_path).replace("\\", "\\\\").replace("'", "''")
+
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".csv")
+    os.close(tmp_fd)
+    try:
+        conn = duckdb.connect(":memory:")
+        try:
+            cols = conn.execute(
+                f"SELECT column_name FROM parquet_schema('{path_escaped}')"
+            ).fetchall()
+            has_row_id = any(c[0] == "#rowId" for c in cols)
+            exclude = ' EXCLUDE ("#rowId")' if has_row_id else ""
+            select_sql = f"SELECT *{exclude} FROM read_parquet('{path_escaped}')"
+
+            copy_opts = f"HEADER, DELIMITER '{delimiter}'"
+            tmp_escaped = tmp_path.replace("\\", "\\\\").replace("'", "''")
+            conn.execute(f"COPY ({select_sql}) TO '{tmp_escaped}' ({copy_opts})")
+        finally:
+            conn.close()
+
+        yield b'\xef\xbb\xbf'
+        with open(tmp_path, "rb") as f:
+            while True:
+                chunk = f.read(65_536)
+                if not chunk:
+                    break
+                yield chunk
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def _stream_csv_from_dataframe(df: pd.DataFrame, delimiter: str):
+    """Stream CSV from a pandas DataFrame in chunks to limit memory."""
+    yield b'\xef\xbb\xbf'
+
+    header_buf = io.StringIO()
+    df.iloc[:0].to_csv(header_buf, index=False, sep=delimiter)
+    yield header_buf.getvalue().encode("utf-8")
+
+    for start in range(0, len(df), _CSV_STREAM_CHUNK_ROWS):
+        chunk_buf = io.StringIO()
+        df.iloc[start : start + _CSV_STREAM_CHUNK_ROWS].to_csv(
+            chunk_buf, index=False, header=False, sep=delimiter
+        )
+        yield chunk_buf.getvalue().encode("utf-8")
+
+
 @tables_bp.route('/export-table-csv', methods=['POST'])
 def export_table_csv():
     """Export a workspace table as CSV (or TSV) file download."""
@@ -638,30 +697,23 @@ def export_table_csv():
             return jsonify({"status": "error", "message": "delimiter must be ',' or '\\t'"}), 400
 
         workspace = _get_workspace()
-
-        if _should_use_duckdb(workspace, table_name):
-            df = workspace.run_parquet_sql(table_name, "SELECT * FROM {parquet} AS t")
-        else:
-            df = workspace.read_data_as_df(table_name)
-
-        df = _dedup_dataframe_columns(df)
-        # Drop internal row-id column if present
-        if '#rowId' in df.columns:
-            df = df.drop(columns=['#rowId'])
-
-        buf = io.StringIO()
-        df.to_csv(buf, index=False, sep=delimiter)
-        csv_bytes = buf.getvalue().encode('utf-8-sig')
-
         ext = 'tsv' if delimiter == '\t' else 'csv'
         mime = 'text/tab-separated-values' if delimiter == '\t' else 'text/csv'
 
+        if _should_use_duckdb(workspace, table_name):
+            gen = _stream_csv_from_duckdb(workspace, table_name, delimiter)
+        else:
+            df = workspace.read_data_as_df(table_name)
+            df = _dedup_dataframe_columns(df)
+            if '#rowId' in df.columns:
+                df = df.drop(columns=['#rowId'])
+            gen = _stream_csv_from_dataframe(df, delimiter)
+
         return Response(
-            csv_bytes,
+            stream_with_context(gen),
             mimetype=mime,
             headers={
                 'Content-Disposition': f'attachment; filename="{table_name}.{ext}"',
-                'Content-Length': str(len(csv_bytes)),
             },
         )
     except Exception as e:

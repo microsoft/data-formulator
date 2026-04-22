@@ -386,7 +386,8 @@
     "sortBy": "按 {{label}} 排序",
     "rowCount": "{{count}} 行",
     "viewRandomRows": "查看此表的 10000 行随机数据",
-    "downloadAsCsv": "下载为 CSV"
+    "downloadAsCsv": "下载为 CSV",
+    "downloading": "下载中..."
   },
   "chatDialog": {
     "noHistory": "尚无对话记录",
