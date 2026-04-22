@@ -81,6 +81,7 @@ import { CustomReactTable } from './ReactTable';
 import { InsightIcon } from '../icons';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { FreeDataViewFC } from './DataView';
+import { formatCellValue } from './ViewUtils';
 
 
 import { dfSelectors } from '../app/dfSlice';
@@ -117,9 +118,11 @@ export let renderTableChart = (
 
     let colDefs = fields.map(field => {
         let name = field.name;
+        const isNumeric = field.type === 'integer' || field.type === 'number';
         return {
-            id: name, label: fieldDisplayNames?.[name] || name, minWidth: 30, align: undefined, 
-            format: (value: any) => `${value}`, source: field.source
+            id: name, label: fieldDisplayNames?.[name] || name, minWidth: 30,
+            align: (isNumeric ? 'right' : undefined) as 'right' | undefined, 
+            format: (value: any) => formatCellValue(value), source: field.source
         }
     })
 

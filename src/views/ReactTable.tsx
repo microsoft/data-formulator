@@ -11,6 +11,7 @@ import TablePagination from '@mui/material/TablePagination';
 import TableRow from '@mui/material/TableRow';
 import { alpha, Box, useTheme } from '@mui/system';
 import Typography from '@mui/material/Typography';
+import { formatCellValue } from './ViewUtils';
 
 
 export interface ColumnDef {
@@ -108,9 +109,7 @@ export const CustomReactTable: React.FC<CustomReactTableProps> = ({
                                                     sx={{ backgroundColor }}>
                                                     {column.format
                                                         ? column.format(value)
-                                                        : (value != null && typeof value === 'object'
-                                                            ? String(value)
-                                                            : (typeof value === "boolean" ? `${value}` : value))}
+                                                        : formatCellValue(value)}
                                                 </TableCell>
                                             );
                                         })}
