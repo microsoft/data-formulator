@@ -46,6 +46,7 @@ export interface InteractionEntry {
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
+    inputTableNames?: string[]; // table names actually used for this derivation step
     options?: string[]; // for clarification questions, the list of options presented to the user
     timestamp?: number;
 }

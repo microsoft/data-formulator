@@ -94,12 +94,15 @@ export const DataFormulatorFC = ({ }) => {
 
     // ── Connector instances (for landing page menu) ─────────────
     const [pageConnectors, setPageConnectors] = useState<ConnectorInstance[]>([]);
-    useEffect(() => {
+    const refreshPageConnectors = useCallback(() => {
         fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(r => r.json())
             .then(data => setPageConnectors(data.connectors || []))
             .catch(() => {});
     }, []);
+    useEffect(() => {
+        refreshPageConnectors();
+    }, [refreshPageConnectors]);
 
     // ── Demo sessions (loaded from manifest, fallback to hardcoded) ─────
     const [demoSessions, setDemoSessions] = useState<ExampleSession[]>(exampleSessions);
@@ -630,7 +633,7 @@ export const DataFormulatorFC = ({ }) => {
                 {tables.length > 0 ? fixedSplitPane : dataUploadRequestBox}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
-                    onClose={() => setUploadDialogOpen(false)}
+                    onClose={() => { setUploadDialogOpen(false); refreshPageConnectors(); }}
                     initialTab={uploadDialogInitialTab}
                 />
                 {/* Loading overlay for session loading */}

@@ -434,6 +434,8 @@ export interface InstantiateContext {
 export type ChartPropertyDef = {
     key: string;
     label: string;
+    /** Optional predicate: show this property only when certain encoding channels are assigned. */
+    visibleWhen?: { channels: string[] };
 } & (
     | { type: 'continuous'; min: number; max: number; step?: number; defaultValue?: number }
     | { type: 'discrete';  options: { value: any; label: string }[]; defaultValue?: any }

@@ -47,6 +47,7 @@ import { getUrls, fetchWithIdentity, CONNECTOR_URLS } from '../app/utils';
 import { DataLoaderForm } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
+    Checkbox,
     FormControlLabel,
     Switch,
 } from '@mui/material';
@@ -55,7 +56,7 @@ import CloudIcon from '@mui/icons-material/Cloud';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
 
-export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore' | 'add-connection' | `connector:${string}`;
+export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore' | 'local-folder' | 'add-connection' | `connector:${string}`;
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -179,6 +180,193 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
     return uniqueName;
 };
 
+// ── Local Folder Panel ──────────────────────────────────────────────────
+// Simple panel: "Select Folder" button + "Recursive" checkbox.
+// Creates a connector behind the scenes, then jumps to the connector tab.
+
+interface LocalFolderPanelProps {
+    onConnectorCreated: (conn: ConnectorInstance) => void;
+}
+
+const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated }) => {
+    const { t } = useTranslation();
+    const theme = useTheme();
+    const [recursive, setRecursive] = React.useState(true);
+    const [loading, setLoading] = React.useState(false);
+    const [error, setError] = React.useState<string | null>(null);
+    const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
+    const [showManualInput, setShowManualInput] = React.useState(false);
+    const [manualPath, setManualPath] = React.useState('');
+
+    // Create connector from a given path
+    const connectFolder = async (folderPath: string) => {
+        setError(null);
+        setLoading(true);
+        try {
+            const folderName = folderPath.split('/').pop() || folderPath.split('\\').pop() || 'Local Folder';
+            const createResp = await fetchWithIdentity(CONNECTOR_URLS.CREATE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    loader_type: 'local_folder',
+                    display_name: folderName,
+                    params: {
+                        root_dir: folderPath,
+                        recursive: recursive ? 'true' : 'false',
+                    },
+                }),
+            });
+            const createData = await createResp.json();
+            if (!createResp.ok) {
+                setError(createData.message || 'Failed to create connector');
+                return;
+            }
+
+            const listResp = await fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' });
+            const listData = await listResp.json();
+            const newConn = (listData.connectors || []).find((c: ConnectorInstance) => c.id === createData.id);
+            if (newConn) {
+                onConnectorCreated(newConn);
+            }
+        } catch (err: any) {
+            setError(err.message || 'Failed to connect folder');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSelectFolder = async () => {
+        setError(null);
+        setLoading(true);
+        try {
+            const pickResp = await fetchWithIdentity('/api/local/pick-directory', { method: 'POST' });
+            const pickData = await pickResp.json();
+
+            // If the picker isn't available, show manual text input
+            if (!pickResp.ok && pickData.fallback === 'text_input') {
+                setShowManualInput(true);
+                setLoading(false);
+                return;
+            }
+            if (!pickData.path) {
+                setLoading(false);
+                return; // user cancelled
+            }
+            setSelectedPath(pickData.path);
+            await connectFolder(pickData.path);
+        } catch (err: any) {
+            setError(err.message || 'Failed to open folder');
+            setShowManualInput(true);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleManualConnect = async () => {
+        const trimmed = manualPath.trim();
+        if (!trimmed) return;
+        setSelectedPath(trimmed);
+        await connectFolder(trimmed);
+    };
+
+    return (
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            boxSizing: 'border-box',
+            gap: 2,
+            p: 3,
+            justifyContent: 'center',
+            alignItems: 'center',
+        }}>
+            <Box sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 2,
+                maxWidth: 420,
+                width: '100%',
+            }}>
+                <FolderOpenIcon sx={{ fontSize: 48, color: 'text.secondary', opacity: 0.5 }} />
+                <Typography variant="body1" color="text.secondary" textAlign="center">
+                    {t('upload.localFolderHint', { defaultValue: 'Select a folder on your computer to browse and import data files.' })}
+                </Typography>
+
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            checked={recursive}
+                            onChange={(e) => setRecursive(e.target.checked)}
+                            size="small"
+                        />
+                    }
+                    label={
+                        <Typography variant="body2">
+                            {t('upload.includeSubfolders', { defaultValue: 'Include subfolders' })}
+                        </Typography>
+                    }
+                />
+
+                {showManualInput ? (
+                    /* Text input fallback when native dialog is unavailable */
+                    <Box sx={{ display: 'flex', gap: 1, width: '100%', alignItems: 'flex-start' }}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            placeholder={t('upload.folderPathPlaceholder', { defaultValue: '/path/to/your/data/folder' })}
+                            value={manualPath}
+                            onChange={(e) => setManualPath(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleManualConnect(); }}
+                            sx={{ '& .MuiInputBase-input': { fontSize: '0.875rem' } }}
+                        />
+                        <Button
+                            variant="contained"
+                            onClick={handleManualConnect}
+                            disabled={loading || !manualPath.trim()}
+                            startIcon={loading ? <CircularProgress size={16} color="inherit" /> : undefined}
+                            sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                        >
+                            {t('upload.connect', { defaultValue: 'Connect' })}
+                        </Button>
+                    </Box>
+                ) : (
+                    <Button
+                        variant="contained"
+                        onClick={handleSelectFolder}
+                        disabled={loading}
+                        startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <FolderOpenIcon />}
+                        sx={{ textTransform: 'none', px: 3, py: 1 }}
+                    >
+                        {loading
+                            ? t('upload.opening', { defaultValue: 'Opening...' })
+                            : t('upload.selectFolder', { defaultValue: 'Select Folder' })}
+                    </Button>
+                )}
+
+                {/* Allow switching to manual input */}
+                {!showManualInput && (
+                    <Link
+                        component="button"
+                        variant="caption"
+                        color="text.secondary"
+                        onClick={() => setShowManualInput(true)}
+                        sx={{ fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                    >
+                        {t('upload.orTypePath', { defaultValue: 'or type a path manually' })}
+                    </Link>
+                )}
+
+                {error && (
+                    <Typography variant="body2" color="error" textAlign="center" sx={{ mt: 1 }}>
+                        {error}
+                    </Typography>
+                )}
+            </Box>
+        </Box>
+    );
+};
+
 /** A registered connector instance from GET /api/connectors */
 export interface ConnectorInstance {
     id: string;
@@ -209,6 +397,7 @@ const CONNECTOR_TYPE_DESCRIPTIONS: Record<string, string> = {
     SupersetLoader: 'Browse datasets from Apache Superset',
     AzureBlobDataLoader: 'Load files from Azure Blob Storage',
     S3DataLoader: 'Load files from Amazon S3',
+    LocalFolderDataLoader: 'Browse and import files from a local folder',
 };
 
 function getConnectorTypeDescription(sourceType: string, connected: boolean, t: (key: string, options?: any) => string): string {
@@ -224,7 +413,7 @@ function getConnectorTypeDescription(sourceType: string, connected: boolean, t: 
 // Reusable Data Load Menu Component
 export interface DataLoadMenuProps {
     onSelectTab: (tab: UploadTabType) => void;
-    serverConfig?: { WORKSPACE_BACKEND?: string };
+    serverConfig?: { WORKSPACE_BACKEND?: string; IS_LOCAL_MODE?: boolean };
     variant?: 'dialog' | 'page'; // 'dialog' uses smaller cards, 'page' uses larger cards
     hideSampleDatasets?: boolean;
     connectors?: ConnectorInstance[];
@@ -286,13 +475,30 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     // Data connections — persistent configured sources (databases, services, etc.)
     const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; dashed?: boolean }> = [
         // Per-connector cards — all instances
-        ...connectors.map((conn) => ({
-            value: `connector:${conn.id}` as UploadTabType,
-            title: conn.display_name,
-            description: getConnectorTypeDescription(conn.source_type, conn.connected, t),
-            icon: getConnectorIcon(conn.icon || conn.source_type),
+        ...connectors.map((conn) => {
+            const isLocalFolder = conn.source_type === 'LocalFolderDataLoader' || conn.id.startsWith('local_folder');
+            const folderPath = isLocalFolder ? (conn.pinned_params?.root_dir || '') : '';
+            return {
+                value: `connector:${conn.id}` as UploadTabType,
+                title: conn.display_name,
+                description: isLocalFolder
+                    ? (folderPath || t('upload.localFolderConnected', { defaultValue: 'Local folder' }))
+                    : getConnectorTypeDescription(conn.source_type, conn.connected, t),
+                icon: isLocalFolder
+                    ? <FolderOpenIcon />
+                    : getConnectorIcon(conn.icon || conn.source_type),
+                disabled: false,
+            };
+        }),
+        // "Local Folder" card (dashed, local mode only)
+        ...(serverConfig?.IS_LOCAL_MODE ? [{
+            value: 'local-folder' as UploadTabType,
+            title: t('upload.localFolder', { defaultValue: 'Connect Local Folder' }),
+            description: t('upload.localFolderDesc', { defaultValue: 'Connect to a local folder for fast imports' }),
+            icon: <AddIcon />,
             disabled: false,
-        })),
+            dashed: true,
+        }] : []),
         // "Add Connection" card (dashed style)
         {
             value: 'add-connection' as UploadTabType,
@@ -646,9 +852,16 @@ const AddConnectionPanel: React.FC<{
                 ))}
             </Box>
 
-            {/* Right panel: display name + DataLoaderForm */}
+            {/* Right panel: display name + DataLoaderForm (or simplified Local Folder panel) */}
             <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
-                {selectedLoader ? (
+                {selectedLoader && selectedType === 'local_folder' ? (
+                    /* Simplified Local Folder panel — no connection name, no form tiers */
+                    <LocalFolderPanel
+                        onConnectorCreated={(newConn) => {
+                            onCreated(newConn);
+                        }}
+                    />
+                ) : selectedLoader ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         {/* Connection name + DataLoaderForm */}
                         <Box sx={{ px: 2, pt: 1.5, pb: 2, flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -1324,6 +1537,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             'extract': t('upload.extractFromDocuments'),
             'url': t('upload.loadFromUrl'),
             'database': t('upload.database'),
+            'local-folder': t('upload.localFolder', { defaultValue: 'Local Folder' }),
         };
         return tabTitles[activeTab] || t('upload.addData');
     };
@@ -1935,6 +2149,22 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 <TabPanel value={activeTab} index="extract">
                     <DataLoadingChat />
                 </TabPanel>
+
+                {/* Local Folder Tab */}
+                {serverConfig.IS_LOCAL_MODE && (
+                    <TabPanel value={activeTab} index="local-folder">
+                        <LocalFolderPanel
+                            onConnectorCreated={(newConn) => {
+                                setConnectorInstances(prev => {
+                                    const exists = prev.find(c => c.id === newConn.id);
+                                    if (exists) return prev.map(c => c.id === newConn.id ? newConn : c);
+                                    return [...prev, newConn];
+                                });
+                                setActiveTab(`connector:${newConn.id}` as UploadTabType);
+                            }}
+                        />
+                    </TabPanel>
+                )}
 
                 {/* Explore Sample Datasets Tab */}
                 <TabPanel value={activeTab} index="explore">

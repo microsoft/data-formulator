@@ -1044,7 +1044,7 @@ def _post_process_chart(
     """Apply chart-type-specific post-processing after encodings are set."""
 
     if chart_type == "Lollipop Chart":
-        _post_process_lollipop(spec, df, encodings)
+        _post_process_lollipop(spec, df, encodings, config)
 
     elif chart_type == "Regression":
         _post_process_regression(spec, encodings)
@@ -1080,7 +1080,7 @@ def _post_process_chart(
         _post_process_rose(spec, df, encodings, config)
 
 
-def _post_process_lollipop(spec: dict, df: pd.DataFrame, encodings: dict) -> None:
+def _post_process_lollipop(spec: dict, df: pd.DataFrame, encodings: dict, config: dict | None) -> None:
     """Lollipop: rule from 0 + circle at value. Both layers share positional encodings."""
     enc = spec.get("encoding", {})
     layer_rule = spec["layer"][0]
@@ -1105,6 +1105,71 @@ def _post_process_lollipop(spec: dict, df: pd.DataFrame, encodings: dict) -> Non
     for ch in list(enc.keys()):
         if ch not in ("x", "y"):
             pass  # keep in top encoding for faceting
+
+    # --- Crowding adjustments ---
+    n = len(df)
+    if n == 0:
+        return
+
+    default_dot_size = int((config or {}).get("dotSize", 80))
+    base_stroke = 1.5
+
+    # 1. Coverage-based point size scaling (like scatter plot)
+    plot_area = 400 * 300  # default canvas
+    target_coverage = 0.15
+    current_coverage = (n * default_dot_size) / plot_area
+    dot_size = default_dot_size
+    if current_coverage > target_coverage:
+        dot_size = max(4, round((target_coverage * plot_area) / n))
+    layer_circle["mark"]["size"] = dot_size
+
+    # 2. Aggressive strokeWidth reduction — use ratio directly (not sqrt)
+    #    so strokes thin out fast with dense data
+    if dot_size < default_dot_size:
+        ratio = dot_size / default_dot_size
+        stroke = max(0.15, base_stroke * ratio)
+        layer_rule["mark"]["strokeWidth"] = round(stroke, 2)
+
+    # 3. Per-group overlap-based stroke thinning
+    discrete_axis = None
+    for ax in ("x", "y"):
+        ax_type = enc.get(ax, {}).get("type")
+        if ax_type in ("nominal", "ordinal"):
+            discrete_axis = ax
+            break
+    if discrete_axis:
+        field = enc[discrete_axis].get("field")
+        if field and field in df.columns:
+            max_overlap = int(df.groupby(field).size().max())
+            if max_overlap > 1:
+                current_stroke = layer_rule["mark"].get("strokeWidth", base_stroke)
+                stroke = max(0.15, current_stroke / max_overlap)
+                layer_rule["mark"]["strokeWidth"] = round(stroke, 2)
+
+    # 4. Step-based sizing for dense discrete axes.
+    #    Lollipops sit between fully-discrete (bar) and fully-continuous
+    #    (scatter): dots are small so steps can be tighter than bars.
+    #    defaultBandSize≈6 (vs bar's 20), minStep=2.
+    for ax, dim_key in [("x", "width"), ("y", "height")]:
+        ax_enc = enc.get(ax, {})
+        if ax_enc.get("type") in ("nominal", "ordinal") and ax_enc.get("field"):
+            field = ax_enc["field"]
+            if field in df.columns:
+                n_unique = df[field].nunique()
+                if n_unique > 12:
+                    step = max(2, min(12, 400 // n_unique))
+                    spec[dim_key] = {"step": step}
+                    # Dot ≤ 60% of step², rule ≤ 40% of step
+                    max_dot = max(4, round(step * step * 0.6))
+                    layer_circle["mark"]["size"] = min(layer_circle["mark"]["size"], max_dot)
+                    max_rule_w = max(0.15, min(step * 0.4, 2))
+                    layer_rule["mark"]["strokeWidth"] = min(
+                        layer_rule["mark"].get("strokeWidth", base_stroke), round(max_rule_w, 2)
+                    )
+
+    # User override wins
+    if (config or {}).get("dotSize"):
+        layer_circle["mark"]["size"] = int(config["dotSize"])
 
 
 def _post_process_regression(spec: dict, encodings: dict) -> None:

@@ -222,6 +222,9 @@ def get_app_config():
         "AVAILABLE_LANGUAGES": args.get('available_languages', ['en', 'zh']),
     }
 
+    from data_formulator.auth.identity import is_local_mode
+    config["IS_LOCAL_MODE"] = is_local_mode()
+
     if workspace_backend == 'local':
         from data_formulator.datalake.workspace import get_data_formulator_home
         config["DATA_FORMULATOR_HOME"] = str(get_data_formulator_home())

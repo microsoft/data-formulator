@@ -251,6 +251,7 @@ const VegaChartRenderer: FC<{
     onSpecReady?: (spec: any | null) => void;
 }> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady }) => {
 
+    const dispatch = useDispatch();
     const elementId = `focused-chart-element-${chart.id}`;
 
     useEffect(() => {
@@ -281,6 +282,16 @@ const VegaChartRenderer: FC<{
         if (!spec || spec === "Table") {
             onSpecReady?.(null);
             return;
+        }
+
+        // Seed chart config with heuristic-computed defaults for properties
+        // the user hasn't explicitly set (e.g. independentYAxis toggle).
+        if (spec._computedConfig) {
+            for (const [key, value] of Object.entries(spec._computedConfig)) {
+                if (chart.config?.[key] === undefined) {
+                    dispatch(dfActions.updateChartConfig({ chartId: chart.id, key, value }));
+                }
+            }
         }
 
         spec['background'] = 'white';

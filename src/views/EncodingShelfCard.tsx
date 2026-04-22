@@ -268,7 +268,7 @@ export const TriggerCard: FC<{
         sx={{
             cursor: 'pointer', 
             fontSize: '11px',
-            color: 'rgba(0,0,0,0.75)',
+            color: 'text.primary',
             textAlign: 'left',
             py: 0.5,
             px: 1,
@@ -300,19 +300,19 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const config = useSelector((state: DataFormulatorState) => state.config);
-    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
 
-    let activeModel = useSelector(dfSelectors.getActiveModel);
     let allCharts = useSelector(dfSelectors.getAllCharts);
 
     // The table the user is currently looking at (from focused state)
     const focusedTableId = (() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const focusedChart = allCharts.find(c => c.id === focusedId.chartId);
-        return focusedChart?.tableRef;
+        if (focusedId.type === 'chart') {
+            const focusedChart = allCharts.find(c => c.id === focusedId.chartId);
+            return focusedChart?.tableRef;
+        }
+        return undefined;
     })();
 
     let chart = allCharts.find(c => c.id == chartId) as Chart;
@@ -362,7 +362,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     // Consolidated chart state - maps chartId to its ideas, thinkingBuffer, and loading state
     const [chartState, setChartState] = useState<Record<string, {
-        ideas: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[],
+        ideas: {text: string, goal: string, tag: string}[],
         thinkingBuffer: string,
         isLoading: boolean
     }>>({});
@@ -374,7 +374,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const isLoadingIdeas = currentState.isLoading;
     
     // Helper functions to update current chart's state
-    const setIdeas = (ideas: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]) => {
+    const setIdeas = (ideas: {text: string, goal: string, tag: string}[]) => {
         setChartState(prev => ({
             ...prev,
             [chartId]: { ...prev[chartId] || { thinkingBuffer: "", isLoading: false }, ideas }
@@ -463,7 +463,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             onLoadingChange: setIsLoadingIdeas,
             currentChartImage: currentChartPng,
             currentDataSample: currentTable.rows.slice(0, 10),
-            filterByType: true,
         });
     }
 
@@ -831,11 +830,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     return (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px', mb: '6px' }}>
                             {configProps.map((propDef) => {
-                                // App-level visibility: hide certain properties unless relevant channels are assigned
-                                if (propDef.key === 'independentYAxis') {
-                                    const hasFacet = chart.encodingMap['column' as Channel]?.fieldID != null
-                                        || chart.encodingMap['row' as Channel]?.fieldID != null;
-                                    if (!hasFacet) return null;
+                                // App-level visibility: hide properties whose visibleWhen channels aren't assigned
+                                if (propDef.visibleWhen?.channels) {
+                                    const hasAny = propDef.visibleWhen.channels.some(
+                                        ch => chart.encodingMap[ch as Channel]?.fieldID != null
+                                    );
+                                    if (!hasAny) return null;
                                 }
                                 if (propDef.type === 'continuous') {
                                     const currentValue = chart.config?.[propDef.key] ?? propDef.defaultValue ?? propDef.min ?? 0;

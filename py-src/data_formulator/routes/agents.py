@@ -371,6 +371,7 @@ def derive_data():
 
         # If user provided chart encodings (via visualization context), use transform mode; otherwise recommendation
         mode = "transform" if current_visualization or expected_visualization else "recommendation"
+        primary_tables = content.get("primary_tables", None)
 
         try:
             identity_id = get_identity_id()
@@ -387,7 +388,7 @@ def derive_data():
 
             if mode == "recommendation":
                 agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
-                results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages)
+                results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages, primary_tables=primary_tables)
             else:
                 agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
                 results = agent.run(input_tables, instruction, prev_messages,
@@ -473,6 +474,8 @@ def data_agent_streaming():
             agent_coding_rules = content.get("agent_coding_rules", "")
             focused_thread = content.get("focused_thread", None)
             other_threads = content.get("other_threads", None)
+            primary_tables = content.get("primary_tables", None)
+            attached_images = content.get("attached_images", None)
 
             # Stateless resume: client sends back the trajectory + user answer
             resume_trajectory = content.get("trajectory", None)
@@ -484,6 +487,8 @@ def data_agent_streaming():
                 logger.debug(f"===> Table: {table['name']}")
 
             logger.debug(f"== user question ===> {user_question}")
+            if attached_images:
+                logger.info(f"== attached_images ===> {len(attached_images)} image(s), sizes: {[len(img) for img in attached_images]}")
 
             client = get_client(content['model'])
             identity_id = get_identity_id()
@@ -531,6 +536,8 @@ def data_agent_streaming():
                     other_threads=other_threads,
                     trajectory=trajectory,
                     completed_step_count=completed_step_count,
+                    primary_tables=primary_tables,
+                    attached_images=attached_images,
                 ):
                     yield json.dumps({
                         "token": token,
@@ -539,7 +546,7 @@ def data_agent_streaming():
                     }, ensure_ascii=False) + '\n'
 
                     # Stop streaming after terminal events
-                    if event.get("type") in ("done", "clarify"):
+                    if event.get("type") in ("completion", "clarify"):
                         break
 
             except Exception as e:
@@ -743,23 +750,32 @@ def get_recommendation_questions():
             workspace = get_workspace(identity_id)
 
             agent_exploration_rules = content.get("agent_exploration_rules", "")
-            mode = content.get("mode", "interactive")
             start_question = content.get("start_question", None)
-            exploration_thread = content.get("exploration_thread", None)
             current_chart = content.get("current_chart", None)
-            current_data_sample = content.get("current_data_sample", None)
 
-            # Collect all tables that need to be in workspace:
-            # both the input tables and any tables from the exploration thread
-            all_tables = list(input_tables)
-            if exploration_thread:
-                all_tables.extend(exploration_thread)
+            # New tiered context params
+            focused_thread = content.get("focused_thread", None)
+            other_threads = content.get("other_threads", None)
+            primary_tables = content.get("primary_tables", None)
+
+            # Legacy params (backward compatibility)
+            exploration_thread = content.get("exploration_thread", None)
+            current_data_sample = content.get("current_data_sample", None)
 
             agent = InteractiveExploreAgent(client=client, workspace=workspace,
                                             agent_exploration_rules=agent_exploration_rules,
                                             language_instruction=get_language_instruction())
             try:
-                for chunk in agent.run(input_tables, start_question, exploration_thread, current_data_sample, current_chart, mode):
+                for chunk in agent.run(
+                    input_tables,
+                    start_question=start_question,
+                    focused_thread=focused_thread,
+                    other_threads=other_threads,
+                    primary_tables=primary_tables,
+                    current_chart=current_chart,
+                    exploration_thread=exploration_thread,
+                    current_data_sample=current_data_sample,
+                ):
                     yield chunk
             except Exception as e:
                 logger.exception("get-recommendation-questions failed")
@@ -779,49 +795,61 @@ def get_recommendation_questions():
     )
     return response
 
-@agent_bp.route('/generate-report-stream', methods=['GET', 'POST'])
-def generate_report_stream():
+
+@agent_bp.route('/generate-report-chat', methods=['POST'])
+def generate_report_chat():
+    """Chat-driven report generation via @report-agent.
+
+    Accepts lightweight context + user prompt.  The agent inspects
+    charts/data on demand via tool calls and streams the report with
+    embed_chart / embed_table events.
+    """
     def generate():
         if request.is_json:
-            logger.info("# generate report stream request")
+            logger.info("# generate report chat request")
             content = request.get_json()
-            token = content.get("token", "")
 
             client = get_client(content['model'])
+            identity_id = get_identity_id()
+            workspace = get_workspace(identity_id)
 
             input_tables = content.get("input_tables", [])
             charts = content.get("charts", [])
-            style = content.get("style", "blog post")
-            identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
-            # Include both input tables and chart data tables as temp data
-            # so derived tables referenced by charts are also available
-            all_tables = list(input_tables)
-            for chart in charts:
-                chart_data = chart.get("chart_data")
-                if chart_data and chart_data.get("name") and chart_data.get("rows"):
-                    all_tables.append(chart_data)
+            user_prompt = content.get("user_prompt", "Create a report summarizing the exploration.")
+            focused_thread = content.get("focused_thread", None)
+            other_threads = content.get("other_threads", None)
+            primary_tables = content.get("primary_tables", None)
 
-            agent = ReportGenAgent(client=client, workspace=workspace,
-                                   language_instruction=get_language_instruction())
+            agent = ReportGenAgent(
+                client=client,
+                workspace=workspace,
+                language_instruction=get_language_instruction(),
+            )
             try:
-                for chunk in agent.stream(input_tables, charts, style):
-                    yield chunk
+                for event in agent.run(
+                    input_tables,
+                    charts,
+                    user_prompt=user_prompt,
+                    focused_thread=focused_thread,
+                    other_threads=other_threads,
+                    primary_tables=primary_tables,
+                ):
+                    yield 'data: ' + json.dumps(event, ensure_ascii=False) + '\n'
             except Exception as e:
-                logger.exception("generate-report-stream failed")
-                error_data = { 
-                    "content": classify_llm_error(e) 
-                }
-                yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
+                logger.exception("generate-report-chat failed")
+                yield 'data: ' + json.dumps({
+                    "type": "error",
+                    "content": classify_llm_error(e),
+                }, ensure_ascii=False) + '\n'
         else:
-            error_data = { 
-                "content": "Invalid request format" 
-            }
-            yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
+            yield 'data: ' + json.dumps({
+                "type": "error",
+                "content": "Invalid request format",
+            }, ensure_ascii=False) + '\n'
 
     response = Response(
         stream_with_context(generate()),
-        mimetype='application/json',
+        mimetype='text/event-stream',
     )
     return response
 

@@ -34,6 +34,7 @@ import { createTableFromText } from '../data/utils';
 import { createTableFromFromObjectArray } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
 import { TableIcon } from '../icons';
+import { DataFrameTable } from './DataFrameTable';
 
 /** Returns true when the model name suggests it does not support image input. */
 export function checkIsLikelyTextOnlyModel(modelName: string | undefined): boolean {
@@ -175,8 +176,6 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
 // Inline table preview — compact notebook-style
 // ---------------------------------------------------------------------------
 
-const MAX_PREVIEW_COLS = 6; // show first 3 + last 3 if > 6 columns
-
 const InlineTablePreviewView: React.FC<{
     preview: InlineTablePreview;
     onLoad?: () => void;
@@ -185,20 +184,7 @@ const InlineTablePreviewView: React.FC<{
     const theme = useTheme();
     const [expanded, setExpanded] = useState(true);
 
-    // Abbreviate columns: first 3 + ... + last 3
     const allCols = preview.columns;
-    const needsEllipsis = allCols.length > MAX_PREVIEW_COLS;
-    const displayCols = needsEllipsis
-        ? [...allCols.slice(0, 3), '\u2026', ...allCols.slice(-3)]
-        : allCols;
-
-    const getCell = (row: Record<string, any>, col: string) => {
-        if (col === '\u2026') return '\u2026';
-        const v = row[col];
-        if (v == null) return '';
-        const s = String(v);
-        return s.length > 18 ? s.slice(0, 16) + '\u2026' : s;
-    };
 
     const rowLabel = preview.totalRows > preview.sampleRows.length
         ? `${preview.totalRows.toLocaleString()} rows`
@@ -265,38 +251,15 @@ const InlineTablePreviewView: React.FC<{
             {/* Collapsible table rows */}
             <Collapse in={expanded}>
                 {preview.sampleRows.length > 0 && (
-                    <Box sx={{ overflowX: 'auto', mt: 0.75, mb: 0.5 }}>
-                        <Box component="table" sx={{
-                            borderCollapse: 'collapse', fontSize: 12, fontFamily: CODE_FONT,
-                            '& th, & td': {
-                                px: 0.75, py: 0.3, textAlign: 'left', whiteSpace: 'nowrap',
-                                borderBottom: '1px solid', borderColor: 'divider',
-                            },
-                            '& th': { fontWeight: 600, color: 'text.secondary', fontSize: 10 },
-                            '& td': { color: 'text.primary' },
-                            '& tr:last-child td': { borderBottom: 'none' },
-                        }}>
-                            <thead>
-                                <tr>
-                                    {displayCols.map((col, i) => (
-                                        <Typography component="th" key={i} variant="caption" sx={{ fontWeight: 600, fontSize: 10 }}>
-                                            {col}
-                                        </Typography>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {preview.sampleRows.slice(0, 5).map((row, ri) => (
-                                    <tr key={ri}>
-                                        {displayCols.map((col, ci) => (
-                                            <Typography component="td" key={ci} variant="caption" sx={{ fontSize: 11 }}>
-                                                {getCell(row, col)}
-                                            </Typography>
-                                        ))}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </Box>
+                    <Box sx={{ mt: 0.75, mb: 0.5 }}>
+                        <DataFrameTable
+                            columns={allCols}
+                            rows={preview.sampleRows}
+                            totalRows={preview.totalRows}
+                            maxRows={5}
+                            maxColumns={6}
+                            maxCellLength={18}
+                        />
                     </Box>
                 )}
             </Collapse>

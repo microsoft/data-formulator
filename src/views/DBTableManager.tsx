@@ -27,6 +27,7 @@ import Autocomplete from '@mui/material/Autocomplete';
 import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity } from '../app/utils';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
+import { DataFrameTable } from './DataFrameTable';
 import { DictTable } from '../components/ComponentType';
 import { useDispatch, useSelector } from 'react-redux';
 import { dfActions } from '../app/dfSlice';
@@ -1059,6 +1060,46 @@ export const DataLoaderForm: React.FC<{
         }
     }, [selectedPreviewTable]);
 
+    // Fetch sample rows on demand when a table is selected but has no sample_rows.
+    // Debounced to avoid rapid-fire requests when clicking through many files.
+    useEffect(() => {
+        if (!selectedPreviewTable || !connectorIdRef.current) return;
+        const meta = tableMetadata[selectedPreviewTable];
+        if (!meta || meta.sample_rows) return; // already has sample rows
+
+        const controller = new AbortController();
+        const timerId = setTimeout(() => {
+            const sourceName = meta._source_name || meta._catalogName || selectedPreviewTable.split('/').pop() || selectedPreviewTable;
+            fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    connector_id: connectorIdRef.current,
+                    source_table: sourceName,
+                    limit: 10,
+                }),
+                signal: controller.signal,
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.rows && data.columns) {
+                        setTableMetadata(prev => ({
+                            ...prev,
+                            [selectedPreviewTable]: {
+                                ...prev[selectedPreviewTable],
+                                sample_rows: data.rows,
+                                columns: data.columns,
+                                row_count: data.total_row_count ?? prev[selectedPreviewTable]?.row_count,
+                            },
+                        }));
+                    }
+                })
+                .catch(() => {});
+        }, 300); // 300ms debounce
+
+        return () => { clearTimeout(timerId); controller.abort(); };
+    }, [selectedPreviewTable]);
+
     // Build preview DictTable for the selected table
     const previewTable: DictTable | null = useMemo(() => {
         if (!selectedPreviewTable || !tableMetadata[selectedPreviewTable]) return null;
@@ -1358,22 +1399,21 @@ export const DataLoaderForm: React.FC<{
                                                 ? t('db.rowsCount', { count: Number(metadata.row_count).toLocaleString() })
                                                 : t('db.sampleRowsCount', { count: previewTable.rows.length })
                                             } × {previewTable.names.length} {t('db.columns')}
+                                            {metadata?.row_count > 0 && previewTable.rows.length < metadata.row_count && (
+                                                <span style={{ opacity: 0.7, marginLeft: 4 }}>
+                                                    ({t('db.showingPreview', { count: previewTable.rows.length, defaultValue: `showing ${previewTable.rows.length} preview rows` })})
+                                                </span>
+                                            )}
                                         </Typography>
                                         {/* Preview table — scrolls when tall, shrink-wraps when short */}
                                         <Box sx={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto' }}>
-                                            <Card variant="outlined" sx={{ borderRadius: 1.5, overflow: 'hidden' }}>
-                                                <CustomReactTable
-                                                    rows={previewTable.rows.slice(0, 20)}
-                                                    columnDefs={previewTable.names.map(name => ({
-                                                        id: name,
-                                                        label: name,
-                                                        minWidth: 60,
-                                                    }))}
-                                                    rowsPerPageNum={-1}
-                                                    compact={false}
-                                                    isIncompleteTable={previewTable.rows.length > 20}
-                                                />
-                                            </Card>
+                                            <DataFrameTable
+                                                columns={previewTable.names}
+                                                rows={previewTable.rows}
+                                                totalRows={metadata?.row_count || undefined}
+                                                maxRows={10}
+                                                showIndex
+                                            />
                                         </Box>
 
                                         {/* Load & filter panel — pinned below table */}

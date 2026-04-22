@@ -72,6 +72,7 @@ export interface ServerConfig {
     CONNECTED_CONNECTORS?: string[];
     IDENTITY?: { type: string; id: string };
     CREDENTIAL_VAULT_ENABLED?: boolean;
+    IS_LOCAL_MODE?: boolean;
 }
 
 export interface ModelConfig {
@@ -107,12 +108,11 @@ export interface ClientConfig {
 export interface GeneratedReport {
     id: string;
     content: string;
-    style: string;
     selectedChartIds: string[];
     createdAt: number;
     title?: string;
     updatedAt?: number;
-    anchorChartId?: string;
+    triggerTableId?: string;
     contentSnapshotHash?: string;
     prompt?: string;
     status?: 'generating' | 'completed' | 'error';
@@ -319,8 +319,20 @@ let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
     // Also clean up any draft nodes that were chained from this table
     state.draftNodes = state.draftNodes.filter(d => d.derive?.trigger.tableId !== tableId);
 
+    // Delete reports triggered from this table
+    state.generatedReports = state.generatedReports.filter(r => r.triggerTableId !== tableId);
+
     if (state.focusedId?.type === 'table' && state.focusedId.tableId === tableId) {
         state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[0].id } : undefined;
+    }
+    // If a report triggered by this table was focused, fall back
+    if (state.focusedId?.type === 'report') {
+        const reportId = (state.focusedId as { type: 'report'; reportId: string }).reportId;
+        const focusedReport = state.generatedReports.find(r => r.id === reportId);
+        if (!focusedReport) {
+            state.focusedId = state.tables.length > 0 ? { type: 'table', tableId: state.tables[state.tables.length - 1].id } : undefined;
+            state.viewMode = 'editor';
+        }
     }
 };
 
@@ -1122,6 +1134,8 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         insertDerivedTables: (state, action: PayloadAction<DictTable>) => {
+            // Guard against duplicate IDs (e.g. race conditions or backend name collisions)
+            if (state.tables.some(t => t.id === action.payload.id)) return;
             state.tables = [...state.tables, action.payload];
         },
         // ── Draft node reducers ──────────────────────────────────
@@ -1358,10 +1372,6 @@ export const dataFormulatorSlice = createSlice({
         // Generated reports actions
         saveGeneratedReport: (state, action: PayloadAction<GeneratedReport>) => {
             const report = action.payload;
-            // Auto-set anchorChartId to the last selected chart if not provided
-            if (!report.anchorChartId && report.selectedChartIds.length > 0) {
-                report.anchorChartId = report.selectedChartIds[report.selectedChartIds.length - 1];
-            }
             // Check if report with same ID already exists and update it, otherwise add new
             const existingIndex = state.generatedReports.findIndex(r => r.id === report.id);
             if (existingIndex >= 0) {
@@ -1373,8 +1383,29 @@ export const dataFormulatorSlice = createSlice({
         },
         deleteGeneratedReport: (state, action: PayloadAction<string>) => {
             const reportId = action.payload;
+            const report = state.generatedReports.find(r => r.id === reportId);
+            const wasFocused = state.focusedId?.type === 'report' && state.focusedId.reportId === reportId;
+
             state.generatedReports = state.generatedReports.filter(r => r.id !== reportId);
-            // Redux Persist will handle persistence automatically
+
+            // Fallback focus: trigger table's first chart, or the trigger table itself
+            if (wasFocused && report) {
+                const triggerTableId = report.triggerTableId;
+                if (triggerTableId) {
+                    const allCharts = dfSelectors.getAllCharts(state);
+                    const tableChart = allCharts.find(c => c.tableRef === triggerTableId && c.source === 'user');
+                    if (tableChart) {
+                        state.focusedId = { type: 'chart', chartId: tableChart.id };
+                    } else {
+                        state.focusedId = { type: 'table', tableId: triggerTableId };
+                    }
+                } else if (state.tables.length > 0) {
+                    state.focusedId = { type: 'table', tableId: state.tables[state.tables.length - 1].id };
+                } else {
+                    state.focusedId = undefined;
+                }
+                state.viewMode = 'editor';
+            }
         },
         updateGeneratedReportContent: (state, action: PayloadAction<{ id: string; content: string; status?: GeneratedReport['status']; title?: string }>) => {
             const { id, content, status, title } = action.payload;

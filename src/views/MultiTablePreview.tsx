@@ -12,11 +12,10 @@ import {
     Tooltip,
     LinearProgress,
     alpha,
-    Card,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { DictTable } from '../components/ComponentType';
-import { CustomReactTable } from './ReactTable';
+import { DataFrameTable } from './DataFrameTable';
 
 export interface MultiTablePreviewProps {
     /** Loading state indicator */
@@ -198,20 +197,12 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
 
                     {activeTable && (
                         <Box>
-                            <Card variant="outlined" sx={{ pb: 0.5 }}>
-                                <CustomReactTable
-                                    rows={activeTable.rows.slice(0, maxRows)}
-                                    columnDefs={activeTable.names.map(name => ({
-                                        id: name,
-                                        label: name,
-                                        minWidth: 60,
-                                    }))}
-                                    rowsPerPageNum={-1}
-                                    compact={compact}
-                                    isIncompleteTable={activeTable.rows.length > maxRows}
-                                    maxHeight={maxHeight}
-                                />
-                            </Card>
+                            <DataFrameTable
+                                columns={activeTable.names}
+                                rows={activeTable.rows}
+                                totalRows={activeTable.virtual?.rowCount}
+                                maxRows={maxRows}
+                            />
                             {!hideRowCount && (
                                 <Typography variant="caption" color="text.secondary">
                                     {t('preview.rowsColumns', {
