@@ -709,12 +709,18 @@ def export_table_csv():
                 df = df.drop(columns=['#rowId'])
             gen = _stream_csv_from_dataframe(df, delimiter)
 
+        from urllib.parse import quote
+        ascii_name = table_name.encode('ascii', 'replace').decode('ascii')
+        utf8_name = quote(table_name)
+        disposition = (
+            f'attachment; filename="{ascii_name}.{ext}"; '
+            f"filename*=UTF-8''{utf8_name}.{ext}"
+        )
+
         return Response(
             stream_with_context(gen),
             mimetype=mime,
-            headers={
-                'Content-Disposition': f'attachment; filename="{table_name}.{ext}"',
-            },
+            headers={'Content-Disposition': disposition},
         )
     except Exception as e:
         safe_msg, status_code = sanitize_db_error_message(e)
