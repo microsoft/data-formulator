@@ -37,6 +37,7 @@ import ExploreOutlinedIcon from '@mui/icons-material/ExploreOutlined';
 import ContentPasteOutlinedIcon from '@mui/icons-material/ContentPasteOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 
 import HistoryIcon from '@mui/icons-material/History';
 
@@ -46,7 +47,7 @@ import { AppDispatch } from '../app/store';
 import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS } from '../app/utils';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
-import { listWorkspaces, loadWorkspace } from '../app/workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace } from '../app/workspaceService';
 import { borderColor } from '../app/tokens';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
@@ -109,7 +110,8 @@ export const DataSourceSidebar: React.FC<{
             flexDirection: 'row',
             borderRight: `1px solid ${borderColor.view}`,
             backgroundColor: 'background.paper',
-            overflow: 'hidden',
+            overflow: 'visible',
+            position: 'relative',
         }}>
             {/* Rail — always visible */}
             <Box sx={{
@@ -144,6 +146,35 @@ export const DataSourceSidebar: React.FC<{
             {/* Panel — rendered when open, slides in/out */}
             {isOpen && (
                 <DataSourceSidebarPanel onOpenUploadDialog={onOpenUploadDialog} onCollapse={toggle} initialTab={initialTab} />
+            )}
+
+            {/* Edge collapse handle — sits on the border line */}
+            {isOpen && (
+                <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="right">
+                    <Box
+                        onClick={toggle}
+                        sx={{
+                            position: 'absolute',
+                            right: -6,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            width: 12,
+                            height: 28,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            borderRadius: 4,
+                            border: `1px solid ${borderColor.view}`,
+                            bgcolor: 'background.paper',
+                            zIndex: 1,
+                            color: 'text.disabled',
+                            '&:hover': { color: 'text.secondary' },
+                        }}
+                    >
+                        <ChevronLeftIcon sx={{ fontSize: 12 }} />
+                    </Box>
+                </Tooltip>
             )}
         </Box>
     );
@@ -194,15 +225,9 @@ const DataSourceSidebarPanel: React.FC<{
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
     const [importing, setImporting] = useState(false);
 
-    // Session preview state
-    const [sessionPreview, setSessionPreview] = useState<{
-        id: string;
-        displayName: string;
-        tables: { name: string; columns: number; rows: number }[];
-        charts: number;
-        loading: boolean;
-    } | null>(null);
-    const [sessionPreviewAnchor, setSessionPreviewAnchor] = useState<HTMLElement | null>(null);
+    // Session hover tooltip cache: sessionId → summary string
+    const [sessionTooltips, setSessionTooltips] = useState<Record<string, string>>({});
+    const sessionTooltipFetching = useRef<Set<string>>(new Set());
 
     // Sidebar tab: 'sources' or 'sessions'
     const [activeTab, setActiveTab] = useState<'sources' | 'sessions'>(initialTab);
@@ -218,45 +243,38 @@ const DataSourceSidebarPanel: React.FC<{
 
     useEffect(() => {
         listWorkspaces()
-            .then(list => setSessions(list))
+            .then(list => setSessions(list))    
             .catch(() => {});
     }, []);
 
-    const handlePreviewSession = useCallback(async (sessionId: string, displayName: string, anchorEl: HTMLElement) => {
-        setSessionPreview({ id: sessionId, displayName, tables: [], charts: 0, loading: true });
-        setSessionPreviewAnchor(anchorEl);
-
-        try {
-            const result = await loadWorkspace(sessionId);
-            if (result && result.state) {
-                const stateTables = (result.state.tables || []) as any[];
-                const stateCharts = (result.state.charts || []) as any[];
-                setSessionPreview({
-                    id: sessionId,
-                    displayName: result.displayName || displayName,
-                    tables: stateTables.map((t: any) => ({
-                        name: t.displayId || t.id || 'unknown',
-                        columns: t.names?.length || 0,
-                        rows: t.virtual?.rowCount || t.rows?.length || 0,
-                    })),
-                    charts: stateCharts.length,
-                    loading: false,
-                });
-            } else {
-                setSessionPreview(prev => prev ? { ...prev, loading: false } : null);
-            }
-        } catch {
-            setSessionPreview(prev => prev ? { ...prev, loading: false } : null);
-        }
-    }, []);
-
-    const closeSessionPreview = useCallback(() => {
-        setSessionPreview(null);
-        setSessionPreviewAnchor(null);
-    }, []);
+    const handleHoverSession = useCallback((sessionId: string) => {
+        if (sessionTooltips[sessionId] || sessionTooltipFetching.current.has(sessionId)) return;
+        sessionTooltipFetching.current.add(sessionId);
+        loadWorkspace(sessionId)
+            .then(result => {
+                if (result && result.state) {
+                    const tables = (result.state.tables || []) as any[];
+                    const charts = (result.state.charts || []) as any[];
+                    const parts: string[] = [];
+                    parts.push(`${tables.length} table${tables.length !== 1 ? 's' : ''}`);
+                    if (charts.length > 0) parts.push(`${charts.length} chart${charts.length !== 1 ? 's' : ''}`);
+                    if (tables.length > 0) {
+                        const names = tables.slice(0, 3).map((t: any) => t.displayId || t.id || 'unknown');
+                        if (tables.length > 3) names.push(`+${tables.length - 3} more`);
+                        parts.push(names.join(', '));
+                    }
+                    setSessionTooltips(prev => ({ ...prev, [sessionId]: parts.join(' · ') }));
+                } else {
+                    setSessionTooltips(prev => ({ ...prev, [sessionId]: 'Empty workspace' }));
+                }
+            })
+            .catch(() => {
+                setSessionTooltips(prev => ({ ...prev, [sessionId]: 'Unable to load info' }));
+            })
+            .finally(() => sessionTooltipFetching.current.delete(sessionId));
+    }, [sessionTooltips]);
 
     const handleOpenSession = useCallback(async (sessionId: string) => {
-        closeSessionPreview();
         dispatch(dfActions.setSessionLoading({ loading: true, label: 'Opening workspace...' }));
         try {
             const result = await loadWorkspace(sessionId);
@@ -269,7 +287,47 @@ const DataSourceSidebarPanel: React.FC<{
             dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: 'default' }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
-    }, [dispatch, closeSessionPreview]);
+    }, [dispatch]);
+
+    const handleDeleteSession = useCallback(async (sessionId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            await deleteWorkspace(sessionId);
+            setSessions(prev => {
+                const updated = prev.filter(s => s.id !== sessionId);
+                // If we deleted the active session, switch to the next one up the list
+                if (activeWorkspace?.id === sessionId) {
+                    const deletedIndex = prev.findIndex(s => s.id === sessionId);
+                    const nextSession = updated[Math.min(deletedIndex, updated.length - 1)];
+                    if (nextSession) {
+                        handleOpenSession(nextSession.id);
+                    } else {
+                        // No sessions left — start fresh
+                        const now = new Date();
+                        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+                        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+                        const short = crypto.randomUUID().slice(0, 4);
+                        const wsId = `session_${date}_${time}_${short}`;
+                        dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'default' } }));
+                    }
+                }
+                return updated;
+            });
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: 'Session deleted',
+            }));
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: 'Failed to delete session',
+            }));
+        }
+    }, [dispatch, activeWorkspace, handleOpenSession]);
 
     // ── Connector list ───────────────────────────────────────────────────────
 
@@ -538,17 +596,18 @@ const DataSourceSidebarPanel: React.FC<{
             {/* ── Data Sources tab ── */}
             {activeTab === 'sources' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                 <Box
-                    onClick={onCollapse}
-                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' }, userSelect: 'none' }}
+                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
                 >
                     <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
                         {t('sidebar.dataSources', { defaultValue: 'Data Sources' })}
                     </Typography>
-                    <ChevronLeftIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
                 </Box>
-                </Tooltip>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
 
                 {/* ── Load Data section ── */}
@@ -756,17 +815,18 @@ const DataSourceSidebarPanel: React.FC<{
             {/* ── Sessions tab ── */}
             {activeTab === 'sessions' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                 <Box
-                    onClick={onCollapse}
-                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' }, userSelect: 'none' }}
+                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
                 >
                     <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
-                    <ChevronLeftIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
                 </Box>
-                </Tooltip>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
                 {/* New session action */}
                 <Box
@@ -789,12 +849,11 @@ const DataSourceSidebarPanel: React.FC<{
                         userSelect: 'none',
                     }}
                 >
-                    <AddIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                    <Typography noWrap sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    <AddIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                    <Typography noWrap sx={{ fontSize: 12, fontWeight: 500, color: 'text.secondary' }}>
                         {t('sidebar.newSession', { defaultValue: 'New session' })}
                     </Typography>
                 </Box>
-                <Divider />
                 {sessions.length === 0 ? (
                     <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
                         <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic' }}>
@@ -803,38 +862,52 @@ const DataSourceSidebarPanel: React.FC<{
                     </Box>
                 ) : (
                     sessions.map((s) => (
-                        <Box key={s.id}>
-                            <Box
-                                onClick={(e) => handlePreviewSession(s.id, s.display_name, e.currentTarget)}
-                                sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 0.75,
-                                    px: 1.5,
-                                    py: 0.75,
-                                    cursor: 'pointer',
-                                    '&:hover': { bgcolor: 'action.hover' },
-                                    userSelect: 'none',
-                                }}
+                        <Tooltip
+                            key={s.id}
+                            title={(() => {
+                                const info = sessionTooltips[s.id];
+                                const date = s.saved_at ? new Date(s.saved_at).toLocaleDateString() : '';
+                                if (activeWorkspace?.id === s.id) return date ? `Current session · ${date}` : 'Current session';
+                                const base = info || 'Click to open';
+                                return date ? `${base} · ${date}` : base;
+                            })()}
+                            placement="right"
+                            enterDelay={400}
+                        >
+                        <Box
+                            onMouseEnter={() => handleHoverSession(s.id)}
+                            onClick={() => { if (activeWorkspace?.id !== s.id) handleOpenSession(s.id); }}
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.75,
+                                px: 1.5,
+                                py: 0.5,
+                                cursor: activeWorkspace?.id === s.id ? 'default' : 'pointer',
+                                '&:hover': { bgcolor: 'action.hover' },
+                                '&:hover .delete-btn': { visibility: 'visible' },
+                                userSelect: 'none',
+                            }}
+                        >
+                            {activeWorkspace?.id === s.id && (
+                                <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', flexShrink: 0 }} />
+                            )}
+                            <Typography noWrap sx={{
+                                fontSize: 12, flex: 1, fontWeight: 500,
+                                color: activeWorkspace?.id === s.id ? 'primary.main' : 'text.primary',
+                            }}>
+                                {s.display_name}
+                            </Typography>
+                            <IconButton
+                                className="delete-btn"
+                                size="small"
+                                onClick={(e) => handleDeleteSession(s.id, e)}
+                                sx={{ p: 0.25, visibility: 'hidden', color: 'text.disabled', '&:hover': { color: 'error.main' } }}
                             >
-                                {activeWorkspace?.id === s.id && (
-                                    <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', flexShrink: 0 }} />
-                                )}
-                                <Typography noWrap sx={{
-                                    fontSize: 12, flex: 1,
-                                    color: activeWorkspace?.id === s.id ? 'primary.main' : 'text.primary',
-                                    fontWeight: activeWorkspace?.id === s.id ? 500 : 400,
-                                }}>
-                                    {s.display_name}
-                                </Typography>
-                                {s.saved_at && (
-                                    <Typography sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }}>
-                                        {new Date(s.saved_at).toLocaleDateString()}
-                                    </Typography>
-                                )}
-                            </Box>
-                            <Divider />
+                                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                            </IconButton>
                         </Box>
+                        </Tooltip>
                     ))
                 )}
             </Box>
@@ -951,81 +1024,6 @@ const DataSourceSidebarPanel: React.FC<{
                 )}
             </Popover>
 
-            {/* Session preview popover */}
-            <Popover
-                open={Boolean(sessionPreviewAnchor && sessionPreview)}
-                anchorEl={sessionPreviewAnchor}
-                onClose={closeSessionPreview}
-                anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
-                transformOrigin={{ vertical: 'center', horizontal: 'left' }}
-                slotProps={{
-                    paper: {
-                        sx: { width: 320, maxHeight: 400, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-                    },
-                }}
-            >
-                {sessionPreview && (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-                        {/* Header */}
-                        <Box sx={{ px: 2, pt: 1.5, pb: 1, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
-                            <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{sessionPreview.displayName}</Typography>
-                        </Box>
-
-                        {/* Content */}
-                        <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1 }}>
-                            {sessionPreview.loading ? (
-                                <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                                    <CircularProgress size={20} />
-                                </Box>
-                            ) : (
-                                <>
-                                    <Typography sx={{ fontSize: 11, color: 'text.secondary', mb: 0.5 }}>
-                                        {sessionPreview.tables.length} table{sessionPreview.tables.length !== 1 ? 's' : ''}
-                                        {sessionPreview.charts > 0 && ` · ${sessionPreview.charts} chart${sessionPreview.charts !== 1 ? 's' : ''}`}
-                                    </Typography>
-                                    {sessionPreview.tables.length > 0 ? (
-                                        sessionPreview.tables.map((tbl, i) => (
-                                            <Box key={i} sx={{
-                                                display: 'flex', alignItems: 'center', gap: 0.75,
-                                                py: 0.25, px: 0.5, borderRadius: 0.5,
-                                                '&:hover': { bgcolor: 'action.hover' },
-                                            }}>
-                                                <Typography noWrap sx={{ fontSize: 12, flex: 1 }}>{tbl.name}</Typography>
-                                                <Typography sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }}>
-                                                    {tbl.columns} cols · {tbl.rows.toLocaleString()} rows
-                                                </Typography>
-                                            </Box>
-                                        ))
-                                    ) : (
-                                        <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 1 }}>
-                                            Empty workspace
-                                        </Typography>
-                                    )}
-                                </>
-                            )}
-                        </Box>
-
-                        {/* Footer */}
-                        <Box sx={{ px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider', flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
-                            {activeWorkspace?.id === sessionPreview.id ? (
-                                <Button size="small" disabled variant="outlined" sx={{ textTransform: 'none', fontSize: 12 }}>
-                                    Current session
-                                </Button>
-                            ) : (
-                                <Button
-                                    size="small"
-                                    variant="contained"
-                                    disabled={sessionPreview.loading}
-                                    onClick={() => handleOpenSession(sessionPreview.id)}
-                                    sx={{ textTransform: 'none', fontSize: 12 }}
-                                >
-                                    Load session
-                                </Button>
-                            )}
-                        </Box>
-                    </Box>
-                )}
-            </Popover>
         </Box>
     );
 };
