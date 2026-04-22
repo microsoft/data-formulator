@@ -806,6 +806,28 @@ const AppShell: FC = () => {
                                 </>}
                             </Box>
                         )}
+                        {isGalleryPage && (
+                            <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, alignItems: 'center' }}>
+                                <LanguageSwitcher />
+                                <Tooltip title={t('appBar.viewOnGitHub')}>
+                                    <IconButton
+                                        component="a"
+                                        href="https://github.com/microsoft/data-formulator"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={t('appBar.viewOnGitHub')}
+                                        sx={{
+                                            color: 'inherit',
+                                            '&:hover': {
+                                                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                            }
+                                        }}
+                                    >
+                                        <GitHubIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                        )}
                         {isAboutPage && (
                             <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
                                 <LanguageSwitcher />

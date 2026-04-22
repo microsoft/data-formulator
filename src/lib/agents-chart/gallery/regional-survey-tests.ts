@@ -76,7 +76,7 @@ function roseByRegionAvgPct(): Record<string, unknown>[] {
 export function genGalleryRegionalSurveyScatterTests(): TestCase[] {
     const data = regionalSurveyTable();
     return [{
-        title: 'Gallery: Scatter — count × % (by region)',
+        title: 'Flint: Scatter — count × % (by region)',
         description: 'Regional survey: sample size vs approval %, colored by compass region.',
         tags: ['gallery', 'survey', 'scatter'],
         chartType: 'Scatter Plot',
@@ -98,7 +98,7 @@ export function genGalleryRegionalSurveyScatterTests(): TestCase[] {
 export function genGalleryRegionalSurveyLineTests(): TestCase[] {
     const data = regionalSurveyTable();
     return [{
-        title: 'Gallery: Line — % over survey waves (by region)',
+        title: 'Flint: Line — % over survey waves (by region)',
         description: 'Multi-series line: x = wave date, y = %, color = region.',
         tags: ['gallery', 'survey', 'line', 'multi-series'],
         chartType: 'Line Chart',
@@ -120,7 +120,7 @@ export function genGalleryRegionalSurveyLineTests(): TestCase[] {
 export function genGalleryRegionalSurveyBarTests(): TestCase[] {
     const data = regionalSurveyTable();
     return [{
-        title: 'Gallery: Bar — city × count',
+        title: 'Flint: Bar — city × count',
         description: 'One bar per city in the panel.',
         tags: ['gallery', 'survey', 'bar'],
         chartType: 'Bar Chart',
@@ -134,7 +134,7 @@ export function genGalleryRegionalSurveyBarTests(): TestCase[] {
 export function genGalleryRegionalSurveyStackedBarTests(): TestCase[] {
     const data = regionalSurveyTable();
     return [{
-        title: 'Gallery: Stacked bar — wave × count (by region)',
+        title: 'Flint: Stacked bar — wave × count (by region)',
         description: 'Stacked counts per survey wave, colored by region.',
         tags: ['gallery', 'survey', 'stacked-bar'],
         chartType: 'Stacked Bar Chart',
@@ -156,7 +156,7 @@ export function genGalleryRegionalSurveyStackedBarTests(): TestCase[] {
 export function genGalleryRegionalSurveyGroupedBarTests(): TestCase[] {
     const data = regionalSurveyTable();
     return [{
-        title: 'Gallery: Grouped bar — region × % (by wave)',
+        title: 'Flint: Grouped bar — region × % (by wave)',
         description: 'Side-by-side bars: region on x, % on y, grouped by wave.',
         tags: ['gallery', 'survey', 'grouped-bar'],
         chartType: 'Grouped Bar Chart',
@@ -178,7 +178,7 @@ export function genGalleryRegionalSurveyGroupedBarTests(): TestCase[] {
 export function genGalleryRegionalSurveyAreaTests(): TestCase[] {
     const data = regionalSurveyTable();
     return [{
-        title: 'Gallery: Area — count over waves (by region)',
+        title: 'Flint: Area — count over waves (by region)',
         description: 'Stacked area: survey wave vs count, colored by region.',
         tags: ['gallery', 'survey', 'area', 'stacked'],
         chartType: 'Area Chart',
@@ -200,7 +200,7 @@ export function genGalleryRegionalSurveyAreaTests(): TestCase[] {
 export function genGalleryRegionalSurveyPieTests(): TestCase[] {
     const data = pieByRegionTotals();
     return [{
-        title: 'Gallery: Pie — total count by region',
+        title: 'Flint: Pie — total count by region',
         description: 'Aggregated respondent counts summed across all waves.',
         tags: ['gallery', 'survey', 'pie'],
         chartType: 'Pie Chart',
@@ -217,7 +217,7 @@ export function genGalleryRegionalSurveyPieTests(): TestCase[] {
 export function genGalleryRegionalSurveyHistogramTests(): TestCase[] {
     const data = regionalSurveyTable();
     return [{
-        title: 'Gallery: Histogram — distribution of %',
+        title: 'Flint: Histogram — distribution of %',
         description: 'Approval percentage across all city-wave rows.',
         tags: ['gallery', 'survey', 'histogram'],
         chartType: 'Histogram',
@@ -232,7 +232,7 @@ export function genGalleryRegionalSurveyRadarTests(): TestCase[] {
     const data = radarByRegionWave();
     const waves = REGIONAL_SURVEY_AXIS_LEVELS.seasonLabels;
     return [{
-        title: 'Gallery: Radar — regions × waves (% )',
+        title: 'Flint: Radar — regions × waves (% )',
         description: 'Each region is a series; each spoke is a survey wave.',
         tags: ['gallery', 'survey', 'radar'],
         chartType: 'Radar Chart',
@@ -254,7 +254,7 @@ export function genGalleryRegionalSurveyRadarTests(): TestCase[] {
 export function genGalleryRegionalSurveyRoseTests(): TestCase[] {
     const data = roseByRegionAvgPct();
     return [{
-        title: 'Gallery: Rose — mean % by region',
+        title: 'Flint: Rose — mean % by region',
         description: 'Polar bars: N/E/S/W with average approval % across waves.',
         tags: ['gallery', 'survey', 'rose'],
         chartType: 'Rose Chart',

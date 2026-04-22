@@ -320,7 +320,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                         onClick={() => {
                             const parts: string[] = [];
                             if (specOptions) {
-                                parts.push('## agents-chart input spec\n' + specOptions);
+                                parts.push('## Flint spec\n' + specOptions);
                             }
                             if (specJson) {
                                 const vlLines = specJson.split('\n').slice(0, 50).join('\n');
@@ -334,7 +334,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 </Box>
             )}
             {specOptions && (
-                <SpecDisclosure label="Agents-Chart Spec" content={specOptions} variant="input" />
+                <SpecDisclosure label="Flint Spec" content={specOptions} variant="input" />
             )}
             {specJson && (
                 <SpecDisclosure label="Vega-Lite Spec" content={specJson} variant="vegalite" dense />
@@ -563,7 +563,7 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             {specJson && (
                 <>
                     {standalone && (
-                        <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" />
+                        <SpecDisclosure label="Flint Spec" content={sharedSpec.compact} variant="input" />
                     )}
                     <SpecDisclosure label="ECharts Option" content={specJson} variant="echarts" dense={standalone} />
                 </>
@@ -605,7 +605,7 @@ const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 ))}
             </Box>
             <Box sx={{ mb: 1.5 }}>
-                <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" maxHeight={260} />
+                <SpecDisclosure label="Flint Spec" content={sharedSpec.compact} variant="input" maxHeight={260} />
             </Box>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                 {/* Vega-Lite side */}
@@ -1021,7 +1021,7 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             {specJson && (
                 <>
                     {standalone && (
-                        <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" />
+                        <SpecDisclosure label="Flint Spec" content={sharedSpec.compact} variant="input" />
                     )}
                     <SpecDisclosure label="Chart.js Config" content={specJson} variant="chartjs" dense={standalone} />
                 </>
@@ -1063,7 +1063,7 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
                 ))}
             </Box>
             <Box sx={{ mb: 1.5 }}>
-                <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" maxHeight={260} />
+                <SpecDisclosure label="Flint Spec" content={sharedSpec.compact} variant="input" maxHeight={260} />
             </Box>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                 <VegaChartInline testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
@@ -1224,7 +1224,7 @@ const QuadChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 ))}
             </Box>
             <Box sx={{ mb: 1.5 }}>
-                <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" maxHeight={260} />
+                <SpecDisclosure label="Flint Spec" content={sharedSpec.compact} variant="input" maxHeight={260} />
             </Box>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                 <VegaChartInline testCase={testCase} canvasSize={{ width: 300, height: 250 }} />
@@ -1434,12 +1434,15 @@ const HomeOverview: React.FC = () => {
     const sections = GALLERY_TREE.filter(s => s.id !== 'overview');
     return (
         <Box sx={{ p: 4, maxWidth: 1000 }}>
-            <Typography variant="h5" fontWeight={700} gutterBottom>Chart Gallery</Typography>
+            <Typography variant="h5" fontWeight={700} gutterBottom>Flint Gallery</Typography>
             <Typography variant="body1" color="text.secondary" paragraph>
-                This gallery demonstrates the expressiveness of the visualization languages
-                that <code>agents-chart</code> compiles to. Each language has its own chart
-                types; cross-cutting Features, Backend Comparison and Demo Scenarios show
-                how shared concepts render across libraries.
+                <strong>Flint</strong> is the intermediate visualization language used across
+                Data Formulator. A single Flint spec compiles to multiple rendering backends —
+                Vega-Lite, ECharts, Chart.js, and GoFish — so agents can pick the one that
+                best fits each chart. This page demonstrates the expressiveness of those
+                backends: each backend section shows its native chart types, and the
+                cross-cutting Features, Backend Comparison, and Demo Scenarios sections
+                illustrate how shared Flint concepts render across libraries.
             </Typography>
             {sections.map(section => (
                 <Box key={section.id} sx={{ mt: 4 }}>
