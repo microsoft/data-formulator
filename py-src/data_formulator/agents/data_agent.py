@@ -222,7 +222,7 @@ class DataAgent:
         agent_coding_rules: str = "",
         language_instruction: str = "",
         max_iterations: int = 5,
-        max_repair_attempts: int = 1,
+        max_repair_attempts: int = 2,
         **kwargs,  # absorb unused params (e.g. rec_language_instruction)
     ):
         self.client = client
@@ -267,26 +267,85 @@ class DataAgent:
 
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count
+        action_retry_budget = 1  # one extra chance when the LLM fails to produce an action
 
         while iteration < self.max_iterations:
             iteration += 1
 
             # --- THINK: call LLM with tools, get action ---------------
-            # _get_next_action is a generator that yields tool events
-            # (for frontend visibility) and returns the final action as
-            # the last yielded item with type="agent_action".
             t_start = time.time()
             action = None
+            action_reason = "ok"
+            action_error = ""
             for event in self._get_next_action(trajectory, input_tables):
                 if event.get("type") == "agent_action":
                     action = event.get("action_data")
+                    action_reason = event.get("reason", "ok")
+                    action_error = event.get("error_message", "")
                 else:
-                    # Forward tool events to the frontend
                     yield event
-            logger.info(f"[DataAgent] iteration {iteration} total={time.time() - t_start:.2f}s")
+            logger.info("[DataAgent] iteration %d total=%.2fs reason=%s",
+                        iteration, time.time() - t_start, action_reason)
 
             if action is None:
-                yield self._error_event(iteration, "Failed to parse agent action from LLM response")
+                # ① tool rounds exhausted → pause and let the user decide
+                if action_reason == "tool_rounds_exhausted":
+                    steps_desc = "\n".join(
+                        f"  • {s['display_instruction']}" for s in completed_steps
+                    ) if completed_steps else "(none yet)"
+                    yield {
+                        "type": "clarify",
+                        "iteration": iteration,
+                        "thought": "",
+                        "message": (
+                            "I've been exploring extensively but haven't reached "
+                            "a conclusion yet.\n\nCompleted steps so far:\n"
+                            f"{steps_desc}\n\n"
+                            "How would you like to proceed?"
+                        ),
+                        "options": [
+                            "Continue exploring",
+                            "Simplify the task",
+                            "Present what you have so far",
+                        ],
+                        "trajectory": self._strip_images(trajectory),
+                        "completed_step_count": len(completed_steps),
+                    }
+                    return
+
+                # ② LLM API error (already retried in _call_llm) → fatal
+                if action_reason == "llm_error":
+                    yield self._error_event(
+                        iteration,
+                        action_error or "LLM API error",
+                    )
+                    break
+
+                # ③ json_parse_failed or unknown → retry once with context
+                if action_retry_budget > 0:
+                    action_retry_budget -= 1
+                    logger.info("[DataAgent] action=None (reason=%s), retrying "
+                                "(%d retries left)", action_reason, action_retry_budget)
+                    steps_summary = "\n".join(
+                        f"  - Step {i + 1}: {s['display_instruction']}"
+                        for i, s in enumerate(completed_steps)
+                    ) or "  (no completed steps)"
+                    trajectory.append({
+                        "role": "user",
+                        "content": (
+                            "[SYSTEM] Your previous response could not be parsed. "
+                            "Here is what was already completed:\n"
+                            f"{steps_summary}\n\n"
+                            "Please output a JSON action object (visualize / clarify / present) "
+                            "to continue."
+                        ),
+                    })
+                    continue
+
+                yield self._error_event(
+                    iteration,
+                    action_error or "Failed to parse agent action from LLM response",
+                )
                 break
 
             action_type = action.get("action")
@@ -852,33 +911,44 @@ class DataAgent:
         Yields:
             - ``{"type": "tool_start", "tool": ..., ...}`` for each tool call
             - ``{"type": "tool_result", "tool": ..., ...}`` for each tool result
-            - ``{"type": "agent_action", "action_data": dict}`` as the final yield
-              (or ``{"type": "agent_action", "action_data": None}`` on failure)
+            - ``{"type": "agent_action", "action_data": dict, "reason": ...}``
+              as the final yield.  ``action_data`` is *None* on failure;
+              ``reason`` is one of ``"ok"``, ``"json_parse_failed"``,
+              ``"llm_error"``, ``"tool_rounds_exhausted"``.
         """
         max_tool_rounds = 8
+        max_json_retries = 1
+        json_retries = 0
         messages = trajectory
 
-        for _ in range(max_tool_rounds):
-            response = self._call_llm(messages)
-
-            if isinstance(response, Exception):
-                logger.error(f"[DataAgent] LLM error: {response}")
-                yield {"type": "agent_action", "action_data": None}
+        for round_idx in range(max_tool_rounds):
+            # --- call LLM (transient errors already retried inside _call_llm) ---
+            try:
+                response = self._call_llm(messages)
+            except Exception as exc:
+                logger.error("[DataAgent] LLM call failed: %s", exc)
+                yield {
+                    "type": "agent_action",
+                    "action_data": None,
+                    "reason": "llm_error",
+                    "error_message": str(exc),
+                }
                 return
+
             if not response.choices:
-                yield {"type": "agent_action", "action_data": None}
+                yield {"type": "agent_action", "action_data": None, "reason": "llm_error",
+                       "error_message": "LLM returned empty response"}
                 return
 
             choice = response.choices[0]
             content = choice.message.content or ""
             tool_calls = getattr(choice.message, 'tool_calls', None)
 
+            # --- tool calls: execute and loop back ---
             if tool_calls:
-                # Yield any text the LLM produced alongside tool calls
                 if content.strip():
                     yield {"type": "thinking_text", "content": content.strip()}
 
-                # Build assistant message with tool calls
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": content or None,
@@ -896,7 +966,6 @@ class DataAgent:
                 ]
                 messages.append(assistant_msg)
 
-                # Execute each tool call and yield events
                 for tc in tool_calls:
                     tool_name = tc.function.name
                     try:
@@ -904,7 +973,6 @@ class DataAgent:
                     except json.JSONDecodeError:
                         tool_args = {}
 
-                    # Yield tool_start event for frontend
                     yield {
                         "type": "tool_start",
                         "tool": tool_name,
@@ -915,11 +983,7 @@ class DataAgent:
                     if tool_name == "think":
                         thought_msg = tool_args.get("message", "")
                         tool_content = "ok"
-
-                        yield {
-                            "type": "thinking_text",
-                            "content": thought_msg,
-                        }
+                        yield {"type": "thinking_text", "content": thought_msg}
                     elif tool_name == "explore":
                         result = self._run_explore_code(
                             tool_args.get("code", ""),
@@ -928,7 +992,6 @@ class DataAgent:
                         tool_content = result.get("stdout", "")
                         if result.get("error"):
                             tool_content += f"\n\nError: {result['error']}"
-
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
@@ -941,7 +1004,6 @@ class DataAgent:
                         tool_content = handle_inspect_source_data(
                             table_names, input_tables or [], self.workspace
                         )
-
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
@@ -957,27 +1019,82 @@ class DataAgent:
                         "content": tool_content,
                     })
 
-                logger.info(f"[DataAgent] Executed {len(tool_calls)} tool call(s), looping back to LLM")
+                logger.info("[DataAgent] Executed %d tool call(s), looping back to LLM", len(tool_calls))
                 continue
 
-            # No tool calls — parse the JSON action from text
-            logger.debug(f"[DataAgent] Raw LLM response:\n{content}")
+            # --- no tool calls — parse JSON action from text ---
+            logger.debug("[DataAgent] Raw LLM response:\n%s", content)
             json_blocks = extract_json_objects(content)
             if json_blocks:
                 messages.append({"role": "assistant", "content": content})
-                yield {"type": "agent_action", "action_data": json_blocks[0]}
+                yield {"type": "agent_action", "action_data": json_blocks[0], "reason": "ok"}
                 return
 
-            logger.warning(f"[DataAgent] No JSON action found in response: {content[:200]}")
-            yield {"type": "agent_action", "action_data": None}
+            # --- JSON parse failed — focused retry (ask LLM to reformat only) ---
+            if json_retries < max_json_retries:
+                json_retries += 1
+                logger.warning("[DataAgent] No JSON found (retry %d/%d), asking LLM to reformat",
+                               json_retries, max_json_retries)
+                messages.append({"role": "assistant", "content": content})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[FORMAT ERROR] Your previous response did not contain a valid JSON action. "
+                        "Please output ONLY a JSON object with one of these actions: "
+                        "visualize, clarify, or present. Do NOT repeat your analysis — "
+                        "just reformat your conclusion as JSON."
+                    ),
+                })
+                continue
+
+            logger.warning("[DataAgent] JSON parse failed after retries: %s", content[:200])
+            yield {"type": "agent_action", "action_data": None, "reason": "json_parse_failed"}
             return
 
-        logger.warning("[DataAgent] Exceeded max tool rounds without producing an action")
-        yield {"type": "agent_action", "action_data": None}
-        return None
+        # --- tool rounds exhausted ---
+        logger.warning("[DataAgent] Exceeded %d tool rounds without producing an action", max_tool_rounds)
+        yield {"type": "agent_action", "action_data": None, "reason": "tool_rounds_exhausted"}
+        return
+
+    _MAX_LLM_RETRIES = 3
+
+    @staticmethod
+    def _is_transient_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        if any(kw in msg for kw in (
+            "timeout", "timed out", "rate limit", "rate_limit",
+            "429", "503", "502", "connection", "reset by peer",
+        )):
+            return True
+        name = type(exc).__name__.lower()
+        return any(kw in name for kw in ("timeout", "ratelimit", "connection"))
 
     def _call_llm(self, messages: list[dict]):
-        """Call the LLM with tool definitions (non-streaming)."""
+        """Call the LLM with tool definitions (non-streaming).
+
+        Retries up to ``_MAX_LLM_RETRIES`` times on transient errors
+        (timeout, rate-limit, connection reset) with exponential back-off.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(self._MAX_LLM_RETRIES):
+            try:
+                return self._call_llm_once(messages)
+            except Exception as e:
+                last_exc = e
+                if self._is_transient_error(e) and attempt < self._MAX_LLM_RETRIES - 1:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        "[DataAgent] Transient LLM error (attempt %d/%d), "
+                        "retrying in %ds: %s",
+                        attempt + 1, self._MAX_LLM_RETRIES, wait, e,
+                    )
+                    time.sleep(wait)
+                    continue
+                raise
+        raise last_exc  # pragma: no cover
+
+    def _call_llm_once(self, messages: list[dict]):
+        """Single LLM call (no retry)."""
         if self.client.endpoint == "openai":
             client = openai.OpenAI(
                 base_url=self.client.params.get("api_base", None),
@@ -1084,6 +1201,23 @@ class DataAgent:
             else:
                 stripped.append(msg)
         return stripped
+
+    @staticmethod
+    def _error_event(
+        iteration: int,
+        message: str,
+        *,
+        display_instruction: str = "",
+    ) -> dict[str, Any]:
+        """Build an ``"error"`` event dict for the streaming response."""
+        event: dict[str, Any] = {
+            "type": "error",
+            "iteration": iteration,
+            "message": message,
+        }
+        if display_instruction:
+            event["display_instruction"] = display_instruction
+        return event
 
     @staticmethod
     def _snapshot_dialog(messages: list[dict] | None) -> list[dict]:
