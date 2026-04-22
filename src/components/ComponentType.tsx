@@ -361,6 +361,8 @@ export interface ConnectorInstance {
     display_name: string;
     icon: string;
     connected: boolean;
+    /** Backend signals that SSO token exchange can auto-connect this source. */
+    sso_auto_connect?: boolean;
     deletable?: boolean;
     params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
     pinned_params: Record<string, string>;

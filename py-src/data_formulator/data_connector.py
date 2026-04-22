@@ -287,6 +287,7 @@ class DataConnector:
         connection verification succeeds.
         """
         merged = {**self._default_params, **user_params}
+        self._inject_sso_token(merged)
         loader = self._loader_class(merged)
         identity = self._get_identity()
         self._loaders[identity] = loader
@@ -311,9 +312,11 @@ class DataConnector:
         """
         stored_params = self._vault_retrieve(identity)
         if stored_params is None:
-            return None
+            # No vault creds — try SSO token exchange as last resort
+            return self._try_sso_auto_connect(identity)
         try:
             merged = {**self._default_params, **stored_params}
+            self._inject_sso_token(merged)
             loader = self._loader_class(merged)
             if loader.test_connection():
                 self._loaders[identity] = loader
@@ -329,6 +332,48 @@ class DataConnector:
                            self._source_id, identity[:16], exc)
             self._vault_delete(identity)
             return None
+
+    def _inject_sso_token(self, params: dict[str, Any]) -> None:
+        """When the user has an SSO token and the loader supports token auth,
+        inject it so the loader can attempt SSO token exchange."""
+        if self._loader_class.auth_mode() != "token":
+            return
+        if params.get("access_token") or params.get("sso_access_token"):
+            return
+        try:
+            from data_formulator.auth.identity import get_sso_token
+            sso_token = get_sso_token()
+            if sso_token:
+                params["sso_access_token"] = sso_token
+        except Exception:
+            pass
+
+    def _try_sso_auto_connect(self, identity: str) -> ExternalDataLoader | None:
+        """Try to auto-connect using the current request's SSO token.
+
+        Only applies to token-mode loaders when no vault credentials exist.
+        """
+        if self._loader_class.auth_mode() != "token":
+            return None
+        try:
+            from data_formulator.auth.identity import get_sso_token
+            sso_token = get_sso_token()
+            if not sso_token:
+                return None
+        except Exception:
+            return None
+        try:
+            merged = {**self._default_params, "sso_access_token": sso_token}
+            loader = self._loader_class(merged)
+            if loader.test_connection():
+                self._loaders[identity] = loader
+                logger.info("SSO auto-connect succeeded for '%s'/%s",
+                            self._source_id, identity[:16])
+                return loader
+        except Exception as exc:
+            logger.debug("SSO auto-connect failed for '%s': %s",
+                         self._source_id, exc)
+        return None
 
     def _require_loader(self) -> ExternalDataLoader:
         identity = self._get_identity()
@@ -517,12 +562,18 @@ def pick_local_directory():
 @connectors_bp.route("/api/connectors", methods=["GET"])
 def list_connectors():
     """List all registered connector instances (admin + user) with connection status."""
-    from data_formulator.auth.identity import get_identity_id
+    from data_formulator.auth.identity import get_identity_id, get_sso_token
 
     try:
         identity = get_identity_id()
     except Exception:
         identity = None
+
+    sso_token = None
+    try:
+        sso_token = get_sso_token() if identity else None
+    except Exception:
+        pass
 
     # Ensure user connectors are loaded
     if identity:
@@ -536,6 +587,13 @@ def list_connectors():
                 connector._get_loader(identity) is not None
                 or connector.has_stored_credentials(identity)
             )
+        # SSO auto-connect: token-mode loader + user has SSO token + URL is pinned
+        sso_auto = (
+            not connected
+            and sso_token is not None
+            and connector._loader_class.auth_mode() == "token"
+            and bool(connector._default_params.get("url"))
+        )
         is_admin = sid in _ADMIN_CONNECTOR_IDS
         cfg = connector.get_frontend_config()
         result.append({
@@ -546,6 +604,7 @@ def list_connectors():
             "display_name": connector._display_name,
             "icon": connector._icon,
             "connected": connected,
+            "sso_auto_connect": sso_auto,
             "params_form": cfg["params_form"],
             "pinned_params": cfg["pinned_params"],
             "hierarchy": cfg["hierarchy"],
@@ -806,9 +865,19 @@ def connector_get_status():
     loader = source._get_loader(identity)
     if loader is None:
         has_stored = source.has_stored_credentials(identity)
+        sso_available = False
+        try:
+            from data_formulator.auth.identity import get_sso_token
+            sso_available = (
+                source._loader_class.auth_mode() == "token"
+                and get_sso_token() is not None
+            )
+        except Exception:
+            pass
         return jsonify({
             "connected": False,
             "has_stored_credentials": has_stored,
+            "sso_available": sso_available,
             "params_form": source.get_frontend_config()["params_form"],
         })
     try:
@@ -1221,6 +1290,19 @@ def _load_admin_specs() -> list[SourceSpec]:
         ))
 
     env_ids = {s.source_id for s in specs}
+
+    # 1b. PLG_SUPERSET_URL shortcut — auto-register Superset when set
+    superset_url = os.environ.get("PLG_SUPERSET_URL", "").strip()
+    if superset_url and "superset" not in env_ids:
+        specs.append(SourceSpec(
+            source_id="superset",
+            loader_type="superset",
+            display_name="Superset",
+            default_params={"url": superset_url.rstrip("/")},
+            icon="superset",
+            source="admin",
+        ))
+        env_ids.add("superset")
 
     # 2. connectors.yaml in DATA_FORMULATOR_HOME
     try:

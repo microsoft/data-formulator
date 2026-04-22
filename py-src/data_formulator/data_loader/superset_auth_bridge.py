@@ -66,3 +66,23 @@ class SupersetAuthBridge:
         )
         resp.raise_for_status()
         return resp.json()
+
+    def exchange_sso_token(self, sso_access_token: str) -> dict:
+        """Exchange an SSO access token for a Superset JWT.
+
+        Requires ``TokenExchangeView`` deployed on the Superset side
+        (see design doc 8, Phase 2).  Returns the same dict shape as
+        :meth:`login` — ``{"access_token": ..., "refresh_token": ...}``.
+
+        Raises on network errors or when the endpoint is unavailable.
+        """
+        resp = requests.post(
+            f"{self.superset_url}/api/v1/df-token-exchange/",
+            json={"sso_access_token": sso_access_token},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "access_token" not in data:
+            raise ValueError("Token exchange response missing access_token")
+        return data

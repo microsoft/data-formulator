@@ -2068,7 +2068,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 paramDefs={conn.params_form}
                                 authInstructions={conn.auth_instructions || ''}
                                 connectorId={conn.id}
-                                autoConnect={conn.connected}
+                                autoConnect={conn.connected || conn.sso_auto_connect}
+                                ssoAutoConnect={conn.sso_auto_connect}
                                 delegatedLogin={conn.delegated_login}
                                 authMode={conn.auth_mode}
                                 onImport={() => {}}

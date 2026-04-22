@@ -677,11 +677,13 @@ const GroupLoadPanel: React.FC<{
 };
 
 export const DataLoaderForm: React.FC<{
-    dataLoaderType: string, 
+    dataLoaderType: string,
     paramDefs: {name: string, default?: string, type: string, required: boolean, description?: string, sensitive?: boolean, tier?: 'connection' | 'auth' | 'filter'}[],
     authInstructions: string,
     connectorId?: string,
     autoConnect?: boolean,
+    /** When true, attempt SSO token passthrough on mount (no popup). */
+    ssoAutoConnect?: boolean,
     delegatedLogin?: { login_url: string; label?: string } | null,
     authMode?: string,
     onImport: () => void,
@@ -692,7 +694,7 @@ export const DataLoaderForm: React.FC<{
     /** Called before the connect step. Returns the effective connectorId to use.
      *  Used by AddConnectionPanel to create the connector before connecting. */
     onBeforeConnect?: (params: Record<string, any>) => Promise<string>,
-}> = ({dataLoaderType, paramDefs, authInstructions, connectorId, autoConnect, delegatedLogin, authMode, onImport, onFinish, onConnected, onDelete, onBeforeConnect}) => {
+}> = ({dataLoaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, onImport, onFinish, onConnected, onDelete, onBeforeConnect}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
@@ -939,45 +941,44 @@ export const DataLoaderForm: React.FC<{
         }, 1000);
     }, [delegatedLogin, mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, t]);
 
-    // Auto-connect on mount if this source has stored vault credentials.
-    // Uses auth/status which auto-reconnects from vault, then lists tables.
+    // Auto-connect on mount from vault credentials or SSO token passthrough.
     const autoConnectTriggered = useRef(false);
     useEffect(() => {
-        if (autoConnect && connectorIdRef.current && !autoConnectTriggered.current && Object.keys(tableMetadata).length === 0) {
-            autoConnectTriggered.current = true;
-            (async () => {
-                setIsConnecting(true);
-                try {
-                    // Check current connection status (no side effects)
-                    const statusResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_STATUS, {
+        const shouldAutoConnect = (autoConnect || ssoAutoConnect) && connectorIdRef.current && !autoConnectTriggered.current && Object.keys(tableMetadata).length === 0;
+        if (!shouldAutoConnect) return;
+        autoConnectTriggered.current = true;
+        (async () => {
+            setIsConnecting(true);
+            try {
+                const statusResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_STATUS, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ connector_id: connectorIdRef.current }),
+                });
+                const statusData = await statusResp.json();
+                if (statusData.connected) {
+                    await fetchCatalogTree();
+                } else if (statusData.has_stored_credentials || statusData.sso_available) {
+                    // Vault creds or SSO token available — attempt auto-connect.
+                    // Backend _inject_sso_token handles SSO token passthrough transparently.
+                    const connectResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.CONNECT, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ connector_id: connectorIdRef.current }),
+                        body: JSON.stringify({ connector_id: connectorIdRef.current, params: {}, persist: !statusData.sso_available }),
                     });
-                    const statusData = await statusResp.json();
-                    if (statusData.connected) {
-                        // Already connected — fetch catalog tree
+                    const connectData = await connectResp.json();
+                    if (connectData.status === 'connected') {
                         await fetchCatalogTree();
-                    } else if (statusData.has_stored_credentials) {
-                        // Vault has creds — attempt reconnect
-                        const connectResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.CONNECT, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ connector_id: connectorIdRef.current, params: {}, persist: true }),
-                        });
-                        const connectData = await connectResp.json();
-                        if (connectData.status === 'connected') {
-                            await fetchCatalogTree();
-                        }
+                        onConnected?.();
                     }
-                } catch (err) {
-                    console.warn('Auto-connect failed for', connectorIdRef.current, err);
-                } finally {
-                    setIsConnecting(false);
                 }
-            })();
-        }
-    }, [autoConnect, connectorId]);
+            } catch (err) {
+                console.warn('Auto-connect failed for', connectorIdRef.current, err);
+            } finally {
+                setIsConnecting(false);
+            }
+        })();
+    }, [autoConnect, ssoAutoConnect, connectorId]);
 
     // Auto-select first table for preview when metadata loads
     useEffect(() => {

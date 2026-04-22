@@ -135,10 +135,20 @@ class SupersetLoader(ExternalDataLoader):
         self._client = SupersetClient(self.url)
         self._bridge = SupersetAuthBridge(self.url)
 
-        # Authenticate immediately
+        # Authenticate immediately — priority order:
+        # 1. Explicit Superset access_token (from SSO bridge popup or vault)
+        # 2. SSO token exchange (shared IdP, requires TokenExchangeView on Superset)
+        # 3. Username/password → Superset login API
         self._access_token: str | None = params.get("access_token")
         self._refresh_token: str | None = params.get("refresh_token")
-        if not self._access_token and self.username and self.password:
+        if self._access_token:
+            return
+        sso_token = params.get("sso_access_token")
+        if sso_token:
+            self._try_sso_exchange(sso_token)
+            if self._access_token:
+                return
+        if self.username and self.password:
             self._do_login()
         elif not self._access_token:
             raise ValueError("Superset requires either username/password or an SSO access token")
@@ -149,6 +159,17 @@ class SupersetLoader(ExternalDataLoader):
         self._refresh_token = result.get("refresh_token")
         if not self._access_token:
             raise ValueError("Superset login failed: no access token returned")
+
+    def _try_sso_exchange(self, sso_token: str) -> None:
+        """Best-effort SSO token exchange — silently ignored on failure."""
+        try:
+            result = self._bridge.exchange_sso_token(sso_token)
+            self._access_token = result.get("access_token")
+            self._refresh_token = result.get("refresh_token")
+            if self._access_token:
+                logger.info("SSO token exchange succeeded for Superset")
+        except Exception:
+            logger.debug("SSO token exchange not available", exc_info=True)
 
     @staticmethod
     def _is_token_expired(token: str, buffer_seconds: int = 60) -> bool:
