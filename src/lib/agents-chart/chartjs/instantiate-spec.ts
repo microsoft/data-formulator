@@ -51,13 +51,33 @@ export function cjsApplyLayoutToSpec(
     // ── Canvas dimensions ────────────────────────────────────────────────
     // Chart.js uses the canvas element dimensions.
     // For non-axis charts (pie, radar), templates set their own _width/_height.
-    // For axis charts, the core layout engine's subplotWidth/Height already
-    // accounts for discrete band sizing (step × count, floored at canvasSize),
-    // so we just add padding for axes/labels/legend.
     if (hasAxes && !config._width) {
-        const PADDING = 80;
-        config._width = (layout.subplotWidth || canvasSize.width) + PADDING;
-        config._height = (layout.subplotHeight || canvasSize.height) + PADDING;
+        // Axes + optional right legend column (see legend block below for extra gutter).
+        const PADDING = 80; // approximate space for axes, labels
+
+        const xIsDiscrete = layout.xNominalCount > 0 || layout.xContinuousAsDiscrete > 0;
+        const yIsDiscrete = layout.yNominalCount > 0 || layout.yContinuousAsDiscrete > 0;
+
+        let plotWidth: number;
+        let plotHeight: number;
+
+        if (xIsDiscrete && layout.xStepUnit !== 'group') {
+            const xItemCount = layout.xNominalCount || layout.xContinuousAsDiscrete || 0;
+            plotWidth = xItemCount > 0 ? layout.xStep * xItemCount : (layout.subplotWidth || canvasSize.width);
+        } else {
+            plotWidth = layout.subplotWidth || canvasSize.width;
+        }
+
+        if (yIsDiscrete && layout.yStepUnit !== 'group') {
+            const yItemCount = layout.yNominalCount || layout.yContinuousAsDiscrete || 0;
+            plotHeight = yItemCount > 0 ? layout.yStep * yItemCount : (layout.subplotHeight || canvasSize.height);
+        } else {
+            plotHeight = layout.subplotHeight || canvasSize.height;
+        }
+
+        const legendGutter = cjsLegendLikelyVisible(config) ? 96 : 0;
+        config._width = plotWidth + PADDING + legendGutter;
+        config._height = plotHeight + PADDING;
     }
 
     // ── Bar sizing ───────────────────────────────────────────────────────
@@ -125,6 +145,58 @@ export function cjsApplyLayoutToSpec(
             }
         }
     }
+
+    // ── Legend: right side (Chart.js stacks items vertically for position 'right') ──
+    cjsApplyLegendRightColumn(config);
+}
+
+/** Whether the Chart.js legend is expected to show (respects display:false; default is show when multiple datasets). */
+function cjsLegendLikelyVisible(config: any): boolean {
+    const legend = config.options?.plugins?.legend;
+    if (legend?.display === false) return false;
+    if (legend?.display === true) return true;
+    const n = config.data?.datasets?.length ?? 0;
+    return n > 1;
+}
+
+/** How many legend rows we expect (pie/doughnut: slice labels; else: one per dataset). */
+function cjsLegendEntryCount(config: any): number {
+    const t = config.type;
+    if (t === 'pie' || t === 'doughnut') {
+        return config.data?.labels?.length ?? 0;
+    }
+    return config.data?.datasets?.length ?? 0;
+}
+
+/**
+ * Place legend on the right in a vertical column; match EC/VL legend text size so labels fit the canvas.
+ * (Chart.js defaults ~12px; VL labelFontSize 8, EC textStyle 11 or 8 when high-cardinality.)
+ */
+function cjsApplyLegendRightColumn(config: any): void {
+    if (!cjsLegendLikelyVisible(config)) return;
+    if (!config.options) config.options = {};
+    if (!config.options.plugins) config.options.plugins = {};
+    const prev = config.options.plugins.legend ?? {};
+    const prevLabels = prev.labels ?? {};
+    const prevFont = prevLabels.font ?? {};
+    const entryCount = cjsLegendEntryCount(config);
+    const highCardinality = entryCount >= 16;
+    const fontSize = prevFont.size ?? (highCardinality ? 8 : 10);
+    const boxW = prevLabels.boxWidth ?? (highCardinality ? 8 : 10);
+    const boxH = prevLabels.boxHeight ?? (highCardinality ? 8 : 10);
+    config.options.plugins.legend = {
+        ...prev,
+        position: 'right' as const,
+        labels: {
+            ...prevLabels,
+            font: {
+                ...prevFont,
+                size: fontSize,
+            },
+            boxWidth: boxW,
+            boxHeight: boxH,
+        },
+    };
 }
 
 /**

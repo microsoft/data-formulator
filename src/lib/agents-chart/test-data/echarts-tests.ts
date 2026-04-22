@@ -1694,7 +1694,7 @@ export function genEChartsSunburstTests(): TestCase[] {
             },
             encodingMap: {
                 color: makeEncodingItem('Department'),
-                detail: makeEncodingItem('Team'),
+                group: makeEncodingItem('Team'),
                 size: makeEncodingItem('Headcount'),
             },
         });
@@ -1732,7 +1732,7 @@ export function genEChartsSunburstTests(): TestCase[] {
             },
             encodingMap: {
                 color: makeEncodingItem('Continent'),
-                detail: makeEncodingItem('Country'),
+                group: makeEncodingItem('Country'),
                 size: makeEncodingItem('Population'),
             },
         });
@@ -2073,7 +2073,7 @@ export function genEChartsUniqueStressTests(): TestCase[] {
             },
             encodingMap: {
                 color: makeEncodingItem('Continent'),
-                detail: makeEncodingItem('Country'),
+                group: makeEncodingItem('Country'),
                 size: makeEncodingItem('GDP'),
             },
         });

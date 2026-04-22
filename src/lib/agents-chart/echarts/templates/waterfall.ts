@@ -82,7 +82,13 @@ export const ecWaterfallChartDef: ChartTemplateDef = {
                 nameLocation: 'middle',
                 nameGap: 30,
                 axisTick: { show: true, alignWithLabel: true },
-                axisLabel: { rotate: areCategoriesNumeric(categories) ? 0 : 90 },
+                axisLabel: {
+                    rotate: areCategoriesNumeric(categories) ? 0 : 90,
+                    formatter: (value: string, index: number) => {
+                        const t = types[index];
+                        return t === 'start' || t === 'end' ? '' : value;
+                    },
+                },
             },
             yAxis: { type: 'value', name: yField, axisTick: { show: true } },
             series: [

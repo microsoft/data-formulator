@@ -360,16 +360,20 @@ export function assembleECharts(input: ChartAssemblyInput): any {
                 if (chartTemplate.postProcess) chartTemplate.postProcess(panelOption, panelCtx);
 
                 // Extract pure plot-area dimensions for facet.ts.
-                // ecApplyLayoutToSpec set: _width = plotArea + margins (with
-                // CANVAS_BUFFER).  facet.ts needs only the plot area so it
-                // can set grid.width/height exactly — not derived from
-                // panelW − margins, which would inflate when margins are
-                // scaled down for non-edge panels.
+                // Always anchor faceted panel sizing to shared core layout
+                // (same source used by Vega-Lite), instead of per-panel
+                // standalone canvas dimensions (which may include legend space).
                 const g = panelOption.grid || {};
-                panelOption._plotWidth = Math.max(20,
-                    (panelOption._width || 200) - (g.left || 0) - (g.right || 0));
-                panelOption._plotHeight = Math.max(20,
-                    (panelOption._height || 150) - (g.top || 0) - (g.bottom || 0));
+                panelOption._plotWidth = Math.max(
+                    20,
+                    facetLayout.subplotWidth
+                    || ((panelOption._width || 200) - (g.left || 0) - (g.right || 0)),
+                );
+                panelOption._plotHeight = Math.max(
+                    20,
+                    facetLayout.subplotHeight
+                    || ((panelOption._height || 150) - (g.top || 0) - (g.bottom || 0)),
+                );
 
                 // Attach facet header labels for the combiner
                 if (colField) panelOption._colHeader = cv;

@@ -215,7 +215,7 @@ export const cjsStackedBarChartDef: ChartTemplateDef = {
 export const cjsGroupedBarChartDef: ChartTemplateDef = {
     chart: 'Grouped Bar Chart',
     template: { mark: 'bar', encoding: {} },
-    channels: ['x', 'y', 'group', 'column', 'row'],
+    channels: ['x', 'y', 'group', 'color', 'column', 'row'],
     markCognitiveChannel: 'length',
     declareLayoutMode: (cs, table) => {
         const result = detectBandedAxisForceDiscrete(cs, table, { preferAxis: 'x' });

@@ -74,6 +74,24 @@ export function groupBy(data: any[], field: string): Map<string, any[]> {
 }
 
 /**
+ * Chart.js `linear` scale requires numeric `x` in `{x,y}` points. ISO strings
+ * (from temporal conversion) become NaN and nothing renders. Map to Unix ms.
+ * Seconds (e.g. ≤1e12) are treated as Unix seconds and multiplied by 1000.
+ */
+export function coerceUnixMsForChartJs(raw: unknown): number {
+    if (raw == null) return NaN;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return raw < 1e12 ? Math.round(raw * 1000) : raw;
+    }
+    if (raw instanceof Date) {
+        const t = raw.getTime();
+        return Number.isFinite(t) ? t : NaN;
+    }
+    const t = new Date(String(raw)).getTime();
+    return Number.isFinite(t) ? t : NaN;
+}
+
+/**
  * Default Chart.js color palette (RGBA with alpha for fill).
  */
 export const DEFAULT_COLORS = [

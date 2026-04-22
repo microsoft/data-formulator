@@ -90,6 +90,24 @@ function areHeatmapCategoriesNumeric(cats: string[]): boolean {
     });
 }
 
+/** Few, short category labels → keep axis text horizontal (0°); else 90° to reduce overlap. */
+const EC_BAR_SHORT_CATEGORY_COUNT = 4;
+const EC_BAR_SHORT_CATEGORY_LABEL_LEN = 8;
+
+function categoryAxisLabelRotateDeg(
+    categories: string[],
+    channelType: string | undefined,
+): number {
+    if (channelType === 'quantitative') return 0;
+    const labels = categories.map(c => String(c));
+    if (labels.length === 0) return 0;
+    const maxLen = Math.max(...labels.map(s => s.length));
+    if (labels.length <= EC_BAR_SHORT_CATEGORY_COUNT && maxLen <= EC_BAR_SHORT_CATEGORY_LABEL_LEN) {
+        return 0;
+    }
+    return 90;
+}
+
 // ─── Bar Chart ──────────────────────────────────────────────────────────────
 
 export const ecBarChartDef: ChartTemplateDef = {
@@ -155,7 +173,9 @@ export const ecBarChartDef: ChartTemplateDef = {
                     splitArea: { show: true },
                     axisTick: { show: true, alignWithLabel: true },
                     axisLabel: {
-                        rotate: areHeatmapCategoriesNumeric(categories) ? 0 : 90,
+                        rotate: areHeatmapCategoriesNumeric(categories)
+                            ? 0
+                            : categoryAxisLabelRotateDeg(categories, catCS?.type),
                     },
                 },
                 yAxis: {
@@ -205,7 +225,7 @@ export const ecBarChartDef: ChartTemplateDef = {
                         type: 'category',
                         data: categories,
                         name: catField,
-                        axisLabel: { rotate: catCS?.type === 'quantitative' ? 0 : 90 },
+                        axisLabel: { rotate: categoryAxisLabelRotateDeg(categories, catCS?.type) },
                         axisTick: { show: true, alignWithLabel: true },
                         axisLine: { show: true },
                     },
@@ -298,7 +318,7 @@ export const ecBarChartDef: ChartTemplateDef = {
                     type: 'category',
                     data: dateCategories,
                     name: valField,
-                    axisLabel: { rotate: 90 },
+                    axisLabel: { rotate: categoryAxisLabelRotateDeg(dateCategories, 'temporal') },
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
@@ -348,8 +368,7 @@ export const ecBarChartDef: ChartTemplateDef = {
                     type: 'category',
                     data: categories,
                     name: catField,
-                    // Numeric categories: keep labels horizontal so numbers read left-to-right.
-                    axisLabel: { rotate: catCS?.type === 'quantitative' ? 0 : 90 },
+                    axisLabel: { rotate: categoryAxisLabelRotateDeg(categories, catCS?.type) },
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
@@ -419,7 +438,9 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                     type: 'category',
                     data: categoriesX,
                     name: channelSemantics.x!.field,
-                    axisLabel: { rotate: 90 },
+                    axisLabel: {
+                        rotate: categoryAxisLabelRotateDeg(categoriesX, channelSemantics.x?.type),
+                    },
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
@@ -490,7 +511,7 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
                     type: 'category',
                     data: categories,
                     name: catField,
-                    axisLabel: { rotate: catCS?.type === 'quantitative' ? 0 : 90 },
+                    axisLabel: { rotate: categoryAxisLabelRotateDeg(categories, catCS?.type) },
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
@@ -594,7 +615,7 @@ export const ecStackedBarChartDef: ChartTemplateDef = {
 export const ecGroupedBarChartDef: ChartTemplateDef = {
     chart: 'Grouped Bar Chart',
     template: { mark: 'bar', encoding: {} },
-    channels: ['x', 'y', 'group', 'column', 'row'],
+    channels: ['x', 'y', 'group', 'color', 'column', 'row'],
     markCognitiveChannel: 'length',
     declareLayoutMode: (cs, table) => {
         const result = detectBandedAxisForceDiscrete(cs, table, { preferAxis: 'x' });
@@ -636,7 +657,7 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
                     type: 'category',
                     data: dateCategories,
                     name: xField,
-                    axisLabel: { rotate: xCS?.type === 'quantitative' ? 0 : 90 },
+                    axisLabel: { rotate: categoryAxisLabelRotateDeg(dateCategories, xCS?.type) },
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
@@ -693,7 +714,7 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
                     type: 'category',
                     data: categories,
                     name: xField,
-                    axisLabel: { rotate: xCS?.type === 'quantitative' ? 0 : 90 },
+                    axisLabel: { rotate: categoryAxisLabelRotateDeg(categories, xCS?.type) },
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
@@ -771,7 +792,7 @@ export const ecGroupedBarChartDef: ChartTemplateDef = {
                     type: 'category',
                     data: categories,
                     name: catField,
-                    axisLabel: { rotate: catCS?.type === 'quantitative' ? 0 : 90 },
+                    axisLabel: { rotate: categoryAxisLabelRotateDeg(categories, catCS?.type) },
                     axisTick: { show: true, alignWithLabel: true },
                     axisLine: { show: true },
                 },
