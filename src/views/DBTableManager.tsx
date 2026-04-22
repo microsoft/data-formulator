@@ -313,6 +313,7 @@ export const DBManagerPane: React.FC<{
                     <DataLoaderForm 
                         key={`source-form-${source.source_id}`}
                         dataLoaderType={source.source_id}
+                        loaderType={source.icon}
                         paramDefs={source.params_form}
                         authInstructions={source.auth_instructions}
                         connectorId={source.source_id}
@@ -678,6 +679,8 @@ const GroupLoadPanel: React.FC<{
 
 export const DataLoaderForm: React.FC<{
     dataLoaderType: string,
+    /** Loader registry key (e.g. "mysql") for i18n lookups. Falls back to dataLoaderType. */
+    loaderType?: string,
     paramDefs: {name: string, default?: string, type: string, required: boolean, description?: string, sensitive?: boolean, tier?: 'connection' | 'auth' | 'filter'}[],
     authInstructions: string,
     connectorId?: string,
@@ -694,10 +697,20 @@ export const DataLoaderForm: React.FC<{
     /** Called before the connect step. Returns the effective connectorId to use.
      *  Used by AddConnectionPanel to create the connector before connecting. */
     onBeforeConnect?: (params: Record<string, any>) => Promise<string>,
-}> = ({dataLoaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, onImport, onFinish, onConnected, onDelete, onBeforeConnect}) => {
+}> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, onImport, onFinish, onConnected, onDelete, onBeforeConnect}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const theme = useTheme();
+    const loaderTypeKey = loaderType || dataLoaderType;
+    const getParamPlaceholder = (paramDef: {name: string; default?: string; description?: string}) => {
+        const fallback = paramDef.description || (paramDef.default ? `${paramDef.default}` : '');
+        return t(`loader.${loaderTypeKey}.${paramDef.name}`, {
+            defaultValue: t(`loader._common.${paramDef.name}`, { defaultValue: fallback }),
+        });
+    };
+    const localizedAuthInstructions = t(`loader.${loaderTypeKey}.authInstructions`, {
+        defaultValue: authInstructions.trim(),
+    });
     // Effective connectorId — may be updated by onBeforeConnect (e.g. AddConnectionPanel)
     const connectorIdRef = useRef(connectorId);
     useEffect(() => { connectorIdRef.current = connectorId; }, [connectorId]);
@@ -1479,7 +1492,7 @@ export const DataLoaderForm: React.FC<{
                                             type={paramDef.type === 'password' ? 'password' : 'text'}
                                             required={paramDef.required}
                                             value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
-                                            placeholder={paramDef.description || (paramDef.default ? `${paramDef.default}` : '')}
+                                            placeholder={getParamPlaceholder(paramDef)}
                                             onChange={(event: any) => {
                                                 if (sensitiveParamNames.has(paramDef.name)) {
                                                     setSensitiveParams(prev => ({ ...prev, [paramDef.name]: event.target.value }));
@@ -1507,7 +1520,7 @@ export const DataLoaderForm: React.FC<{
                                         type={paramDef.type === 'password' ? 'password' : 'text'}
                                         required={paramDef.required}
                                         value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
-                                        placeholder={paramDef.description || (paramDef.default ? `${paramDef.default}` : '')}
+                                        placeholder={getParamPlaceholder(paramDef)}
                                         onChange={(event: any) => {
                                             if (sensitiveParamNames.has(paramDef.name)) {
                                                 setSensitiveParams(prev => ({ ...prev, [paramDef.name]: event.target.value }));
@@ -1585,7 +1598,7 @@ export const DataLoaderForm: React.FC<{
                                                             label={paramDef.name}
                                                             type={paramDef.type === 'password' ? 'password' : 'text'}
                                                             value={sensitiveParamNames.has(paramDef.name) ? (sensitiveParams[paramDef.name] ?? '') : (params[paramDef.name] ?? '')}
-                                                            placeholder={paramDef.description || (paramDef.default ? `${paramDef.default}` : '')}
+                                                            placeholder={getParamPlaceholder(paramDef)}
                                                             onChange={(event: any) => {
                                                                 if (sensitiveParamNames.has(paramDef.name)) {
                                                                     setSensitiveParams(prev => ({ ...prev, [paramDef.name]: event.target.value }));
@@ -1648,7 +1661,7 @@ export const DataLoaderForm: React.FC<{
                             }
                         />
                     )}
-                    {authInstructions.trim() && (
+                    {localizedAuthInstructions && (
                         <Box sx={(theme) => ({
                             mt: 2, px: 1.5, py: 1, 
                             backgroundColor: 'rgba(0,0,0,0.02)',
@@ -1668,7 +1681,7 @@ export const DataLoaderForm: React.FC<{
                             '& strong': { fontWeight: 600, color: 'text.primary' },
                             '& h1, & h2, & h3, & h4': { fontSize: '12px', fontWeight: 600, color: 'text.primary', margin: '4px 0' },
                         })}>
-                            <Markdown>{authInstructions.trim()}</Markdown>
+                            <Markdown>{localizedAuthInstructions}</Markdown>
                         </Box>
                     )}
                     {onDelete && connectorIdRef.current && (

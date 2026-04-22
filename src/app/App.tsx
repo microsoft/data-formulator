@@ -60,7 +60,7 @@ import {
 import MuiAppBar from '@mui/material/AppBar';
 import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
 
-import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+import AddIcon from '@mui/icons-material/Add';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
@@ -443,29 +443,30 @@ const WorkspaceMenu: React.FC = () => {
     );
 };
 
-const CloseWorkspaceButton: React.FC = () => {
+const NewSessionButton: React.FC = () => {
     const dispatch = useDispatch();
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
     const state = useSelector((s: DataFormulatorState) => s);
     const { t } = useTranslation();
 
-    if (!activeWorkspace || tables.length === 0) return null;
-
-    const handleClose = async () => {
+    const handleNewSession = async () => {
         try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
-        dispatch(dfActions.resetState());
+        const now = new Date();
+        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        const short = crypto.randomUUID().slice(0, 4);
+        const wsId = `session_${date}_${time}_${short}`;
+        dispatch(dfActions.loadState({
+            tables: [], charts: [], draftNodes: [], conceptShelfItems: [],
+            activeWorkspace: { id: wsId, displayName: 'default' },
+        }));
     };
 
     return (
-        <Button 
-            variant="text" 
-            sx={{ textTransform: 'none' }}
-            onClick={handleClose} 
-            endIcon={<ExitToAppIcon sx={{ fontSize: 18 }} />}
-        >
-            {t('workspace.exit')}
-        </Button>
+        <Tooltip title={t('workspace.newSessionTooltip')} placement="bottom">
+            <IconButton size="small" onClick={handleNewSession} sx={{ color: 'text.secondary', ml: 0.5 }}>
+                <AddIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+        </Tooltip>
     );
 };
 
@@ -804,6 +805,7 @@ const AppShell: FC = () => {
                         {activeWorkspace && isAppPage && (
                             <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
                                 <WorkspaceMenu />
+                                <NewSessionButton />
                             </Box>
                         )}
                         {isAppPage && (
@@ -813,10 +815,6 @@ const AppShell: FC = () => {
                                 <ConfigDialog />
                                 <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
                                 <ModelSelectionButton />
-                                {activeWorkspace && <>
-                                    <Divider orientation="vertical" variant="middle" flexItem />
-                                    <CloseWorkspaceButton />
-                                </>}
                             </Box>
                         )}
                         {isGalleryPage && (

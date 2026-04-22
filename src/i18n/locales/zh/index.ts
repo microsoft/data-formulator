@@ -9,6 +9,7 @@ import encoding from './encoding.json';
 import messages from './messages.json';
 import navigation from './navigation.json';
 import dataLoading from './dataLoading.json';
+import loader from './loader.json';
 
 export default {
   ...common,
@@ -19,4 +20,5 @@ export default {
   ...messages,
   ...navigation,
   ...dataLoading,
+  ...loader,
 };

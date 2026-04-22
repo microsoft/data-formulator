@@ -2066,6 +2066,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         <Box sx={{ p: 2, height: '100%', boxSizing: 'border-box' }}>
                             <DataLoaderForm
                                 dataLoaderType={conn.id}
+                                loaderType={conn.icon}
                                 paramDefs={conn.params_form}
                                 authInstructions={conn.auth_instructions || ''}
                                 connectorId={conn.id}

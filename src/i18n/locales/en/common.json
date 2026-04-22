@@ -320,7 +320,10 @@
     "tierAuthOr": "or",
     "tierAuthManual": "Enter credentials manually",
     "selectTableFromTree": "Select a table from the tree to preview",
-    "noTablesFound": "No tables found"
+    "noTablesFound": "No tables found",
+    "createConnector": "Create Connector",
+    "deleteConnector": "Delete",
+    "showingPreview": "showing {{count}} preview rows"
   },
   "dataThread": {
     "title": "Data Threads",
@@ -555,7 +558,7 @@
     "failedToOpenWorkspace": "Failed to open workspace",
     "deletedSession": "Deleted session \"{{name}}\"",
     "sessionTooltip": "Session: {{name}}",
-    "exit": "Exit",
+    "newSessionTooltip": "New Session",
     "recoveredSession": "Recovered Session",
     "errorOccurred": "An error has occurred, please",
     "refreshSession": "refresh the session",
@@ -617,6 +620,19 @@
     "writingReport": "Writing your report…"
   },
   "sidebar": {
+    "openDataSources": "Data Sources",
+    "dataSources": "Data Sources",
+    "sessions": "Sessions",
+    "collapse": "Collapse",
+    "loadData": "Load data",
+    "dataConnectors": "Data connectors",
+    "refreshCatalog": "Refresh",
+    "refresh": "Refresh data",
+    "emptyTree": "No tables found",
+    "addConnector": "Add data connector",
+    "linkLocalFolder": "Link local folder",
+    "newSession": "New session",
+    "noSessions": "No saved sessions",
     "tableCount": "{{count}} table(s)",
     "chartCount": "{{count}} chart(s)",
     "andMore": "+{{count}} more",
