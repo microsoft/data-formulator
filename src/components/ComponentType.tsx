@@ -353,3 +353,20 @@ export type Channel = typeof channels[number];
 export interface EncodingDropResult {
     channel: Channel
 }
+
+/** A registered connector instance from GET /api/connectors */
+export interface ConnectorInstance {
+    id: string;
+    source_type: string;
+    display_name: string;
+    icon: string;
+    connected: boolean;
+    deletable?: boolean;
+    params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    pinned_params: Record<string, string>;
+    hierarchy: Array<{key: string; label: string}>;
+    effective_hierarchy: Array<{key: string; label: string}>;
+    auth_mode?: string;
+    auth_instructions?: string;
+    delegated_login?: { login_url: string; label?: string } | null;
+}

@@ -15,7 +15,6 @@ import {
   MenuItem,
   Checkbox,
   FormControlLabel,
-  styled,
   useTheme,
   Tooltip,
 } from '@mui/material';
@@ -39,23 +38,19 @@ import Markdown from 'markdown-to-jsx';
 
 import CheckIcon from '@mui/icons-material/Check';
 
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { TableIcon } from '../icons';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
-import { TreeItem, treeItemClasses } from '@mui/x-tree-view/TreeItem';
 
-// ---------- Catalog tree types & helpers ----------
-
-/** A node returned by the catalog/tree endpoint */
-interface CatalogTreeNode {
-    name: string;
-    node_type: 'namespace' | 'table' | 'table_group';
-    path: string[];
-    metadata: Record<string, any> | null;
-    children?: CatalogTreeNode[];
-}
+import {
+    CatalogTreeNode,
+    collectNamespaceIds,
+    findNodeByPath,
+    StyledTreeItem,
+    countBadgeSx,
+    renderCatalogTreeItems,
+} from '../components/CatalogTree';
 
 /** A source filter definition from the backend (e.g. Superset native filter). */
 interface SourceFilter {
@@ -69,63 +64,6 @@ interface SourceFilter {
     applies_to?: number[];
     options?: string[];
 }
-
-/** Collect all namespace item IDs for default-expanded state */
-function collectNamespaceIds(nodes: CatalogTreeNode[]): string[] {
-    const ids: string[] = [];
-    for (const n of nodes) {
-        if (n.node_type === 'namespace') {
-            ids.push(n.path.join('/'));
-            if (n.children) ids.push(...collectNamespaceIds(n.children));
-        }
-    }
-    return ids;
-}
-
-/** Find a node by path in the catalog tree */
-function findNodeByPath(nodes: CatalogTreeNode[], itemId: string): CatalogTreeNode | null {
-    for (const n of nodes) {
-        if (n.path.join('/') === itemId) return n;
-        if (n.children) {
-            const found = findNodeByPath(n.children, itemId);
-            if (found) return found;
-        }
-    }
-    return null;
-}
-
-/** Styled TreeItem — clean, compact, GitHub-flavoured. */
-const StyledTreeItem = styled(TreeItem)(({ theme }) => ({
-    [`& .${treeItemClasses.groupTransition}`]: {
-        marginLeft: 12,
-        paddingLeft: 8,
-        borderLeft: `1px solid ${theme.palette.divider}`,
-    },
-    [`& > .${treeItemClasses.content}`]: {
-        padding: '2px 6px',
-        borderRadius: 6,
-        gap: 4,
-        [`& .${treeItemClasses.iconContainer}`]: {
-            width: 16, minWidth: 16,
-            color: theme.palette.text.disabled,
-        },
-        // Hide the empty icon container on leaf items (no expand/collapse arrow)
-        [`& .${treeItemClasses.iconContainer}:empty`]: {
-            display: 'none',
-        },
-        [`& .${treeItemClasses.label}`]: {
-            fontSize: 13,
-        },
-        '&:hover': { backgroundColor: theme.palette.action.hover },
-    },
-    [`& > .${treeItemClasses.content}.Mui-selected`]: {
-        backgroundColor: theme.palette.action.selected,
-        fontWeight: 500,
-        '&:hover': { backgroundColor: theme.palette.action.selected },
-    },
-})) as typeof TreeItem;
-
-// ---------- End catalog tree ----------
 
 
 export const handleDBDownload = async (identityId: string) => {
@@ -1194,61 +1132,6 @@ export const DataLoaderForm: React.FC<{
 
     const isConnected = catalogTree.length > 0 || Object.keys(tableMetadata).length > 0;
 
-    /** Recursively render CatalogTreeNode[] as styled TreeItem elements */
-    const countBadgeSx = {
-        fontSize: 11, color: 'text.disabled', bgcolor: 'action.selected',
-        borderRadius: 10, px: 0.8, lineHeight: '18px', flexShrink: 0,
-        fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'center',
-    } as const;
-
-    const renderCatalogTreeItems = (nodes: CatalogTreeNode[], loadedMap: Record<string, string>, expandedSet: Set<string>): React.ReactNode =>
-        nodes.map((node) => {
-            const itemId = node.path.join('/');
-            const isTable = node.node_type === 'table';
-            const isGroup = node.node_type === 'table_group';
-            const loaded = isTable ? loadedMap[node.name] || loadedMap[itemId] : undefined;
-            const groupLoaded = isGroup ? loadedMap[itemId] : undefined;
-            const childCount = !isTable && !isGroup ? (node.children?.length ?? 0) : 0;
-            const tableCount = isGroup ? (node.metadata?.tables?.length ?? 0) : 0;
-            const isExpanded = expandedSet.has(itemId);
-
-            const labelContent = (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
-                    {isGroup
-                        ? <DashboardOutlinedIcon sx={{ fontSize: 16, color: groupLoaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                        : isTable
-                            ? <TableIcon sx={{ fontSize: 16, color: loaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                            : <FolderOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                    }
-                    <Typography noWrap component="span" sx={{ flex: 1, minWidth: 0, fontSize: 13 }}>
-                        {node.name}
-                    </Typography>
-                    {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: 13, color: 'success.main', flexShrink: 0 }} />}
-                    {isTable && node.metadata?.row_count != null && (
-                        <Typography component="span" sx={{ fontSize: 11, color: 'text.disabled', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                            {Number(node.metadata.row_count).toLocaleString()}
-                        </Typography>
-                    )}
-                    {isGroup && tableCount > 0 && (
-                        <Box component="span" sx={countBadgeSx}>
-                            {tableCount}
-                        </Box>
-                    )}
-                    {childCount > 0 && !isExpanded && (
-                        <Box component="span" sx={countBadgeSx}>
-                            {childCount}
-                        </Box>
-                    )}
-                </Box>
-            );
-
-            return (
-                <StyledTreeItem key={itemId} itemId={itemId} label={labelContent}>
-                    {!isGroup && node.children && renderCatalogTreeItems(node.children, loadedMap, expandedSet)}
-                </StyledTreeItem>
-            );
-        });
-
     return (
         <Box sx={{p: 0, pb: 2, display: 'flex', flexDirection: 'column', height: isConnected ? '100%' : 'auto' }}>
             {isConnecting && <Box sx={{
@@ -1345,7 +1228,7 @@ export const DataLoaderForm: React.FC<{
                                     itemChildrenIndentation={0}
                                     sx={{ px: 0.5 }}
                                 >
-                                    {renderCatalogTreeItems(catalogTree, effectiveLoadedTables, new Set(expandedItems))}
+                                    {renderCatalogTreeItems(catalogTree, { loadedMap: effectiveLoadedTables, expandedSet: new Set(expandedItems) })}
                                 </SimpleTreeView>
                             ) : (
                                 <Typography sx={{ fontSize: 11, color: 'text.disabled', p: 1.5, fontStyle: 'italic' }}>

@@ -7,7 +7,7 @@
     "uploadFileDesc": "Upload local files (CSV, TSV, JSON, Excel)",
     "pasteData": "Paste Data",
     "pasteDataDesc": "Paste tabular data directly from clipboard",
-    "extractData": "Extract Unstructured Data",
+    "extractData": "Extract Data Agent",
     "extractDataDesc": "Extract tables from images or text using AI",
     "loadFromUrl": "Load from URL",
     "loadFromUrlDesc": "Load data from a URL with optional auto-refresh",

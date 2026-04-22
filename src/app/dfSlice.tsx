@@ -182,6 +182,9 @@ export interface DataFormulatorState {
     // Active workspace (null = show workspace picker)
     // id: stable identifier (folder name), displayName: user-facing name (can be renamed)
     activeWorkspace: { id: string; displayName: string } | null;
+
+    /** Whether the data source sidebar is expanded (true) or collapsed to rail (false) */
+    dataSourceSidebarOpen: boolean;
 }
 
 // Define the initial state using that type
@@ -249,6 +252,8 @@ const initialState: DataFormulatorState = {
     sessionLoadingLabel: '',
 
     activeWorkspace: null,
+
+    dataSourceSidebarOpen: false,
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -560,6 +565,9 @@ export const dataFormulatorSlice = createSlice({
         setActiveWorkspace: (state, action: PayloadAction<{ id: string; displayName: string } | null>) => {
             state.activeWorkspace = action.payload;
         },
+        setDataSourceSidebarOpen: (state, action: PayloadAction<boolean>) => {
+            state.dataSourceSidebarOpen = action.payload;
+        },
         loadState: (state, action: PayloadAction<any>) => {
             const saved = action.payload;
 
@@ -625,6 +633,8 @@ export const dataFormulatorSlice = createSlice({
 
                 // Preserve or restore workspace name
                 activeWorkspace: saved.activeWorkspace ?? state.activeWorkspace ?? null,
+
+                dataSourceSidebarOpen: state.dataSourceSidebarOpen,
             };
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {

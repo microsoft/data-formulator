@@ -127,6 +127,8 @@ export const getConnectorIcon = (sourceType: string, props?: SvgIconProps): Reac
     return <Icon {...(props || {})} />;
 };
 
+export { GenericDBIcon as DatabaseIcon };
+
 // ── Custom SVG domain icons ─────────────────────────────────────────────
 
 /** Grid-lines-in-a-rectangle icon — represents a database table. */

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useMemo, useRef, useState, memo } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 
 import {
     Box,
@@ -35,6 +35,10 @@ import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
 import { Chart, DictTable, Trigger, InteractionEntry } from "../components/ComponentType";
+import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
+import type { CatalogTableDragItem } from '../components/DndTypes';
+import { loadTable } from '../app/tableThunks';
+import { AppDispatch } from '../app/store';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import StarIcon from '@mui/icons-material/Star';
@@ -2182,6 +2186,7 @@ function chooseBestColumnLayout(
 
 export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const { t } = useTranslation();
+    const dispatch = useDispatch<AppDispatch>();
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
@@ -2214,6 +2219,65 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
     const [chatboxFocused, setChatboxFocused] = useState(false);
+    const [isDragOver, setIsDragOver] = useState(false);
+
+    // ── Drop handler for catalog table items from DataSourceSidebar ──────
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        if (e.dataTransfer.types.includes('application/json')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            setIsDragOver(true);
+        }
+    }, []);
+    const handleDragLeave = useCallback(() => setIsDragOver(false), []);
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        setIsDragOver(false);
+        try {
+            const raw = e.dataTransfer.getData('application/json');
+            if (!raw) return;
+            const item: CatalogTableDragItem = JSON.parse(raw);
+            if (item.type !== CATALOG_TABLE_ITEM) return;
+            e.preventDefault();
+
+            const tableObj: DictTable = {
+                kind: 'table' as const,
+                id: item.tableName,
+                displayId: item.tableName,
+                names: [],
+                metadata: {},
+                rows: [],
+                virtual: { tableId: item.tableName, rowCount: 0 },
+                anchored: true,
+                attachedMetadata: '',
+                source: {
+                    type: 'database' as const,
+                    databaseTable: item.tablePath.join('/'),
+                    canRefresh: true,
+                    lastRefreshed: Date.now(),
+                    connectorId: item.connectorId,
+                },
+            };
+
+            dispatch(loadTable({
+                table: tableObj,
+                connectorId: item.connectorId,
+                sourceTableName: item.tableName,
+                importOptions: {},
+            })).unwrap()
+                .then(() => {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'success',
+                        component: 'data thread', value: `Loaded table "${item.tableName}"`,
+                    }));
+                })
+                .catch((err) => {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'error',
+                        component: 'data thread', value: `Failed to load "${item.tableName}": ${err}`,
+                    }));
+                });
+        } catch { /* ignore bad data */ }
+    }, [dispatch]);
     // Re-attach ResizeObserver when containerRef changes
     useEffect(() => {
         const el = containerRef.current;
@@ -2237,8 +2301,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             }) 
         }
     }
-
-    const dispatch = useDispatch();
 
     // Track previous table/chart counts to detect agent additions
     const prevCountsRef = useRef({ tables: tables.length, charts: charts.length });
@@ -2705,7 +2767,24 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     ) : null;
 
     return (
-        <Box className="data-thread" sx={{ ...sx, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        <Box
+            className="data-thread"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            sx={{
+                ...sx,
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                ...(isDragOver && {
+                    outline: '2px dashed',
+                    outlineColor: 'primary.main',
+                    outlineOffset: -2,
+                    backgroundColor: 'action.hover',
+                }),
+            }}
+        >
             <Box ref={containerRef} sx={{
                     overflow: 'hidden', 
                     direction: 'rtl', 

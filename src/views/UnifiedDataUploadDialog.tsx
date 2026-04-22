@@ -26,7 +26,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import LinkIcon from '@mui/icons-material/Link';
 import { StreamIcon, getConnectorIcon, connectorSortOrder } from '../icons';
-import ImageSearchIcon from '@mui/icons-material/ImageSearch';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import ExploreIcon from '@mui/icons-material/Explore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -39,7 +39,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { loadTable } from '../app/tableThunks';
-import { DataSourceConfig, DictTable } from '../components/ComponentType';
+import { DataSourceConfig, DictTable, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
@@ -367,22 +367,8 @@ const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated 
     );
 };
 
-/** A registered connector instance from GET /api/connectors */
-export interface ConnectorInstance {
-    id: string;
-    source_type: string;
-    display_name: string;
-    icon: string;
-    connected: boolean;
-    deletable?: boolean;
-    params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
-    pinned_params: Record<string, string>;
-    hierarchy: Array<{key: string; label: string}>;
-    effective_hierarchy: Array<{key: string; label: string}>;
-    auth_mode?: string;
-    auth_instructions?: string;
-    delegated_login?: { login_url: string; label?: string } | null;
-}
+// Re-export ConnectorInstance from shared types for backward compatibility
+export { type ConnectorInstance } from '../components/ComponentType';
 
 // Map connector source_type (class name) to action-oriented description
 const CONNECTOR_TYPE_DESCRIPTIONS: Record<string, string> = {
@@ -455,7 +441,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             value: 'extract' as UploadTabType, 
             title: t('upload.extractData'), 
             description: t('upload.extractDataDesc'),
-            icon: <ImageSearchIcon />, 
+            icon: <SmartToyOutlinedIcon />, 
             disabled: false
         },
         { 
