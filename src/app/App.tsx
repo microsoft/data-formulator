@@ -79,7 +79,7 @@ import {
     useLocation,
 } from "react-router-dom";
 import { About } from '../views/About';
-import ChartGallery from '../views/ChartGallery';
+import ChartGallery from '../gallery/ChartGallery';
 import { MessageSnackbar } from '../views/MessageSnackbar';
 import { ChartRenderService } from '../views/ChartRenderService';
 import { DictTable } from '../components/ComponentType';

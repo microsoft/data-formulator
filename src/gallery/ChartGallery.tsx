@@ -11,28 +11,153 @@
 
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
-    Box, Tabs, Tab, Typography, Paper, Chip, Button,
+    Box, Typography, Paper, Chip, Button, IconButton, Collapse, Tooltip,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import embed from 'vega-embed';
 import * as echarts from 'echarts';
 import { Chart, registerables } from 'chart.js';
 import { assembleVegaChart } from '../app/utils';
 import { Channel, EncodingItem } from '../components/ComponentType';
-import { channels } from '../components/ChartTemplates';
+import { channels, CHART_ICONS } from '../components/ChartTemplates';
 import { ChartWarning, ChartEncoding, ChartAssemblyInput, assembleVegaLite, assembleECharts, assembleChartjs, assembleGoFish, GoFishSpec } from '../lib/agents-chart';
 import {
-    TestCase, TEST_GENERATORS, GALLERY_SECTIONS,
-    OMNI_VIZ_ROWS, OMNI_VIZ_LEVELS, OMNI_VIZ_GALLERY_DATA_TABLE_ENTRY,
+    TestCase, TEST_GENERATORS,
+    OMNI_VIZ_ROWS, OMNI_VIZ_LEVELS,
+    GALLERY_TREE, DEFAULT_PATH, findPage,
+    type GalleryPage,
 } from '../lib/agents-chart/test-data';
+import { GallerySidebar, ancestorsOf, type GalleryPath } from './GallerySidebar';
 
 // Register all Chart.js components
 Chart.register(...registerables);
 
 // ============================================================================
+// Spec Disclosure — reusable collapsible code viewer
+// ============================================================================
+
+type SpecVariant = 'input' | 'vegalite' | 'echarts' | 'chartjs' | 'gofish' | 'neutral';
+
+const SPEC_VARIANT_STYLES: Record<SpecVariant, { accent: string; bg: string }> = {
+    input:    { accent: '#6b7a99', bg: '#fafbfd' },
+    vegalite: { accent: '#6b7a99', bg: '#fafbfd' },
+    echarts:  { accent: '#a68a6b', bg: '#fcfaf7' },
+    chartjs:  { accent: '#7a9a7a', bg: '#fafcfa' },
+    gofish:   { accent: '#9a7aa6', bg: '#fbfafc' },
+    neutral:  { accent: '#9e9e9e', bg: '#fafafa' },
+};
+
+const SpecDisclosure: React.FC<{
+    label: string;
+    content: string;
+    variant?: SpecVariant;
+    defaultExpanded?: boolean;
+    maxHeight?: number;
+    dense?: boolean;
+}> = ({ label, content, variant = 'neutral', defaultExpanded = false, maxHeight = 220, dense = false }) => {
+    const [open, setOpen] = useState(defaultExpanded);
+    const [copied, setCopied] = useState(false);
+    const { accent, bg } = SPEC_VARIANT_STYLES[variant];
+
+    const handleCopy = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(content).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+        });
+    };
+
+    return (
+        <Box sx={{ mt: dense ? 0.25 : 0.5 }}>
+            <Box
+                onClick={() => setOpen(o => !o)}
+                sx={{
+                    display: 'inline-flex', alignItems: 'center', gap: 0.25,
+                    py: 0.25,
+                    cursor: 'pointer', userSelect: 'none',
+                    color: 'text.secondary',
+                    opacity: 0.75,
+                    transition: 'opacity 120ms',
+                    '&:hover': { opacity: 1 },
+                }}
+            >
+                <ChevronRightIcon
+                    sx={{
+                        fontSize: 13,
+                        transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+                        transition: 'transform 150ms',
+                    }}
+                />
+                <Typography variant="caption" sx={{ fontSize: 10.5, fontWeight: 500, letterSpacing: 0.2 }}>
+                    {label}
+                </Typography>
+                {open && (
+                    <Tooltip title={copied ? 'Copied' : 'Copy'} placement="top">
+                        <IconButton
+                            size="small"
+                            onClick={handleCopy}
+                            sx={{ p: 0.125, ml: 0.25, color: 'inherit', opacity: 0.6, '&:hover': { opacity: 1 } }}
+                        >
+                            <ContentCopyIcon sx={{ fontSize: 11 }} />
+                        </IconButton>
+                    </Tooltip>
+                )}
+            </Box>
+            <Collapse in={open} timeout={150} unmountOnExit>
+                <Box
+                    component="pre"
+                    sx={{
+                        m: 0, mt: 0.25, px: 1, py: 0.75,
+                        fontSize: 10, lineHeight: 1.5,
+                        fontFamily: '"SF Mono", Monaco, Consolas, "Courier New", monospace',
+                        color: 'text.secondary',
+                        maxHeight,
+                        overflow: 'auto',
+                        bgcolor: bg,
+                        borderLeft: '2px solid',
+                        borderLeftColor: accent,
+                        borderRadius: '0 2px 2px 0',
+                        whiteSpace: 'pre',
+                    }}
+                >
+                    {content}
+                </Box>
+            </Collapse>
+        </Box>
+    );
+};
+
+// ============================================================================
 // Chart Rendering Component
 // ============================================================================
+
+/**
+ * Replace inline `data` / `values` arrays inside a spec object with a placeholder
+ * string so the JSON stays readable in disclosures.
+ */
+function stripSpecData<T>(spec: T): T {
+    const walk = (node: any): any => {
+        if (Array.isArray(node)) return node.map(walk);
+        if (node && typeof node === 'object') {
+            const out: any = {};
+            for (const [k, v] of Object.entries(node)) {
+                if ((k === 'data' || k === 'values' || k === 'datasets') && Array.isArray(v)) {
+                    out[k] = `[${v.length} items]`;
+                } else if (k === 'data' && v && typeof v === 'object' && Array.isArray((v as any).values)) {
+                    out[k] = { ...(v as any), values: `[${(v as any).values.length} rows]` };
+                } else {
+                    out[k] = walk(v);
+                }
+            }
+            return out;
+        }
+        return node;
+    };
+    return walk(spec);
+}
 
 const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -136,7 +261,7 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
 
             setSpecOptions(compactJson(assembleInput));
 
-            setSpecJson(JSON.stringify(vlSpec, null, 2));
+            setSpecJson(JSON.stringify(stripSpecData(vlSpec), null, 2));
 
             const spec = {
                 ...vlSpec as any,
@@ -159,33 +284,12 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
     }, [testCase]);
 
     return (
-        <Paper
-            elevation={1}
-            sx={{
-                p: 2, mb: 2, width: 'fit-content',
-                border: error ? '2px solid #f44336' : '1px solid #e0e0e0',
-            }}
-        >
-            {/* Text block: width:0 + minWidth:100% prevents text from expanding the card beyond the chart width */}
-            <Box sx={{ width: 0, minWidth: '100%', overflow: 'hidden' }}>
-                <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                    {testCase.title}
+        <StandaloneChartCard testCase={testCase} error={error}>
+            {inferredSize && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
+                    Inferred size: {inferredSize}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" display="block" mb={1} sx={{ wordBreak: 'break-word' }}>
-                    {testCase.description}
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
-                    {testCase.tags.map(tag => (
-                        <Chip key={tag} label={tag} size="small" variant="outlined"
-                            sx={{ fontSize: 10, height: 20 }} />
-                    ))}
-                </Box>
-                {inferredSize && (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
-                        Inferred size: {inferredSize}
-                    </Typography>
-                )}
-            </Box>
+            )}
             {error ? (
                 <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
                     {error}
@@ -230,26 +334,12 @@ const VegaChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                 </Box>
             )}
             {specOptions && (
-                <details style={{ marginTop: 8, width: 0, minWidth: '100%', overflow: 'hidden' }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        Spec
-                    </summary>
-                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f0f4ff', padding: 8, borderRadius: 4 }}>
-                        {specOptions}
-                    </pre>
-                </details>
+                <SpecDisclosure label="Agents-Chart Spec" content={specOptions} variant="input" />
             )}
-            {/* {specJson && (
-                <details style={{ marginTop: 4 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        Vega-Lite Spec
-                    </summary>
-                    <pre style={{ fontSize: 10, maxHeight: 300, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4 }}>
-                        {specJson}
-                    </pre>
-                </details>
-            )} */}
-        </Paper>
+            {specJson && (
+                <SpecDisclosure label="Vega-Lite Spec" content={specJson} variant="vegalite" dense />
+            )}
+        </StandaloneChartCard>
     );
 });
 
@@ -343,13 +433,47 @@ function testCaseToEChartsInput(testCase: TestCase, canvasSize: { width: number;
 /** Stable default so useEffect dependencies don't change on every render. */
 const DEFAULT_CANVAS_SIZE = { width: 400, height: 300 } as const;
 
-const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number } }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE }) => {
+/**
+ * Shared card wrapper used by standalone backend chart renderers.
+ * Shows the test case title / description / tags and a subtle card background,
+ * so the per-backend label can be omitted (the gallery section already implies it).
+ */
+const StandaloneChartCard: React.FC<{ testCase: TestCase; error?: string | null; children: React.ReactNode }> = ({ testCase, error, children }) => (
+    <Paper
+        elevation={0}
+        sx={{
+            p: 2, mb: 2, width: 'fit-content',
+            bgcolor: '#ffffff',
+            border: error ? '1px solid #f44336' : '1px solid #eeeeee',
+            borderRadius: 1,
+        }}
+    >
+        <Box sx={{ width: 0, minWidth: '100%', overflow: 'hidden' }}>
+            <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                {testCase.title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1} sx={{ wordBreak: 'break-word' }}>
+                {testCase.description}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                {testCase.tags.map(tag => (
+                    <Chip key={tag} label={tag} size="small" variant="outlined"
+                        sx={{ fontSize: 10, height: 20 }} />
+                ))}
+            </Box>
+        </Box>
+        {children}
+    </Paper>
+);
+
+const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number }; standalone?: boolean }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE, standalone = false }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<echarts.ECharts | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [warnings, setWarnings] = useState<ChartWarning[]>([]);
     const [specJson, setSpecJson] = useState<string>('');
     const [inferredSize, setInferredSize] = useState<string>('');
+    const sharedSpec = useMemo(() => buildSharedInputSpec(testCase), [testCase]);
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -373,7 +497,7 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             delete displayOption._width;
             delete displayOption._height;
             delete displayOption._legendWidth;
-            setSpecJson(JSON.stringify(displayOption, null, 2));
+            setSpecJson(JSON.stringify(stripSpecData(displayOption), null, 2));
 
             // Initialize or reuse ECharts instance
             if (chartRef.current) {
@@ -407,12 +531,14 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
         };
     }, [testCase, canvasSize]);
 
-    return (
-        <Box sx={{ width: 'fit-content' }}>
-            <Typography variant="caption" fontWeight={600} color="#e65100"
-                sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
-                ECharts
-            </Typography>
+    const body = (
+        <>
+            {!standalone && (
+                <Typography variant="caption" fontWeight={600} color="#e65100"
+                    sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
+                    ECharts
+                </Typography>
+            )}
             {inferredSize && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
                     Inferred size: {inferredSize}
@@ -435,17 +561,19 @@ const EChartsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
                 </Box>
             )}
             {specJson && (
-                <details style={{ marginTop: 8 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        ECharts Option
-                    </summary>
-                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#fff3e0', padding: 8, borderRadius: 4 }}>
-                        {specJson}
-                    </pre>
-                </details>
+                <>
+                    {standalone && (
+                        <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" />
+                    )}
+                    <SpecDisclosure label="ECharts Option" content={specJson} variant="echarts" dense={standalone} />
+                </>
             )}
-        </Box>
+        </>
     );
+    if (standalone) {
+        return <StandaloneChartCard testCase={testCase} error={error}>{body}</StandaloneChartCard>;
+    }
+    return <Box sx={{ width: 'fit-content' }}>{body}</Box>;
 });
 
 // ============================================================================
@@ -456,10 +584,12 @@ const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
     const sharedSpec = useMemo(() => buildSharedInputSpec(testCase), [testCase]);
     return (
         <Paper
-            elevation={1}
+            elevation={0}
             sx={{
                 p: 2, mb: 2, maxWidth: 800,
-                border: '1px solid #e0e0e0',
+                bgcolor: '#ffffff',
+                border: '1px solid #eeeeee',
+                borderRadius: 1,
             }}
         >
             <Typography variant="subtitle2" fontWeight={600} gutterBottom>
@@ -474,14 +604,9 @@ const DualChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                         sx={{ fontSize: 10, height: 20 }} />
                 ))}
             </Box>
-            <details style={{ marginBottom: 12 }}>
-                <summary style={{ cursor: 'pointer', fontSize: 11, color: '#666', fontWeight: 600 }}>
-                    Spec
-                </summary>
-                <pre style={{ fontSize: 10, maxHeight: 220, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4, marginTop: 4 }}>
-                    {sharedSpec.compact}
-                </pre>
-            </details>
+            <Box sx={{ mb: 1.5 }}>
+                <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" maxHeight={260} />
+            </Box>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                 {/* Vega-Lite side */}
                 <VegaChartInline testCase={testCase} />
@@ -529,7 +654,7 @@ const VegaChartInline: React.FC<{ testCase: TestCase; canvasSize?: { width: numb
             delete displaySpec._warnings;
             delete displaySpec._width;
             delete displaySpec._height;
-            setSpecJson(JSON.stringify(displaySpec, null, 2));
+            setSpecJson(JSON.stringify(stripSpecData(displaySpec), null, 2));
 
             const spec = { ...specAny };
             delete spec._warnings;
@@ -564,14 +689,7 @@ const VegaChartInline: React.FC<{ testCase: TestCase; canvasSize?: { width: numb
                 <Box ref={containerRef} sx={{ minHeight: 200 }} />
             )}
             {specJson && (
-                <details style={{ marginTop: 8 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        Vega-Lite Spec
-                    </summary>
-                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f0f4ff', padding: 8, borderRadius: 4 }}>
-                        {specJson}
-                    </pre>
-                </details>
+                <SpecDisclosure label="Vega-Lite Spec" content={specJson} variant="vegalite" />
             )}
         </Box>
     );
@@ -620,13 +738,14 @@ function testCaseToChartJsInput(testCase: TestCase, canvasSize: { width: number;
     };
 }
 
-const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number } }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE }) => {
+const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number }; standalone?: boolean }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE, standalone = false }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRefs = useRef<Chart[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [warnings, setWarnings] = useState<ChartWarning[]>([]);
     const [specJson, setSpecJson] = useState<string>('');
     const [inferredSize, setInferredSize] = useState<string>('');
+    const sharedSpec = useMemo(() => buildSharedInputSpec(testCase), [testCase]);
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -647,7 +766,7 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
             const displayConfig = { ...cjsConfig };
             delete displayConfig._warnings;
             delete displayConfig._dataLength;
-            setSpecJson(JSON.stringify(displayConfig, null, 2));
+            setSpecJson(JSON.stringify(stripSpecData(displayConfig), null, 2));
 
             // Destroy previous charts
             for (const c of chartRefs.current) c.destroy();
@@ -870,12 +989,14 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
         };
     }, [testCase, canvasSize]);
 
-    return (
-        <Box sx={{ width: 'fit-content' }}>
-            <Typography variant="caption" fontWeight={600} color="#2e7d32"
-                sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
-                Chart.js
-            </Typography>
+    const body = (
+        <>
+            {!standalone && (
+                <Typography variant="caption" fontWeight={600} color="#2e7d32"
+                    sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
+                    Chart.js
+                </Typography>
+            )}
             {inferredSize && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
                     Inferred size: {inferredSize}
@@ -898,17 +1019,19 @@ const ChartJsChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number;
                 </Box>
             )}
             {specJson && (
-                <details style={{ marginTop: 8 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        Chart.js Config
-                    </summary>
-                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#e8f5e9', padding: 8, borderRadius: 4 }}>
-                        {specJson}
-                    </pre>
-                </details>
+                <>
+                    {standalone && (
+                        <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" />
+                    )}
+                    <SpecDisclosure label="Chart.js Config" content={specJson} variant="chartjs" dense={standalone} />
+                </>
             )}
-        </Box>
+        </>
     );
+    if (standalone) {
+        return <StandaloneChartCard testCase={testCase} error={error}>{body}</StandaloneChartCard>;
+    }
+    return <Box sx={{ width: 'fit-content' }}>{body}</Box>;
 });
 
 // ============================================================================
@@ -919,10 +1042,12 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
     const sharedSpec = useMemo(() => buildSharedInputSpec(testCase), [testCase]);
     return (
         <Paper
-            elevation={1}
+            elevation={0}
             sx={{
                 p: 2, mb: 2, maxWidth: 900,
-                border: '1px solid #e0e0e0',
+                bgcolor: '#ffffff',
+                border: '1px solid #eeeeee',
+                borderRadius: 1,
             }}
         >
             <Typography variant="subtitle2" fontWeight={600} gutterBottom>
@@ -937,14 +1062,9 @@ const TripleChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) 
                         sx={{ fontSize: 10, height: 20 }} />
                 ))}
             </Box>
-            <details style={{ marginBottom: 12 }}>
-                <summary style={{ cursor: 'pointer', fontSize: 11, color: '#666', fontWeight: 600 }}>
-                    Spec
-                </summary>
-                <pre style={{ fontSize: 10, maxHeight: 220, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4, marginTop: 4 }}>
-                    {sharedSpec.compact}
-                </pre>
-            </details>
+            <Box sx={{ mb: 1.5 }}>
+                <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" maxHeight={260} />
+            </Box>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                 <VegaChartInline testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
                 <EChartsChart testCase={testCase} canvasSize={{ width: 240, height: 200 }} />
@@ -997,7 +1117,7 @@ function testCaseToGoFishInput(testCase: TestCase, canvasSize: { width: number; 
     };
 }
 
-const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number } }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE }) => {
+const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; height: number }; standalone?: boolean }> = React.memo(({ testCase, canvasSize = DEFAULT_CANVAS_SIZE, standalone = false }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [error, setError] = useState<string | null>(null);
     const [warnings, setWarnings] = useState<ChartWarning[]>([]);
@@ -1035,12 +1155,14 @@ const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; 
         }
     }, [testCase, canvasSize]);
 
-    return (
-        <Box sx={{ width: 'fit-content' }}>
-            <Typography variant="caption" fontWeight={600} color="#6a1b9a"
-                sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
-                GoFish
-            </Typography>
+    const body = (
+        <>
+            {!standalone && (
+                <Typography variant="caption" fontWeight={600} color="#6a1b9a"
+                    sx={{ display: 'block', mb: 0.5, fontSize: 11, letterSpacing: 0.5 }}>
+                    GoFish
+                </Typography>
+            )}
             {inferredSize && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontSize: 10 }}>
                     Inferred size: {inferredSize}
@@ -1063,17 +1185,14 @@ const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; 
                 </Box>
             )}
             {specDescription && (
-                <details style={{ marginTop: 8 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>
-                        GoFish Spec
-                    </summary>
-                    <pre style={{ fontSize: 10, maxHeight: 200, overflow: 'auto', background: '#f3e5f5', padding: 8, borderRadius: 4 }}>
-                        {specDescription}
-                    </pre>
-                </details>
+                <SpecDisclosure label="GoFish Spec" content={specDescription} variant="gofish" />
             )}
-        </Box>
+        </>
     );
+    if (standalone) {
+        return <StandaloneChartCard testCase={testCase} error={error}>{body}</StandaloneChartCard>;
+    }
+    return <Box sx={{ width: 'fit-content' }}>{body}</Box>;
 });
 
 // ============================================================================
@@ -1081,12 +1200,15 @@ const GoFishChart: React.FC<{ testCase: TestCase; canvasSize?: { width: number; 
 // ============================================================================
 
 const QuadChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) => {
+    const sharedSpec = useMemo(() => buildSharedInputSpec(testCase), [testCase]);
     return (
         <Paper
-            elevation={1}
+            elevation={0}
             sx={{
                 p: 2, mb: 2, maxWidth: 800,
-                border: '1px solid #e0e0e0',
+                bgcolor: '#ffffff',
+                border: '1px solid #eeeeee',
+                borderRadius: 1,
             }}
         >
             <Typography variant="subtitle2" fontWeight={600} gutterBottom>
@@ -1100,6 +1222,9 @@ const QuadChart: React.FC<{ testCase: TestCase }> = React.memo(({ testCase }) =>
                     <Chip key={tag} label={tag} size="small" variant="outlined"
                         sx={{ fontSize: 10, height: 20 }} />
                 ))}
+            </Box>
+            <Box sx={{ mb: 1.5 }}>
+                <SpecDisclosure label="Agents-Chart Spec" content={sharedSpec.compact} variant="input" maxHeight={260} />
             </Box>
             <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                 <VegaChartInline testCase={testCase} canvasSize={{ width: 300, height: 250 }} />
@@ -1204,105 +1329,276 @@ const OmniGameDatasetTablePreview: React.FC = () => {
 };
 
 // ============================================================================
-// Sub-page for a single chart type
+// Page body — renders a GalleryPage according to its `render` kind
 // ============================================================================
 
-const ChartTypeTestPanel: React.FC<{ chartGroup: string; sectionLabel?: string }> = ({ chartGroup, sectionLabel }) => {
-    if (chartGroup === OMNI_VIZ_GALLERY_DATA_TABLE_ENTRY) {
+const GalleryPageBody: React.FC<{ page: GalleryPage }> = ({ page }) => {
+    const tests = useMemo(() => {
+        const out: TestCase[] = [];
+        for (const key of page.generatorKeys) {
+            const gen = TEST_GENERATORS[key];
+            if (gen) out.push(...gen());
+        }
+        return out;
+    }, [page.generatorKeys]);
+
+    if (page.render === 'static') {
+        return <StaticPage pageId={page.staticPageId ?? page.id} />;
+    }
+
+    if (page.render === 'table') {
         return (
-            <Box sx={{ p: 1, bgcolor: '#fafafa' }}>
+            <Box sx={{ p: 2 }}>
                 <OmniGameDatasetTablePreview />
             </Box>
         );
     }
 
-    const tests = useMemo(() => {
-        const gen = TEST_GENERATORS[chartGroup];
-        return gen ? gen() : [];
-    }, [chartGroup]);
-
-    const isChartJsGroup = chartGroup.startsWith('Chart.js:');
-    const isGallerySurveyGroup = chartGroup.startsWith('Gallery:');
-    const isOmniVizGroup = chartGroup.startsWith('Omni:');
-    const isGoFishGroup = chartGroup.startsWith('GoFish');
-    const isEChartsSection = sectionLabel === 'ECharts Backend';
-
     if (tests.length === 0) {
         return (
             <Box sx={{ p: 4, textAlign: 'center' }}>
-                <Typography color="text.secondary">No test cases defined for "{chartGroup}"</Typography>
+                <Typography color="text.secondary">
+                    No test cases defined for "{page.label}"
+                </Typography>
             </Box>
         );
     }
 
+    const renderOne = (tc: TestCase, i: number) => {
+        const key = `${page.id}-${i}`;
+        switch (page.render) {
+            case 'dual':   return <DualChart key={key} testCase={tc} />;
+            case 'triple': return <TripleChart key={key} testCase={tc} />;
+            case 'quad':   return <QuadChart key={key} testCase={tc} />;
+            case 'single':
+            default:
+                switch (page.library) {
+                    case 'echarts':  return <EChartsChart key={key} testCase={tc} standalone />;
+                    case 'chartjs':  return <ChartJsChart key={key} testCase={tc} standalone />;
+                    case 'gofish':   return <GoFishChart key={key} testCase={tc} standalone />;
+                    case 'vegalite':
+                    default:         return <VegaChart key={key} testCase={tc} />;
+                }
+        }
+    };
+
     return (
-        <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
-            {tests.map((tc, i) =>
-                isGoFishGroup
-                    ? <QuadChart key={`${chartGroup}-${i}`} testCase={tc} />
-                    : isChartJsGroup || isGallerySurveyGroup || isOmniVizGroup
-                        ? <TripleChart key={`${chartGroup}-${i}`} testCase={tc} />
-                        : isEChartsSection
-                            ? <DualChart key={`${chartGroup}-${i}`} testCase={tc} />
-                            : <VegaChart key={`${chartGroup}-${i}`} testCase={tc} />
-            )}
+        <Box sx={{ p: 2, pb: 8, display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
+            {tests.map(renderOne)}
         </Box>
     );
 };
 
+// ============================================================================
+// Static overview pages (home + one per language)
+// ============================================================================
 
+const StaticPage: React.FC<{ pageId: string }> = ({ pageId }) => {
+    if (pageId === 'home') {
+        return <HomeOverview />;
+    }
+    return (
+        <Box sx={{ p: 4 }}>
+            <Typography color="text.secondary">Unknown overview: {pageId}</Typography>
+        </Box>
+    );
+};
+
+/** Short labels (used in EC/CJS chart-type pages) to canonical CHART_ICONS keys. */
+const CHART_ICON_ALIAS: Record<string, string> = {
+    'Scatter':     'Scatter Plot',
+    'Bar':         'Bar Chart',
+    'Stacked Bar': 'Stacked Bar Chart',
+    'Grouped Bar': 'Grouped Bar Chart',
+    'Line':        'Line Chart',
+    'Area':        'Area Chart',
+    'Pie':         'Pie Chart',
+    'Rose':        'Rose Chart',
+    'Radar':       'Radar Chart',
+    'Bump':        'Bump Chart',
+    'Pyramid':     'Pyramid Chart',
+    'Candlestick': 'Candlestick Chart',
+    'Waterfall':   'Waterfall Chart',
+    'Dotted Line': 'Dotted Line Chart',
+    'Ranged Dot':  'Ranged Dot Plot',
+    'Density':     'Density Plot',
+    'Strip':       'Strip Plot',
+};
+function chartIconFor(label: string): React.ReactElement {
+    const hit = CHART_ICONS[label] ?? CHART_ICONS[CHART_ICON_ALIAS[label] ?? ''];
+    if (hit) return hit;
+    return <QuestionMarkIcon sx={{ fontSize: 12, color: 'text.disabled' }} />;
+}
+
+const HomeOverview: React.FC = () => {
+    const sections = GALLERY_TREE.filter(s => s.id !== 'overview');
+    return (
+        <Box sx={{ p: 4, maxWidth: 1000 }}>
+            <Typography variant="h5" fontWeight={700} gutterBottom>Chart Gallery</Typography>
+            <Typography variant="body1" color="text.secondary" paragraph>
+                This gallery demonstrates the expressiveness of the visualization languages
+                that <code>agents-chart</code> compiles to. Each language has its own chart
+                types; cross-cutting Features, Backend Comparison and Demo Scenarios show
+                how shared concepts render across libraries.
+            </Typography>
+            {sections.map(section => (
+                <Box key={section.id} sx={{ mt: 4 }}>
+                    <Typography variant="subtitle1" fontWeight={700}>{section.label}</Typography>
+                    {section.description && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            {section.description}
+                        </Typography>
+                    )}
+                    {section.categories.map(cat => {
+                        const singleCat = section.categories.length === 1;
+                        const isChartTypes = cat.id === 'chart-types';
+                        return (
+                            <Box key={cat.id} sx={{ mt: singleCat ? 1 : 2 }}>
+                                {!singleCat && (
+                                    <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>
+                                        {cat.label}
+                                    </Typography>
+                                )}
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 0.75 }}>
+                                    {cat.pages.map(page => {
+                                        const icon = isChartTypes ? chartIconFor(page.label) : null;
+                                        return (
+                                            <Chip
+                                                key={page.id}
+                                                size="small"
+                                                component="a"
+                                                href={`#/${section.id}/${cat.id}/${page.id}`}
+                                                clickable
+                                                variant="outlined"
+                                                label={page.label}
+                                                icon={icon ? (
+                                                    <Box sx={{ width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', ml: '4px', opacity: 0.85 }}>
+                                                        {icon}
+                                                    </Box>
+                                                ) : undefined}
+                                            />
+                                        );
+                                    })}
+                                </Box>
+                            </Box>
+                        );
+                    })}
+                </Box>
+            ))}
+        </Box>
+    );
+};
+
+// ============================================================================
+// Hash-based routing
+// ============================================================================
+
+function parseHash(hash: string): GalleryPath | null {
+    // Accept "#/a/b/c", "#a/b/c", "/a/b/c", "a/b/c"
+    const clean = hash.replace(/^#\/?/, '').replace(/^\//, '');
+    if (!clean) return null;
+    const parts = clean.split('/');
+    if (parts.length !== 3) return null;
+    const found = findPage(parts as unknown as GalleryPath);
+    if (!found) return null;
+    return [parts[0], parts[1], parts[2]] as const;
+}
+
+function pathToHash(path: GalleryPath): string {
+    return `#/${path.join('/')}`;
+}
+
+function useHashRoute(): [GalleryPath, (p: GalleryPath) => void] {
+    const [path, setPath] = useState<GalleryPath>(() => {
+        return parseHash(window.location.hash) ?? DEFAULT_PATH;
+    });
+    useEffect(() => {
+        const onHash = () => {
+            const p = parseHash(window.location.hash);
+            if (p) setPath(p);
+        };
+        window.addEventListener('hashchange', onHash);
+        return () => window.removeEventListener('hashchange', onHash);
+    }, []);
+    const navigate = (p: GalleryPath) => {
+        const hash = pathToHash(p);
+        if (window.location.hash !== hash) {
+            window.location.hash = hash;
+        }
+        setPath(p);
+    };
+    return [path, navigate];
+}
 
 // ============================================================================
 // Main Page
 // ============================================================================
 
 const ChartGallery: React.FC = () => {
-    const [activeSection, setActiveSection] = useState(0);
-    const [activeCategory, setActiveCategory] = useState(0);
+    const [path, navigate] = useHashRoute();
+    const [expanded, setExpanded] = useState<string[]>(() => ancestorsOf(path));
 
-    const section = GALLERY_SECTIONS[activeSection];
-    const activeCategoryName = section?.entries[activeCategory] ?? '';
+    // When the path changes (e.g. via deep link), make sure ancestors are expanded.
+    useEffect(() => {
+        setExpanded(prev => {
+            const needed = ancestorsOf(path);
+            const missing = needed.filter(id => !prev.includes(id));
+            return missing.length ? [...prev, ...missing] : prev;
+        });
+    }, [path]);
+
+    const resolved = useMemo(() => findPage(path), [path]);
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-            {/* Section tabs (top level) */}
-            <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
-                <Tabs
-                    value={activeSection}
-                    onChange={(_, v) => { setActiveSection(v); setActiveCategory(0); }}
-                    sx={{
-                        minHeight: 36,
-                        '& .MuiTab-root': { minHeight: 36, py: 0.5, textTransform: 'none', fontWeight: 600, fontSize: 14 },
-                    }}
-                >
-                    {GALLERY_SECTIONS.map((s, i) => (
-                        <Tab key={s.label} label={s.label} value={i} />
-                    ))}
-                </Tabs>
+        <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+            <GallerySidebar
+                selected={path}
+                expanded={expanded}
+                onSelect={(p) => {
+                    // If user clicked a section/category node, its itemId resolves
+                    // to a 3-part path only for leaf pages; parents are handled by
+                    // the tree widget's own expand/collapse.
+                    navigate(p);
+                }}
+                onExpandedChange={setExpanded}
+            />
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {resolved && <Breadcrumb path={path} />}
+                <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#fafafa' }}>
+                    {resolved ? (
+                        <GalleryPageBody page={resolved.page} />
+                    ) : (
+                        <Box sx={{ p: 4 }}>
+                            <Typography color="text.secondary">
+                                Page not found. <a href={pathToHash(DEFAULT_PATH)}>Go home →</a>
+                            </Typography>
+                        </Box>
+                    )}
+                </Box>
             </Box>
+        </Box>
+    );
+};
 
-            {/* Category chips within the active section */}
-            <Box sx={{ px: 2, py: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap', bgcolor: '#f5f5f5', borderBottom: 1, borderColor: 'divider' }}>
-                <Typography variant="caption" color="text.secondary" sx={{ mr: 1, lineHeight: '28px' }}>
-                    {section.description}:
-                </Typography>
-                {section.entries.map((entry, ei) => (
-                    <Chip
-                        key={entry}
-                        label={entry}
-                        size="small"
-                        onClick={() => setActiveCategory(ei)}
-                        variant={ei === activeCategory ? 'filled' : 'outlined'}
-                        color={ei === activeCategory ? 'primary' : 'default'}
-                        sx={{ fontSize: 12, height: 26, cursor: 'pointer' }}
-                    />
-                ))}
-            </Box>
-
-            {/* Chart content */}
-            <Box sx={{ flex: 1, overflow: 'auto', bgcolor: '#fafafa' }}>
-                <ChartTypeTestPanel chartGroup={activeCategoryName} sectionLabel={section?.label} />
-            </Box>
+const Breadcrumb: React.FC<{ path: GalleryPath }> = ({ path }) => {
+    const resolved = findPage(path);
+    if (!resolved) return null;
+    const { section, category, page } = resolved;
+    const crumbSx = { fontSize: 12, color: 'text.secondary', textDecoration: 'none', cursor: 'pointer' };
+    const sep = <Typography component="span" sx={{ mx: 0.75, color: 'text.disabled', fontSize: 12 }}>›</Typography>;
+    return (
+        <Box sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'wrap' }}>
+            <Typography component="a" href={pathToHash(DEFAULT_PATH)} sx={crumbSx}>Gallery</Typography>
+            {sep}
+            <Typography component="span" sx={crumbSx}>{section.label}</Typography>
+            {section.categories.length > 1 && <>
+                {sep}
+                <Typography component="span" sx={crumbSx}>{category.label}</Typography>
+            </>}
+            {sep}
+            <Typography component="span" sx={{ fontSize: 12, color: 'text.primary', fontWeight: 500 }}>
+                {page.label}
+            </Typography>
         </Box>
     );
 };

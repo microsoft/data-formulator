@@ -44,13 +44,6 @@ export interface DateFormat {
     semanticType: string;
 }
 
-/** Gallery section definition */
-export interface GallerySection {
-    label: string;
-    description: string;
-    entries: string[];   // keys into TEST_GENERATORS
-}
-
 // ============================================================================
 // Helper Functions
 // ============================================================================

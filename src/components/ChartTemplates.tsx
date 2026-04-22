@@ -60,7 +60,7 @@ const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) =
 // Icon mapping: chart name → React icon element
 // ---------------------------------------------------------------------------
 
-const CHART_ICONS: Record<string, any> = {
+export const CHART_ICONS: Record<string, React.ReactElement> = {
     "Auto": <InsightsIcon color="primary" />,
     "Scatter Plot": <ChartIcon src={chartIconScatter} />,
     "Regression": <ChartIcon src={chartIconLinearRegression} />,

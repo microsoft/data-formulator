@@ -106,6 +106,9 @@ export function vlApplyLayoutToSpec(
             // Skip binned encodings — the bin axis represents data values,
             // not bar length, so zero-baseline is inappropriate (e.g. histograms).
             if (enc.bin) continue;
+            // Skip encodings using a private/synthetic field distinct from
+            // the channel's semantic field (e.g. Radar's `__y` polar coord).
+            if (cs.field && enc.field && enc.field !== cs.field) continue;
             if (!enc.scale) enc.scale = {};
             if (enc.scale.zero !== undefined) continue;
             if (enc.scale.domain && Array.isArray(enc.scale.domain)) continue;
@@ -656,6 +659,13 @@ function vlApplyFieldContext(
 
         for (const enc of targets) {
             if (!enc.field) continue;
+
+            // Skip encodings whose field differs from the channel's semantic
+            // field. Templates (e.g. Radar) may inject private computed fields
+            // (e.g. `__x`, `__y` for polar coordinates) on the same VL channel;
+            // applying the user field's semantic context (domain, format, etc.)
+            // to those synthetic fields produces wrong scales.
+            if (cs.field && enc.field !== cs.field) continue;
 
             // ── 0. Temporal + bin incompatibility guard ──
             // VL's `bin` operates on numeric values. Setting `type: "temporal"`
