@@ -20,12 +20,10 @@ export const lollipopChartDef: ChartTemplateDef = {
         return {
             axisFlags: result ? { [result.axis]: { banded: true } } : { x: { banded: true } },
             resolvedTypes: result?.resolvedTypes,
-            // Lollipops need far less room per position than bars:
-            // a thin rule + small dot vs a full-width bar.  Use tighter
-            // band sizing so the chart stays compact with dense data.
-            // Allow wider stretch (3×) and taller bands (AR 30 vs bar's 10)
-            // since thin marks tolerate elongated cells without looking cramped.
-            paramOverrides: { defaultBandSize: 6, minStep: 2, maxStretch: 3, targetBandAR: 240 },
+            // Lollipops use the same base band size as bars but tolerate
+            // more compression (minStep: 4 vs bar's 6, maxStretch: 3 vs 2)
+            // since thin rules + small dots need less room than full-width bars.
+            paramOverrides: { defaultBandSize: 20, minStep: 4, maxStretch: 3, targetBandAR: 240 },
         };
     },
     instantiate: (spec, ctx) => {

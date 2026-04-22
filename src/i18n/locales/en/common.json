@@ -114,9 +114,9 @@
   },
   "landing": {
     "tagline": "Explore data with visualizations, powered by AI agents.",
-    "demos": "demos",
+    "demos": "Demos",
     "firstSelectModelPrefix": "First, let's",
-    "modelTip": "Models with strong code generation capabilities (e.g., gpt-5, claude-sonnet-4-5) provide best experience with Data Formulator."
+    "modelTip": "Models with strong coding and multimodal capabilities provide best experience with Data Formulator."
   },
   "about": {
     "startExploration": "Start Exploration",

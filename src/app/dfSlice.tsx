@@ -565,6 +565,24 @@ export const dataFormulatorSlice = createSlice({
         setActiveWorkspace: (state, action: PayloadAction<{ id: string; displayName: string } | null>) => {
             state.activeWorkspace = action.payload;
         },
+        resetForNewWorkspace: (state, action: PayloadAction<{ id: string; displayName: string }>) => {
+            // Fresh session data, but preserve user settings / server config / identity / view mode
+            return {
+                ...initialState,
+                identity: state.identity,
+                agentRules: state.agentRules,
+                globalModels: state.globalModels,
+                models: state.models,
+                selectedModelId: state.selectedModelId,
+                testedModels: state.testedModels,
+                serverConfig: state.serverConfig,
+                config: state.config,
+                viewMode: state.viewMode,
+                dataLoaderConnectParams: state.dataLoaderConnectParams,
+                dataSourceSidebarOpen: state.dataSourceSidebarOpen,
+                activeWorkspace: action.payload,
+            };
+        },
         setDataSourceSidebarOpen: (state, action: PayloadAction<boolean>) => {
             state.dataSourceSidebarOpen = action.payload;
         },

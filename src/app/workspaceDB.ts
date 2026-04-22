@@ -291,14 +291,14 @@ export async function importWorkspaceFromZip(
     const JSZip = (await import('jszip')).default;
     const zip = await JSZip.loadAsync(file);
 
-    // Read session_state.json
-    const stateFile = zip.file('session_state.json');
+    // Read session_state.json (exported by app) or state.json (built by build_demo_zips.py)
+    const stateFile = zip.file('session_state.json') || zip.file('state.json');
     if (!stateFile) throw new Error('Invalid workspace zip: missing session_state.json');
     const state: Record<string, unknown> = JSON.parse(await stateFile.async('string'));
 
-    // Read workspace.yaml (JSON format)
+    // Read workspace.yaml (JSON format) — may be at root or under workspace/
     let tableIndex: TableIndexEntry[] = [];
-    const yamlFile = zip.file('workspace.yaml');
+    const yamlFile = zip.file('workspace.yaml') || zip.file('workspace/workspace.yaml');
     if (yamlFile) {
         const meta = JSON.parse(await yamlFile.async('string'));
         tableIndex = meta.tableIndex || [];
@@ -307,9 +307,9 @@ export async function importWorkspaceFromZip(
     // Save workspace metadata + state
     await workspaceDB.save(workspaceId, displayName, state, tableIndex);
 
-    // Read data/*.json → table_data store
+    // Read data/*.json or workspace/data/*.json → table_data store
     let tableCount = 0;
-    const dataFolder = zip.folder('data');
+    const dataFolder = zip.folder('data') ?? zip.folder('workspace/data');
     if (dataFolder) {
         const filePromises: Promise<void>[] = [];
         dataFolder.forEach((relativePath, zipEntry) => {

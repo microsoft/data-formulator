@@ -43,6 +43,8 @@ import {
     Box,
     Divider,
     Checkbox,
+    Switch,
+    FormControlLabel,
 } from '@mui/material';
 
 
@@ -171,41 +173,50 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     let readyToTest = newModel && (newApiKey || newApiBase);
 
+    const inputSx = {
+        '& .MuiOutlinedInput-root': {
+            fontSize: '0.75rem',
+            borderRadius: 0.5,
+            backgroundColor: 'rgba(0,0,0,0.02)',
+            height: 28,
+            '& fieldset': { borderColor: 'divider' },
+            '&:hover fieldset': { borderColor: 'text.disabled' },
+            '&.Mui-focused fieldset': { borderColor: 'primary.main' },
+        },
+        '& .MuiOutlinedInput-input': { px: 1, py: 0 },
+    };
+
     let newModelEntry = <TableRow
         key={`new-model-entry`}
-        sx={{ '&:last-child td, &:last-child th': { border: 0 }, 
-        padding: "6px 6px"}}
+        sx={{ '&:last-child td, &:last-child th': { border: 0 }, '& td': { py: 1 } }}
     >
         <TableCell align="left">
             <TextField
                 size="small"
                 fullWidth
+                variant="outlined"
                 value={newModel}
                 onChange={(event) => { setNewModel(event.target.value); }}
                 placeholder={t('model.modelPlaceholder')}
                 error={newEndpoint != "" && !newModel}
-                slotProps={{
-                    input: {
-                        style: { fontSize: "0.75rem" },
-                        'aria-label': t('model.enterModelName'),
-                    }
-                }}
+                sx={inputSx}
+                slotProps={{ input: { 'aria-label': t('model.enterModelName') } }}
+                autoComplete='off'
+                inputProps={{ 'data-form-type': 'other' }}
             />
         </TableCell>
-        <TableCell align="left" sx={{ minWidth: '180px' }}>
+        <TableCell align="left">
             <TextField fullWidth size="small" type={showKeys ? "text" : "password"} 
-                slotProps={{
-                    input: {
-                        style: { fontSize: "0.75rem" }
-                    }
-                }}
+                variant="outlined"
+                sx={inputSx}
                 placeholder={t('model.optionalKeylessEndpoint')}
                 value={newApiKey}  
                 onChange={(event: any) => { setNewApiKey(event.target.value); }} 
-                autoComplete='new-password'
+                autoComplete='off'
+                inputProps={{ autoComplete: 'off', 'data-form-type': 'other' }}
             />
         </TableCell>
-        <TableCell align="left" sx={{ width: '120px' }}>
+        <TableCell align="left">
             <Autocomplete
                 freeSolo
                 value={newEndpoint}
@@ -220,7 +231,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 }}
                 options={['openai', 'azure', 'ollama', 'anthropic', 'gemini']}
                 renderOption={(props, option) => (
-                    <Typography {...props} onClick={() => setNewEndpoint(option)} sx={{fontSize: "0.875rem"}}>
+                    <Typography {...props} onClick={() => setNewEndpoint(option)} sx={{ fontSize: "0.75rem" }}>
                         {option}
                     </Typography>
                 )}
@@ -228,71 +239,46 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                     <TextField
                         {...params}
                         placeholder={t('model.providerPlaceholder')}
-                        slotProps={{
-                            input: {
-                                ...params.InputProps,
-                                style: { fontSize: "0.75rem" }
-                            }
-                        }}
                         size="small"
                         autoComplete="off"
+                        sx={inputSx}
                         onChange={(event: any) => setNewEndpoint(event.target.value)}
                     />
                 )}
-                slotProps={{
-                    listbox: {
-                        style: { padding: 0 }
-                    },
-                }}
-                slots={{
-                    paper: (props) => {
-                        return <Paper {...props}>
-                            <Typography sx={{ p: 1, color: 'gray', fontStyle: 'italic', fontSize: '0.75rem' }}>
-                                {t('model.example')}
-                            </Typography>
-                            {props.children}
-                        </Paper>
-                    }
-                }}
+                slotProps={{ listbox: { style: { padding: 0 } } }}
             />
         </TableCell>
-        <TableCell align="right">
+        <TableCell align="left">
             <TextField size="small" type="text" fullWidth
+                variant="outlined"
                 placeholder={t('model.optional')}
-                slotProps={{
-                    input: {
-                        style: { fontSize: "0.75rem" }
-                    }
-                }}
+                sx={inputSx}
                 value={newApiBase}  
                 onChange={(event: any) => { setNewApiBase(event.target.value); }} 
                 autoComplete='off'
             />
         </TableCell>
-        <TableCell align="right">
+        <TableCell align="left">
             <TextField size="small" type="text" fullWidth
-                slotProps={{
-                    input: {
-                        style: { fontSize: "0.75rem" }
-                    }
-                }}
+                variant="outlined"
+                sx={inputSx}
                 value={newApiVersion}  onChange={(event: any) => { setNewApiVersion(event.target.value); }} 
                 autoComplete='off'
                 placeholder={t('model.optional')}
             />
         </TableCell>
-        <TableCell align="right">
+        <TableCell align="left">
             <Tooltip title={modelExists ? t('model.providerModelExists') : t('model.addAndTestModel')}>
                 <span>  
                     <IconButton color={modelExists ? 'error' : 'primary'}
                         disabled={!readyToTest}
-                        sx={{cursor: modelExists ? 'help' : 'pointer'}}
+                        size="small"
+                        sx={{ cursor: modelExists ? 'help' : 'pointer', p: 0.25 }}
                         onClick={(event) => {
                             event.stopPropagation()
 
                             let endpoint = newEndpoint;
 
-                            // Hash the ID to prevent API key exposure
                             const idString = `${endpoint}-${newModel}-${newApiKey}-${newApiBase}-${newApiVersion}`;
                             let id = simpleHash(idString);
 
@@ -300,22 +286,18 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
                             dispatch(dfActions.addModel(model));
 
-                            // Create a custom test function that assigns to slot on success
                             const testAndAssignModel = (model: ModelConfig) => {
                                 updateModelStatus(model, 'testing', "");
                                 let message = {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', },
-                                    body: JSON.stringify({
-                                        model: model,
-                                    }),
+                                    body: JSON.stringify({ model: model }),
                                 };
                                 fetch(getUrls().TEST_MODEL, {...message })
                                     .then((response) => response.json())
                                     .then((data) => {
                                         let status = data["status"] || 'error';
                                         updateModelStatus(model, status, data["message"] || "");
-                                        // Only assign to slot if test is successful
                                         if (status === 'ok') {
                                             setTempSelectedModelId(id);
                                         }
@@ -332,14 +314,14 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             setNewApiBase("");
                             setNewApiVersion("");
                         }}>
-                        <AddCircleIcon />
+                        <AddCircleIcon sx={{ fontSize: 18 }} />
                     </IconButton>
                 </span>
             </Tooltip>
         </TableCell>
         <TableCell align="right">
             <Tooltip title={t('model.clear')}>
-                <IconButton 
+                <IconButton size="small" sx={{ p: 0.25 }}
                     onClick={(event) => {
                         event.stopPropagation()
                         setNewEndpoint("");
@@ -348,7 +330,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         setNewApiBase("");
                         setNewApiVersion("");
                     }}>
-                    <ClearIcon />
+                    <ClearIcon sx={{ fontSize: 14 }} />
                 </IconButton>
             </Tooltip>
         </TableCell>
@@ -360,11 +342,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         const status = getStatus(model.id);
 
         const statusIcon =
-            status === 'configured' ? <SettingsOutlinedIcon color="info" fontSize="small" /> :
-            status === 'unknown'    ? <HelpOutlineIcon color="warning" fontSize="small" /> :
-            status === 'testing'    ? <CircularProgress size={20} /> :
-            status === 'ok'         ? <CheckCircleOutlineIcon color="success" fontSize="small" /> :
-                                      <ErrorOutlineIcon color="error" fontSize="small" />;
+            status === 'configured' ? <SettingsOutlinedIcon color="info" sx={{ fontSize: 16 }} /> :
+            status === 'unknown'    ? <HelpOutlineIcon color="warning" sx={{ fontSize: 16 }} /> :
+            status === 'testing'    ? <CircularProgress size={14} /> :
+            status === 'ok'         ? <CheckCircleOutlineIcon color="success" sx={{ fontSize: 16 }} /> :
+                                      <ErrorOutlineIcon color="error" sx={{ fontSize: 16 }} />;
 
         let message = t('model.modelReadyMessage');
         if (status === 'configured') {
@@ -376,85 +358,58 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             message = t('model.errorMessage', { message: decodeHtmlEntities(rawMessage) });
         }
 
-        const borderStyle = status === 'error' ? '1px dashed lightgray' : undefined;
-        const noBorderStyle = status === 'error' ? 'none' : undefined;
-        // "configured" and "ok" models are selectable. Only "error" and "unknown" (user models) are disabled.
         const selectable = status === 'ok' || status === 'configured' || (isGlobal && status !== 'error');
-        const disabledStyle = !selectable ? { cursor: 'default', opacity: 0.5 } : undefined;
+        const isSelected = tempSelectedModelId === model.id;
 
         return (
             <React.Fragment key={model.id}>
                 <TableRow
                     sx={{
-                        '& .MuiTableCell-root': { fontSize: '0.75rem' },
-                        '&:hover': { backgroundColor: '#f8f9fa' },
-                        border: tempSelectedModelId === model.id ? `2px solid ${theme.palette.primary.main}` : 'none',
                         cursor: selectable ? 'pointer' : 'default',
+                        opacity: selectable ? 1 : 0.5,
+                        backgroundColor: isSelected ? alpha(theme.palette.primary.main, 0.04) : 'transparent',
+                        border: isSelected ? `2px solid ${theme.palette.primary.main}` : '2px solid transparent',
+                        '&:hover': selectable ? { backgroundColor: isSelected ? alpha(theme.palette.primary.main, 0.06) : 'rgba(0,0,0,0.02)' } : {},
                     }}
                     onClick={() => selectable && setTempSelectedModelId(
-                        tempSelectedModelId === model.id ? undefined : model.id
+                        isSelected ? undefined : model.id
                     )}
                 >
-                    <TableCell align="left" sx={{ borderBottom: borderStyle, ...disabledStyle }}>
-                        <Typography variant="body2" sx={{ fontSize: 'inherit', fontWeight: 500 }}>
-                            {model.model}
-                        </Typography>
+                    <TableCell align="left">
+                        {model.model}
                     </TableCell>
-                    <TableCell component="th" scope="row" sx={{ borderBottom: borderStyle, ...disabledStyle }}>
-                        {isGlobal ? (
-                            <Typography sx={{ color: 'text.secondary', fontSize: 'inherit', fontStyle: 'italic' }}>
-                                {t('model.serverManaged', 'Server managed')}
-                            </Typography>
-                        ) : model.api_key ? (showKeys ?
-                            <Typography variant="body2" sx={{
-                                maxWidth: '220px', wordBreak: 'break-all', whiteSpace: 'normal',
-                                fontSize: '0.5rem', fontFamily: 'monospace', lineHeight: 1.3
-                            }}>
-                                {model.api_key}
-                            </Typography>
-                            : <Typography variant="body2" sx={{ fontSize: 'inherit', fontFamily: 'monospace', color: 'text.secondary' }}>
-                                ••••••••••••
-                            </Typography>
-                        ) : (
-                            <Typography sx={{ color: 'text.secondary', fontSize: 'inherit', fontStyle: 'italic' }}>
-                                {t('model.none')}
-                            </Typography>
-                        )}
+                    <TableCell>
+                        {isGlobal
+                            ? <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.serverManaged', 'Server managed')}</Box>
+                            : model.api_key
+                                ? (showKeys
+                                    ? <Box component="span" sx={{ fontSize: '0.5rem', fontFamily: 'monospace', wordBreak: 'break-all', whiteSpace: 'normal', lineHeight: 1.3 }}>{model.api_key}</Box>
+                                    : <Box component="span" sx={{ color: 'text.disabled' }}>••••••••••</Box>)
+                                : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.none')}</Box>
+                        }
                     </TableCell>
-                    <TableCell align="left" sx={{ borderBottom: noBorderStyle, ...disabledStyle }}>
-                        <Typography variant="body2" sx={{ fontWeight: 500, fontSize: 'inherit' }}>
-                            {model.endpoint}
-                        </Typography>
+                    <TableCell align="left">
+                        {model.endpoint}
                     </TableCell>
-                    <TableCell align="left" sx={{ borderBottom: borderStyle, ...disabledStyle }}>
-                        {model.api_base ? (
-                            <Typography variant="body2" sx={{
-                                fontSize: 'inherit', maxWidth: '220px', wordBreak: 'break-all', lineHeight: 1.3
-                            }}>
-                                {model.api_base}
-                            </Typography>
-                        ) : (
-                            <Typography sx={{ color: 'text.secondary', fontSize: 'inherit', fontStyle: 'italic' }}>
-                                {t('model.default')}
-                            </Typography>
-                        )}
+                    <TableCell align="left">
+                        {model.api_base
+                            ? <Box component="span" sx={{ wordBreak: 'break-all', whiteSpace: 'normal', lineHeight: 1.3 }}>{model.api_base}</Box>
+                            : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.default')}</Box>
+                        }
                     </TableCell>
-                    <TableCell align="left" sx={{ borderBottom: borderStyle, ...disabledStyle }}>
-                        {model.api_version ? (
-                            <Typography variant="body2" sx={{ fontSize: 'inherit' }}>{model.api_version}</Typography>
-                        ) : (
-                            <Typography sx={{ color: 'text.secondary', fontSize: 'inherit', fontStyle: 'italic' }}>
-                                {t('model.default')}
-                            </Typography>
-                        )}
+                    <TableCell align="left">
+                        {model.api_version
+                            ? model.api_version
+                            : <Box component="span" sx={{ color: 'text.disabled' }}>{t('model.default')}</Box>
+                        }
                     </TableCell>
-                    <TableCell sx={{ borderBottom: borderStyle }} align="left">
+                    <TableCell align="left">
                         <Tooltip title={message}>
                             <Button
                                 size="small"
                                 color={status === 'ok' ? 'success' : status === 'configured' ? 'info' : status === 'error' ? 'error' : 'warning'}
-                                onClick={() => testModel(model)}
-                                sx={{ p: 0.75, fontSize: '0.75rem', textTransform: 'none' }}
+                                onClick={(e) => { e.stopPropagation(); testModel(model); }}
+                                sx={{ p: 0.5, minWidth: 0, textTransform: 'none', fontSize: 'inherit' }}
                                 startIcon={statusIcon}
                             >
                                 {status === 'ok' ? t('model.ready') :
@@ -463,18 +418,19 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                             </Button>
                         </Tooltip>
                     </TableCell>
-                    <TableCell sx={{ borderBottom: borderStyle }} align="right">
+                    <TableCell align="right">
                         {!isGlobal && (
                             <Tooltip title={t('model.removeModel')}>
                                 <IconButton
                                     size="small"
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                        e.stopPropagation();
                                         dispatch(dfActions.removeModel(model.id));
                                         if (tempSelectedModelId === model.id) setTempSelectedModelId(undefined);
                                     }}
-                                    sx={{ p: 0.75 }}
+                                    sx={{ p: 0.25 }}
                                 >
-                                    <ClearIcon fontSize="small" />
+                                    <ClearIcon sx={{ fontSize: 14 }} />
                                 </IconButton>
                             </Tooltip>
                         )}
@@ -482,11 +438,11 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 </TableRow>
                 {status === 'error' && (
                     <TableRow>
-                        <TableCell colSpan={1} align="right" />
-                        <TableCell colSpan={7}>
-                            <Typography variant="caption" color="#c82c2c" sx={{ fontSize: '0.625rem' }}>
+                        <TableCell colSpan={1} />
+                        <TableCell colSpan={6} sx={{ borderBottom: 'none' }}>
+                            <Box component="span" sx={{ color: 'error.main' }}>
                                 {message}
-                            </Typography>
+                            </Box>
                         </TableCell>
                     </TableRow>
                 )}
@@ -494,44 +450,60 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
         );
     };
 
-    const tableHead = (
-        <TableHead>
-            <TableRow>
-                <TableCell sx={{ fontWeight: 'bold', width: '160px' }} align="left">{t('model.model')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: '160px' }}>{t('model.apiKey')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: '120px' }}>{t('model.provider')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: '200px' }} align="left">{t('model.apiBase')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', width: '120px' }} align="left">{t('model.apiVersion')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }} align="left">{t('model.status')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }} align="right" />
-            </TableRow>
-        </TableHead>
+    const sectionHeader = (label: string) => (
+        <TableRow>
+            <TableCell colSpan={7} sx={{ pt: 1, pb: 0, borderBottom: 'none' }}>
+                <Typography sx={{ fontSize: '0.65rem', fontWeight: 500, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    {label}
+                </Typography>
+            </TableCell>
+        </TableRow>
     );
 
     let modelTable = <TableContainer>
-        <Table sx={{ minWidth: 600, "& .MuiTableCell-root": { padding: "4px 8px", borderBottom: "none", fontSize: '0.75rem' } }} size="small">
-            {tableHead}
+        <Table sx={{
+            minWidth: 600,
+            tableLayout: 'fixed',
+            borderCollapse: 'collapse',
+            fontSize: '0.75rem',
+            '& th, & td': {
+                px: 1, py: 0.75,
+                textAlign: 'left',
+                borderBottom: 'none',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: 'inherit',
+            },
+            '& th': {
+                fontWeight: 600,
+                color: 'text.secondary',
+                fontSize: '0.7rem',
+                bgcolor: 'background.paper',
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+            },
+        }} size="small">
+            <TableHead>
+                <TableRow>
+                    <TableCell sx={{ width: '15%' }}>{t('model.model')}</TableCell>
+                    <TableCell sx={{ width: '18%' }}>{t('model.apiKey')}</TableCell>
+                    <TableCell sx={{ width: '10%' }}>{t('model.provider')}</TableCell>
+                    <TableCell sx={{ width: '25%' }}>{t('model.apiBase')}</TableCell>
+                    <TableCell sx={{ width: '10%' }}>{t('model.apiVersion')}</TableCell>
+                    <TableCell sx={{ width: '12%' }}>{t('model.status')}</TableCell>
+                    <TableCell sx={{ width: '5%' }} />
+                </TableRow>
+            </TableHead>
             <TableBody>
                 {/* Global / server-managed models */}
-                {globalModels.length > 0 && (
-                    <TableRow>
-                        <TableCell colSpan={7} sx={{ pt: 1.5, pb: 0.5, borderBottom: 'none', display: 'flex', gap: 0.75, alignItems: 'center' }}>
-                            <Chip label={t('model.serverManagedSection', 'Server configured models')} size="small" color="primary" variant="outlined"
-                                sx={{ fontSize: '0.7rem', height: 20 }} />
-                            <Chip label={t('model.serverManagedReadonly', 'Read-only')} size="small" color="default" variant="outlined"
-                                sx={{ fontSize: '0.7rem', height: 20, opacity: 0.6 }} />
-                        </TableCell>
-                    </TableRow>
+                {globalModels.length > 0 && sectionHeader(
+                    t('model.serverManagedSection', 'Server configured models'),
                 )}
                 {globalModels.map(model => renderModelRow(model, true))}
 
                 {/* User-added models */}
-                <TableRow>
-                    <TableCell colSpan={7} sx={{ pt: 1.5, pb: 0.5, borderBottom: 'none' }}>
-                        <Chip label={t('model.userManagedSection', 'My models')} size="small" color="default" variant="outlined"
-                            sx={{ fontSize: '0.7rem', height: 20 }} />
-                    </TableCell>
-                </TableRow>
+                {sectionHeader(t('model.userManagedSection', 'My models'))}
                 {models.map(model => renderModelRow(model, false))}
                 {newModelEntry}
             </TableBody>
@@ -597,10 +569,21 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
             </DialogContent>
             <DialogActions>
                 {!serverConfig.DISABLE_DISPLAY_KEYS && (
-                    <Button sx={{marginRight: 'auto'}} endIcon={showKeys ? <VisibilityOffIcon /> : <VisibilityIcon />} onClick={()=>{
-                        setShowKeys(!showKeys);}}>
-                            {showKeys ? t('model.hideKeys') : t('model.showKeys')}
-                    </Button>
+                    <FormControlLabel
+                        sx={{ marginRight: 'auto', ml: 1 }}
+                        control={
+                            <Switch
+                                size="small"
+                                checked={showKeys}
+                                onChange={() => setShowKeys(!showKeys)}
+                            />
+                        }
+                        label={
+                            <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                                {showKeys ? t('model.hideKeys') : t('model.showKeys')}
+                            </Typography>
+                        }
+                    />
                 )}
                 <Button disabled={modelNotReady} sx={{textTransform: 'none'}}
                     variant={modelNotReady ? 'text' : 'contained'}

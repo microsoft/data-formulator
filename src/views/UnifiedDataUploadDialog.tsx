@@ -912,6 +912,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const existingNames = new Set(existingTables.map(t => t.id));
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
@@ -2208,6 +2209,59 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             }
                             handleClose();
                         }}
+                        handleSelectDatasetNewSession={activeWorkspace ? async (dataset) => {
+                            const now = new Date();
+                            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+                            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+                            const short = crypto.randomUUID().slice(0, 4);
+                            const wsId = `session_${date}_${time}_${short}`;
+                            dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: dataset.name }));
+
+                            const isLiveDataset = dataset.live === true;
+
+                            setDatasetLoading(true);
+                            setDatasetLoadingLabel(t('upload.loadingDataset', { name: dataset.name }));
+
+                            try {
+                                const loadPromises = dataset.tables.map(async (table) => {
+                                    let fullUrl = table.url;
+                                    if (table.url.startsWith('/')) {
+                                        fullUrl = window.location.origin + table.url;
+                                    }
+
+                                    const res = await fetch(fullUrl);
+                                    const textData = await res.text();
+                                    let tableName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || 'table-' + Date.now().toString().substring(0, 8);
+                                    let dictTable;
+                                    if (table.format == "csv") {
+                                        dictTable = createTableFromText(tableName, textData);
+                                    } else if (table.format == "json") {
+                                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
+                                    }
+                                    if (dictTable) {
+                                        if (isLiveDataset) {
+                                            dictTable.source = {
+                                                type: 'stream',
+                                                url: fullUrl,
+                                                autoRefresh: true,
+                                                refreshIntervalSeconds: dataset.refreshIntervalSeconds || 60,
+                                                lastRefreshed: Date.now()
+                                            };
+                                        } else {
+                                            dictTable.source = { type: 'example', url: table.url };
+                                        }
+                                        await dispatch(loadTable({ table: dictTable }));
+                                    }
+                                });
+                                await Promise.all(loadPromises);
+                            } catch (error) {
+                                console.error('Failed to load dataset:', error);
+                            } finally {
+                                setDatasetLoading(false);
+                                setDatasetLoadingLabel('');
+                            }
+                            handleClose();
+                        } : undefined}
                         />
                     </Box>
                 </TabPanel>

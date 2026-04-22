@@ -32,10 +32,11 @@ export interface DatasetMetadata {
 export interface DatasetSelectionViewProps {
     datasets: DatasetMetadata[];
     handleSelectDataset: (datasetMetadata: DatasetMetadata) => void;
+    handleSelectDatasetNewSession?: (datasetMetadata: DatasetMetadata) => void;
     hideRowNum?: boolean;
 }
 
-export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = function DatasetSelectionView({ datasets, handleSelectDataset, hideRowNum  }) {
+export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = function DatasetSelectionView({ datasets, handleSelectDataset, handleSelectDatasetNewSession, hideRowNum  }) {
 
     const [selectedDatasetName, setSelectedDatasetName] = useState<string | undefined>(undefined);
     const [tableActiveIndex, setTableActiveIndex] = useState<number>(0);
@@ -160,13 +161,21 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                                     hideRowCount={hideRowNum}
                                 />
                             </Box>
-                            <Box sx={{display: 'flex', justifyContent: 'center', mt: 2}} >
-                                <Button variant="contained" sx={{ width: 240 }}
+                            <Box sx={{display: 'flex', justifyContent: 'center', mt: 2, gap: 1}} >
+                                <Button variant="contained" sx={{ width: 240, textTransform: 'none' }}
                                         onClick={(event: React.MouseEvent<HTMLElement>) => {
                                             handleSelectDataset(selectedDataset);
                                         }}>
                                     load dataset
                                 </Button>
+                                {handleSelectDatasetNewSession && (
+                                    <Button variant="outlined" sx={{ width: 240, textTransform: 'none', color: 'text.secondary', borderColor: 'divider' }}
+                                            onClick={(event: React.MouseEvent<HTMLElement>) => {
+                                                handleSelectDatasetNewSession(selectedDataset);
+                                            }}>
+                                        load in new session
+                                    </Button>
+                                )}
                             </Box>
                         </Box>
                     )}

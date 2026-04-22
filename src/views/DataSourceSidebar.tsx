@@ -496,7 +496,7 @@ const DataSourceSidebarPanel: React.FC<{
             const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
             const short = crypto.randomUUID().slice(0, 4);
             const wsId = `session_${date}_${time}_${short}`;
-            dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: node.name }));
+            dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
         }
 
         const tableObj: DictTable = {

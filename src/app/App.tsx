@@ -800,11 +800,6 @@ const AppShell: FC = () => {
                                 <ConfigDialog />
                                 <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
                                 <ModelSelectionButton />
-                                <Divider orientation="vertical" variant="middle" flexItem />
-
-                                <Typography fontSize="inherit" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <TableMenu />
-                                </Typography>
                                 {activeWorkspace && <>
                                     <Divider orientation="vertical" variant="middle" flexItem />
                                     <CloseWorkspaceButton />

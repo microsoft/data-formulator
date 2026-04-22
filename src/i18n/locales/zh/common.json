@@ -116,7 +116,7 @@
     "tagline": "用 AI Agent 驱动可视化探索数据。",
     "demos": "示例",
     "firstSelectModelPrefix": "首先，请",
-    "modelTip": "具备较强代码生成能力的模型（例如 gpt-5、claude-sonnet-4-5）可提供更好的 Data Formulator 使用体验。"
+    "modelTip": "具备较强编程和多模态能力的模型可提供更好的 Data Formulator 使用体验。"
   },
   "about": {
     "startExploration": "开始探索",
