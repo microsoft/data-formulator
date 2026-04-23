@@ -28,6 +28,7 @@ import {
     DialogActions,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
+import { generateUUID } from '../app/identity';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
 
 import StorageIcon from '@mui/icons-material/Storage';
@@ -315,7 +316,7 @@ const DataSourceSidebarPanel: React.FC<{
                         const now = new Date();
                         const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
                         const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                        const short = crypto.randomUUID().slice(0, 4);
+                        const short = generateUUID().slice(0, 4);
                         const wsId = `session_${date}_${time}_${short}`;
                         dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'default' } }));
                     }
@@ -503,7 +504,7 @@ const DataSourceSidebarPanel: React.FC<{
             const now = new Date();
             const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
             const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-            const short = crypto.randomUUID().slice(0, 4);
+            const short = generateUUID().slice(0, 4);
             const wsId = `session_${date}_${time}_${short}`;
             dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
         }
@@ -899,7 +900,7 @@ const DataSourceSidebarPanel: React.FC<{
                         const now = new Date();
                         const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
                         const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                        const short = crypto.randomUUID().slice(0, 4);
+                        const short = generateUUID().slice(0, 4);
                         const wsId = `session_${date}_${time}_${short}`;
                         dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'default' } }));
                     }}

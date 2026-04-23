@@ -13,7 +13,7 @@ import {
     DEFAULT_ROW_LIMIT,
     DEFAULT_ROW_LIMIT_EPHEMERAL,
 } from './dfSlice'
-import { getBrowserId } from './identity';
+import { getBrowserId, generateUUID } from './identity';
 import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
 import type { AuthInfo } from './oidcConfig';
 import { OidcCallback } from './OidcCallback';
@@ -453,7 +453,7 @@ const NewSessionButton: React.FC = () => {
         const now = new Date();
         const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
         const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-        const short = crypto.randomUUID().slice(0, 4);
+        const short = generateUUID().slice(0, 4);
         const wsId = `session_${date}_${time}_${short}`;
         dispatch(dfActions.loadState({
             tables: [], charts: [], draftNodes: [], conceptShelfItems: [],

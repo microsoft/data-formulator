@@ -38,6 +38,7 @@ import Backdrop from '@mui/material/Backdrop';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
+import { generateUUID } from '../app/identity';
 import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
@@ -2216,7 +2217,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             const now = new Date();
                             const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
                             const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                            const short = crypto.randomUUID().slice(0, 4);
+                            const short = generateUUID().slice(0, 4);
                             const wsId = `session_${date}_${time}_${short}`;
                             dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: dataset.name }));
 

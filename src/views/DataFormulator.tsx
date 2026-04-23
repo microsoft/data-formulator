@@ -52,6 +52,7 @@ import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace } from '../app/workspaceService';
 import { AppDispatch } from '../app/store';
+import { generateUUID } from '../app/identity';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import IconButton from '@mui/material/IconButton';
@@ -68,7 +69,7 @@ function generateSessionId(): string {
     const now = new Date();
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    const short = crypto.randomUUID().slice(0, 4);
+    const short = generateUUID().slice(0, 4);
     return `session_${date}_${time}_${short}`;
 }
 
