@@ -334,20 +334,25 @@ class AzureBlobWorkspace(Workspace):
     def delete_tables_by_source_file(self, source_filename: str) -> list[str]:
         safe_filename = safe_data_filename(source_filename)
         deleted: list[str] = []
+        blobs_to_delete: list[str] = []
 
         def _cleanup(m: WorkspaceMetadata) -> None:
             for name, table in list(m.tables.items()):
-                if table.filename == safe_filename:
+                if table.source_file == safe_filename or table.filename == safe_filename:
+                    blobs_to_delete.append(table.filename)
                     m.remove_table(name)
                     deleted.append(name)
 
         self._atomic_update_metadata(_cleanup)
 
-        if deleted and self._blob_exists(self._data_blob_key(safe_filename)):
-            try:
-                self._delete_blob(self._data_blob_key(safe_filename))
-            except Exception as e:
-                logger.warning("Failed to delete source blob %s: %s", safe_filename, e)
+        for fname in set(blobs_to_delete):
+            blob_key = self._data_blob_key(fname)
+            if self._blob_exists(blob_key):
+                try:
+                    self._delete_blob(blob_key)
+                except Exception as e:
+                    logger.warning("Failed to delete blob %s: %s", fname, e)
+        if deleted:
             logger.info(
                 "Deleted %d table(s) for source file %s: %s",
                 len(deleted), safe_filename, deleted,

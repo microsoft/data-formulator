@@ -58,6 +58,12 @@ def _make_csv(rows: list[dict]) -> bytes:
     return pd.DataFrame(rows).to_csv(index=False).encode()
 
 
+def _make_xlsx(rows: list[dict]) -> bytes:
+    buf = io.BytesIO()
+    pd.DataFrame(rows).to_excel(buf, index=False, engine="openpyxl")
+    return buf.getvalue()
+
+
 # ── P3: overwrite semantics ──────────────────────────────────────────
 
 def test_overwrite_same_table_name(client, tmp_workspace) -> None:
@@ -99,13 +105,13 @@ def test_replace_source_removes_old_tables(client, tmp_workspace) -> None:
 
 def test_fewer_sheets_after_replace_no_orphans(client, tmp_workspace) -> None:
     """First upload 2 sheets, then replace_source with 1 → old sheet2 gone."""
-    csv = _make_csv([{"v": 42}])
+    xlsx = _make_xlsx([{"v": 42}])
 
-    _upload(client, csv, "业绩.xlsx", "业绩_xlsx_sheet1")
-    _upload(client, csv, "业绩.xlsx", "业绩_xlsx_sheet2")
+    _upload(client, xlsx, "业绩.xlsx", "业绩_xlsx_sheet1")
+    _upload(client, xlsx, "业绩.xlsx", "业绩_xlsx_sheet2")
     assert len(tmp_workspace.list_tables()) == 2
 
-    _upload(client, csv, "业绩.xlsx", "业绩_xlsx_sheet1", replace_source=True)
+    _upload(client, xlsx, "业绩.xlsx", "业绩_xlsx_sheet1", replace_source=True)
     tables = tmp_workspace.list_tables()
     assert "业绩_xlsx_sheet1" in tables
     assert "业绩_xlsx_sheet2" not in tables

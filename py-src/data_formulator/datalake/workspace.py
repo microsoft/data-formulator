@@ -388,8 +388,12 @@ class Workspace:
     def delete_tables_by_source_file(self, source_filename: str) -> list[str]:
         """Delete all tables whose source filename matches.
 
+        Matches against both ``source_file`` (upload origin) and
+        ``filename`` (physical file), so this works whether the table
+        was stored as-is or converted to parquet.
+
         Atomically removes the metadata entries, then deletes the
-        physical file.  Used when re-uploading a file so that sheets
+        physical files.  Used when re-uploading a file so that sheets
         removed in the new version don't linger as orphans.
 
         Returns:
@@ -397,22 +401,25 @@ class Workspace:
         """
         safe_filename = safe_data_filename(source_filename)
         deleted: list[str] = []
+        files_to_delete: list[str] = []
 
         def _cleanup(metadata: WorkspaceMetadata) -> None:
             for name, table in list(metadata.tables.items()):
-                if table.filename == safe_filename:
+                if table.source_file == safe_filename or table.filename == safe_filename:
+                    files_to_delete.append(table.filename)
                     metadata.remove_table(name)
                     deleted.append(name)
 
         self._atomic_update_metadata(_cleanup)
 
-        if deleted:
+        for fname in set(files_to_delete):
             try:
-                file_path = self.get_file_path(safe_filename)
+                file_path = self.get_file_path(fname)
                 if file_path.exists():
                     file_path.unlink()
             except Exception as e:
-                logger.warning(f"Failed to delete source file {safe_filename}: {e}")
+                logger.warning(f"Failed to delete file {fname}: {e}")
+        if deleted:
             logger.info(
                 f"Deleted {len(deleted)} table(s) for source file "
                 f"{safe_filename}: {deleted}"

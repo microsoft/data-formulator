@@ -215,6 +215,7 @@ class TableMetadata:
     row_count: int | None = None
     columns: list[ColumnInfo] | None = None
     original_name: str | None = None
+    source_file: str | None = None
     description: str | None = None
 
     def to_dict(self) -> dict:
@@ -248,6 +249,8 @@ class TableMetadata:
             result["columns"] = [col.to_dict() for col in self.columns]
         if self.original_name is not None:
             result["original_name"] = self.original_name
+        if self.source_file is not None:
+            result["source_file"] = self.source_file
         if self.description is not None:
             result["description"] = self.description
         
@@ -285,6 +288,7 @@ class TableMetadata:
             row_count=data.get("row_count"),
             columns=columns,
             original_name=data.get("original_name"),
+            source_file=data.get("source_file"),
             description=data.get("description"),
         )
 

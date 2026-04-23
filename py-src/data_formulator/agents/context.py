@@ -111,6 +111,12 @@ def build_lightweight_table_context(
             )
         except Exception as e:
             logger.warning(f"Could not read table {table_name}: {e}")
+            from data_formulator.error_handler import collect_stream_warning
+            collect_stream_warning(
+                f"Table '{table_name}' schema unavailable",
+                detail=str(e),
+                message_code="TABLE_SCHEMA_FAILED",
+            )
             return f"Table: {table_name} (error reading schema)"
 
     load_hint = (
@@ -160,6 +166,11 @@ def handle_inspect_source_data(
             )
         except (FileNotFoundError, KeyError) as exc:
             logger.warning("Could not generate data summary: %s", exc)
+            from data_formulator.error_handler import collect_stream_warning
+            collect_stream_warning(
+                f"Could not read table data for inspection: {exc}",
+                message_code="TABLE_INSPECT_FAILED",
+            )
             content = f"Error reading table data: some tables could not be found in the workspace. Available tables may have changed."
     else:
         content = f"No tables found matching: {table_names}"

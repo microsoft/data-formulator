@@ -212,6 +212,12 @@ class InteractiveExploreAgent(object):
                 response = self._call_llm_with_tools(messages, tools)
             except Exception as e:
                 logger.warning(f"[InteractiveExploreAgent] Inspect round failed: {e}")
+                from data_formulator.error_handler import collect_stream_warning
+                collect_stream_warning(
+                    "Data inspection round failed — results may be less accurate",
+                    detail=str(e),
+                    message_code="INSPECT_ROUND_FAILED",
+                )
                 break
 
             if not response or not response.choices:

@@ -283,6 +283,14 @@ export function useFormulateData() {
                                 const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
                                 throw new Error(msg);
                             }
+                            if (parsed.type === 'warning') {
+                                dispatch(dfActions.addMessages([{
+                                    timestamp: Date.now(), type: 'warning',
+                                    component: 'exploration',
+                                    value: parsed.warning?.message ?? 'Warning from server',
+                                }]));
+                                continue;
+                            }
                             if (parsed.text) {
                                 lines.push(trimmed);
                                 updateState(lines);
@@ -304,7 +312,13 @@ export function useFormulateData() {
                         const msg = parsed.error?.message ?? 'Unknown error';
                         throw new Error(msg);
                     }
-                    if (parsed.text) {
+                    if (parsed.type === 'warning') {
+                        dispatch(dfActions.addMessages([{
+                            timestamp: Date.now(), type: 'warning',
+                            component: 'exploration',
+                            value: parsed.warning?.message ?? 'Warning from server',
+                        }]));
+                    } else if (parsed.text) {
                         lines.push(buffer.trim());
                     }
                 } catch (e) {

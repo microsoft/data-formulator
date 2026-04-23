@@ -61,6 +61,23 @@ def get_language_instruction(*, mode: str = "full") -> str:
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
 
 
+def _with_warnings(gen):
+    """Wrap an NDJSON generator to flush accumulated stream warnings.
+
+    Any code running during chunk generation (e.g. agent helpers) may
+    call :func:`collect_stream_warning`.  This wrapper drains the
+    accumulated warnings before each application chunk so the frontend
+    receives them in chronological order.
+    """
+    from data_formulator.error_handler import flush_stream_warnings
+    for chunk in gen:
+        for w in flush_stream_warnings():
+            yield w
+        yield chunk
+    for w in flush_stream_warnings():
+        yield w
+
+
 @agent_bp.after_request
 def _set_cors(response):
     """Set CORS headers from server configuration.
@@ -300,7 +317,7 @@ def clean_data_stream_request():
             ))
 
     response = Response(
-        stream_with_context(generate()),
+        stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )
     return response
@@ -557,7 +574,7 @@ def data_agent_streaming():
             ))
 
     response = Response(
-        stream_with_context(generate()),
+        stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )
     return response
@@ -777,7 +794,7 @@ def get_recommendation_questions():
             ))
 
     response = Response(
-        stream_with_context(generate()),
+        stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )
     return response
@@ -834,7 +851,7 @@ def generate_report_chat():
             ))
 
     response = Response(
-        stream_with_context(generate()),
+        stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )
     return response
@@ -1203,6 +1220,6 @@ def data_loading_chat():
             }, ensure_ascii=False) + "\n"
 
     return Response(
-        stream_with_context(generate()),
+        stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )

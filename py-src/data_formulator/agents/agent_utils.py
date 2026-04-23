@@ -346,6 +346,11 @@ def generate_data_summary(
             df = workspace.read_data_as_df(table_name)
         except (FileNotFoundError, KeyError) as exc:
             _logger.warning("Could not read table %s for summary: %s", table_name, exc)
+            from data_formulator.error_handler import collect_stream_warning
+            collect_stream_warning(
+                f"Table '{table_name}' data unavailable — it may have been removed or renamed",
+                message_code="TABLE_READ_FAILED",
+            )
             return f"## {table_name_prefix} {idx + 1}: {table_name}\n- ⚠ Table data unavailable (may have been removed or renamed)"
 
         data_file_path = workspace.get_relative_data_file_path(table_name)

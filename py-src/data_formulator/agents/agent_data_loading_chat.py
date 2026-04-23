@@ -779,6 +779,12 @@ class DataLoadingAgent:
                 table_names = ", ".join(m.table_name for m in metadata)
         except Exception as e:
             logger.warning("Could not list tables for system prompt", exc_info=e)
+            from data_formulator.error_handler import collect_stream_warning
+            collect_stream_warning(
+                "Could not load table list — data chat context may be incomplete",
+                detail=str(e),
+                message_code="TABLE_LIST_FAILED",
+            )
 
         prompt = SYSTEM_PROMPT.format(
             table_names=table_names,

@@ -293,3 +293,87 @@ class TestRequestIdMiddleware:
         rid = resp.headers["X-Request-Id"]
         parts = rid.split("-")
         assert len(parts) == 5  # UUID4 format: 8-4-4-4-12
+
+
+# ---------------------------------------------------------------------------
+# stream_warning_event
+# ---------------------------------------------------------------------------
+
+class TestStreamWarningEvent:
+
+    @pytest.fixture(autouse=True)
+    def _import(self):
+        from data_formulator.error_handler import stream_warning_event
+        self.stream_warning_event = stream_warning_event
+
+    def test_output_is_valid_ndjson_line(self) -> None:
+        line = self.stream_warning_event("table unavailable")
+        assert line.endswith("\n")
+        assert "\n" not in line.rstrip("\n")
+        parsed = json.loads(line)
+        assert parsed["type"] == "warning"
+
+    def test_warning_structure(self) -> None:
+        parsed = json.loads(self.stream_warning_event("table unavailable"))
+        assert parsed["warning"]["message"] == "table unavailable"
+        assert "detail" not in parsed["warning"]
+
+    def test_detail_included(self) -> None:
+        parsed = json.loads(
+            self.stream_warning_event("table unavailable", detail="FileNotFoundError")
+        )
+        assert parsed["warning"]["detail"] == "FileNotFoundError"
+
+    def test_message_code_included(self) -> None:
+        parsed = json.loads(
+            self.stream_warning_event("table unavailable", message_code="TABLE_READ_FAILED")
+        )
+        assert parsed["warning"]["message_code"] == "TABLE_READ_FAILED"
+
+    def test_unicode_safe(self) -> None:
+        line = self.stream_warning_event("表数据不可用")
+        parsed = json.loads(line)
+        assert parsed["warning"]["message"] == "表数据不可用"
+
+
+# ---------------------------------------------------------------------------
+# collect_stream_warning / flush_stream_warnings
+# ---------------------------------------------------------------------------
+
+class TestCollectAndFlushStreamWarnings:
+
+    @pytest.fixture(autouse=True)
+    def _import(self, app):
+        from data_formulator.error_handler import (
+            collect_stream_warning,
+            flush_stream_warnings,
+        )
+        self.collect = collect_stream_warning
+        self.flush = flush_stream_warnings
+        self.app = app
+
+    def test_no_warnings_returns_empty(self) -> None:
+        with self.app.test_request_context("/"):
+            assert self.flush() == []
+
+    def test_collect_then_flush(self) -> None:
+        with self.app.test_request_context("/"):
+            self.collect("warn 1")
+            self.collect("warn 2", detail="extra")
+            lines = self.flush()
+            assert len(lines) == 2
+            p1 = json.loads(lines[0])
+            assert p1["type"] == "warning"
+            assert p1["warning"]["message"] == "warn 1"
+            p2 = json.loads(lines[1])
+            assert p2["warning"]["detail"] == "extra"
+
+    def test_flush_clears_accumulator(self) -> None:
+        with self.app.test_request_context("/"):
+            self.collect("x")
+            self.flush()
+            assert self.flush() == []
+
+    def test_outside_request_context_is_noop(self) -> None:
+        self.collect("should not crash")
+        assert self.flush() == []

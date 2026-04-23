@@ -432,6 +432,14 @@ export const SimpleChartRecBox: FC = function () {
                                 }]));
                                 continue;
                             }
+                            if (parsed.type === 'warning') {
+                                dispatch(dfActions.addMessages([{
+                                    timestamp: Date.now(), type: 'warning',
+                                    component: 'exploration',
+                                    value: parsed.warning?.message ?? 'Warning from server',
+                                }]));
+                                continue;
+                            }
                             if (parsed.text) {
                                 lines.push(parsed);
                                 setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
@@ -453,6 +461,12 @@ export const SimpleChartRecBox: FC = function () {
                             timestamp: Date.now(), type: 'error',
                             component: 'exploration', value: msg,
                             diagnostics: parsed.error,
+                        }]));
+                    } else if (parsed.type === 'warning') {
+                        dispatch(dfActions.addMessages([{
+                            timestamp: Date.now(), type: 'warning',
+                            component: 'exploration',
+                            value: parsed.warning?.message ?? 'Warning from server',
                         }]));
                     } else if (parsed.text) {
                         lines.push(parsed);
@@ -1049,6 +1063,15 @@ export const SimpleChartRecBox: FC = function () {
                                     return;
                                 }
 
+                                if (data.type === "warning") {
+                                    dispatch(dfActions.addMessages([{
+                                        timestamp: Date.now(), type: 'warning',
+                                        component: 'data-agent',
+                                        value: data.warning?.message ?? 'Warning from server',
+                                    }]));
+                                    continue;
+                                }
+
                                 if (data.token === token) {
                                     if (data.status === "ok" && data.result) {
                                         allResults.push(data.result);
@@ -1212,6 +1235,12 @@ export const SimpleChartRecBox: FC = function () {
                             dispatch(dfActions.addMessages([{
                                 timestamp: Date.now(), type: 'error',
                                 component: 'report-agent', value: errMsg,
+                            }]));
+                        } else if (event.type === 'warning') {
+                            dispatch(dfActions.addMessages([{
+                                timestamp: Date.now(), type: 'warning',
+                                component: 'report-agent',
+                                value: event.warning?.message ?? 'Warning from server',
                             }]));
                         }
                         const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);

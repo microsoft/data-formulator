@@ -17,7 +17,7 @@ from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
 from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename
-from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, normalize_text_encoding
+from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, get_file_type, normalize_text_encoding
 from data_formulator.datalake.workspace_metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
 import re
 
@@ -406,6 +406,83 @@ def get_table_data():
     except Exception as e:
         classify_and_raise_db_error(e)
 
+def _read_upload_to_df(
+    content: bytes,
+    file_type: str,
+    *,
+    table_name: str = "",
+    sheet_hint: str | None = None,
+) -> pd.DataFrame:
+    """Parse uploaded file bytes into a DataFrame for parquet conversion.
+
+    For Excel files the target sheet is resolved by
+    :func:`_resolve_excel_sheet`.
+    """
+    buf = io.BytesIO(content)
+    if file_type == "csv":
+        return pd.read_csv(buf)
+    if file_type == "txt":
+        return pd.read_csv(buf, sep="\t")
+    if file_type in ("excel",):
+        sheet = _resolve_excel_sheet(content, table_name, sheet_hint)
+        return pd.read_excel(io.BytesIO(content), sheet_name=sheet)
+    if file_type == "json":
+        return pd.read_json(buf)
+    raise ValueError(f"Cannot convert file_type '{file_type}' to DataFrame")
+
+
+def _resolve_excel_sheet(
+    content: bytes,
+    table_name: str,
+    sheet_hint: str | None = None,
+) -> int | str:
+    """Pick the correct sheet from an Excel workbook.
+
+    Resolution order:
+
+    1. **Validated hint** — if the frontend sent *sheet_hint* **and** that
+       name actually exists in the workbook, use it directly.
+    2. **Suffix match** — for each real sheet name, check whether
+       ``table_name`` ends with ``_<sheet_lower>``.  This handles the
+       common pattern ``query_产品利润_xlsx_sheet1``.
+    3. **Substring match** — looser: ``sheet_lower in table_name``.
+    4. **Fallback** — first sheet (index 0).
+    """
+    try:
+        xls = pd.ExcelFile(io.BytesIO(content))
+        sheet_names = xls.sheet_names
+    except Exception:
+        return 0
+
+    if not sheet_names:
+        return 0
+
+    # 1. Validated frontend hint
+    if sheet_hint:
+        for name in sheet_names:
+            if name == sheet_hint:
+                return name
+        for name in sheet_names:
+            if name.lower() == sheet_hint.lower():
+                return name
+
+    tn_lower = table_name.lower()
+    if not tn_lower:
+        return 0
+
+    # 2. Exact suffix match (strongest signal)
+    for name in sheet_names:
+        if tn_lower.endswith("_" + name.lower()):
+            return name
+
+    # 3. Substring match (weaker)
+    for name in sheet_names:
+        if name.lower() in tn_lower:
+            return name
+
+    return 0
+
+
 @tables_bp.route('/create-table', methods=['POST'])
 def create_table():
     """Create a new table from uploaded file or raw data in the workspace."""
@@ -435,26 +512,26 @@ def create_table():
             if replace_source:
                 workspace.delete_tables_by_source_file(safe_name)
 
-            meta = save_uploaded_file(
-                workspace,
-                file.stream,
-                safe_name,
+            file_type = get_file_type(safe_name)
+            content = file.stream.read()
+            content = normalize_text_encoding(content, file_type)
+
+            sheet_hint = request.form.get('sheet_name') or None
+            df = _read_upload_to_df(
+                content, file_type,
                 table_name=sanitized_table_name,
-                overwrite=True,
+                sheet_hint=sheet_hint,
             )
+
+            meta = workspace.write_parquet(df, sanitized_table_name)
+            meta.source_type = "upload"
+            meta.source_file = safe_name
+            meta.original_name = table_name
+            workspace.add_table_metadata(meta)
+
             sanitized_table_name = meta.name
             row_count = meta.row_count
             columns = [c.name for c in (meta.columns or [])]
-            if row_count is None or not columns:
-                df = workspace.read_data_as_df(sanitized_table_name)
-                row_count = len(df)
-                columns = list(df.columns)
-                meta.row_count = row_count
-                meta.columns = [
-                    ColumnInfo(name=str(c), dtype=str(df[c].dtype))
-                    for c in df.columns
-                ]
-                workspace.add_table_metadata(meta)
         else:
             # raw_data can come as a file upload (Blob) or as a form field
             if 'raw_data' in request.files:

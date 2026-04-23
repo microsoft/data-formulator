@@ -120,6 +120,74 @@ def stream_error_event(
 
 
 # ---------------------------------------------------------------------------
+# Streaming warning event
+# ---------------------------------------------------------------------------
+
+def stream_warning_event(
+    message: str,
+    *,
+    detail: str = "",
+    message_code: str = "",
+) -> str:
+    """Format a non-fatal warning as a single NDJSON line.
+
+    Unlike :func:`stream_error_event`, a warning does **not** abort the
+    stream — it is an advisory notice (e.g. "table X unavailable, using
+    degraded context") that the frontend can display as a toast / snackbar.
+
+    Returns a string ending with ``\\n``.
+    """
+    warning: dict = {"message": message}
+    if detail:
+        warning["detail"] = detail
+    if message_code:
+        warning["message_code"] = message_code
+
+    return json.dumps({"type": "warning", "warning": warning}, ensure_ascii=False) + "\n"
+
+
+def collect_stream_warning(message: str, *, detail: str = "", message_code: str = "") -> None:
+    """Accumulate a warning in the current request context.
+
+    Stored on ``flask.g`` so that any code running within a request
+    (including inside agent helper functions that cannot ``yield``) can
+    emit warnings.  The streaming generator drains them via
+    :func:`flush_stream_warnings`.
+    """
+    try:
+        warnings = getattr(g, "_stream_warnings", None)
+        if warnings is None:
+            g._stream_warnings = warnings = []
+        entry: dict = {"message": message}
+        if detail:
+            entry["detail"] = detail
+        if message_code:
+            entry["message_code"] = message_code
+        warnings.append(entry)
+    except RuntimeError:
+        pass
+
+
+def flush_stream_warnings() -> list[str]:
+    """Return and clear all accumulated warning NDJSON lines.
+
+    Call this inside a streaming generator (wrapped with
+    ``stream_with_context``) to inject pending warnings into the stream.
+    """
+    try:
+        warnings = getattr(g, "_stream_warnings", None)
+        if not warnings:
+            return []
+        g._stream_warnings = []
+        return [
+            json.dumps({"type": "warning", "warning": w}, ensure_ascii=False) + "\n"
+            for w in warnings
+        ]
+    except RuntimeError:
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Global Flask error handlers + request-id middleware
 # ---------------------------------------------------------------------------
 
