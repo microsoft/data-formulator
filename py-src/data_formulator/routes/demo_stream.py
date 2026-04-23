@@ -238,8 +238,8 @@ def get_earthquakes():
         
         return make_csv_response(rows)
     except Exception as e:
-        logger.warning(f"Failed to fetch earthquakes: {e}")
-        return Response(f"error,{str(e)}", mimetype='text/csv'), 500
+        logger.warning("Failed to fetch earthquakes", exc_info=e)
+        return Response("error,Data fetch failed", mimetype='text/csv'), 500
 
 
 # ============================================================================

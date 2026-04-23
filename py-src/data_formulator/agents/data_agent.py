@@ -599,7 +599,8 @@ class DataAgent:
                     "stdout": "",
                 }
         except Exception as e:
-            return {"status": "error", "error": str(e), "stdout": ""}
+            logger.error("[DataAgent] Sandbox execution error", exc_info=e)
+            return {"status": "error", "error": "Code execution failed", "stdout": ""}
 
     def _run_visualize_code(
         self,
@@ -718,8 +719,8 @@ class DataAgent:
             }
 
         except Exception as e:
-            logger.error(f"[DataAgent] Visualize execution error: {e}")
-            return {"status": "error", "error_message": str(e)}
+            logger.error("[DataAgent] Visualize execution error", exc_info=e)
+            return {"status": "error", "error_message": "Visualization execution failed"}
 
     def _create_chart(
         self,
@@ -949,12 +950,13 @@ class DataAgent:
             try:
                 response = self._call_llm(messages)
             except Exception as exc:
-                logger.error("[DataAgent] LLM call failed: %s", exc)
+                logger.error("[DataAgent] LLM call failed", exc_info=exc)
+                from data_formulator.security.sanitize import classify_llm_error
                 yield {
                     "type": "agent_action",
                     "action_data": None,
                     "reason": "llm_error",
-                    "error_message": str(exc),
+                    "error_message": classify_llm_error(exc),
                 }
                 return
 

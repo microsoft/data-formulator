@@ -571,8 +571,8 @@ class DataLoadingAgent:
                 }
 
         except Exception as e:
-            logger.error(f"execute_python failed: {e}")
-            return {"stdout": "", "error": str(e)}
+            logger.error("execute_python failed", exc_info=e)
+            return {"stdout": "", "error": "Code execution failed"}
 
     def _tool_show_user_data_preview(self, args, scratch_dir):
         """Unified data preview with 3 modes."""
@@ -614,7 +614,8 @@ class DataLoadingAgent:
                     "csv_scratch_path": f"scratch/{safe_name}.csv",
                 })
             except Exception as e:
-                actions.append({"type": "preview_table", "name": name, "error": str(e)})
+                logger.warning("Table preview failed for %s", name, exc_info=e)
+                actions.append({"type": "preview_table", "name": name, "error": "Table preview failed"})
 
         return {"actions": actions}
 
@@ -640,7 +641,8 @@ class DataLoadingAgent:
                     "csv_scratch_path": f"scratch/{name}.csv",
                 })
             except Exception as e:
-                actions.append({"type": "preview_table", "name": name, "error": str(e)})
+                logger.warning("Inline table preview failed for %s", name, exc_info=e)
+                actions.append({"type": "preview_table", "name": name, "error": "Table preview failed"})
 
         return {"actions": actions}
 
@@ -675,7 +677,8 @@ class DataLoadingAgent:
                     "csv_scratch_path": file_path,
                 })
             except Exception as e:
-                actions.append({"type": "preview_table", "name": table_name, "error": str(e)})
+                logger.warning("Scratch file preview failed for %s", table_name, exc_info=e)
+                actions.append({"type": "preview_table", "name": table_name, "error": "Table preview failed"})
 
         return {"actions": actions}
 
