@@ -90,12 +90,16 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "purpose": {
+                        "type": "string",
+                        "description": "One-sentence description of what this code does and why (shown to user as progress).",
+                    },
                     "code": {
                         "type": "string",
                         "description": "Python code to execute. Use print() to see output.",
                     },
                 },
-                "required": ["code"],
+                "required": ["purpose", "code"],
             },
         },
     },
@@ -1006,6 +1010,7 @@ class DataAgent:
                     yield {
                         "type": "tool_start",
                         "tool": tool_name,
+                        "purpose": tool_args.get("purpose") if tool_name == "explore" else None,
                         "code": tool_args.get("code") if tool_name == "explore" else None,
                         "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
                     }

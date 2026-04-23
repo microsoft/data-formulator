@@ -735,9 +735,9 @@ export const SimpleChartRecBox: FC = function () {
 
         // Accumulate thinking phase steps for progressive display
         // Steps are joined with \x1E (Record Separator) to avoid splitting multi-line content
-        let thinkingSteps: string[] = [];
-        let pendingThought: string = ''; // accumulate thinking_text content (background reasoning)
         const STEP_SEP = '\x1E';
+        let thinkingSteps: string[] = [];
+        let pendingThought: string = '';
 
         const processStreamingResult = (result: any) => {
             // ── thinking_text: LLM reasoning alongside tool calls ──
@@ -756,11 +756,20 @@ export const SimpleChartRecBox: FC = function () {
             // ── tool_start: agent is calling a tool (explore/inspect) ──
             // (think tool is handled via thinking_text event, not here)
             if (result.type === "tool_start" && result.tool !== "think") {
-                // Flush any pending thought before the tool step
-                pendingThought = '';
+                // Show pending thought as a visible step before the tool step
+                if (pendingThought) {
+                    thinkingSteps.push(pendingThought);
+                    pendingThought = '';
+                }
                 if (result.tool === "explore") {
-                    const codePreview = result.code || '';
-                    thinkingSteps.push(t('dataThread.runningCode') + (codePreview ? `: ${codePreview.split('\n')[0]}...` : ''));
+                    const purpose = result.purpose || '';
+                    if (purpose) {
+                        thinkingSteps.push(t('dataThread.runningCode') + ' ' + purpose);
+                    } else {
+                        const codePreview = result.code || '';
+                        const meaningfulLine = codePreview.split('\n').find((l: string) => l.trim() && !l.trim().startsWith('import ') && !l.trim().startsWith('from ')) || codePreview.split('\n')[0] || '';
+                        thinkingSteps.push(t('dataThread.runningCode') + (meaningfulLine ? `: ${meaningfulLine.trim()}` : ''));
+                    }
                 } else if (result.tool === "inspect_source_data") {
                     const tableNames = result.table_names?.join(', ') || '';
                     thinkingSteps.push(t('dataThread.inspectingData') + (tableNames ? ` ${tableNames}` : ''));
@@ -949,9 +958,16 @@ export const SimpleChartRecBox: FC = function () {
                 const rawOptions: string[] = Array.isArray(result.options) ? result.options : [];
                 const clarifyOptions = translateBackendOptions(rawOptions, result.option_codes);
                 if (currentDraftId) {
+                    // Snapshot thinking steps into the clarify entry so they render
+                    // inline (as 二级) between the user prompt and the clarify question.
+                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
+                    thinkingSteps = [];
+                    pendingThought = '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+
                     const clarifyEntry: InteractionEntry = {
                         from: 'data-agent', to: 'user', role: 'clarify',
-                        plan: result.thought || undefined,
+                        plan: priorSteps || result.thought || undefined,
                         content: clarifyMsg,
                         options: clarifyOptions.length > 0 ? clarifyOptions : undefined,
                         timestamp: Date.now(),
