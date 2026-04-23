@@ -95,6 +95,17 @@ export async function getUserManager(): Promise<UserManager | null> {
     const config = await getOidcConfig();
     if (!config) return null;
 
+    // oidc-client-ts uses crypto.subtle for PKCE code challenge (SHA-256).
+    // crypto.subtle is only available in Secure Contexts (HTTPS / localhost).
+    if (typeof crypto === 'undefined' || !crypto.subtle) {
+        throw new Error(
+            "SSO requires a secure context (HTTPS). "
+            + "The current page is served over plain HTTP, which does not provide "
+            + "the crypto.subtle API needed for OIDC authentication. "
+            + "Please deploy with HTTPS or access via localhost."
+        );
+    }
+
     const hasManualEndpoints = config.metadata &&
         config.metadata.authorization_endpoint &&
         config.metadata.token_endpoint;
