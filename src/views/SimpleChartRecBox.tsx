@@ -1223,10 +1223,10 @@ export const SimpleChartRecBox: FC = function () {
                 buffer = lines.pop() || '';
 
                 for (const line of lines) {
-                    const raw = line.startsWith('data: ') ? line.slice(6) : line;
-                    if (!raw.trim()) continue;
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
                     try {
-                        const event = JSON.parse(raw);
+                        const event = JSON.parse(trimmed);
                         if (event.type === 'text_delta') {
                             accumulatedMarkdown += event.content;
                         } else if (event.type === 'error') {

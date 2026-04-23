@@ -340,18 +340,17 @@ class TestGetRecommendationQuestionsError:
 
         lines = resp.data.decode("utf-8").strip().split("\n")
         assert len(lines) >= 1
-        error_line = [l for l in lines if l.startswith("error:")]
-        assert len(error_line) == 1
+        error_events = [json.loads(l) for l in lines
+                        if l.strip() and json.loads(l).get("type") == "error"]
+        assert len(error_events) == 1
 
-        error_payload = json.loads(error_line[0].removeprefix("error: "))
-        # Raw exception must not leak
-        assert "column 'x' not found" not in error_payload["content"]
-        # classify_llm_error returns a pre-defined safe message
-        assert error_payload["content"] == "Model request failed"
+        err = error_events[0]["error"]
+        assert "column 'x' not found" not in err["message"]
+        assert err["retry"] is False
 
     def test_error_message_never_leaks_api_keys(self) -> None:
-        """Even when exception contains API keys, classify_llm_error returns
-        a safe pre-defined message without any raw exception text."""
+        """Even when exception contains API keys, classify_and_wrap_llm_error
+        returns a safe pre-defined message without any raw exception text."""
         app = _build_app()
 
         mock_agent = MagicMock()
@@ -377,8 +376,9 @@ class TestGetRecommendationQuestionsError:
                     )
 
         lines = resp.data.decode("utf-8").strip().split("\n")
-        error_line = [l for l in lines if l.startswith("error:")]
-        error_payload = json.loads(error_line[0].removeprefix("error: "))
-        assert "sk-secret123" not in error_payload["content"]
-        # "auth failed" matches the authentication pattern
-        assert "Authentication failed" in error_payload["content"]
+        error_events = [json.loads(l) for l in lines
+                        if l.strip() and json.loads(l).get("type") == "error"]
+        assert len(error_events) >= 1
+        err = error_events[0]["error"]
+        assert "sk-secret123" not in err["message"]
+        assert err["code"] == "LLM_AUTH_FAILED"

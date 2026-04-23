@@ -61,6 +61,27 @@ def get_language_instruction(*, mode: str = "full") -> str:
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
 
 
+def _try_parse_explore_line(raw_line: str) -> str | None:
+    """Parse a single line from the exploration agent into an NDJSON line.
+
+    The LLM is prompted to output one JSON object per line.  Older prompts
+    used an SSE-style ``data: `` prefix which we strip for compatibility.
+    Non-JSON lines (thinking text, blank lines) are silently dropped.
+    """
+    line = raw_line.strip()
+    if not line:
+        return None
+    if line.startswith("data:"):
+        line = line[5:].lstrip()
+    if not line.startswith("{"):
+        return None
+    try:
+        obj = json.loads(line)
+        return json.dumps(obj, ensure_ascii=False) + "\n"
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
 def _with_warnings(gen):
     """Wrap an NDJSON generator to flush accumulated stream warnings.
 
@@ -771,6 +792,7 @@ def get_recommendation_questions():
                                             agent_exploration_rules=agent_exploration_rules,
                                             language_instruction=get_language_instruction())
             try:
+                text_buf = ""
                 for chunk in agent.run(
                     input_tables,
                     start_question=start_question,
@@ -781,7 +803,16 @@ def get_recommendation_questions():
                     exploration_thread=exploration_thread,
                     current_data_sample=current_data_sample,
                 ):
-                    yield chunk
+                    text_buf += chunk
+                    while "\n" in text_buf:
+                        line, text_buf = text_buf.split("\n", 1)
+                        ndjson_line = _try_parse_explore_line(line)
+                        if ndjson_line:
+                            yield ndjson_line
+                if text_buf.strip():
+                    ndjson_line = _try_parse_explore_line(text_buf)
+                    if ndjson_line:
+                        yield ndjson_line
             except Exception as e:
                 logger.exception("get-recommendation-questions failed")
                 from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error

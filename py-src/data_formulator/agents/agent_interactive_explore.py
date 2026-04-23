@@ -82,10 +82,10 @@ Guidelines:
     - `goal`: A concise summary (<10 words) with **bold** keywords for key attributes/metrics.
     - `tag`: One of: `deep-dive`, `pivot`, `broaden`, `cross-data`, `statistical`.
 
-Output a list of JSON objects, one per line, each prefixed with `data: `:
+Output a list of JSON objects, one per line (NDJSON format). Each line must be valid JSON with NO prefix:
 
-data: {"type": "question", "text": ..., "goal": ..., "tag": ...}
-data: {"type": "question", "text": ..., "goal": ..., "tag": ...}
+{"type": "question", "text": ..., "goal": ..., "tag": ...}
+{"type": "question", "text": ..., "goal": ..., "tag": ...}
 ...
 '''
 
