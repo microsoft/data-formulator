@@ -214,7 +214,7 @@ class DataLoadAgent(object):
                 try:
                     json_block = json.loads(choice.message.content + "\n")
                     result = {'status': 'ok', 'content': json_block}
-                except:
+                except (json.JSONDecodeError, ValueError, TypeError):
                     result = {'status': 'other error', 'content': 'unable to extract script from response', 'content_code': 'agent.unableExtractScript'}
             
             # individual dialog for the agent

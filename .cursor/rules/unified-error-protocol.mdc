@@ -1,0 +1,163 @@
+---
+description: Unified error handling protocol for backend and frontend
+globs: py-src/**/*.py,src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Unified Error Protocol
+
+All API error responses MUST follow the unified format. No new code should use legacy patterns.
+
+## Backend: Non-streaming JSON Format
+
+```jsonc
+// Success
+{"status": "ok", "data": {...}, "token": "..."}
+
+// Error
+{
+    "status": "error",
+    "error": {
+        "code": "TABLE_NOT_FOUND",    // ErrorCode constant
+        "message": "Table not found",  // Safe English fallback
+        "retry": false,                // Retry hint
+        "detail": "..."               // Only in debug mode
+    },
+    "token": "..."
+}
+```
+
+## Backend: Streaming NDJSON Format
+
+All streaming endpoints use `application/x-ndjson`. Each line is one JSON object:
+
+```jsonc
+{"type": "text_delta", "data": {...}}
+{"type": "error", "error": {"code": "LLM_TIMEOUT", "message": "...", "retry": true}}
+{"type": "done", "data": {...}}
+```
+
+## Backend: How to Handle Errors
+
+```python
+from data_formulator.errors import AppError, ErrorCode
+from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+
+# Non-streaming: raise AppError (caught by global handler)
+raise AppError(ErrorCode.TABLE_NOT_FOUND, "Table not found", status_code=404)
+
+# Streaming: yield error event
+yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+```
+
+## Frontend: How to Consume APIs
+
+```typescript
+import { apiRequest, streamRequest, parseStreamLine } from '../app/apiClient';
+import { handleApiError } from '../app/errorHandler';
+
+// Non-streaming
+try {
+    const { data } = await apiRequest<MyType>(url, options);
+} catch (e) {
+    handleApiError(e, 'my-component');
+}
+
+// Streaming
+try {
+    for await (const event of streamRequest(url, options, signal)) {
+        if (event.type === 'error') { /* handle inline */ }
+        // ...process events...
+    }
+} catch (e) {
+    handleApiError(e, 'my-component');
+}
+```
+
+## Prohibited Patterns
+
+### Backend
+- ❌ `return jsonify({"error_message": str(e)})` — use `raise AppError(...)` instead
+- ❌ `yield json.dumps({"type": "error", "error": str(e)})` — use `stream_error_event()`
+- ❌ Bare `except:` or `except Exception: pass` — always log or propagate
+- ❌ `yield 'error: ' + json.dumps(...)` — non-standard prefix
+
+### Frontend
+- ❌ `.catch(() => {})` — either add a comment explaining why (best-effort), or use `handleApiError`
+- ❌ `.catch(console.error)` without user feedback — dispatch `addMessages` or use `handleApiError`
+- ❌ Raw `fetch()` for `/api/` URLs — use `fetchWithIdentity` (identity headers + 401 retry)
+- ❌ RTK thunk without `.rejected` handler — always add `.addCase(thunk.rejected, ...)` with `addMessages`
+
+### RTK Thunk Rejected Handler Pattern
+
+```typescript
+.addCase(myThunk.rejected, (state, action) => {
+    if (action.error?.name !== 'AbortError') {
+        state.messages.push({
+            timestamp: Date.now(), type: 'warning',
+            component: 'my-component',
+            value: 'Human-readable error description',
+        });
+    }
+})
+```
+
+## Migrated Streaming Endpoints
+
+All streaming endpoints now use `application/x-ndjson` and `stream_error_event()`:
+
+| Endpoint | Old format | New format | Status |
+|----------|-----------|------------|--------|
+| `/data-agent-streaming` | `{status:"error", error_message}` + `application/json` | `stream_error_event()` + `application/x-ndjson` | ✅ Done |
+| `/get-recommendation-questions` | `error: {json}` prefix + `application/json` | `stream_error_event()` + `application/x-ndjson` | ✅ Done |
+| `/generate-report-chat` | `data: {json}` SSE prefix + `text/event-stream` | Pure NDJSON + `application/x-ndjson` | ✅ Done |
+| `/data-loading-chat` | `str(e)` in error field | `classify_llm_error(e)` safe message | ✅ Done |
+| `/clean-data-stream` | `\n{json}\n` + `application/json` | `stream_error_event()` + `application/x-ndjson` | ✅ Done |
+
+**Frontend backward compatibility**: Stream parsers check for both `data.type === "error"` (new unified format)
+and `data.status === "error"` (legacy format) to ensure smooth migration. The `data: ` SSE prefix is also
+handled as a fallback in the report chat consumer via `line.startsWith('data: ') ? line.slice(6) : line`.
+
+## Blueprint Error Handler
+
+The old `agent_bp.errorhandler(Exception)` catch-all has been **removed**. All unhandled exceptions are now caught by the global `register_error_handlers()` handler in `error_handler.py`, which provides:
+- Unified JSON format with `ErrorCode.INTERNAL_ERROR`
+- `X-Request-Id` header
+- Stack trace in `detail` field when `app.debug is True`
+
+## Migrated Non-streaming Endpoints
+
+| Module | Endpoints | Old pattern | New pattern |
+|--------|-----------|-------------|-------------|
+| `tables.py` | All 9 table CRUD endpoints | `sanitize_db_error_message()` → `(msg, code)` | `classify_and_raise_db_error()` → `AppError` (global handler) |
+| `data_connector.py` | 7 connector endpoints | `_sanitize_error()` → `(msg, code)` | `classify_and_raise_connector_error()` → `AppError` (global handler) |
+| `sessions.py` | `cleanup-anonymous` | Returns `status: "ok"` on failure | Returns `status: "warning"` with message |
+| `agents.py` | Non-streaming endpoints | Mixed `error_message` patterns | Consistent `error_message` field |
+
+## Complete ErrorCode Reference
+
+```
+AUTH_REQUIRED, AUTH_EXPIRED, ACCESS_DENIED
+INVALID_REQUEST, TABLE_NOT_FOUND, FILE_PARSE_ERROR, FILE_TOO_LARGE, VALIDATION_ERROR
+LLM_AUTH_FAILED, LLM_RATE_LIMIT, LLM_CONTEXT_TOO_LONG, LLM_MODEL_NOT_FOUND
+LLM_TIMEOUT, LLM_SERVICE_ERROR, LLM_CONTENT_FILTERED, LLM_UNKNOWN_ERROR
+DB_CONNECTION_FAILED, DB_QUERY_ERROR, DATA_LOAD_ERROR, CONNECTOR_ERROR
+CODE_EXECUTION_ERROR, AGENT_ERROR
+INTERNAL_ERROR, SERVICE_UNAVAILABLE
+```
+
+## Adding a New Error Code
+
+1. Add constant to `py-src/data_formulator/errors.py` `ErrorCode` class
+2. Add i18n mapping to `src/app/errorCodes.ts` `ERROR_CODE_I18N_MAP`
+3. Add translations to `src/i18n/locales/en/errors.json` AND `zh/errors.json`
+
+## New Endpoint Checklist
+
+When adding a new API endpoint, verify:
+- [ ] Raises `AppError` (or uses `classify_and_raise_*`) instead of `return jsonify(...), 500`
+- [ ] Streaming endpoints use `stream_error_event()` + `mimetype='application/x-ndjson'`
+- [ ] No `str(e)` in any response body
+- [ ] No naked `except:` — use specific exception types or `except Exception as e:` with logging
+- [ ] Frontend consumer handles both `type: "error"` (streaming) or HTTP error status (non-streaming)
+- [ ] Error test cases included (at minimum: AppError, unexpected exception)

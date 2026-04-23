@@ -10,6 +10,7 @@ import messages from './messages.json';
 import navigation from './navigation.json';
 import dataLoading from './dataLoading.json';
 import loader from './loader.json';
+import errors from './errors.json';
 
 export default {
   ...common,
@@ -21,4 +22,5 @@ export default {
   ...navigation,
   ...dataLoading,
   ...loader,
+  ...errors,
 };

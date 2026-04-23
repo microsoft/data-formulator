@@ -198,26 +198,28 @@ def list_tables():
                     try:
                         schema_info = workspace.get_parquet_schema(table_name)
                         columns = [{"name": c["name"], "type": c["type"]} for c in schema_info.get("columns", [])]
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Could not read parquet schema for %s", table_name, exc_info=e)
                 if not columns:
                     try:
                         df = workspace.read_data_as_df(table_name)
                         columns = [{"name": str(c), "type": str(df[c].dtype)} for c in df.columns]
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Could not read columns for %s", table_name, exc_info=e)
                 row_count = meta.row_count
                 if row_count is None and meta.file_type == "parquet":
                     try:
                         schema_info = workspace.get_parquet_schema(table_name)
                         row_count = schema_info.get("num_rows", 0) or 0
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Could not read row count from parquet for %s", table_name, exc_info=e)
                         row_count = 0
                 if row_count is None:
                     try:
                         df = workspace.read_data_as_df(table_name)
                         row_count = len(df)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Could not read row count for %s", table_name, exc_info=e)
                         row_count = 0
                 sample_rows = []
                 if row_count > 0:
@@ -229,8 +231,8 @@ def list_tables():
                             df = df.head(1000)
                         df = _dedup_dataframe_columns(df)
                         sample_rows = json.loads(df.to_json(orient='records', date_format='iso'))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Could not read sample rows for %s", table_name, exc_info=e)
                 source_metadata = _table_metadata_to_source_metadata(meta)
                 result.append({
                     "name": table_name,
@@ -248,8 +250,7 @@ def list_tables():
                 continue
         return jsonify({"status": "success", "tables": result})
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
         
 
 def _apply_aggregation_and_sample(
@@ -360,8 +361,7 @@ def sample_table():
             "total_row_count": total_row_count,
         })
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 @tables_bp.route('/get-table', methods=['GET'])
 def get_table_data():
@@ -404,8 +404,7 @@ def get_table_data():
             "page_size": page_size,
         })
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 @tables_bp.route('/create-table', methods=['POST'])
 def create_table():
@@ -488,8 +487,7 @@ def create_table():
             "columns": columns,
         })
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 @tables_bp.route('/parse-file', methods=['POST'])
@@ -583,8 +581,7 @@ def sync_table_data():
             "row_count": len(df),
         })
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 @tables_bp.route('/delete-table', methods=['POST'])
@@ -601,8 +598,7 @@ def drop_table():
             return jsonify({"status": "error", "message": f"Table '{table_name}' does not exist"}), 404
         return jsonify({"status": "success", "message": f"Table {table_name} dropped"})
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 @tables_bp.route('/upload-db-file', methods=['POST'])
@@ -723,8 +719,7 @@ def export_table_csv():
             headers={'Content-Disposition': disposition},
         )
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 @tables_bp.route('/reset-db-file', methods=['POST'])
@@ -735,8 +730,7 @@ def reset_db_file():
         workspace.cleanup()
         return jsonify({"status": "success", "message": "Workspace reset successfully"})
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 def _is_numeric_duckdb_type(col_type: str) -> bool:
     """Return True if DuckDB/parquet type is numeric for min/max/avg."""
@@ -813,41 +807,51 @@ def analyze_table():
 
         return jsonify({"status": "success", "table_name": table_name, "statistics": stats})
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 def sanitize_table_name(table_name: str) -> str:
     """Sanitize a table name for use in the workspace."""
     return parquet_sanitize_table_name(table_name)
 
-def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
-    """Classify *error* and return ``(safe_message, status_code)``.
+def classify_and_raise_db_error(error: Exception) -> None:
+    """Classify a database/workspace error and raise ``AppError``.
 
-    **Security rule**: the returned message must *never* contain text
-    derived from ``str(error)``.  Only pre-defined, human-written strings
-    are returned.  The full exception (including traceback) is written to
-    the server log so operators can still debug.
+    **Security rule**: the raised message is *never* derived from
+    ``str(error)``.  Only pre-defined, human-written strings are used.
+    The full exception is logged server-side for debugging.
     """
-    logger.error("sanitize_db_error_message caught exception", exc_info=error)
+    from data_formulator.errors import AppError, ErrorCode
+
+    logger.error("Database/workspace error", exc_info=error)
 
     error_msg = str(error)
 
-    _SAFE_PATTERNS: list[tuple[str, str, int]] = [
-        # (regex, safe client message, HTTP status)
-        (r"Table.*does not exist",       "The requested table does not exist",            404),
-        (r"Table.*already exists",       "A table with that name already exists",         409),
-        (r"syntax error",                "Query syntax error",                            400),
-        (r"Catalog Error",               "The requested catalog object was not found",    404),
-        (r"Binder Error",                "Invalid query reference",                       400),
-        (r"Invalid input syntax",        "Invalid input syntax",                          400),
-        (r"No such file",                "The requested resource was not found",          404),
-        (r"Permission denied",           "Access denied",                                 403),
-        (r"identity",                    "Identity not found, please refresh the page",   500),
+    _SAFE_PATTERNS: list[tuple[str, str, str, int]] = [
+        # (regex, ErrorCode, safe client message, HTTP status)
+        (r"Table.*does not exist",   ErrorCode.TABLE_NOT_FOUND,   "The requested table does not exist",            404),
+        (r"Table.*already exists",   ErrorCode.INVALID_REQUEST,   "A table with that name already exists",         409),
+        (r"syntax error",            ErrorCode.INVALID_REQUEST,   "Query syntax error",                            400),
+        (r"Catalog Error",           ErrorCode.TABLE_NOT_FOUND,   "The requested catalog object was not found",    404),
+        (r"Binder Error",            ErrorCode.INVALID_REQUEST,   "Invalid query reference",                       400),
+        (r"Invalid input syntax",    ErrorCode.INVALID_REQUEST,   "Invalid input syntax",                          400),
+        (r"No such file",            ErrorCode.TABLE_NOT_FOUND,   "The requested resource was not found",          404),
+        (r"Permission denied",       ErrorCode.ACCESS_DENIED,     "Access denied",                                 403),
+        (r"identity",                ErrorCode.AUTH_REQUIRED,     "Identity not found, please refresh the page",   500),
     ]
 
-    for pattern, safe_msg, status_code in _SAFE_PATTERNS:
+    for pattern, code, safe_msg, status_code in _SAFE_PATTERNS:
         if re.search(pattern, error_msg, re.IGNORECASE):
-            return safe_msg, status_code
+            raise AppError(code, safe_msg, status_code=status_code, detail=error_msg) from error
 
+    raise AppError(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred", status_code=500, detail=error_msg) from error
+
+
+def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
+    """Legacy wrapper — prefer ``classify_and_raise_db_error`` for new code."""
+    from data_formulator.errors import AppError
+    try:
+        classify_and_raise_db_error(error)
+    except AppError as ae:
+        return ae.message, ae.status_code
     return "An unexpected error occurred", 500

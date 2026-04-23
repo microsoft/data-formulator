@@ -1046,7 +1046,7 @@ export const DataLoaderForm: React.FC<{
                         }));
                     }
                 })
-                .catch(() => {});
+                .catch(() => { /* preview fetch is best-effort; debounced and abortable */ });
         }, 300); // 300ms debounce
 
         return () => { clearTimeout(timerId); controller.abort(); };

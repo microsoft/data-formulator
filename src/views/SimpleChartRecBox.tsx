@@ -416,29 +416,61 @@ export const SimpleChartRecBox: FC = function () {
                     const { done, value } = await reader.read();
                     if (done) break;
                     buffer += decoder.decode(value, { stream: true });
-                    const newLines = buffer.split('data: ').filter(l => l.trim() !== '');
-                    buffer = newLines.pop() || '';
-                    if (newLines.length > 0) {
-                        lines.push(...newLines);
-                        const parsed = lines
-                            .map(l => { try { return JSON.parse(l.trim()); } catch { return null; } })
-                            .filter(Boolean)
-                            .map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' }));
-                        setIdeas(parsed);
+                    const ndjsonLines = buffer.split('\n');
+                    buffer = ndjsonLines.pop() || '';
+                    for (const rawLine of ndjsonLines) {
+                        const trimmed = rawLine.trim();
+                        if (!trimmed) continue;
+                        try {
+                            const parsed = JSON.parse(trimmed);
+                            if (parsed.type === 'error') {
+                                const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
+                                dispatch(dfActions.addMessages([{
+                                    timestamp: Date.now(), type: 'error',
+                                    component: 'exploration', value: msg,
+                                    diagnostics: parsed.error,
+                                }]));
+                                continue;
+                            }
+                            if (parsed.text) {
+                                lines.push(parsed);
+                                setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
+                            }
+                        } catch {
+                            setThinkingBuffer(trimmed);
+                        }
                     }
-                    setThinkingBuffer(buffer.replace(/^data: /, ''));
                 }
             } finally {
                 reader.releaseLock();
             }
-            lines.push(buffer);
-            const finalIdeas = lines
-                .map(l => { try { return JSON.parse(l.trim()); } catch { return null; } })
-                .filter(Boolean)
-                .map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' }));
-            setIdeas(finalIdeas);
+            if (buffer.trim()) {
+                try {
+                    const parsed = JSON.parse(buffer.trim());
+                    if (parsed.type === 'error') {
+                        const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
+                        dispatch(dfActions.addMessages([{
+                            timestamp: Date.now(), type: 'error',
+                            component: 'exploration', value: msg,
+                            diagnostics: parsed.error,
+                        }]));
+                    } else if (parsed.text) {
+                        lines.push(parsed);
+                    }
+                } catch { /* partial non-JSON remainder, ignore */ }
+            }
+            setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
         } catch (error) {
-            console.error('Error getting ideas:', error);
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                // user cancelled, no notification needed
+            } else {
+                dispatch(dfActions.addMessages([{
+                    timestamp: Date.now(), type: 'error',
+                    component: 'exploration',
+                    value: t('messages.agent.unexpectedError'),
+                    detail: error instanceof Error ? error.message : String(error),
+                }]));
+            }
         } finally {
             setIsLoadingIdeas(false);
             setThinkingBuffer('');
@@ -996,20 +1028,44 @@ export const SimpleChartRecBox: FC = function () {
                         if (line.trim() !== "") {
                             try {
                                 const data = JSON.parse(line);
+
+                                // Unified error event: {type: "error", error: {message, ...}}
+                                if (data.type === "error") {
+                                    const errMsg = data.error?.message || data.error_message || t('chartRec.errorDuringExploration');
+                                    setIsChatFormulating(false);
+                                    clearTimeout(timeoutId);
+                                    dispatch(dfActions.addMessages([{
+                                        timestamp: Date.now(), type: 'error',
+                                        component: 'data-agent', value: errMsg,
+                                    }]));
+                                    if (currentDraftId) {
+                                        dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
+                                            from: 'data-agent', to: 'user', role: 'error',
+                                            content: errMsg, timestamp: Date.now(),
+                                        }}));
+                                        dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                                        currentDraftId = null;
+                                    }
+                                    return;
+                                }
+
                                 if (data.token === token) {
                                     if (data.status === "ok" && data.result) {
                                         allResults.push(data.result);
                                         processStreamingResult(data.result);
                                         if (data.result.type === "completion" || data.result.type === "clarify") { handleCompletion(); return; }
                                     } else if (data.status === "error") {
+                                        const errMsg = data.error_message || t('chartRec.errorDuringExploration');
                                         setIsChatFormulating(false);
                                         clearTimeout(timeoutId);
-                                        // Mark draft as error
+                                        dispatch(dfActions.addMessages([{
+                                            timestamp: Date.now(), type: 'error',
+                                            component: 'data-agent', value: errMsg,
+                                        }]));
                                         if (currentDraftId) {
                                             dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                                                 from: 'data-agent', to: 'user', role: 'error',
-                                                content: data.error_message || t('chartRec.errorDuringExploration'),
-                                                timestamp: Date.now(),
+                                                content: errMsg, timestamp: Date.now(),
                                             }}));
                                             dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
                                             currentDraftId = null;
@@ -1144,15 +1200,20 @@ export const SimpleChartRecBox: FC = function () {
                 buffer = lines.pop() || '';
 
                 for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue;
+                    const raw = line.startsWith('data: ') ? line.slice(6) : line;
+                    if (!raw.trim()) continue;
                     try {
-                        const event = JSON.parse(line.slice(6));
+                        const event = JSON.parse(raw);
                         if (event.type === 'text_delta') {
                             accumulatedMarkdown += event.content;
                         } else if (event.type === 'error') {
-                            accumulatedMarkdown += `\n\n**Error:** ${event.content}`;
+                            const errMsg = event.error?.message || event.content || 'Unknown error';
+                            accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
+                            dispatch(dfActions.addMessages([{
+                                timestamp: Date.now(), type: 'error',
+                                component: 'report-agent', value: errMsg,
+                            }]));
                         }
-                        // Stream update to report view
                         const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
                         dispatch(dfActions.updateGeneratedReportContent({
                             id: reportId,

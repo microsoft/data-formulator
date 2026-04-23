@@ -272,32 +272,62 @@ export function useFormulateData() {
                     if (done) break;
 
                     buffer += decoder.decode(value, { stream: true });
-                    const newLines = buffer.split('data: ').filter(line => line.trim() !== "");
-                    buffer = newLines.pop() || '';
-                    if (newLines.length > 0) {
-                        lines.push(...newLines);
-                        updateState(lines);
+                    const ndjsonLines = buffer.split('\n');
+                    buffer = ndjsonLines.pop() || '';
+                    for (const rawLine of ndjsonLines) {
+                        const trimmed = rawLine.trim();
+                        if (!trimmed) continue;
+                        try {
+                            const parsed = JSON.parse(trimmed);
+                            if (parsed.type === 'error') {
+                                const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
+                                throw new Error(msg);
+                            }
+                            if (parsed.text) {
+                                lines.push(trimmed);
+                                updateState(lines);
+                            }
+                        } catch (e) {
+                            if (e instanceof Error && e.message !== trimmed) throw e;
+                            onThinkingBuffer(trimmed);
+                        }
                     }
-                    onThinkingBuffer(buffer.replace(/^data: /, ""));
                 }
             } finally {
                 reader.releaseLock();
             }
 
-            lines.push(buffer);
+            if (buffer.trim()) {
+                try {
+                    const parsed = JSON.parse(buffer.trim());
+                    if (parsed.type === 'error') {
+                        const msg = parsed.error?.message ?? 'Unknown error';
+                        throw new Error(msg);
+                    }
+                    if (parsed.text) {
+                        lines.push(buffer.trim());
+                    }
+                } catch (e) {
+                    if (e instanceof Error && e.message !== buffer.trim()) throw e;
+                }
+            }
             updateState(lines);
 
             if (lines.length === 0) {
                 throw new Error('No valid results returned from agent');
             }
         } catch (error) {
-            dispatch(dfActions.addMessages({
-                "timestamp": Date.now(),
-                "type": "error",
-                "component": "chart builder",
-                "value": "Failed to get ideas from the exploration agent. Please try again.",
-                "detail": error instanceof Error ? error.message : 'Unknown error',
-            }));
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                // user cancelled
+            } else {
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "type": "error",
+                    "component": "chart builder",
+                    "value": error instanceof Error ? error.message : "Failed to get ideas from the exploration agent. Please try again.",
+                    "detail": error instanceof Error ? error.message : 'Unknown error',
+                }));
+            }
         } finally {
             onLoadingChange(false);
         }

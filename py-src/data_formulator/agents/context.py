@@ -146,15 +146,21 @@ def handle_inspect_source_data(
     """Handle an inspect_source_data tool call.
 
     Returns a data summary string for the requested tables.
+    If a table cannot be read (e.g. not found in workspace), the error
+    is included in the summary instead of crashing the entire request.
     """
     tables_to_inspect = [
         t for t in input_tables
         if t.get("name") in table_names
     ]
     if tables_to_inspect:
-        content = generate_data_summary(
-            tables_to_inspect, workspace=workspace
-        )
+        try:
+            content = generate_data_summary(
+                tables_to_inspect, workspace=workspace
+            )
+        except (FileNotFoundError, KeyError) as exc:
+            logger.warning("Could not generate data summary: %s", exc)
+            content = f"Error reading table data: some tables could not be found in the workspace. Available tables may have changed."
     else:
         content = f"No tables found matching: {table_names}"
 

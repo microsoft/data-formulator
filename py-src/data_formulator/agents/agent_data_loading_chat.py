@@ -777,8 +777,8 @@ class DataLoadingAgent:
             metadata = self.workspace.list_tables()
             if metadata:
                 table_names = ", ".join(m.table_name for m in metadata)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not list tables for system prompt", exc_info=e)
 
         prompt = SYSTEM_PROMPT.format(
             table_names=table_names,

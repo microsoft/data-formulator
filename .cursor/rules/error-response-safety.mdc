@@ -10,52 +10,143 @@ Never return raw exception text (`str(e)`, `f"...{e}"`) directly in HTTP respons
 Python exceptions may contain stack traces, file paths, database connection strings,
 API keys, or internal IP addresses — all of which are security risks (CWE-209).
 
+## Unified Error System
+
+All errors MUST use the `AppError` / `error_handler` infrastructure from `errors.py` and `error_handler.py`.
+
+### Non-streaming routes
+
+Raise `AppError` — the global error handler converts it to a consistent JSON envelope:
+
+```python
+from data_formulator.errors import AppError, ErrorCode
+
+# Business error — raise with appropriate code and safe message
+raise AppError(
+    ErrorCode.TABLE_NOT_FOUND,
+    "Table not found",
+    status_code=404,
+)
+
+# LLM / external API error — use classify_and_wrap_llm_error
+from data_formulator.error_handler import classify_and_wrap_llm_error
+
+except Exception as e:
+    raise classify_and_wrap_llm_error(e) from e
+```
+
+### Streaming routes
+
+Use `stream_error_event()` to yield a unified NDJSON error line:
+
+```python
+from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+
+except AppError as e:
+    yield stream_error_event(e, token=token)
+except Exception as e:
+    yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+```
+
+### Real examples from migrated endpoints
+
+```python
+# /data-agent-streaming — streaming with token
+except Exception as e:
+    logger.error("Error in data-agent-streaming", exc_info=e)
+    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+    yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+
+# /generate-report-chat — streaming without token
+except Exception as e:
+    logger.exception("generate-report-chat failed")
+    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+    yield stream_error_event(classify_and_wrap_llm_error(e))
+
+# Invalid request format in streaming endpoint
+from data_formulator.error_handler import stream_error_event
+from data_formulator.errors import AppError, ErrorCode
+yield stream_error_event(AppError(
+    ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
+))
+```
+
+### Database / workspace errors (tables.py)
+
+Use `classify_and_raise_db_error()` instead of the legacy `sanitize_db_error_message()`:
+
+```python
+from data_formulator.routes.tables import classify_and_raise_db_error
+
+except Exception as e:
+    classify_and_raise_db_error(e)  # raises AppError with safe message
+```
+
+### Connector errors (data_connector.py)
+
+Use `classify_and_raise_connector_error()` instead of the legacy `_sanitize_error()`:
+
+```python
+from data_formulator.data_connector import classify_and_raise_connector_error
+
+except Exception as e:
+    classify_and_raise_connector_error(e)  # raises AppError with safe message
+```
+
+### Legacy functions (deprecated)
+
+These functions still exist as wrappers but should NOT be used in new code:
+- `sanitize_db_error_message()` → use `classify_and_raise_db_error()`
+- `_sanitize_error()` → use `classify_and_raise_connector_error()`
+- `safe_error_response()` / `sanitize_error_message()` → use `raise AppError(...)`
+- `classify_llm_error()` is used internally by `classify_and_wrap_llm_error()`
+
 ## Rules
 
 1. **5xx errors** — return a fixed generic message; never expose exception details.
-2. **502 errors** — return `"Upstream service unavailable"`; never include upstream error body.
-3. **4xx errors** — run `sanitize_error_message(str(e))` so business-validation messages
-   stay useful while secrets are stripped.
+2. **4xx errors** — use a pre-defined safe message from `ErrorCode` constants.
+3. **Streaming errors** — always use `stream_error_event()` for NDJSON error lines.
 4. **Logging** — always log the full exception server-side (`logger.warning` / `logger.error`
    with `exc_info=True` when needed). The client never needs the stack trace.
+5. **Debug detail** — `AppError.detail` is only included in responses when `app.debug is True`.
 
-## How To
+## Bare except Policy
 
-For Flask route `except` blocks, use `safe_error_response`:
-
-```python
-from data_formulator.security.sanitize import safe_error_response
-
-except HTTPError as e:
-    return safe_error_response(e, 502, log_message="Upstream call failed")
-except ValueError as e:
-    return safe_error_response(e, 400, log_message="Invalid input")
-except Exception as e:
-    return safe_error_response(e, 500, log_message="Unexpected error")
-```
-
-For non-route contexts (generators, background tasks) where a Flask response
-cannot be returned, use `sanitize_error_message` directly:
-
-```python
-from data_formulator.security.sanitize import sanitize_error_message
-
-except Exception as exc:
-    logger.error("Task failed: %s", exc, exc_info=True)
-    payload = {"status": "error", "message": sanitize_error_message(str(exc))}
-```
+- **Never** use naked `except:` — always specify at least `except Exception:`
+- Use specific exception types when possible (`except (ValueError, TypeError):`)
+- Always log caught exceptions: `logger.warning(...)` for degraded operations, `logger.debug(...)` for expected failures
+- Process cleanup code (`terminate`, `join`, `close`) is exempt from logging requirements
 
 ## Common Mistakes
 
 ```python
 # ❌ BAD — raw exception leaks internal details
 return jsonify({"message": str(e)}), 500
-return jsonify({"message": f"Failed: {e}"}), 502
+return jsonify({"error": f"Failed: {e}"}), 502
+yield json.dumps({"type": "error", "error": str(e)}) + "\n"
 
-# ❌ BAD — manual traceback in response
-import traceback
-return jsonify({"message": traceback.format_exc()}), 500
+# ❌ BAD — inconsistent error format
+return jsonify({"status": "error", "error_message": "..."}), 500
 
-# ✅ GOOD
-return safe_error_response(e, 500, log_message="Operation failed")
+# ❌ BAD — naked except catches SystemExit/KeyboardInterrupt
+except:
+    pass
+
+# ❌ BAD — silent swallow without logging
+except Exception:
+    pass
+
+# ✅ GOOD — non-streaming
+raise AppError(ErrorCode.TABLE_NOT_FOUND, "Table not found", status_code=404)
+
+# ✅ GOOD — streaming
+yield stream_error_event(AppError(ErrorCode.LLM_TIMEOUT, "Timeout", retry=True))
+
+# ✅ GOOD — graceful degradation with logging
+except Exception as e:
+    logger.warning("Could not read schema for %s", table_name, exc_info=e)
+
+# ✅ GOOD — specific exception types
+except (ValueError, TypeError):
+    pass  # safe fallback
 ```

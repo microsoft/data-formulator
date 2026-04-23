@@ -254,7 +254,7 @@ const DataSourceSidebarPanel: React.FC<{
     useEffect(() => {
         listWorkspaces()
             .then(list => setSessions(list))    
-            .catch(() => {});
+            .catch(() => { /* session list is best-effort */ });
     }, []);
 
     const handleHoverSession = useCallback((sessionId: string) => {
@@ -349,7 +349,7 @@ const DataSourceSidebarPanel: React.FC<{
                 const list: ConnectorInstance[] = data.connectors || [];
                 setConnectors(list);
             })
-            .catch(() => {})
+            .catch(() => { /* connector list is best-effort */ })
             .finally(() => setLoadingConnectors(false));
     }, []);
 
@@ -398,7 +398,7 @@ const DataSourceSidebarPanel: React.FC<{
                     c.id === connectorId ? { ...c, connected: false } : c
                 ));
             }
-        } catch { /* ignore */ }
+        } catch { /* catalog fetch is best-effort; connector remains usable */ }
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
         fetchingRef.current.delete(connectorId);
     }, []);
@@ -588,7 +588,12 @@ const DataSourceSidebarPanel: React.FC<{
                     }));
                 }
             })
-            .catch(() => {});
+            .catch(() => {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error',
+                    component: 'data source sidebar', value: 'Failed to refresh table data',
+                }));
+            });
     }, [tableIdentities, dispatch]);
 
     // ── Delete connector ──────────────────────────────────────────────────

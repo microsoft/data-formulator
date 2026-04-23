@@ -29,7 +29,7 @@ const { t } = useTranslation();
 
 - English: `src/i18n/locales/en/<namespace>.json`
 - Chinese: `src/i18n/locales/zh/<namespace>.json`
-- Namespaces: `common`, `upload`, `chart`, `model`, `encoding`, `messages`, `navigation`, `dataLoading`
+- Namespaces: `common`, `upload`, `chart`, `model`, `encoding`, `messages`, `navigation`, `dataLoading`, `errors`
 
 When adding a new key, add it to **both** `en` and `zh` locale files. Pick the namespace that fits; create a new namespace only if none applies.
 

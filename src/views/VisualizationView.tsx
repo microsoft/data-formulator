@@ -554,9 +554,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 // Else: this response is stale, ignore it
             })
             .catch(error => {
-                // Only show error if this is still the current request
                 if (currentRequestRef.current === requestId) {
-                    console.error('Error sampling table:', error);
+                    setSystemMessage('Failed to sample table data', 'error');
                 }
             });
         } else {

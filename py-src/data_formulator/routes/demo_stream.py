@@ -147,7 +147,7 @@ def get_earthquakes():
         try:
             since_dt = datetime.fromisoformat(since_str.replace("Z", "+00:00")).replace(tzinfo=None)
             since_timestamp = since_dt.timestamp() * 1000  # USGS uses milliseconds
-        except:
+        except (ValueError, TypeError):
             pass
     
     try:
@@ -783,7 +783,7 @@ def _yf_is_valid(val):
     """Check if value is valid (not NaN/None)"""
     try:
         return val is not None and not (isinstance(val, float) and math.isnan(val))
-    except:
+    except (ValueError, TypeError):
         return False
 
 
@@ -806,7 +806,7 @@ def _yf_format_timestamp(date_obj):
             return date_utc.strftime("%Y-%m-%d %H:%M:%S")
         else:
             return str(date_utc)
-    except:
+    except (ValueError, TypeError, AttributeError):
         return str(date_obj)
 
 
@@ -843,7 +843,7 @@ def get_yfinance_history():
             for date, row in hist.iterrows():
                 try:
                     date_str = date.strftime("%Y-%m-%d") if hasattr(date, 'strftime') else str(date)
-                except:
+                except (ValueError, TypeError, AttributeError):
                     date_str = str(date)
                 
                 rows.append({

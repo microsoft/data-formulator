@@ -42,38 +42,46 @@ DATA_CONNECTORS: dict[str, "DataConnector"] = {}
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _sanitize_error(error: Exception) -> tuple[str, int]:
-    """Return a user-facing error message + HTTP status code.
+def classify_and_raise_connector_error(error: Exception) -> None:
+    """Classify a connector error and raise ``AppError``.
 
-    Preserves actionable detail from known error categories while
-    stripping internal stack traces and implementation details.
+    Preserves actionable detail for known error categories while keeping
+    raw internals in ``detail`` (only exposed in debug mode).
     """
+    from data_formulator.errors import AppError, ErrorCode
+
     logger.error("DataConnector error", exc_info=error)
     raw = str(error)
     msg = raw.lower()
 
-    # Auth / credential errors — tell the user what went wrong
     if any(kw in msg for kw in ("authenticat", "login", "credential",
                                  "unauthorized", "401", "forbidden", "403")):
-        return f"Authentication failed: {raw}", 401
+        raise AppError(ErrorCode.LLM_AUTH_FAILED, "Authentication failed", status_code=401, detail=raw) from error
     if any(kw in msg for kw in ("expired", "token")):
-        return f"Token expired or invalid: {raw}", 401
+        raise AppError(ErrorCode.AUTH_EXPIRED, "Token expired or invalid", status_code=401, detail=raw) from error
     if any(kw in msg for kw in ("permission", "access denied", "denied")):
-        return f"Access denied: {raw}", 403
+        raise AppError(ErrorCode.ACCESS_DENIED, "Access denied", status_code=403, detail=raw) from error
 
-    # Connection errors — actionable (wrong host, port, firewall)
     if any(kw in msg for kw in ("connect", "refused", "unreachable",
                                  "resolve", "dns", "network", "socket")):
-        return f"Connection failed: {raw}", 502
+        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection failed", status_code=502, detail=raw, retry=True) from error
     if "timeout" in msg or "timed out" in msg:
-        return f"Connection timed out: {raw}", 504
+        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection timed out", status_code=504, detail=raw, retry=True) from error
 
-    # Validation errors
     if "required" in msg or "invalid" in msg or "missing" in msg:
-        return f"Invalid parameters: {raw}", 400
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid parameters", status_code=400, detail=raw) from error
 
-    # Unknown — still include the raw message so the user can report it
-    return f"Unexpected error: {raw}", 500
+    raise AppError(ErrorCode.CONNECTOR_ERROR, "An unexpected connector error occurred", status_code=500, detail=raw) from error
+
+
+def _sanitize_error(error: Exception) -> tuple[str, int]:
+    """Legacy wrapper — prefer ``classify_and_raise_connector_error``."""
+    from data_formulator.errors import AppError
+    try:
+        classify_and_raise_connector_error(error)
+    except AppError as ae:
+        return ae.message, ae.status_code
+    return "An unexpected error occurred", 500
 
 
 def _node_to_dict(node: CatalogNode) -> dict[str, Any]:
@@ -272,7 +280,8 @@ class DataConnector:
             return False
         try:
             return self._source_id in vault.list_sources(identity)
-        except Exception:
+        except Exception as e:
+            logger.debug("Could not check stored credentials for %s", self._source_id, exc_info=e)
             return False
 
     def _get_loader(self, identity: str | None = None) -> ExternalDataLoader | None:
@@ -345,8 +354,8 @@ class DataConnector:
             sso_token = get_sso_token()
             if sso_token:
                 params["sso_access_token"] = sso_token
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("SSO token injection failed for %s", self._source_id, exc_info=e)
 
     def _try_sso_auto_connect(self, identity: str) -> ExternalDataLoader | None:
         """Try to auto-connect using the current request's SSO token.
@@ -551,7 +560,7 @@ def pick_local_directory():
     except Exception as exc:
         logger.warning("Failed to open directory picker: %s", exc)
         return jsonify({
-            "error": str(exc), "path": None, "fallback": "text_input",
+            "error": "Failed to open directory picker", "path": None, "fallback": "text_input",
         }), 500
 
     if not folder:
@@ -566,14 +575,15 @@ def list_connectors():
 
     try:
         identity = get_identity_id()
-    except Exception:
+    except Exception as e:
+        logger.debug("Identity unavailable for connector list", exc_info=e)
         identity = None
 
     sso_token = None
     try:
         sso_token = get_sso_token() if identity else None
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("SSO token unavailable for connector list", exc_info=e)
 
     # Ensure user connectors are loaded
     if identity:
@@ -687,6 +697,9 @@ def create_connector():
         ))
     except Exception as e:
         logger.warning("Failed to persist connector '%s' to user config: %s", instance_id, e)
+        persist_warning = "Connector created but could not be saved to config"
+    else:
+        persist_warning = None
 
     # Auto-connect if params were provided
     result_data: dict[str, Any] = {
@@ -718,7 +731,11 @@ def create_connector():
             except Exception:
                 pass
             result_data["connected"] = False
-            result_data["connect_error"] = str(e)
+            safe_msg, _ = _sanitize_error(e)
+            result_data["connect_error"] = safe_msg
+
+    if persist_warning:
+        result_data["persist_warning"] = persist_warning
 
     logger.info("Created user connector '%s' (type=%s)", instance_id, loader_type)
     return jsonify(result_data), 201
@@ -758,8 +775,8 @@ def delete_connector(connector_id: str):
     # Full cleanup: in-memory loader + vault credentials
     try:
         connector._delete_credentials()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to delete credentials for connector '%s'", connector_id, exc_info=e)
 
     DATA_CONNECTORS.pop(connector_id, None)
 
@@ -848,8 +865,7 @@ def connector_connect():
             source._loaders.pop(identity, None)
         except Exception:
             pass
-        safe_msg, status_code = _sanitize_error(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_connector_error(e)
 
 
 @connectors_bp.route("/api/connectors/get-status", methods=["POST"])
@@ -872,8 +888,8 @@ def connector_get_status():
                 source._loader_class.auth_mode() == "token"
                 and get_sso_token() is not None
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("SSO availability check failed", exc_info=e)
         return jsonify({
             "connected": False,
             "has_stored_credentials": has_stored,
@@ -882,7 +898,8 @@ def connector_get_status():
         })
     try:
         alive = loader.test_connection()
-    except Exception:
+    except Exception as e:
+        logger.warning("Connection test failed for connector", exc_info=e)
         alive = False
     if not alive:
         source._loaders.pop(identity, None)
@@ -926,12 +943,11 @@ def connector_get_catalog():
             try:
                 metadata = loader.get_metadata(path)
                 result["metadata"] = metadata
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Metadata fetch failed for path %s", path, exc_info=e)
         return jsonify(result)
     except Exception as e:
-        safe_msg, status_code = _sanitize_error(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_connector_error(e)
 
 
 @connectors_bp.route("/api/connectors/get-catalog-tree", methods=["POST"])
@@ -954,8 +970,7 @@ def connector_get_catalog_tree():
             "tree": result["tree"],
         })
     except Exception as e:
-        safe_msg, status_code = _sanitize_error(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_connector_error(e)
 
 
 @connectors_bp.route("/api/connectors/import-data", methods=["POST"])
@@ -1000,8 +1015,7 @@ def connector_import_data():
             "refreshable": True,
         })
     except Exception as e:
-        safe_msg, status_code = _sanitize_error(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_connector_error(e)
 
 
 @connectors_bp.route("/api/connectors/refresh-data", methods=["POST"])
@@ -1038,8 +1052,7 @@ def connector_refresh_data():
             "data_changed": data_changed,
         })
     except Exception as e:
-        safe_msg, status_code = _sanitize_error(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_connector_error(e)
 
 
 @connectors_bp.route("/api/connectors/preview-data", methods=["POST"])
@@ -1080,8 +1093,7 @@ def connector_preview_data():
             "total_row_count": total_row_count,
         })
     except Exception as e:
-        safe_msg, status_code = _sanitize_error(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_connector_error(e)
 
 
 @connectors_bp.route("/api/connectors/import-group", methods=["POST"])
@@ -1159,8 +1171,7 @@ def connector_import_group():
             "results": results,
         })
     except Exception as e:
-        safe_msg, status_code = _sanitize_error(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_connector_error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -1307,7 +1318,8 @@ def _load_admin_specs() -> list[SourceSpec]:
     # 2. connectors.yaml in DATA_FORMULATOR_HOME
     try:
         admin_path = _get_df_home() / "connectors.yaml"
-    except Exception:
+    except Exception as e:
+        logger.debug("Could not resolve DATA_FORMULATOR_HOME", exc_info=e)
         admin_path = Path("__nonexistent__")
 
     for i, entry in enumerate(_load_connectors_yaml(admin_path)):
@@ -1335,7 +1347,8 @@ def _load_user_specs(identity: str) -> list[SourceSpec]:
     try:
         from data_formulator.datalake.workspace import get_user_home
         user_path = get_user_home(identity) / "connectors.yaml"
-    except Exception:
+    except Exception as e:
+        logger.debug("Could not resolve user home for %s", identity[:16], exc_info=e)
         return []
 
     specs: list[SourceSpec] = []

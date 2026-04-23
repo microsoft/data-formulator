@@ -1,0 +1,33 @@
+{
+  "errors": {
+    "authRequired": "需要登录",
+    "authExpired": "登录已过期，请重新登录",
+    "accessDenied": "没有访问权限",
+
+    "invalidRequest": "请求格式错误",
+    "tableNotFound": "未找到数据表",
+    "fileParseError": "文件解析失败",
+    "fileTooLarge": "文件过大",
+    "validationError": "参数校验失败",
+
+    "llmAuthFailed": "API Key 无效，请检查配置",
+    "llmRateLimit": "请求过于频繁，请稍后再试",
+    "llmContextTooLong": "输入过长，请减少数据量或提示词长度",
+    "llmModelNotFound": "模型不存在，请检查模型名称",
+    "llmTimeout": "请求超时，请检查网络后重试",
+    "llmServiceError": "模型服务返回错误，请稍后再试",
+    "llmContentFiltered": "请求被内容安全过滤器拦截",
+    "llmUnknownError": "模型请求失败",
+
+    "dbConnectionFailed": "数据库连接失败",
+    "dbQueryError": "数据库查询错误",
+    "dataLoadError": "数据加载失败",
+    "connectorError": "数据连接器错误",
+
+    "codeExecutionError": "代码执行过程中发生错误",
+    "agentError": "Agent 遇到错误",
+
+    "internalError": "服务器内部错误",
+    "serviceUnavailable": "服务暂时不可用"
+  }
+}

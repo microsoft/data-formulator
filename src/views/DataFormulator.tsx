@@ -100,7 +100,7 @@ export const DataFormulatorFC = ({ }) => {
         fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(r => r.json())
             .then(data => setPageConnectors(data.connectors || []))
-            .catch(() => {});
+            .catch(() => { /* connector list is optional on landing page */ });
     }, []);
     useEffect(() => {
         refreshPageConnectors();
@@ -122,7 +122,7 @@ export const DataFormulatorFC = ({ }) => {
         try {
             const sessions = await listWorkspaces();
             setSavedWorkspaces(sessions);
-        } catch { /* ignore */ }
+        } catch { /* workspace list is best-effort on landing page */ }
     }, []);
 
     useEffect(() => {
@@ -150,9 +150,14 @@ export const DataFormulatorFC = ({ }) => {
         try {
             await deleteWorkspace(name);
             setSavedWorkspaces(prev => prev.filter(w => w.id !== name));
-        } catch { /* ignore */ }
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'workspace', value: 'Failed to delete workspace',
+            }));
+        }
         setConfirmDeleteWs(null);
-    }, []);
+    }, [dispatch]);
 
     const handleExportWorkspace = useCallback(async (name: string) => {
         try {

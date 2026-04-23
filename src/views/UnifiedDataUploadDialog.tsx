@@ -713,7 +713,7 @@ const AddConnectionPanel: React.FC<{
                     setDisplayName(data.loaders[0].name);
                 }
             })
-            .catch(() => {});
+            .catch(() => { /* loader types unavailable — form will be empty */ });
     }, []);
 
     const selectedLoader = loaderTypes.find(l => l.type === selectedType);
@@ -929,7 +929,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(r => r.json())
             .then(data => setConnectorInstances(data.connectors || []))
-            .catch(() => {});
+            .catch(() => { /* connector list is best-effort */ });
     }, []);
 
     useEffect(() => {
@@ -1891,11 +1891,19 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                         variant="caption"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            fetchWithIdentity(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
-                                                                .then(() => {
-                                                                    console.log('Reset successful');
-                                                                })
-                                                                .catch(err => console.error('Reset failed:', err));
+                                            fetchWithIdentity(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
+                                                .then(() => {
+                                                    dispatch(dfActions.addMessages({
+                                                        timestamp: Date.now(), type: 'success',
+                                                        component: 'data upload', value: 'Example data reset successful',
+                                                    }));
+                                                })
+                                                .catch(() => {
+                                                    dispatch(dfActions.addMessages({
+                                                        timestamp: Date.now(), type: 'error',
+                                                        component: 'data upload', value: 'Failed to reset example data',
+                                                    }));
+                                                });
                                                         }}
                                                         sx={{
                                                             fontSize: '0.7rem',

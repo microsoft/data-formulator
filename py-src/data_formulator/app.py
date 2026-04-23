@@ -117,6 +117,11 @@ def _register_blueprints():
     if _blueprints_registered:
         return
     _blueprints_registered = True
+
+    # Register unified error handlers and request-id middleware
+    from data_formulator.error_handler import register_error_handlers
+    register_error_handlers(app)
+
     # Import tables routes (imports database connectors)
     print("  Loading data loader drivers...", flush=True)
     from data_formulator.routes.tables import tables_bp
@@ -176,16 +181,6 @@ def get_sample_datasets():
 def index_alt(path):
     logger.info(app.static_folder)
     return send_from_directory(app.static_folder, "index.html")
-
-@app.errorhandler(413)
-def request_entity_too_large(e):
-    return flask.jsonify({"status": "error", "message": "File too large. Maximum upload size is 500 MB."}), 413
-
-@app.errorhandler(404)
-def page_not_found(e):
-    logger.info(app.static_folder)
-    return send_from_directory(app.static_folder, "index.html")
-
 
 @app.route('/api/auth/info', methods=['GET'])
 def get_auth_info():
