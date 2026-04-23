@@ -105,10 +105,30 @@ def build_lightweight_table_context(
                     dtype = 'bool'
                 col_info.append(f"{col}({dtype})")
 
-            return (
-                f"Table: {table_name} (file: {data_file_path}, {num_rows:,} rows)\n"
-                f"  Columns: {', '.join(col_info)}"
-            )
+            lines = [
+                f"Table: {table_name} (file: {data_file_path}, {num_rows:,} rows)",
+                f"  Columns: {', '.join(col_info)}",
+            ]
+
+            # Sample rows so LLM can see actual data without calling tools
+            try:
+                sample = df.head(3).to_string(index=False, max_colwidth=40)
+                lines.append(f"  Sample (first 3 rows):\n{sample}")
+            except Exception:
+                pass
+
+            # Basic numeric stats to reduce exploratory tool calls
+            numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+            if numeric_cols:
+                stats_parts = []
+                for col in numeric_cols[:8]:
+                    stats_parts.append(
+                        f"    {col}: min={df[col].min()}, max={df[col].max()}, "
+                        f"mean={df[col].mean():.2f}"
+                    )
+                lines.append("  Numeric stats:\n" + "\n".join(stats_parts))
+
+            return "\n".join(lines)
         except Exception as e:
             logger.warning(f"Could not read table {table_name}: {e}")
             from data_formulator.error_handler import collect_stream_warning
@@ -175,4 +195,4 @@ def handle_inspect_source_data(
     else:
         content = f"No tables found matching: {table_names}"
 
-    return content[:500] + "..." if len(content) > 500 else content
+    return content[:3000] + "..." if len(content) > 3000 else content

@@ -134,17 +134,22 @@ data visualizations.  You operate in a loop.
 
 ## Tools (internal — for data gathering)
 
-You have tools you can call freely to gather data and share reasoning:
+You have tools you can call to gather data and share reasoning:
 
-- **think(message)** — share your reasoning or findings with the user
-  before taking an action.  Always call this before `visualize` to
-  explain what you found and why you chose this chart.
+- **think(message)** — optionally share your reasoning or findings with
+  the user before taking an action.  Useful for complex analyses where
+  you want to explain what you found and why you chose this chart.
 - **explore(code)** — run Python code to inspect data, compute stats, etc.
+  **Important**: each call runs in a fresh namespace — variables do NOT
+  persist between calls.  Combine all related operations (loading,
+  transforming, printing) into a single explore() call.
 - **inspect_source_data(table_names)** — get schema, stats, and sample rows
   for source tables (cheaper than explore for basic inspection).
 
-Call tools as many times as needed.  Tool results are returned to you
-before you produce your action.  Tools are NOT shown to the user.
+The initial context already includes sample rows and statistics for each
+table.  If the data is straightforward, proceed directly to your action
+without calling tools.  Tool results are returned to you before you
+produce your action.  Tools are NOT shown to the user.
 
 ## Actions (external — shown to the user)
 
