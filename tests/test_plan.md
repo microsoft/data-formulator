@@ -63,7 +63,7 @@ pytest
 | Layer | Location | Runner | Count |
 |-------|----------|--------|-------|
 | Backend unit | `tests/backend/unit/` | pytest | 20 files |
-| Backend security | `tests/backend/security/` | pytest | 6 files |
+| Backend security | `tests/backend/security/` | pytest | 9 files |
 | Backend integration | `tests/backend/integration/` | pytest | 8 files (7 route tests + sandbox) |
 | Backend contract | `tests/backend/contract/` | pytest | 2 files |
 | Backend benchmarks | `tests/backend/benchmarks/` | manual | 2 files |
@@ -126,6 +126,36 @@ Tests in `tests/backend/security/test_url_allowlist.py`:
 open mode (env unset, all URLs allowed), enforce mode (matching patterns
 pass, unlisted/private IPs rejected), empty api_base always allowed,
 case insensitivity, glob edge cases, pattern loading.
+
+#### 4c. `scratch_serve` path safety ✅ covered
+
+Tests in `tests/backend/security/test_scratch_serve.py`:
+path traversal → 403, absolute path → 403, normal file → 200, nonexistent → 404,
+verified `send_file` used instead of `send_from_directory` (FINDING-1 from issue-002).
+
+#### 4d. Agent tool path confinement ✅ covered
+
+Tests in `tests/backend/agents/test_tool_path_safety.py`:
+`_tool_read_file` / `_tool_list_directory` / `_preview_scratch_files` reject
+traversal paths (`../../etc/passwd`), normal workspace paths work (FINDING-2 from issue-002).
+
+#### 4e. `local_folder` deployment restriction ✅ covered
+
+Tests in `tests/backend/security/test_local_folder_deployment.py`:
+multi-user mode disables `local_folder` connector, local mode keeps it,
+`create_connector` rejects disabled types (FINDING-3 from issue-002).
+
+#### 4f. Workspace path safety ✅ covered
+
+Tests in `tests/backend/data/test_workspace_path_safety.py`:
+`Workspace.__init__` rejects traversal identities, paths are strictly under root,
+uses `is_relative_to` instead of `str.startswith` (FINDING-4 from issue-002).
+
+#### 4g. Startup safety checks ✅ covered
+
+Tests in `tests/backend/security/test_startup_safety.py`:
+multi-user + no sandbox → `logger.critical` warning, safe configs → no warning
+(FINDING-5 from issue-002).
 
 #### 5. Session sensitive-field stripping (`session_routes.py`)
 

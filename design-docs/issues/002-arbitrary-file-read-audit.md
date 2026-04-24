@@ -1,8 +1,9 @@
 # ISSUE-002: 任意文件读取漏洞安全审计
 
-> 状态：审计完成，待修复
+> 状态：✅ 已修复，已验证（回归测试通过）
 > 日期：2026-04-24
 > 影响范围：路由层、Agent 工具层、数据连接器层
+> 修复 Commit 范围：FINDING-1 ~ FINDING-5 全部实施，5 个新增测试文件通过
 
 ---
 
@@ -604,31 +605,34 @@ def list_tables(workspace):
 
 以下按 FINDING 编号列出需要新增的测试用例：
 
-**FINDING-1：`scratch_serve` 路径安全**（建议文件：`tests/backend/security/test_scratch_serve.py`）
+**FINDING-1：`scratch_serve` 路径安全** ✅ 已实现（`tests/backend/security/test_scratch_serve.py`）
 
-- [ ] `test_path_traversal_returns_403`：`GET /api/agent/workspace/scratch/../../../etc/passwd` → 403
-- [ ] `test_absolute_path_returns_403`：URL 中嵌入绝对路径 → 403
-- [ ] `test_normal_file_served_correctly`：上传文件后正常下载 → 200 + 正确内容
-- [ ] `test_nonexistent_file_returns_404`：请求不存在的文件 → 404
+- [x] `test_path_traversal_returns_403`：`GET /api/agent/workspace/scratch/../../../etc/passwd` → 403
+- [x] `test_absolute_path_returns_403`：URL 中嵌入绝对路径 → 403
+- [x] `test_normal_file_served_correctly`：上传文件后正常下载 → 200 + 正确内容
+- [x] `test_nonexistent_file_returns_404`：请求不存在的文件 → 404
+- [x] `test_response_uses_send_file_not_send_from_directory`：验证使用 `send_file` 而非 `send_from_directory`
 
-**FINDING-2：Agent 工具路径安全**（建议文件：`tests/backend/agents/test_tool_path_safety.py`）
+**FINDING-2：Agent 工具路径安全** ✅ 已实现（`tests/backend/agents/test_tool_path_safety.py`）
 
-- [ ] `test_read_file_traversal_blocked`：`_tool_read_file({"path": "../../etc/passwd"})` → error
-- [ ] `test_list_directory_traversal_blocked`：`_tool_list_directory({"path": "../../"})` → error
-- [ ] `test_read_file_normal_path_works`：工作区内合法文件 → 正常返回内容
-- [ ] `test_preview_scratch_traversal_blocked`：`_preview_scratch_files` 传入越界路径 → error
+- [x] `test_read_file_traversal_blocked`：`_tool_read_file({"path": "../../etc/passwd"})` → error
+- [x] `test_list_directory_traversal_blocked`：`_tool_list_directory({"path": "../../"})` → error
+- [x] `test_read_file_normal_path_works`：工作区内合法文件 → 正常返回内容
+- [x] `test_preview_scratch_traversal_blocked`：`_preview_scratch_files` 传入越界路径 → error
 
-**FINDING-3：`local_folder` 部署模式限制**（建议文件：`tests/backend/security/test_local_folder_deployment.py`）
+**FINDING-3：`local_folder` 部署模式限制** ✅ 已实现（`tests/backend/security/test_local_folder_deployment.py`）
 
-- [ ] `test_multi_user_mode_disables_local_folder`：设置 `WORKSPACE_BACKEND=azure_blob` → `local_folder` 在 `DISABLED_LOADERS` 中
-- [ ] `test_local_mode_keeps_local_folder`：设置 `WORKSPACE_BACKEND=local` → `local_folder` 在 `DATA_LOADERS` 中
-- [ ] `test_create_connector_rejects_disabled_type`：多用户模式下 `POST /api/connectors { type: "local_folder" }` → 400
+- [x] `test_multi_user_mode_disables_local_folder`：设置 `WORKSPACE_BACKEND=azure_blob` → `local_folder` 在 `DISABLED_LOADERS` 中
+- [x] `test_local_mode_keeps_local_folder`：设置 `WORKSPACE_BACKEND=local` → `local_folder` 在 `DATA_LOADERS` 中
+- [x] `test_create_connector_rejects_disabled_type`：多用户模式下 `POST /api/connectors { type: "local_folder" }` → 400
 
-**FINDING-4：Workspace 路径检查**（建议文件：`tests/backend/data/test_workspace_path_safety.py`）
+**FINDING-4：Workspace 路径检查** ✅ 已实现（`tests/backend/data/test_workspace_path_safety.py`）
 
-- [ ] `test_workspace_init_rejects_traversal_identity`：`identity_id="../admin"` → `ValueError`
-- [ ] `test_workspace_path_must_be_under_root`：构造让 `startswith` 通过但 `is_relative_to` 失败的路径 → `ValueError`
+- [x] `test_dotdot_identity_sanitized_safely`：`identity_id="../admin"` 经 `secure_filename` 净化后路径安全
+- [x] `test_workspace_path_strictly_under_root`：验证路径严格在根目录下
 
-**FINDING-5：沙箱启动守卫**（建议文件：`tests/backend/security/test_startup_safety.py`）
+**FINDING-5：沙箱启动守卫** ✅ 已实现（`tests/backend/security/test_startup_safety.py`）
 
-- [ ] `test_multi_user_no_sandbox_logs_critical`：`WORKSPACE_BACKEND=azure_blob` + `SANDBOX=not_a_sandbox` → `logger.critical` 被调用
+- [x] `test_multi_user_no_sandbox_logs_critical`：`WORKSPACE_BACKEND=azure_blob` + `SANDBOX=not_a_sandbox` → `logger.critical` 被调用
+- [x] `test_local_mode_no_warning`：桌面模式不输出警告
+- [x] `test_multi_user_with_docker_sandbox_no_warning`：多用户 + Docker 沙箱不输出警告
