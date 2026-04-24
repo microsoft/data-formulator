@@ -1,3 +1,8 @@
+---
+name: language-injection
+description: LLM Agent 多语言注入规范。在修改 Agent 提示词、添加新的 Agent 端点、处理用户可见的后端消息（message_code）时使用。
+---
+
 # Language Injection for Agent Prompts
 
 Detailed guide for the language injection system. The short version lives in `.cursor/rules/language-injection-conventions.mdc`.

@@ -1,3 +1,8 @@
+---
+name: error-handling
+description: 统一错误处理系统。在添加 API 端点、修改错误处理、添加前端 API 调用、编写错误相关测试时使用。
+---
+
 # Error Handling Skill
 
 Unified error handling system for DF. Use when adding API endpoints, modifying error handling, or adding frontend API calls.
