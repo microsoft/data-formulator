@@ -320,7 +320,10 @@
     "tierAuthOr": "or",
     "tierAuthManual": "Enter credentials manually",
     "selectTableFromTree": "Select a table from the tree to preview",
-    "noTablesFound": "No tables found"
+    "noTablesFound": "No tables found",
+    "createConnector": "Create Connector",
+    "deleteConnector": "Delete",
+    "showingPreview": "showing {{count}} preview rows"
   },
   "dataThread": {
     "title": "Data Threads",
@@ -474,14 +477,19 @@
     "threadReportPrompt": "Summarize the key findings from this exploration",
     "explorationThreadDeriveDescription": "Derive from {{source}} with instruction: {{instruction}}",
     "explorationStepCodeComment": "# Exploration step {{step}}",
-    "maxIterationsReached": "Reached the maximum number of exploration steps."
+    "maxIterationsReached": "Reached the maximum number of exploration steps.",
+    "switchToReport": "Switch to Report mode",
+    "switchToExplore": "Switch to Explore mode",
+    "modeExplore": "Explore",
+    "modeReport": "Report"
   },
   "dataGrid": {
     "loading": "Loading ...",
     "sortBy": "Sort by {{label}}",
     "rowCount": "{{count}} rows",
     "viewRandomRows": "view 10000 random rows from this table",
-    "downloadAsCsv": "Download as CSV"
+    "downloadAsCsv": "Download as CSV",
+    "downloading": "Downloading..."
   },
   "chatDialog": {
     "noHistory": "There is no conversation history yet",
@@ -539,6 +547,27 @@
     "noDashboards": "No dashboards found.",
     "noDatasetsInDashboard": "No datasets in this dashboard."
   },
+  "workspace": {
+    "sessions": "Sessions",
+    "refreshList": "Refresh list",
+    "deleteSession": "Delete session",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "close": "Close",
+    "newSession": "+ New Session",
+    "loadingSessions": "Loading sessions...",
+    "active": "(active)",
+    "openingWorkspace": "Opening workspace...",
+    "openedSession": "Opened session \"{{name}}\"",
+    "failedToOpenWorkspace": "Failed to open workspace",
+    "deletedSession": "Deleted session \"{{name}}\"",
+    "sessionTooltip": "Session: {{name}}",
+    "newSessionTooltip": "New Session",
+    "recoveredSession": "Recovered Session",
+    "errorOccurred": "An error has occurred, please",
+    "refreshSession": "refresh the session",
+    "errorPersistHint": "If the problem still exists, click close session."
+  },
   "supersetCatalog": {
     "title": "Superset Datasets",
     "searchPlaceholder": "Search datasets...",
@@ -564,5 +593,77 @@
     "cancel": "Cancel",
     "confirmLoad": "Confirm & Load",
     "rowLimitTip": "Max rows to load"
+  },
+  "tableSelection": {
+    "noTables": "No tables available.",
+    "loadDataset": "load dataset",
+    "loadInNewSession": "load in new session",
+    "fromSource": "[from {{source}}]"
+  },
+  "interaction": {
+    "askedForClarification": "asked for clarification"
+  },
+  "concepts": {
+    "showFewer": "Show fewer concepts",
+    "showAll": "Show all concepts",
+    "showFirstN": "Show first {{count}} concepts",
+    "showAllN": "Show all {{count}} concepts"
+  },
+  "dataframe": {
+    "columnCount": "{{count}} columns"
+  },
+  "editor": {
+    "bold": "Bold (⌘B)",
+    "italic": "Italic (⌘I)",
+    "heading1": "Heading 1",
+    "heading2": "Heading 2",
+    "bulletList": "Bullet List",
+    "numberedList": "Numbered List",
+    "quote": "Quote",
+    "generating": "Generating…",
+    "writingReport": "Writing your report…"
+  },
+  "sidebar": {
+    "openDataSources": "Data Sources",
+    "dataSources": "Data Sources",
+    "sessions": "Sessions",
+    "collapse": "Collapse",
+    "loadData": "Load data",
+    "dataConnectors": "Data connectors",
+    "refreshCatalog": "Refresh",
+    "refresh": "Refresh data",
+    "emptyTree": "No tables found",
+    "addConnector": "Add data connector",
+    "linkLocalFolder": "Link local folder",
+    "newSession": "New session",
+    "noSessions": "No saved sessions",
+    "tableCount": "{{count}} table(s)",
+    "chartCount": "{{count}} chart(s)",
+    "andMore": "+{{count}} more",
+    "emptyWorkspace": "Empty workspace",
+    "unableToLoadInfo": "Unable to load info",
+    "openingWorkspace": "Opening workspace...",
+    "sessionDeleted": "Session deleted",
+    "failedDeleteSession": "Failed to delete session",
+    "loadedTable": "Loaded table \"{{name}}\"",
+    "failedLoadTable": "Failed to load \"{{name}}\": {{error}}",
+    "refreshedTable": "Refreshed \"{{name}}\"",
+    "currentSession": "Current session",
+    "currentSessionWithDate": "Current session · {{date}}",
+    "clickToOpen": "Click to open",
+    "previewRowCount": "{{count}} rows",
+    "previewColumnsHeader": "Columns ({{count}})",
+    "noPreviewAvailable": "No preview available",
+    "alreadyLoaded": "Already loaded",
+    "loadInNewWorkspace": "Load in new workspace",
+    "loadingEllipsis": "Loading...",
+    "load": "Load",
+    "deleteConnector": "Delete connector",
+    "deleteConnectorTitle": "Delete connector",
+    "deleteConnectorConfirm": "Are you sure you want to delete \"{{name}}\"? Imported data will not be affected.",
+    "connectorDeleted": "Connector \"{{name}}\" deleted",
+    "failedDeleteConnector": "Failed to delete connector",
+    "deletingEllipsis": "Deleting...",
+    "deleteConfirmBtn": "Delete"
   }
 }

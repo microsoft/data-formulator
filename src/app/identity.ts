@@ -28,16 +28,27 @@ export interface UserInfo {
 }
 
 /**
- * Generates a UUID v4
- * Uses crypto.randomUUID if available, falls back to manual generation
+ * Generates a UUID v4.
+ * Uses crypto.randomUUID if available (secure contexts only), falls back to
+ * crypto.getRandomValues (CSPRNG, available in non-secure contexts), then Math.random.
  */
-function generateUUID(): string {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+export function generateUUID(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
         return crypto.randomUUID();
     }
-    // Fallback for older browsers
+
+    let idx = 0;
+    let randomBytes: Uint8Array | null = null;
+
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        randomBytes = new Uint8Array(16);
+        crypto.getRandomValues(randomBytes);
+    }
+
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-        const r = Math.random() * 16 | 0;
+        const r = randomBytes
+            ? randomBytes[idx++] % 16
+            : (Math.random() * 16 | 0);
         const v = c === 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
     });

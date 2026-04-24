@@ -5,7 +5,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType } from './dfSlice';
 import { AppDispatch } from './store';
 import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../components/ComponentType';
-import { getUrls, getTriggers, fetchWithIdentity } from './utils';
+import { getUrls, getTriggers, fetchWithIdentity, translateBackend } from './utils';
 
 export type IdeaItem = {
     text: string;
@@ -272,32 +272,76 @@ export function useFormulateData() {
                     if (done) break;
 
                     buffer += decoder.decode(value, { stream: true });
-                    const newLines = buffer.split('data: ').filter(line => line.trim() !== "");
-                    buffer = newLines.pop() || '';
-                    if (newLines.length > 0) {
-                        lines.push(...newLines);
-                        updateState(lines);
+                    const ndjsonLines = buffer.split('\n');
+                    buffer = ndjsonLines.pop() || '';
+                    for (const rawLine of ndjsonLines) {
+                        const trimmed = rawLine.trim();
+                        if (!trimmed) continue;
+                        try {
+                            const parsed = JSON.parse(trimmed);
+                            if (parsed.type === 'error') {
+                                const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
+                                throw new Error(msg);
+                            }
+                            if (parsed.type === 'warning') {
+                                dispatch(dfActions.addMessages([{
+                                    timestamp: Date.now(), type: 'warning',
+                                    component: 'exploration',
+                                    value: parsed.warning?.message ?? 'Warning from server',
+                                }]));
+                                continue;
+                            }
+                            if (parsed.text) {
+                                lines.push(trimmed);
+                                updateState(lines);
+                            }
+                        } catch (e) {
+                            if (e instanceof Error && e.message !== trimmed) throw e;
+                            onThinkingBuffer(trimmed);
+                        }
                     }
-                    onThinkingBuffer(buffer.replace(/^data: /, ""));
                 }
             } finally {
                 reader.releaseLock();
             }
 
-            lines.push(buffer);
+            if (buffer.trim()) {
+                try {
+                    const parsed = JSON.parse(buffer.trim());
+                    if (parsed.type === 'error') {
+                        const msg = parsed.error?.message ?? 'Unknown error';
+                        throw new Error(msg);
+                    }
+                    if (parsed.type === 'warning') {
+                        dispatch(dfActions.addMessages([{
+                            timestamp: Date.now(), type: 'warning',
+                            component: 'exploration',
+                            value: parsed.warning?.message ?? 'Warning from server',
+                        }]));
+                    } else if (parsed.text) {
+                        lines.push(buffer.trim());
+                    }
+                } catch (e) {
+                    if (e instanceof Error && e.message !== buffer.trim()) throw e;
+                }
+            }
             updateState(lines);
 
             if (lines.length === 0) {
                 throw new Error('No valid results returned from agent');
             }
         } catch (error) {
-            dispatch(dfActions.addMessages({
-                "timestamp": Date.now(),
-                "type": "error",
-                "component": "chart builder",
-                "value": "Failed to get ideas from the exploration agent. Please try again.",
-                "detail": error instanceof Error ? error.message : 'Unknown error',
-            }));
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                // user cancelled
+            } else {
+                dispatch(dfActions.addMessages({
+                    "timestamp": Date.now(),
+                    "type": "error",
+                    "component": "chart builder",
+                    "value": error instanceof Error ? error.message : "Failed to get ideas from the exploration agent. Please try again.",
+                    "detail": error instanceof Error ? error.message : 'Unknown error',
+                }));
+            }
         } finally {
             onLoadingChange(false);
         }
@@ -440,14 +484,15 @@ export function useFormulateData() {
             const candidates = data["results"].filter((item: any) => item["status"] === "ok");
 
             if (candidates.length === 0) {
+                const firstResult = data.results[0];
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "error",
                     "component": "chart builder",
                     "value": "Data formulation failed, please try again.",
-                    "code": data.results[0].code,
-                    "detail": data.results[0].content,
-                    "diagnostics": data.results[0].diagnostics,
+                    "code": firstResult.code,
+                    "detail": translateBackend(firstResult.content, firstResult.content_code),
+                    "diagnostics": firstResult.diagnostics,
                 }));
                 onError?.(new Error("All candidates failed"));
                 return;
@@ -539,6 +584,15 @@ export function useFormulateData() {
                         if (m['intrinsic_domain']) {
                             candidateTable.metadata[fieldName].intrinsicDomain = m['intrinsic_domain'];
                         }
+                    }
+                }
+            }
+
+            const fieldDisplayNames = refinedGoal['field_display_names'];
+            if (fieldDisplayNames && typeof fieldDisplayNames === 'object') {
+                for (const [fieldName, displayName] of Object.entries(fieldDisplayNames)) {
+                    if (candidateTable.metadata[fieldName] && typeof displayName === 'string') {
+                        candidateTable.metadata[fieldName].displayName = displayName;
                     }
                 }
             }

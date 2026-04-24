@@ -293,7 +293,7 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                                     headers: { 'Content-Type': 'application/json', },
                                     body: JSON.stringify({ model: model }),
                                 };
-                                fetch(getUrls().TEST_MODEL, {...message })
+                                fetchWithIdentity(getUrls().TEST_MODEL, {...message })
                                     .then((response) => response.json())
                                     .then((data) => {
                                         let status = data["status"] || 'error';

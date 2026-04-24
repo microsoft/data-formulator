@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     Box,
     Card,
@@ -176,6 +177,7 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
     concepts, 
     maxCards = 8 
 }) => {
+    const { t } = useTranslation();
     const [expanded, setExpanded] = useState(false);
 
     if (!concepts || concepts.length === 0) {
@@ -218,7 +220,7 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
                         paddingTop: 1,
                         borderTop: `1px solid ${borderColor.divider}`,
                     }}>
-                        <Tooltip title={expanded ? "Show fewer concepts" : "Show all concepts"}>
+                        <Tooltip title={expanded ? t('concepts.showFewer') : t('concepts.showAll')}>
                             <IconButton
                                 size="small"
                                 onClick={() => setExpanded(!expanded)}
@@ -232,8 +234,8 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
                             >
                                 <Typography variant="caption">
                                     {expanded 
-                                        ? `Show first ${maxCards} concepts` 
-                                        : `Show all ${concepts.length} concepts`
+                                        ? t('concepts.showFirstN', { count: maxCards })
+                                        : t('concepts.showAllN', { count: concepts.length })
                                     }
                                 </Typography>
                             </IconButton>

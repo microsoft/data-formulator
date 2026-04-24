@@ -52,6 +52,7 @@ import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace } from '../app/workspaceService';
 import { AppDispatch } from '../app/store';
+import { generateUUID } from '../app/identity';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import IconButton from '@mui/material/IconButton';
@@ -68,7 +69,7 @@ function generateSessionId(): string {
     const now = new Date();
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    const short = crypto.randomUUID().slice(0, 4);
+    const short = generateUUID().slice(0, 4);
     return `session_${date}_${time}_${short}`;
 }
 
@@ -99,7 +100,7 @@ export const DataFormulatorFC = ({ }) => {
         fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(r => r.json())
             .then(data => setPageConnectors(data.connectors || []))
-            .catch(() => {});
+            .catch(() => { /* connector list is optional on landing page */ });
     }, []);
     useEffect(() => {
         refreshPageConnectors();
@@ -121,7 +122,7 @@ export const DataFormulatorFC = ({ }) => {
         try {
             const sessions = await listWorkspaces();
             setSavedWorkspaces(sessions);
-        } catch { /* ignore */ }
+        } catch { /* workspace list is best-effort on landing page */ }
     }, []);
 
     useEffect(() => {
@@ -149,9 +150,14 @@ export const DataFormulatorFC = ({ }) => {
         try {
             await deleteWorkspace(name);
             setSavedWorkspaces(prev => prev.filter(w => w.id !== name));
-        } catch { /* ignore */ }
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'workspace', value: 'Failed to delete workspace',
+            }));
+        }
         setConfirmDeleteWs(null);
-    }, []);
+    }, [dispatch]);
 
     const handleExportWorkspace = useCallback(async (name: string) => {
         try {

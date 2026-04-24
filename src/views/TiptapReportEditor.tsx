@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { FC, useEffect, useCallback, useRef, useState as useStateReact } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewProps, ReactNodeViewRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
@@ -159,6 +160,7 @@ const ToolbarButton: FC<{
 
 export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, editable = true, reportId, onUpdate }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const isFocused = useRef(false);
 
     const editor = useEditor({
@@ -264,14 +266,14 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
                     <ToolbarButton
                         onClick={() => editor.chain().focus().toggleBold().run()}
                         isActive={editor.isActive('bold')}
-                        title="Bold (⌘B)"
+                        title={t('editor.bold')}
                     >
                         <FormatBoldIcon sx={iconSx} />
                     </ToolbarButton>
                     <ToolbarButton
                         onClick={() => editor.chain().focus().toggleItalic().run()}
                         isActive={editor.isActive('italic')}
-                        title="Italic (⌘I)"
+                        title={t('editor.italic')}
                     >
                         <FormatItalicIcon sx={iconSx} />
                     </ToolbarButton>
@@ -279,14 +281,14 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
                     <ToolbarButton
                         onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
                         isActive={editor.isActive('heading', { level: 1 })}
-                        title="Heading 1"
+                        title={t('editor.heading1')}
                     >
                         <TitleIcon sx={iconSx} />
                     </ToolbarButton>
                     <ToolbarButton
                         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
                         isActive={editor.isActive('heading', { level: 2 })}
-                        title="Heading 2"
+                        title={t('editor.heading2')}
                     >
                         <TitleIcon sx={{ ...iconSx, fontSize: 14 }} />
                     </ToolbarButton>
@@ -294,21 +296,21 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
                     <ToolbarButton
                         onClick={() => editor.chain().focus().toggleBulletList().run()}
                         isActive={editor.isActive('bulletList')}
-                        title="Bullet List"
+                        title={t('editor.bulletList')}
                     >
                         <FormatListBulletedIcon sx={iconSx} />
                     </ToolbarButton>
                     <ToolbarButton
                         onClick={() => editor.chain().focus().toggleOrderedList().run()}
                         isActive={editor.isActive('orderedList')}
-                        title="Numbered List"
+                        title={t('editor.numberedList')}
                     >
                         <FormatListNumberedIcon sx={iconSx} />
                     </ToolbarButton>
                     <ToolbarButton
                         onClick={() => editor.chain().focus().toggleBlockquote().run()}
                         isActive={editor.isActive('blockquote')}
-                        title="Quote"
+                        title={t('editor.quote')}
                     >
                         <FormatQuoteIcon sx={iconSx} />
                     </ToolbarButton>
@@ -323,7 +325,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
                                     '50%': { opacity: 1 },
                                 },
                             }} />
-                            <ShimmerText>Generating…</ShimmerText>
+                            <ShimmerText>{t('editor.generating')}</ShimmerText>
                         </Box>
                     )}
             </Box>
@@ -429,7 +431,7 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
                         justifyContent: 'center',
                         pb: 6,
                     }}>
-                        <WritingIndicator label="Writing your report…" fontSize="0.85rem" />
+                        <WritingIndicator label={t('editor.writingReport')} fontSize="0.85rem" />
                     </Box>
                 )}
             </Box>

@@ -11,6 +11,7 @@ import json
 import logging
 
 from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_language import inject_language_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +69,9 @@ _WORKSPACE_SUMMARY_SYSTEM_PROMPT = (
 class SimpleAgents:
     """Collection of lightweight single-turn LLM agents."""
 
-    def __init__(self, client):
+    def __init__(self, client, language_instruction: str = ""):
         self.client = client
+        self.language_instruction = language_instruction
 
     # -- NL → structured filter conditions ----------------------------------
 
@@ -141,8 +143,12 @@ class SimpleAgents:
 
         context_str = ". ".join(prompt_parts) if prompt_parts else "A data analysis session"
 
+        system_prompt = inject_language_instruction(
+            _WORKSPACE_SUMMARY_SYSTEM_PROMPT, self.language_instruction,
+        )
+
         messages = [
-            {"role": "system", "content": _WORKSPACE_SUMMARY_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": context_str},
         ]
 

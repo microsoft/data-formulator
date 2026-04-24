@@ -24,6 +24,7 @@ import DatasetIcon from '@mui/icons-material/Dataset';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import AddIcon from '@mui/icons-material/Add';
 
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
@@ -183,14 +184,15 @@ const InlineTablePreviewView: React.FC<{
     confirmed?: boolean;
 }> = ({ preview, onLoad, confirmed }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const [expanded, setExpanded] = useState(true);
 
     const allCols = preview.columns;
 
     const rowLabel = preview.totalRows > preview.sampleRows.length
-        ? `${preview.totalRows.toLocaleString()} rows`
+        ? `${preview.totalRows.toLocaleString()} ${t('dataLoading.rows')}`
         : '';
-    const meta = [rowLabel, `${allCols.length} cols`].filter(Boolean).join(' · ');
+    const meta = [rowLabel, `${allCols.length} ${t('dataLoading.cols')}`].filter(Boolean).join(' · ');
 
     // Pill colors
     const pillBg = confirmed
@@ -244,7 +246,7 @@ const InlineTablePreviewView: React.FC<{
                 {onLoad && !confirmed && (
                     <Button size="small" variant="text" onClick={onLoad}
                         sx={{ textTransform: 'none', fontSize: 11, py: 0, px: 1, minHeight: 0, color: 'primary.main' }}>
-                        Load
+                        {t('dataLoading.load')}
                     </Button>
                 )}
             </Box>
@@ -273,6 +275,7 @@ const InlineTablePreviewView: React.FC<{
 // ---------------------------------------------------------------------------
 
 const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
+    const { t } = useTranslation();
     const [expanded, setExpanded] = useState(false);
     return (
         <Paper variant="outlined" sx={{ my: 1, borderRadius: radius.md, overflow: 'hidden' }}>
@@ -287,9 +290,9 @@ const CodeBlockView: React.FC<{ block: CodeExecution }> = ({ block }) => {
             >
                 <TerminalIcon sx={{ fontSize: 14, color: 'text.secondary', mr: 0.75 }} />
                 <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', flex: 1 }}>
-                    Ran Python code
+                    {t('dataLoading.ranPythonCode')}
                 </Typography>
-                {block.error && <Chip label="error" size="small" color="error" sx={{ height: 18, fontSize: 9, mr: 0.5 }} />}
+                {block.error && <Chip label={t('dataLoading.error')} size="small" color="error" sx={{ height: 18, fontSize: 9, mr: 0.5 }} />}
                 {expanded ? <ExpandLessIcon sx={{ fontSize: 14 }} /> : <ExpandMoreIcon sx={{ fontSize: 14 }} />}
             </Box>
             <Collapse in={expanded}>
@@ -333,6 +336,7 @@ const ChatBubble: React.FC<{
     existingNames: Set<string>;
 }> = ({ message, existingNames }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
     const isUser = message.role === 'user';
     const [hovered, setHovered] = useState(false);
@@ -451,8 +455,8 @@ const ChatBubble: React.FC<{
                             }}
                             sx={{ textTransform: 'none', fontSize: 12, py: 0.5, px: 2, minHeight: 0, borderRadius: 1.5, boxShadow: 'none' }}>
                             {message.pendingLoads.length === 1
-                                ? 'Load table'
-                                : `Load all ${message.pendingLoads.filter(p => !p.confirmed).length} tables`}
+                                ? t('dataLoading.loadTable')
+                                : t('dataLoading.loadAllTables', { count: message.pendingLoads.filter(p => !p.confirmed).length })}
                         </Button>
                     </Box>
                 )}
@@ -461,7 +465,7 @@ const ChatBubble: React.FC<{
                     <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
                         {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Typography>
-                    <Tooltip title="Show raw message data" placement="top">
+                    <Tooltip title={t('dataLoading.showRawData')} placement="top">
                         <IconButton size="small" onClick={() => setShowDebug(!showDebug)}
                             sx={{ width: 16, height: 16, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
                             <TerminalIcon sx={{ fontSize: 12 }} />
@@ -484,12 +488,12 @@ const ChatBubble: React.FC<{
 // Tool call label mapping
 // ---------------------------------------------------------------------------
 
-const TOOL_LABELS: Record<string, string> = {
-    read_file: 'Reading file',
-    write_file: 'Writing file',
-    list_directory: 'Listing files',
-    execute_python: 'Running Python',
-    show_user_data_preview: 'Preparing preview',
+const TOOL_LABEL_KEYS: Record<string, string> = {
+    read_file: 'dataLoading.toolLabels.readingFile',
+    write_file: 'dataLoading.toolLabels.writingFile',
+    list_directory: 'dataLoading.toolLabels.listingFiles',
+    execute_python: 'dataLoading.toolLabels.runningPython',
+    show_user_data_preview: 'dataLoading.toolLabels.preparingPreview',
 };
 
 // ---------------------------------------------------------------------------
@@ -604,13 +608,14 @@ const SampleTaskItem: React.FC<{
 
 export const DataLoadingChat: React.FC = () => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
     const chatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const chatInProgress = useSelector((state: DataFormulatorState) => state.dataLoadingChatInProgress);
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const activeModel = useSelector(dfSelectors.getActiveModel);
-    const existingNames = new Set(existingTables.map(t => t.id));
+    const existingNames = new Set(existingTables.map(tbl => tbl.id));
 
     const [prompt, setPrompt] = useState('');
     const [userImages, setUserImages] = useState<string[]>([]);
@@ -667,7 +672,7 @@ export const DataLoadingChat: React.FC = () => {
                 method: 'POST', body: formData,
             }).then(res => res.json()).then(data => {
                 if (data.status === 'ok') {
-                    setPrompt(prev => prev + (prev ? '\n' : '') + `[Uploaded: ${file.name}]`);
+                    setPrompt(prev => prev + (prev ? '\n' : '') + t('dataLoading.uploaded', { name: file.name }));
                 }
             }).catch(err => console.error('Upload failed:', err));
         }
@@ -688,7 +693,7 @@ export const DataLoadingChat: React.FC = () => {
 
         const userMsg: ChatMessage = {
             id: `msg-${Date.now()}-user`, role: 'user',
-            content: text || (userImages.length > 0 ? 'Extract data from this image' : ''),
+            content: text || (userImages.length > 0 ? t('dataLoading.defaultImageMessage') : ''),
             attachments: attachments.length > 0 ? attachments : undefined,
             timestamp: Date.now(),
         };
@@ -713,7 +718,7 @@ export const DataLoadingChat: React.FC = () => {
             body: JSON.stringify({
                 model: activeModel,
                 messages: allMessages,
-                workspace_tables: existingTables.map(t => t.id),
+                workspace_tables: existingTables.map(tbl => tbl.id),
             }),
             signal: controller.signal,
         })
@@ -798,7 +803,7 @@ export const DataLoadingChat: React.FC = () => {
                                     setStreamingContent(fullText);
                                     break;
                                 case 'tool_start': {
-                                    const label = TOOL_LABELS[event.tool] || event.tool;
+                                    const label = TOOL_LABEL_KEYS[event.tool] ? t(TOOL_LABEL_KEYS[event.tool]) : event.tool;
                                     const newSteps = [...streamingToolStepsRef];
                                     newSteps.push({ tool: event.tool, status: 'running', label });
                                     streamingToolStepsRef = newSteps;
@@ -884,7 +889,7 @@ export const DataLoadingChat: React.FC = () => {
                 if (partialContent) {
                     dispatch(dfActions.addChatMessage({
                         id: `msg-${Date.now()}-assistant`, role: 'assistant',
-                        content: partialContent + '\n\n*— stopped*',
+                        content: partialContent + `\n\n*${t('dataLoading.stopped')}*`,
                         timestamp: Date.now(),
                     }));
                 }
@@ -904,7 +909,7 @@ export const DataLoadingChat: React.FC = () => {
             dispatch(dfActions.setDataLoadingChatInProgress(false));
             abortControllerRef.current = null;
         });
-    }, [prompt, userImages, chatInProgress, chatMessages, activeModel, existingTables, dispatch, streamingContent]);
+    }, [prompt, userImages, chatInProgress, chatMessages, activeModel, existingTables, dispatch, streamingContent, t]);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -913,20 +918,11 @@ export const DataLoadingChat: React.FC = () => {
         }
     };
 
-    // Sample tasks for empty state
-    const extractFromTextPrompt = `Extract revenue growth data from this text:\n\nBusiness Highlights\n\nMicrosoft Cloud revenue was $51.5 billion and increased 26% (up 24% in constant currency), and commercial remaining performance obligation increased 110% to $625 billion.\n\nRevenue in Productivity and Business Processes was $34.1 billion and increased 16% (up 14% in constant currency), with the following business highlights:\n\n·        Microsoft 365 Commercial cloud revenue increased 17% (up 14% in constant currency)\n\n·        Microsoft 365 Consumer cloud revenue increased 29% (up 27% in constant currency)\n\n·        LinkedIn revenue increased 11% (up 10% in constant currency)\n\n·        Dynamics 365 revenue increased 19% (up 17% in constant currency)\n\nRevenue in Intelligent Cloud was $32.9 billion and increased 29% (up 28% in constant currency), with the following business highlights:\n\n·        Azure and other cloud services revenue increased 39% (up 38% in constant currency)\n\nRevenue in More Personal Computing was $14.3 billion and decreased 3%, with the following business highlights:\n\n·        Windows OEM and Devices revenue increased 1% (relatively unchanged in constant currency)\n\n·        Xbox content and services revenue decreased 5% (down 6% in constant currency)\n\n·        Search and news advertising revenue excluding traffic acquisition costs increased 10% (up 9% in constant currency)\n\nMicrosoft returned $12.7 billion to shareholders in the form of dividends and share repurchases in the second quarter of fiscal year 2026, an increase of 32% compared to the second quarter of fiscal year 2025.`;
-
     const sampleTasks = [
-        // {
-        //     icon: <LanguageIcon sx={{ fontSize: 16 }} />,
-        //     title: 'Extract data from a webpage',
-        //     example: 'Extract earnings data from https://www.microsoft.com/en-us/investor/earnings/fy-2026-q2/press-release-webcast',
-        //     action: () => { setPrompt('Extract earnings data from https://www.microsoft.com/en-us/investor/earnings/fy-2026-q2/press-release-webcast'); setTimeout(() => inputRef.current?.focus(), 50); },
-        // },
         {
             icon: <ImageIcon sx={{ fontSize: 16 }} />,
-            title: 'Extract data from an image',
-            example: 'Extract revenue data from this image',
+            title: t('dataLoading.examples.extractFromImage'),
+            example: t('dataLoading.examples.extractFromImageExample'),
             action: () => {
                 fetch(exampleImageTable)
                     .then(res => res.blob())
@@ -935,7 +931,7 @@ export const DataLoadingChat: React.FC = () => {
                         reader.onload = () => {
                             if (reader.result) {
                                 setUserImages([reader.result as string]);
-                                setPrompt('Extract revenue data from this image');
+                                setPrompt(t('dataLoading.examples.extractFromImageExample'));
                                 setTimeout(() => inputRef.current?.focus(), 50);
                             }
                         };
@@ -945,21 +941,21 @@ export const DataLoadingChat: React.FC = () => {
         },
         {
             icon: <TextFieldsIcon sx={{ fontSize: 16 }} />,
-            title: 'Extract data from text',
-            example: 'Extract revenue growth data from this text: Business Highlights ...',
-            action: () => { setPrompt(extractFromTextPrompt); setTimeout(() => inputRef.current?.focus(), 50); },
+            title: t('dataLoading.examples.extractFromText'),
+            example: t('dataLoading.examples.extractFromTextExample'),
+            action: () => { setPrompt(t('dataLoading.examples.extractFromTextPrompt')); setTimeout(() => inputRef.current?.focus(), 50); },
         },
         {
             icon: <DatasetIcon sx={{ fontSize: 16 }} />,
-            title: 'Generate synthetic data',
-            example: 'Generate a UK dynasty dataset with 20 rows',
-            action: () => { setPrompt('Generate a UK dynasty dataset with 20 rows'); setTimeout(() => inputRef.current?.focus(), 50); },
+            title: t('dataLoading.examples.generateSynthetic'),
+            example: t('dataLoading.examples.generateSyntheticExample'),
+            action: () => { setPrompt(t('dataLoading.examples.generateSyntheticExample')); setTimeout(() => inputRef.current?.focus(), 50); },
         },
         {
             icon: <DatasetIcon sx={{ fontSize: 16 }} />,
-            title: 'Browse sample datasets',
-            example: 'What sample datasets are available?',
-            action: () => { setPrompt('What sample datasets are available?'); setTimeout(() => inputRef.current?.focus(), 50); },
+            title: t('dataLoading.examples.browseSamples'),
+            example: t('dataLoading.examples.browseSamplesExample'),
+            action: () => { setPrompt(t('dataLoading.examples.browseSamplesExample')); setTimeout(() => inputRef.current?.focus(), 50); },
         },
     ];
 
@@ -984,10 +980,10 @@ export const DataLoadingChat: React.FC = () => {
                 {isEmpty ? (
                     <Box sx={{ maxWidth: 480, width: '100%' }}>
                         <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
-                            Data Loading Assistant
+                            {t('dataLoading.title')}
                         </Typography>
                         <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2, textAlign: 'center', lineHeight: 1.5 }}>
-                            Extract data from images, files, webpages, or text. Generate synthetic datasets. Browse sample data.
+                            {t('dataLoading.subtitle')}
                         </Typography>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                             {sampleTasks.map((task, i) => (
@@ -1054,7 +1050,7 @@ export const DataLoadingChat: React.FC = () => {
                         <input type="file" ref={fileInputRef} style={{ display: 'none' }}
                             accept="image/*,.csv,.json,.xlsx,.xls,.txt,.tsv"
                             onChange={handleFileUpload} />
-                        <Tooltip title="Attach file or image" placement="top">
+                        <Tooltip title={t('dataLoading.attachTooltip')} placement="top">
                             <IconButton size="small" onClick={() => fileInputRef.current?.click()}
                                 disabled={chatInProgress}
                                 sx={{ mb: 0.25, color: 'text.secondary' }}>
@@ -1070,13 +1066,13 @@ export const DataLoadingChat: React.FC = () => {
                             onChange={(e) => setPrompt(e.target.value)}
                             onKeyDown={handleKeyDown}
                             onPaste={handlePaste}
-                            placeholder="Describe data to extract, upload, or generate..."
+                            placeholder={t('dataLoading.placeholder')}
                             disabled={chatInProgress}
                             sx={{ flex: 1, px: 1, py: 0.75, fontSize: 13, lineHeight: 1.5 }}
                         />
 
                         {chatInProgress ? (
-                            <Tooltip title="Stop generation" placement="top">
+                            <Tooltip title={t('dataLoading.stopTooltip')} placement="top">
                                 <IconButton size="small" onClick={stopGeneration}
                                     sx={{
                                         mb: 0.25, bgcolor: 'error.main', color: 'white',
@@ -1087,7 +1083,7 @@ export const DataLoadingChat: React.FC = () => {
                                 </IconButton>
                             </Tooltip>
                         ) : (
-                            <Tooltip title="Send  (Enter)" placement="top">
+                            <Tooltip title={t('dataLoading.sendTooltip')} placement="top">
                                 <span>
                                     <IconButton size="small" onClick={sendMessage} disabled={!canSend}
                                         sx={{
@@ -1106,7 +1102,7 @@ export const DataLoadingChat: React.FC = () => {
                 </Box>
 
                 <Typography sx={{ fontSize: 10, color: 'text.disabled', textAlign: 'center', mt: 0.5 }}>
-                    Shift+Enter for new line
+                    {t('dataLoading.shiftEnterHint')}
                 </Typography>
               </Box>
             </Box>

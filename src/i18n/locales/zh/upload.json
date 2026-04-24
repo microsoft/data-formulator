@@ -83,6 +83,37 @@
     "pastePreviewTruncatedSuffix": "……（为提升性能已截断）",
     "loadingData": "加载数据中...",
     "loadingDataset": "正在加载 {{name}}...",
+    "connect": "连接",
+    "connectionNameLabel": "连接名称",
+    "dataSourceTypes": "数据源",
+    "folderPathPlaceholder": "/你的数据文件夹路径",
+    "includeSubfolders": "包含子文件夹",
+    "localFolder": "本地文件夹",
+    "localFolderConnected": "本地文件夹",
+    "localFolderDesc": "连接本地文件夹快速导入",
+    "localFolderHint": "选择电脑上的文件夹以浏览和导入数据文件。",
+    "opening": "打开中...",
+    "orTypePath": "或手动输入路径",
+    "selectDataSourceType": "选择数据源类型",
+    "selectFolder": "选择文件夹",
+    "storedInAzure": "数据存储在 Azure Blob Storage",
+    "storedInBrowser": "数据仅保留在浏览器中",
+    "storedOnDisk": "数据存储在磁盘上",
+    "connectorDesc": {
+      "mysql": "从 MySQL 数据库查询表",
+      "postgresql": "从 PostgreSQL 数据库查询表",
+      "mssql": "从 Microsoft SQL Server 查询表",
+      "cosmosdb": "从 Azure Cosmos DB 查询容器",
+      "mongodb": "从 MongoDB 查询集合",
+      "bigquery": "从 Google BigQuery 查询数据集",
+      "athena": "通过 Amazon Athena 查询数据",
+      "kusto": "从 Azure Data Explorer (Kusto) 查询数据",
+      "superset": "从 Apache Superset 浏览数据集",
+      "azure_blob": "从 Azure Blob Storage 加载文件",
+      "s3": "从 Amazon S3 加载文件",
+      "local_folder": "浏览并导入本地文件夹中的文件"
+    },
+    "localFolderDefaultName": "本地文件夹",
     "errors": {
       "fileTooLarge": "文件 {{name}} 太大（{{size}}MB），请使用数据库加载大文件。",
       "failedToParse": "无法解析 {{name}}。",
@@ -90,7 +121,15 @@
       "failedToParseExcel": "无法解析 Excel 文件 {{name}}。",
       "unsupportedFormat": "不支持的文件格式：{{name}}。",
       "unableToParseUrl": "无法从提供的 URL 解析数据。请确保 URL 指向 CSV、JSON 或 JSONL 格式的数据。",
-      "failedToFetch": "获取数据失败：{{message}}。请确保 URL 指向 CSV、JSON 或 JSONL 格式的数据。"
+      "failedToFetch": "获取数据失败：{{message}}。请确保 URL 指向 CSV、JSON 或 JSONL 格式的数据。",
+      "failedToCreateConnector": "创建连接器失败",
+      "failedToConnectFolder": "连接文件夹失败",
+      "failedToOpenFolder": "打开文件夹失败",
+      "failedToDeleteConnector": "删除连接器失败"
+    },
+    "messages": {
+      "connectedTo": "已连接到「{{name}}」",
+      "deletedConnector": "已删除连接器「{{name}}」"
     }
   }
 }

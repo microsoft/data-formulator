@@ -108,8 +108,8 @@ class WorkspaceManager:
                     aw = state.get("activeWorkspace")
                     if isinstance(aw, dict) and aw.get("displayName"):
                         display_name = aw["displayName"]
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Could not read session state for %s", child.name, exc_info=e)
 
             workspaces.append({
                 "id": child.name,

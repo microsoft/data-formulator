@@ -962,8 +962,20 @@ function vlApplyFieldContext(
 
 /**
  * Apply tooltip configuration to a VL spec.
+ *
+ * Sets a global `numberFormat` with thousand-separator grouping so that
+ * tooltips (and any axis/legend labels without an explicit format) display
+ * numbers like "1,234,567" instead of "1234567".
+ *
+ * d3's `","` format uses ~12 significant digits with comma grouping,
+ * which covers all practical numeric ranges without losing precision.
+ * Fields that already have explicit `axis.format` / `legend.format`
+ * (set by vlApplyFieldContext) are unaffected.
  */
 export function vlApplyTooltips(vgObj: any): void {
     if (!vgObj.config) vgObj.config = {};
     vgObj.config.mark = { ...vgObj.config.mark, tooltip: true };
+    if (!vgObj.config.numberFormat) {
+        vgObj.config.numberFormat = ',';
+    }
 }

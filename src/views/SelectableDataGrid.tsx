@@ -269,6 +269,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
     
     // Initialize as true to cover the initial mount delay
     const [isLoading, setIsLoading] = React.useState<boolean>(true);
+    const [isDownloading, setIsDownloading] = React.useState<boolean>(false);
     
     // Clear loading state after first render
     React.useEffect(() => {
@@ -310,13 +311,14 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
     }
 
     const handleDownload = async (format: 'csv' | 'tsv') => {
+        if (isDownloading) return;
         const delimiter = format === 'tsv' ? '\t' : ',';
         const ext = format === 'tsv' ? 'tsv' : 'csv';
         const mime = format === 'tsv' ? 'text/tab-separated-values' : 'text/csv';
 
-        if (virtual) {
-            // Virtual table: fetch full data from server
-            try {
+        setIsDownloading(true);
+        try {
+            if (virtual) {
                 const response = await fetchWithIdentity(getUrls().EXPORT_TABLE_CSV, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -329,18 +331,19 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 a.download = `${tableName}.${ext}`;
                 a.click();
                 URL.revokeObjectURL(a.href);
-            } catch (error) {
-                console.error('Error downloading table:', error);
+            } else {
+                const csvContent = d3.dsvFormat(delimiter).format(rows);
+                const blob = new Blob([csvContent], { type: mime });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${tableName}.${ext}`;
+                a.click();
+                URL.revokeObjectURL(a.href);
             }
-        } else {
-            // Local table: export from in-memory rows
-            const csvContent = d3.dsvFormat(delimiter).format(rows);
-            const blob = new Blob([csvContent], { type: mime });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${tableName}.${ext}`;
-            a.click();
-            URL.revokeObjectURL(a.href);
+        } catch (error) {
+            console.error('Error downloading table:', error);
+        } finally {
+            setIsDownloading(false);
         }
     };
 
@@ -550,14 +553,20 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                             </IconButton>
                         </Tooltip>
                     )}
-                    <Tooltip title={t('dataGrid.downloadAsCsv')}>
-                        <IconButton 
-                            size="small" 
-                            color="primary" 
-                            onClick={() => handleDownload('csv')}
-                        >
-                            <FileDownloadIcon sx={{ fontSize: 18 }} />
-                        </IconButton>
+                    <Tooltip title={isDownloading ? t('dataGrid.downloading') : t('dataGrid.downloadAsCsv')}>
+                        <span>
+                            <IconButton 
+                                size="small" 
+                                color="primary" 
+                                disabled={isDownloading}
+                                onClick={() => handleDownload('csv')}
+                            >
+                                {isDownloading 
+                                    ? <CircularProgress size={16} sx={{ color: 'inherit' }} />
+                                    : <FileDownloadIcon sx={{ fontSize: 18 }} />
+                                }
+                            </IconButton>
+                        </span>
                     </Tooltip>
                 </Box>
             </Paper>

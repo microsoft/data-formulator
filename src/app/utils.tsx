@@ -255,6 +255,41 @@ export function getAgentLanguage(): string {
     return i18n.language.split('-')[0];
 }
 
+/**
+ * Translate a backend message using an optional ``message_code`` / ``content_code``.
+ *
+ * The backend sends English text as the default value plus a code that maps
+ * to a key under ``messages.agent.*`` in the i18n locale files.  If no code
+ * is provided or no translation exists, the original English text is returned.
+ *
+ * @example
+ *   translateBackend(event.message, event.message_code, event.message_params)
+ *   translateBackend(result.content, result.content_code)
+ */
+export function translateBackend(
+    fallback: string,
+    code?: string,
+    params?: Record<string, string>,
+): string {
+    if (!code) return fallback;
+    const key = `messages.${code}`;
+    const translated = i18n.t(key, { ...params, defaultValue: fallback });
+    return translated;
+}
+
+/**
+ * Translate a list of backend option labels using parallel code arrays.
+ */
+export function translateBackendOptions(
+    options: string[],
+    codes?: string[],
+): string[] {
+    if (!codes || codes.length === 0) return options;
+    return options.map((opt, i) =>
+        codes[i] ? translateBackend(opt, codes[i]) : opt,
+    );
+}
+
 import * as vm from 'vm-browserify';
 
 export function usePrevious<T>(value: T): T | undefined {
@@ -563,6 +598,11 @@ export const assembleVegaChart = (
         effectiveMaxStretch = 1 + (effectiveMaxStretch - 1) * 0.3;
     }
 
+    const fieldDisplayNames: Record<string, string> = {};
+    for (const [name, meta] of Object.entries(tableMetadata)) {
+        if (meta.displayName) fieldDisplayNames[name] = meta.displayName;
+    }
+
     return assembleVegaLite({
         data: { values: workingTable },
         semantic_types: semanticTypes,
@@ -577,6 +617,7 @@ export const assembleVegaChart = (
             ...(effectiveMaxStretch != null ? { maxStretch: effectiveMaxStretch } : {}),
             ...assembleOptions,
         },
+        ...(Object.keys(fieldDisplayNames).length > 0 ? { field_display_names: fieldDisplayNames } : {}),
     });
 }
 

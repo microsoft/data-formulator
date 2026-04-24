@@ -602,6 +602,12 @@ export interface ChartAssemblyInput {
      * All fields are optional and have sensible defaults.
      */
     options?: AssembleOptions;
+
+    /**
+     * Localized display names for fields (column name → display label).
+     * When present, used as axis titles and legend headers instead of raw field names.
+     */
+    field_display_names?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------

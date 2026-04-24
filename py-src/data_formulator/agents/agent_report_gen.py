@@ -215,6 +215,12 @@ class ReportGenAgent:
                 response = self._call_llm(messages, tools=INSPECT_TOOLS)
             except Exception as e:
                 logger.warning(f"[ReportAgent] Inspect phase error: {e}")
+                from data_formulator.error_handler import collect_stream_warning
+                collect_stream_warning(
+                    "Report data inspection failed — report may be incomplete",
+                    detail=str(e),
+                    message_code="INSPECT_PHASE_FAILED",
+                )
                 break
 
             if not response or not response.choices:

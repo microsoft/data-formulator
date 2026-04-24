@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import React, { memo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Box, Collapse, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
@@ -25,6 +26,57 @@ export const getStepIconComponent = (line: string) => {
     return AutoAwesomeIcon;
 };
 
+/** A single step line with 2-line clamp + click to expand. */
+const PlanStepItem: React.FC<{
+    step: string;
+    showShimmer: boolean;
+}> = ({ step, showShimmer }) => {
+    const [expanded, setExpanded] = useState(false);
+    const isChecked = step.startsWith('✓');
+    const displayLine = isChecked ? step.slice(2) : step;
+    const IconComp = getStepIconComponent(step);
+
+    return (
+        <Box sx={{
+            display: 'flex', alignItems: 'flex-start', gap: '4px',
+            position: 'relative', overflow: 'hidden',
+            cursor: 'pointer',
+            ...(showShimmer ? {
+                '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0, left: 0, width: '100%', height: '100%',
+                    background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
+                    animation: 'windowWipe 2s ease-in-out infinite',
+                    zIndex: 1, pointerEvents: 'none',
+                },
+                '@keyframes windowWipe': {
+                    '0%': { transform: 'translateX(-100%)' },
+                    '100%': { transform: 'translateX(100%)' },
+                },
+            } : {}),
+        }}
+        onClick={() => setExpanded(prev => !prev)}
+        >
+            <IconComp sx={{ width: 10, height: 10, color: 'text.disabled', flexShrink: 0, mt: '2px' }} />
+            <Typography component="span" sx={{
+                fontSize: '10px',
+                color: showShimmer ? 'text.secondary' : 'text.disabled',
+                fontStyle: 'italic',
+                lineHeight: 1.4,
+                ...(!expanded ? {
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                } : {}),
+            }}>
+                {displayLine}
+            </Typography>
+        </Box>
+    );
+};
+
 /** Shared component to render plan steps as a list with icons.
  *  `activeLastStep` adds a shimmer animation to the last incomplete step (for streaming). 
  *  `filterCreatingChart` hides "creating chart..." lines (already shown as instruction text). */
@@ -46,40 +98,8 @@ export const PlanStepsView: React.FC<{
             {filtered.map((step, idx) => {
                 const isLast = idx === filtered.length - 1;
                 const isChecked = step.startsWith('✓');
-                const displayLine = isChecked ? step.slice(2) : step;
-                const IconComp = getStepIconComponent(step);
                 const showShimmer = activeLastStep && isLast && !isChecked;
-
-                return (
-                    <Box key={idx} sx={{
-                        display: 'flex', alignItems: 'flex-start', gap: '4px',
-                        position: 'relative', overflow: 'hidden',
-                        ...(showShimmer ? {
-                            '&::before': {
-                                content: '""',
-                                position: 'absolute',
-                                top: 0, left: 0, width: '100%', height: '100%',
-                                background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
-                                animation: 'windowWipe 2s ease-in-out infinite',
-                                zIndex: 1, pointerEvents: 'none',
-                            },
-                            '@keyframes windowWipe': {
-                                '0%': { transform: 'translateX(-100%)' },
-                                '100%': { transform: 'translateX(100%)' },
-                            },
-                        } : {}),
-                    }}>
-                        <IconComp sx={{ width: 10, height: 10, color: 'text.disabled', flexShrink: 0, mt: '2px' }} />
-                        <Typography component="span" sx={{
-                            fontSize: '10px',
-                            color: showShimmer ? 'text.secondary' : 'text.disabled',
-                            fontStyle: 'italic',
-                            lineHeight: 1.4,
-                        }}>
-                            {displayLine}
-                        </Typography>
-                    </Box>
-                );
+                return <PlanStepItem key={idx} step={step} showShimmer={showShimmer} />;
             })}
         </Box>
     );
@@ -115,6 +135,7 @@ export interface InteractionEntryCardProps {
 
 export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({ entry, highlighted = false, resolved = false, onClick }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const text = entry.displayContent || entry.content;
     const clickable = !!onClick;
     const clickSx = clickable ? { cursor: 'pointer', '&:hover': { opacity: 0.8 } } : {};
@@ -173,7 +194,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 break;
             case 'clarify':
                 color = resolved ? theme.palette.text.secondary : theme.palette.warning.main;
-                if (resolved) collapsedLabel = 'asked for clarification';
+                if (resolved) collapsedLabel = t('interaction.askedForClarification');
                 break;
             case 'summary':
                 color = theme.palette.text.secondary;

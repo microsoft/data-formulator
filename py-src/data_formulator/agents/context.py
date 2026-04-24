@@ -105,12 +105,38 @@ def build_lightweight_table_context(
                     dtype = 'bool'
                 col_info.append(f"{col}({dtype})")
 
-            return (
-                f"Table: {table_name} (file: {data_file_path}, {num_rows:,} rows)\n"
-                f"  Columns: {', '.join(col_info)}"
-            )
+            lines = [
+                f"Table: {table_name} (file: {data_file_path}, {num_rows:,} rows)",
+                f"  Columns: {', '.join(col_info)}",
+            ]
+
+            # Sample rows so LLM can see actual data without calling tools
+            try:
+                sample = df.head(3).to_string(index=False, max_colwidth=40)
+                lines.append(f"  Sample (first 3 rows):\n{sample}")
+            except Exception:
+                pass
+
+            # Basic numeric stats to reduce exploratory tool calls
+            numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+            if numeric_cols:
+                stats_parts = []
+                for col in numeric_cols[:8]:
+                    stats_parts.append(
+                        f"    {col}: min={df[col].min()}, max={df[col].max()}, "
+                        f"mean={df[col].mean():.2f}"
+                    )
+                lines.append("  Numeric stats:\n" + "\n".join(stats_parts))
+
+            return "\n".join(lines)
         except Exception as e:
             logger.warning(f"Could not read table {table_name}: {e}")
+            from data_formulator.error_handler import collect_stream_warning
+            collect_stream_warning(
+                f"Table '{table_name}' schema unavailable",
+                detail=str(e),
+                message_code="TABLE_SCHEMA_FAILED",
+            )
             return f"Table: {table_name} (error reading schema)"
 
     load_hint = (
@@ -146,16 +172,27 @@ def handle_inspect_source_data(
     """Handle an inspect_source_data tool call.
 
     Returns a data summary string for the requested tables.
+    If a table cannot be read (e.g. not found in workspace), the error
+    is included in the summary instead of crashing the entire request.
     """
     tables_to_inspect = [
         t for t in input_tables
         if t.get("name") in table_names
     ]
     if tables_to_inspect:
-        content = generate_data_summary(
-            tables_to_inspect, workspace=workspace
-        )
+        try:
+            content = generate_data_summary(
+                tables_to_inspect, workspace=workspace
+            )
+        except (FileNotFoundError, KeyError) as exc:
+            logger.warning("Could not generate data summary: %s", exc)
+            from data_formulator.error_handler import collect_stream_warning
+            collect_stream_warning(
+                f"Could not read table data for inspection: {exc}",
+                message_code="TABLE_INSPECT_FAILED",
+            )
+            content = f"Error reading table data: some tables could not be found in the workspace. Available tables may have changed."
     else:
         content = f"No tables found matching: {table_names}"
 
-    return content[:500] + "..." if len(content) > 500 else content
+    return content[:3000] + "..." if len(content) > 3000 else content

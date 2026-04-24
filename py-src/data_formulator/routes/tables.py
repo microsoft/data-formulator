@@ -10,14 +10,14 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 import json
 import gzip
-from flask import request, jsonify, Blueprint, Response
+from flask import request, jsonify, Blueprint, Response, stream_with_context
 import pandas as pd
 from pathlib import Path
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
 from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename
-from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, normalize_text_encoding
+from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, get_file_type, normalize_text_encoding
 from data_formulator.datalake.workspace_metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
 import re
 
@@ -198,26 +198,28 @@ def list_tables():
                     try:
                         schema_info = workspace.get_parquet_schema(table_name)
                         columns = [{"name": c["name"], "type": c["type"]} for c in schema_info.get("columns", [])]
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Could not read parquet schema for %s", table_name, exc_info=e)
                 if not columns:
                     try:
                         df = workspace.read_data_as_df(table_name)
                         columns = [{"name": str(c), "type": str(df[c].dtype)} for c in df.columns]
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Could not read columns for %s", table_name, exc_info=e)
                 row_count = meta.row_count
                 if row_count is None and meta.file_type == "parquet":
                     try:
                         schema_info = workspace.get_parquet_schema(table_name)
                         row_count = schema_info.get("num_rows", 0) or 0
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Could not read row count from parquet for %s", table_name, exc_info=e)
                         row_count = 0
                 if row_count is None:
                     try:
                         df = workspace.read_data_as_df(table_name)
                         row_count = len(df)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Could not read row count for %s", table_name, exc_info=e)
                         row_count = 0
                 sample_rows = []
                 if row_count > 0:
@@ -229,8 +231,8 @@ def list_tables():
                             df = df.head(1000)
                         df = _dedup_dataframe_columns(df)
                         sample_rows = json.loads(df.to_json(orient='records', date_format='iso'))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Could not read sample rows for %s", table_name, exc_info=e)
                 source_metadata = _table_metadata_to_source_metadata(meta)
                 result.append({
                     "name": table_name,
@@ -248,8 +250,7 @@ def list_tables():
                 continue
         return jsonify({"status": "success", "tables": result})
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
         
 
 def _apply_aggregation_and_sample(
@@ -360,8 +361,7 @@ def sample_table():
             "total_row_count": total_row_count,
         })
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 @tables_bp.route('/get-table', methods=['GET'])
 def get_table_data():
@@ -404,8 +404,84 @@ def get_table_data():
             "page_size": page_size,
         })
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
+
+def _read_upload_to_df(
+    content: bytes,
+    file_type: str,
+    *,
+    table_name: str = "",
+    sheet_hint: str | None = None,
+) -> pd.DataFrame:
+    """Parse uploaded file bytes into a DataFrame for parquet conversion.
+
+    For Excel files the target sheet is resolved by
+    :func:`_resolve_excel_sheet`.
+    """
+    buf = io.BytesIO(content)
+    if file_type == "csv":
+        return pd.read_csv(buf)
+    if file_type == "txt":
+        return pd.read_csv(buf, sep="\t")
+    if file_type in ("excel",):
+        sheet = _resolve_excel_sheet(content, table_name, sheet_hint)
+        return pd.read_excel(io.BytesIO(content), sheet_name=sheet)
+    if file_type == "json":
+        return pd.read_json(buf)
+    raise ValueError(f"Cannot convert file_type '{file_type}' to DataFrame")
+
+
+def _resolve_excel_sheet(
+    content: bytes,
+    table_name: str,
+    sheet_hint: str | None = None,
+) -> int | str:
+    """Pick the correct sheet from an Excel workbook.
+
+    Resolution order:
+
+    1. **Validated hint** — if the frontend sent *sheet_hint* **and** that
+       name actually exists in the workbook, use it directly.
+    2. **Suffix match** — for each real sheet name, check whether
+       ``table_name`` ends with ``_<sheet_lower>``.  This handles the
+       common pattern ``query_产品利润_xlsx_sheet1``.
+    3. **Substring match** — looser: ``sheet_lower in table_name``.
+    4. **Fallback** — first sheet (index 0).
+    """
+    try:
+        xls = pd.ExcelFile(io.BytesIO(content))
+        sheet_names = xls.sheet_names
+    except Exception:
+        return 0
+
+    if not sheet_names:
+        return 0
+
+    # 1. Validated frontend hint
+    if sheet_hint:
+        for name in sheet_names:
+            if name == sheet_hint:
+                return name
+        for name in sheet_names:
+            if name.lower() == sheet_hint.lower():
+                return name
+
+    tn_lower = table_name.lower()
+    if not tn_lower:
+        return 0
+
+    # 2. Exact suffix match (strongest signal)
+    for name in sheet_names:
+        if tn_lower.endswith("_" + name.lower()):
+            return name
+
+    # 3. Substring match (weaker)
+    for name in sheet_names:
+        if name.lower() in tn_lower:
+            return name
+
+    return 0
+
 
 @tables_bp.route('/create-table', methods=['POST'])
 def create_table():
@@ -436,26 +512,26 @@ def create_table():
             if replace_source:
                 workspace.delete_tables_by_source_file(safe_name)
 
-            meta = save_uploaded_file(
-                workspace,
-                file.stream,
-                safe_name,
+            file_type = get_file_type(safe_name)
+            content = file.stream.read()
+            content = normalize_text_encoding(content, file_type)
+
+            sheet_hint = request.form.get('sheet_name') or None
+            df = _read_upload_to_df(
+                content, file_type,
                 table_name=sanitized_table_name,
-                overwrite=True,
+                sheet_hint=sheet_hint,
             )
+
+            meta = workspace.write_parquet(df, sanitized_table_name)
+            meta.source_type = "upload"
+            meta.source_file = safe_name
+            meta.original_name = table_name
+            workspace.add_table_metadata(meta)
+
             sanitized_table_name = meta.name
             row_count = meta.row_count
             columns = [c.name for c in (meta.columns or [])]
-            if row_count is None or not columns:
-                df = workspace.read_data_as_df(sanitized_table_name)
-                row_count = len(df)
-                columns = list(df.columns)
-                meta.row_count = row_count
-                meta.columns = [
-                    ColumnInfo(name=str(c), dtype=str(df[c].dtype))
-                    for c in df.columns
-                ]
-                workspace.add_table_metadata(meta)
         else:
             # raw_data can come as a file upload (Blob) or as a form field
             if 'raw_data' in request.files:
@@ -488,8 +564,7 @@ def create_table():
             "columns": columns,
         })
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 @tables_bp.route('/parse-file', methods=['POST'])
@@ -583,8 +658,7 @@ def sync_table_data():
             "row_count": len(df),
         })
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 @tables_bp.route('/delete-table', methods=['POST'])
@@ -601,8 +675,7 @@ def drop_table():
             return jsonify({"status": "error", "message": f"Table '{table_name}' does not exist"}), 404
         return jsonify({"status": "success", "message": f"Table {table_name} dropped"})
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 @tables_bp.route('/upload-db-file', methods=['POST'])
@@ -623,6 +696,65 @@ def download_db_file():
     }), 410
 
 
+_CSV_STREAM_CHUNK_ROWS = 10_000
+
+
+def _stream_csv_from_duckdb(workspace, table_name: str, delimiter: str):
+    """Use DuckDB native COPY to export CSV — bypasses pandas entirely."""
+    import duckdb
+    import tempfile
+
+    parquet_path = workspace.get_parquet_path(table_name)
+    path_escaped = str(parquet_path).replace("\\", "\\\\").replace("'", "''")
+
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".csv")
+    os.close(tmp_fd)
+    try:
+        conn = duckdb.connect(":memory:")
+        try:
+            cols = conn.execute(
+                f"SELECT column_name FROM parquet_schema('{path_escaped}')"
+            ).fetchall()
+            has_row_id = any(c[0] == "#rowId" for c in cols)
+            exclude = ' EXCLUDE ("#rowId")' if has_row_id else ""
+            select_sql = f"SELECT *{exclude} FROM read_parquet('{path_escaped}')"
+
+            copy_opts = f"HEADER, DELIMITER '{delimiter}'"
+            tmp_escaped = tmp_path.replace("\\", "\\\\").replace("'", "''")
+            conn.execute(f"COPY ({select_sql}) TO '{tmp_escaped}' ({copy_opts})")
+        finally:
+            conn.close()
+
+        yield b'\xef\xbb\xbf'
+        with open(tmp_path, "rb") as f:
+            while True:
+                chunk = f.read(65_536)
+                if not chunk:
+                    break
+                yield chunk
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def _stream_csv_from_dataframe(df: pd.DataFrame, delimiter: str):
+    """Stream CSV from a pandas DataFrame in chunks to limit memory."""
+    yield b'\xef\xbb\xbf'
+
+    header_buf = io.StringIO()
+    df.iloc[:0].to_csv(header_buf, index=False, sep=delimiter)
+    yield header_buf.getvalue().encode("utf-8")
+
+    for start in range(0, len(df), _CSV_STREAM_CHUNK_ROWS):
+        chunk_buf = io.StringIO()
+        df.iloc[start : start + _CSV_STREAM_CHUNK_ROWS].to_csv(
+            chunk_buf, index=False, header=False, sep=delimiter
+        )
+        yield chunk_buf.getvalue().encode("utf-8")
+
+
 @tables_bp.route('/export-table-csv', methods=['POST'])
 def export_table_csv():
     """Export a workspace table as CSV (or TSV) file download."""
@@ -638,35 +770,33 @@ def export_table_csv():
             return jsonify({"status": "error", "message": "delimiter must be ',' or '\\t'"}), 400
 
         workspace = _get_workspace()
-
-        if _should_use_duckdb(workspace, table_name):
-            df = workspace.run_parquet_sql(table_name, "SELECT * FROM {parquet} AS t")
-        else:
-            df = workspace.read_data_as_df(table_name)
-
-        df = _dedup_dataframe_columns(df)
-        # Drop internal row-id column if present
-        if '#rowId' in df.columns:
-            df = df.drop(columns=['#rowId'])
-
-        buf = io.StringIO()
-        df.to_csv(buf, index=False, sep=delimiter)
-        csv_bytes = buf.getvalue().encode('utf-8-sig')
-
         ext = 'tsv' if delimiter == '\t' else 'csv'
         mime = 'text/tab-separated-values' if delimiter == '\t' else 'text/csv'
 
+        if _should_use_duckdb(workspace, table_name):
+            gen = _stream_csv_from_duckdb(workspace, table_name, delimiter)
+        else:
+            df = workspace.read_data_as_df(table_name)
+            df = _dedup_dataframe_columns(df)
+            if '#rowId' in df.columns:
+                df = df.drop(columns=['#rowId'])
+            gen = _stream_csv_from_dataframe(df, delimiter)
+
+        from urllib.parse import quote
+        ascii_name = table_name.encode('ascii', 'replace').decode('ascii')
+        utf8_name = quote(table_name)
+        disposition = (
+            f'attachment; filename="{ascii_name}.{ext}"; '
+            f"filename*=UTF-8''{utf8_name}.{ext}"
+        )
+
         return Response(
-            csv_bytes,
+            stream_with_context(gen),
             mimetype=mime,
-            headers={
-                'Content-Disposition': f'attachment; filename="{table_name}.{ext}"',
-                'Content-Length': str(len(csv_bytes)),
-            },
+            headers={'Content-Disposition': disposition},
         )
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 @tables_bp.route('/reset-db-file', methods=['POST'])
@@ -677,8 +807,7 @@ def reset_db_file():
         workspace.cleanup()
         return jsonify({"status": "success", "message": "Workspace reset successfully"})
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 def _is_numeric_duckdb_type(col_type: str) -> bool:
     """Return True if DuckDB/parquet type is numeric for min/max/avg."""
@@ -755,41 +884,51 @@ def analyze_table():
 
         return jsonify({"status": "success", "table_name": table_name, "statistics": stats})
     except Exception as e:
-        safe_msg, status_code = sanitize_db_error_message(e)
-        return jsonify({"status": "error", "message": safe_msg}), status_code
+        classify_and_raise_db_error(e)
 
 
 def sanitize_table_name(table_name: str) -> str:
     """Sanitize a table name for use in the workspace."""
     return parquet_sanitize_table_name(table_name)
 
-def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
-    """Classify *error* and return ``(safe_message, status_code)``.
+def classify_and_raise_db_error(error: Exception) -> None:
+    """Classify a database/workspace error and raise ``AppError``.
 
-    **Security rule**: the returned message must *never* contain text
-    derived from ``str(error)``.  Only pre-defined, human-written strings
-    are returned.  The full exception (including traceback) is written to
-    the server log so operators can still debug.
+    **Security rule**: the raised message is *never* derived from
+    ``str(error)``.  Only pre-defined, human-written strings are used.
+    The full exception is logged server-side for debugging.
     """
-    logger.error("sanitize_db_error_message caught exception", exc_info=error)
+    from data_formulator.errors import AppError, ErrorCode
+
+    logger.error("Database/workspace error", exc_info=error)
 
     error_msg = str(error)
 
-    _SAFE_PATTERNS: list[tuple[str, str, int]] = [
-        # (regex, safe client message, HTTP status)
-        (r"Table.*does not exist",       "The requested table does not exist",            404),
-        (r"Table.*already exists",       "A table with that name already exists",         409),
-        (r"syntax error",                "Query syntax error",                            400),
-        (r"Catalog Error",               "The requested catalog object was not found",    404),
-        (r"Binder Error",                "Invalid query reference",                       400),
-        (r"Invalid input syntax",        "Invalid input syntax",                          400),
-        (r"No such file",                "The requested resource was not found",          404),
-        (r"Permission denied",           "Access denied",                                 403),
-        (r"identity",                    "Identity not found, please refresh the page",   500),
+    _SAFE_PATTERNS: list[tuple[str, str, str, int]] = [
+        # (regex, ErrorCode, safe client message, HTTP status)
+        (r"Table.*does not exist",   ErrorCode.TABLE_NOT_FOUND,   "The requested table does not exist",            404),
+        (r"Table.*already exists",   ErrorCode.INVALID_REQUEST,   "A table with that name already exists",         409),
+        (r"syntax error",            ErrorCode.INVALID_REQUEST,   "Query syntax error",                            400),
+        (r"Catalog Error",           ErrorCode.TABLE_NOT_FOUND,   "The requested catalog object was not found",    404),
+        (r"Binder Error",            ErrorCode.INVALID_REQUEST,   "Invalid query reference",                       400),
+        (r"Invalid input syntax",    ErrorCode.INVALID_REQUEST,   "Invalid input syntax",                          400),
+        (r"No such file",            ErrorCode.TABLE_NOT_FOUND,   "The requested resource was not found",          404),
+        (r"Permission denied",       ErrorCode.ACCESS_DENIED,     "Access denied",                                 403),
+        (r"identity",                ErrorCode.AUTH_REQUIRED,     "Identity not found, please refresh the page",   500),
     ]
 
-    for pattern, safe_msg, status_code in _SAFE_PATTERNS:
+    for pattern, code, safe_msg, status_code in _SAFE_PATTERNS:
         if re.search(pattern, error_msg, re.IGNORECASE):
-            return safe_msg, status_code
+            raise AppError(code, safe_msg, status_code=status_code, detail=error_msg) from error
 
+    raise AppError(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred", status_code=500, detail=error_msg) from error
+
+
+def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
+    """Legacy wrapper — prefer ``classify_and_raise_db_error`` for new code."""
+    from data_formulator.errors import AppError
+    try:
+        classify_and_raise_db_error(error)
+    except AppError as ae:
+        return ae.message, ae.status_code
     return "An unexpected error occurred", 500

@@ -1546,11 +1546,26 @@ export const dataFormulatorSlice = createSlice({
             let derivedTableId = action.meta.arg.id;
             let derivedTable = state.tables.find(t => t.id == derivedTableId)
             if (derivedTable?.derive) {
-                // The response is now an object with code and concepts
                 derivedTable.derive.explanation = codeExplResponse;
             }
-            console.log("fetched codeExpl");
-            console.log(action.payload);
+        })
+        .addCase(fetchCodeExpl.rejected, (state, action) => {
+            if (action.error?.name !== 'AbortError') {
+                state.messages.push({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'code explanation',
+                    value: 'Failed to generate code explanation',
+                });
+            }
+        })
+        .addCase(fetchFieldSemanticType.rejected, (state, action) => {
+            if (action.error?.name !== 'AbortError') {
+                state.messages.push({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'semantic type',
+                    value: 'Failed to infer field semantic types',
+                });
+            }
         })
         .addCase(fetchChartInsight.pending, (state, action) => {
             let chartId = action.meta.arg.chartId;
@@ -1570,7 +1585,13 @@ export const dataFormulatorSlice = createSlice({
         .addCase(fetchChartInsight.rejected, (state, action) => {
             let chartId = action.meta.arg.chartId;
             state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
-            console.error("chart insight failed", action.error);
+            if (action.error?.name !== 'AbortError') {
+                state.messages.push({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'chart insight',
+                    value: 'Failed to generate chart insight',
+                });
+            }
         })
     },
 })

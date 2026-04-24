@@ -49,7 +49,7 @@ def value_handling_func(val):
     try:
         val = float(val)
         val = np.round(val, 5)
-    except:
+    except (ValueError, TypeError):
         pass
 
     if isinstance(val, (list,)):
@@ -277,7 +277,7 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
     
     try:
         values = sorted([make_hashable(x) for x in list(set([make_hashable(x) for x in df[field_name].values])) if x is not None])
-    except:
+    except Exception:
         values = [make_hashable(x) for x in list(set([make_hashable(x) for x in df[field_name].values])) if x is not None]
 
     val_sample = ""
@@ -342,38 +342,40 @@ def generate_data_summary(
         table_name = table['name']
         description = table.get("attached_metadata", "")
 
-        # Read data into DataFrame (handles parquet, csv, excel, json, etc.)
-        df = workspace.read_data_as_df(table_name)
+        try:
+            df = workspace.read_data_as_df(table_name)
+        except (FileNotFoundError, KeyError) as exc:
+            _logger.warning("Could not read table %s for summary: %s", table_name, exc)
+            from data_formulator.error_handler import collect_stream_warning
+            collect_stream_warning(
+                f"Table '{table_name}' data unavailable — it may have been removed or renamed",
+                message_code="TABLE_READ_FAILED",
+            )
+            return f"## {table_name_prefix} {idx + 1}: {table_name}\n- ⚠ Table data unavailable (may have been removed or renamed)"
 
-        # Get filename for display (LLM uses this to generate read_parquet/read_csv calls)
         data_file_path = workspace.get_relative_data_file_path(table_name)
 
         num_rows = len(df)
         num_cols = len(df.columns)
 
-        # Build sections in logical order: Overview → Description → Schema → Examples
         sections = []
 
-        # 1. Table Header with basic stats
         header = f"## {table_name_prefix} {idx + 1}: {table_name}"
         if num_rows > 0:
             header += f" ({num_rows:,} rows × {num_cols} columns)"
         sections.append(header)
         sections.append(f"- **file path:** `{data_file_path}`")
-        sections.append("")  # Empty line for spacing
+        sections.append("")
 
-        # 2. Description (if available) - provides context first
         if description:
             sections.append(f"### Description\n{description}\n")
 
-        # 3. Schema/Fields - core structure information
         fields_summary = '\n'.join([
             '  - ' + get_field_summary(fname, df, field_sample_size, max_val_chars)
             for fname in df.columns
         ])
         sections.append(f"### Schema ({num_cols} fields)\n{fields_summary}\n")
 
-        # 4. Sample data (if requested) - concrete examples last
         if include_data_samples and num_rows > 0:
             sample_df = df.head(row_sample_size)
             sections.append(

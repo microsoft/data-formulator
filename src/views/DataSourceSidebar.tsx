@@ -21,8 +21,14 @@ import {
     Divider,
     Popover,
     Button,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogContentText,
+    DialogActions,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
+import { generateUUID } from '../app/identity';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
 
 import StorageIcon from '@mui/icons-material/Storage';
@@ -225,6 +231,10 @@ const DataSourceSidebarPanel: React.FC<{
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
     const [importing, setImporting] = useState(false);
 
+    // Delete connector confirmation
+    const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
+    const [deleting, setDeleting] = useState(false);
+
     // Session hover tooltip cache: sessionId → summary string
     const [sessionTooltips, setSessionTooltips] = useState<Record<string, string>>({});
     const sessionTooltipFetching = useRef<Set<string>>(new Set());
@@ -244,7 +254,7 @@ const DataSourceSidebarPanel: React.FC<{
     useEffect(() => {
         listWorkspaces()
             .then(list => setSessions(list))    
-            .catch(() => {});
+            .catch(() => { /* session list is best-effort */ });
     }, []);
 
     const handleHoverSession = useCallback((sessionId: string) => {
@@ -256,26 +266,26 @@ const DataSourceSidebarPanel: React.FC<{
                     const tables = (result.state.tables || []) as any[];
                     const charts = (result.state.charts || []) as any[];
                     const parts: string[] = [];
-                    parts.push(`${tables.length} table${tables.length !== 1 ? 's' : ''}`);
-                    if (charts.length > 0) parts.push(`${charts.length} chart${charts.length !== 1 ? 's' : ''}`);
+                    parts.push(t('sidebar.tableCount', { count: tables.length }));
+                    if (charts.length > 0) parts.push(t('sidebar.chartCount', { count: charts.length }));
                     if (tables.length > 0) {
                         const names = tables.slice(0, 3).map((t: any) => t.displayId || t.id || 'unknown');
-                        if (tables.length > 3) names.push(`+${tables.length - 3} more`);
+                        if (tables.length > 3) names.push(t('sidebar.andMore', { count: tables.length - 3 }));
                         parts.push(names.join(', '));
                     }
                     setSessionTooltips(prev => ({ ...prev, [sessionId]: parts.join(' · ') }));
                 } else {
-                    setSessionTooltips(prev => ({ ...prev, [sessionId]: 'Empty workspace' }));
+                    setSessionTooltips(prev => ({ ...prev, [sessionId]: t('sidebar.emptyWorkspace') }));
                 }
             })
             .catch(() => {
-                setSessionTooltips(prev => ({ ...prev, [sessionId]: 'Unable to load info' }));
+                setSessionTooltips(prev => ({ ...prev, [sessionId]: t('sidebar.unableToLoadInfo') }));
             })
             .finally(() => sessionTooltipFetching.current.delete(sessionId));
     }, [sessionTooltips]);
 
     const handleOpenSession = useCallback(async (sessionId: string) => {
-        dispatch(dfActions.setSessionLoading({ loading: true, label: 'Opening workspace...' }));
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('sidebar.openingWorkspace') }));
         try {
             const result = await loadWorkspace(sessionId);
             if (result && Object.keys(result.state).length > 0) {
@@ -306,7 +316,7 @@ const DataSourceSidebarPanel: React.FC<{
                         const now = new Date();
                         const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
                         const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                        const short = crypto.randomUUID().slice(0, 4);
+                        const short = generateUUID().slice(0, 4);
                         const wsId = `session_${date}_${time}_${short}`;
                         dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'default' } }));
                     }
@@ -317,14 +327,14 @@ const DataSourceSidebarPanel: React.FC<{
                 timestamp: Date.now(),
                 type: 'success',
                 component: 'data source sidebar',
-                value: 'Session deleted',
+                value: t('sidebar.sessionDeleted'),
             }));
         } catch {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
                 component: 'data source sidebar',
-                value: 'Failed to delete session',
+                value: t('sidebar.failedDeleteSession'),
             }));
         }
     }, [dispatch, activeWorkspace, handleOpenSession]);
@@ -339,7 +349,7 @@ const DataSourceSidebarPanel: React.FC<{
                 const list: ConnectorInstance[] = data.connectors || [];
                 setConnectors(list);
             })
-            .catch(() => {})
+            .catch(() => { /* connector list is best-effort */ })
             .finally(() => setLoadingConnectors(false));
     }, []);
 
@@ -388,7 +398,7 @@ const DataSourceSidebarPanel: React.FC<{
                     c.id === connectorId ? { ...c, connected: false } : c
                 ));
             }
-        } catch { /* ignore */ }
+        } catch { /* catalog fetch is best-effort; connector remains usable */ }
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
         fetchingRef.current.delete(connectorId);
     }, []);
@@ -494,7 +504,7 @@ const DataSourceSidebarPanel: React.FC<{
             const now = new Date();
             const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
             const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-            const short = crypto.randomUUID().slice(0, 4);
+            const short = generateUUID().slice(0, 4);
             const wsId = `session_${date}_${time}_${short}`;
             dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
         }
@@ -530,7 +540,7 @@ const DataSourceSidebarPanel: React.FC<{
                     timestamp: Date.now(),
                     type: 'success',
                     component: 'data source sidebar',
-                    value: `Loaded table "${sourceName}"`,
+                    value: t('sidebar.loadedTable', { name: sourceName }),
                 }));
                 closePreview();
             })
@@ -539,7 +549,7 @@ const DataSourceSidebarPanel: React.FC<{
                     timestamp: Date.now(),
                     type: 'error',
                     component: 'data source sidebar',
-                    value: `Failed to load "${sourceName}": ${error}`,
+                    value: t('sidebar.failedLoadTable', { name: sourceName, error: String(error) }),
                 }));
             })
             .finally(() => setImporting(false));
@@ -574,12 +584,57 @@ const DataSourceSidebarPanel: React.FC<{
                         timestamp: Date.now(),
                         type: 'success',
                         component: 'data source sidebar',
-                        value: `Refreshed "${sourceName}"`,
+                        value: t('sidebar.refreshedTable', { name: sourceName }),
                     }));
                 }
             })
-            .catch(() => {});
+            .catch(() => {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error',
+                    component: 'data source sidebar', value: 'Failed to refresh table data',
+                }));
+            });
     }, [tableIdentities, dispatch]);
+
+    // ── Delete connector ──────────────────────────────────────────────────
+
+    const handleDeleteConnector = useCallback(async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
+        try {
+            const resp = await fetchWithIdentity(CONNECTOR_URLS.DELETE(deleteTarget.id), { method: 'DELETE' });
+            const data = await resp.json();
+            if (resp.ok || data.status === 'success') {
+                setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
+                setCatalogCache(prev => { const next = { ...prev }; delete next[deleteTarget.id]; return next; });
+                setExpandedSources(prev => { const next = new Set(prev); next.delete(deleteTarget.id); return next; });
+                setTreeExpanded(prev => { const next = { ...prev }; delete next[deleteTarget.id]; return next; });
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'success',
+                    component: 'data source sidebar',
+                    value: t('sidebar.connectorDeleted', { name: deleteTarget.display_name }),
+                }));
+            } else {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'error',
+                    component: 'data source sidebar',
+                    value: data.message || t('sidebar.failedDeleteConnector'),
+                }));
+            }
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: t('sidebar.failedDeleteConnector'),
+            }));
+        } finally {
+            setDeleting(false);
+            setDeleteTarget(null);
+        }
+    }, [deleteTarget, dispatch, t]);
 
     // ── Render ───────────────────────────────────────────────────────────────
 
@@ -670,6 +725,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     py: 0.75,
                                     cursor: 'pointer',
                                     '&:hover': { bgcolor: 'action.hover' },
+                                    '&:hover .delete-connector-btn': { visibility: 'visible' },
                                     userSelect: 'none',
                                 }}
                             >
@@ -695,6 +751,21 @@ const DataSourceSidebarPanel: React.FC<{
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: isExpanded ? 'visible' : 'hidden' }}
                                         >
                                             <RefreshIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                                {connector.deletable && (
+                                    <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
+                                        <IconButton
+                                            size="small"
+                                            className="delete-connector-btn"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDeleteTarget(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
+                                        >
+                                            <DeleteOutlineIcon sx={{ fontSize: 14 }} />
                                         </IconButton>
                                     </Tooltip>
                                 )}
@@ -834,7 +905,7 @@ const DataSourceSidebarPanel: React.FC<{
                         const now = new Date();
                         const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
                         const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                        const short = crypto.randomUUID().slice(0, 4);
+                        const short = generateUUID().slice(0, 4);
                         const wsId = `session_${date}_${time}_${short}`;
                         dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'default' } }));
                     }}
@@ -867,8 +938,8 @@ const DataSourceSidebarPanel: React.FC<{
                             title={(() => {
                                 const info = sessionTooltips[s.id];
                                 const date = s.saved_at ? new Date(s.saved_at).toLocaleDateString() : '';
-                                if (activeWorkspace?.id === s.id) return date ? `Current session · ${date}` : 'Current session';
-                                const base = info || 'Click to open';
+                                if (activeWorkspace?.id === s.id) return date ? t('sidebar.currentSessionWithDate', { date }) : t('sidebar.currentSession');
+                                const base = info || t('sidebar.clickToOpen');
                                 return date ? `${base} · ${date}` : base;
                             })()}
                             placement="right"
@@ -934,7 +1005,7 @@ const DataSourceSidebarPanel: React.FC<{
                             <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{preview.node.name}</Typography>
                             {preview.rowCount != null && (
                                 <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-                                    {Number(preview.rowCount).toLocaleString()} rows
+                                    {t('sidebar.previewRowCount', { count: Number(preview.rowCount).toLocaleString() })}
                                 </Typography>
                             )}
                         </Box>
@@ -960,7 +1031,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     ) : preview.columns.length > 0 ? (
                                         <Box sx={{ mb: 1.5 }}>
                                             <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.5 }}>
-                                                Columns ({preview.columns.length})
+                                                {t('sidebar.previewColumnsHeader', { count: preview.columns.length })}
                                             </Typography>
                                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                                                 {preview.columns.map((col, i) => (
@@ -977,7 +1048,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         </Box>
                                     ) : (
                                         <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
-                                            No preview available
+                                            {t('sidebar.noPreviewAvailable')}
                                         </Typography>
                                     )}
                                 </>
@@ -993,7 +1064,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     {alreadyLoaded ? (
                                         <Button size="small" disabled variant="outlined"
                                             sx={{ textTransform: 'none', fontSize: 12 }}>
-                                            Already loaded
+                                            {t('sidebar.alreadyLoaded')}
                                         </Button>
                                     ) : (
                                         <>
@@ -1004,7 +1075,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             onClick={() => handleImportTable(preview.connectorId, preview.node, true)}
                                             sx={{ textTransform: 'none', fontSize: 12 }}
                                         >
-                                            Load in new workspace
+                                            {t('sidebar.loadInNewWorkspace')}
                                         </Button>
                                         <Button
                                             size="small"
@@ -1013,7 +1084,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             onClick={() => handleImportTable(preview.connectorId, preview.node)}
                                             sx={{ textTransform: 'none', fontSize: 12 }}
                                         >
-                                            {importing ? 'Loading...' : 'Load'}
+                                            {importing ? t('sidebar.loadingEllipsis') : t('sidebar.load')}
                                         </Button>
                                         </>
                                     )}
@@ -1023,6 +1094,44 @@ const DataSourceSidebarPanel: React.FC<{
                     </Box>
                 )}
             </Popover>
+
+            {/* Delete connector confirmation dialog */}
+            <Dialog
+                open={!!deleteTarget}
+                onClose={() => { if (!deleting) setDeleteTarget(null); }}
+            >
+                <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
+                    {t('sidebar.deleteConnectorTitle', { defaultValue: 'Delete connector' })}
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ fontSize: 13 }}>
+                        {t('sidebar.deleteConnectorConfirm', {
+                            name: deleteTarget?.display_name,
+                            defaultValue: `Are you sure you want to delete "{{name}}"? Imported data will not be affected.`,
+                        })}
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setDeleteTarget(null)}
+                        disabled={deleting}
+                        sx={{ textTransform: 'none', fontSize: 12 }}
+                    >
+                        {t('app.cancel', { defaultValue: 'Cancel' })}
+                    </Button>
+                    <Button
+                        onClick={handleDeleteConnector}
+                        disabled={deleting}
+                        color="error"
+                        variant="contained"
+                        sx={{ textTransform: 'none', fontSize: 12 }}
+                    >
+                        {deleting
+                            ? t('sidebar.deletingEllipsis', { defaultValue: 'Deleting...' })
+                            : t('sidebar.deleteConfirmBtn', { defaultValue: 'Delete' })}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
         </Box>
     );

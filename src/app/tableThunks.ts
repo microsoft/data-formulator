@@ -163,13 +163,19 @@ export const loadTable = createAsyncThunk<
                     throw err;
                 }
             } else if (file) {
-                // File upload to workspace
+                // File upload to workspace — backend converts to parquet
                 try {
                     const formData = new FormData();
                     formData.append('file', file);
                     formData.append('table_name', table.id);
                     if (replaceSource) {
                         formData.append('replace_source', 'true');
+                    }
+                    // Sheet hint for multi-sheet Excel: backend validates against real sheets
+                    const srcName = table.source?.fileName || file.name;
+                    if (srcName && table.id.length > srcName.length + 1
+                        && table.id.startsWith(srcName + '-')) {
+                        formData.append('sheet_name', table.id.slice(srcName.length + 1));
                     }
                     
                     const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {

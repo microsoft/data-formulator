@@ -316,4 +316,4 @@ def cleanup_anonymous():
         # On Windows, files may be locked by other processes; treat as
         # best-effort — the identity type flip prevents future prompts.
         logger.warning("Anonymous cleanup partially failed (non-fatal)", exc_info=e)
-        return jsonify(status="ok", deleted=0, warning="Cleanup partially failed")
+        return jsonify(status="warning", deleted=0, message="Cleanup partially failed; some files may still exist")

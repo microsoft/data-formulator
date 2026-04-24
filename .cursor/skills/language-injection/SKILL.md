@@ -20,9 +20,11 @@ Frontend i18n.language  →  Accept-Language header  →  get_language_instructi
 
 | Module | Role |
 |--------|------|
-| `agents/agent_language.py` | `build_language_instruction(lang, mode)` — generates prompt fragments; supports 20 languages; returns `""` for English |
-| `agent_routes.py` → `get_language_instruction()` | Reads `Accept-Language` header, delegates to `build_language_instruction` |
+| `agents/agent_language.py` | `build_language_instruction(lang, mode)` — generates prompt fragments; `inject_language_instruction()` — injects into system prompts; supports 20 languages; returns `""` for English |
+| `routes/agents.py` → `get_language_instruction()` | Reads `Accept-Language` header, delegates to `build_language_instruction` |
+| `routes/agents.py` → `_get_ui_lang()` | Extracts primary language code from `Accept-Language` header |
 | `src/app/utils.tsx` → `fetchWithIdentity()` | Sets `Accept-Language` header on every API request from `i18n.language` |
+| `src/app/utils.tsx` → `translateBackend()` | Translates backend `message_code` / `content_code` using frontend i18n |
 
 ## Code Examples
 
@@ -39,21 +41,50 @@ messages = [
 ]
 ```
 
-### Agent constructor — marker-based insertion
+### Agent constructor — use inject_language_instruction()
 
 ```python
-if language_instruction:
-    marker = "**About the execution environment:**"
-    idx = self.system_prompt.find(marker)
-    if idx > 0:
-        self.system_prompt = (
-            self.system_prompt[:idx]
-            + language_instruction + "\n\n"
-            + self.system_prompt[idx:]
-        )
-    else:
-        self.system_prompt += "\n\n" + language_instruction
+from data_formulator.agents.agent_language import inject_language_instruction
+
+# Simple append (most agents)
+system_prompt = inject_language_instruction(system_prompt, language_instruction)
+
+# Insert before a marker (complex prompts)
+system_prompt = inject_language_instruction(
+    system_prompt, language_instruction,
+    marker="**About the execution environment:**"
+)
 ```
+
+### Python-side user-visible messages — message_code pattern
+
+For fixed strings in Python that appear in the UI, do NOT translate in Python.
+Return a `message_code` and let the frontend translate:
+
+```python
+# In an Agent or route handler:
+yield {
+    "type": "error",
+    "message": "Output DataFrame is empty (0 rows).",  # English fallback
+    "message_code": "agent.emptyDataframe",             # frontend i18n key
+}
+
+# With parameters:
+result = {
+    "status": "error",
+    "content": f"Fields not found: {missing}",
+    "content_code": "agent.fieldsNotFound",
+    "content_params": {"missing": missing, "available": available},
+}
+```
+
+Frontend consumption:
+```tsx
+import { translateBackend } from '../app/utils';
+const msg = translateBackend(event.message, event.message_code, event.message_params);
+```
+
+Translation keys go in `src/i18n/locales/{en,zh}/messages.json` under `messages.agent.*`.
 
 ## Anti-Patterns (with explanations)
 
@@ -63,6 +94,8 @@ if language_instruction:
 | Global LLM client interceptor | Hidden behavior; can't distinguish full/compact mode; fragile string detection |
 | New `MessageBuilder` class | Duplicates `agent_language.py`; creates parallel conflicting abstractions |
 | Hardcoded `"回答请使用中文"` in prompts | Not configurable; skips the mode system; breaks for other languages |
+| Backend-side translation dict (`agent_messages.py`) | Forces adding every new language to Python; translations should all live in `src/i18n/locales/` |
+| Hardcoded English UI strings in `.tsx` without `t()` | Not translatable; use `useTranslation` + `t('key')` |
 
 ## Adding a New Language
 

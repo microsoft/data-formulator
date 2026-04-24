@@ -44,6 +44,42 @@ pytestmark = [pytest.mark.backend]
 - **Preferred:** `python -m pytest tests/backend/ -q`
 - **Avoid:** `python -m pytest tests/backend/ -v 2>&1`
 
+## Error Handling Test Requirements
+
+When adding a new route or modifying error handling, include tests for:
+
+1. **AppError scenarios** — verify the endpoint returns the correct `ErrorCode` and HTTP status:
+   ```python
+   def test_missing_table_returns_404():
+       with app.test_client() as client:
+           resp = client.get('/api/tables/nonexistent')
+           assert resp.status_code == 404
+           data = resp.get_json()
+           assert data["error"]["code"] == "TABLE_NOT_FOUND"
+   ```
+
+2. **Unexpected exceptions** — verify the global handler catches them:
+   ```python
+   def test_unexpected_error_returns_500():
+       # Mock internal function to raise
+       with patch('module.function', side_effect=RuntimeError("boom")):
+           resp = client.get('/api/endpoint')
+           assert resp.status_code == 500
+           assert resp.get_json()["error"]["code"] == "INTERNAL_ERROR"
+   ```
+
+3. **Streaming endpoints** — verify error events in the NDJSON stream:
+   ```python
+   def test_stream_error_yields_ndjson_event():
+       resp = client.post('/api/my-stream', ...)
+       lines = [json.loads(l) for l in resp.data.decode().strip().split('\n') if l]
+       error_lines = [l for l in lines if l.get('type') == 'error']
+       assert len(error_lines) >= 1
+       assert error_lines[0]['error']['code'] == 'LLM_TIMEOUT'
+   ```
+
+See `tests/backend/errors/test_errors.py` and `test_error_handler.py` for reference implementations.
+
 ## Example
 
 ```python

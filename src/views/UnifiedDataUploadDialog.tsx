@@ -38,6 +38,7 @@ import Backdrop from '@mui/material/Backdrop';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
+import { generateUUID } from '../app/identity';
 import { loadTable } from '../app/tableThunks';
 import { DataSourceConfig, DictTable, ConnectorInstance } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper, readFileText } from '../data/utils';
@@ -203,7 +204,7 @@ const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated 
         setError(null);
         setLoading(true);
         try {
-            const folderName = folderPath.split('/').pop() || folderPath.split('\\').pop() || 'Local Folder';
+            const folderName = folderPath.split('/').pop() || folderPath.split('\\').pop() || t('upload.localFolderDefaultName', { defaultValue: 'Local Folder' });
             const createResp = await fetchWithIdentity(CONNECTOR_URLS.CREATE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -218,7 +219,7 @@ const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated 
             });
             const createData = await createResp.json();
             if (!createResp.ok) {
-                setError(createData.message || 'Failed to create connector');
+                setError(createData.message || t('upload.errors.failedToCreateConnector', { defaultValue: 'Failed to create connector' }));
                 return;
             }
 
@@ -229,7 +230,7 @@ const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated 
                 onConnectorCreated(newConn);
             }
         } catch (err: any) {
-            setError(err.message || 'Failed to connect folder');
+            setError(err.message || t('upload.errors.failedToConnectFolder', { defaultValue: 'Failed to connect folder' }));
         } finally {
             setLoading(false);
         }
@@ -255,7 +256,7 @@ const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated 
             setSelectedPath(pickData.path);
             await connectFolder(pickData.path);
         } catch (err: any) {
-            setError(err.message || 'Failed to open folder');
+            setError(err.message || t('upload.errors.failedToOpenFolder', { defaultValue: 'Failed to open folder' }));
             setShowManualInput(true);
         } finally {
             setLoading(false);
@@ -370,25 +371,26 @@ const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated 
 // Re-export ConnectorInstance from shared types for backward compatibility
 export { type ConnectorInstance } from '../components/ComponentType';
 
-// Map connector source_type (class name) to action-oriented description
-const CONNECTOR_TYPE_DESCRIPTIONS: Record<string, string> = {
-    MySQLDataLoader: 'Query tables from a MySQL database',
-    PostgreSQLDataLoader: 'Query tables from a PostgreSQL database',
-    MSSQLDataLoader: 'Query tables from Microsoft SQL Server',
-    CosmosDBDataLoader: 'Query containers from Azure Cosmos DB',
-    MongoDBDataLoader: 'Query collections from MongoDB',
-    BigQueryDataLoader: 'Query datasets from Google BigQuery',
-    AthenaDataLoader: 'Query data via Amazon Athena',
-    KustoDataLoader: 'Query data from Azure Data Explorer (Kusto)',
-    SupersetLoader: 'Browse datasets from Apache Superset',
-    AzureBlobDataLoader: 'Load files from Azure Blob Storage',
-    S3DataLoader: 'Load files from Amazon S3',
-    LocalFolderDataLoader: 'Browse and import files from a local folder',
+// Map connector source_type (class name) to i18n key suffix
+const CONNECTOR_TYPE_KEY_MAP: Record<string, string> = {
+    MySQLDataLoader: 'mysql',
+    PostgreSQLDataLoader: 'postgresql',
+    MSSQLDataLoader: 'mssql',
+    CosmosDBDataLoader: 'cosmosdb',
+    MongoDBDataLoader: 'mongodb',
+    BigQueryDataLoader: 'bigquery',
+    AthenaDataLoader: 'athena',
+    KustoDataLoader: 'kusto',
+    SupersetLoader: 'superset',
+    AzureBlobDataLoader: 'azure_blob',
+    S3DataLoader: 's3',
+    LocalFolderDataLoader: 'local_folder',
 };
 
 function getConnectorTypeDescription(sourceType: string, connected: boolean, t: (key: string, options?: any) => string): string {
-    const typeDesc = CONNECTOR_TYPE_DESCRIPTIONS[sourceType];
-    if (typeDesc) {
+    const keySuffix = CONNECTOR_TYPE_KEY_MAP[sourceType];
+    if (keySuffix) {
+        const typeDesc = t(`upload.connectorDesc.${keySuffix}`);
         return connected ? typeDesc : t('upload.connectorDisconnected', { defaultValue: 'Not connected' });
     }
     return connected
@@ -711,7 +713,7 @@ const AddConnectionPanel: React.FC<{
                     setDisplayName(data.loaders[0].name);
                 }
             })
-            .catch(() => {});
+            .catch(() => { /* loader types unavailable — form will be empty */ });
     }, []);
 
     const selectedLoader = loaderTypes.find(l => l.type === selectedType);
@@ -740,7 +742,7 @@ const AddConnectionPanel: React.FC<{
         });
         const data = await resp.json();
         if (data.status === 'error') {
-            throw new Error(data.message || 'Failed to create connector');
+            throw new Error(data.message || t('upload.errors.failedToCreateConnector', { defaultValue: 'Failed to create connector' }));
         }
         createdIdRef.current = data.id;
         return data.id;
@@ -758,7 +760,7 @@ const AddConnectionPanel: React.FC<{
                 onCreated({ ...created, connected: true });
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), component: 'connector', type: 'success',
-                    value: `Connected to "${created.display_name}"`,
+                    value: t('upload.messages.connectedTo', { name: created.display_name, defaultValue: 'Connected to "{{name}}"' }),
                 }));
             }
         } catch {
@@ -927,7 +929,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(r => r.json())
             .then(data => setConnectorInstances(data.connectors || []))
-            .catch(() => {});
+            .catch(() => { /* connector list is best-effort */ });
     }, []);
 
     useEffect(() => {
@@ -1889,11 +1891,19 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                         variant="caption"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            fetchWithIdentity(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
-                                                                .then(() => {
-                                                                    console.log('Reset successful');
-                                                                })
-                                                                .catch(err => console.error('Reset failed:', err));
+                                            fetchWithIdentity(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
+                                                .then(() => {
+                                                    dispatch(dfActions.addMessages({
+                                                        timestamp: Date.now(), type: 'success',
+                                                        component: 'data upload', value: 'Example data reset successful',
+                                                    }));
+                                                })
+                                                .catch(() => {
+                                                    dispatch(dfActions.addMessages({
+                                                        timestamp: Date.now(), type: 'error',
+                                                        component: 'data upload', value: 'Failed to reset example data',
+                                                    }));
+                                                });
                                                         }}
                                                         sx={{
                                                             fontSize: '0.7rem',
@@ -2065,10 +2075,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         <Box sx={{ p: 2, height: '100%', boxSizing: 'border-box' }}>
                             <DataLoaderForm
                                 dataLoaderType={conn.id}
+                                loaderType={conn.icon}
                                 paramDefs={conn.params_form}
                                 authInstructions={conn.auth_instructions || ''}
                                 connectorId={conn.id}
-                                autoConnect={conn.connected}
+                                autoConnect={conn.connected || conn.sso_auto_connect}
+                                ssoAutoConnect={conn.sso_auto_connect}
                                 delegatedLogin={conn.delegated_login}
                                 authMode={conn.auth_mode}
                                 onImport={() => {}}
@@ -2094,18 +2106,18 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                             setActiveTab('menu');
                                             dispatch(dfActions.addMessages({
                                                 timestamp: Date.now(), component: 'connector', type: 'success',
-                                                value: `Deleted connector "${conn.display_name}"`,
+                                                value: t('upload.messages.deletedConnector', { name: conn.display_name, defaultValue: 'Deleted connector "{{name}}"' }),
                                             }));
                                         } else {
                                             dispatch(dfActions.addMessages({
                                                 timestamp: Date.now(), component: 'connector', type: 'error',
-                                                value: data.message || 'Failed to delete connector',
+                                                value: data.message || t('upload.errors.failedToDeleteConnector', { defaultValue: 'Failed to delete connector' }),
                                             }));
                                         }
                                     } catch (err: any) {
                                         dispatch(dfActions.addMessages({
                                             timestamp: Date.now(), component: 'connector', type: 'error',
-                                            value: err.message || 'Failed to delete connector',
+                                            value: err.message || t('upload.errors.failedToDeleteConnector', { defaultValue: 'Failed to delete connector' }),
                                         }));
                                     }
                                 } : undefined}
@@ -2213,7 +2225,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             const now = new Date();
                             const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
                             const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                            const short = crypto.randomUUID().slice(0, 4);
+                            const short = generateUUID().slice(0, 4);
                             const wsId = `session_${date}_${time}_${short}`;
                             dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: dataset.name }));
 

@@ -52,6 +52,26 @@
       "errorRefreshingDerivedTable": "Error refreshing derived table ({{table}})",
       "successRefreshedWithDerived": "Successfully refreshed data for ({{table}}) and updated derived tables.",
       "errorRefreshingData": "Error refreshing data: {{error}}"
+    },
+    "agent": {
+      "clarifyExhausted": "I've been exploring extensively but haven't reached a conclusion yet.\n\nCompleted steps so far:\n{{steps}}\n\nHow would you like to proceed?",
+      "clarifyOptionContinue": "Continue exploring",
+      "clarifyOptionSimplify": "Simplify the task",
+      "clarifyOptionPresent": "Present what you have so far",
+      "maxIterationsSummary": "Reached the maximum number of exploration steps.",
+      "emptyDataframe": "Output DataFrame is empty (0 rows). Check filters or data loading.",
+      "fieldsNotFound": "Chart encoding fields not found in output DataFrame: {{missing}}. Available columns: {{available}}",
+      "llmApiError": "LLM API error",
+      "llmEmptyResponse": "LLM returned empty response",
+      "parseActionFailed": "Failed to parse agent action from LLM response",
+      "unknownAction": "Unknown action: {{actionType}}",
+      "noCodeBlock": "No code block found in the response. The model is unable to generate code to complete the task.",
+      "unexpectedError": "Unexpected error",
+      "codeExecError": "An error occurred during code execution.",
+      "unableExtractTables": "Unable to extract tables from response",
+      "unableExtractScript": "Unable to extract script from response",
+      "errorCallingModel": "Error calling model: {{error}}",
+      "noModelConfigured": "No model configured"
     }
   }
 }

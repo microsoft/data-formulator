@@ -24,7 +24,7 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers } from '../app/utils';
+import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers, translateBackend, translateBackendOptions } from '../app/utils';
 import { Chart, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
 
 import { alpha } from '@mui/material/styles';
@@ -416,29 +416,75 @@ export const SimpleChartRecBox: FC = function () {
                     const { done, value } = await reader.read();
                     if (done) break;
                     buffer += decoder.decode(value, { stream: true });
-                    const newLines = buffer.split('data: ').filter(l => l.trim() !== '');
-                    buffer = newLines.pop() || '';
-                    if (newLines.length > 0) {
-                        lines.push(...newLines);
-                        const parsed = lines
-                            .map(l => { try { return JSON.parse(l.trim()); } catch { return null; } })
-                            .filter(Boolean)
-                            .map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' }));
-                        setIdeas(parsed);
+                    const ndjsonLines = buffer.split('\n');
+                    buffer = ndjsonLines.pop() || '';
+                    for (const rawLine of ndjsonLines) {
+                        const trimmed = rawLine.trim();
+                        if (!trimmed) continue;
+                        try {
+                            const parsed = JSON.parse(trimmed);
+                            if (parsed.type === 'error') {
+                                const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
+                                dispatch(dfActions.addMessages([{
+                                    timestamp: Date.now(), type: 'error',
+                                    component: 'exploration', value: msg,
+                                    diagnostics: parsed.error,
+                                }]));
+                                continue;
+                            }
+                            if (parsed.type === 'warning') {
+                                dispatch(dfActions.addMessages([{
+                                    timestamp: Date.now(), type: 'warning',
+                                    component: 'exploration',
+                                    value: parsed.warning?.message ?? 'Warning from server',
+                                }]));
+                                continue;
+                            }
+                            if (parsed.text) {
+                                lines.push(parsed);
+                                setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
+                            }
+                        } catch {
+                            setThinkingBuffer(trimmed);
+                        }
                     }
-                    setThinkingBuffer(buffer.replace(/^data: /, ''));
                 }
             } finally {
                 reader.releaseLock();
             }
-            lines.push(buffer);
-            const finalIdeas = lines
-                .map(l => { try { return JSON.parse(l.trim()); } catch { return null; } })
-                .filter(Boolean)
-                .map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' }));
-            setIdeas(finalIdeas);
+            if (buffer.trim()) {
+                try {
+                    const parsed = JSON.parse(buffer.trim());
+                    if (parsed.type === 'error') {
+                        const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
+                        dispatch(dfActions.addMessages([{
+                            timestamp: Date.now(), type: 'error',
+                            component: 'exploration', value: msg,
+                            diagnostics: parsed.error,
+                        }]));
+                    } else if (parsed.type === 'warning') {
+                        dispatch(dfActions.addMessages([{
+                            timestamp: Date.now(), type: 'warning',
+                            component: 'exploration',
+                            value: parsed.warning?.message ?? 'Warning from server',
+                        }]));
+                    } else if (parsed.text) {
+                        lines.push(parsed);
+                    }
+                } catch { /* partial non-JSON remainder, ignore */ }
+            }
+            setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
         } catch (error) {
-            console.error('Error getting ideas:', error);
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                // user cancelled, no notification needed
+            } else {
+                dispatch(dfActions.addMessages([{
+                    timestamp: Date.now(), type: 'error',
+                    component: 'exploration',
+                    value: t('messages.agent.unexpectedError'),
+                    detail: error instanceof Error ? error.message : String(error),
+                }]));
+            }
         } finally {
             setIsLoadingIdeas(false);
             setThinkingBuffer('');
@@ -689,9 +735,9 @@ export const SimpleChartRecBox: FC = function () {
 
         // Accumulate thinking phase steps for progressive display
         // Steps are joined with \x1E (Record Separator) to avoid splitting multi-line content
-        let thinkingSteps: string[] = [];
-        let pendingThought: string = ''; // accumulate thinking_text content (background reasoning)
         const STEP_SEP = '\x1E';
+        let thinkingSteps: string[] = [];
+        let pendingThought: string = '';
 
         const processStreamingResult = (result: any) => {
             // ── thinking_text: LLM reasoning alongside tool calls ──
@@ -710,11 +756,20 @@ export const SimpleChartRecBox: FC = function () {
             // ── tool_start: agent is calling a tool (explore/inspect) ──
             // (think tool is handled via thinking_text event, not here)
             if (result.type === "tool_start" && result.tool !== "think") {
-                // Flush any pending thought before the tool step
-                pendingThought = '';
+                // Show pending thought as a visible step before the tool step
+                if (pendingThought) {
+                    thinkingSteps.push(pendingThought);
+                    pendingThought = '';
+                }
                 if (result.tool === "explore") {
-                    const codePreview = result.code || '';
-                    thinkingSteps.push(t('dataThread.runningCode') + (codePreview ? `: ${codePreview.split('\n')[0]}...` : ''));
+                    const purpose = result.purpose || '';
+                    if (purpose) {
+                        thinkingSteps.push(t('dataThread.runningCode') + ' ' + purpose);
+                    } else {
+                        const codePreview = result.code || '';
+                        const meaningfulLine = codePreview.split('\n').find((l: string) => l.trim() && !l.trim().startsWith('import ') && !l.trim().startsWith('from ')) || codePreview.split('\n')[0] || '';
+                        thinkingSteps.push(t('dataThread.runningCode') + (meaningfulLine ? `: ${meaningfulLine.trim()}` : ''));
+                    }
                 } else if (result.tool === "inspect_source_data") {
                     const tableNames = result.table_names?.join(', ') || '';
                     thinkingSteps.push(t('dataThread.inspectingData') + (tableNames ? ` ${tableNames}` : ''));
@@ -839,6 +894,15 @@ export const SimpleChartRecBox: FC = function () {
                     }
                 }
 
+                const fieldDisplayNames = refinedGoal?.['field_display_names'];
+                if (fieldDisplayNames && typeof fieldDisplayNames === 'object') {
+                    for (const [fieldName, displayName] of Object.entries(fieldDisplayNames)) {
+                        if (candidateTable.metadata[fieldName] && typeof displayName === 'string') {
+                            candidateTable.metadata[fieldName].displayName = displayName;
+                        }
+                    }
+                }
+
                 createdTables.push(candidateTable);
                 lastCreatedTableId = candidateTableId;
 
@@ -890,12 +954,20 @@ export const SimpleChartRecBox: FC = function () {
 
             // ── clarify: pause and let user respond ──
             if (result.type === "clarify") {
-                const clarifyMsg = result.message || t('chartRec.couldYouClarify');
-                const clarifyOptions: string[] = Array.isArray(result.options) ? result.options : [];
+                const clarifyMsg = translateBackend(result.message, result.message_code, result.message_params) || t('chartRec.couldYouClarify');
+                const rawOptions: string[] = Array.isArray(result.options) ? result.options : [];
+                const clarifyOptions = translateBackendOptions(rawOptions, result.option_codes);
                 if (currentDraftId) {
+                    // Snapshot thinking steps into the clarify entry so they render
+                    // inline (as 二级) between the user prompt and the clarify question.
+                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
+                    thinkingSteps = [];
+                    pendingThought = '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+
                     const clarifyEntry: InteractionEntry = {
                         from: 'data-agent', to: 'user', role: 'clarify',
-                        plan: result.thought || undefined,
+                        plan: priorSteps || result.thought || undefined,
                         content: clarifyMsg,
                         options: clarifyOptions.length > 0 ? clarifyOptions : undefined,
                         timestamp: Date.now(),
@@ -923,9 +995,10 @@ export const SimpleChartRecBox: FC = function () {
             // ── completion: final summary ──
             if (result.type === "completion") {
                 if (lastCreatedTableId) {
+                    const rawSummary = result.content?.summary || "";
                     const summary = result.status === "max_iterations"
-                        ? t('chartRec.maxIterationsReached')
-                        : (result.content?.summary || "");
+                        ? translateBackend(rawSummary, result.content?.summary_code) || t('chartRec.maxIterationsReached')
+                        : rawSummary;
                     if (summary) {
                         const entry: InteractionEntry = {
                             from: 'data-agent', to: 'user', role: 'summary',
@@ -985,20 +1058,53 @@ export const SimpleChartRecBox: FC = function () {
                         if (line.trim() !== "") {
                             try {
                                 const data = JSON.parse(line);
+
+                                // Unified error event: {type: "error", error: {message, ...}}
+                                if (data.type === "error") {
+                                    const errMsg = data.error?.message || data.error_message || t('chartRec.errorDuringExploration');
+                                    setIsChatFormulating(false);
+                                    clearTimeout(timeoutId);
+                                    dispatch(dfActions.addMessages([{
+                                        timestamp: Date.now(), type: 'error',
+                                        component: 'data-agent', value: errMsg,
+                                    }]));
+                                    if (currentDraftId) {
+                                        dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
+                                            from: 'data-agent', to: 'user', role: 'error',
+                                            content: errMsg, timestamp: Date.now(),
+                                        }}));
+                                        dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                                        currentDraftId = null;
+                                    }
+                                    return;
+                                }
+
+                                if (data.type === "warning") {
+                                    dispatch(dfActions.addMessages([{
+                                        timestamp: Date.now(), type: 'warning',
+                                        component: 'data-agent',
+                                        value: data.warning?.message ?? 'Warning from server',
+                                    }]));
+                                    continue;
+                                }
+
                                 if (data.token === token) {
                                     if (data.status === "ok" && data.result) {
                                         allResults.push(data.result);
                                         processStreamingResult(data.result);
                                         if (data.result.type === "completion" || data.result.type === "clarify") { handleCompletion(); return; }
                                     } else if (data.status === "error") {
+                                        const errMsg = data.error_message || t('chartRec.errorDuringExploration');
                                         setIsChatFormulating(false);
                                         clearTimeout(timeoutId);
-                                        // Mark draft as error
+                                        dispatch(dfActions.addMessages([{
+                                            timestamp: Date.now(), type: 'error',
+                                            component: 'data-agent', value: errMsg,
+                                        }]));
                                         if (currentDraftId) {
                                             dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                                                 from: 'data-agent', to: 'user', role: 'error',
-                                                content: data.error_message || t('chartRec.errorDuringExploration'),
-                                                timestamp: Date.now(),
+                                                content: errMsg, timestamp: Date.now(),
                                             }}));
                                             dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
                                             currentDraftId = null;
@@ -1133,15 +1239,26 @@ export const SimpleChartRecBox: FC = function () {
                 buffer = lines.pop() || '';
 
                 for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue;
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
                     try {
-                        const event = JSON.parse(line.slice(6));
+                        const event = JSON.parse(trimmed);
                         if (event.type === 'text_delta') {
                             accumulatedMarkdown += event.content;
                         } else if (event.type === 'error') {
-                            accumulatedMarkdown += `\n\n**Error:** ${event.content}`;
+                            const errMsg = event.error?.message || event.content || 'Unknown error';
+                            accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
+                            dispatch(dfActions.addMessages([{
+                                timestamp: Date.now(), type: 'error',
+                                component: 'report-agent', value: errMsg,
+                            }]));
+                        } else if (event.type === 'warning') {
+                            dispatch(dfActions.addMessages([{
+                                timestamp: Date.now(), type: 'warning',
+                                component: 'report-agent',
+                                value: event.warning?.message ?? 'Warning from server',
+                            }]));
                         }
-                        // Stream update to report view
                         const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
                         dispatch(dfActions.updateGeneratedReportContent({
                             id: reportId,
@@ -1563,7 +1680,7 @@ export const SimpleChartRecBox: FC = function () {
                         </IconButton>
                     </Tooltip>
                     {/* Agent mode toggle */}
-                    <Tooltip title={`Switch to ${selectedAgent === 'explore' ? 'Report' : 'Explore'} mode`}>
+                    <Tooltip title={selectedAgent === 'explore' ? t('chartRec.switchToReport') : t('chartRec.switchToExplore')}>
                         <Button
                             size="small"
                             onClick={() => setSelectedAgent(prev => prev === 'explore' ? 'report' : 'explore')}
@@ -1585,7 +1702,7 @@ export const SimpleChartRecBox: FC = function () {
                             {selectedAgent === 'explore'
                                 ? <AutoGraphIcon sx={{ fontSize: '10px !important' }} />
                                 : <DescriptionOutlinedIcon sx={{ fontSize: '10px !important' }} />}
-                            {selectedAgent === 'explore' ? 'Explore' : 'Report'}
+                            {selectedAgent === 'explore' ? t('chartRec.modeExplore') : t('chartRec.modeReport')}
                         </Button>
                     </Tooltip>
                 </Box>

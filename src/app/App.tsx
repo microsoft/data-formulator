@@ -13,7 +13,7 @@ import {
     DEFAULT_ROW_LIMIT,
     DEFAULT_ROW_LIMIT_EPHEMERAL,
 } from './dfSlice'
-import { getBrowserId } from './identity';
+import { getBrowserId, generateUUID } from './identity';
 import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
 import type { AuthInfo } from './oidcConfig';
 import { OidcCallback } from './OidcCallback';
@@ -60,7 +60,7 @@ import {
 import MuiAppBar from '@mui/material/AppBar';
 import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
 
-import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+import AddIcon from '@mui/icons-material/Add';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
@@ -282,19 +282,19 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
         try { await saveWorkspaceState(getSerializableState(store.getState())); } catch { /* best effort */ }
         const wsEntry = workspaces.find(w => w.id === wsId);
         setLoading(true);
-        dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.openingWorkspace') }));
         onClose();
         try {
             const result = await loadWorkspace(wsId);
             if (result) {
                 const displayName = result.displayName || wsEntry?.display_name || wsId;
                 dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: wsId, displayName } }));
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: `Opened session "${displayName}"` }));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.openedSession', { name: displayName }) }));
             } else {
-                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: 'Failed to open workspace' }));
+                dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
             }
         } catch (e) {
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: 'Failed to open workspace' }));
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "error", value: t('workspace.failedToOpenWorkspace') }));
         }
         setLoading(false);
         dispatch(dfActions.setSessionLoading({ loading: false }));
@@ -309,7 +309,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
         try {
             await deleteWorkspace(workspaceId);
             setWorkspaces(prev => prev.filter(s => s.id !== workspaceId));
-            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: `Deleted session "${workspaceId}"` }));
+            dispatch(dfActions.addMessages({ timestamp: Date.now(), component: "Workspace", type: "success", value: t('workspace.deletedSession', { name: workspaceId }) }));
         } catch (e) { /* ignore */ }
         setConfirmDelete(null);
     };
@@ -317,8 +317,8 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                Sessions
-                <Tooltip title="Refresh list">
+                {t('workspace.sessions')}
+                <Tooltip title={t('workspace.refreshList')}>
                     <IconButton size="small" onClick={fetchWsList} disabled={listLoading} sx={{ color: 'text.secondary' }}>
                         {listLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
                     </IconButton>
@@ -328,7 +328,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
                 {listLoading && workspaces.length === 0 ? (
                     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 1.5 }}>
                         <CircularProgress size={28} />
-                        <Typography variant="body2" color="text.secondary">Loading sessions...</Typography>
+                        <Typography variant="body2" color="text.secondary">{t('workspace.loadingSessions')}</Typography>
                     </Box>
                 ) : (
                     <>
@@ -343,7 +343,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
                             onClick={handleCreate}
                         >
                             <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
-                                + New Session
+                                {t('workspace.newSession')}
                             </Typography>
                         </Box>
                         {workspaces.length > 0 && <Divider sx={{ my: 0.5 }} />}
@@ -361,7 +361,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
                         >
                             <Box sx={{ flex: 1, minWidth: 0 }}>
                                 <Typography variant="body2" fontWeight={activeWorkspace?.id === s.id ? 'bold' : 'normal'} noWrap>
-                                    {s.display_name} {activeWorkspace?.id === s.id ? '(active)' : ''}
+                                    {s.display_name} {activeWorkspace?.id === s.id ? t('workspace.active') : ''}
                                 </Typography>
                                 {s.saved_at && (
                                     <Typography variant="caption" color="text.secondary">
@@ -373,12 +373,12 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
                                 confirmDelete === s.id ? (
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} onClick={e => e.stopPropagation()}>
                                         <Button size="small" color="error" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
-                                            onClick={() => handleDelete(s.id)}>Delete</Button>
+                                            onClick={() => handleDelete(s.id)}>{t('workspace.delete')}</Button>
                                         <Button size="small" sx={{ minWidth: 0, fontSize: 11, textTransform: 'none' }}
-                                            onClick={() => setConfirmDelete(null)}>Cancel</Button>
+                                            onClick={() => setConfirmDelete(null)}>{t('workspace.cancel')}</Button>
                                     </Box>
                                 ) : (
-                                    <Tooltip title="Delete session">
+                                    <Tooltip title={t('workspace.deleteSession')}>
                                         <IconButton size="small" onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.id); }} sx={{ color: 'text.secondary' }}>
                                             <ClearIcon fontSize="small" />
                                         </IconButton>
@@ -392,7 +392,7 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
                 )}
             </DialogContent>
             <DialogActions>
-                <Button onClick={onClose}>Close</Button>
+                <Button onClick={onClose}>{t('workspace.close')}</Button>
             </DialogActions>
         </Dialog>
     );
@@ -402,6 +402,7 @@ const WorkspaceMenu: React.FC = () => {
     const [pickerOpen, setPickerOpen] = useState(false);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const { t } = useTranslation();
     const diskPersistenceDisabled = false; // all backends support workspace switching
 
     console.log('Rendering WorkspaceMenu, activeWorkspace:', activeWorkspace, 'serverConfig:', serverConfig); // Debug log for rendering and state
@@ -412,7 +413,7 @@ const WorkspaceMenu: React.FC = () => {
 
     return (
         <>
-            <Tooltip title={`Session: ${activeWorkspace?.id || ''}`} placement="bottom">
+            <Tooltip title={t('workspace.sessionTooltip', { name: activeWorkspace?.id || '' })} placement="bottom">
                 <Box 
                     onClick={() => !diskPersistenceDisabled && setPickerOpen(true)}
                     sx={{ 
@@ -442,28 +443,30 @@ const WorkspaceMenu: React.FC = () => {
     );
 };
 
-const CloseWorkspaceButton: React.FC = () => {
+const NewSessionButton: React.FC = () => {
     const dispatch = useDispatch();
-    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
     const state = useSelector((s: DataFormulatorState) => s);
+    const { t } = useTranslation();
 
-    if (!activeWorkspace || tables.length === 0) return null;
-
-    const handleClose = async () => {
+    const handleNewSession = async () => {
         try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
-        dispatch(dfActions.resetState());
+        const now = new Date();
+        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        const short = generateUUID().slice(0, 4);
+        const wsId = `session_${date}_${time}_${short}`;
+        dispatch(dfActions.loadState({
+            tables: [], charts: [], draftNodes: [], conceptShelfItems: [],
+            activeWorkspace: { id: wsId, displayName: 'default' },
+        }));
     };
 
     return (
-        <Button 
-            variant="text" 
-            sx={{ textTransform: 'none' }}
-            onClick={handleClose} 
-            endIcon={<ExitToAppIcon sx={{ fontSize: 18 }} />}
-        >
-            Exit
-        </Button>
+        <Tooltip title={t('workspace.newSessionTooltip')} placement="bottom">
+            <IconButton size="small" onClick={handleNewSession} sx={{ color: 'text.secondary', ml: 0.5 }}>
+                <AddIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+        </Tooltip>
     );
 };
 
@@ -711,6 +714,17 @@ const ConfigDialog: React.FC = () => {
     );  
 }
 
+const ErrorBoundaryFallback: React.FC = () => {
+    const { t } = useTranslation();
+    return (
+        <Box sx={{ width: "100%", height: "100%", display: "flex" }}>
+            <Typography color="gray" sx={{ margin: "150px auto" }}>
+                {t('workspace.errorOccurred')} <Link href="/app">{t('workspace.refreshSession')}</Link>{'. '}{t('workspace.errorPersistHint')}
+            </Typography>
+        </Box>
+    );
+};
+
 const AppShell: FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
@@ -791,6 +805,7 @@ const AppShell: FC = () => {
                         {activeWorkspace && isAppPage && (
                             <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
                                 <WorkspaceMenu />
+                                <NewSessionButton />
                             </Box>
                         )}
                         {isAppPage && (
@@ -800,10 +815,6 @@ const AppShell: FC = () => {
                                 <ConfigDialog />
                                 <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
                                 <ModelSelectionButton />
-                                {activeWorkspace && <>
-                                    <Divider orientation="vertical" variant="middle" flexItem />
-                                    <CloseWorkspaceButton />
-                                </>}
                             </Box>
                         )}
                         {isGalleryPage && (
@@ -936,6 +947,7 @@ const AppShell: FC = () => {
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const dispatch = useDispatch<AppDispatch>();
+    const { t } = useTranslation();
     const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
 
@@ -963,7 +975,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             // Recover orphaned state: tables exist but activeWorkspace was lost
             if (!activeWorkspace && tables.length > 0) {
                 const recoveredId = `recovered_${Date.now()}`;
-                dispatch(dfActions.setActiveWorkspace({ id: recoveredId, displayName: 'Recovered Session' }));
+                dispatch(dfActions.setActiveWorkspace({ id: recoveredId, displayName: t('workspace.recoveredSession') }));
             }
         }
     }, [configLoaded]);
@@ -1149,9 +1161,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
         {
             path: "/",
             element: <AppShell />,
-            errorElement: <Box sx={{ width: "100%", height: "100%", display: "flex" }}>
-                <Typography color="gray" sx={{ margin: "150px auto" }}>An error has occurred, please <Link href="/app">refresh the session</Link>. If the problem still exists, click close session.</Typography>
-            </Box>,
+            errorElement: <ErrorBoundaryFallback />,
             children: [
                 {
                     index: true,

@@ -81,6 +81,7 @@ import { CustomReactTable } from './ReactTable';
 import { InsightIcon } from '../icons';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import { FreeDataViewFC } from './DataView';
+import { formatCellValue } from './ViewUtils';
 
 
 import { dfSelectors } from '../app/dfSlice';
@@ -102,7 +103,8 @@ export { generateChartSkeleton, getDataTable, checkChartAvailability };
 
 export let renderTableChart = (
     chart: Chart, conceptShelfItems: FieldItem[], extTable: any[], 
-    width: number = 120, height: number = 120) => {
+    width: number = 120, height: number = 120,
+    fieldDisplayNames?: Record<string, string>) => {
 
     let fields = Object.entries(chart.encodingMap).filter(([channel, encoding]) => {
         return encoding.fieldID != undefined;
@@ -116,9 +118,11 @@ export let renderTableChart = (
 
     let colDefs = fields.map(field => {
         let name = field.name;
+        const isNumeric = field.type === 'integer' || field.type === 'number';
         return {
-            id: name, label: name, minWidth: 30, align: undefined, 
-            format: (value: any) => `${value}`, source: field.source
+            id: name, label: fieldDisplayNames?.[name] || name, minWidth: 30,
+            align: (isNumeric ? 'right' : undefined) as 'right' | undefined, 
+            format: (value: any) => formatCellValue(value), source: field.source
         }
     })
 
@@ -334,7 +338,13 @@ const VegaChartRenderer: FC<{
     }
 
     if (chart.chartType === "Table") {
-        return visTableRows.length > 0 ? renderTableChart(chart, conceptShelfItems, visTableRows) : <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
+        const displayNames: Record<string, string> = {};
+        if (tableMetadata) {
+            for (const [k, v] of Object.entries(tableMetadata)) {
+                if ((v as any)?.displayName) displayNames[k] = (v as any).displayName;
+            }
+        }
+        return visTableRows.length > 0 ? renderTableChart(chart, conceptShelfItems, visTableRows, 120, 120, Object.keys(displayNames).length > 0 ? displayNames : undefined) : <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }} >
             <InsightIcon fontSize="large"/>
         </Box>;
     }
@@ -544,9 +554,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                 // Else: this response is stale, ignore it
             })
             .catch(error => {
-                // Only show error if this is still the current request
                 if (currentRequestRef.current === requestId) {
-                    console.error('Error sampling table:', error);
+                    setSystemMessage('Failed to sample table data', 'error');
                 }
             });
         } else {

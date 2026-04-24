@@ -45,16 +45,58 @@ from data_formulator.security.sanitize import classify_llm_error
 logger = logging.getLogger(__name__)
 
 
+def _get_ui_lang() -> str:
+    """Extract the primary language code from the Accept-Language header."""
+    return request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0].strip().lower()
+
+
 def get_language_instruction(*, mode: str = "full") -> str:
     """Read the UI language from the Accept-Language header and build the prompt instruction.
 
     mode: "full" for text-heavy agents, "compact" for code-generation agents.
     """
-    lang = request.headers.get('Accept-Language', 'en').split(',')[0].split('-')[0].strip().lower()
-    return build_language_instruction(lang, mode=mode)
+    return build_language_instruction(_get_ui_lang(), mode=mode)
 
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
+
+
+def _try_parse_explore_line(raw_line: str) -> str | None:
+    """Parse a single line from the exploration agent into an NDJSON line.
+
+    The LLM is prompted to output one JSON object per line.  Older prompts
+    used an SSE-style ``data: `` prefix which we strip for compatibility.
+    Non-JSON lines (thinking text, blank lines) are silently dropped.
+    """
+    line = raw_line.strip()
+    if not line:
+        return None
+    if line.startswith("data:"):
+        line = line[5:].lstrip()
+    if not line.startswith("{"):
+        return None
+    try:
+        obj = json.loads(line)
+        return json.dumps(obj, ensure_ascii=False) + "\n"
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def _with_warnings(gen):
+    """Wrap an NDJSON generator to flush accumulated stream warnings.
+
+    Any code running during chunk generation (e.g. agent helpers) may
+    call :func:`collect_stream_warning`.  This wrapper drains the
+    accumulated warnings before each application chunk so the frontend
+    receives them in chronological order.
+    """
+    from data_formulator.error_handler import flush_stream_warnings
+    for chunk in gen:
+        for w in flush_stream_warnings():
+            yield w
+        yield chunk
+    for w in flush_stream_warnings():
+        yield w
 
 
 @agent_bp.after_request
@@ -72,18 +114,6 @@ def _set_cors(response):
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response
-
-@agent_bp.errorhandler(Exception)
-def handle_agent_error(e):
-    """Catch-all error handler to ensure JSON responses instead of HTML error pages."""
-    logger.error("Unhandled error in agent route", exc_info=e)
-    response = flask.jsonify({
-        "status": "error",
-        "error_message": "An unexpected error occurred",
-        "results": [],
-        "result": []
-    })
-    return response, 500
 
 def get_client(model_config):
     # For global models, resolve real credentials from the server-side registry.
@@ -216,6 +246,12 @@ def test_model():
                     "status": 'ok',
                     "message": ""
                 }
+            else:
+                result = {
+                    "model": content['model'],
+                    "status": 'error',
+                    "message": "Model responded but did not pass connectivity check",
+                }
         except Exception as e:
             logger.exception(f"Error testing model {content['model'].get('id', '')}")
             result = {
@@ -224,7 +260,7 @@ def test_model():
                 "message": classify_llm_error(e),
             }
     else:
-        result = {'status': 'error'}
+        result = {'status': 'error', 'message': 'Invalid request format'}
     
     return jsonify(result)
 
@@ -257,9 +293,9 @@ def process_data_on_load_request():
             response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
         except Exception as e:
             logger.exception(e)
-            response = flask.jsonify({ "token": token, "status": "error", "result": [] })
+            response = flask.jsonify({ "token": token, "status": "error", "result": [], "error_message": classify_llm_error(e) })
     else:
-        response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
+        response = flask.jsonify({ "token": -1, "status": "error", "result": [], "error_message": "Invalid request format" })
 
     return response
 
@@ -283,31 +319,27 @@ def clean_data_stream_request():
                 for chunk in agent.stream(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', [])):
                     yield chunk
             except Exception as e:
-                logger.error(e)
+                logger.error("clean-data-stream error", exc_info=e)
+                from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+                from data_formulator.errors import AppError, ErrorCode
                 if 'unable to download html from url' in str(e):
-                    error_data = { 
-                        "token": token, 
-                        "status": "error", 
-                        "result": 'this website doesn\'t allow us to download html from url :(' 
-                    }
+                    yield stream_error_event(AppError(
+                        ErrorCode.DATA_LOAD_ERROR,
+                        "This website doesn't allow us to download HTML from URL",
+                        status_code=400,
+                    ), token=token)
                 else:
-                    error_data = { 
-                        "token": token, 
-                        "status": "error", 
-                        "result": 'unable to process data clean request' 
-                    }
-                yield '\n' + json.dumps(error_data, ensure_ascii=False) + '\n'
+                    yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
         else:
-            error_data = { 
-                "token": -1, 
-                "status": "error", 
-                "result": "Invalid request format" 
-            }
-            yield '\n' + json.dumps(error_data, ensure_ascii=False) + '\n'
+            from data_formulator.error_handler import stream_error_event
+            from data_formulator.errors import AppError, ErrorCode
+            yield stream_error_event(AppError(
+                ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
+            ))
 
     response = Response(
-        stream_with_context(generate()),
-        mimetype='application/json',
+        stream_with_context(_with_warnings(generate())),
+        mimetype='application/x-ndjson',
     )
     return response
 
@@ -323,7 +355,8 @@ def sort_data_request():
         try:
             client = get_client(content['model'])
 
-            agent = SortDataAgent(client=client)
+            language_instruction = get_language_instruction(mode="compact")
+            agent = SortDataAgent(client=client, language_instruction=language_instruction)
             candidates = agent.run(content['field'], content['items'])
 
             candidates = candidates if candidates != None else []
@@ -332,7 +365,7 @@ def sort_data_request():
             logger.error("Error in sort-data", exc_info=e)
             response = flask.jsonify({ "token": token, "status": "error", "result": [], "error_message": classify_llm_error(e) })
     else:
-        response = flask.jsonify({ "token": -1, "status": "error", "result": [] })
+        response = flask.jsonify({ "token": -1, "status": "error", "result": [], "error_message": "Invalid request format" })
 
     return response
 
@@ -438,7 +471,7 @@ def derive_data():
             logger.error("Error in derive-data", exc_info=e)
             response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": classify_llm_error(e) })
     else:
-        response = flask.jsonify({ "token": "", "status": "error", "results": [] })
+        response = flask.jsonify({ "token": "", "status": "error", "results": [], "error_message": "Invalid request format" })
 
     return response
 
@@ -494,17 +527,16 @@ def data_agent_streaming():
             identity_id = get_identity_id()
 
             if not identity_id:
-                yield json.dumps({
-                    "token": token,
-                    "status": "error",
-                    "result": {"type": "error", "error_message": "Identity ID required"},
-                }, ensure_ascii=False) + '\n'
+                from data_formulator.error_handler import stream_error_event
+                from data_formulator.errors import AppError, ErrorCode
+                yield stream_error_event(AppError(
+                    ErrorCode.AUTH_REQUIRED, "Identity ID required", status_code=401,
+                ), token=token)
                 return
 
             workspace = get_workspace(identity_id)
 
             language_instruction = get_language_instruction(mode="full")
-            rec_language_instruction = get_language_instruction(mode="compact")
 
             try:
                 agent = DataAgent(
@@ -513,7 +545,6 @@ def data_agent_streaming():
                     agent_exploration_rules=agent_exploration_rules,
                     agent_coding_rules=agent_coding_rules,
                     language_instruction=language_instruction,
-                    rec_language_instruction=rec_language_instruction,
                     max_iterations=max_iterations,
                     max_repair_attempts=max_repair_attempts,
                 )
@@ -551,26 +582,21 @@ def data_agent_streaming():
 
             except Exception as e:
                 logger.error("Error in data-agent-streaming", exc_info=e)
-                yield json.dumps({
-                    "token": token,
-                    "status": "error",
-                    "result": None,
-                    "error_message": classify_llm_error(e),
-                }, ensure_ascii=False) + '\n'
+                from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+                yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
 
             logger.setLevel(logging.WARNING)
 
         else:
-            yield json.dumps({
-                "token": "",
-                "status": "error",
-                "result": None,
-                "error_message": "Invalid request format",
-            }, ensure_ascii=False) + '\n'
+            from data_formulator.error_handler import stream_error_event
+            from data_formulator.errors import AppError, ErrorCode
+            yield stream_error_event(AppError(
+                ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
+            ))
 
     response = Response(
-        stream_with_context(generate()),
-        mimetype='application/json',
+        stream_with_context(_with_warnings(generate())),
+        mimetype='application/x-ndjson',
     )
     return response
 
@@ -661,7 +687,7 @@ def refine_data():
             logger.error("Error in refine-data", exc_info=e)
             response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": classify_llm_error(e) })
     else:
-        response = flask.jsonify({ "token": "", "status": "error", "results": []})
+        response = flask.jsonify({ "token": "", "status": "error", "results": [], "error_message": "Invalid request format"})
 
     return response
 
@@ -766,6 +792,7 @@ def get_recommendation_questions():
                                             agent_exploration_rules=agent_exploration_rules,
                                             language_instruction=get_language_instruction())
             try:
+                text_buf = ""
                 for chunk in agent.run(
                     input_tables,
                     start_question=start_question,
@@ -776,22 +803,30 @@ def get_recommendation_questions():
                     exploration_thread=exploration_thread,
                     current_data_sample=current_data_sample,
                 ):
-                    yield chunk
+                    text_buf += chunk
+                    while "\n" in text_buf:
+                        line, text_buf = text_buf.split("\n", 1)
+                        ndjson_line = _try_parse_explore_line(line)
+                        if ndjson_line:
+                            yield ndjson_line
+                if text_buf.strip():
+                    ndjson_line = _try_parse_explore_line(text_buf)
+                    if ndjson_line:
+                        yield ndjson_line
             except Exception as e:
                 logger.exception("get-recommendation-questions failed")
-                error_data = {
-                    "content": classify_llm_error(e)
-                }
-                yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
+                from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+                yield stream_error_event(classify_and_wrap_llm_error(e))
         else:
-            error_data = { 
-                "content": "Invalid request format" 
-            }
-            yield 'error: ' + json.dumps(error_data, ensure_ascii=False) + '\n'
+            from data_formulator.errors import AppError, ErrorCode
+            from data_formulator.error_handler import stream_error_event
+            yield stream_error_event(AppError(
+                ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
+            ))
 
     response = Response(
-        stream_with_context(generate()),
-        mimetype='application/json',
+        stream_with_context(_with_warnings(generate())),
+        mimetype='application/x-ndjson',
     )
     return response
 
@@ -834,22 +869,21 @@ def generate_report_chat():
                     other_threads=other_threads,
                     primary_tables=primary_tables,
                 ):
-                    yield 'data: ' + json.dumps(event, ensure_ascii=False) + '\n'
+                    yield json.dumps(event, ensure_ascii=False) + '\n'
             except Exception as e:
                 logger.exception("generate-report-chat failed")
-                yield 'data: ' + json.dumps({
-                    "type": "error",
-                    "content": classify_llm_error(e),
-                }, ensure_ascii=False) + '\n'
+                from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+                yield stream_error_event(classify_and_wrap_llm_error(e))
         else:
-            yield 'data: ' + json.dumps({
-                "type": "error",
-                "content": "Invalid request format",
-            }, ensure_ascii=False) + '\n'
+            from data_formulator.error_handler import stream_error_event
+            from data_formulator.errors import AppError, ErrorCode
+            yield stream_error_event(AppError(
+                ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
+            ))
 
     response = Response(
-        stream_with_context(generate()),
-        mimetype='text/event-stream',
+        stream_with_context(_with_warnings(generate())),
+        mimetype='application/x-ndjson',
     )
     return response
 
@@ -1041,7 +1075,8 @@ def workspace_summary():
         client = get_client(content['model'])
         ctx = content.get('context', {})
 
-        agent = SimpleAgents(client=client)
+        language_instruction = get_language_instruction(mode="compact")
+        agent = SimpleAgents(client=client, language_instruction=language_instruction)
         summary = agent.workspace_summary(
             table_names=ctx.get('tables', []),
             user_query=ctx.get('userQuery', ''),
@@ -1050,7 +1085,7 @@ def workspace_summary():
 
     except Exception as e:
         logger.warning(f"Failed to generate workspace summary: {e}")
-        return jsonify(status="error", summary=""), 500
+        return jsonify(status="error", summary="", error_message=classify_llm_error(e)), 500
 
 
 # ---------------------------------------------------------------------------
@@ -1205,16 +1240,17 @@ def data_loading_chat():
 
         except Exception as e:
             logger.exception("data-loading-chat error")
+            safe_msg = classify_llm_error(e)
             yield json.dumps({
                 "type": "error",
-                "error": str(e),
+                "error": safe_msg,
             }, ensure_ascii=False) + "\n"
             yield json.dumps({
                 "type": "done",
-                "full_text": f"Error: {e}",
+                "full_text": f"Error: {safe_msg}",
             }, ensure_ascii=False) + "\n"
 
     return Response(
-        stream_with_context(generate()),
+        stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )

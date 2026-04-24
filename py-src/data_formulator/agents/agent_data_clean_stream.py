@@ -230,7 +230,7 @@ class DataCleanAgentStream(object):
                 'content': tables, 
             }
         else:
-            result = {'status': 'other error', 'content': 'unable to extract tables from response'}
+            result = {'status': 'other error', 'content': 'unable to extract tables from response', 'content_code': 'agent.unableExtractTables'}
 
         result['dialog'] = [*messages, {"role": "assistant", "content": accumulated_content}]
         result['agent'] = 'DataCleanAgentStream'

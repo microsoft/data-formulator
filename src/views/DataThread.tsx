@@ -1202,21 +1202,71 @@ let SingleThreadGroupView: FC<{
         ];
     };
 
-    /** Append timeline items for a running or clarifying agent draft. */
+    /** Append timeline items for a running or clarifying agent draft.
+     *
+     *  When the interaction contains a clarify entry (with a `plan` snapshot
+     *  of the first-round thinking steps), the rendering is split:
+     *    1. Entries before clarify (user prompt)
+     *    2. ThinkingStepsBanner for first-round steps (from clarify.plan)
+     *    3. Clarify entry + user response entries
+     *    4. ThinkingStepsBanner for second-round steps (from runningPlan)
+     */
     const pushAgentDraftItems = (
         tableId: string,
         triggerType: 'trigger' | 'leaf-trigger',
         highlighted: boolean,
     ) => {
-        if (runningAgentTableIds.has(tableId)) {
-            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
-            const draftInteraction = runningDraft?.derive?.trigger?.interaction;
-            if (draftInteraction && draftInteraction.length > 0) {
-                pushInteractionEntries(draftInteraction, tableId, triggerType, highlighted, 'agent-running-entry');
-                const runningPlan = runningDraft?.derive?.runningPlan;
-                // Split running plan into step lines (\x1E = Record Separator between steps)
+        const renderSplitByClarity = (
+            interaction: InteractionEntry[],
+            runningPlan: string | undefined,
+            isRunning: boolean,
+            keyPrefix: string,
+        ) => {
+            const clarifyIdx = interaction.findIndex(e => e.role === 'clarify');
+            if (clarifyIdx < 0) {
+                // No clarify — render all entries then ThinkingStepsBanner
+                pushInteractionEntries(interaction, tableId, triggerType, highlighted, keyPrefix);
                 const planLines = (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
-                // Single timeline entry with all steps rendered inside
+                timelineItems.push({
+                    key: `agent-thinking-${tableId}`,
+                    type: triggerType,
+                    highlighted,
+                    isRunning,
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }),
+                });
+                return;
+            }
+
+            // Split at the clarify entry
+            const beforeClarify = interaction.slice(0, clarifyIdx);
+            const clarifyAndAfter = interaction.slice(clarifyIdx);
+            const clarifyEntry = interaction[clarifyIdx];
+
+            // 1. Entries before clarify (user prompt etc.)
+            if (beforeClarify.length > 0) {
+                pushInteractionEntries(beforeClarify, tableId, triggerType, highlighted, `${keyPrefix}-pre`);
+            }
+
+            // 2. First-round thinking steps (snapshotted in clarify entry's plan)
+            if (clarifyEntry.plan) {
+                const priorLines = clarifyEntry.plan.split('\n').filter((l: string) => l.trim());
+                if (priorLines.length > 0) {
+                    timelineItems.push({
+                        key: `agent-thinking-prior-${tableId}`,
+                        type: triggerType,
+                        highlighted,
+                        isRunning: false,
+                        element: ThinkingStepsBanner(priorLines, { px: 1, py: 0.5 }),
+                    });
+                }
+            }
+
+            // 3. Clarify + response entries
+            pushInteractionEntries(clarifyAndAfter, tableId, triggerType, highlighted, `${keyPrefix}-post`, { isClarifying: false, tableId });
+
+            // 4. Second-round thinking steps (current runningPlan)
+            if (isRunning) {
+                const planLines = (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
                 timelineItems.push({
                     key: `agent-thinking-${tableId}`,
                     type: triggerType,
@@ -1224,6 +1274,19 @@ let SingleThreadGroupView: FC<{
                     isRunning: true,
                     element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }),
                 });
+            }
+        };
+
+        if (runningAgentTableIds.has(tableId)) {
+            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
+            const draftInteraction = runningDraft?.derive?.trigger?.interaction;
+            if (draftInteraction && draftInteraction.length > 0) {
+                renderSplitByClarity(
+                    draftInteraction,
+                    runningDraft?.derive?.runningPlan,
+                    true,
+                    'agent-running-entry',
+                );
             } else {
                 const runningAction = runningAgentTableIds.get(tableId);
                 const message = runningAction?.description || t('dataThread.working');
@@ -1239,8 +1302,12 @@ let SingleThreadGroupView: FC<{
             const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
             const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
             if (clarifyInteraction && clarifyInteraction.length > 0) {
-                pushInteractionEntries(clarifyInteraction, tableId, triggerType, highlighted, 'agent-clarify-entry', { isClarifying: false, tableId });
-                // Mark the last clarify entry with isClarifying so the gutter shows the hourglass
+                renderSplitByClarity(
+                    clarifyInteraction,
+                    undefined,
+                    false,
+                    'agent-clarify-entry',
+                );
                 const lastItem = timelineItems[timelineItems.length - 1];
                 if (lastItem?.interactionEntry?.role === 'clarify') lastItem.isClarifying = true;
             } else {

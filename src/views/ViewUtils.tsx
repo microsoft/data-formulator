@@ -45,6 +45,37 @@ export const getIconFromType = (t: Type | undefined): JSX.Element => {
     return <CommitIcon sx={{opacity: 0.3}} fontSize="inherit" />;
 };
 
+/**
+ * Format a cell value for display in data tables.
+ *
+ * - Numbers get thousand separators (e.g. 1,234,567)
+ * - Floats are capped at a reasonable number of decimal places
+ * - Non-numbers pass through as strings
+ */
+export const formatCellValue = (value: any): string => {
+    if (value == null) return '';
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value)) return String(value);
+        if (Number.isInteger(value)) {
+            return value.toLocaleString('en-US');
+        }
+        // Determine meaningful decimal places: use up to 4, but trim trailing zeros
+        return value.toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 4,
+        });
+    }
+    if (typeof value === 'boolean') return String(value);
+    if (typeof value === 'object') return String(value);
+    return String(value);
+};
+
+/** Returns 'right' for numeric types, undefined (left) for everything else. */
+export const getColumnAlign = (dataType: Type | undefined): 'right' | undefined => {
+    if (dataType === Type.Number || dataType === Type.Integer) return 'right';
+    return undefined;
+};
+
 export const getIconFromDtype = (t: "quantitative" | "nominal" | "ordinal" | "temporal" | "auto"): JSX.Element => {
     switch (t) {
         case "quantitative":

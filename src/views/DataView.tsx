@@ -15,6 +15,7 @@ import { DataFormulatorState, dfActions, dfSelectors, FocusedId } from '../app/d
 import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';
 import { SelectableDataGrid } from './SelectableDataGrid';
+import { formatCellValue, getColumnAlign } from './ViewUtils';
 
 export interface FreeDataViewProps {
 }
@@ -83,14 +84,15 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
 
         let colDefs = targetTable ? targetTable.names.map((name, i) => {
             const { minWidth, width } = calculateColumnWidth(name);
+            const dataType = targetTable?.metadata[name].type as Type;
             return {
                 id: name, 
-                label: name, 
+                label: targetTable?.metadata[name]?.displayName || name, 
                 minWidth, 
                 width, 
-                align: undefined, 
-                format: (value: any) => <Typography fontSize="inherit">{`${value}`}</Typography>, 
-                dataType: targetTable?.metadata[name].type as Type,
+                align: getColumnAlign(dataType), 
+                format: (value: any) => <Typography fontSize="inherit">{formatCellValue(value)}</Typography>, 
+                dataType,
                 source: conceptShelfItems.find(f => f.name == name)?.source || "original", 
             };
         }) : [];
