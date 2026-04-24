@@ -1,6 +1,9 @@
 # Error Handling Skill
 
-DF 统一错误处理体系。在新增 API 端点、修改错误处理、添加前端 API 调用时使用。
+Unified error handling system for DF. Use when adding API endpoints, modifying error handling, or adding frontend API calls.
+
+> **Prerequisites**: Read `dev-guides/2.log-sanitization.md` (log sanitization) before development.
+> If your work introduces new error handling patterns or conventions, update this file and related dev-guides accordingly.
 
 ## Architecture Overview
 
@@ -226,12 +229,64 @@ When an error isn't reaching the frontend:
 5. **Check global handler** — Verify `register_error_handlers(app)` is called in `app.py`
 6. **Check blueprint handlers** — Blueprint-level `errorhandler(Exception)` takes priority over global handlers. The `agent_bp.errorhandler(Exception)` has been removed; verify no new blueprint handlers have been added.
 
+## Log Sanitization (Sensitive Data in Server Logs)
+
+Server-side logs must never leak passwords, tokens, API keys, or connection strings.
+The project uses a defense-in-depth approach with two layers.
+
+### Layer 1: Explicit Utilities (call-site)
+
+```python
+from data_formulator.security.log_sanitizer import (
+    sanitize_url, sanitize_params, redact_token,
+)
+
+# Dict with credentials → sanitize_params()
+log.info("Connecting with: %s", sanitize_params(params))
+
+# URL that may embed credentials → sanitize_url()
+logger.info("Issuer: %s", sanitize_url(issuer_url))
+
+# Token/API key → redact_token()
+logger.debug("Token: %s", redact_token(token))
+```
+
+### Layer 2: SensitiveDataFilter (global safety net)
+
+Registered in `app.py:configure_logging()`. Automatically redacts:
+- URL credentials (`://user:pass@host`)
+- `Bearer` tokens
+- `password=xxx`, `api_key=xxx`, `secret=xxx` patterns
+- JWT-like base64 strings
+- Python dict repr with sensitive keys
+
+Disable with `LOG_SANITIZE=false` for local debugging only.
+
+### When to Use What
+
+| Data | Utility | Why not just filter? |
+|------|---------|---------------------|
+| `dict` with password keys | `sanitize_params()` | Filter can't identify arbitrary password values in dict repr |
+| URL from config/env | `sanitize_url()` | Explicit is clearer; filter is backup |
+| Token/key value | `redact_token()` | Explicit is clearer; filter is backup |
+| Normal text | Nothing | Filter handles edge cases |
+
+### New Module Checklist
+
+When adding a module that handles credentials or external services:
+
+1. Audit all `logger.*()` calls for credential/URL/token logging
+2. Use `sanitize_params()` for dicts, `sanitize_url()` for URLs, `redact_token()` for tokens
+3. Prefer `type(exc).__name__` over `str(exc)` in warning-level logs
+4. If introducing new credential key names, add to `SENSITIVE_KEYS` in `log_sanitizer.py`
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `py-src/data_formulator/errors.py` | `ErrorCode` enum + `AppError` exception |
 | `py-src/data_formulator/error_handler.py` | Global handlers, `classify_and_wrap_llm_error`, `stream_error_event` |
+| `py-src/data_formulator/security/log_sanitizer.py` | `sanitize_url`, `sanitize_params`, `redact_token`, `SensitiveDataFilter` |
 | `py-src/data_formulator/routes/tables.py` | `classify_and_raise_db_error` (database/workspace errors) |
 | `py-src/data_formulator/data_connector.py` | `classify_and_raise_connector_error` (connector errors) |
 | `py-src/data_formulator/security/sanitize.py` | `classify_llm_error` (internal), `sanitize_error_message` |

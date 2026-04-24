@@ -2,6 +2,9 @@
 
 Detailed guide for the language injection system. The short version lives in `.cursor/rules/language-injection-conventions.mdc`.
 
+> **Prerequisites**: Read relevant guides in `dev-guides/` (e.g. streaming protocol, log sanitization) before development.
+> If your work introduces new language injection patterns or conventions, update this file and related dev-guides accordingly.
+
 ## Architecture
 
 ```
