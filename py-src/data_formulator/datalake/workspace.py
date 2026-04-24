@@ -198,13 +198,9 @@ class Workspace:
             # Verify the constructed path hasn't escaped the root directory
             resolved = self._path.resolve()
             root_resolved = self._root.resolve()
-            if not str(resolved).startswith(str(root_resolved) + os.sep) and resolved != root_resolved:
+            if not resolved.is_relative_to(root_resolved) or resolved == root_resolved:
                 raise ValueError(
-                    f"Path traversal detected: workspace path escapes root directory"
-                )
-            if resolved == root_resolved:
-                raise ValueError(
-                    "identity_id must not resolve to the workspace root itself"
+                    "Path traversal detected: workspace path escapes root directory"
                 )
 
         # Ensure workspace directory exists

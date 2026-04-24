@@ -1180,7 +1180,7 @@ def scratch_upload():
 @agent_bp.route('/workspace/scratch/<path:filename>', methods=['GET'])
 def scratch_serve(filename):
     """Serve a file from the workspace scratch/ folder."""
-    from flask import send_from_directory as _send
+    from flask import send_file
 
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
@@ -1196,7 +1196,7 @@ def scratch_serve(filename):
     if not target.exists():
         return jsonify(status="error", message="File not found"), 404
 
-    return _send(str(scratch_dir), filename)
+    return send_file(target)
 
 
 # ---------------------------------------------------------------------------

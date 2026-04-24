@@ -414,7 +414,7 @@ class DataLoadingAgent:
 
     def _execute_tool(self, name, args):
         """Execute a tool and return result dict."""
-        workspace_path = self.workspace._path
+        workspace_path = self.workspace._path.resolve()
         scratch_dir = workspace_path / "scratch"
         scratch_dir.mkdir(exist_ok=True)
 
@@ -438,9 +438,9 @@ class DataLoadingAgent:
         rel_path = args.get("path", "")
         target = (workspace_path / rel_path).resolve()
 
-        # Security: confine to workspace
+        # Security: confine to workspace (workspace_path already resolved by _execute_tool)
         try:
-            target.relative_to(workspace_path.resolve())
+            target.relative_to(workspace_path)
         except ValueError:
             return {"error": "Access denied: path outside workspace"}
 
@@ -481,8 +481,9 @@ class DataLoadingAgent:
         rel_path = args.get("path") or ""
         target = (workspace_path / rel_path).resolve()
 
+        # Security: confine to workspace (workspace_path already resolved by _execute_tool)
         try:
-            target.relative_to(workspace_path.resolve())
+            target.relative_to(workspace_path)
         except ValueError:
             return {"error": "Access denied: path outside workspace"}
 
@@ -648,7 +649,7 @@ class DataLoadingAgent:
 
     def _preview_scratch_files(self, scratch_files, scratch_dir):
         """Read scratch CSV files and build preview actions."""
-        workspace_path = self.workspace._path
+        workspace_path = self.workspace._path.resolve()
         actions = []
 
         for spec in scratch_files:
@@ -656,8 +657,9 @@ class DataLoadingAgent:
             table_name = _secure_filename(spec.get("name", "table"))
 
             target = (workspace_path / file_path).resolve()
+            # Security: confine to workspace (workspace_path already resolved above)
             try:
-                target.relative_to(workspace_path.resolve())
+                target.relative_to(workspace_path)
             except ValueError:
                 actions.append({"type": "preview_table", "name": table_name, "error": "Path outside workspace"})
                 continue

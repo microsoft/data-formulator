@@ -56,4 +56,30 @@ for _key, _module_path, _cls_name, _pip_pkg in _LOADER_SPECS:
             _key, exc.name, _install_hint,
         )
 
+# ---------------------------------------------------------------------------
+# Deployment restrictions
+# ---------------------------------------------------------------------------
+
+import os as _os
+
+def _enforce_deployment_restrictions():
+    """Disable local-only loaders in multi-user mode.
+
+    When WORKSPACE_BACKEND is anything other than "local" (e.g. azure_blob),
+    the local_folder connector is moved to DISABLED_LOADERS so it cannot be
+    instantiated — even via direct API calls that bypass the frontend.
+    """
+    backend = _os.environ.get("WORKSPACE_BACKEND", "local")
+    if backend != "local" and "local_folder" in DATA_LOADERS:
+        del DATA_LOADERS["local_folder"]
+        DISABLED_LOADERS["local_folder"] = (
+            "local_folder connector is disabled in multi-user mode "
+            "(WORKSPACE_BACKEND != 'local')"
+        )
+        _log.info(
+            "local_folder loader disabled: WORKSPACE_BACKEND=%s", backend,
+        )
+
+_enforce_deployment_restrictions()
+
 __all__ = ["ExternalDataLoader", "CatalogNode", "DATA_LOADERS", "DISABLED_LOADERS"]
