@@ -465,9 +465,9 @@ def derive_data():
             if repair_attempts > 0:
                 logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
 
-            # Sign code in each result so the frontend can send it back
-            # for re-execution during data refresh with proof of authenticity.
             for r in results:
+                if r.get("status") in ("error", "other error") and r.get("content"):
+                    r["content"] = sanitize_error_message(r["content"])
                 sign_result(r)
 
             response = flask.jsonify({ "token": token, "status": "ok", "results": results })
@@ -673,8 +673,9 @@ def refine_data():
             if repair_attempts > 0:
                 logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
 
-            # Sign code in each result for secure refresh later.
             for r in results:
+                if r.get("status") in ("error", "other error") and r.get("content"):
+                    r["content"] = sanitize_error_message(r["content"])
                 sign_result(r)
 
             response = flask.jsonify({ "token": token, "status": "ok", "results": results})
@@ -1078,7 +1079,7 @@ def workspace_summary():
         return jsonify(status="ok", summary=summary)
 
     except Exception as e:
-        logger.warning(f"Failed to generate workspace summary: {e}")
+        logger.warning("Failed to generate workspace summary", exc_info=e)
         return jsonify(status="error", summary="", error_message=classify_llm_error(e))
 
 

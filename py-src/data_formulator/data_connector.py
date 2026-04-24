@@ -47,32 +47,33 @@ def classify_and_raise_connector_error(error: Exception) -> None:
     """Classify a connector error and raise ``AppError``.
 
     Preserves actionable detail for known error categories while keeping
-    raw internals in ``detail`` (only exposed in debug mode).
+    sanitized internals in ``detail`` (only exposed in debug mode).
     """
     from data_formulator.errors import AppError, ErrorCode
 
     logger.error("DataConnector error", exc_info=error)
     raw = str(error)
     msg = raw.lower()
+    safe_detail = sanitize_error_message(raw)
 
     if any(kw in msg for kw in ("authenticat", "login", "credential",
                                  "unauthorized", "401", "forbidden", "403")):
-        raise AppError(ErrorCode.LLM_AUTH_FAILED, "Authentication failed", status_code=401, detail=raw) from error
+        raise AppError(ErrorCode.LLM_AUTH_FAILED, "Authentication failed", status_code=401, detail=safe_detail) from error
     if any(kw in msg for kw in ("expired", "token")):
-        raise AppError(ErrorCode.AUTH_EXPIRED, "Token expired or invalid", status_code=401, detail=raw) from error
+        raise AppError(ErrorCode.AUTH_EXPIRED, "Token expired or invalid", status_code=401, detail=safe_detail) from error
     if any(kw in msg for kw in ("permission", "access denied", "denied")):
-        raise AppError(ErrorCode.ACCESS_DENIED, "Access denied", status_code=403, detail=raw) from error
+        raise AppError(ErrorCode.ACCESS_DENIED, "Access denied", status_code=403, detail=safe_detail) from error
 
     if any(kw in msg for kw in ("connect", "refused", "unreachable",
                                  "resolve", "dns", "network", "socket")):
-        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection failed", status_code=502, detail=raw, retry=True) from error
+        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection failed", status_code=502, detail=safe_detail, retry=True) from error
     if "timeout" in msg or "timed out" in msg:
-        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection timed out", status_code=504, detail=raw, retry=True) from error
+        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection timed out", status_code=504, detail=safe_detail, retry=True) from error
 
     if "required" in msg or "invalid" in msg or "missing" in msg:
-        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid parameters", status_code=400, detail=raw) from error
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid parameters", status_code=400, detail=safe_detail) from error
 
-    raise AppError(ErrorCode.CONNECTOR_ERROR, "An unexpected connector error occurred", status_code=500, detail=raw) from error
+    raise AppError(ErrorCode.CONNECTOR_ERROR, "An unexpected connector error occurred", status_code=500, detail=safe_detail) from error
 
 
 def _sanitize_error(error: Exception) -> tuple[str, int]:

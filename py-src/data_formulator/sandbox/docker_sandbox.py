@@ -207,7 +207,15 @@ class DockerSandbox(Sandbox):
                     "status": "error",
                     "content": "Invalid output_variable",
                 }
-            parquet_out = os.path.join(output_dir, f"{safe_name}.parquet")
+            parquet_out = os.path.realpath(
+                os.path.join(output_dir, f"{safe_name}.parquet")
+            )
+            if not parquet_out.startswith(os.path.realpath(output_dir) + os.sep):
+                self._cleanup(tmpdir)
+                return {
+                    "status": "error",
+                    "content": "Invalid output_variable",
+                }
             if not os.path.exists(parquet_out):
                 self._cleanup(tmpdir)
                 return {

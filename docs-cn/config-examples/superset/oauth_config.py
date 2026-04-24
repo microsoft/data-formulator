@@ -21,7 +21,7 @@ import logging
 import json
 import secrets
 import requests
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from flask_appbuilder.security.manager import AUTH_OAUTH
 from flask_appbuilder import BaseView, expose
@@ -213,10 +213,22 @@ class SSOBridgeView(BaseView):
             return False
         return True
 
+    @staticmethod
+    def _validate_origin(raw: str) -> str:
+        """Validate df_origin: only allow http(s) scheme with a real netloc."""
+        if raw == "*":
+            return "*"
+        parsed = urlparse(raw)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+        return "*"
+
     @expose("/", methods=["GET"])
     def df_sso_bridge(self):
         if not self._is_real_logged_in_user():
             next_url = request.full_path.rstrip("?")
+            if not next_url.startswith("/"):
+                next_url = "/"
             return redirect(f"/login/?next={quote(next_url)}")
 
         from flask_jwt_extended import create_access_token, create_refresh_token
@@ -238,7 +250,7 @@ class SSOBridgeView(BaseView):
             identity=user_id_str, additional_claims=additional_claims,
         )
 
-        df_origin = request.args.get("df_origin", "*")
+        df_origin = self._validate_origin(request.args.get("df_origin", "*"))
         user_data = additional_claims["user"]
         csp_nonce = getattr(g, "csp_nonce", "") or secrets.token_urlsafe(16)
 
