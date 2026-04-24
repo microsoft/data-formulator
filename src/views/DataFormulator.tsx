@@ -138,10 +138,10 @@ export const DataFormulatorFC = ({ }) => {
             if (result && Object.keys(result.state).length > 0) {
                 dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName: result.displayName } }));
             } else {
-                dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'default' }));
+                dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'Untitled Session' }));
             }
         } catch {
-            dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'default' }));
+            dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'Untitled Session' }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
     }, [dispatch]);
@@ -203,7 +203,7 @@ export const DataFormulatorFC = ({ }) => {
     const openUploadDialog = (tab: UploadTabType) => {
         // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
         if (!activeWorkspace) {
-            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'default' }));
+            dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
         }
         setUploadDialogInitialTab(tab);
         setUploadDialogOpen(true);

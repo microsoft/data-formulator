@@ -291,10 +291,10 @@ const DataSourceSidebarPanel: React.FC<{
             if (result && Object.keys(result.state).length > 0) {
                 dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: sessionId, displayName: result.displayName } }));
             } else {
-                dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: 'default' }));
+                dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: 'Untitled Session' }));
             }
         } catch {
-            dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: 'default' }));
+            dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: 'Untitled Session' }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
     }, [dispatch]);
@@ -318,7 +318,7 @@ const DataSourceSidebarPanel: React.FC<{
                         const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
                         const short = generateUUID().slice(0, 4);
                         const wsId = `session_${date}_${time}_${short}`;
-                        dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'default' } }));
+                        dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'Untitled Session' } }));
                     }
                 }
                 return updated;
@@ -907,7 +907,7 @@ const DataSourceSidebarPanel: React.FC<{
                         const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
                         const short = generateUUID().slice(0, 4);
                         const wsId = `session_${date}_${time}_${short}`;
-                        dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'default' } }));
+                        dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'Untitled Session' } }));
                     }}
                     sx={{
                         display: 'flex',

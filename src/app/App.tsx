@@ -457,7 +457,7 @@ const NewSessionButton: React.FC = () => {
         const wsId = `session_${date}_${time}_${short}`;
         dispatch(dfActions.loadState({
             tables: [], charts: [], draftNodes: [], conceptShelfItems: [],
-            activeWorkspace: { id: wsId, displayName: 'default' },
+            activeWorkspace: { id: wsId, displayName: 'Untitled Session' },
         }));
     };
 

@@ -39,8 +39,8 @@ export function useWorkspaceAutoName() {
         if (tables.length === 0) return;
         if (!selectedModelId) return;
 
-        // Only auto-name if the display name is still "default"
-        if (activeWorkspace.displayName !== 'default') return;
+        // Only auto-name if the display name is still the placeholder
+        if (activeWorkspace.displayName !== 'Untitled Session') return;
 
         const model = models.find(m => m.id === selectedModelId);
         if (!model) return;
