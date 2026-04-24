@@ -39,13 +39,13 @@ def store_credential():
     """Store or update encrypted credentials for a source."""
     vault = get_credential_vault()
     if not vault:
-        return jsonify({"error": "Credential vault not configured"}), 503
+        return jsonify({"error": "Credential vault not configured"})
 
     data = request.get_json()
     source_key = data.get("source_key")
     credentials = data.get("credentials")
     if not source_key or not credentials:
-        return jsonify({"error": "source_key and credentials required"}), 400
+        return jsonify({"error": "source_key and credentials required"})
 
     identity = get_identity_id()
     vault.store(identity, source_key, credentials)
@@ -58,12 +58,12 @@ def delete_credential():
     """Delete stored credentials for a source."""
     vault = get_credential_vault()
     if not vault:
-        return jsonify({"error": "Credential vault not configured"}), 503
+        return jsonify({"error": "Credential vault not configured"})
 
     data = request.get_json()
     source_key = data.get("source_key")
     if not source_key:
-        return jsonify({"error": "source_key required"}), 400
+        return jsonify({"error": "source_key required"})
 
     identity = get_identity_id()
     vault.delete(identity, source_key)

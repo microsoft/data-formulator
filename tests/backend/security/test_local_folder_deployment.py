@@ -62,7 +62,7 @@ class TestLocalFolderDeploymentRestriction:
                         "display_name": "Evil local",
                         "params": {"root_dir": "/etc"},
                     })
-                    assert resp.status_code == 400
+                    assert resp.status_code == 200
                     assert "Unknown" in resp.get_json().get("message", "")
         finally:
             _reload_registry("local")

@@ -43,8 +43,11 @@ All streaming endpoints use `application/x-ndjson`. Each line is one JSON object
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
 
-# Non-streaming: raise AppError (caught by global handler)
-raise AppError(ErrorCode.TABLE_NOT_FOUND, "Table not found", status_code=404)
+# Non-streaming: raise AppError (global handler returns HTTP 200 + error body)
+raise AppError(ErrorCode.TABLE_NOT_FOUND, "Table not found")
+
+# Or for validation errors in route handlers:
+return jsonify({"status": "error", "error": {"code": ErrorCode.VALIDATION_ERROR, "message": "...", "retry": False}})
 
 # Streaming: yield error event
 yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
@@ -74,9 +77,22 @@ try {
 }
 ```
 
+## HTTP Status Code Policy
+
+**All application-controlled responses return HTTP 200.** Errors are communicated via `body.status === "error"`.
+
+Only transport-layer errors (not controlled by application code) use non-200:
+- `404` — Flask routing: no matching route handler (SPA fallback for non-`/api/` URLs)
+- `413` — WSGI: request body exceeds `MAX_CONTENT_LENGTH`
+- `500` — Unhandled exception that escaped all error handling (indicates a bug)
+
+**Streaming endpoints**: validation failures before the stream starts return `200 application/json` (not NDJSON).
+The frontend `streamRequest()` detects this via `content-type` header and throws `ApiRequestError`.
+
 ## Prohibited Patterns
 
 ### Backend
+- ❌ `return jsonify({...}), 400` — never use HTTP error codes; drop the second argument
 - ❌ `return jsonify({"error_message": str(e)})` — use `raise AppError(...)` instead
 - ❌ `yield json.dumps({"type": "error", "error": str(e)})` — use `stream_error_event()`
 - ❌ Bare `except:` or `except Exception: pass` — always log or propagate
@@ -155,9 +171,11 @@ INTERNAL_ERROR, SERVICE_UNAVAILABLE
 ## New Endpoint Checklist
 
 When adding a new API endpoint, verify:
-- [ ] Raises `AppError` (or uses `classify_and_raise_*`) instead of `return jsonify(...), 500`
-- [ ] Streaming endpoints use `stream_error_event()` + `mimetype='application/x-ndjson'`
+- [ ] All error responses return HTTP 200 (never `return jsonify(...), 4xx`)
+- [ ] Uses `raise AppError(...)` or `return jsonify({"status": "error", ...})` — never `return ..., 400`
+- [ ] Streaming endpoints: validation before `return Response(...)`, errors via `stream_error_event()`
+- [ ] Streaming endpoints: mimetype is `application/x-ndjson`
 - [ ] No `str(e)` in any response body
 - [ ] No naked `except:` — use specific exception types or `except Exception as e:` with logging
-- [ ] Frontend consumer handles both `type: "error"` (streaming) or HTTP error status (non-streaming)
-- [ ] Error test cases included (at minimum: AppError, unexpected exception)
+- [ ] Frontend consumer checks `body.status === "error"` (not `!response.ok`)
+- [ ] Error test cases assert `status_code == 200` and `body.status == "error"`

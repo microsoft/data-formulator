@@ -484,7 +484,7 @@ def pick_local_directory():
     from data_formulator.auth.identity import is_local_mode
 
     if not is_local_mode():
-        return jsonify({"error": "Not available in server mode"}), 404
+        return jsonify({"error": "Not available in server mode"})
 
     folder: str | None = None
     system = platform.system()
@@ -556,15 +556,15 @@ def pick_local_directory():
                                  "Install zenity, kdialog, or python3-tk.",
                         "path": None,
                         "fallback": "text_input",
-                    }), 501
+                    })
 
     except subprocess.TimeoutExpired:
-        return jsonify({"error": "Dialog timed out", "path": None}), 408
+        return jsonify({"error": "Dialog timed out", "path": None})
     except Exception as exc:
         logger.warning("Failed to open directory picker: %s", exc)
         return jsonify({
             "error": "Failed to open directory picker", "path": None, "fallback": "text_input",
-        }), 500
+        })
 
     if not folder:
         return jsonify({"path": None})  # user cancelled
@@ -651,11 +651,11 @@ def create_connector():
     data = request.get_json() or {}
     loader_type = data.get("loader_type")
     if not loader_type:
-        return jsonify({"status": "error", "message": "loader_type is required"}), 400
+        return jsonify({"status": "error", "message": "loader_type is required"})
 
     loader_class = DATA_LOADERS.get(loader_type)
     if not loader_class:
-        return jsonify({"status": "error", "message": f"Unknown loader type: {loader_type}"}), 400
+        return jsonify({"status": "error", "message": f"Unknown loader type: {loader_type}"})
 
     display_name = data.get("display_name", loader_type.replace("_", " ").title())
     icon = data.get("icon", loader_type)
@@ -676,7 +676,7 @@ def create_connector():
                 display_name = f"{display_name} ({i})"
                 break
         else:
-            return jsonify({"status": "error", "message": "Too many connectors with this name"}), 400
+            return jsonify({"status": "error", "message": "Too many connectors with this name"})
 
     connector = DataConnector.from_loader(
         loader_class,
@@ -769,11 +769,11 @@ def delete_connector(connector_id: str):
     from data_formulator.auth.identity import get_identity_id
 
     if connector_id in _ADMIN_CONNECTOR_IDS:
-        return jsonify({"status": "error", "message": "Admin connectors cannot be deleted"}), 403
+        return jsonify({"status": "error", "message": "Admin connectors cannot be deleted"})
 
     connector = DATA_CONNECTORS.get(connector_id)
     if not connector:
-        return jsonify({"status": "error", "message": f"Unknown connector: {connector_id}"}), 404
+        return jsonify({"status": "error", "message": f"Unknown connector: {connector_id}"})
 
     # Full cleanup: in-memory loader + vault credentials
     try:
@@ -823,7 +823,7 @@ def connector_connect():
         if mode == "token":
             access_token = data.get("access_token")
             if not access_token:
-                return jsonify({"status": "error", "message": "Missing access_token"}), 400
+                return jsonify({"status": "error", "message": "Missing access_token"})
             extra_params = data.get("params", {})
             user_params = {
                 **extra_params,
@@ -838,7 +838,7 @@ def connector_connect():
         if not loader.test_connection():
             identity = source._get_identity()
             source._loaders.pop(identity, None)
-            return jsonify({"status": "error", "message": "Connection test failed"}), 400
+            return jsonify({"status": "error", "message": "Connection test failed"})
 
         persisted = False
         if persist:
@@ -974,7 +974,7 @@ def connector_import_data():
 
         source_table = data.get("source_table")
         if not source_table:
-            return jsonify({"status": "error", "message": "source_table is required"}), 400
+            return jsonify({"status": "error", "message": "source_table is required"})
 
         table_name = data.get("table_name")
         import_options = data.get("import_options", {})
@@ -1015,7 +1015,7 @@ def connector_refresh_data():
         loader = source._require_loader()
         table_name = data.get("table_name")
         if not table_name:
-            return jsonify({"status": "error", "message": "table_name is required"}), 400
+            return jsonify({"status": "error", "message": "table_name is required"})
 
         from data_formulator.auth.identity import get_identity_id
         from data_formulator.workspace_factory import get_workspace
@@ -1023,7 +1023,7 @@ def connector_refresh_data():
         workspace = get_workspace(get_identity_id())
         meta = workspace.get_table_metadata(table_name)
         if meta is None or not meta.source_table:
-            return jsonify({"status": "error", "message": f"No refreshable source for '{table_name}'"}), 400
+            return jsonify({"status": "error", "message": f"No refreshable source for '{table_name}'"})
 
         arrow_table = loader.fetch_data_as_arrow(
             source_table=meta.source_table,
@@ -1049,7 +1049,7 @@ def connector_preview_data():
         loader = source._require_loader()
         source_table = data.get("source_table")
         if not source_table:
-            return jsonify({"status": "error", "message": "source_table is required"}), 400
+            return jsonify({"status": "error", "message": "source_table is required"})
 
         import_options = data.get("import_options", {})
         if not import_options:
@@ -1089,7 +1089,7 @@ def connector_import_group():
 
         tables = data.get("tables")
         if not tables or not isinstance(tables, list):
-            return jsonify({"status": "error", "message": "tables list is required"}), 400
+            return jsonify({"status": "error", "message": "tables list is required"})
 
         row_limit = data.get("row_limit", -1)
         source_filters = data.get("source_filters", [])

@@ -49,17 +49,20 @@ class TestScratchServePathSafety:
         assert resp.status_code == 200
         assert b"a,b" in resp.data
 
-    def test_path_traversal_returns_403(self, client):
+    def test_path_traversal_returns_error(self, client):
         resp = client.get("/api/agent/workspace/scratch/../../../etc/passwd")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "error"
 
-    def test_dotdot_single_returns_403(self, client):
+    def test_dotdot_single_returns_error(self, client):
         resp = client.get("/api/agent/workspace/scratch/../secret.txt")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "error"
 
-    def test_nonexistent_file_returns_404(self, client):
+    def test_nonexistent_file_returns_error(self, client):
         resp = client.get("/api/agent/workspace/scratch/no_such_file.csv")
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "error"
 
     def test_response_uses_send_file_not_send_from_directory(self, client):
         """After FINDING-1 fix, scratch_serve must use send_file (not send_from_directory)."""

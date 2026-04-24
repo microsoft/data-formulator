@@ -74,15 +74,17 @@ class TestStoreEndpoint:
         app, _ = app_with_vault
         with app.test_client() as c:
             resp = c.post("/api/credentials/store", json={"source_key": "superset"})
-            assert resp.status_code == 400
+            assert resp.status_code == 200
+            assert "error" in resp.get_json()
 
-    def test_store_no_vault_returns_503(self, app_no_vault):
+    def test_store_no_vault_returns_error(self, app_no_vault):
         with app_no_vault.test_client() as c:
             resp = c.post("/api/credentials/store", json={
                 "source_key": "superset",
                 "credentials": {"username": "alice", "password": "pw"},
             })
-            assert resp.status_code == 503
+            assert resp.status_code == 200
+            assert "error" in resp.get_json()
 
 
 class TestListEndpoint:
@@ -125,12 +127,14 @@ class TestDeleteEndpoint:
         app, _ = app_with_vault
         with app.test_client() as c:
             resp = c.post("/api/credentials/delete", json={})
-            assert resp.status_code == 400
+            assert resp.status_code == 200
+            assert "error" in resp.get_json()
 
-    def test_delete_no_vault_returns_503(self, app_no_vault):
+    def test_delete_no_vault_returns_error(self, app_no_vault):
         with app_no_vault.test_client() as c:
             resp = c.post("/api/credentials/delete", json={"source_key": "superset"})
-            assert resp.status_code == 503
+            assert resp.status_code == 200
+            assert "error" in resp.get_json()
 
 
 class TestUserIsolation:

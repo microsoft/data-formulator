@@ -304,46 +304,48 @@ def process_data_on_load_request():
 
 @agent_bp.route('/clean-data-stream', methods=['GET', 'POST'])
 def clean_data_stream_request():
+    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+    from data_formulator.errors import AppError, ErrorCode
+
+    if not request.is_json:
+        return jsonify({"status": "error", "error": {
+            "code": ErrorCode.INVALID_REQUEST,
+            "message": "Invalid request format",
+            "retry": False,
+        }})
+
+    content = request.get_json()
+    token = content["token"]
+    client = get_client(content['model'])
+
+    logger.info("# clean-data-stream request")
+    logger.debug(f" model: {content['model']}")
+
+    language_instruction = get_language_instruction()
+    prompt = content.get('prompt', '')
+    artifacts = content.get('artifacts', [])
+    dialog = content.get('dialog', [])
+
     def generate():
-        if request.is_json:
-            logger.info("# clean-data-stream request")
-            content = request.get_json()
-            token = content["token"]
+        agent = DataCleanAgentStream(client=client, language_instruction=language_instruction)
+        try:
+            for chunk in agent.stream(prompt, artifacts, dialog):
+                yield chunk
+        except Exception as e:
+            logger.error("clean-data-stream error", exc_info=e)
+            if 'unable to download html from url' in str(e):
+                yield stream_error_event(AppError(
+                    ErrorCode.DATA_LOAD_ERROR,
+                    "This website doesn't allow us to download HTML from URL",
+                    status_code=400,
+                ), token=token)
+            else:
+                yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
 
-            client = get_client(content['model'])
-
-            logger.debug(f" model: {content['model']}")
-            
-            language_instruction = get_language_instruction()
-            agent = DataCleanAgentStream(client=client, language_instruction=language_instruction)
-
-            try:
-                for chunk in agent.stream(content.get('prompt', ''), content.get('artifacts', []), content.get('dialog', [])):
-                    yield chunk
-            except Exception as e:
-                logger.error("clean-data-stream error", exc_info=e)
-                from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-                from data_formulator.errors import AppError, ErrorCode
-                if 'unable to download html from url' in str(e):
-                    yield stream_error_event(AppError(
-                        ErrorCode.DATA_LOAD_ERROR,
-                        "This website doesn't allow us to download HTML from URL",
-                        status_code=400,
-                    ), token=token)
-                else:
-                    yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
-        else:
-            from data_formulator.error_handler import stream_error_event
-            from data_formulator.errors import AppError, ErrorCode
-            yield stream_error_event(AppError(
-                ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
-            ))
-
-    response = Response(
+    return Response(
         stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )
-    return response
 
 
 @agent_bp.route('/sort-data', methods=['GET', 'POST'])
@@ -493,114 +495,105 @@ def data_agent_streaming():
         - trajectory: the trajectory list returned in the clarify event
         - clarification_response: the user's answer (string)
     """
+    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+    from data_formulator.errors import ErrorCode
+
+    if not request.is_json:
+        return jsonify({"status": "error", "error": {
+            "code": ErrorCode.INVALID_REQUEST,
+            "message": "Invalid request format",
+            "retry": False,
+        }})
+
+    content = request.get_json()
+    token = content.get("token", "")
+
+    identity_id = get_identity_id()
+    if not identity_id:
+        return jsonify({"status": "error", "error": {
+            "code": ErrorCode.AUTH_REQUIRED,
+            "message": "Identity ID required",
+            "retry": False,
+        }})
+
+    client = get_client(content['model'])
+    workspace = get_workspace(identity_id)
+
+    input_tables = content["input_tables"]
+    user_question = content.get("user_question", "")
+    max_iterations = content.get("max_iterations", 5)
+    max_repair_attempts = content.get("max_repair_attempts", 1)
+    agent_exploration_rules = content.get("agent_exploration_rules", "")
+    agent_coding_rules = content.get("agent_coding_rules", "")
+    focused_thread = content.get("focused_thread", None)
+    other_threads = content.get("other_threads", None)
+    primary_tables = content.get("primary_tables", None)
+    attached_images = content.get("attached_images", None)
+    resume_trajectory = content.get("trajectory", None)
+    clarification_response = content.get("clarification_response", None)
+    completed_step_count = content.get("completed_step_count", 0)
+
+    logger.setLevel(logging.INFO)
+    logger.info("# data-agent-streaming request")
+    logger.debug("== input tables ===>")
+    for table in input_tables:
+        logger.debug(f"===> Table: {table['name']}")
+    logger.debug(f"== user question ===> {user_question}")
+    if attached_images:
+        logger.info(f"== attached_images ===> {len(attached_images)} image(s), sizes: {[len(img) for img in attached_images]}")
+
+    language_instruction = get_language_instruction(mode="full")
+
     def generate():
-        if request.is_json:
-            logger.setLevel(logging.INFO)
-            logger.info("# data-agent-streaming request")
+        try:
+            agent = DataAgent(
+                client=client,
+                workspace=workspace,
+                agent_exploration_rules=agent_exploration_rules,
+                agent_coding_rules=agent_coding_rules,
+                language_instruction=language_instruction,
+                max_iterations=max_iterations,
+                max_repair_attempts=max_repair_attempts,
+            )
 
-            content = request.get_json()
-            token = content.get("token", "")
+            trajectory = None
+            if resume_trajectory and clarification_response:
+                trajectory = list(resume_trajectory)
+                trajectory.append({
+                    "role": "user",
+                    "content": f"[USER CLARIFICATION]\n\n{clarification_response}",
+                })
+                logger.debug(f"== resuming with clarification ===> {clarification_response}")
 
-            input_tables = content["input_tables"]
-            user_question = content.get("user_question", "")
-            max_iterations = content.get("max_iterations", 5)
-            max_repair_attempts = content.get("max_repair_attempts", 1)
-            agent_exploration_rules = content.get("agent_exploration_rules", "")
-            agent_coding_rules = content.get("agent_coding_rules", "")
-            focused_thread = content.get("focused_thread", None)
-            other_threads = content.get("other_threads", None)
-            primary_tables = content.get("primary_tables", None)
-            attached_images = content.get("attached_images", None)
+            for event in agent.run(
+                input_tables=input_tables,
+                user_question=user_question,
+                focused_thread=focused_thread,
+                other_threads=other_threads,
+                trajectory=trajectory,
+                completed_step_count=completed_step_count,
+                primary_tables=primary_tables,
+                attached_images=attached_images,
+            ):
+                yield json.dumps({
+                    "token": token,
+                    "status": "ok",
+                    "result": event,
+                }, ensure_ascii=False) + '\n'
 
-            # Stateless resume: client sends back the trajectory + user answer
-            resume_trajectory = content.get("trajectory", None)
-            clarification_response = content.get("clarification_response", None)
-            completed_step_count = content.get("completed_step_count", 0)
+                if event.get("type") in ("completion", "clarify"):
+                    break
 
-            logger.debug("== input tables ===>")
-            for table in input_tables:
-                logger.debug(f"===> Table: {table['name']}")
+        except Exception as e:
+            logger.error("Error in data-agent-streaming", exc_info=e)
+            yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
 
-            logger.debug(f"== user question ===> {user_question}")
-            if attached_images:
-                logger.info(f"== attached_images ===> {len(attached_images)} image(s), sizes: {[len(img) for img in attached_images]}")
+        logger.setLevel(logging.WARNING)
 
-            client = get_client(content['model'])
-            identity_id = get_identity_id()
-
-            if not identity_id:
-                from data_formulator.error_handler import stream_error_event
-                from data_formulator.errors import AppError, ErrorCode
-                yield stream_error_event(AppError(
-                    ErrorCode.AUTH_REQUIRED, "Identity ID required", status_code=401,
-                ), token=token)
-                return
-
-            workspace = get_workspace(identity_id)
-
-            language_instruction = get_language_instruction(mode="full")
-
-            try:
-                agent = DataAgent(
-                    client=client,
-                    workspace=workspace,
-                    agent_exploration_rules=agent_exploration_rules,
-                    agent_coding_rules=agent_coding_rules,
-                    language_instruction=language_instruction,
-                    max_iterations=max_iterations,
-                    max_repair_attempts=max_repair_attempts,
-                )
-
-                # Build trajectory for resume or fresh start
-                trajectory = None
-                if resume_trajectory and clarification_response:
-                    # Append the user's clarification to the saved trajectory
-                    trajectory = list(resume_trajectory)
-                    trajectory.append({
-                        "role": "user",
-                        "content": f"[USER CLARIFICATION]\n\n{clarification_response}",
-                    })
-                    logger.debug(f"== resuming with clarification ===> {clarification_response}")
-
-                for event in agent.run(
-                    input_tables=input_tables,
-                    user_question=user_question,
-                    focused_thread=focused_thread,
-                    other_threads=other_threads,
-                    trajectory=trajectory,
-                    completed_step_count=completed_step_count,
-                    primary_tables=primary_tables,
-                    attached_images=attached_images,
-                ):
-                    yield json.dumps({
-                        "token": token,
-                        "status": "ok",
-                        "result": event,
-                    }, ensure_ascii=False) + '\n'
-
-                    # Stop streaming after terminal events
-                    if event.get("type") in ("completion", "clarify"):
-                        break
-
-            except Exception as e:
-                logger.error("Error in data-agent-streaming", exc_info=e)
-                from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-                yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
-
-            logger.setLevel(logging.WARNING)
-
-        else:
-            from data_formulator.error_handler import stream_error_event
-            from data_formulator.errors import AppError, ErrorCode
-            yield stream_error_event(AppError(
-                ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
-            ))
-
-    response = Response(
+    return Response(
         stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )
-    return response
 
 
 @agent_bp.route('/refine-data', methods=['GET', 'POST'])
@@ -719,14 +712,14 @@ def request_code_expl():
                 if result['status'] == 'ok':
                     return jsonify(result)
                 else:
-                    return jsonify(result), 400
+                    return jsonify(result)
             else:
-                return jsonify({'error': 'No explanation generated'}), 400
+                return jsonify({'error': 'No explanation generated'})
         except Exception as e:
             logger.error("Error in code-expl", exc_info=e)
-            return jsonify({'error': classify_llm_error(e)}), 400
+            return jsonify({'error': classify_llm_error(e)})
     else:
-        return jsonify({'error': 'Invalid request format'}), 400
+        return jsonify({'error': 'Invalid request format'})
 
 @agent_bp.route('/chart-insight', methods=['GET', 'POST'])
 def request_chart_insight():
@@ -754,83 +747,79 @@ def request_chart_insight():
                 if result['status'] == 'ok':
                     return jsonify(result)
                 else:
-                    return jsonify(result), 400
+                    return jsonify(result)
             else:
-                return jsonify({'error': 'No insight generated'}), 400
+                return jsonify({'error': 'No insight generated'})
         except Exception as e:
             logger.error("Error in chart-insight", exc_info=e)
-            return jsonify({'error': classify_llm_error(e)}), 400
+            return jsonify({'error': classify_llm_error(e)})
     else:
-        return jsonify({'error': 'Invalid request format'}), 400
+        return jsonify({'error': 'Invalid request format'})
 
 @agent_bp.route('/get-recommendation-questions', methods=['GET', 'POST'])
 def get_recommendation_questions():
+    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+    from data_formulator.errors import ErrorCode
+
+    if not request.is_json:
+        return jsonify({"status": "error", "error": {
+            "code": ErrorCode.INVALID_REQUEST,
+            "message": "Invalid request format",
+            "retry": False,
+        }})
+
+    logger.info("# get recommendation questions request")
+    content = request.get_json()
+    token = content.get("token", "")
+
+    client = get_client(content['model'])
+    input_tables = content.get("input_tables", [])
+    identity_id = get_identity_id()
+    workspace = get_workspace(identity_id)
+
+    agent_exploration_rules = content.get("agent_exploration_rules", "")
+    start_question = content.get("start_question", None)
+    current_chart = content.get("current_chart", None)
+    focused_thread = content.get("focused_thread", None)
+    other_threads = content.get("other_threads", None)
+    primary_tables = content.get("primary_tables", None)
+    exploration_thread = content.get("exploration_thread", None)
+    current_data_sample = content.get("current_data_sample", None)
+
     def generate():
-        if request.is_json:
-            logger.info("# get recommendation questions request")
-            content = request.get_json()
-            token = content.get("token", "")
-
-            client = get_client(content['model'])
-
-            input_tables = content.get("input_tables", [])
-            identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
-
-            agent_exploration_rules = content.get("agent_exploration_rules", "")
-            start_question = content.get("start_question", None)
-            current_chart = content.get("current_chart", None)
-
-            # New tiered context params
-            focused_thread = content.get("focused_thread", None)
-            other_threads = content.get("other_threads", None)
-            primary_tables = content.get("primary_tables", None)
-
-            # Legacy params (backward compatibility)
-            exploration_thread = content.get("exploration_thread", None)
-            current_data_sample = content.get("current_data_sample", None)
-
-            agent = InteractiveExploreAgent(client=client, workspace=workspace,
-                                            agent_exploration_rules=agent_exploration_rules,
-                                            language_instruction=get_language_instruction())
-            try:
-                text_buf = ""
-                for chunk in agent.run(
-                    input_tables,
-                    start_question=start_question,
-                    focused_thread=focused_thread,
-                    other_threads=other_threads,
-                    primary_tables=primary_tables,
-                    current_chart=current_chart,
-                    exploration_thread=exploration_thread,
-                    current_data_sample=current_data_sample,
-                ):
-                    text_buf += chunk
-                    while "\n" in text_buf:
-                        line, text_buf = text_buf.split("\n", 1)
-                        ndjson_line = _try_parse_explore_line(line)
-                        if ndjson_line:
-                            yield ndjson_line
-                if text_buf.strip():
-                    ndjson_line = _try_parse_explore_line(text_buf)
+        agent = InteractiveExploreAgent(client=client, workspace=workspace,
+                                        agent_exploration_rules=agent_exploration_rules,
+                                        language_instruction=get_language_instruction())
+        try:
+            text_buf = ""
+            for chunk in agent.run(
+                input_tables,
+                start_question=start_question,
+                focused_thread=focused_thread,
+                other_threads=other_threads,
+                primary_tables=primary_tables,
+                current_chart=current_chart,
+                exploration_thread=exploration_thread,
+                current_data_sample=current_data_sample,
+            ):
+                text_buf += chunk
+                while "\n" in text_buf:
+                    line, text_buf = text_buf.split("\n", 1)
+                    ndjson_line = _try_parse_explore_line(line)
                     if ndjson_line:
                         yield ndjson_line
-            except Exception as e:
-                logger.exception("get-recommendation-questions failed")
-                from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-                yield stream_error_event(classify_and_wrap_llm_error(e))
-        else:
-            from data_formulator.errors import AppError, ErrorCode
-            from data_formulator.error_handler import stream_error_event
-            yield stream_error_event(AppError(
-                ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
-            ))
+            if text_buf.strip():
+                ndjson_line = _try_parse_explore_line(text_buf)
+                if ndjson_line:
+                    yield ndjson_line
+        except Exception as e:
+            logger.exception("get-recommendation-questions failed")
+            yield stream_error_event(classify_and_wrap_llm_error(e))
 
-    response = Response(
+    return Response(
         stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )
-    return response
 
 
 @agent_bp.route('/generate-report-chat', methods=['POST'])
@@ -841,53 +830,54 @@ def generate_report_chat():
     charts/data on demand via tool calls and streams the report with
     embed_chart / embed_table events.
     """
+    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+    from data_formulator.errors import ErrorCode
+
+    if not request.is_json:
+        return jsonify({"status": "error", "error": {
+            "code": ErrorCode.INVALID_REQUEST,
+            "message": "Invalid request format",
+            "retry": False,
+        }})
+
+    logger.info("# generate report chat request")
+    content = request.get_json()
+
+    client = get_client(content['model'])
+    identity_id = get_identity_id()
+    workspace = get_workspace(identity_id)
+
+    input_tables = content.get("input_tables", [])
+    charts = content.get("charts", [])
+    user_prompt = content.get("user_prompt", "Create a report summarizing the exploration.")
+    focused_thread = content.get("focused_thread", None)
+    other_threads = content.get("other_threads", None)
+    primary_tables = content.get("primary_tables", None)
+
     def generate():
-        if request.is_json:
-            logger.info("# generate report chat request")
-            content = request.get_json()
+        agent = ReportGenAgent(
+            client=client,
+            workspace=workspace,
+            language_instruction=get_language_instruction(),
+        )
+        try:
+            for event in agent.run(
+                input_tables,
+                charts,
+                user_prompt=user_prompt,
+                focused_thread=focused_thread,
+                other_threads=other_threads,
+                primary_tables=primary_tables,
+            ):
+                yield json.dumps(event, ensure_ascii=False) + '\n'
+        except Exception as e:
+            logger.exception("generate-report-chat failed")
+            yield stream_error_event(classify_and_wrap_llm_error(e))
 
-            client = get_client(content['model'])
-            identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
-
-            input_tables = content.get("input_tables", [])
-            charts = content.get("charts", [])
-            user_prompt = content.get("user_prompt", "Create a report summarizing the exploration.")
-            focused_thread = content.get("focused_thread", None)
-            other_threads = content.get("other_threads", None)
-            primary_tables = content.get("primary_tables", None)
-
-            agent = ReportGenAgent(
-                client=client,
-                workspace=workspace,
-                language_instruction=get_language_instruction(),
-            )
-            try:
-                for event in agent.run(
-                    input_tables,
-                    charts,
-                    user_prompt=user_prompt,
-                    focused_thread=focused_thread,
-                    other_threads=other_threads,
-                    primary_tables=primary_tables,
-                ):
-                    yield json.dumps(event, ensure_ascii=False) + '\n'
-            except Exception as e:
-                logger.exception("generate-report-chat failed")
-                from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-                yield stream_error_event(classify_and_wrap_llm_error(e))
-        else:
-            from data_formulator.error_handler import stream_error_event
-            from data_formulator.errors import AppError, ErrorCode
-            yield stream_error_event(AppError(
-                ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
-            ))
-
-    response = Response(
+    return Response(
         stream_with_context(_with_warnings(generate())),
         mimetype='application/x-ndjson',
     )
-    return response
 
 
 @agent_bp.route('/refresh-derived-data', methods=['POST'])
@@ -937,13 +927,13 @@ def refresh_derived_data():
             return jsonify({
                 "status": "error",
                 "message": "No input tables provided"
-            }), 400
+            })
             
         if not code:
             return jsonify({
                 "status": "error", 
                 "message": "No transformation code provided"
-            }), 400
+            })
 
         # ---- Security: verify code signature --------------------------------
         # The code must have been signed by the server when the agent first
@@ -953,34 +943,34 @@ def refresh_derived_data():
             return jsonify({
                 "status": "error",
                 "message": "Missing code_signature — code must be signed by the server"
-            }), 403
+            })
 
         if len(code) > MAX_CODE_SIZE:
             logger.warning(f"[refresh-derived-data] Rejected request: code too large ({len(code)} bytes)")
             return jsonify({
                 "status": "error",
                 "message": f"Code exceeds maximum allowed size ({MAX_CODE_SIZE} bytes)"
-            }), 400
+            })
 
         if not verify_code(code, code_signature):
             logger.warning("[refresh-derived-data] Rejected request: invalid code_signature (code may have been tampered with)")
             return jsonify({
                 "status": "error",
                 "message": "Invalid code_signature — code may have been tampered with"
-            }), 403
+            })
 
         # ---- Input validation -----------------------------------------------
         if len(input_tables) > 50:
             return jsonify({
                 "status": "error",
                 "message": "Too many input tables (max 50)"
-            }), 400
+            })
             
         if not output_variable:
             return jsonify({
                 "status": "error",
                 "message": "No output_variable provided"
-            }), 400
+            })
 
         # output_variable is interpolated into generated Python code and used
         # to construct file paths inside the sandbox.  Restrict it to valid
@@ -989,13 +979,13 @@ def refresh_derived_data():
             return jsonify({
                 "status": "error",
                 "message": "output_variable must be a valid Python identifier"
-            }), 400
+            })
             
         if virtual and not output_table_name:
             return jsonify({
                 "status": "error",
                 "message": "output_table_name is required when virtual=true"
-            }), 400
+            })
         
         # Get workspace and mount temp data for tables not in workspace
         identity_id = get_identity_id()
@@ -1052,14 +1042,14 @@ def refresh_derived_data():
                 "message": sanitize_error_message(
                     result.get('content', 'Unknown error during transformation')
                 )
-            }), 400
+            })
 
     except Exception as e:
         logger.error("Error refreshing derived data", exc_info=e)
         return jsonify({
             "status": "error",
             "message": classify_llm_error(e)
-        }), 400
+        })
 
 
 @agent_bp.route('/workspace-summary', methods=['POST'])
@@ -1071,7 +1061,7 @@ def workspace_summary():
     Returns: { status: "ok", summary: "3-5 word name" }
     """
     if not request.is_json:
-        return jsonify(status="error", summary=""), 400
+        return jsonify(status="error", summary="")
 
     content = request.get_json()
 
@@ -1089,7 +1079,7 @@ def workspace_summary():
 
     except Exception as e:
         logger.warning(f"Failed to generate workspace summary: {e}")
-        return jsonify(status="error", summary="", error_message=classify_llm_error(e)), 500
+        return jsonify(status="error", summary="", error_message=classify_llm_error(e))
 
 
 # ---------------------------------------------------------------------------
@@ -1118,7 +1108,7 @@ def nl_to_filter():
             return jsonify(status="ok", conditions=[], sort_columns=[], sort_order=None, limit=None)
 
         if not model_config:
-            return jsonify(status="error", message="No model configured"), 400
+            return jsonify(status="error", message="No model configured")
 
         client = get_client(model_config)
         agent = SimpleAgents(client=client)
@@ -1127,11 +1117,11 @@ def nl_to_filter():
         return jsonify(status="ok", **result)
 
     except json.JSONDecodeError:
-        return jsonify(status="error", message="Failed to parse LLM response as JSON"), 422
+        return jsonify(status="error", message="Failed to parse LLM response as JSON")
     except Exception as e:
         logger.warning(f"NL-to-filter failed: {e}")
         safe_msg = classify_llm_error(e)
-        return jsonify(status="error", message=safe_msg), 500
+        return jsonify(status="error", message=safe_msg)
 
 
 # ---------------------------------------------------------------------------
@@ -1149,11 +1139,11 @@ def scratch_upload():
     from werkzeug.utils import secure_filename as _werkzeug_secure_filename
 
     if 'file' not in request.files:
-        return jsonify(status="error", message="No file in request"), 400
+        return jsonify(status="error", message="No file in request")
 
     file = request.files['file']
     if not file.filename:
-        return jsonify(status="error", message="No filename"), 400
+        return jsonify(status="error", message="No filename")
 
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
@@ -1191,10 +1181,10 @@ def scratch_serve(filename):
     try:
         target.relative_to(scratch_dir.resolve())
     except ValueError:
-        return jsonify(status="error", message="Access denied"), 403
+        return jsonify(status="error", message="Access denied")
 
     if not target.exists():
-        return jsonify(status="error", message="File not found"), 404
+        return jsonify(status="error", message="File not found")
 
     return send_file(target)
 
@@ -1209,23 +1199,34 @@ def data_loading_chat():
 
     Streams newline-delimited JSON events (SSE-style).
     """
+    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+    from data_formulator.errors import ErrorCode
+
+    if not request.is_json:
+        return jsonify({"status": "error", "error": {
+            "code": ErrorCode.INVALID_REQUEST,
+            "message": "Invalid request format",
+            "retry": False,
+        }})
+
+    content = request.get_json()
+    logger.info("# data-loading-chat request")
+
+    client = get_client(content['model'])
+    identity_id = get_identity_id()
+    workspace = get_workspace(identity_id)
+
+    from data_formulator.example_datasets_config import EXAMPLE_DATASETS
+    available_datasets = [
+        {"name": ds["name"], "description": ds.get("description", "")}
+        for ds in EXAMPLE_DATASETS
+    ]
+
+    language_instruction = get_language_instruction()
+    messages = content.get("messages", [])
+
     def generate():
         try:
-            content = request.get_json()
-            logger.info("# data-loading-chat request")
-
-            client = get_client(content['model'])
-            identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
-
-            # Get available datasets for the agent
-            from data_formulator.example_datasets_config import EXAMPLE_DATASETS
-            available_datasets = [
-                {"name": ds["name"], "description": ds.get("description", "")}
-                for ds in EXAMPLE_DATASETS
-            ]
-
-            language_instruction = get_language_instruction()
             agent = DataLoadingAgent(
                 client=client,
                 workspace=workspace,
@@ -1233,26 +1234,15 @@ def data_loading_chat():
                 language_instruction=language_instruction,
             )
 
-            messages = content.get("messages", [])
-            workspace_tables = content.get("workspace_tables", [])
-
             for event in agent.stream(messages):
-                # NaN from pandas .to_dict() is not valid JSON; replace with null
                 raw = json.dumps(event, ensure_ascii=False, default=str)
                 raw = raw.replace(': NaN,', ': null,').replace(': NaN}', ': null}').replace(':NaN,', ':null,').replace(':NaN}', ':null}')
                 yield raw + "\n"
 
         except Exception as e:
             logger.exception("data-loading-chat error")
-            safe_msg = classify_llm_error(e)
-            yield json.dumps({
-                "type": "error",
-                "error": safe_msg,
-            }, ensure_ascii=False) + "\n"
-            yield json.dumps({
-                "type": "done",
-                "full_text": f"Error: {safe_msg}",
-            }, ensure_ascii=False) + "\n"
+            yield stream_error_event(classify_and_wrap_llm_error(e))
+            yield json.dumps({"type": "done", "full_text": f"Error: {classify_llm_error(e)}"}, ensure_ascii=False) + "\n"
 
     return Response(
         stream_with_context(_with_warnings(generate())),

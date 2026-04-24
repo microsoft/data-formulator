@@ -49,7 +49,7 @@ def test_parse_xls_returns_sheet_data(client):
 
 def test_parse_file_rejects_missing_file(client):
     resp = client.post("/api/tables/parse-file")
-    assert resp.status_code == 400
+    assert resp.status_code == 200
     assert resp.get_json()["status"] == "error"
 
 
@@ -60,7 +60,8 @@ def test_parse_file_rejects_unsupported_format(client):
         data={"file": (fake, "data.txt")},
         content_type="multipart/form-data",
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "error"
 
 
 def test_parse_csv_via_endpoint(client):

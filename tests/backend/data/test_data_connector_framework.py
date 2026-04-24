@@ -178,10 +178,13 @@ def _clean_data_connectors():
 @pytest.fixture
 def app():
     """Minimal Flask app with the shared connectors blueprint."""
+    from data_formulator.error_handler import register_error_handlers
+
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.secret_key = "test-secret"
     _app.register_blueprint(connectors_bp)
+    register_error_handlers(_app)
     return _app
 
 
@@ -324,7 +327,7 @@ class TestAuthRoutes:
                 "connector_id": "mock_bad",
                 "params": {"host": "bad-host", "user": "x", "password": "x"},
             })
-        assert resp.status_code in (400, 500, 502)
+        assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "error"
 
@@ -339,7 +342,7 @@ class TestAuthRoutes:
                 "connector_id": "mock_fail",
                 "params": {"host": "localhost", "user": "x", "password": "x"},
             })
-        assert resp.status_code == 400
+        assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
 
     def test_delete_connector_clears_status(self, connected_client):
@@ -446,7 +449,7 @@ class TestCatalogRoutes:
     def test_ls_not_connected_returns_error(self, client):
         with patch.object(DataConnector, "_get_identity", return_value="nobody"):
             resp = client.post("/api/connectors/get-catalog", json={"connector_id": "mock_db", "path": []})
-        assert resp.status_code in (400, 500, 502)
+        assert resp.status_code == 200
 
     def test_catalog_metadata(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
@@ -503,12 +506,14 @@ class TestDataRoutes:
     def test_preview_missing_source_table(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/preview-data", json={"connector_id": "mock_db"})
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "error"
 
     def test_import_requires_source_table(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/import-data", json={"connector_id": "mock_db"})
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "error"
 
     def test_import_success(self, connected_client):
         """Import calls ingest_to_workspace and returns metadata."""
@@ -535,7 +540,8 @@ class TestDataRoutes:
     def test_refresh_requires_table_name(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
             resp = connected_client.post("/api/connectors/refresh-data", json={"connector_id": "mock_db"})
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "error"
 
 
 # ==================================================================

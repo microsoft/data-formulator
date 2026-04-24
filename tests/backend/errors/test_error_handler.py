@@ -209,7 +209,7 @@ class TestRegisterErrorHandlers:
 
     def test_app_error_returns_json(self, client) -> None:
         resp = client.get("/raise-app-error")
-        assert resp.status_code == 404
+        assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "error"
         assert data["error"]["code"] == "TABLE_NOT_FOUND"
@@ -218,7 +218,7 @@ class TestRegisterErrorHandlers:
 
     def test_app_error_retryable(self, client) -> None:
         resp = client.get("/raise-app-error-retryable")
-        assert resp.status_code == 429
+        assert resp.status_code == 200
         data = resp.get_json()
         assert data["error"]["retry"] is True
         assert "detail" not in data["error"]  # not debug mode

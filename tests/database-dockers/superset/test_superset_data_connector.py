@@ -226,7 +226,7 @@ class TestSupersetAuth:
             resp = client.post("/api/connectors/superset/auth/connect", json={
                 "params": {"url": "https://bi.example.com", "username": "admin", "password": "wrong"},
             })
-        assert resp.status_code in (400, 500)
+        assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "error"
         # Must not leak the password

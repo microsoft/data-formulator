@@ -66,12 +66,12 @@ def save_session():
     workspace_id: str = data.get("id", "").strip() or data.get("name", "").strip()
 
     if state is None:
-        return jsonify(status="error", message="State payload is required"), 400
+        return jsonify(status="error", message="State payload is required")
 
     identity_id = get_identity_id()
     ws_id = workspace_id or get_active_workspace_id()
     if not ws_id:
-        return jsonify(status="error", message="No active workspace"), 400
+        return jsonify(status="error", message="No active workspace")
 
     mgr = get_workspace_manager(identity_id)
 
@@ -100,9 +100,9 @@ def list_sessions():
     source = request.args.get("source_identity", "").strip()
     if source:
         if not identity_id.startswith("user:"):
-            return jsonify(status="error", message="source_identity requires authenticated user"), 403
+            return jsonify(status="error", message="source_identity requires authenticated user")
         if not source.startswith("browser:"):
-            return jsonify(status="error", message="source_identity must be a browser identity"), 400
+            return jsonify(status="error", message="source_identity must be a browser identity")
         identity_id = source
 
     mgr = get_workspace_manager(identity_id)
@@ -124,13 +124,13 @@ def load_session():
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or data.get("name", "")).strip()
     if not workspace_id:
-        return jsonify(status="error", message="Workspace id is required"), 400
+        return jsonify(status="error", message="Workspace id is required")
 
     identity_id = get_identity_id()
     mgr = get_workspace_manager(identity_id)
 
     if not mgr.workspace_exists(workspace_id):
-        return jsonify(status="error", message=f"Workspace '{workspace_id}' not found"), 404
+        return jsonify(status="error", message=f"Workspace '{workspace_id}' not found")
 
     # Load session state
     state = mgr.load_session_state(workspace_id)
@@ -149,13 +149,13 @@ def delete_session():
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or data.get("name", "")).strip()
     if not workspace_id:
-        return jsonify(status="error", message="Workspace id is required"), 400
+        return jsonify(status="error", message="Workspace id is required")
 
     identity_id = get_identity_id()
     mgr = get_workspace_manager(identity_id)
 
     if not mgr.delete_workspace(workspace_id):
-        return jsonify(status="error", message=f"Workspace '{workspace_id}' not found"), 404
+        return jsonify(status="error", message=f"Workspace '{workspace_id}' not found")
 
     return jsonify(status="ok", id=workspace_id)
 
@@ -169,13 +169,13 @@ def create_workspace_route():
     data = request.get_json(force=True)
     workspace_id: str = (data.get("id") or data.get("name", "")).strip()
     if not workspace_id:
-        return jsonify(status="error", message="Workspace id is required"), 400
+        return jsonify(status="error", message="Workspace id is required")
 
     identity_id = get_identity_id()
     mgr = get_workspace_manager(identity_id)
 
     if mgr.workspace_exists(workspace_id):
-        return jsonify(status="error", message="Workspace already exists"), 409
+        return jsonify(status="error", message="Workspace already exists")
 
     mgr.create_workspace(workspace_id)
 
@@ -192,7 +192,7 @@ def rename_workspace_route():
     old_id: str = (data.get("old_id") or data.get("old_name", "")).strip()
     new_id: str = (data.get("new_id") or data.get("new_name", "")).strip()
     if not old_id or not new_id:
-        return jsonify(status="error", message="old_id and new_id are required"), 400
+        return jsonify(status="error", message="old_id and new_id are required")
 
     identity_id = get_identity_id()
     mgr = get_workspace_manager(identity_id)
@@ -200,7 +200,7 @@ def rename_workspace_route():
     try:
         mgr.rename_workspace(old_id, new_id)
     except ValueError:
-        return jsonify(status="error", message="Rename failed — workspace not found or name conflict"), 400
+        return jsonify(status="error", message="Rename failed — workspace not found or name conflict")
 
     return jsonify(status="ok", old_id=old_id, new_id=new_id)
 
@@ -211,7 +211,7 @@ def export_session():
     data = request.get_json(force=True)
     state: dict = data.get("state")
     if state is None:
-        return jsonify(status="error", message="State payload is required"), 400
+        return jsonify(status="error", message="State payload is required")
 
     identity_id = get_identity_id()
     ws = get_workspace(identity_id)
@@ -228,7 +228,7 @@ def export_session():
 def import_session():
     """Import a workspace from a zip."""
     if "file" not in request.files:
-        return jsonify(status="error", message="No file uploaded"), 400
+        return jsonify(status="error", message="No file uploaded")
 
     file = request.files["file"]
     try:
@@ -237,10 +237,10 @@ def import_session():
         state = ws.import_session_zip(io.BytesIO(file.read()))
         return jsonify(status="ok", state=state)
     except ValueError:
-        return jsonify(status="error", message="Invalid session file"), 400
+        return jsonify(status="error", message="Invalid session file")
     except Exception as e:
         logger.error("Error importing session", exc_info=e)
-        return jsonify(status="error", message="Failed to import session"), 400
+        return jsonify(status="error", message="Failed to import session")
 
 
 @session_bp.route("/migrate", methods=["POST"])
@@ -259,12 +259,12 @@ def migrate_workspaces():
 
     target_id = get_identity_id()
     if not target_id.startswith("user:"):
-        return jsonify(status="error", message="Migration requires an authenticated user"), 403
+        return jsonify(status="error", message="Migration requires an authenticated user")
 
     data = request.get_json(force=True)
     source_id: str = (data.get("source_identity") or "").strip()
     if not source_id.startswith("browser:"):
-        return jsonify(status="error", message="source_identity must be a browser identity"), 400
+        return jsonify(status="error", message="source_identity must be a browser identity")
 
     try:
         source_mgr = get_workspace_manager(source_id)
@@ -283,7 +283,7 @@ def migrate_workspaces():
         return jsonify(status="ok", moved=moved)
     except Exception as e:
         logger.error("Workspace migration failed", exc_info=e)
-        return jsonify(status="error", message="Workspace migration failed"), 500
+        return jsonify(status="error", message="Workspace migration failed")
 
 
 @session_bp.route("/cleanup-anonymous", methods=["POST"])
@@ -300,12 +300,12 @@ def cleanup_anonymous():
 
     target_id = get_identity_id()
     if not target_id.startswith("user:"):
-        return jsonify(status="error", message="Cleanup requires an authenticated user"), 403
+        return jsonify(status="error", message="Cleanup requires an authenticated user")
 
     data = request.get_json(force=True)
     source_id: str = (data.get("source_identity") or "").strip()
     if not source_id.startswith("browser:"):
-        return jsonify(status="error", message="source_identity must be a browser identity"), 400
+        return jsonify(status="error", message="source_identity must be a browser identity")
 
     try:
         source_mgr = get_workspace_manager(source_id)
