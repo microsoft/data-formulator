@@ -16,7 +16,7 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { inferTypeFromValueArray } from '../data/utils';
-import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash } from './utils';
+import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
 import { tableDataDB } from './workspaceDB';
 
@@ -41,7 +41,7 @@ export interface LoadTablePayload {
     replaceSource?: boolean;
 
     // For database sources loaded via data connector:
-    sourceTableName?: string;
+    sourceTableRef?: SourceTableRef;
     connectorId?: string;
     importOptions?: {
         rowLimit?: number;
@@ -74,7 +74,7 @@ export const loadTable = createAsyncThunk<
 >(
     'dataFormulator/loadTable',
     async (payload, { dispatch, getState }) => {
-        const { table, file, replaceSource, sourceTableName, connectorId, importOptions } = payload;
+        const { table, file, replaceSource, sourceTableRef, connectorId, importOptions } = payload;
         const state = getState();
         const frontendRowLimit = state.config?.frontendRowLimit ?? 2_000_000;
         const existingTables = state.tables;
@@ -129,14 +129,14 @@ export const loadTable = createAsyncThunk<
 
         if (storeOnServer) {
             // === STORE ON SERVER PATH ===
-            if (sourceType === 'database' && sourceTableName && connectorId) {
+            if (sourceType === 'database' && sourceTableRef && connectorId) {
                 // Database source: ingest to workspace via data connector
                 try {
                     const ingestUrl = CONNECTOR_ACTION_URLS.IMPORT_DATA;
                     const ingestBody = {
                         connector_id: connectorId,
-                        source_table: sourceTableName,
-                        table_name: sourceTableName,
+                        source_table: sourceTableRef,
+                        table_name: sourceTableRef.name,
                         import_options: importOptions || {},
                     };
                     const response = await fetchWithIdentity(ingestUrl, {
@@ -235,7 +235,7 @@ export const loadTable = createAsyncThunk<
             }
         } else {
             // === LOCAL ONLY PATH (storeOnServer = false) ===
-            if (sourceType === 'database' && connectorId && sourceTableName) {
+            if (sourceType === 'database' && connectorId && sourceTableRef) {
                 // Database source: fetch data via data connector preview (no workspace save)
                 try {
                     const response = await fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
@@ -243,11 +243,12 @@ export const loadTable = createAsyncThunk<
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             connector_id: connectorId,
-                            source_table: sourceTableName,
+                            source_table: sourceTableRef,
                             import_options: {
                                 size: frontendRowLimit,
                                 sort_columns: importOptions?.sortColumns,
                                 sort_order: importOptions?.sortOrder,
+                                source_filters: importOptions?.source_filters,
                             },
                         }),
                     });

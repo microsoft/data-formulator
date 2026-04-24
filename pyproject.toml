@@ -58,6 +58,7 @@ dependencies = [
     # SSO / Auth deps
     "PyJWT[crypto]>=2.8.0",     # OIDC JWT verification (includes cryptography)
     "requests",                 # GitHub OAuth code exchange, Superset API calls
+    "flask-session>=0.8.0",     # Server-side session (SQLite) for TokenStore
 ]
 
 [project.urls]

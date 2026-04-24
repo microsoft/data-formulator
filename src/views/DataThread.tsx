@@ -2328,7 +2328,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             dispatch(loadTable({
                 table: tableObj,
                 connectorId: item.connectorId,
-                sourceTableName: item.tableName,
+                sourceTableRef: { id: item.tableId || item.tableName, name: item.tableName },
                 importOptions: {},
             })).unwrap()
                 .then(() => {

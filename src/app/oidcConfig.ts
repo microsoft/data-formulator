@@ -38,7 +38,7 @@ export interface OidcConfig {
 }
 
 export interface AuthInfo {
-    action: "frontend" | "redirect" | "transparent" | "none";
+    action: "frontend" | "backend" | "redirect" | "transparent" | "none";
     label?: string;
     oidc?: {
         authority: string;
@@ -47,6 +47,18 @@ export interface AuthInfo {
         metadata?: OidcEndpointMetadata;
     };
     url?: string;
+    login_url?: string;
+    status_url?: string;
+    logout_url?: string;
+}
+
+/**
+ * Returns ``true`` when the server handles OIDC (confidential client) and the
+ * browser should use session cookies instead of ``Authorization: Bearer`` tokens.
+ */
+export async function isBackendAuth(): Promise<boolean> {
+    const info = await getAuthInfo();
+    return info?.action === "backend";
 }
 
 // ---------------------------------------------------------------------------

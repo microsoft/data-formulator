@@ -284,11 +284,11 @@ export function useFormulateData() {
                                 throw new Error(msg);
                             }
                             if (parsed.type === 'warning') {
-                                dispatch(dfActions.addMessages([{
+                                dispatch(dfActions.addMessages({
                                     timestamp: Date.now(), type: 'warning',
                                     component: 'exploration',
                                     value: parsed.warning?.message ?? 'Warning from server',
-                                }]));
+                                }));
                                 continue;
                             }
                             if (parsed.text) {
@@ -313,11 +313,11 @@ export function useFormulateData() {
                         throw new Error(msg);
                     }
                     if (parsed.type === 'warning') {
-                        dispatch(dfActions.addMessages([{
+                        dispatch(dfActions.addMessages({
                             timestamp: Date.now(), type: 'warning',
                             component: 'exploration',
                             value: parsed.warning?.message ?? 'Warning from server',
-                        }]));
+                        }));
                     } else if (parsed.text) {
                         lines.push(buffer.trim());
                     }

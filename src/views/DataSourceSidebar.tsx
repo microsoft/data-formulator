@@ -12,6 +12,7 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import {
+    Autocomplete,
     Box,
     Typography,
     IconButton,
@@ -26,7 +27,12 @@ import {
     DialogContent,
     DialogContentText,
     DialogActions,
+    Stack,
+    TextField,
+    MenuItem,
+    InputAdornment,
 } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import { generateUUID } from '../app/identity';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
@@ -44,17 +50,20 @@ import ContentPasteOutlinedIcon from '@mui/icons-material/ContentPasteOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import SearchIcon from '@mui/icons-material/Search';
+import ClearIcon from '@mui/icons-material/Clear';
 
 import HistoryIcon from '@mui/icons-material/History';
 
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS } from '../app/utils';
+import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace } from '../app/workspaceService';
 import { borderColor } from '../app/tokens';
+import { RowLimitUnderlineSelect } from '../components/RowLimitUnderlineSelect';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
 import { DataFrameTable } from './DataFrameTable';
@@ -82,7 +91,7 @@ interface CatalogCache {
 interface PreviewState {
     connectorId: string;
     node: CatalogTreeNode;
-    columns: { name: string; type: string }[];
+    columns: { name: string; type: string; source_type?: string }[];
     sampleRows: Record<string, any>[];
     rowCount: number | null;
     loading: boolean;
@@ -230,10 +239,124 @@ const DataSourceSidebarPanel: React.FC<{
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
     const [importing, setImporting] = useState(false);
+    const [previewRowLimit, setPreviewRowLimit] = useState<number>(50_000);
+    const [previewFilters, setPreviewFilters] = useState<{ column: string; operator: string; value: string; valueTo?: string }[]>([]);
+    const sidebarRowLimitPresets = [20_000, 50_000, 100_000, 200_000, 300_000, 500_000];
+
+    // Smart filter: column type detection.
+    // Prefers source_type (original DB/BI type like "TEMPORAL", "BOOLEAN",
+    // "timestamp") over pandas dtype ("object", "int64") for reliable detection.
+    const inferInputType = (pandasType: string, sourceType?: string): 'time' | 'numeric' | 'boolean' | 'select' | 'text' => {
+        const src = (sourceType || '').toUpperCase();
+        const pd = (pandasType || '').toUpperCase();
+
+        // Source type takes priority — backend normalizes to TEMPORAL/NUMERIC/BOOLEAN/STRING
+        if (src) {
+            if (src === 'TEMPORAL' || /DATE|TIME|TIMESTAMP|DATETIME/.test(src)) return 'time';
+            if (src === 'NUMERIC' || /INT|FLOAT|DOUBLE|DECIMAL|BIGINT|NUMBER/.test(src)) return 'numeric';
+            if (src === 'BOOLEAN' || /BOOL/.test(src)) return 'boolean';
+        }
+
+        // Fallback to pandas dtype
+        if (/DATETIME/.test(pd)) return 'time';
+        if (/INT|FLOAT/.test(pd)) return 'numeric';
+        if (/BOOL/.test(pd)) return 'boolean';
+
+        return 'select';
+    };
+
+    const getOperatorsForType = (inputType: string) => {
+        switch (inputType) {
+            case 'boolean':
+                return [
+                    { value: 'EQ', label: '=' },
+                    { value: 'IS_NULL', label: 'IS NULL' },
+                    { value: 'IS_NOT_NULL', label: 'IS NOT NULL' },
+                ];
+            case 'select':
+                return [
+                    { value: 'EQ', label: '=' },
+                    { value: 'NEQ', label: '!=' },
+                    { value: 'IS_NULL', label: 'IS NULL' },
+                    { value: 'IS_NOT_NULL', label: 'IS NOT NULL' },
+                ];
+            case 'numeric':
+                return [
+                    { value: 'EQ', label: '=' },
+                    { value: 'GT', label: '>' },
+                    { value: 'GTE', label: '>=' },
+                    { value: 'LT', label: '<' },
+                    { value: 'LTE', label: '<=' },
+                    { value: 'BETWEEN', label: t('sidebar.opBetween', { defaultValue: 'BETWEEN' }) },
+                    { value: 'IS_NULL', label: 'IS NULL' },
+                    { value: 'IS_NOT_NULL', label: 'IS NOT NULL' },
+                ];
+            case 'time':
+                return [
+                    { value: 'BETWEEN', label: t('sidebar.opBetween', { defaultValue: 'BETWEEN' }) },
+                    { value: 'EQ', label: '=' },
+                    { value: 'GT', label: '>' },
+                    { value: 'GTE', label: '>=' },
+                    { value: 'LT', label: '<' },
+                    { value: 'LTE', label: '<=' },
+                    { value: 'IS_NULL', label: 'IS NULL' },
+                    { value: 'IS_NOT_NULL', label: 'IS NOT NULL' },
+                ];
+            default:
+                return [
+                    { value: 'ILIKE', label: t('sidebar.opContains', { defaultValue: 'CONTAINS' }) },
+                    { value: 'EQ', label: '=' },
+                    { value: 'NEQ', label: '!=' },
+                    { value: 'IS_NULL', label: 'IS NULL' },
+                    { value: 'IS_NOT_NULL', label: 'IS NOT NULL' },
+                ];
+        }
+    };
+
+    const defaultOperatorForType = (inputType: string) => {
+        if (inputType === 'time') return 'BETWEEN';
+        if (inputType === 'boolean') return 'EQ';
+        if (inputType === 'select') return 'EQ';
+        if (inputType === 'numeric') return 'EQ';
+        return 'ILIKE';
+    };
+
+    // Autocomplete options cache & loading state for select-type filters
+    const [filterOptionsMap, setFilterOptionsMap] = useState<Record<string, { label: string; value: any }[]>>({});
+    const [filterOptionsLoading, setFilterOptionsLoading] = useState<string | null>(null);
+    const [filterOptionsMore, setFilterOptionsMore] = useState<Record<string, boolean>>({});
+
+    const loadFilterOptions = useCallback(async (connectorId: string, sourceTable: any, columnName: string, keyword = '') => {
+        const cacheKey = `${connectorId}:${typeof sourceTable === 'object' ? sourceTable.id : sourceTable}:${columnName}`;
+        setFilterOptionsLoading(cacheKey);
+        try {
+            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.COLUMN_VALUES, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    connector_id: connectorId,
+                    source_table: sourceTable,
+                    column_name: columnName,
+                    keyword: keyword.trim(),
+                    limit: 50,
+                }),
+            });
+            const data = await resp.json();
+            if (data.status === 'ok') {
+                setFilterOptionsMap(prev => ({ ...prev, [cacheKey]: data.options || [] }));
+                setFilterOptionsMore(prev => ({ ...prev, [cacheKey]: !!data.has_more }));
+            }
+        } catch { /* best-effort */ } finally {
+            setFilterOptionsLoading(cur => cur === cacheKey ? null : cur);
+        }
+    }, []);
 
     // Delete connector confirmation
     const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
     const [deleting, setDeleting] = useState(false);
+
+    // Catalog search (pure frontend filtering)
+    const [catalogSearch, setCatalogSearch] = useState('');
 
     // Session hover tooltip cache: sessionId → summary string
     const [sessionTooltips, setSessionTooltips] = useState<Record<string, string>>({});
@@ -420,6 +543,37 @@ const DataSourceSidebarPanel: React.FC<{
         return map;
     }, [tableIdentities]);
 
+    // ── Filtered catalog trees (frontend search) ───────────────────────────
+    const filterTree = useCallback((nodes: CatalogTreeNode[], query: string): CatalogTreeNode[] => {
+        const q = query.toLowerCase();
+        const result: CatalogTreeNode[] = [];
+        for (const node of nodes) {
+            if (node.node_type === 'table') {
+                if (node.name.toLowerCase().includes(q)) {
+                    result.push(node);
+                }
+            } else {
+                const filteredChildren = node.children ? filterTree(node.children, query) : [];
+                if (filteredChildren.length > 0) {
+                    result.push({ ...node, children: filteredChildren });
+                }
+            }
+        }
+        return result;
+    }, []);
+
+    const filteredCatalogCache = useMemo(() => {
+        if (!catalogSearch.trim()) return catalogCache;
+        const filtered: Record<string, CatalogCache> = {};
+        for (const [connId, cache] of Object.entries(catalogCache)) {
+            const tree = filterTree(cache.tree, catalogSearch.trim());
+            if (tree.length > 0) {
+                filtered[connId] = { ...cache, tree };
+            }
+        }
+        return filtered;
+    }, [catalogCache, catalogSearch, filterTree]);
+
     // ── Toggle expand source ─────────────────────────────────────────────────
 
     const catalogCacheRef = useRef(catalogCache);
@@ -443,11 +597,19 @@ const DataSourceSidebarPanel: React.FC<{
 
     // ── Preview a table on click ──────────────────────────────────────────
 
+    const buildSourceTableRef = useCallback((node: CatalogTreeNode): SourceTableRef => {
+        const name = node.metadata?._source_name || node.metadata?._catalogName || node.name;
+        const id = node.metadata?.dataset_id != null ? String(node.metadata.dataset_id) : name;
+        return { id, name };
+    }, []);
+
     const handlePreviewTable = useCallback((connectorId: string, node: CatalogTreeNode, anchorEl: HTMLElement) => {
         if (node.node_type !== 'table') return;
 
-        const sourceName = node.metadata?._source_name || node.metadata?._catalogName || node.name;
+        const ref = buildSourceTableRef(node);
 
+        setPreviewRowLimit(50_000);
+        setPreviewFilters([]);
         setPreview({
             connectorId,
             node,
@@ -463,20 +625,24 @@ const DataSourceSidebarPanel: React.FC<{
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 connector_id: connectorId,
-                source_table: sourceName,
-                limit: 5,
+                source_table: ref,
+                limit: 10,
             }),
         })
             .then(r => r.json())
             .then(data => {
-                if (data.columns && data.rows) {
-                    setPreview(prev => prev ? {
-                        ...prev,
-                        columns: data.columns,
-                        sampleRows: data.rows,
-                        rowCount: data.total_row_count ?? prev.rowCount,
-                        loading: false,
-                    } : null);
+                if (data.columns) {
+                    setPreview(prev => {
+                        if (!prev) return null;
+                        const newCols = (data.columns as typeof prev.columns);
+                        return {
+                            ...prev,
+                            columns: newCols.length > 0 ? newCols : prev.columns,
+                            sampleRows: data.rows || [],
+                            rowCount: data.total_row_count ?? prev.rowCount,
+                            loading: false,
+                        };
+                    });
                 } else {
                     setPreview(prev => prev ? { ...prev, loading: false } : null);
                 }
@@ -493,21 +659,11 @@ const DataSourceSidebarPanel: React.FC<{
 
     // ── Import table (from preview "Load" button) ────────────────────────────
 
-    const handleImportTable = useCallback((connectorId: string, node: CatalogTreeNode, newWorkspace?: boolean) => {
+    const handleImportTable = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
         if (node.node_type !== 'table') return;
 
-        const sourceName = node.metadata?._source_name || node.metadata?._catalogName || node.name;
+        const ref = buildSourceTableRef(node);
         const pathKey = node.path.join('/');
-
-        // Create a new workspace first if requested
-        if (newWorkspace) {
-            const now = new Date();
-            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-            const short = generateUUID().slice(0, 4);
-            const wsId = `session_${date}_${time}_${short}`;
-            dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
-        }
 
         const tableObj: DictTable = {
             kind: 'table' as const,
@@ -532,15 +688,15 @@ const DataSourceSidebarPanel: React.FC<{
         dispatch(loadTable({
             table: tableObj,
             connectorId,
-            sourceTableName: sourceName,
-            importOptions: {},
+            sourceTableRef: ref,
+            importOptions: importOptions || {},
         })).unwrap()
             .then(() => {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     type: 'success',
                     component: 'data source sidebar',
-                    value: t('sidebar.loadedTable', { name: sourceName }),
+                    value: t('sidebar.loadedTable', { name: ref.name }),
                 }));
                 closePreview();
             })
@@ -549,24 +705,23 @@ const DataSourceSidebarPanel: React.FC<{
                     timestamp: Date.now(),
                     type: 'error',
                     component: 'data source sidebar',
-                    value: t('sidebar.failedLoadTable', { name: sourceName, error: String(error) }),
+                    value: t('sidebar.failedLoadTable', { name: ref.name, error: String(error) }),
                 }));
             })
             .finally(() => setImporting(false));
-    }, [dispatch, closePreview]);
+    }, [dispatch, closePreview, buildSourceTableRef]);
 
     // ── Refresh table data ───────────────────────────────────────────────────
 
     const handleRefreshTable = useCallback((connectorId: string, node: CatalogTreeNode, e: React.MouseEvent) => {
         e.stopPropagation();
         const pathKey = node.path.join('/');
-        // Find the loaded table identity matching this node
         const loaded = tableIdentities.find(
             t => t.connectorId === connectorId && (t.databaseTable === pathKey || t.id === node.name)
         );
         if (!loaded) return;
 
-        const sourceName = node.metadata?._source_name || node.metadata?._catalogName || node.name;
+        const ref = buildSourceTableRef(node);
 
         fetchWithIdentity(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
             method: 'POST',
@@ -574,7 +729,7 @@ const DataSourceSidebarPanel: React.FC<{
             body: JSON.stringify({
                 connector_id: connectorId,
                 table_name: loaded.virtualTableId || loaded.id,
-                source_table: sourceName,
+                source_table: ref,
             }),
         })
             .then(r => r.json())
@@ -584,7 +739,7 @@ const DataSourceSidebarPanel: React.FC<{
                         timestamp: Date.now(),
                         type: 'success',
                         component: 'data source sidebar',
-                        value: t('sidebar.refreshedTable', { name: sourceName }),
+                        value: t('sidebar.refreshedTable', { name: ref.name }),
                     }));
                 }
             })
@@ -594,7 +749,7 @@ const DataSourceSidebarPanel: React.FC<{
                     component: 'data source sidebar', value: 'Failed to refresh table data',
                 }));
             });
-    }, [tableIdentities, dispatch]);
+    }, [tableIdentities, dispatch, buildSourceTableRef]);
 
     // ── Delete connector ──────────────────────────────────────────────────
 
@@ -693,17 +848,62 @@ const DataSourceSidebarPanel: React.FC<{
                     {t('sidebar.dataConnectors', { defaultValue: 'Data connectors' })}
                 </Typography>
 
+                {/* Search box for filtering catalog tables */}
+                <Box sx={{ px: 1.5, pt: 0.5, pb: 0.5 }}>
+                    <TextField
+                        size="small"
+                        fullWidth
+                        value={catalogSearch}
+                        onChange={(e) => setCatalogSearch(e.target.value)}
+                        placeholder={t('sidebar.searchTables', { defaultValue: 'Search tables...' })}
+                        slotProps={{
+                            input: {
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: catalogSearch ? (
+                                    <InputAdornment position="end">
+                                        <IconButton size="small" onClick={() => setCatalogSearch('')} sx={{ p: 0.25 }}>
+                                            <ClearIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                                        </IconButton>
+                                    </InputAdornment>
+                                ) : null,
+                            },
+                        }}
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: 12, height: 30, borderRadius: 1 },
+                            '& .MuiInputBase-input': { py: 0.5, px: 0.5 },
+                            '& .MuiInputBase-input::placeholder': { fontSize: 11 },
+                        }}
+                    />
+                </Box>
+
                 {loadingConnectors && connectors.length === 0 && (
                     <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
                         <CircularProgress size={20} />
                     </Box>
                 )}
 
-                {sortedConnectors.map((connector) => {
-                    const isExpanded = expandedSources.has(connector.id);
-                    const cache = catalogCache[connector.id];
+                {sortedConnectors
+                    .filter((connector) => {
+                        if (!catalogSearch.trim()) return true;
+                        const cache = catalogCache[connector.id];
+                        if (!cache) return true; // not yet loaded — keep visible
+                        const filtered = filteredCatalogCache[connector.id];
+                        return filtered && filtered.tree.length > 0;
+                    })
+                    .map((connector) => {
+                    const isSearching = !!catalogSearch.trim();
+                    const displayCache = isSearching ? filteredCatalogCache[connector.id] : catalogCache[connector.id];
+                    const isExpanded = isSearching
+                        ? (!!displayCache && displayCache.tree.length > 0)
+                        : expandedSources.has(connector.id);
                     const isLoading = loadingCatalog[connector.id] ?? false;
-                    const expanded = treeExpanded[connector.id] || [];
+                    const expanded = isSearching
+                        ? collectNamespaceIds(displayCache?.tree || [])
+                        : (treeExpanded[connector.id] || []);
 
                     return (
                         <Box key={connector.id}>
@@ -775,19 +975,22 @@ const DataSourceSidebarPanel: React.FC<{
                             {connector.connected && (
                             <Collapse in={isExpanded}>
                                 <Box sx={{ pl: 1, pr: 0.5, pb: 1 }}>
-                                    {!cache && (
+                                    {!displayCache && (
                                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
                                             <CircularProgress size={16} />
                                         </Box>
                                     )}
-                                    {cache && cache.tree.length > 0 && (
+                                    {displayCache && displayCache.tree.length > 0 && (
                                         <SimpleTreeView
                                             expandedItems={expanded}
                                             onExpandedItemsChange={(_e, items) => {
-                                                setTreeExpanded(prev => ({ ...prev, [connector.id]: items }));
+                                                if (!isSearching) {
+                                                    setTreeExpanded(prev => ({ ...prev, [connector.id]: items }));
+                                                }
                                             }}
                                             onItemClick={(e, itemId) => {
-                                                const node = findNodeByPath(cache.tree, itemId);
+                                                const fullCache = catalogCache[connector.id];
+                                                const node = fullCache ? findNodeByPath(fullCache.tree, itemId) : null;
                                                 if (node && node.node_type === 'table') {
                                                     handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
                                                 }
@@ -795,14 +998,16 @@ const DataSourceSidebarPanel: React.FC<{
                                             itemChildrenIndentation={0}
                                             sx={{ px: 0.5 }}
                                         >
-                                            {renderCatalogTreeItems(cache.tree, {
+                                            {renderCatalogTreeItems(displayCache.tree, {
                                                 loadedMap: loadedTablesMap,
                                                 expandedSet: new Set(expanded),
                                                 onDragStart: (node, event) => {
+                                                    const dsId = node.metadata?.dataset_id;
                                                     const item: CatalogTableDragItem = {
                                                         type: CATALOG_TABLE_ITEM,
                                                         connectorId: connector.id,
                                                         tableName: node.name,
+                                                        tableId: dsId != null ? String(dsId) : undefined,
                                                         tablePath: node.path,
                                                         sourceType: connector.source_type,
                                                     };
@@ -828,7 +1033,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             })}
                                         </SimpleTreeView>
                                     )}
-                                    {cache && cache.tree.length === 0 && !isLoading && (
+                                    {displayCache && displayCache.tree.length === 0 && !isLoading && (
                                         <Typography sx={{ fontSize: 11, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>
                                             {t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
                                         </Typography>
@@ -994,68 +1199,338 @@ const DataSourceSidebarPanel: React.FC<{
                 transformOrigin={{ vertical: 'center', horizontal: 'left' }}
                 slotProps={{
                     paper: {
-                        sx: { width: 480, maxHeight: 520, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+                        sx: {
+                            width: '66vw', maxWidth: '92vw', minWidth: 400, minHeight: 300, maxHeight: '85vh',
+                            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                            resize: 'both',
+                        },
                     },
                 }}
             >
                 {preview && (
                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-                        {/* Header */}
+                        {/* Header — name + max rows + filters */}
                         <Box sx={{ px: 2, pt: 1.5, pb: 1, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
-                            <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{preview.node.name}</Typography>
-                            {preview.rowCount != null && (
-                                <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-                                    {t('sidebar.previewRowCount', { count: Number(preview.rowCount).toLocaleString() })}
-                                </Typography>
+                            {/* Row 1: name + max rows */}
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                    <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>{preview.node.name}</Typography>
+                                    {preview.rowCount != null && (
+                                        <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
+                                            {t('sidebar.previewRowCount', { count: Number(preview.rowCount).toLocaleString() })}
+                                        </Typography>
+                                    )}
+                                </Box>
+                                {!(loadedTablesMap[preview.node.name] || loadedTablesMap[preview.node.path.join('/')]) && (
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.25, flexShrink: 0, mt: 0.125 }}>
+                                        <Typography sx={{ fontSize: 10, color: 'text.secondary', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                                            {t('sidebar.maxRows', { defaultValue: 'Max rows' })}
+                                        </Typography>
+                                        <RowLimitUnderlineSelect
+                                            value={previewRowLimit}
+                                            presets={sidebarRowLimitPresets}
+                                            onChange={setPreviewRowLimit}
+                                            fontSize={12}
+                                        />
+                                    </Box>
+                                )}
+                            </Box>
+                            {/* Filter conditions — smart inputs based on column type */}
+                            {preview.columns.length > 0 && !(loadedTablesMap[preview.node.name] || loadedTablesMap[preview.node.path.join('/')]) && (
+                                <Box sx={{ mt: 1 }}>
+                                    {previewFilters.map((f, idx) => {
+                                        const colMeta = preview.columns.find(c => c.name === f.column);
+                                        const inputType = colMeta ? inferInputType(colMeta.type, colMeta.source_type) : 'text';
+                                        const operators = f.column ? getOperatorsForType(inputType) : getOperatorsForType('text');
+                                        const noValue = f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL';
+                                        const isBetween = f.operator === 'BETWEEN';
+                                        const inputSx = { '& .MuiInputBase-root': { fontSize: 11, height: 26 }, '& .MuiInputBase-input': { py: 0.25, px: 0.75 } };
+                                        const sourceTable = preview.node.metadata?.dataset_id
+                                            ? { id: String(preview.node.metadata.dataset_id), name: preview.node.name }
+                                            : preview.node.path.slice(-1)[0];
+                                        const cacheKey = `${preview.connectorId}:${typeof sourceTable === 'object' ? sourceTable.id : sourceTable}:${f.column}`;
+
+                                        const renderValueControl = () => {
+                                            if (noValue) {
+                                                return (
+                                                    <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 10, flex: 1 }}>
+                                                        {t('sidebar.noValueNeeded', { defaultValue: 'No value needed' })}
+                                                    </Typography>
+                                                );
+                                            }
+                                            if (inputType === 'boolean') {
+                                                return (
+                                                    <TextField
+                                                        select size="small" value={f.value || ''}
+                                                        onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, value: e.target.value } : r))}
+                                                        sx={{ flex: 1, minWidth: 80, ...inputSx }}
+                                                        slotProps={{ select: { displayEmpty: true } }}
+                                                    >
+                                                        <MenuItem value="" sx={{ fontSize: 11, color: 'text.disabled' }}><em>—</em></MenuItem>
+                                                        <MenuItem value="true" sx={{ fontSize: 11 }}>True</MenuItem>
+                                                        <MenuItem value="false" sx={{ fontSize: 11 }}>False</MenuItem>
+                                                    </TextField>
+                                                );
+                                            }
+                                            if (inputType === 'select' && f.column) {
+                                                const hasTruncation = filterOptionsMore[cacheKey];
+                                                return (
+                                                    <Tooltip
+                                                        title={hasTruncation ? t('sidebar.filterOptionsTruncated', { defaultValue: 'Results truncated, type to narrow' }) : ''}
+                                                        placement="top"
+                                                    >
+                                                    <Box sx={{ flex: 1, minWidth: 120 }}>
+                                                        <Autocomplete
+                                                            freeSolo
+                                                            size="small"
+                                                            options={filterOptionsMap[cacheKey] || []}
+                                                            value={f.value || null}
+                                                            loading={filterOptionsLoading === cacheKey}
+                                                            filterOptions={(opts) => opts}
+                                                            getOptionLabel={(opt) => typeof opt === 'string' ? opt : (opt as any).label || String((opt as any).value)}
+                                                            isOptionEqualToValue={(opt, val) => String(typeof opt === 'string' ? opt : (opt as any).value) === String(typeof val === 'string' ? val : (val as any).value)}
+                                                            onChange={(_, val) => {
+                                                                const newVal = val == null ? '' : typeof val === 'string' ? val : String((val as any).value);
+                                                                setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, value: newVal } : r));
+                                                            }}
+                                                            onInputChange={(_, val, reason) => {
+                                                                if (reason === 'input') {
+                                                                    setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, value: val } : r));
+                                                                }
+                                                            }}
+                                                            renderInput={(params) => (
+                                                                <TextField
+                                                                    {...params}
+                                                                    size="small"
+                                                                    placeholder={t('sidebar.filterValueSearch', { defaultValue: 'Enter & search' })}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            e.preventDefault();
+                                                                            loadFilterOptions(preview.connectorId, sourceTable, f.column, f.value || '');
+                                                                        }
+                                                                    }}
+                                                                    sx={{ ...inputSx, '& .MuiOutlinedInput-root': { fontSize: 11, height: 26, py: 0 } }}
+                                                                />
+                                                            )}
+                                                            slotProps={{ listbox: { sx: { fontSize: 11 } } }}
+                                                        />
+                                                    </Box>
+                                                    </Tooltip>
+                                                );
+                                            }
+                                            if (inputType === 'time') {
+                                                const dateSx = {
+                                                    '& .MuiInputBase-root': { fontSize: 11, height: 28 },
+                                                    '& .MuiInputBase-input': { py: 0.25, px: 0.75 },
+                                                    '& .MuiInputBase-input::-webkit-calendar-picker-indicator': { cursor: 'pointer', opacity: 0.6 },
+                                                };
+                                                return (
+                                                    <Stack direction="row" spacing={0.5} sx={{ flex: 1, minWidth: 120 }}>
+                                                        <TextField
+                                                            size="small" type="date"
+                                                            value={f.value || ''}
+                                                            placeholder="YYYY-MM-DD"
+                                                            onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, value: e.target.value } : r))}
+                                                            slotProps={{ inputLabel: { shrink: true } }}
+                                                            sx={{ flex: 1, ...dateSx }}
+                                                        />
+                                                        {isBetween && (
+                                                            <TextField
+                                                                size="small" type="date"
+                                                                value={f.valueTo || ''}
+                                                                placeholder="YYYY-MM-DD"
+                                                                onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, valueTo: e.target.value } : r))}
+                                                                slotProps={{ inputLabel: { shrink: true } }}
+                                                                sx={{ flex: 1, ...dateSx }}
+                                                            />
+                                                        )}
+                                                    </Stack>
+                                                );
+                                            }
+                                            if (inputType === 'numeric') {
+                                                return (
+                                                    <Stack direction="row" spacing={0.5} sx={{ flex: 1, minWidth: 80 }}>
+                                                        <TextField
+                                                            size="small" type="number"
+                                                            value={f.value || ''}
+                                                            placeholder={t('sidebar.filterValue', { defaultValue: 'Value' })}
+                                                            onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, value: e.target.value } : r))}
+                                                            sx={{ flex: 1, ...inputSx }}
+                                                        />
+                                                        {isBetween && (
+                                                            <TextField
+                                                                size="small" type="number"
+                                                                value={f.valueTo || ''}
+                                                                placeholder={t('sidebar.filterValueTo', { defaultValue: 'To' })}
+                                                                onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, valueTo: e.target.value } : r))}
+                                                                sx={{ flex: 1, ...inputSx }}
+                                                            />
+                                                        )}
+                                                    </Stack>
+                                                );
+                                            }
+                                            return (
+                                                <TextField
+                                                    size="small" value={f.value || ''}
+                                                    placeholder={t('sidebar.filterValue', { defaultValue: 'Value' })}
+                                                    onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, value: e.target.value } : r))}
+                                                    sx={{ flex: 1, minWidth: 80, ...inputSx }}
+                                                />
+                                            );
+                                        };
+
+                                        return (
+                                            <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                                                <TextField
+                                                    select size="small" value={f.column}
+                                                    onChange={(e) => {
+                                                        const newCol = e.target.value;
+                                                        const newMeta = preview.columns.find(c => c.name === newCol);
+                                                        const newType = newMeta ? inferInputType(newMeta.type, newMeta.source_type) : 'text';
+                                                        const newOps = getOperatorsForType(newType);
+                                                        const opValid = newOps.some(op => op.value === f.operator);
+                                                        setPreviewFilters(prev => prev.map((r, i) => i === idx ? {
+                                                            ...r,
+                                                            column: newCol,
+                                                            operator: opValid ? r.operator : defaultOperatorForType(newType),
+                                                            value: '',
+                                                            valueTo: '',
+                                                        } : r));
+                                                    }}
+                                                    slotProps={{ select: { displayEmpty: true } }}
+                                                    sx={{ minWidth: 130, '& .MuiInputBase-root': { fontSize: 11, height: 26 }, '& .MuiSelect-select': { py: 0.1, px: 0.75 } }}
+                                                >
+                                                    <MenuItem value="" disabled sx={{ fontSize: 11, color: 'text.disabled' }}><em>{t('sidebar.filterColumn', { defaultValue: 'Column' })}</em></MenuItem>
+                                                    {preview.columns.map(c => (
+                                                        <MenuItem key={c.name} value={c.name} sx={{ fontSize: 11 }}>{c.name}</MenuItem>
+                                                    ))}
+                                                </TextField>
+                                                <TextField
+                                                    select size="small" value={f.operator}
+                                                    onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, operator: e.target.value, value: '', valueTo: '' } : r))}
+                                                    sx={{ minWidth: 100, '& .MuiInputBase-root': { fontSize: 11, height: 26 }, '& .MuiSelect-select': { py: 0.1, px: 0.75 } }}
+                                                >
+                                                    {operators.map(op => (
+                                                        <MenuItem key={op.value} value={op.value} sx={{ fontSize: 11 }}>{op.label}</MenuItem>
+                                                    ))}
+                                                </TextField>
+                                                {renderValueControl()}
+                                                <IconButton size="small" onClick={() => setPreviewFilters(prev => prev.filter((_, i) => i !== idx))}
+                                                    sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'error.main' } }}>
+                                                    <CloseIcon sx={{ fontSize: 14 }} />
+                                                </IconButton>
+                                            </Box>
+                                        );
+                                    })}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <Button
+                                            size="small" startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+                                            onClick={() => setPreviewFilters(prev => [...prev, { column: '', operator: 'EQ', value: '' }])}
+                                            sx={{ textTransform: 'none', fontSize: 11, px: 0.5, minHeight: 0, height: 22, color: 'text.secondary' }}
+                                        >
+                                            {t('sidebar.addFilter', { defaultValue: 'Add filter' })}
+                                        </Button>
+                                        {previewFilters.length > 0 && (
+                                            <Button
+                                                size="small" startIcon={<RefreshIcon sx={{ fontSize: 14 }} />}
+                                                disabled={preview.loading}
+                                                onClick={() => {
+                                                    const validFilters = previewFilters
+                                                        .filter(f => f.column && f.operator && (
+                                                            f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL' ||
+                                                            (f.operator === 'BETWEEN' ? (f.value || '').trim() && (f.valueTo || '').trim() : (f.value || '').trim())
+                                                        ))
+                                                        .map(f => {
+                                                            const colMeta = preview.columns.find(c => c.name === f.column);
+                                                            const iType = colMeta ? inferInputType(colMeta.type, colMeta.source_type) : 'text';
+                                                            if (f.operator === 'BETWEEN') {
+                                                                const v1 = iType === 'numeric' ? Number(f.value) : f.value;
+                                                                const v2 = iType === 'numeric' ? Number(f.valueTo) : f.valueTo;
+                                                                return { column: f.column, operator: f.operator, value: [v1, v2] };
+                                                            }
+                                                            if (f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL') {
+                                                                return { column: f.column, operator: f.operator };
+                                                            }
+                                                            let val: any = f.value;
+                                                            if (iType === 'numeric' && f.value) val = Number(f.value);
+                                                            else if (iType === 'boolean') val = f.value === 'true';
+                                                            return { column: f.column, operator: f.operator, value: val };
+                                                        });
+
+                                                    const ref = buildSourceTableRef(preview.node);
+                                                    setPreview(prev => prev ? { ...prev, loading: true } : null);
+                                                    fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({
+                                                            connector_id: preview.connectorId,
+                                                            source_table: ref,
+                                                            import_options: {
+                                                                size: 10,
+                                                                source_filters: validFilters.length > 0 ? validFilters : undefined,
+                                                            },
+                                                        }),
+                                                    })
+                                                        .then(r => r.json())
+                                                        .then(data => {
+                                                            if (data.columns && data.rows) {
+                                                                setPreview(prev => {
+                                                                    if (!prev) return null;
+                                                                    const newCols = (data.columns as typeof prev.columns);
+                                                                    return {
+                                                                        ...prev,
+                                                                        columns: newCols.length > 0 ? newCols : prev.columns,
+                                                                        sampleRows: data.rows,
+                                                                        rowCount: data.total_row_count ?? prev.rowCount,
+                                                                        loading: false,
+                                                                    };
+                                                                });
+                                                            } else {
+                                                                setPreview(prev => prev ? { ...prev, loading: false } : null);
+                                                            }
+                                                        })
+                                                        .catch(() => {
+                                                            setPreview(prev => prev ? { ...prev, loading: false } : null);
+                                                        });
+                                                }}
+                                                sx={{ textTransform: 'none', fontSize: 11, px: 0.5, minHeight: 0, height: 22, color: 'primary.main' }}
+                                            >
+                                                {t('sidebar.refreshPreview', { defaultValue: 'Preview' })}
+                                            </Button>
+                                        )}
+                                    </Box>
+                                </Box>
                             )}
                         </Box>
 
-                        {/* Content */}
+                        {/* Content — preview table */}
                         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1 }}>
                             {preview.loading ? (
                                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
                                     <CircularProgress size={20} />
                                 </Box>
+                            ) : preview.sampleRows.length > 0 ? (
+                                <DataFrameTable
+                                    columns={preview.columns.map(c => c.name)}
+                                    rows={preview.sampleRows}
+                                    totalRows={preview.rowCount ?? undefined}
+                                    maxColumns={20}
+                                    maxRows={10}
+                                    fontSize={11}
+                                    headerFontSize={10}
+                                />
+                            ) : preview.columns.length > 0 && previewFilters.length > 0 ? (
+                                <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
+                                    {t('sidebar.noMatchingRows', { defaultValue: 'No rows match the current filters' })}
+                                </Typography>
                             ) : (
-                                <>
-                                    {preview.columns.length > 0 && preview.sampleRows.length > 0 ? (
-                                        <DataFrameTable
-                                            columns={preview.columns.map(c => c.name)}
-                                            rows={preview.sampleRows}
-                                            totalRows={preview.rowCount ?? undefined}
-                                            maxColumns={6}
-                                            maxRows={5}
-                                            fontSize={11}
-                                            headerFontSize={10}
-                                        />
-                                    ) : preview.columns.length > 0 ? (
-                                        <Box sx={{ mb: 1.5 }}>
-                                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.5 }}>
-                                                {t('sidebar.previewColumnsHeader', { count: preview.columns.length })}
-                                            </Typography>
-                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                                {preview.columns.map((col, i) => (
-                                                    <Box key={i} sx={{
-                                                        display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                                                        px: 0.75, py: 0.25, borderRadius: 0.5,
-                                                        bgcolor: 'action.hover', fontSize: 11,
-                                                    }}>
-                                                        <span style={{ fontWeight: 500 }}>{col.name}</span>
-                                                        <span style={{ color: 'gray', fontSize: 10 }}>{col.type}</span>
-                                                    </Box>
-                                                ))}
-                                            </Box>
-                                        </Box>
-                                    ) : (
-                                        <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
-                                            {t('sidebar.noPreviewAvailable')}
-                                        </Typography>
-                                    )}
-                                </>
+                                <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
+                                    {t('sidebar.noPreviewAvailable')}
+                                </Typography>
                             )}
                         </Box>
 
-                        {/* Footer — Load button */}
+                        {/* Footer — single Load button */}
                         {(() => {
                             const pathKey = preview.node.path.join('/');
                             const alreadyLoaded = loadedTablesMap[preview.node.name] || loadedTablesMap[pathKey];
@@ -1067,26 +1542,42 @@ const DataSourceSidebarPanel: React.FC<{
                                             {t('sidebar.alreadyLoaded')}
                                         </Button>
                                     ) : (
-                                        <>
-                                        <Button
-                                            size="small"
-                                            variant="outlined"
-                                            disabled={importing || preview.loading}
-                                            onClick={() => handleImportTable(preview.connectorId, preview.node, true)}
-                                            sx={{ textTransform: 'none', fontSize: 12 }}
-                                        >
-                                            {t('sidebar.loadInNewWorkspace')}
-                                        </Button>
                                         <Button
                                             size="small"
                                             variant="contained"
                                             disabled={importing || preview.loading}
-                                            onClick={() => handleImportTable(preview.connectorId, preview.node)}
+                                            onClick={() => {
+                                                const opts: Record<string, any> = { size: previewRowLimit };
+                                                const validFilters = previewFilters
+                                                    .filter(f => f.column && f.operator && (
+                                                        f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL' ||
+                                                        (f.operator === 'BETWEEN' ? (f.value || '').trim() && (f.valueTo || '').trim() : (f.value || '').trim())
+                                                    ))
+                                                    .map(f => {
+                                                        const colMeta = preview!.columns.find(c => c.name === f.column);
+                                                        const iType = colMeta ? inferInputType(colMeta.type, colMeta.source_type) : 'text';
+                                                        if (f.operator === 'BETWEEN') {
+                                                            const v1 = iType === 'numeric' ? Number(f.value) : f.value;
+                                                            const v2 = iType === 'numeric' ? Number(f.valueTo) : f.valueTo;
+                                                            return { column: f.column, operator: f.operator, value: [v1, v2] };
+                                                        }
+                                                        if (f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL') {
+                                                            return { column: f.column, operator: f.operator };
+                                                        }
+                                                        let val: any = f.value;
+                                                        if (iType === 'numeric' && f.value) val = Number(f.value);
+                                                        else if (iType === 'boolean') val = f.value === 'true';
+                                                        return { column: f.column, operator: f.operator, value: val };
+                                                    });
+                                                if (validFilters.length > 0) {
+                                                    opts.source_filters = validFilters;
+                                                }
+                                                handleImportTable(preview.connectorId, preview.node, opts);
+                                            }}
                                             sx={{ textTransform: 'none', fontSize: 12 }}
                                         >
                                             {importing ? t('sidebar.loadingEllipsis') : t('sidebar.load')}
                                         </Button>
-                                        </>
                                     )}
                                 </Box>
                             );

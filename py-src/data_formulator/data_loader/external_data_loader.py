@@ -531,6 +531,24 @@ class ExternalDataLoader(ABC):
             for t in tables
         ]
 
+    def get_column_values(
+        self,
+        source_table: str,
+        column_name: str,
+        keyword: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return distinct values for a column (used for smart filter inputs).
+
+        Subclasses may override to provide richer results (e.g. via native
+        Superset APIs).  The default returns an empty list, signalling that
+        the frontend should fall back to a free-text input.
+
+        Returns ``{"options": [{"label": str, "value": ...}], "has_more": bool}``.
+        """
+        return {"options": [], "has_more": False}
+
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         """Get detailed metadata for a single catalog node.
 
@@ -543,6 +561,28 @@ class ExternalDataLoader(ABC):
         for n in nodes:
             if n.name == path[-1]:
                 return n.metadata or {}
+        return {}
+
+    def get_column_types(self, source_table: str) -> dict[str, Any]:
+        """Return source-level column type info for a table.
+
+        Returns ``{"columns": [{"name": str, "type": str, "is_dttm": bool}, ...]}``.
+        The ``type`` is the *original* source type (e.g. ``TIMESTAMP``,
+        ``VARCHAR``, ``BOOLEAN``) — not pandas dtype — so the frontend can
+        choose the correct filter widget.
+
+        Default: tries ``get_metadata(path)`` where *path* is derived by
+        splitting ``source_table`` on ``"."``.  SQL-based loaders that
+        already implement ``get_metadata`` with ``information_schema``
+        queries get this for free.
+        """
+        try:
+            path = source_table.split(".")
+            meta = self.get_metadata(path)
+            if meta and "columns" in meta:
+                return {"columns": meta["columns"]}
+        except Exception:
+            pass
         return {}
 
     def list_tables_tree(self, table_filter: str | None = None) -> dict:
@@ -658,8 +698,45 @@ class ExternalDataLoader(ABC):
 
     @staticmethod
     def auth_mode() -> str:
-        """Return ``'connection'`` (default) or ``'token'``."""
+        """Return ``'connection'`` (default) or ``'token'``.
+
+        Legacy interface kept for backward compatibility.
+        New loaders should implement :meth:`auth_config` instead.
+        """
         return "connection"
+
+    @staticmethod
+    def auth_config() -> dict:
+        """Declare how this loader authenticates with its target system.
+
+        The :class:`~data_formulator.auth.token_store.TokenStore` reads this
+        to determine which credential strategies to attempt.
+
+        Supported modes and required keys:
+
+        ``mode="credentials"`` (default)
+            Static username/password via Vault.
+
+        ``mode="sso_exchange"``
+            SSO token → target system token, backend-to-backend.
+            Required: ``exchange_url``.
+            Optional: ``token_url``, ``login_url`` (popup fallback), ``timeout``.
+
+        ``mode="delegated"``
+            Popup window → target system login → postMessage back.
+            Required: ``login_url``.
+            Optional: ``token_url``.
+
+        ``mode="oauth2"``
+            Independent OAuth2 flow (different IdP).
+            Required: ``authorize_url``, ``token_url``.
+            Optional: ``scopes``, ``client_id_env``, ``client_secret_env``.
+
+        Common optional keys:
+            ``display_name``: human-readable name.
+            ``supports_refresh``: whether refresh_token is available.
+        """
+        return {"mode": "credentials"}
 
     @staticmethod
     def rate_limit() -> dict | None:

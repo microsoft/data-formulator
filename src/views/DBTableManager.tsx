@@ -17,13 +17,14 @@ import {
   FormControlLabel,
   useTheme,
   Tooltip,
+  Tabs,
+  Tab,
 } from '@mui/material';
 
 import SearchIcon from '@mui/icons-material/Search';
 
-import Autocomplete from '@mui/material/Autocomplete';
 
-import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity } from '../app/utils';
+import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity, SourceTableRef } from '../app/utils';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
 import { DataFrameTable } from './DataFrameTable';
@@ -41,6 +42,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { TableIcon } from '../icons';
+import { RowLimitUnderlineSelect } from '../components/RowLimitUnderlineSelect';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
 
 import {
@@ -51,19 +53,6 @@ import {
     countBadgeSx,
     renderCatalogTreeItems,
 } from '../components/CatalogTree';
-
-/** A source filter definition from the backend (e.g. Superset native filter). */
-interface SourceFilter {
-    name: string;
-    column: string;
-    input_type: 'select' | 'numeric' | 'time' | 'text';
-    column_type: string;
-    multi: boolean;
-    required: boolean;
-    default_value?: unknown;
-    applies_to?: number[];
-    options?: string[];
-}
 
 
 export const handleDBDownload = async (identityId: string) => {
@@ -414,61 +403,48 @@ export const DBManagerPane: React.FC<{
 const GroupLoadPanel: React.FC<{
     groupName: string;
     tables: { name: string; dataset_id: number; row_count?: number; columns?: string[] }[];
-    sourceFilters: SourceFilter[];
-    frontendRowLimit: number;
     rowLimitPresets: number[];
     connectorId: string;
     loadedKey?: string;
     onLoaded: (label: string) => void;
     onImport: () => void;
     onFinish: (severity: "error" | "success", msg: string, tableIds?: string[]) => void;
-}> = ({ groupName, tables, sourceFilters, frontendRowLimit, rowLimitPresets, connectorId, loadedKey, onLoaded, onImport, onFinish }) => {
+}> = ({ groupName, tables, rowLimitPresets, connectorId, loadedKey, onLoaded, onImport, onFinish }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
-    // Filter values state — keyed by filter name
-    const [filterValues, setFilterValues] = useState<Record<string, any>>(() => {
-        const defaults: Record<string, any> = {};
-        for (const f of sourceFilters) {
-            if (f.default_value != null) defaults[f.name] = f.default_value;
-        }
-        return defaults;
-    });
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set(tables.map(t => t.dataset_id)));
+    const allSelected = selectedIds.size === tables.length;
+    const toggleAll = () => {
+        if (allSelected) setSelectedIds(new Set());
+        else setSelectedIds(new Set(tables.map(t => t.dataset_id)));
+    };
+    const toggleOne = (id: number) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
 
-    // Row limit
-    const [rowLimit, setRowLimit] = useState<number>(-1);
-
-    // Loading state
+    const [rowLimit, setRowLimit] = useState<number>(50_000);
     const [isLoading, setIsLoading] = useState(false);
 
-    const totalRows = tables.reduce((sum, t) => sum + (t.row_count ?? 0), 0);
+    const selectedTables = tables.filter(t => selectedIds.has(t.dataset_id));
+    const totalRows = selectedTables.reduce((sum, t) => sum + (t.row_count ?? 0), 0);
 
     const handleLoadGroup = async () => {
+        if (selectedTables.length === 0) return;
         setIsLoading(true);
         onImport();
         try {
-            // Build source_filters payload from user-selected values
-            const appliedFilters: { column: string; operator: string; value: any; applies_to?: number[] }[] = [];
-            for (const f of sourceFilters) {
-                const val = filterValues[f.name];
-                if (val == null || val === '' || (Array.isArray(val) && val.length === 0)) continue;
-                if (f.multi && Array.isArray(val)) {
-                    appliedFilters.push({ column: f.column, operator: 'IN', value: val, applies_to: f.applies_to });
-                } else if (f.input_type === 'numeric') {
-                    appliedFilters.push({ column: f.column, operator: 'EQ', value: val, applies_to: f.applies_to });
-                } else {
-                    appliedFilters.push({ column: f.column, operator: 'EQ', value: val, applies_to: f.applies_to });
-                }
-            }
-
             const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.IMPORT_GROUP, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     connector_id: connectorId,
-                    tables: tables.map(t => ({ dataset_id: t.dataset_id, name: t.name })),
-                    row_limit: rowLimit > 0 ? rowLimit : -1,
-                    source_filters: appliedFilters,
+                    tables: selectedTables.map(t => ({ dataset_id: t.dataset_id, name: t.name })),
+                    row_limit: rowLimit,
                     group_name: groupName,
                 }),
             });
@@ -479,7 +455,6 @@ const GroupLoadPanel: React.FC<{
                 const succeeded = results.filter(r => r.status === 'success');
                 const failed = results.filter(r => r.status === 'error');
 
-                // Fetch workspace table list to get full data for loaded tables
                 const listResp = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
                 const listData = await listResp.json();
                 if (listData.status === 'success') {
@@ -522,95 +497,49 @@ const GroupLoadPanel: React.FC<{
             {/* Header */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexShrink: 0 }}>
                 <DashboardOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{groupName}</Typography>
-                <Typography variant="caption" sx={{ color: 'text.disabled' }}>
-                    {tables.length} {tables.length === 1 ? 'table' : 'tables'}
-                    {totalRows > 0 && ` · ~${totalRows.toLocaleString()} rows`}
+                <Typography sx={{ fontSize: 14, fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>{groupName}</Typography>
+                <Typography variant="caption" sx={{ color: 'text.disabled', flexShrink: 0 }}>
+                    {selectedTables.length}/{tables.length}
+                    {totalRows > 0 && ` · ~${totalRows.toLocaleString()}`}
                 </Typography>
             </Box>
 
-            {/* Scrollable content */}
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                {/* Tables list */}
-                <Box>
+            {/* Scrollable content — tables list with checkboxes */}
+            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Checkbox
+                        size="small" checked={allSelected}
+                        indeterminate={selectedIds.size > 0 && !allSelected}
+                        onChange={toggleAll}
+                        sx={{ p: 0.25, '& .MuiSvgIcon-root': { fontSize: 16 } }}
+                    />
                     <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                         Tables
                     </Typography>
-                    <Box sx={{ mt: 0.5 }}>
-                        {tables.map((tbl, idx) => (
-                                <Box key={idx} sx={{ mb: 0.25 }}>
-                                    <Box sx={{
-                                        display: 'flex', alignItems: 'center', gap: 0.75, py: 0.5, px: 0.5,
-                                        borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' },
-                                    }}>
-                                        <TableIcon sx={{ fontSize: 14, color: 'text.secondary', opacity: 0.7 }} />
-                                        <Typography sx={{ fontSize: 12, flex: 1 }}>{tbl.name}</Typography>
-                                        {tbl.row_count != null && (
-                                            <Typography sx={{ fontSize: 11, color: 'text.disabled', fontVariantNumeric: 'tabular-nums' }}>
-                                                {Number(tbl.row_count).toLocaleString()} rows
-                                            </Typography>
-                                        )}
-                                        {tbl.columns && (
-                                            <Typography component="span" sx={{ fontSize: 11, color: 'text.disabled' }}>
-                                                {tbl.columns.length} cols
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                    {tbl.columns && tbl.columns.length > 0 && (
-                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', pl: 3.5, pb: 0.5, lineHeight: 1.6 }}>
-                                            {tbl.columns.join(', ')}
-                                        </Typography>
-                                    )}
-                                </Box>
-                            ))}
-                    </Box>
                 </Box>
-
-                {/* Source Filters */}
-                {sourceFilters.length > 0 && (
-                    <Box>
-                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                            Filters
-                        </Typography>
-                        <Box sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                            {sourceFilters.map((f, idx) => (
-                                <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Typography sx={{ fontSize: 12, minWidth: 80, color: 'text.secondary' }}>
-                                        {f.name}
-                                        {f.required && <Box component="span" sx={{ color: 'error.main', ml: 0.25 }}>*</Box>}
-                                    </Typography>
-                                    {f.input_type === 'select' ? (
-                                        <Autocomplete
-                                            multiple={f.multi} freeSolo size="small"
-                                            options={f.options || []}
-                                            value={filterValues[f.name] ?? (f.multi ? [] : '')}
-                                            onChange={(_e, newVal) => setFilterValues(prev => ({ ...prev, [f.name]: newVal }))}
-                                            sx={{ flex: 1, '& .MuiInputBase-root': { fontSize: 11, minHeight: 28, py: '0px !important' } }}
-                                            renderInput={(params) => <TextField {...params} placeholder={f.column} />}
-                                            slotProps={{ popper: { sx: { '& .MuiAutocomplete-option': { fontSize: 11, minHeight: 28 } } } }}
-                                        />
-                                    ) : f.input_type === 'numeric' ? (
-                                        <TextField
-                                            size="small" type="number"
-                                            value={filterValues[f.name] ?? ''}
-                                            onChange={(e) => setFilterValues(prev => ({ ...prev, [f.name]: e.target.value ? Number(e.target.value) : '' }))}
-                                            placeholder={f.column}
-                                            sx={{ flex: 1, '& .MuiInputBase-root': { fontSize: 11, height: 28 } }}
-                                        />
-                                    ) : (
-                                        <TextField
-                                            size="small"
-                                            value={filterValues[f.name] ?? ''}
-                                            onChange={(e) => setFilterValues(prev => ({ ...prev, [f.name]: e.target.value }))}
-                                            placeholder={f.column}
-                                            sx={{ flex: 1, '& .MuiInputBase-root': { fontSize: 11, height: 28 } }}
-                                        />
-                                    )}
-                                </Box>
-                            ))}
+                <Box sx={{ mt: 0.5 }}>
+                    {tables.map((tbl, idx) => (
+                        <Box key={idx} sx={{
+                            display: 'flex', alignItems: 'center', gap: 0.5, py: 0.25, px: 0.5,
+                            borderRadius: 0.5, '&:hover': { bgcolor: 'action.hover' },
+                            cursor: 'pointer',
+                        }} onClick={() => toggleOne(tbl.dataset_id)}>
+                            <Checkbox
+                                size="small" checked={selectedIds.has(tbl.dataset_id)}
+                                sx={{ p: 0.25, '& .MuiSvgIcon-root': { fontSize: 14 } }}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={() => toggleOne(tbl.dataset_id)}
+                            />
+                            <TableIcon sx={{ fontSize: 14, color: 'text.secondary', opacity: 0.7 }} />
+                            <Typography sx={{ fontSize: 12, flex: 1 }} noWrap>{tbl.name}</Typography>
+                            {tbl.row_count != null && (
+                                <Typography sx={{ fontSize: 11, color: 'text.disabled', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                                    {Number(tbl.row_count).toLocaleString()}
+                                </Typography>
+                            )}
                         </Box>
-                    </Box>
-                )}
+                    ))}
+                </Box>
             </Box>
 
             {/* Load controls — pinned at bottom */}
@@ -633,42 +562,26 @@ const GroupLoadPanel: React.FC<{
                     </Button>
                 ) : (
                     <>
-                        <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary' }}>Rows/table</Typography>
-                        <Autocomplete
-                            freeSolo size="small"
-                            options={[
-                                ...rowLimitPresets.map(n => ({ label: n.toLocaleString(), value: n })),
-                                { label: 'All', value: -1 },
-                            ]}
-                            value={rowLimit === -1
-                                ? { label: 'All', value: -1 }
-                                : { label: rowLimit.toLocaleString(), value: rowLimit }
-                            }
-                            onChange={(_e, newVal) => {
-                                if (newVal == null) return;
-                                if (typeof newVal === 'string') {
-                                    const v = parseInt(newVal.replace(/,/g, ''));
-                                    if (!isNaN(v) && v > 0) setRowLimit(v);
-                                } else {
-                                    setRowLimit(newVal.value);
-                                }
-                            }}
-                            getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.label}
-                            isOptionEqualToValue={(opt, val) => opt.value === val.value}
-                            disableClearable
-                            sx={{ width: 100, '& .MuiInputBase-root': { fontSize: 11, height: 28, py: '0px !important' } }}
-                            renderInput={(params) => <TextField {...params} />}
-                            slotProps={{ popper: { sx: { '& .MuiAutocomplete-option': { fontSize: 11, minHeight: 28 } } } }}
-                        />
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.25 }}>
+                            <Typography sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                                {t('db.maxRows', { defaultValue: 'Max rows' })}/table
+                            </Typography>
+                            <RowLimitUnderlineSelect
+                                value={rowLimit}
+                                presets={rowLimitPresets}
+                                onChange={setRowLimit}
+                                fontSize={11}
+                            />
+                        </Box>
                         <Box sx={{ flex: 1 }} />
                         <Button
                             variant="contained" size="small"
-                            disabled={isLoading}
+                            disabled={isLoading || selectedTables.length === 0}
                             onClick={handleLoadGroup}
                             startIcon={isLoading ? <CircularProgress size={14} /> : <DashboardOutlinedIcon sx={{ fontSize: 14 }} />}
                             sx={{ textTransform: 'none', fontSize: 12, px: 2, height: 30, flexShrink: 0 }}
                         >
-                            {isLoading ? 'Loading...' : `Load Tables (${tables.length})`}
+                            {isLoading ? 'Loading...' : `Import Selected (${selectedTables.length})`}
                         </Button>
                     </>
                 )}
@@ -727,14 +640,14 @@ export const DataLoaderForm: React.FC<{
     // Import options for the currently selected table
     // Standard row-limit presets, capped by the system frontendRowLimit setting
     const rowLimitPresets = useMemo(
-        () => [1000, 5000, 10000, 50000, 100000, 200000, 500000, 1000000].filter(n => n <= frontendRowLimit),
+        () => [20_000, 50_000, 100_000, 200_000, 300_000, 500_000].filter(n => n <= frontendRowLimit),
         [frontendRowLimit],
     );
     const [loadConfig, setLoadConfig] = useState<{
         limit: number;
         sortColumn: string;
         sortOrder: 'asc' | 'desc';
-    }>({ limit: frontendRowLimit, sortColumn: '', sortOrder: 'desc' });
+    }>({ limit: 50_000, sortColumn: '', sortOrder: 'desc' });
 
     // Track which tables have been loaded and how (persists across table selections)
     const [loadedTables, setLoadedTables] = useState<Record<string, string>>({});
@@ -915,6 +828,18 @@ export const DataLoaderForm: React.FC<{
             const { access_token, refresh_token, user } = event.data;
             if (access_token) {
                 try {
+                    // Persist token in TokenStore for Agent and future requests
+                    await fetchWithIdentity('/api/auth/tokens/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            system_id: connectorIdRef.current,
+                            access_token,
+                            refresh_token,
+                            user,
+                        }),
+                    }).catch(() => {});
+
                     // Send tokens to backend token-connect endpoint
                     const connectResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.CONNECT, {
                         method: 'POST',
@@ -1001,16 +926,19 @@ export const DataLoaderForm: React.FC<{
         }
     }, [tableMetadata]);
 
-    // Reset load config when switching tables
+    // Reset load config when switching tables — always use a safe default
     useEffect(() => {
         if (selectedPreviewTable && tableMetadata[selectedPreviewTable]) {
-            const rowCount = tableMetadata[selectedPreviewTable].row_count || 0;
-            // Default to All unless the table exceeds the system row limit
-            const defaultLimit = rowCount > frontendRowLimit ? frontendRowLimit : -1;
-            setLoadConfig({ limit: defaultLimit, sortColumn: '', sortOrder: 'desc' });
-
+            setLoadConfig({ limit: 50_000, sortColumn: '', sortOrder: 'desc' });
         }
     }, [selectedPreviewTable]);
+
+    const getSourceTableRef = useCallback((pathKey: string): SourceTableRef => {
+        const meta = tableMetadata[pathKey];
+        const name = meta?._source_name || meta?._catalogName || pathKey.split('/').pop() || pathKey;
+        const id = meta?.dataset_id != null ? String(meta.dataset_id) : name;
+        return { id, name };
+    }, [tableMetadata]);
 
     // Fetch sample rows on demand when a table is selected but has no sample_rows.
     // Debounced to avoid rapid-fire requests when clicking through many files.
@@ -1021,13 +949,13 @@ export const DataLoaderForm: React.FC<{
 
         const controller = new AbortController();
         const timerId = setTimeout(() => {
-            const sourceName = meta._source_name || meta._catalogName || selectedPreviewTable.split('/').pop() || selectedPreviewTable;
+            const ref = getSourceTableRef(selectedPreviewTable);
             fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     connector_id: connectorIdRef.current,
-                    source_table: sourceName,
+                    source_table: ref,
                     limit: 10,
                 }),
                 signal: controller.signal,
@@ -1050,7 +978,7 @@ export const DataLoaderForm: React.FC<{
         }, 300); // 300ms debounce
 
         return () => { clearTimeout(timerId); controller.abort(); };
-    }, [selectedPreviewTable]);
+    }, [selectedPreviewTable, getSourceTableRef]);
 
     // Build preview DictTable for the selected table
     const previewTable: DictTable | null = useMemo(() => {
@@ -1084,16 +1012,6 @@ export const DataLoaderForm: React.FC<{
         setSelectedPreviewTable(pathKey);
     }, []);
 
-    // The source_table identifier for import: use the original name from list_tables()
-    // For flat sources this is the table name; for hierarchical sources it's the dotted path (e.g. "schema.table")
-    const getSourceTableName = useCallback((pathKey: string): string => {
-        const meta = tableMetadata[pathKey];
-        if (meta?._source_name) return meta._source_name;
-        if (meta?._catalogName) return meta._catalogName;
-        // Fallback: last segment of the path
-        return pathKey.split('/').pop() || pathKey;
-    }, [tableMetadata]);
-
     /** Shared helper: build DictTable + dispatch loadTable */
     const doLoadTable = useCallback((importOptions: Record<string, any>, label?: string) => {
         const pathKey = selectedPreviewTable;
@@ -1101,20 +1019,20 @@ export const DataLoaderForm: React.FC<{
         const meta = tableMetadata[pathKey];
         if (!meta) return;
 
-        const sourceTableName = getSourceTableName(pathKey);
+        const ref = getSourceTableRef(pathKey);
         const sampleRows = meta.sample_rows || [];
         const columns = meta.columns || [];
         const tableObj: DictTable = {
             kind: 'table' as const,
-            id: sourceTableName.split('.').pop() || sourceTableName,
-            displayId: sourceTableName,
+            id: ref.name.split('.').pop() || ref.name,
+            displayId: ref.name,
             names: columns.map((c: any) => c.name),
             metadata: columns.reduce((acc: Record<string, any>, col: any) => ({
                 ...acc,
                 [col.name]: { type: 'string' as any, semanticType: '', levels: [] }
             }), {}),
             rows: sampleRows,
-            virtual: { tableId: sourceTableName.split('.').pop() || sourceTableName, rowCount: meta.row_count || sampleRows.length },
+            virtual: { tableId: ref.name.split('.').pop() || ref.name, rowCount: meta.row_count || sampleRows.length },
             anchored: true,
             attachedMetadata: '',
             source: {
@@ -1130,21 +1048,46 @@ export const DataLoaderForm: React.FC<{
         dispatch(loadTable({
             table: tableObj,
             connectorId: connectorIdRef.current,
-            sourceTableName,
+            sourceTableRef: ref,
             importOptions,
         })).unwrap()
             .then((result) => {
                 setLoadedTables(prev => ({ ...prev, [pathKey]: label || 'loaded' }));
-                onFinish("success", `Loaded table "${sourceTableName}"`, [result.table.id]);
+                onFinish("success", `Loaded table "${ref.name}"`, [result.table.id]);
             })
             .catch((error) => {
                 console.error('Failed to load data:', error);
-                onFinish("error", `Failed to load "${sourceTableName}": ${error}`);
+                onFinish("error", `Failed to load "${ref.name}": ${error}`);
             });
-    }, [selectedPreviewTable, tableMetadata, getSourceTableName, onImport, onFinish, dispatch]);
+    }, [selectedPreviewTable, tableMetadata, getSourceTableRef, onImport, onFinish, dispatch]);
 
 
     const isConnected = catalogTree.length > 0 || Object.keys(tableMetadata).length > 0;
+
+    // Split catalog tree into dataset vs dashboard subsets for tabbed view
+    const datasetNodes = useMemo(() => catalogTree.filter(n => n.node_type !== 'table_group'), [catalogTree]);
+    const dashboardNodes = useMemo(() => catalogTree.filter(n => n.node_type === 'table_group'), [catalogTree]);
+    const hasBothTabs = datasetNodes.length > 0 && dashboardNodes.length > 0;
+    const [catalogTab, setCatalogTab] = useState(0);
+    const [localTableFilter, setLocalTableFilter] = useState('');
+
+    const filterTreeByName = useCallback((nodes: CatalogTreeNode[], keyword: string): CatalogTreeNode[] => {
+        if (!keyword) return nodes;
+        const lc = keyword.toLowerCase();
+        return nodes.reduce<CatalogTreeNode[]>((acc, node) => {
+            if (node.node_type === 'namespace') {
+                const filteredChildren = filterTreeByName(node.children || [], keyword);
+                if (filteredChildren.length > 0) {
+                    acc.push({ ...node, children: filteredChildren });
+                }
+            } else {
+                if (node.name.toLowerCase().includes(lc)) {
+                    acc.push(node);
+                }
+            }
+            return acc;
+        }, []);
+    }, []);
 
     return (
         <Box sx={{p: 0, pb: 2, display: 'flex', flexDirection: 'column', height: isConnected ? '100%' : 'auto' }}>
@@ -1225,30 +1168,73 @@ export const DataLoaderForm: React.FC<{
                                     <RefreshIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                                 </IconButton>
                             </Box>
-                            <Divider sx={{ mb: 0.5 }} />
-                            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
-                            {catalogTree.length > 0 ? (
-                                <SimpleTreeView
-                                    expandedItems={expandedItems}
-                                    onExpandedItemsChange={(_event, itemIds) => setExpandedItems(itemIds)}
-                                    selectedItems={selectedPreviewTable}
-                                    onSelectedItemsChange={(_event, itemId) => {
-                                        if (itemId == null) return;
-                                        const node = findNodeByPath(catalogTree, itemId);
-                                        if (node && (node.node_type === 'table' || node.node_type === 'table_group')) {
-                                            handleTreeTableSelect(node);
-                                        }
+                            <Divider sx={{ mb: 0 }} />
+                            {hasBothTabs && (
+                                <Tabs
+                                    value={catalogTab}
+                                    onChange={(_e, v) => setCatalogTab(v)}
+                                    variant="fullWidth"
+                                    sx={{
+                                        minHeight: 0, flexShrink: 0,
+                                        '& .MuiTab-root': { minHeight: 28, py: 0.25, fontSize: 11, textTransform: 'none', fontWeight: 600, letterSpacing: 0.3 },
+                                        '& .MuiTabs-indicator': { height: 2 },
                                     }}
-                                    itemChildrenIndentation={0}
-                                    sx={{ px: 0.5 }}
                                 >
-                                    {renderCatalogTreeItems(catalogTree, { loadedMap: effectiveLoadedTables, expandedSet: new Set(expandedItems) })}
-                                </SimpleTreeView>
-                            ) : (
-                                <Typography sx={{ fontSize: 11, color: 'text.disabled', p: 1.5, fontStyle: 'italic' }}>
-                                    {t('db.noTablesFound')}
-                                </Typography>
+                                    <Tab label={`${t('db.datasets', { defaultValue: 'Datasets' })} (${datasetNodes.reduce((s, n) => s + (n.children?.length ?? 0), 0)})`} />
+                                    <Tab label={`${t('db.dashboards', { defaultValue: 'Dashboards' })} (${dashboardNodes.length})`} />
+                                </Tabs>
                             )}
+                            {/* Local instant filter by table name */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 0.5, py: 0.5, flexShrink: 0 }}>
+                                <SearchIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                                <TextField
+                                    sx={{
+                                        flex: 1,
+                                        '& .MuiInputBase-root': { fontSize: 12 },
+                                        '& .MuiInputBase-input': { fontSize: 12, py: 0.25, px: 0.5 },
+                                        '& .MuiInputBase-input::placeholder': { fontSize: 11, opacity: 0.5 },
+                                        '& .MuiInput-underline:before, & .MuiInput-underline:after': { display: 'none' },
+                                    }}
+                                    variant="standard" size="small"
+                                    placeholder={t('db.localFilterPlaceholder', { defaultValue: 'Filter by name...' })}
+                                    autoComplete="off"
+                                    value={localTableFilter}
+                                    onChange={(e) => setLocalTableFilter(e.target.value)}
+                                />
+                                {localTableFilter && (
+                                    <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setLocalTableFilter('')}>
+                                        <Typography sx={{ fontSize: 12, lineHeight: 1, color: 'text.disabled' }}>✕</Typography>
+                                    </IconButton>
+                                )}
+                            </Box>
+                            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+                            {(() => {
+                                const baseNodes = hasBothTabs ? (catalogTab === 0 ? datasetNodes : dashboardNodes) : catalogTree;
+                                const visibleNodes = filterTreeByName(baseNodes, localTableFilter);
+                                if (visibleNodes.length === 0) return (
+                                    <Typography sx={{ fontSize: 11, color: 'text.disabled', p: 1.5, fontStyle: 'italic' }}>
+                                        {t('db.noTablesFound')}
+                                    </Typography>
+                                );
+                                return (
+                                    <SimpleTreeView
+                                        expandedItems={expandedItems}
+                                        onExpandedItemsChange={(_event, itemIds) => setExpandedItems(itemIds)}
+                                        selectedItems={selectedPreviewTable}
+                                        onSelectedItemsChange={(_event, itemId) => {
+                                            if (itemId == null) return;
+                                            const node = findNodeByPath(visibleNodes, itemId);
+                                            if (node && (node.node_type === 'table' || node.node_type === 'table_group')) {
+                                                handleTreeTableSelect(node);
+                                            }
+                                        }}
+                                        itemChildrenIndentation={0}
+                                        sx={{ px: 0.5 }}
+                                    >
+                                        {renderCatalogTreeItems(visibleNodes, { loadedMap: effectiveLoadedTables, expandedSet: new Set(expandedItems) })}
+                                    </SimpleTreeView>
+                                );
+                            })()}
                             </Box>
                         </Box>
 
@@ -1259,13 +1245,10 @@ export const DataLoaderForm: React.FC<{
                                 const metadata = tableMetadata[selectedPreviewTable];
                                 const groupName = metadata._catalogName || selectedPreviewTable;
                                 const tables: any[] = metadata.tables || [];
-                                const sourceFilters: SourceFilter[] = metadata.source_filters || [];
                                 return (
                                     <GroupLoadPanel
                                         groupName={groupName}
                                         tables={tables}
-                                        sourceFilters={sourceFilters}
-                                        frontendRowLimit={frontendRowLimit}
                                         rowLimitPresets={rowLimitPresets}
                                         connectorId={connectorIdRef.current!}
                                         loadedKey={effectiveLoadedTables[selectedPreviewTable]}
@@ -1279,15 +1262,30 @@ export const DataLoaderForm: React.FC<{
                                 const displayName = metadata?._catalogName || selectedPreviewTable.split('/').pop() || selectedPreviewTable;
                                 return (
                                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-                                        {/* Table header */}
-                                        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5, flexShrink: 0 }}>
-                                            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
-                                                {displayName}
-                                            </Typography>
-                                            {selectedTreeNode && selectedTreeNode.path.length > 1 && (
-                                                <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-                                                    {selectedTreeNode.path.slice(0, -1).join(' / ')}
+                                        {/* Table header + max rows selector */}
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexShrink: 0 }}>
+                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Typography sx={{ fontSize: 14, fontWeight: 600 }} noWrap>
+                                                    {displayName}
                                                 </Typography>
+                                                {selectedTreeNode && selectedTreeNode.path.length > 1 && (
+                                                    <Typography sx={{ fontSize: 11, color: 'text.disabled' }} noWrap>
+                                                        {selectedTreeNode.path.slice(0, -1).join(' / ')}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                            {!effectiveLoadedTables[selectedPreviewTable] && (
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+                                                    <RowLimitUnderlineSelect
+                                                        value={loadConfig.limit}
+                                                        presets={rowLimitPresets}
+                                                        onChange={(n) => setLoadConfig(prev => ({ ...prev, limit: n }))}
+                                                        fontSize={12}
+                                                    />
+                                                    <Typography sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap', lineHeight: 1 }}>
+                                                        {t('db.maxRows', { defaultValue: 'Max rows' })}
+                                                    </Typography>
+                                                </Box>
                                             )}
                                         </Box>
                                         {/* Summary line */}
@@ -1348,46 +1346,10 @@ export const DataLoaderForm: React.FC<{
                                                     </Button>
                                                 </Box>
                                             ) : (
-                                                /* Not yet loaded — show options */
+                                                /* Not yet loaded — show sort + load buttons */
                                                 <>
-                                                    {/* Row 1: Limit + Sort + Load Button */}
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                                                        {metadata?.row_count > 1000 && (<>
-                                                            <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>Rows</Typography>
-                                                            <Autocomplete
-                                                                freeSolo size="small"
-                                                                options={[
-                                                                    ...rowLimitPresets.filter(n => n <= metadata.row_count && n <= frontendRowLimit).map(n => ({
-                                                                        label: n.toLocaleString(), value: n,
-                                                                    })),
-                                                                    { label: 'All', value: -1 },
-                                                                ]}
-                                                                value={loadConfig.limit === -1
-                                                                    ? { label: 'All', value: -1 }
-                                                                    : { label: loadConfig.limit.toLocaleString(), value: loadConfig.limit }
-                                                                }
-                                                                onChange={(_e, newVal) => {
-                                                                    if (newVal == null) return;
-                                                                    if (typeof newVal === 'string') {
-                                                                        const v = parseInt(newVal.replace(/,/g, ''));
-                                                                        if (!isNaN(v) && v > 0) setLoadConfig(prev => ({ ...prev, limit: v }));
-                                                                    } else {
-                                                                        setLoadConfig(prev => ({ ...prev, limit: newVal.value }));
-                                                                    }
-                                                                }}
-                                                                onInputChange={(_e, inputVal, reason) => {
-                                                                    if (reason !== 'input') return;
-                                                                    const v = parseInt(inputVal.replace(/,/g, ''));
-                                                                    if (!isNaN(v) && v > 0) setLoadConfig(prev => ({ ...prev, limit: v }));
-                                                                }}
-                                                                getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.label}
-                                                                isOptionEqualToValue={(opt, val) => opt.value === val.value}
-                                                                disableClearable
-                                                                sx={{ width: 110, '& .MuiInputBase-root': { fontSize: 11, height: 28, py: '0px !important' }, '& .MuiInputBase-input': { px: 0.75 } }}
-                                                                renderInput={(params) => <TextField {...params} />}
-                                                                slotProps={{ popper: { sx: { '& .MuiAutocomplete-option': { fontSize: 11, minHeight: 28 } } } }}
-                                                            />
-                                                            <Divider orientation="vertical" flexItem sx={{ mx: 0.25 }} />
+                                                        {metadata?.columns?.length > 0 && (<>
                                                             <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>Sort</Typography>
                                                             <TextField
                                                                 select size="small"
@@ -1414,22 +1376,27 @@ export const DataLoaderForm: React.FC<{
                                                         </>)}
                                                         <Box sx={{ flex: 1 }} />
                                                         <Button
-                                                            variant="contained" size="small"
-                                                            sx={{ textTransform: 'none', fontSize: 12, px: 3, height: 30, flexShrink: 0 }}
+                                                            variant="outlined" size="small"
+                                                            sx={{ textTransform: 'none', fontSize: 12, px: 2, height: 30, flexShrink: 0 }}
                                                             onClick={() => {
-                                                                const importOptions: any = {
-                                                                    ...(loadConfig.limit > 0 ? { size: loadConfig.limit } : {}),
-                                                                };
+                                                                const importOptions: any = { size: loadConfig.limit };
                                                                 if (loadConfig.sortColumn) {
                                                                     importOptions.sortColumns = [loadConfig.sortColumn];
                                                                     importOptions.sortOrder = loadConfig.sortOrder;
                                                                 }
-                                                                const isSubset = (metadata?.row_count > 1000) && (loadConfig.limit > 0 || loadConfig.sortColumn);
-                                                                doLoadTable(importOptions, isSubset ? 'subset' : 'loaded');
+                                                                doLoadTable(importOptions, 'subset');
                                                             }}
                                                         >
-                                                            {(metadata?.row_count > 1000) && (loadConfig.limit > 0 || loadConfig.sortColumn)
-                                                                ? t('db.loadTableSubset') : t('db.loadTableBtn')}
+                                                            {t('db.loadWithFilters', { defaultValue: 'Load with Filters' })}
+                                                        </Button>
+                                                        <Button
+                                                            variant="contained" size="small"
+                                                            sx={{ textTransform: 'none', fontSize: 12, px: 3, height: 30, flexShrink: 0 }}
+                                                            onClick={() => {
+                                                                doLoadTable({ size: loadConfig.limit }, 'loaded');
+                                                            }}
+                                                        >
+                                                            {t('db.loadTableBtn')}
                                                         </Button>
                                                     </Box>
 

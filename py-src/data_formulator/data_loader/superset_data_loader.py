@@ -31,9 +31,35 @@ logger = logging.getLogger(__name__)
 # SQL building helpers
 # ---------------------------------------------------------------------------
 
-def _quote_identifier(name: str) -> str:
-    escaped = (name or "").replace('"', '""')
-    return f'"{escaped}"'
+def _detect_quote_char(detail: dict) -> str:
+    """Return the SQL identifier quote character for the dataset's database backend.
+
+    MySQL/MariaDB use backticks; PostgreSQL, SQLite, and most ANSI-compliant
+    databases use double quotes.
+    """
+    backend = ((detail.get("database") or {}).get("backend") or "").lower()
+    if backend in ("mysql", "mariadb"):
+        return "`"
+    return '"'
+
+
+def _quote_identifier(name: str, quote_char: str = '"') -> str:
+    escaped = (name or "").replace(quote_char, quote_char * 2)
+    return f'{quote_char}{escaped}{quote_char}'
+
+
+def _column_ref(name: str, quote_char: str = '"') -> str:
+    """Reference a column name in SQL, quoting only when necessary.
+
+    Simple word-character identifiers (including CJK / Unicode letters)
+    are returned unquoted — this avoids MySQL's double-quote-as-string
+    pitfall while keeping the SQL readable.  Only names with spaces,
+    parentheses, or other special characters are quoted.
+    """
+    stripped = (name or "").strip()
+    if re.fullmatch(r"\w+", stripped, flags=re.UNICODE):
+        return stripped
+    return _quote_identifier(stripped, quote_char)
 
 
 def _sql_literal(value: Any) -> str:
@@ -58,8 +84,9 @@ def _build_dataset_sql(detail: dict) -> tuple[int, str, str]:
     if dataset_kind == "virtual" and dataset_sql:
         return db_id, schema, f"SELECT * FROM ({dataset_sql.rstrip(';')}) AS _vds"
 
-    prefix = f'"{schema}".' if schema else ""
-    return db_id, schema, f'SELECT * FROM {prefix}"{table_name}"'
+    qc = _detect_quote_char(detail)
+    prefix = f'{_quote_identifier(schema, qc)}.' if schema else ""
+    return db_id, schema, f'SELECT * FROM {prefix}{_quote_identifier(table_name, qc)}'
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +126,22 @@ class SupersetLoader(ExternalDataLoader):
     @staticmethod
     def auth_mode() -> str:
         return "token"
+
+    @staticmethod
+    def auth_config() -> dict:
+        import os
+        url = os.environ.get("PLG_SUPERSET_URL", "").rstrip("/")
+        login_url = os.environ.get(
+            "PLG_SUPERSET_SSO_LOGIN_URL",
+            f"{url}/df-sso-bridge/" if url else "",
+        )
+        return {
+            "mode": "sso_exchange",
+            "display_name": "Superset",
+            "exchange_url": f"{url}/api/v1/df-token-exchange/" if url else "",
+            "login_url": login_url,
+            "supports_refresh": True,
+        }
 
     @staticmethod
     def delegated_login_config() -> dict[str, Any] | None:
@@ -226,72 +269,38 @@ class SupersetLoader(ExternalDataLoader):
         except Exception:
             return False
 
-    # -- list_tables (eager, with dashboard hierarchy) ---------------------
+    # -- list_tables (lightweight, for catalog tree building) ----------------
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List datasets grouped under dashboards **and** under "All Datasets".
 
-        Each dataset appears once under every dashboard it belongs to, plus
-        once under the synthetic "All Datasets" folder.  Metadata (columns,
-        sample rows) is fetched once per unique dataset and shared across
-        duplicate entries.
+        Returns only lightweight metadata (id, name, row_count, schema,
+        database).  Column definitions and sample rows are fetched lazily
+        via ``preview-data`` when the user clicks a specific dataset.
         """
         token = self._ensure_token()
 
-        # 1. Fetch all datasets and build a detail cache keyed by dataset id
         all_datasets = self._fetch_all_datasets(token)
         ds_by_id: dict[int, dict] = {ds["id"]: ds for ds in all_datasets}
-        detail_cache: dict[int, dict] = {}  # dataset_id → metadata dict
 
-        def _get_metadata(ds: dict) -> dict:
-            ds_id = ds["id"]
-            if ds_id in detail_cache:
-                return detail_cache[ds_id]
-
-            columns: list[dict] = []
-            row_count = ds.get("row_count")
-            sample_rows: list[dict] = []
-            try:
-                detail = self._client.get_dataset_detail(token, ds_id)
-                columns = [
-                    {"name": c.get("column_name") or c.get("name") or "",
-                     "type": c.get("type") or ""}
-                    for c in (detail.get("columns") or [])
-                ]
-                row_count = detail.get("row_count") or row_count
-
-                db_id, schema, base_sql = _build_dataset_sql(detail)
-                sql_session = self._client.create_sql_session(token)
-                result = self._client.execute_sql_with_session(
-                    sql_session, db_id,
-                    f"SELECT * FROM ({base_sql}) AS _src LIMIT 10",
-                    schema, 10,
-                )
-                sample_rows = result.get("data", []) or []
-            except Exception:
-                logger.debug("Failed to fetch detail for dataset %s", ds_id)
-
-            meta = {
-                "dataset_id": ds_id,
-                "row_count": row_count,
-                "columns": columns,
-                "sample_rows": sample_rows,
+        def _make_lightweight_meta(ds: dict) -> dict:
+            return {
+                "dataset_id": ds["id"],
+                "row_count": ds.get("row_count"),
                 "schema": ds.get("schema", ""),
                 "database": (ds.get("database") or {}).get("database_name", ""),
             }
-            detail_cache[ds_id] = meta
-            return meta
 
         def _make_entry(ds: dict, folder: str, ds_name: str) -> dict:
             return {
                 "name": f"{ds['id']}:{ds_name}",
                 "path": [folder, ds_name],
-                "metadata": dict(_get_metadata(ds)),  # shallow copy
+                "metadata": _make_lightweight_meta(ds),
             }
 
         results: list[dict[str, Any]] = []
 
-        # 2. Walk dashboards → datasets
+        # Walk dashboards → datasets
         raw = self._client.list_dashboards(token, page=0, page_size=500)
         dashboards = raw.get("result", [])
         for dash in dashboards:
@@ -307,11 +316,10 @@ class SupersetLoader(ExternalDataLoader):
                 ds_name = ds.get("table_name") or ds.get("name") or f"dataset_{ds.get('id', '?')}"
                 if table_filter and table_filter.lower() not in ds_name.lower():
                     continue
-                # Ensure we have full dataset info from the all-datasets list
                 full_ds = ds_by_id.get(ds["id"], ds)
                 results.append(_make_entry(full_ds, dash_title, ds_name))
 
-        # 3. All datasets under "All Datasets"
+        # All datasets under "All Datasets"
         for ds in all_datasets:
             ds_name = ds.get("table_name") or ""
             if table_filter and table_filter.lower() not in ds_name.lower():
@@ -336,8 +344,7 @@ class SupersetLoader(ExternalDataLoader):
                 if filter and filter.lower() not in title.lower():
                     continue
                 dash_id = d["id"]
-                # Build table_group node with tables + source_filters
-                tables, source_filters = self._build_dashboard_group_metadata(token, dash_id)
+                tables = self._build_dashboard_group_metadata(token, dash_id)
                 nodes.append(CatalogNode(
                     name=title,
                     node_type="table_group",
@@ -345,7 +352,6 @@ class SupersetLoader(ExternalDataLoader):
                     metadata={
                         "dashboard_id": dash_id,
                         "tables": tables,
-                        "source_filters": source_filters,
                     },
                 ))
             # Add synthetic "All Datasets" entry (namespace, not table_group)
@@ -393,172 +399,47 @@ class SupersetLoader(ExternalDataLoader):
 
     def _build_dashboard_group_metadata(
         self, token: str, dashboard_id: int,
-    ) -> tuple[list[dict], list[dict]]:
-        """Build tables list and source_filters for a dashboard table_group node.
+    ) -> list[dict]:
+        """Build tables list for a dashboard table_group node.
 
-        Returns (tables, source_filters).
+        Returns tables only.  Filters are fetched lazily via
+        ``get_dashboard_filters()`` when the user actually clicks a dashboard.
+
+        This is a **lightweight** call: it fetches only dataset names and IDs
+        from the dashboard endpoint, NOT per-dataset detail or SQL queries.
         """
-        # Fetch datasets under this dashboard
         try:
             ds_raw = self._client.get_dashboard_datasets(token, dashboard_id)
             datasets = ds_raw.get("result", [])
         except Exception:
             logger.debug("Failed to fetch datasets for dashboard %s", dashboard_id)
-            return [], []
+            return []
 
         tables = []
         for ds in datasets:
             ds_id = ds["id"]
             name = ds.get("table_name") or ds.get("name") or f"dataset_{ds_id}"
-            # Fetch columns for this dataset
-            columns: list[str] = []
-            try:
-                detail = self._client.get_dataset_detail(token, ds_id)
-                columns = [
-                    c.get("column_name") or c.get("name") or ""
-                    for c in (detail.get("columns") or [])
-                    if c.get("column_name") or c.get("name")
-                ]
-            except Exception:
-                logger.debug("Failed to fetch detail for dataset %s", ds_id)
             tables.append({
                 "name": name,
                 "dataset_id": ds_id,
                 "row_count": ds.get("row_count"),
-                "columns": columns,
             })
 
-        # Extract native filters from dashboard metadata
-        source_filters = self._extract_dashboard_filters(token, dashboard_id, datasets)
+        return tables
 
-        return tables, source_filters
-
-    def _extract_dashboard_filters(
-        self, token: str, dashboard_id: int, datasets: list[dict],
-    ) -> list[dict]:
-        """Extract native filter definitions from a dashboard's json_metadata.
-
-        Returns a list of source_filter dicts in the generic format defined
-        in design doc 9.2.
-        """
-        try:
-            detail = self._client.get_dashboard_detail(token, dashboard_id)
-        except Exception:
-            logger.debug("Failed to fetch dashboard detail %s for filters", dashboard_id)
-            return []
-
-        json_metadata = detail.get("json_metadata")
-        if isinstance(json_metadata, str):
-            try:
-                json_metadata = json.loads(json_metadata)
-            except Exception:
-                json_metadata = {}
-        if not isinstance(json_metadata, dict):
-            json_metadata = {}
-
-        raw_filters = (
-            json_metadata.get("native_filter_configuration")
-            or json_metadata.get("filter_configuration")
-            or []
-        )
-        if isinstance(raw_filters, str):
-            try:
-                raw_filters = json.loads(raw_filters)
-            except Exception:
-                return []
-
-        dataset_ids = {ds["id"] for ds in datasets}
-        filter_defs: list[dict] = []
-
-        for raw_filter in raw_filters:
-            if not isinstance(raw_filter, dict):
-                continue
-
-            filter_name = raw_filter.get("name") or "Unnamed filter"
-            filter_type = str(raw_filter.get("filterType") or raw_filter.get("type") or "")
-            control_values = raw_filter.get("controlValues") or {}
-            multi = bool(
-                control_values.get("multiSelect")
-                or control_values.get("enableMultiple")
-                or control_values.get("multi_select")
-            )
-            required = bool(raw_filter.get("required"))
-
-            # Extract default value
-            dm = raw_filter.get("defaultDataMask") or {}
-            fs = dm.get("filterState") or {}
-            default_value = fs.get("value")
-
-            targets = raw_filter.get("targets") or []
-            applies_to: list[int] = []
-            column_name = ""
-
-            for target in targets:
-                if not isinstance(target, dict):
-                    continue
-                target_ds_id = target.get("datasetId") or target.get("dataset_id")
-                if not target_ds_id:
-                    continue
-                target_ds_id = int(target_ds_id)
-                if target_ds_id in dataset_ids:
-                    applies_to.append(target_ds_id)
-                if not column_name:
-                    col_obj = target.get("column") or {}
-                    column_name = (
-                        col_obj.get("name")
-                        or target.get("column_name")
-                        or target.get("columnName")
-                        or ""
-                    )
-
-            if not column_name or not applies_to:
-                continue
-
-            # Infer column_type and input_type
-            column_type = self._infer_column_type(filter_type)
-            input_type = self._infer_input_type(filter_type, column_type)
-
-            filter_defs.append({
-                "name": filter_name,
-                "column": column_name,
-                "input_type": input_type,
-                "column_type": column_type,
-                "multi": multi,
-                "required": required,
-                "default_value": default_value,
-                "applies_to": applies_to,
-            })
-
-        return filter_defs
 
     @staticmethod
-    def _infer_column_type(filter_type: str) -> str:
-        """Infer column type from Superset filter type string."""
-        ft = (filter_type or "").lower()
-        if any(tok in ft for tok in ("time", "date", "temporal")):
-            return "TEMPORAL"
-        if any(tok in ft for tok in ("number", "range", "numeric")):
-            return "NUMERIC"
-        return "STRING"
-
-    @staticmethod
-    def _infer_input_type(filter_type: str, column_type: str) -> str:
-        """Map Superset filter type to generic input_type."""
-        ft = (filter_type or "").lower()
-        if "time" in ft or column_type == "TEMPORAL":
-            return "time"
-        if "number" in ft or "range" in ft or column_type == "NUMERIC":
-            return "numeric"
-        if "select" in ft:
-            return "select"
-        return "select"  # default to select for unknown types
-
-    @staticmethod
-    def _build_source_filter_clauses(source_filters: list[dict] | None) -> list[str]:
+    def _build_source_filter_clauses(
+        source_filters: list[dict] | None,
+        quote_char: str = '"',
+    ) -> list[str]:
         """Convert source_filters from import_options into SQL WHERE clause fragments.
 
         Each filter has: column, operator, value.
-        Uses safe quoting — column names are double-quoted, string values are escaped.
+        ``quote_char`` must match the target database dialect (backtick for
+        MySQL, double-quote for PostgreSQL / ANSI).  Simple Unicode-word
+        identifiers (CJK, Latin, etc.) are left unquoted via ``_column_ref``
+        so they work on all backends.
         """
         if not source_filters:
             return []
@@ -582,7 +463,7 @@ class SupersetLoader(ExternalDataLoader):
             if not col or op not in valid_ops:
                 continue
 
-            qcol = _quote_identifier(col)
+            qcol = _column_ref(col, quote_char)
 
             if op == "IS_NULL":
                 clauses.append(f"{qcol} IS NULL")
@@ -607,7 +488,7 @@ class SupersetLoader(ExternalDataLoader):
 
         return clauses
 
-    # -- get_metadata ------------------------------------------------------
+    # -- get_metadata / get_column_types ------------------------------------
 
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         if not path or len(path) < 2:
@@ -621,7 +502,11 @@ class SupersetLoader(ExternalDataLoader):
         try:
             detail = self._client.get_dataset_detail(token, dataset_id)
             columns = [
-                {"name": c.get("column_name", ""), "type": c.get("type", "")}
+                {
+                    "name": c.get("column_name", ""),
+                    "type": c.get("type", ""),
+                    "is_dttm": bool(c.get("is_dttm")),
+                }
                 for c in (detail.get("columns") or [])
             ]
             return {
@@ -636,6 +521,164 @@ class SupersetLoader(ExternalDataLoader):
             logger.warning("get_metadata failed for dataset %s: %s", dataset_id, e)
             return {}
 
+    def get_column_types(self, source_table: str) -> dict[str, Any]:
+        """Return source-level column types from Superset dataset detail.
+
+        Includes ``is_dttm`` flag which reliably identifies temporal columns
+        regardless of the raw type string.
+        """
+        try:
+            dataset_id = int(source_table)
+        except (ValueError, TypeError):
+            return {}
+        token = self._ensure_token()
+        try:
+            detail = self._client.get_dataset_detail(token, dataset_id)
+            columns = []
+            for c in (detail.get("columns") or []):
+                col_type = self._normalize_column_type(c)
+                columns.append({
+                    "name": c.get("column_name", ""),
+                    "type": col_type,
+                    "is_dttm": bool(c.get("is_dttm")),
+                })
+            return {"columns": columns}
+        except Exception as e:
+            logger.warning("get_column_types failed for dataset %s: %s", source_table, e)
+            return {}
+
+    @staticmethod
+    def _normalize_column_type(column: dict[str, Any] | None) -> str:
+        """Normalize Superset column metadata to a standard type category.
+
+        Uses ``is_dttm``, ``type_generic``, and raw ``type`` to classify
+        into TEMPORAL / NUMERIC / BOOLEAN / STRING.
+        """
+        if not column:
+            return "STRING"
+        raw = str(
+            column.get("type_generic")
+            or column.get("type")
+            or column.get("python_date_format")
+            or ""
+        ).upper()
+        if column.get("is_dttm"):
+            return "TEMPORAL"
+        if any(t in raw for t in ("DATE", "TIME", "TEMPORAL", "TIMESTAMP")):
+            return "TEMPORAL"
+        if any(t in raw for t in ("INT", "FLOAT", "DOUBLE", "NUMERIC", "DECIMAL", "BIGINT", "NUMBER")):
+            return "NUMERIC"
+        if "BOOL" in raw:
+            return "BOOLEAN"
+        return "STRING"
+
+    # -- get_column_values (smart filter support) ----------------------------
+
+    def get_column_values(
+        self,
+        source_table: str,
+        column_name: str,
+        keyword: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return distinct values for *column_name* in a Superset dataset.
+
+        Uses a three-tier fallback strategy (same as 0.6):
+        1. ``/api/v1/datasource/table/{id}/column/{col}/values/``
+        2. ``/api/v1/dataset/distinct/{col}``
+        3. SQL ``SELECT DISTINCT`` via SQL Lab
+        """
+        try:
+            dataset_id = int(source_table)
+        except (ValueError, TypeError):
+            return {"options": [], "has_more": False}
+
+        token = self._ensure_token()
+        safe_limit = max(1, min(int(limit), 200))
+        safe_offset = max(0, int(offset))
+        trimmed = keyword.strip()
+
+        def _normalize(payload: Any) -> list[dict[str, Any]]:
+            result = payload.get("result", payload) if isinstance(payload, dict) else payload
+            if isinstance(result, dict):
+                result = result.get("values", result.get("data", [result]))
+            if not isinstance(result, list):
+                return []
+            out: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for item in result:
+                raw, label = item, None
+                if isinstance(item, dict):
+                    raw = item.get("value", item.get("label", next(iter(item.values()), None)))
+                    label = item.get("label")
+                elif isinstance(item, (list, tuple)):
+                    raw = item[0] if item else None
+                if raw is None:
+                    continue
+                if trimmed and trimmed.lower() not in str(raw).lower():
+                    continue
+                key = repr(raw)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({"label": str(label) if label else str(raw), "value": raw})
+            return out
+
+        for fetcher in (
+            lambda: self._client.get_datasource_column_values(token, dataset_id, column_name),
+            lambda: self._client.get_dataset_distinct_values(token, column_name),
+        ):
+            try:
+                options = _normalize(fetcher())
+                sliced = options[safe_offset: safe_offset + safe_limit + 1]
+                return {
+                    "options": [{"label": o["label"], "value": o["value"]} for o in sliced[:safe_limit]],
+                    "has_more": len(sliced) > safe_limit,
+                }
+            except Exception:
+                logger.debug(
+                    "Native option endpoint failed for dataset=%s column=%s",
+                    dataset_id, column_name, exc_info=True,
+                )
+
+        try:
+            detail = self._client.get_dataset_detail(token, dataset_id)
+            db_id, schema, base_sql = _build_dataset_sql(detail)
+            qc = _detect_quote_char(detail)
+            qcol = _column_ref(column_name, qc)
+            where_parts = [f"{qcol} IS NOT NULL"]
+            if trimmed:
+                where_parts.append(
+                    f"CAST({qcol} AS VARCHAR) ILIKE {_sql_literal(f'%{trimmed}%')}"
+                )
+            sql = (
+                f"SELECT DISTINCT {qcol} FROM ({base_sql}) AS _src "
+                f"WHERE {' AND '.join(where_parts)} "
+                f"ORDER BY 1 LIMIT {safe_limit + 1} OFFSET {safe_offset}"
+            )
+            session = self._client.create_sql_session(token)
+            result = self._client.execute_sql_with_session(
+                session, db_id, sql, schema, row_limit=safe_limit + 1,
+            )
+            rows = result.get("data", []) or []
+            has_more = len(rows) > safe_limit
+            rows = rows[:safe_limit]
+
+            cols = result.get("columns") or []
+            col_key = (cols[0].get("column_name") or cols[0].get("name") or cols[0].get("label")) if cols else None
+            if not col_key and rows and isinstance(rows[0], dict):
+                col_key = next(iter(rows[0]), None)
+
+            options = []
+            for row in rows:
+                raw = row.get(col_key) if isinstance(row, dict) and col_key else row
+                options.append({"label": str(raw) if raw is not None else "", "value": raw})
+            return {"options": options, "has_more": has_more}
+        except Exception:
+            logger.warning("SQL fallback for column values failed dataset=%s column=%s", dataset_id, column_name, exc_info=True)
+            return {"options": [], "has_more": False}
+
     # -- fetch_data_as_arrow -----------------------------------------------
 
     def fetch_data_as_arrow(
@@ -645,26 +688,29 @@ class SupersetLoader(ExternalDataLoader):
     ) -> pa.Table:
         """Fetch dataset data via Superset's SQL Lab API.
 
-        ``source_table`` is either:
-        - A dataset ID (int as string): ``"42"``
-        - A ``"dataset_id:table_name"`` pair: ``"42:orders_fact"``
+        ``source_table`` must be a numeric dataset ID as a string, e.g. ``"42"``.
         """
         opts = import_options or {}
         size = opts.get("size", 100_000)
 
-        # Parse dataset_id from source_table
-        dataset_id_str = source_table.split(":")[0] if ":" in source_table else source_table
         try:
-            dataset_id = int(dataset_id_str)
-        except ValueError:
-            raise ValueError(f"source_table must be a dataset ID (got: {source_table!r})")
+            dataset_id = int(source_table)
+        except (ValueError, TypeError):
+            raise ValueError(
+                f"source_table must be a numeric dataset ID (got: {source_table!r})"
+            )
 
         token = self._ensure_token()
         detail = self._client.get_dataset_detail(token, dataset_id)
         db_id, schema, base_sql = _build_dataset_sql(detail)
 
+        # Detect the database backend for correct identifier quoting
+        quote_char = _detect_quote_char(detail)
+
         # Build WHERE clauses from source_filters
-        where_clauses = self._build_source_filter_clauses(opts.get("source_filters"))
+        where_clauses = self._build_source_filter_clauses(
+            opts.get("source_filters"), quote_char,
+        )
 
         # Build SQL
         if where_clauses:
@@ -674,12 +720,38 @@ class SupersetLoader(ExternalDataLoader):
 
         # Execute via SQL Lab
         sql_session = self._client.create_sql_session(token)
+        logger.info(
+            "Superset SQL Lab execute: dataset_id=%s db_id=%s schema=%s sql=%s",
+            dataset_id, db_id, schema, full_sql,
+        )
         result = self._client.execute_sql_with_session(
             sql_session, db_id, full_sql, schema, size,
         )
 
         rows = result.get("data", []) or []
+        logger.info(
+            "Superset SQL Lab result: dataset_id=%s rows=%d status=%s",
+            dataset_id, len(rows), result.get("status", "unknown"),
+        )
+
         if not rows:
+            # Return a 0-row table that preserves column schema from the
+            # dataset metadata (same approach as 0.6).  ``pa.table({})``
+            # would lose all column info, causing the frontend filter UI
+            # to disappear.
+            col_names = [
+                c.get("column_name") or c.get("name") or c.get("label")
+                for c in (result.get("columns") or [])
+            ]
+            col_names = [n for n in col_names if n]
+            if not col_names:
+                col_names = [
+                    c.get("column_name", "")
+                    for c in (detail.get("columns") or [])
+                    if c.get("column_name")
+                ]
+            if col_names:
+                return pa.table({name: pa.array([], type=pa.string()) for name in col_names})
             return pa.table({})
 
         # Convert list-of-dicts to Arrow table
@@ -690,18 +762,17 @@ class SupersetLoader(ExternalDataLoader):
     # -- list_tables_tree (override) ----------------------------------------
 
     def list_tables_tree(self, table_filter: str | None = None) -> dict:
-        """Build nested tree using ls() instead of list_tables().
+        """Build a **lightweight** catalog tree (names + basic metadata only).
 
-        Dashboards become ``table_group`` leaf nodes (with tables and
-        source_filters in metadata).  "All Datasets" remains a namespace
-        with child table nodes that include full metadata (columns, sample_rows).
+        No per-dataset detail/SQL queries at this stage — column lists and
+        sample rows are fetched on demand via ``get-catalog`` with a path
+        or ``preview-data``.
+
+        Dashboard (table_group) nodes include child dataset nodes so the
+        frontend can render them as expandable tree items.
         """
         root_nodes = self.ls(path=[], filter=table_filter)
         tree: list[dict] = []
-
-        # For "All Datasets", use the eager list_tables() which fetches
-        # columns and sample_rows per dataset (needed for table preview).
-        all_datasets_meta: dict[str, dict] | None = None
 
         for node in root_nodes:
             d = {
@@ -711,37 +782,32 @@ class SupersetLoader(ExternalDataLoader):
                 "metadata": node.metadata,
             }
             if node.node_type == "namespace":
-                # Lazily fetch full metadata for All Datasets namespace
-                if all_datasets_meta is None:
-                    try:
-                        full_tables = self.list_tables(table_filter=table_filter)
-                        all_datasets_meta = {}
-                        for t in full_tables:
-                            # Key by dataset name for lookup
-                            name = t["name"].split(":", 1)[-1] if ":" in t["name"] else t["name"]
-                            # Only keep entries under "All Datasets"
-                            if t.get("path") and t["path"][0] == "All Datasets":
-                                all_datasets_meta[name] = t.get("metadata") or {}
-                    except Exception:
-                        all_datasets_meta = {}
-
-                # Expand namespace children with enriched metadata
                 child_nodes = self.ls(path=node.path, filter=table_filter)
-                d["children"] = []
-                for cn in child_nodes:
-                    enriched_meta = {**(cn.metadata or {})}
-                    # Merge full metadata (columns, sample_rows) if available
-                    full_meta = all_datasets_meta.get(cn.name, {})
-                    if full_meta:
-                        enriched_meta.update(full_meta)
-                    d["children"].append({
+                d["children"] = [
+                    {
                         "name": cn.name,
                         "node_type": cn.node_type,
                         "path": cn.path,
-                        "metadata": enriched_meta,
-                    })
+                        "metadata": cn.metadata,
+                    }
+                    for cn in child_nodes
+                ]
+            elif node.node_type == "table_group":
+                tables = (node.metadata or {}).get("tables", [])
+                d["children"] = [
+                    {
+                        "name": tbl["name"],
+                        "node_type": "table",
+                        "path": node.path + [str(tbl["dataset_id"])],
+                        "metadata": {
+                            "dataset_id": tbl["dataset_id"],
+                            "row_count": tbl.get("row_count"),
+                            "parent_group": node.path[0] if node.path else None,
+                        },
+                    }
+                    for tbl in tables
+                ]
             else:
-                # table_group: no children in tree
                 d["children"] = []
             tree.append(d)
 

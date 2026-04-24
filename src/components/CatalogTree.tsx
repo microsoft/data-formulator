@@ -28,11 +28,11 @@ export interface CatalogTreeNode {
 
 // ---------- Helpers ----------
 
-/** Collect all namespace item IDs for default-expanded state */
+/** Collect expandable (namespace + table_group) item IDs for default-expanded state */
 export function collectNamespaceIds(nodes: CatalogTreeNode[]): string[] {
     const ids: string[] = [];
     for (const n of nodes) {
-        if (n.node_type === 'namespace') {
+        if (n.node_type === 'namespace' || n.node_type === 'table_group') {
             ids.push(n.path.join('/'));
             if (n.children) ids.push(...collectNamespaceIds(n.children));
         }
@@ -162,7 +162,7 @@ export function renderCatalogTreeItems(
 
         return (
             <StyledTreeItem key={itemId} itemId={itemId} label={labelContent} {...dragProps}>
-                {!isGroup && node.children && renderCatalogTreeItems(node.children, opts)}
+                {node.children && renderCatalogTreeItems(node.children, opts)}
             </StyledTreeItem>
         );
     });

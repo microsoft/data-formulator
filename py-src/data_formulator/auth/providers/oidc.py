@@ -205,6 +205,17 @@ class OIDCProvider(AuthProvider):
         return "profile email offline_access"
 
     def get_auth_info(self) -> dict:
+        auth_mode = os.environ.get("AUTH_MODE", "frontend").lower()
+
+        if auth_mode == "backend":
+            return {
+                "action": "backend",
+                "label": os.environ.get("AUTH_DISPLAY_NAME", "SSO Login"),
+                "login_url": "/api/auth/oidc/login",
+                "status_url": "/api/auth/oidc/status",
+                "logout_url": "/api/auth/oidc/logout",
+            }
+
         info: dict[str, Any] = {
             "action": "frontend",
             "label": os.environ.get("AUTH_DISPLAY_NAME", "SSO Login"),
@@ -229,14 +240,15 @@ class OIDCProvider(AuthProvider):
         if metadata:
             info["oidc"]["metadata"] = metadata
 
-        # NOTE: client_secret is intentionally NOT sent to the frontend.
-        # The browser uses PKCE (Public Client) for secure token exchange.
-
         return info
 
     # -- request authentication --------------------------------------------
 
     def authenticate(self, request: Request) -> Optional[AuthResult]:
+        # Backend mode: authenticate from server-side session
+        if os.environ.get("AUTH_MODE", "").lower() == "backend":
+            return self._authenticate_session()
+
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             return None
@@ -254,6 +266,21 @@ class OIDCProvider(AuthProvider):
             return self._authenticate_userinfo(token)
 
         return None
+
+    def _authenticate_session(self) -> Optional[AuthResult]:
+        """Authenticate from server-side session (backend OIDC mode)."""
+        from flask import session as flask_session
+        sso = flask_session.get("sso")
+        if not sso or not sso.get("access_token"):
+            return None
+        user = sso.get("user") or {}
+        user_id = user.get("sub") or user.get("id") or "session_user"
+        return AuthResult(
+            user_id=str(user_id),
+            display_name=user.get("name"),
+            email=user.get("email"),
+            raw_token=sso["access_token"],
+        )
 
     def _authenticate_jwt(self, token: str) -> AuthResult:
         """Verify JWT signature locally using JWKS."""

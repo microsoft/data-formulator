@@ -298,7 +298,7 @@ class DataConnector:
         connection verification succeeds.
         """
         merged = {**self._default_params, **user_params}
-        self._inject_sso_token(merged)
+        self._inject_credentials(merged)
         loader = self._loader_class(merged)
         identity = self._get_identity()
         self._loaders[identity] = loader
@@ -327,7 +327,7 @@ class DataConnector:
             return self._try_sso_auto_connect(identity)
         try:
             merged = {**self._default_params, **stored_params}
-            self._inject_sso_token(merged)
+            self._inject_credentials(merged)
             loader = self._loader_class(merged)
             if loader.test_connection():
                 self._loaders[identity] = loader
@@ -344,45 +344,76 @@ class DataConnector:
             self._vault_delete(identity)
             return None
 
-    def _inject_sso_token(self, params: dict[str, Any]) -> None:
-        """When the user has an SSO token and the loader supports token auth,
-        inject it so the loader can attempt SSO token exchange."""
-        if self._loader_class.auth_mode() != "token":
-            return
+    def _inject_credentials(self, params: dict[str, Any]) -> None:
+        """Inject the best available credentials via TokenStore.
+
+        Falls back to the legacy SSO token injection when TokenStore
+        is unavailable (e.g. outside a request context).
+        """
         if params.get("access_token") or params.get("sso_access_token"):
             return
+
+        config = (self._loader_class.auth_config()
+                  if hasattr(self._loader_class, "auth_config") else None)
+        mode = config.get("mode") if config else self._loader_class.auth_mode()
+
+        if mode in ("credentials", "connection"):
+            return
+
+        try:
+            from data_formulator.auth.token_store import TokenStore
+            token_store = TokenStore()
+            access = token_store.get_access(self._source_id)
+            if access:
+                if isinstance(access, dict):
+                    params.update(access)
+                else:
+                    params["access_token"] = access
+                return
+        except Exception as exc:
+            logger.debug("TokenStore lookup failed for %s: %s",
+                         self._source_id, exc)
+
+        # Legacy fallback: inject raw SSO token for exchange
         try:
             from data_formulator.auth.identity import get_sso_token
             sso_token = get_sso_token()
             if sso_token:
                 params["sso_access_token"] = sso_token
         except Exception as e:
-            logger.debug("SSO token injection failed for %s", self._source_id, exc_info=e)
+            logger.debug("SSO token injection failed for %s",
+                         self._source_id, exc_info=e)
+
+    # Backward-compatible alias
+    _inject_sso_token = _inject_credentials
 
     def _try_sso_auto_connect(self, identity: str) -> ExternalDataLoader | None:
-        """Try to auto-connect using the current request's SSO token.
+        """Try to auto-connect using TokenStore or the current SSO token.
 
-        Only applies to token-mode loaders when no vault credentials exist.
+        Only applies to token/sso_exchange-mode loaders when no vault
+        credentials exist.
         """
-        if self._loader_class.auth_mode() != "token":
+        config = (self._loader_class.auth_config()
+                  if hasattr(self._loader_class, "auth_config") else None)
+        mode = config.get("mode") if config else self._loader_class.auth_mode()
+
+        if mode not in ("token", "sso_exchange", "delegated"):
+            return None
+
+        merged = {**self._default_params}
+        self._inject_credentials(merged)
+
+        if not (merged.get("access_token") or merged.get("sso_access_token")):
             return None
         try:
-            from data_formulator.auth.identity import get_sso_token
-            sso_token = get_sso_token()
-            if not sso_token:
-                return None
-        except Exception:
-            return None
-        try:
-            merged = {**self._default_params, "sso_access_token": sso_token}
             loader = self._loader_class(merged)
             if loader.test_connection():
                 self._loaders[identity] = loader
-                logger.info("SSO auto-connect succeeded for '%s'/%s",
+                logger.info("Auto-connect succeeded for '%s'/%s",
                             self._source_id, identity[:16])
                 return loader
         except Exception as exc:
-            logger.debug("SSO auto-connect failed for '%s': %s",
+            logger.debug("Auto-connect failed for '%s': %s",
                          self._source_id, exc)
         return None
 
@@ -416,6 +447,24 @@ def _resolve_connector(data: dict[str, Any]) -> DataConnector:
     if connector is None:
         raise AppError(ErrorCode.CONNECTOR_ERROR, "Connector not found", status_code=404)
     return connector
+
+
+def _parse_source_table(raw: Any) -> tuple[str, str]:
+    """Normalise the ``source_table`` value from a request body.
+
+    Accepts two shapes:
+    - **structured** ``{"id": "42", "name": "orders_fact"}`` — id is the
+      opaque identifier the loader needs, name is human-readable.
+    - **plain string** ``"public.users"`` — used as both id and name
+      (backward-compatible for simple DB loaders).
+
+    Returns ``(source_id, source_name)``.
+    """
+    if isinstance(raw, dict):
+        sid = str(raw.get("id") or raw.get("name") or "")
+        sname = str(raw.get("name") or raw.get("id") or "")
+        return sid, sname
+    return str(raw), str(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -973,11 +1022,12 @@ def connector_import_data():
     try:
         loader = source._require_loader()
 
-        source_table = data.get("source_table")
-        if not source_table:
+        raw_source = data.get("source_table")
+        if not raw_source:
             return jsonify({"status": "error", "message": "source_table is required"})
 
-        table_name = data.get("table_name")
+        source_id, source_name = _parse_source_table(raw_source)
+        table_name = data.get("table_name") or source_name
         import_options = data.get("import_options", {})
 
         from data_formulator.auth.identity import get_identity_id
@@ -986,15 +1036,12 @@ def connector_import_data():
 
         workspace = get_workspace(get_identity_id())
 
-        if not table_name:
-            raw = source_table.split(".")[-1] if "." in source_table else source_table
-            table_name = raw
         safe_name = sanitize_table_name(table_name)
 
         meta = loader.ingest_to_workspace(
             workspace=workspace,
             table_name=safe_name,
-            source_table=source_table,
+            source_table=source_id,
             import_options=import_options or None,
         )
         return jsonify({
@@ -1048,9 +1095,11 @@ def connector_preview_data():
 
     try:
         loader = source._require_loader()
-        source_table = data.get("source_table")
-        if not source_table:
+        raw_source = data.get("source_table")
+        if not raw_source:
             return jsonify({"status": "error", "message": "source_table is required"})
+
+        source_id, _source_name = _parse_source_table(raw_source)
 
         import_options = data.get("import_options", {})
         if not import_options:
@@ -1058,12 +1107,30 @@ def connector_preview_data():
             import_options = {"size": size}
 
         arrow_table = loader.fetch_data_as_arrow(
-            source_table=source_table,
+            source_table=source_id,
             import_options=import_options,
         )
         df = arrow_table.to_pandas()
         rows = _json.loads(df.to_json(orient="records", date_format="iso"))
         columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
+
+        # Enrich columns with source-level types from loader metadata.
+        # Source types (e.g. "timestamp", "varchar", "boolean") are far more
+        # reliable for UI widget selection than pandas dtypes ("object", "int64").
+        try:
+            meta = loader.get_column_types(source_id)
+            if not meta:
+                meta = {}
+            source_cols = {c["name"]: c for c in meta.get("columns", [])}
+            if source_cols:
+                for col_info in columns:
+                    src = source_cols.get(col_info["name"])
+                    if src:
+                        col_info["source_type"] = src.get("type", "")
+                        if src.get("is_dttm"):
+                            col_info["source_type"] = "TEMPORAL"
+        except Exception:
+            pass  # source type enrichment is best-effort
 
         # Get actual total row count (some loaders store it before slicing)
         total_row_count = getattr(loader, '_last_total_rows', None) or len(rows)
@@ -1075,6 +1142,39 @@ def connector_preview_data():
             "row_count": len(rows),
             "total_row_count": total_row_count,
         })
+    except Exception as e:
+        classify_and_raise_connector_error(e)
+
+
+@connectors_bp.route("/api/connectors/column-values", methods=["POST"])
+def connector_column_values():
+    """Return distinct values for a dataset column (smart filter support)."""
+    data = request.get_json() or {}
+    source = _resolve_connector(data)
+
+    try:
+        loader = source._require_loader()
+        raw_source = data.get("source_table")
+        if not raw_source:
+            return jsonify({"status": "error", "message": "source_table is required"})
+        source_id, _source_name = _parse_source_table(raw_source)
+
+        column_name = (data.get("column_name") or "").strip()
+        if not column_name:
+            return jsonify({"status": "error", "message": "column_name is required"})
+
+        keyword = (data.get("keyword") or "").strip()
+        limit = int(data.get("limit", 50))
+        offset = int(data.get("offset", 0))
+
+        result = loader.get_column_values(
+            source_table=source_id,
+            column_name=column_name,
+            keyword=keyword,
+            limit=limit,
+            offset=offset,
+        )
+        return jsonify({"status": "ok", **result})
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1152,6 +1252,7 @@ def connector_import_group():
         })
     except Exception as e:
         classify_and_raise_connector_error(e)
+
 
 
 # ---------------------------------------------------------------------------

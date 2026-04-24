@@ -1,20 +1,17 @@
 """
-Superset OAuth + DF 桥接配置参考
+Superset OAuth + Data Formulator 桥接配置
 
-本文件为 Superset 端 SSO 对接的参考实现，包含三部分：
-  1. SsoHandler       — 从 SSO userinfo 端点解析用户信息
-  2. SecurityManager  — 用户创建/更新 + 角色同步
-  3. SSOBridgeView    — DF 通过弹窗获取 Superset JWT
+本文件部署在 Superset 服务端（PYTHONPATH 下），包含三部分：
+  1. SsoHandler            — 从 SSO userinfo 端点解析用户信息
+  2. CustomSsoSecurityManager — 用户创建/更新 + 角色同步
+  3. SSOBridgeView         — DF 通过弹窗获取 Superset JWT
 
 使用方法：
   1. 复制本文件到 Superset 的 PYTHONPATH 下，命名为 oauth_config.py
   2. 将所有 <PLACEHOLDER> 替换为你的实际值
   3. 在 superset_config.py 中导入（见同目录下的 superset_config.py 示例）
 
-关键设计：
-  - SSOBridgeView 用独立的 BaseView 注册，不侵入 SecurityManager
-  - 未登录用户访问 bridge 会被重定向到 Superset 登录页，登录后自动回到 bridge
-  - JWT identity 使用 str(user.id)，与 Superset 默认行为一致
+对接文档：docs-cn/5.1-superset-sso-oauth-config-guide.md
 """
 
 import logging
@@ -38,25 +35,20 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 class SsoHandler:
-    """
-    从 SSO 的 userinfo 端点解析用户信息。
+    """从 SSO userinfo 端点解析用户信息。"""
 
-    需要修改：
-      - userinfo_url:  你的 SSO userinfo 端点地址
-      - role_mapping:  SSO 角色代码 → Superset 角色名的映射表
-    """
-    userinfo_url = '<YOUR_SSO_USERINFO_URL>'  # 例: https://sso.example.com/api/v1/oauth2/userinfo
+    # ── 需要修改 ──────────────────────────────────────────────
+    userinfo_url = '<YOUR_SSO_USERINFO_URL>'
 
     role_mapping = {
         'admin': 'Admin',
         'analyst': 'Alpha',
         'viewer': 'Gamma',
-        # 按需添加更多映射...
     }
+    # ─────────────────────────────────────────────────────────
 
     @classmethod
     def parse_user_details(cls, access_token):
-        """用 access_token 调 userinfo 端点，返回标准化的用户信息字典。"""
         resp = requests.get(
             cls.userinfo_url,
             headers={'Authorization': f'Bearer {access_token}'},
@@ -89,18 +81,12 @@ class SsoHandler:
 # =============================================================================
 
 class CustomSsoSecurityManager(SupersetSecurityManager):
-    """
-    扩展 Superset 默认的 Security Manager：
-      - oauth_user_info: 从 SSO 获取用户信息
-      - auth_user_oauth: 创建/更新用户 + 同步角色
-    """
 
     def oauth_user_info(self, provider, response=None):
         access_token = response.get('access_token') if response else None
         if not access_token:
             logger.error("OAuth 响应中缺少 access_token")
             return super().oauth_user_info(provider, response)
-
         try:
             user_details = SsoHandler.parse_user_details(access_token)
             if user_details:
@@ -115,7 +101,6 @@ class CustomSsoSecurityManager(SupersetSecurityManager):
             return None
 
         sso_roles = userinfo.get('sso_roles', [])
-
         has_mapped_role = any(r in SsoHandler.role_mapping for r in sso_roles)
         if not has_mapped_role:
             from flask import flash
@@ -143,7 +128,6 @@ class CustomSsoSecurityManager(SupersetSecurityManager):
     def _sync_roles(self, user, sso_roles):
         """将 SSO 角色映射为 Superset 角色。本地 Admin 身份始终保留。"""
         target_names = set()
-
         for sr in sso_roles:
             mapped = SsoHandler.role_mapping.get(sr)
             if mapped:
@@ -162,7 +146,6 @@ class CustomSsoSecurityManager(SupersetSecurityManager):
 
         if not new_roles:
             return
-
         try:
             user.roles = new_roles
             db.session.merge(user)
@@ -176,15 +159,15 @@ class CustomSsoSecurityManager(SupersetSecurityManager):
 # =============================================================================
 # 第三部分：Data Formulator SSO 桥接端点
 #
-# 工作流程:
+# 流程：
 #   1. DF 前端 window.open(/df-sso-bridge/?df_origin=http://df-host:5567)
 #   2. 未登录 → 重定向到 /login/?next=... → SSO → 回到此端点
 #   3. 已登录 → 签发 JWT → postMessage 传给 DF → 关闭弹窗
 #
-# 关键：_is_real_logged_in_user() 区分真实登录用户和 Public 匿名用户。
-# 当 Superset 启用了 PUBLIC_ROLE_LIKE（允许匿名浏览数据）时，
-# current_user.is_authenticated 对匿名用户也可能返回 True，
-# 必须额外检查 session._user_id 来判断用户是否真正通过登录流程认证。
+# DF 前端 (DBTableManager.tsx) 监听 type === 'df-sso-auth' 的 postMessage，
+# 收到后将 token 发送到:
+#   - /api/connectors/connect (连接 Superset DataConnector)
+#   - /api/auth/tokens/save   (持久化到 TokenStore，供 Agent 使用)
 # =============================================================================
 
 class SSOBridgeView(BaseView):
@@ -192,13 +175,10 @@ class SSOBridgeView(BaseView):
 
     @staticmethod
     def _is_real_logged_in_user():
-        """
-        判断当前用户是否通过真实登录流程认证（而非 Public 匿名访问）。
+        """区分真实登录用户和 Public 匿名用户。
 
-        背景：当 Superset 配置了 PUBLIC_ROLE_LIKE = "Gamma" 时，
-        未登录用户也能访问部分数据，此时 current_user 不是 None 而是一个
-        具有 Public 角色的伪用户。此方法通过检查 session 中的 _user_id
-        来区分真实登录和匿名访问。
+        当 Superset 启用 PUBLIC_ROLE_LIKE 时，current_user.is_authenticated
+        对匿名用户也可能返回 True，必须检查 session._user_id。
         """
         if not session.get("_user_id"):
             return False
@@ -215,7 +195,7 @@ class SSOBridgeView(BaseView):
 
     @staticmethod
     def _validate_origin(raw: str) -> str:
-        """Validate df_origin: only allow http(s) scheme with a real netloc."""
+        """只允许 http(s) scheme，防止 javascript: 等注入。"""
         if raw == "*":
             return "*"
         parsed = urlparse(raw)
@@ -292,13 +272,13 @@ OAUTH_CONFIG = {
     'CUSTOM_SECURITY_MANAGER': CustomSsoSecurityManager,
     'OAUTH_PROVIDERS': [
         {
-            'name': '<YOUR_PROVIDER_NAME>',     # 例: 'keycloak', 'okta'
+            'name': '<YOUR_PROVIDER_NAME>',
             'token_key': 'access_token',
             'icon': 'fa-key',
             'remote_app': {
                 'client_id': '<YOUR_CLIENT_ID>',
                 'client_secret': '<YOUR_CLIENT_SECRET>',
-                'server_metadata_url': '<YOUR_DISCOVERY_URL>',  # 例: https://sso.example.com/.well-known/openid-configuration
+                'server_metadata_url': '<YOUR_DISCOVERY_URL>',
                 'client_kwargs': {
                     'scope': 'openid profile email',
                 },
