@@ -3,7 +3,7 @@
 
 import json
 import logging
-from urllib.parse import urlencode
+from urllib.parse import quote, urlparse
 
 from flask import Blueprint, Response, redirect, request, url_for
 from flask_login import current_user
@@ -23,12 +23,18 @@ def df_sso_bridge():
     Query params:
         df_origin: The DF frontend origin (e.g. http://localhost:5567).
     """
-    df_origin = request.args.get("df_origin", "*")
+    raw_origin = request.args.get("df_origin", "*")
+    # Validate df_origin: must be a real http(s) origin, not an arbitrary string.
+    _parsed = urlparse(raw_origin) if raw_origin != "*" else None
+    if _parsed and _parsed.scheme in ("http", "https") and _parsed.netloc:
+        df_origin = f"{_parsed.scheme}://{_parsed.netloc}"
+    else:
+        df_origin = "*"
 
     if not current_user.is_authenticated:
-        # Redirect to Superset login, then back here after authentication.
-        bridge_url = request.url  # preserves df_origin query param
-        return redirect(f"/login/?next={bridge_url}")
+        # Only allow same-site relative redirects (prevent open redirect).
+        next_path = request.full_path.rstrip("?")
+        return redirect(f"/login/?next={quote(next_path)}")
 
     from flask_jwt_extended import create_access_token, create_refresh_token
 

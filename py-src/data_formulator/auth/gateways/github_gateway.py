@@ -42,7 +42,7 @@ def github_callback():
     """Handle the OAuth callback — exchange code for token, fetch user."""
     code = request.args.get("code")
     if not code:
-        return jsonify({"error": "Missing authorization code"}), 400
+        return jsonify({"error": "Missing authorization code"})
 
     client_id = os.environ.get("GITHUB_CLIENT_ID", "")
     client_secret = os.environ.get("GITHUB_CLIENT_SECRET", "")
@@ -60,11 +60,11 @@ def github_callback():
         timeout=10,
     )
     if not token_resp.ok:
-        return jsonify({"error": "Failed to exchange code for token"}), 502
+        return jsonify({"error": "Failed to exchange code for token"})
 
     access_token = token_resp.json().get("access_token")
     if not access_token:
-        return jsonify({"error": "No access_token in response"}), 502
+        return jsonify({"error": "No access_token in response"})
 
     user_resp = http_requests.get(
         "https://api.github.com/user",
@@ -75,7 +75,7 @@ def github_callback():
         timeout=10,
     )
     if not user_resp.ok:
-        return jsonify({"error": "Failed to fetch GitHub user info"}), 502
+        return jsonify({"error": "Failed to fetch GitHub user info"})
 
     user_info = user_resp.json()
     user_id = str(user_info.get("id", ""))

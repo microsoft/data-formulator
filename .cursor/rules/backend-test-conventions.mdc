@@ -46,19 +46,23 @@ pytestmark = [pytest.mark.backend]
 
 ## Error Handling Test Requirements
 
+All application errors return **HTTP 200** with `status: "error"` in the body.
+Only uncontrolled transport failures (no route, body limit, unhandled crash) use non-200.
+
 When adding a new route or modifying error handling, include tests for:
 
-1. **AppError scenarios** — verify the endpoint returns the correct `ErrorCode` and HTTP status:
+1. **AppError scenarios** — verify HTTP 200 + correct `ErrorCode` in body:
    ```python
-   def test_missing_table_returns_404():
+   def test_missing_table_returns_error():
        with app.test_client() as client:
            resp = client.get('/api/tables/nonexistent')
-           assert resp.status_code == 404
+           assert resp.status_code == 200
            data = resp.get_json()
+           assert data["status"] == "error"
            assert data["error"]["code"] == "TABLE_NOT_FOUND"
    ```
 
-2. **Unexpected exceptions** — verify the global handler catches them:
+2. **Unexpected exceptions** — verify the global handler catches them (unhandled = 500):
    ```python
    def test_unexpected_error_returns_500():
        # Mock internal function to raise
@@ -76,6 +80,18 @@ When adding a new route or modifying error handling, include tests for:
        error_lines = [l for l in lines if l.get('type') == 'error']
        assert len(error_lines) >= 1
        assert error_lines[0]['error']['code'] == 'LLM_TIMEOUT'
+   ```
+
+4. **Test fixture** — ensure `register_error_handlers(app)` is called in the test app fixture:
+   ```python
+   @pytest.fixture
+   def app():
+       from data_formulator.error_handler import register_error_handlers
+       _app = flask.Flask(__name__)
+       _app.config["TESTING"] = True
+       _app.register_blueprint(my_bp)
+       register_error_handlers(_app)
+       return _app
    ```
 
 See `tests/backend/errors/test_errors.py` and `test_error_handler.py` for reference implementations.

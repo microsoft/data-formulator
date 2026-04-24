@@ -135,7 +135,8 @@ def sanitize_error_message(error_message: str) -> str:
     sensitive implementation details so that only a human-readable
     summary is returned to the browser.
     """
-    message = html.escape(error_message)
+    # Cap input length first to prevent ReDoS on crafted payloads.
+    message = html.escape(error_message[:2000])
 
     # Remove API keys / tokens
     message = re.sub(
@@ -144,9 +145,12 @@ def sanitize_error_message(error_message: str) -> str:
     )
 
     # Strip Python stack-trace blocks ("Traceback (most recent call last): ...")
+    # Use an atomic-style pattern: match non-T chars or T-not-starting-a-new-
+    # traceback header, avoiding catastrophic backtracking.
     message = re.sub(
-        r'Traceback \(most recent call last\):.*?(?=\w+Error:|\w+Exception:|\Z)',
-        '', message, flags=re.DOTALL | re.IGNORECASE,
+        r'Traceback \(most recent call last\):'
+        r'[^T]*(?:T(?!raceback \(most recent call last\):)[^T]*)*',
+        '', message, flags=re.IGNORECASE,
     )
 
     # Strip individual "File "/path/...", line N" references

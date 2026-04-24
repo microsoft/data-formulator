@@ -2,6 +2,8 @@
 
 > **来源**：CodeQL `py/path-injection` 审计 + 全量代码人工审查。
 > **目标**：将"根目录 + 用户/外部输入"拼接这一高频模式收敛到单一原语，消除散落式校验遗漏。
+>
+> **相关文档**：[ISSUE-002: 任意文件读取漏洞安全审计](issues/002-arbitrary-file-read-audit.md) — 在 ConfinedDir 体系之外发现的 5 项残余风险及修复（scratch_serve TOCTOU、Agent 工具路径、local_folder 多用户禁用、Workspace `is_relative_to`、沙箱启动守卫）。
 
 ---
 

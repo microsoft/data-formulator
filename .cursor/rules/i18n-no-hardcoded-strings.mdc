@@ -1,7 +1,7 @@
 ---
 description: No hardcoded UI strings — use i18n translation keys
 globs: src/**/*.{ts,tsx}
-alwaysApply: false
+alwaysApply: true
 ---
 
 # i18n: No Hardcoded UI Strings
@@ -38,6 +38,8 @@ When adding a new key, add it to **both** `en` and `zh` locale files. Pick the n
 Must use `t()`: button labels, tooltips, placeholders, error messages, dialog titles, tab names, toast notifications, table headers, empty-state text.
 
 May stay hardcoded: log messages (`console.log`), error messages thrown but never displayed, internal constants, CSS class names, test IDs.
+
+**Cross-stack sentinel values** — strings shared between frontend and backend as identity markers (e.g. `UNTITLED_SESSION` in `dfSlice.ts` used by both Redux state and backend workspace API) must NOT be translated. They are internal constants, not display text. Translate them only at the UI rendering layer by mapping the sentinel to `t('...')`.
 
 ## Backend Messages with message_code
 

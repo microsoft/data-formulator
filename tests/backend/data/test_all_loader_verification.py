@@ -72,7 +72,7 @@ class TestAllLoaderCatalogHierarchies:
 
     def test_last_level_is_importable(self):
         """The last hierarchy level should be the importable leaf (table/file/dataset/etc.)."""
-        importable_keys = {"table", "collection", "dataset", "object", "blob"}
+        importable_keys = {"table", "collection", "container", "dataset", "object", "blob"}
         for key, cls in _get_available_loaders().items():
             h = cls.catalog_hierarchy()
             last_key = h[-1]["key"]

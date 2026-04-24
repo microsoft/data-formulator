@@ -163,7 +163,11 @@ export async function apiRequest<T = any>(
  * Streaming (NDJSON) API request.
  *
  * Returns an async generator that yields {@link StreamEvent} objects.
- * Non-200 responses are thrown as {@link ApiRequestError} before streaming begins.
+ *
+ * Handles two pre-stream error scenarios:
+ * - True HTTP errors (500, 413, etc.) — transport-level failures
+ * - Validation errors returned as 200 + application/json (not NDJSON) — the
+ *   backend rejected the request but responded with a structured body
  */
 export async function* streamRequest<T = any>(
     url: string,
@@ -172,6 +176,7 @@ export async function* streamRequest<T = any>(
 ): AsyncGenerator<StreamEvent<T>> {
     const response = await fetchWithIdentity(url, { ...options, signal });
 
+    // Defensive: true transport-level errors (500 crash, 413 WSGI reject, etc.)
     if (!response.ok) {
         let apiError: ApiError;
         try {
@@ -185,6 +190,20 @@ export async function* streamRequest<T = any>(
             apiError = { code: 'HTTP_ERROR', message: `HTTP ${response.status}`, retry: false };
         }
         throw new ApiRequestError(apiError, response.status);
+    }
+
+    // Validation errors: backend returns 200 + application/json instead of NDJSON
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+        const body = await response.json();
+        if (body.status === 'error') {
+            const apiError: ApiError = body.error ?? {
+                code: 'UNKNOWN',
+                message: body.error_message ?? body.message ?? 'Unknown error',
+                retry: false,
+            };
+            throw new ApiRequestError(apiError, response.status);
+        }
     }
 
     const reader = response.body!.getReader();

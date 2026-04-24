@@ -58,7 +58,8 @@ class ConfinedDir:
         """
         if not relative:
             raise ValueError("Empty relative path")
-        if Path(relative).is_absolute():
+        rel = Path(relative)
+        if rel.is_absolute() or rel.root:
             raise ValueError(f"Absolute path not allowed: {relative!r}")
 
         parts = Path(relative).parts

@@ -174,9 +174,25 @@ def _register_blueprints():
         print("  Data connectors disabled (DISABLE_DATA_CONNECTORS=true)", flush=True)
 
 
+def _safety_checks():
+    """Warn about dangerous configuration combinations at startup."""
+    cli = app.config.get('CLI_ARGS', {})
+    backend = cli.get('workspace_backend', 'local')
+    sandbox = cli.get('sandbox', 'not_a_sandbox')
+    multi_user = backend != 'local'
+
+    if multi_user and sandbox == 'not_a_sandbox':
+        logger.critical(
+            "SECURITY WARNING: Multi-user mode with no sandbox is dangerous. "
+            "LLM-generated code can read/write arbitrary files on the server. "
+            "Set SANDBOX=docker or SANDBOX=local for production deployments."
+        )
+
+
 # Register blueprints at module level so WSGI servers (gunicorn) pick up all routes.
 # The guard inside _register_blueprints() prevents double registration when run via CLI.
 _register_blueprints()
+_safety_checks()
 
 
 @app.route('/api/example-datasets')

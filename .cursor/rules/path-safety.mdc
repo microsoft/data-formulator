@@ -1,0 +1,25 @@
+---
+description: 路径安全编码规范 — 编辑路由/Agent/Loader/Workspace 代码时自动提醒
+globs: py-src/data_formulator/{routes,agents,data_loader,datalake,security}/**/*.py
+alwaysApply: false
+---
+
+# 路径安全编码规范
+
+编辑此目录下的文件时，请遵守以下安全规则（详见 `.cursor/skills/path-safety/SKILL.md`）：
+
+## 文件下载
+
+- 用 `send_file(resolved_path)`，**禁止** `send_from_directory(dir, user_input)`
+- 先 `resolve()` + `is_relative_to()` 校验，再传给 `send_file`
+
+## 路径校验
+
+- 路径包含判断用 `Path.is_relative_to()`，**禁止** `str.startswith()`
+- base 路径只 `resolve()` 一次（在函数入口），后续复用
+- 用户输入拼路径用 `ConfinedDir` 或 `Workspace.get_file_path()`，**禁止** 裸 `Path(root) / user_input`
+
+## 部署守卫
+
+- 新增读取宿主文件系统的 Loader 必须在 `_enforce_deployment_restrictions()` 注册多用户禁用
+- 多用户模式（`WORKSPACE_BACKEND != "local"`）必须启用沙箱

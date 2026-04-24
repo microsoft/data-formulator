@@ -129,7 +129,7 @@ def test_upload_xls_rejects_missing_table_name(client):
             content_type="multipart/form-data",
         )
 
-    assert resp.status_code == 400
+    assert resp.status_code == 200
     assert resp.get_json()["status"] == "error"
 
 

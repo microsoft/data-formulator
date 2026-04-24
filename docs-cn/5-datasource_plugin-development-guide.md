@@ -495,6 +495,20 @@ if (authStatus.vault_stale) {
 
 ---
 
+## 11.1 部署模式安全限制
+
+> **重要**：`local_folder` 连接器（浏览服务器本地目录）在多用户部署下会自动被禁用。
+
+当 `WORKSPACE_BACKEND` 不等于 `"local"` 时（即多用户 / 云部署），`data_loader/__init__.py` 会在导入阶段将 `local_folder` 从 `DATA_LOADERS` 移入 `DISABLED_LOADERS`。这意味着：
+
+- 前端不会显示"本地文件夹"连接器选项
+- 即使通过 API 直接发送 `POST /api/connectors { "type": "local_folder" }` 也会被拒绝（返回 400）
+- 桌面单用户模式（`WORKSPACE_BACKEND=local`）不受影响
+
+如果你正在开发的插件涉及**直接访问服务器文件系统**的功能，请参考此机制设计类似的部署模式守卫。详见 [`design-docs/issues/002-arbitrary-file-read-audit.md` FINDING-3](../design-docs/issues/002-arbitrary-file-read-audit.md)。
+
+---
+
 ## 12. 测试规范
 
 ### 测试文件位置

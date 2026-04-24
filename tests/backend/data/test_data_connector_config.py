@@ -82,8 +82,9 @@ class _StubLoader(ExternalDataLoader):
 # ------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def _clean_data_connectors():
+def _clean_data_connectors(monkeypatch):
     """Reset the global DATA_CONNECTORS dict, _ADMIN_CONNECTOR_IDS, and _LOADED_USER_IDENTITIES between tests."""
+    monkeypatch.delenv("PLG_SUPERSET_URL", raising=False)
     old = dict(DATA_CONNECTORS)
     old_admin = set(_ADMIN_CONNECTOR_IDS)
     old_loaded = set(_LOADED_USER_IDENTITIES)

@@ -225,7 +225,9 @@ def register_error_handlers(app: flask.Flask) -> None:
             "status": "error",
             "error": e.to_dict(include_detail=app.debug),
         }
-        return jsonify(body), e.status_code
+        # Always return HTTP 200 — the error is an application-level result,
+        # not a transport-level failure. Clients inspect body.status instead.
+        return jsonify(body), 200
 
     # -- 413 -----------------------------------------------------------------
 

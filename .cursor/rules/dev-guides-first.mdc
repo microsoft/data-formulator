@@ -15,6 +15,7 @@ read the relevant documents in `dev-guides/`** to understand existing convention
 |-------|-------------|
 | `dev-guides/1.streaming-protocol.md` | Any work on streaming endpoints or NDJSON protocol |
 | `dev-guides/2.log-sanitization.md` | Any work involving logging, credentials, external services, or DataLoaders |
+| `.cursor/rules/i18n-no-hardcoded-strings.mdc` | Any work adding or changing user-visible strings in `src/` |
 
 Also check `.cursor/rules/` and `.cursor/skills/` for related coding conventions.
 

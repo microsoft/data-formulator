@@ -61,7 +61,7 @@ class TestMigrateRoute:
                 json={"source_identity": "browser:xyz"},
             )
 
-        assert resp.status_code == 403
+        assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
 
 
@@ -92,5 +92,5 @@ class TestCleanupAnonymousRoute:
                 json={"source_identity": "browser:xyz"},
             )
 
-        assert resp.status_code == 403
+        assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"

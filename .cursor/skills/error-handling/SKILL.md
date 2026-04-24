@@ -1,3 +1,8 @@
+---
+name: error-handling
+description: 统一错误处理系统。在添加 API 端点、修改错误处理、添加前端 API 调用、编写错误相关测试时使用。
+---
+
 # Error Handling Skill
 
 Unified error handling system for DF. Use when adding API endpoints, modifying error handling, or adding frontend API calls.
@@ -26,6 +31,11 @@ MessageSnackbar ← dfSlice.messages
 
 ## Backend: Adding a New API Endpoint
 
+### HTTP Status Code Policy
+
+**All application-controlled responses return HTTP 200.** Errors are in the body (`status: "error"`).
+Only uncontrolled transport errors use non-200: `404` (no route), `413` (WSGI body limit), `500` (unhandled crash).
+
 ### Non-streaming endpoint
 
 ```python
@@ -35,21 +45,23 @@ from data_formulator.errors import AppError, ErrorCode
 def my_endpoint():
     content = request.get_json()
     if not content.get('required_field'):
-        raise AppError(ErrorCode.INVALID_REQUEST, "Missing required_field", status_code=400)
+        raise AppError(ErrorCode.INVALID_REQUEST, "Missing required_field")
 
     try:
         result = do_work(content)
     except SomeBusinessError as e:
-        raise AppError(ErrorCode.DATA_LOAD_ERROR, "Failed to load data", status_code=500) from e
+        raise AppError(ErrorCode.DATA_LOAD_ERROR, "Failed to load data") from e
     except Exception as e:
-        # LLM errors → classify_and_wrap_llm_error
         from data_formulator.error_handler import classify_and_wrap_llm_error
         raise classify_and_wrap_llm_error(e) from e
 
     return jsonify({"status": "ok", "data": result})
+# Global handler returns: HTTP 200 + {"status": "error", "error": {code, message, retry}}
 ```
 
 ### Streaming endpoint
+
+Validation MUST be outside the generator. Failures return 200 JSON (not NDJSON).
 
 ```python
 from data_formulator.errors import AppError, ErrorCode
@@ -57,12 +69,19 @@ from data_formulator.error_handler import stream_error_event, classify_and_wrap_
 
 @bp.route('/my-stream', methods=['POST'])
 def my_stream():
+    # Validation outside generator — failures return 200 JSON
+    if not request.is_json:
+        return jsonify({"status": "error", "error": {
+            "code": ErrorCode.INVALID_REQUEST, "message": "Invalid request", "retry": False,
+        }})
+
+    content = request.get_json()
+    client = get_client(content['model'])
+
     def generate():
         try:
             for event in agent.run(...):
                 yield json.dumps(event, ensure_ascii=False) + "\n"
-        except AppError as e:
-            yield stream_error_event(e, token=token)
         except Exception as e:
             yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
 
@@ -197,10 +216,11 @@ def my_table_op():
         classify_and_raise_db_error(e)
 ```
 
-`classify_and_raise_db_error` maps common DB errors to appropriate `AppError` codes:
-- "Table does not exist" → `TABLE_NOT_FOUND` (404)
-- "Table already exists" → `INVALID_REQUEST` (409)
-- "Permission denied" → `ACCESS_DENIED` (403)
+`classify_and_raise_db_error` maps common DB errors to appropriate `AppError` codes
+(all returned as HTTP 200 by the global handler):
+- "Table does not exist" → `TABLE_NOT_FOUND`
+- "Table already exists" → `INVALID_REQUEST`
+- "Permission denied" → `ACCESS_DENIED`
 - etc.
 
 ## Backend: Connector Errors (data_connector.py)

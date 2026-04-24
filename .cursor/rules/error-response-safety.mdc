@@ -13,20 +13,17 @@ API keys, or internal IP addresses — all of which are security risks (CWE-209)
 ## Unified Error System
 
 All errors MUST use the `AppError` / `error_handler` infrastructure from `errors.py` and `error_handler.py`.
+All application-controlled responses return **HTTP 200**. Errors are conveyed via `body.status === "error"`.
 
 ### Non-streaming routes
 
-Raise `AppError` — the global error handler converts it to a consistent JSON envelope:
+Raise `AppError` — the global error handler returns HTTP 200 + JSON error envelope:
 
 ```python
 from data_formulator.errors import AppError, ErrorCode
 
 # Business error — raise with appropriate code and safe message
-raise AppError(
-    ErrorCode.TABLE_NOT_FOUND,
-    "Table not found",
-    status_code=404,
-)
+raise AppError(ErrorCode.TABLE_NOT_FOUND, "Table not found")
 
 # LLM / external API error — use classify_and_wrap_llm_error
 from data_formulator.error_handler import classify_and_wrap_llm_error
@@ -37,7 +34,8 @@ except Exception as e:
 
 ### Streaming routes
 
-Use `stream_error_event()` to yield a unified NDJSON error line:
+Use `stream_error_event()` to yield a unified NDJSON error line.
+Validation before the stream starts returns `200 application/json` (not NDJSON):
 
 ```python
 from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
@@ -63,12 +61,11 @@ except Exception as e:
     from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
     yield stream_error_event(classify_and_wrap_llm_error(e))
 
-# Invalid request format in streaming endpoint
-from data_formulator.error_handler import stream_error_event
-from data_formulator.errors import AppError, ErrorCode
-yield stream_error_event(AppError(
-    ErrorCode.INVALID_REQUEST, "Invalid request format", status_code=400,
-))
+# Validation failure before stream starts — return 200 JSON, not NDJSON
+if not request.is_json:
+    return jsonify({"status": "error", "error": {
+        "code": ErrorCode.INVALID_REQUEST, "message": "Invalid request", "retry": False,
+    }})
 ```
 
 ### Database / workspace errors (tables.py)
@@ -103,8 +100,8 @@ These functions still exist as wrappers but should NOT be used in new code:
 
 ## Rules
 
-1. **5xx errors** — return a fixed generic message; never expose exception details.
-2. **4xx errors** — use a pre-defined safe message from `ErrorCode` constants.
+1. **Application errors** — always HTTP 200 + `{"status": "error", "error": {...}}`; never expose exception details.
+2. **Transport errors** (uncontrolled) — only `404` (no route), `413` (body limit), `500` (unhandled crash) may be non-200.
 3. **Streaming errors** — always use `stream_error_event()` for NDJSON error lines.
 4. **Logging** — always log the full exception server-side (`logger.warning` / `logger.error`
    with `exc_info=True` when needed). The client never needs the stack trace.
@@ -125,8 +122,8 @@ return jsonify({"message": str(e)}), 500
 return jsonify({"error": f"Failed: {e}"}), 502
 yield json.dumps({"type": "error", "error": str(e)}) + "\n"
 
-# ❌ BAD — inconsistent error format
-return jsonify({"status": "error", "error_message": "..."}), 500
+# ❌ BAD — non-200 HTTP status code for application errors
+return jsonify({"status": "error", "error_message": "..."}), 400
 
 # ❌ BAD — naked except catches SystemExit/KeyboardInterrupt
 except:
@@ -136,8 +133,8 @@ except:
 except Exception:
     pass
 
-# ✅ GOOD — non-streaming
-raise AppError(ErrorCode.TABLE_NOT_FOUND, "Table not found", status_code=404)
+# ✅ GOOD — non-streaming (global handler returns HTTP 200)
+raise AppError(ErrorCode.TABLE_NOT_FOUND, "Table not found")
 
 # ✅ GOOD — streaming
 yield stream_error_event(AppError(ErrorCode.LLM_TIMEOUT, "Timeout", retry=True))

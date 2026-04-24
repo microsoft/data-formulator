@@ -718,7 +718,7 @@ tests/
 | Phase 1 | `auth_providers/README.md` | 如何新增一个 AuthProvider：基类契约、环境变量约定、`get_auth_info()` 返回格式、测试方法 |
 | Phase 2 | `plugins/README.md` | **插件开发指南**：目录约定、`plugin_class` 暴露方式、manifest 字段说明、路由前缀规则、PluginDataWriter 用法、前端 `index.ts` 导出规范、fixture 录制方法 |
 | Phase 2 | `.env.template` 更新 | 新增 `SUPERSET_URL` 等插件环境变量的说明 |
-| Phase 3 | `credential_vault/README.md` | Vault 配置方式、密钥生成命令、插件如何调用 Vault API |
+| Phase 3 | `docs-cn/6-credential-vault.md` | Vault 配置方式、密钥生成命令、插件如何调用 Vault API |
 | Phase 4 | `plugins/README.md` 更新 | 用 Metabase 插件作为实际案例补充到指南中，验证文档的可操作性 |
 | 每个 Phase | `CHANGELOG.md` 追加 | 简要记录本阶段新增的能力和配置变更 |
 
