@@ -217,6 +217,7 @@ class TestDataConnectorWrapping:
             "/api/connectors/refresh-data",
             "/api/connectors/preview-data",
             "/api/connectors/import-group",
+            "/api/connectors/column-values",
         ]
         app = flask.Flask(__name__)
         app.config["TESTING"] = True
