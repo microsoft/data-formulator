@@ -1128,6 +1128,39 @@ def connector_preview_data():
         classify_and_raise_connector_error(e)
 
 
+@connectors_bp.route("/api/connectors/column-values", methods=["POST"])
+def connector_column_values():
+    """Return distinct values for a dataset column (smart filter support)."""
+    data = request.get_json() or {}
+    source = _resolve_connector(data)
+
+    try:
+        loader = source._require_loader()
+        raw_source = data.get("source_table")
+        if not raw_source:
+            return jsonify({"status": "error", "message": "source_table is required"})
+        source_id, _source_name = _parse_source_table(raw_source)
+
+        column_name = (data.get("column_name") or "").strip()
+        if not column_name:
+            return jsonify({"status": "error", "message": "column_name is required"})
+
+        keyword = (data.get("keyword") or "").strip()
+        limit = int(data.get("limit", 50))
+        offset = int(data.get("offset", 0))
+
+        result = loader.get_column_values(
+            source_table=source_id,
+            column_name=column_name,
+            keyword=keyword,
+            limit=limit,
+            offset=offset,
+        )
+        return jsonify({"status": "ok", **result})
+    except Exception as e:
+        classify_and_raise_connector_error(e)
+
+
 @connectors_bp.route("/api/connectors/import-group", methods=["POST"])
 def connector_import_group():
     """Import all tables from a table_group with shared filters."""

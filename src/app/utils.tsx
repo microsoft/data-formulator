@@ -101,6 +101,7 @@ export const CONNECTOR_ACTION_URLS = {
     REFRESH_DATA: '/api/connectors/refresh-data',
     PREVIEW_DATA: '/api/connectors/preview-data',
     IMPORT_GROUP: '/api/connectors/import-group',
+    COLUMN_VALUES: '/api/connectors/column-values',
 } as const;
 
 /** Global connector management URLs. */

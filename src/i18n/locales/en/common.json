@@ -671,6 +671,16 @@
     "connectorDeleted": "Connector \"{{name}}\" deleted",
     "failedDeleteConnector": "Failed to delete connector",
     "deletingEllipsis": "Deleting...",
-    "deleteConfirmBtn": "Delete"
+    "deleteConfirmBtn": "Delete",
+    "searchTables": "Search tables...",
+    "addFilter": "Add filter",
+    "filterColumn": "Column",
+    "filterValue": "Value",
+    "filterValueTo": "To",
+    "filterValueSearch": "Enter to search",
+    "filterOptionsTruncated": "Results truncated, type to narrow",
+    "noValueNeeded": "No value needed",
+    "opBetween": "BETWEEN",
+    "opContains": "CONTAINS"
   }
 }

@@ -653,6 +653,16 @@
     "connectorDeleted": "连接器「{{name}}」已删除",
     "failedDeleteConnector": "删除连接器失败",
     "deletingEllipsis": "删除中...",
-    "deleteConfirmBtn": "删除"
+    "deleteConfirmBtn": "删除",
+    "searchTables": "搜索表...",
+    "addFilter": "添加筛选",
+    "filterColumn": "列",
+    "filterValue": "值",
+    "filterValueTo": "至",
+    "filterValueSearch": "回车搜索可选值",
+    "filterOptionsTruncated": "结果已截断，输入关键字缩小范围",
+    "noValueNeeded": "此操作无需填写值",
+    "opBetween": "介于",
+    "opContains": "包含"
   }
 }

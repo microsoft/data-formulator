@@ -531,6 +531,24 @@ class ExternalDataLoader(ABC):
             for t in tables
         ]
 
+    def get_column_values(
+        self,
+        source_table: str,
+        column_name: str,
+        keyword: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return distinct values for a column (used for smart filter inputs).
+
+        Subclasses may override to provide richer results (e.g. via native
+        Superset APIs).  The default returns an empty list, signalling that
+        the frontend should fall back to a free-text input.
+
+        Returns ``{"options": [{"label": str, "value": ...}], "has_more": bool}``.
+        """
+        return {"options": [], "has_more": False}
+
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         """Get detailed metadata for a single catalog node.
 

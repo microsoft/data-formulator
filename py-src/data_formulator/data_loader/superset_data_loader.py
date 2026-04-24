@@ -484,6 +484,112 @@ class SupersetLoader(ExternalDataLoader):
             logger.warning("get_metadata failed for dataset %s: %s", dataset_id, e)
             return {}
 
+    # -- get_column_values (smart filter support) ----------------------------
+
+    def get_column_values(
+        self,
+        source_table: str,
+        column_name: str,
+        keyword: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return distinct values for *column_name* in a Superset dataset.
+
+        Uses a three-tier fallback strategy (same as 0.6):
+        1. ``/api/v1/datasource/table/{id}/column/{col}/values/``
+        2. ``/api/v1/dataset/distinct/{col}``
+        3. SQL ``SELECT DISTINCT`` via SQL Lab
+        """
+        try:
+            dataset_id = int(source_table)
+        except (ValueError, TypeError):
+            return {"options": [], "has_more": False}
+
+        token = self._ensure_token()
+        safe_limit = max(1, min(int(limit), 200))
+        safe_offset = max(0, int(offset))
+        trimmed = keyword.strip()
+
+        def _normalize(payload: Any) -> list[dict[str, Any]]:
+            result = payload.get("result", payload) if isinstance(payload, dict) else payload
+            if isinstance(result, dict):
+                result = result.get("values", result.get("data", [result]))
+            if not isinstance(result, list):
+                return []
+            out: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for item in result:
+                raw, label = item, None
+                if isinstance(item, dict):
+                    raw = item.get("value", item.get("label", next(iter(item.values()), None)))
+                    label = item.get("label")
+                elif isinstance(item, (list, tuple)):
+                    raw = item[0] if item else None
+                if raw is None:
+                    continue
+                if trimmed and trimmed.lower() not in str(raw).lower():
+                    continue
+                key = repr(raw)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({"label": str(label) if label else str(raw), "value": raw})
+            return out
+
+        for fetcher in (
+            lambda: self._client.get_datasource_column_values(token, dataset_id, column_name),
+            lambda: self._client.get_dataset_distinct_values(token, column_name),
+        ):
+            try:
+                options = _normalize(fetcher())
+                sliced = options[safe_offset: safe_offset + safe_limit + 1]
+                return {
+                    "options": [{"label": o["label"], "value": o["value"]} for o in sliced[:safe_limit]],
+                    "has_more": len(sliced) > safe_limit,
+                }
+            except Exception:
+                logger.debug(
+                    "Native option endpoint failed for dataset=%s column=%s",
+                    dataset_id, column_name, exc_info=True,
+                )
+
+        try:
+            detail = self._client.get_dataset_detail(token, dataset_id)
+            db_id, schema, base_sql = _build_dataset_sql(detail)
+            qcol = _quote_identifier(column_name)
+            where_parts = [f"{qcol} IS NOT NULL"]
+            if trimmed:
+                where_parts.append(
+                    f"CAST({qcol} AS VARCHAR) ILIKE {_sql_literal(f'%{trimmed}%')}"
+                )
+            sql = (
+                f"SELECT DISTINCT {qcol} FROM ({base_sql}) AS _src "
+                f"WHERE {' AND '.join(where_parts)} "
+                f"ORDER BY 1 LIMIT {safe_limit + 1} OFFSET {safe_offset}"
+            )
+            session = self._client.create_sql_session(token)
+            result = self._client.execute_sql_with_session(
+                session, db_id, sql, schema, row_limit=safe_limit + 1,
+            )
+            rows = result.get("data", []) or []
+            has_more = len(rows) > safe_limit
+            rows = rows[:safe_limit]
+
+            cols = result.get("columns") or []
+            col_key = (cols[0].get("column_name") or cols[0].get("name") or cols[0].get("label")) if cols else None
+            if not col_key and rows and isinstance(rows[0], dict):
+                col_key = next(iter(rows[0]), None)
+
+            options = []
+            for row in rows:
+                raw = row.get(col_key) if isinstance(row, dict) and col_key else row
+                options.append({"label": str(raw) if raw is not None else "", "value": raw})
+            return {"options": options, "has_more": has_more}
+        except Exception:
+            logger.warning("SQL fallback for column values failed dataset=%s column=%s", dataset_id, column_name, exc_info=True)
+            return {"options": [], "has_more": False}
+
     # -- fetch_data_as_arrow -----------------------------------------------
 
     def fetch_data_as_arrow(
