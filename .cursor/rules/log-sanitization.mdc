@@ -1,0 +1,105 @@
+---
+description: Prevent sensitive data leakage in server-side log messages
+globs: py-src/**/*.py
+alwaysApply: false
+---
+
+# Log Sanitization
+
+Server-side logs must never contain passwords, tokens, API keys, or other credentials
+in plain text. This rule complements `error-response-safety.mdc` (which covers client
+responses) by addressing the **logging** side.
+
+## Architecture: Defense in Depth
+
+Two layers protect against sensitive data in logs:
+
+1. **Layer 1 — Explicit utilities** (call-site): developers use `sanitize_url()`,
+   `sanitize_params()`, `redact_token()` from `security/log_sanitizer.py`.
+2. **Layer 2 — SensitiveDataFilter** (global): a `logging.Filter` registered on all
+   handlers in `configure_logging()` auto-redacts patterns that slip through.
+
+Layer 1 is the primary defense; Layer 2 is a safety net. Both are required.
+
+## When to Use Each Utility
+
+| Data Type | Utility | Example |
+|-----------|---------|---------|
+| `dict` with password/secret/token keys | `sanitize_params(params)` | `log.info("Init: %s", sanitize_params(params))` |
+| URL (may have `user:pass@host`) | `sanitize_url(url)` | `logger.info("Connecting to %s", sanitize_url(url))` |
+| Bearer / access token | `redact_token(token)` | `logger.debug("Token: %s", redact_token(token))` |
+| Normal string (no secrets) | Nothing needed | `logger.info("Processing table %s", name)` |
+
+## Rules
+
+1. **Never log raw `params` / `config` dicts** that may contain `password`, `secret`,
+   `api_key`, `token`, or `connection_string` keys. Always use `sanitize_params()`.
+
+2. **Never log full tokens or API keys.** Use `redact_token()` if you need to identify
+   a token in logs.
+
+3. **Prefer `type(exc).__name__`** over `str(exc)` in warning/info logs when the
+   exception may contain connection strings or upstream response bodies. Use
+   `exc_info=True` for full tracebacks at ERROR level (the filter sanitizes `exc_text`).
+
+4. **URL logging** — use `sanitize_url()` for any URL from configuration or
+   environment variables (issuer URLs, JWKS URLs, database URLs, API base URLs).
+
+5. **Use `%s`-style formatting** instead of f-strings for log messages. This allows
+   the filter to intercept arguments before formatting and provides better
+   compatibility with log aggregation tools.
+
+## Common Mistakes
+
+```python
+# BAD — dict may contain password
+log.info(f"Connecting with {params}")
+log.info("Connecting with %s", params)
+
+# GOOD
+from data_formulator.security.log_sanitizer import sanitize_params
+log.info("Connecting with %s", sanitize_params(params))
+
+# BAD — URL may embed credentials
+logger.warning("Failed for %s", discovery_url)
+
+# GOOD
+from data_formulator.security.log_sanitizer import sanitize_url
+logger.warning("Failed for %s", sanitize_url(discovery_url))
+
+# BAD — exception may leak connection string or upstream body
+logger.warning("Error: %s", exc)
+
+# GOOD — log type name at warning level, full traceback at error level
+logger.warning("Error: %s", type(exc).__name__)
+logger.error("Unexpected failure", exc_info=True)
+
+# BAD — full token in logs
+logger.debug("Using token %s", token)
+
+# GOOD
+from data_formulator.security.log_sanitizer import redact_token
+logger.debug("Using token %s", redact_token(token))
+```
+
+## Disabling for Local Debug
+
+Set `LOG_SANITIZE=false` to disable the global filter during local debugging.
+This should **never** be used in production or CI.
+
+## Adding New Sensitive Keys
+
+If your module introduces a new credential key name (e.g. `custom_auth_token`),
+add it to `SENSITIVE_KEYS` in `security/log_sanitizer.py` and add a corresponding
+regex pattern to `_SENSITIVE_KEY_NAMES` if needed.
+
+## New Module Checklist
+
+When creating a new module or feature that handles credentials or external services:
+
+- [ ] Audit all `logger.*()` calls — do any log connection params, URLs, or tokens?
+- [ ] Use `sanitize_params()` for any dict that may contain credentials
+- [ ] Use `sanitize_url()` for any URL from config/env
+- [ ] Use `redact_token()` for any token/key value
+- [ ] If introducing new credential key names, update `SENSITIVE_KEYS`
+- [ ] Run `python -m pytest tests/backend/security/test_log_sanitizer.py` to verify

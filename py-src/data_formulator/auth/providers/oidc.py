@@ -45,6 +45,7 @@ from jwt import PyJWKClient
 from flask import Flask, Request
 
 from .base import AuthProvider, AuthResult, AuthenticationError
+from data_formulator.security.log_sanitizer import sanitize_url, redact_token
 
 logger = logging.getLogger(__name__)
 
@@ -115,13 +116,14 @@ class OIDCProvider(AuthProvider):
                 logger.warning(
                     "Discovery response from %s missing authorization_endpoint "
                     "(likely not a valid discovery document), ignoring",
-                    discovery_url,
+                    sanitize_url(discovery_url),
                 )
                 return None
 
             return doc
         except Exception as exc:
-            logger.warning("Discovery request failed for %s: %s", discovery_url, exc)
+            logger.warning("Discovery request failed for %s: %s",
+                           sanitize_url(discovery_url), type(exc).__name__)
             return None
 
     def on_configure(self, app: Flask) -> None:
@@ -160,7 +162,7 @@ class OIDCProvider(AuthProvider):
             if "id_token_signing_alg_values_supported" in discovery:
                 self._algorithms = discovery["id_token_signing_alg_values_supported"]
             self._discovery_ok = True
-            logger.info("Discovery succeeded for issuer %s", self._issuer)
+            logger.info("Discovery succeeded for issuer %s", sanitize_url(self._issuer))
         else:
             logger.warning(
                 "All discovery attempts failed — using manual endpoints"
@@ -170,18 +172,20 @@ class OIDCProvider(AuthProvider):
         if self._jwks_url:
             try:
                 self._jwks_client = PyJWKClient(self._jwks_url, cache_keys=True)
-                logger.info("JWKS client initialised: %s", self._jwks_url)
+                logger.info("JWKS client initialised: %s", sanitize_url(self._jwks_url))
             except Exception as exc:
-                logger.warning("Failed to initialise JWKS client: %s", exc)
+                logger.warning("Failed to initialise JWKS client: %s", type(exc).__name__)
 
         # 3) Summarise
         mode = "JWKS" if self._jwks_client else (
             "userinfo" if self._userinfo_url else "NONE"
         )
         logger.info(
-            "OIDC provider ready: issuer=%s, client_id=%s, "
+            "OIDC provider ready: issuer=%s, client_id=%s..., "
             "protocol=%s, discovery=%s, token_validation=%s",
-            self._issuer, self._client_id, self._protocol,
+            sanitize_url(self._issuer),
+            self._client_id[:4] + "..." if len(self._client_id) > 4 else self._client_id,
+            self._protocol,
             "ok" if self._discovery_ok else "manual",
             mode,
         )

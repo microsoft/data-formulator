@@ -1,0 +1,58 @@
+---
+description: Require reading dev-guides before development and keeping docs in sync
+globs: 
+alwaysApply: true
+---
+
+# Dev Guides First
+
+## Before Starting Any Development
+
+Before implementing or designing a new feature, module, or significant change, **always
+read the relevant documents in `dev-guides/`** to understand existing conventions:
+
+| Guide | When to Read |
+|-------|-------------|
+| `dev-guides/1.streaming-protocol.md` | Any work on streaming endpoints or NDJSON protocol |
+| `dev-guides/2.log-sanitization.md` | Any work involving logging, credentials, external services, or DataLoaders |
+
+Also check `.cursor/rules/` and `.cursor/skills/` for related coding conventions.
+
+## After Introducing New Conventions
+
+When your work establishes a new development pattern, convention, or architectural
+decision, you MUST update documentation before considering the task complete:
+
+1. **Update existing dev-guide** — if your change extends an existing convention
+   (e.g. new sensitive key type → update `2.log-sanitization.md`)
+
+2. **Create new dev-guide** — if your change introduces a new cross-cutting convention
+   that future developers must follow. Place in `dev-guides/` with the next number prefix.
+
+3. **Update existing SKILL** — if your change affects how an existing skill works
+   (e.g. new error handling pattern → update `error-handling/SKILL.md`)
+
+4. **Create new SKILL** — if your change introduces a reusable development workflow
+   that AI agents should follow. Place in `.cursor/skills/<name>/SKILL.md`.
+
+5. **Update existing Rule** — if your change adds constraints to an existing rule
+   (e.g. new banned pattern → update the relevant `.mdc` file)
+
+6. **Create new Rule** — if your change introduces file-scoped coding conventions
+   that should be enforced automatically. Place in `.cursor/rules/<name>.mdc`.
+
+## Documentation Sync Checklist
+
+For every PR that introduces new patterns:
+
+- [ ] Searched `dev-guides/` for related existing docs
+- [ ] Updated or created dev-guide if introducing cross-cutting conventions
+- [ ] Updated or created `.cursor/skills/` if introducing reusable workflows
+- [ ] Updated or created `.cursor/rules/` if introducing file-scoped constraints
+- [ ] New dev-guide includes a "New Module Checklist" section (if applicable)
+
+## File Naming Conventions
+
+- **dev-guides**: `<number>.<kebab-case-topic>.md` (e.g. `3.api-versioning.md`)
+- **skills**: `.cursor/skills/<topic>/SKILL.md`
+- **rules**: `.cursor/rules/<kebab-case-topic>.mdc`

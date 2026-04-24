@@ -39,7 +39,7 @@ from data_formulator.model_registry import model_registry
 
 from data_formulator.agents.data_agent import DataAgent
 from data_formulator.agents.agent_language import build_language_instruction
-from data_formulator.security.sanitize import classify_llm_error
+from data_formulator.security.sanitize import classify_llm_error, sanitize_error_message
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -170,8 +170,10 @@ def check_available_models():
     all_public = model_registry.list_public()
     logger.info("=" * 60)
     logger.info(f"[check-available-models] Checking {len(all_public)} global models")
+    from data_formulator.security.log_sanitizer import sanitize_url
     for p in all_public:
-        logger.info(f"  -> {p['id']}  (endpoint={p['endpoint']}, model={p['model']}, api_base={p['api_base']})")
+        logger.info("  -> %s  (endpoint=%s, model=%s, api_base=%s)",
+                     p['id'], p['endpoint'], p['model'], sanitize_url(p.get('api_base', '')))
     overall_start = time.time()
 
     def _check_one(public_info: dict) -> dict:
@@ -1047,7 +1049,9 @@ def refresh_derived_data():
         else:
             return jsonify({
                 "status": "error",
-                "message": result.get('content', 'Unknown error during transformation')
+                "message": sanitize_error_message(
+                    result.get('content', 'Unknown error during transformation')
+                )
             }), 400
 
     except Exception as e:
