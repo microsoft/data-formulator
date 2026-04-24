@@ -1247,13 +1247,14 @@ def _load_admin_specs() -> list[SourceSpec]:
     prefix = "DF_SOURCES__"
     raw: dict[str, dict[str, str]] = {}
     for env_key, env_val in os.environ.items():
-        if not env_key.startswith(prefix):
+        # Windows env vars are case-insensitive; normalise for consistent IDs.
+        if not env_key.upper().startswith(prefix):
             continue
         rest = env_key[len(prefix):]
         parts = rest.split("__", 1)
         if len(parts) != 2:
             continue
-        instance_id, field = parts[0], parts[1].lower()
+        instance_id, field = parts[0].lower(), parts[1].lower()
         raw.setdefault(instance_id, {})[field] = env_val
 
     for instance_id, fields in raw.items():

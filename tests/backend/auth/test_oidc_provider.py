@@ -165,13 +165,14 @@ class TestOIDCAuthenticate:
             assert result.email == "alice@example.com"
             assert result.raw_token == token
 
-    def test_sub_is_stringified(self, app, provider, rsa_private_key):
+    def test_numeric_sub_is_rejected(self, app, provider, rsa_private_key):
+        """OIDC spec requires ``sub`` to be a string; numeric values are rejected by PyJWT."""
         token = _sign_jwt(rsa_private_key, _valid_payload(sub=12345))
         with app.test_request_context(
             headers={"Authorization": f"Bearer {token}"}
         ):
-            result = provider.authenticate(flask.request)
-            assert result.user_id == "12345"
+            with pytest.raises(AuthenticationError, match="Invalid OIDC token"):
+                provider.authenticate(flask.request)
 
 
 # ------------------------------------------------------------------
