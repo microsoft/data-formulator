@@ -86,10 +86,15 @@ def configure_logging():
     log_level_str = os.getenv("LOG_LEVEL", "INFO").strip().upper()
     app_log_level = getattr(logging, log_level_str, logging.INFO)
 
+    from data_formulator.security.log_sanitizer import SensitiveDataFilter
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.addFilter(SensitiveDataFilter())
+
     logging.basicConfig(
         level=logging.WARNING,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler(sys.stdout)]
+        handlers=[handler],
     )
 
     logging.getLogger('data_formulator').setLevel(app_log_level)
@@ -99,10 +104,13 @@ def configure_logging():
     logging.getLogger('openai').setLevel(logging.WARNING)
 
     app.logger.handlers = []
-    for handler in logging.getLogger().handlers:
-        app.logger.addHandler(handler)
+    for h in logging.getLogger().handlers:
+        app.logger.addHandler(h)
 
-    logging.getLogger('data_formulator').info(f"Log level: {log_level_str}")
+    logging.getLogger('data_formulator').info(
+        "Log level: %s (sanitize=%s)", log_level_str,
+        os.getenv("LOG_SANITIZE", "true"),
+    )
 
 
 _blueprints_registered = False

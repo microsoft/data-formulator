@@ -170,8 +170,10 @@ def check_available_models():
     all_public = model_registry.list_public()
     logger.info("=" * 60)
     logger.info(f"[check-available-models] Checking {len(all_public)} global models")
+    from data_formulator.security.log_sanitizer import sanitize_url
     for p in all_public:
-        logger.info(f"  -> {p['id']}  (endpoint={p['endpoint']}, model={p['model']}, api_base={p['api_base']})")
+        logger.info("  -> %s  (endpoint=%s, model=%s, api_base=%s)",
+                     p['id'], p['endpoint'], p['model'], sanitize_url(p.get('api_base', '')))
     overall_start = time.time()
 
     def _check_one(public_info: dict) -> dict:

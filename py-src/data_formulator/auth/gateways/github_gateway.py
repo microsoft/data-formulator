@@ -88,7 +88,8 @@ def github_callback():
         "raw_token": access_token,
         "provider": "github",
     }
-    logger.info("GitHub login successful: user=%s (%s)", login, user_id)
+    logger.info("GitHub login successful: user=%s (id=%s...)",
+                 login, user_id[:8] if len(user_id) > 8 else user_id)
 
     return redirect("/")
 

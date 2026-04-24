@@ -117,7 +117,8 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
 **Troubleshooting:** Ensure SQL Server service is running. Verify TCP/IP is enabled in SQL Server Configuration Manager. Test with `sqlcmd -S <server> -d <database> -U <user> -P <password>`."""
 
     def __init__(self, params: dict[str, Any]):
-        log.info(f"Initializing MSSQL DataLoader with parameters: {params}")
+        from data_formulator.security.log_sanitizer import sanitize_params
+        log.info("Initializing MSSQL DataLoader with parameters: %s", sanitize_params(params))
 
         self.params = params
 
