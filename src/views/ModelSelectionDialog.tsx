@@ -368,7 +368,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                         cursor: selectable ? 'pointer' : 'default',
                         opacity: selectable ? 1 : 0.5,
                         backgroundColor: isSelected ? alpha(theme.palette.primary.main, 0.04) : 'transparent',
-                        border: isSelected ? `2px solid ${theme.palette.primary.main}` : '2px solid transparent',
+                        outline: isSelected ? `2px solid ${theme.palette.primary.main}` : 'none',
+                        outlineOffset: -2,
                         '&:hover': selectable ? { backgroundColor: isSelected ? alpha(theme.palette.primary.main, 0.06) : 'rgba(0,0,0,0.02)' } : {},
                     }}
                     onClick={() => selectable && setTempSelectedModelId(

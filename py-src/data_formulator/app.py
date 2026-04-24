@@ -42,6 +42,34 @@ app.config['PERMANENT_SESSION_LIFETIME'] = 60 * 60 * 24 * 365
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
+# Server-side session via flask-session (filesystem / cachelib backend).
+# Stores SSO tokens + service tokens without hitting the 4 KB cookie limit.
+_data_home = os.environ.get(
+    'DATA_FORMULATOR_HOME',
+    str(Path.home() / '.data-formulator'),
+)
+_session_dir = os.path.join(_data_home, 'sessions')
+os.makedirs(_session_dir, exist_ok=True)
+
+app.config['SESSION_TYPE'] = 'cachelib'
+app.config['SESSION_PERMANENT'] = True
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_KEY_PREFIX'] = 'df_session:'
+app.config['SESSION_CLEANUP_N_REQUESTS'] = 100
+
+try:
+    from cachelib import FileSystemCache
+    app.config['SESSION_CACHELIB'] = FileSystemCache(
+        cache_dir=_session_dir, threshold=500,
+    )
+    from flask_session import Session
+    Session(app)
+except ImportError:
+    logging.getLogger(__name__).warning(
+        "flask-session not installed; falling back to cookie sessions "
+        "(TokenStore features will be limited)"
+    )
+
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.int64):
@@ -160,6 +188,15 @@ def _register_blueprints():
     if provider and provider.name == "github":
         from data_formulator.auth.gateways.github_gateway import github_bp
         app.register_blueprint(github_bp)
+
+    # Register auth token management routes (always active)
+    from data_formulator.auth.gateways.oidc_gateway import auth_tokens_bp
+    app.register_blueprint(auth_tokens_bp)
+
+    # Register backend OIDC gateway (active only when AUTH_MODE=backend)
+    if os.environ.get("AUTH_MODE", "").lower() == "backend":
+        from data_formulator.auth.gateways.oidc_gateway import oidc_bp
+        app.register_blueprint(oidc_bp)
 
     # Register credential vault API (safe even when vault is not configured)
     from data_formulator.routes.credentials import credential_bp

@@ -78,6 +78,17 @@ export function getUrls() {
 }
 
 /**
+ * Structured reference to a table in an external data source.
+ * - `id`:   opaque identifier the backend loader needs (e.g. numeric dataset_id for Superset,
+ *           "schema.table" for a SQL database).
+ * - `name`: human-readable label used for display and workspace file naming.
+ */
+export interface SourceTableRef {
+    id: string;
+    name: string;
+}
+
+/**
  * Static API URLs for connector actions.
  * All action routes accept `connector_id` in the JSON body.
  */
@@ -163,12 +174,16 @@ async function _doFetch(
 
         headers.set('Accept-Language', getAgentLanguage());
 
-        // Attach OIDC Bearer token when available
+        // Attach OIDC Bearer token when available (frontend mode only).
+        // In backend mode the session cookie handles auth — no Bearer needed.
         try {
-            const { getAccessToken } = await import('./oidcConfig');
-            const accessToken = await getAccessToken();
-            if (accessToken) {
-                headers.set('Authorization', `Bearer ${accessToken}`);
+            const { getAccessToken, isBackendAuth } = await import('./oidcConfig');
+            const backend = await isBackendAuth();
+            if (!backend) {
+                const accessToken = await getAccessToken();
+                if (accessToken) {
+                    headers.set('Authorization', `Bearer ${accessToken}`);
+                }
             }
         } catch {
             // oidc-client-ts not available — anonymous mode

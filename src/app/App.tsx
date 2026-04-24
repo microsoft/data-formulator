@@ -1004,7 +1004,22 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 try {
                     const info: AuthInfo | null = await getAuthInfo();
 
-                    if (info?.action === 'frontend') {
+                    if (info?.action === 'backend') {
+                        // Backend OIDC — identity from server session
+                        try {
+                            const resp = await fetch(info.status_url || '/api/auth/oidc/status');
+                            const status = await resp.json();
+                            if (status.authenticated && status.user) {
+                                resolvedIdentity = {
+                                    type: 'user',
+                                    id: status.user.sub || status.user.id || 'session_user',
+                                    displayName: status.user.name ?? undefined,
+                                };
+                            }
+                        } catch {
+                            // fall through to browser identity
+                        }
+                    } else if (info?.action === 'frontend') {
                         // OIDC PKCE — check for an existing session
                         const user = await getOidcUser();
                         if (user && !user.expired) {

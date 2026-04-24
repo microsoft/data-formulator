@@ -13,8 +13,7 @@
  */
 
 import React from 'react';
-import { useTranslation } from 'react-i18next';
-import { Box, Chip, Typography, useTheme } from '@mui/material';
+import { Box, Typography, useTheme } from '@mui/material';
 
 const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
 
@@ -51,7 +50,6 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
     showIndex = false,
 }) => {
     const theme = useTheme();
-    const { t } = useTranslation();
     const visibleRows = maxRows != null ? rows.slice(0, maxRows) : rows;
     const hasMore = totalRows == null
         || totalRows > visibleRows.length
@@ -75,30 +73,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
 
     return (
         <Box>
-            {needsColEllipsis && (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.4, mb: 0.75, alignItems: 'center', maxHeight: 180, overflowY: 'auto' }}>
-                    <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 10, mr: 0.25 }}>
-                        {t('dataframe.columnCount', { count: columns.length })}
-                    </Typography>
-                    {columns.map((col, i) => (
-                        <Chip
-                            key={i}
-                            label={col}
-                            size="small"
-                            variant="outlined"
-                            sx={{
-                                height: 18,
-                                fontSize: 10,
-                                fontFamily: CODE_FONT,
-                                borderRadius: 0.5,
-                                borderColor: 'divider',
-                                color: 'text.secondary',
-                                '& .MuiChip-label': { px: 0.75, py: 0 },
-                            }}
-                        />
-                    ))}
-                </Box>
-            )}
+            {/* Column list removed — the abbreviated table header is sufficient */}
             <Box component="table" sx={{
                 borderCollapse: 'collapse',
                 fontSize,

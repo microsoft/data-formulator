@@ -658,8 +658,45 @@ class ExternalDataLoader(ABC):
 
     @staticmethod
     def auth_mode() -> str:
-        """Return ``'connection'`` (default) or ``'token'``."""
+        """Return ``'connection'`` (default) or ``'token'``.
+
+        Legacy interface kept for backward compatibility.
+        New loaders should implement :meth:`auth_config` instead.
+        """
         return "connection"
+
+    @staticmethod
+    def auth_config() -> dict:
+        """Declare how this loader authenticates with its target system.
+
+        The :class:`~data_formulator.auth.token_store.TokenStore` reads this
+        to determine which credential strategies to attempt.
+
+        Supported modes and required keys:
+
+        ``mode="credentials"`` (default)
+            Static username/password via Vault.
+
+        ``mode="sso_exchange"``
+            SSO token → target system token, backend-to-backend.
+            Required: ``exchange_url``.
+            Optional: ``token_url``, ``login_url`` (popup fallback), ``timeout``.
+
+        ``mode="delegated"``
+            Popup window → target system login → postMessage back.
+            Required: ``login_url``.
+            Optional: ``token_url``.
+
+        ``mode="oauth2"``
+            Independent OAuth2 flow (different IdP).
+            Required: ``authorize_url``, ``token_url``.
+            Optional: ``scopes``, ``client_id_env``, ``client_secret_env``.
+
+        Common optional keys:
+            ``display_name``: human-readable name.
+            ``supports_refresh``: whether refresh_token is available.
+        """
+        return {"mode": "credentials"}
 
     @staticmethod
     def rate_limit() -> dict | None:

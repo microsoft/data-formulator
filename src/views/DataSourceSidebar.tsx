@@ -26,7 +26,10 @@ import {
     DialogContent,
     DialogContentText,
     DialogActions,
+    TextField,
+    MenuItem,
 } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import { generateUUID } from '../app/identity';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
@@ -50,11 +53,12 @@ import HistoryIcon from '@mui/icons-material/History';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS } from '../app/utils';
+import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace } from '../app/workspaceService';
 import { borderColor } from '../app/tokens';
+import { RowLimitUnderlineSelect } from '../components/RowLimitUnderlineSelect';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
 import { DataFrameTable } from './DataFrameTable';
@@ -230,6 +234,21 @@ const DataSourceSidebarPanel: React.FC<{
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
     const [importing, setImporting] = useState(false);
+    const [previewRowLimit, setPreviewRowLimit] = useState<number>(50_000);
+    const [previewFilters, setPreviewFilters] = useState<{ column: string; operator: string; value: string }[]>([]);
+    const sidebarRowLimitPresets = [20_000, 50_000, 100_000, 200_000, 300_000, 500_000];
+    const filterOperators = [
+        { value: 'EQ', label: '=' },
+        { value: 'NEQ', label: '!=' },
+        { value: 'GT', label: '>' },
+        { value: 'GTE', label: '>=' },
+        { value: 'LT', label: '<' },
+        { value: 'LTE', label: '<=' },
+        { value: 'LIKE', label: 'LIKE' },
+        { value: 'ILIKE', label: 'ILIKE' },
+        { value: 'IS_NULL', label: 'IS NULL' },
+        { value: 'IS_NOT_NULL', label: 'IS NOT NULL' },
+    ];
 
     // Delete connector confirmation
     const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
@@ -443,11 +462,19 @@ const DataSourceSidebarPanel: React.FC<{
 
     // ── Preview a table on click ──────────────────────────────────────────
 
+    const buildSourceTableRef = useCallback((node: CatalogTreeNode): SourceTableRef => {
+        const name = node.metadata?._source_name || node.metadata?._catalogName || node.name;
+        const id = node.metadata?.dataset_id != null ? String(node.metadata.dataset_id) : name;
+        return { id, name };
+    }, []);
+
     const handlePreviewTable = useCallback((connectorId: string, node: CatalogTreeNode, anchorEl: HTMLElement) => {
         if (node.node_type !== 'table') return;
 
-        const sourceName = node.metadata?._source_name || node.metadata?._catalogName || node.name;
+        const ref = buildSourceTableRef(node);
 
+        setPreviewRowLimit(50_000);
+        setPreviewFilters([]);
         setPreview({
             connectorId,
             node,
@@ -463,8 +490,8 @@ const DataSourceSidebarPanel: React.FC<{
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 connector_id: connectorId,
-                source_table: sourceName,
-                limit: 5,
+                source_table: ref,
+                limit: 10,
             }),
         })
             .then(r => r.json())
@@ -493,21 +520,11 @@ const DataSourceSidebarPanel: React.FC<{
 
     // ── Import table (from preview "Load" button) ────────────────────────────
 
-    const handleImportTable = useCallback((connectorId: string, node: CatalogTreeNode, newWorkspace?: boolean) => {
+    const handleImportTable = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
         if (node.node_type !== 'table') return;
 
-        const sourceName = node.metadata?._source_name || node.metadata?._catalogName || node.name;
+        const ref = buildSourceTableRef(node);
         const pathKey = node.path.join('/');
-
-        // Create a new workspace first if requested
-        if (newWorkspace) {
-            const now = new Date();
-            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-            const short = generateUUID().slice(0, 4);
-            const wsId = `session_${date}_${time}_${short}`;
-            dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
-        }
 
         const tableObj: DictTable = {
             kind: 'table' as const,
@@ -532,15 +549,15 @@ const DataSourceSidebarPanel: React.FC<{
         dispatch(loadTable({
             table: tableObj,
             connectorId,
-            sourceTableName: sourceName,
-            importOptions: {},
+            sourceTableRef: ref,
+            importOptions: importOptions || {},
         })).unwrap()
             .then(() => {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     type: 'success',
                     component: 'data source sidebar',
-                    value: t('sidebar.loadedTable', { name: sourceName }),
+                    value: t('sidebar.loadedTable', { name: ref.name }),
                 }));
                 closePreview();
             })
@@ -549,24 +566,23 @@ const DataSourceSidebarPanel: React.FC<{
                     timestamp: Date.now(),
                     type: 'error',
                     component: 'data source sidebar',
-                    value: t('sidebar.failedLoadTable', { name: sourceName, error: String(error) }),
+                    value: t('sidebar.failedLoadTable', { name: ref.name, error: String(error) }),
                 }));
             })
             .finally(() => setImporting(false));
-    }, [dispatch, closePreview]);
+    }, [dispatch, closePreview, buildSourceTableRef]);
 
     // ── Refresh table data ───────────────────────────────────────────────────
 
     const handleRefreshTable = useCallback((connectorId: string, node: CatalogTreeNode, e: React.MouseEvent) => {
         e.stopPropagation();
         const pathKey = node.path.join('/');
-        // Find the loaded table identity matching this node
         const loaded = tableIdentities.find(
             t => t.connectorId === connectorId && (t.databaseTable === pathKey || t.id === node.name)
         );
         if (!loaded) return;
 
-        const sourceName = node.metadata?._source_name || node.metadata?._catalogName || node.name;
+        const ref = buildSourceTableRef(node);
 
         fetchWithIdentity(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
             method: 'POST',
@@ -574,7 +590,7 @@ const DataSourceSidebarPanel: React.FC<{
             body: JSON.stringify({
                 connector_id: connectorId,
                 table_name: loaded.virtualTableId || loaded.id,
-                source_table: sourceName,
+                source_table: ref,
             }),
         })
             .then(r => r.json())
@@ -584,7 +600,7 @@ const DataSourceSidebarPanel: React.FC<{
                         timestamp: Date.now(),
                         type: 'success',
                         component: 'data source sidebar',
-                        value: t('sidebar.refreshedTable', { name: sourceName }),
+                        value: t('sidebar.refreshedTable', { name: ref.name }),
                     }));
                 }
             })
@@ -594,7 +610,7 @@ const DataSourceSidebarPanel: React.FC<{
                     component: 'data source sidebar', value: 'Failed to refresh table data',
                 }));
             });
-    }, [tableIdentities, dispatch]);
+    }, [tableIdentities, dispatch, buildSourceTableRef]);
 
     // ── Delete connector ──────────────────────────────────────────────────
 
@@ -799,10 +815,12 @@ const DataSourceSidebarPanel: React.FC<{
                                                 loadedMap: loadedTablesMap,
                                                 expandedSet: new Set(expanded),
                                                 onDragStart: (node, event) => {
+                                                    const dsId = node.metadata?.dataset_id;
                                                     const item: CatalogTableDragItem = {
                                                         type: CATALOG_TABLE_ITEM,
                                                         connectorId: connector.id,
                                                         tableName: node.name,
+                                                        tableId: dsId != null ? String(dsId) : undefined,
                                                         tablePath: node.path,
                                                         sourceType: connector.source_type,
                                                     };
@@ -994,68 +1012,114 @@ const DataSourceSidebarPanel: React.FC<{
                 transformOrigin={{ vertical: 'center', horizontal: 'left' }}
                 slotProps={{
                     paper: {
-                        sx: { width: 480, maxHeight: 520, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+                        sx: { width: '66vw', maxWidth: 1100, minWidth: 600, maxHeight: 700, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
                     },
                 }}
             >
                 {preview && (
                     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-                        {/* Header */}
+                        {/* Header — name + max rows + filters */}
                         <Box sx={{ px: 2, pt: 1.5, pb: 1, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
-                            <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{preview.node.name}</Typography>
-                            {preview.rowCount != null && (
-                                <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-                                    {t('sidebar.previewRowCount', { count: Number(preview.rowCount).toLocaleString() })}
-                                </Typography>
+                            {/* Row 1: name + max rows */}
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                    <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>{preview.node.name}</Typography>
+                                    {preview.rowCount != null && (
+                                        <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
+                                            {t('sidebar.previewRowCount', { count: Number(preview.rowCount).toLocaleString() })}
+                                        </Typography>
+                                    )}
+                                </Box>
+                                {!(loadedTablesMap[preview.node.name] || loadedTablesMap[preview.node.path.join('/')]) && (
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.25, flexShrink: 0, mt: 0.125 }}>
+                                        <Typography sx={{ fontSize: 10, color: 'text.secondary', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                                            {t('sidebar.maxRows', { defaultValue: 'Max rows' })}
+                                        </Typography>
+                                        <RowLimitUnderlineSelect
+                                            value={previewRowLimit}
+                                            presets={sidebarRowLimitPresets}
+                                            onChange={setPreviewRowLimit}
+                                            fontSize={12}
+                                        />
+                                    </Box>
+                                )}
+                            </Box>
+                            {/* Filter conditions */}
+                            {!preview.loading && preview.columns.length > 0 && !(loadedTablesMap[preview.node.name] || loadedTablesMap[preview.node.path.join('/')]) && (
+                                <Box sx={{ mt: 1 }}>
+                                    {previewFilters.map((f, idx) => {
+                                        const noValue = f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL';
+                                        return (
+                                            <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                                                <TextField
+                                                    select size="small" value={f.column}
+                                                    onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, column: e.target.value } : r))}
+                                                    slotProps={{ select: { displayEmpty: true } }}
+                                                    sx={{ minWidth: 130, '& .MuiInputBase-root': { fontSize: 11, height: 26 }, '& .MuiSelect-select': { py: 0.1, px: 0.75 } }}
+                                                >
+                                                    <MenuItem value="" disabled sx={{ fontSize: 11, color: 'text.disabled' }}><em>{t('sidebar.filterColumn', { defaultValue: 'Column' })}</em></MenuItem>
+                                                    {preview.columns.map(c => (
+                                                        <MenuItem key={c.name} value={c.name} sx={{ fontSize: 11 }}>{c.name}</MenuItem>
+                                                    ))}
+                                                </TextField>
+                                                <TextField
+                                                    select size="small" value={f.operator}
+                                                    onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, operator: e.target.value } : r))}
+                                                    sx={{ minWidth: 100, '& .MuiInputBase-root': { fontSize: 11, height: 26 }, '& .MuiSelect-select': { py: 0.1, px: 0.75 } }}
+                                                >
+                                                    {filterOperators.map(op => (
+                                                        <MenuItem key={op.value} value={op.value} sx={{ fontSize: 11 }}>{op.label}</MenuItem>
+                                                    ))}
+                                                </TextField>
+                                                {!noValue && (
+                                                    <TextField
+                                                        size="small" value={f.value} placeholder={t('sidebar.filterValue', { defaultValue: 'Value' })}
+                                                        onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, value: e.target.value } : r))}
+                                                        sx={{ flex: 1, minWidth: 80, '& .MuiInputBase-root': { fontSize: 11, height: 26 }, '& .MuiInputBase-input': { py: 0.25, px: 0.75 } }}
+                                                    />
+                                                )}
+                                                <IconButton size="small" onClick={() => setPreviewFilters(prev => prev.filter((_, i) => i !== idx))}
+                                                    sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'error.main' } }}>
+                                                    <CloseIcon sx={{ fontSize: 14 }} />
+                                                </IconButton>
+                                            </Box>
+                                        );
+                                    })}
+                                    <Button
+                                        size="small" startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+                                        onClick={() => setPreviewFilters(prev => [...prev, { column: '', operator: 'EQ', value: '' }])}
+                                        sx={{ textTransform: 'none', fontSize: 11, px: 0.5, minHeight: 0, height: 22, color: 'text.secondary' }}
+                                    >
+                                        {t('sidebar.addFilter', { defaultValue: 'Add filter' })}
+                                    </Button>
+                                </Box>
                             )}
                         </Box>
 
-                        {/* Content */}
+                        {/* Content — preview table */}
                         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1 }}>
                             {preview.loading ? (
                                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
                                     <CircularProgress size={20} />
                                 </Box>
+                            ) : preview.columns.length > 0 && preview.sampleRows.length > 0 ? (
+                                <DataFrameTable
+                                    columns={preview.columns.map(c => c.name)}
+                                    rows={preview.sampleRows}
+                                    totalRows={preview.rowCount ?? undefined}
+                                    maxColumns={20}
+                                    maxRows={10}
+                                    fontSize={11}
+                                    headerFontSize={10}
+                                />
                             ) : (
-                                <>
-                                    {preview.columns.length > 0 && preview.sampleRows.length > 0 ? (
-                                        <DataFrameTable
-                                            columns={preview.columns.map(c => c.name)}
-                                            rows={preview.sampleRows}
-                                            totalRows={preview.rowCount ?? undefined}
-                                            maxColumns={6}
-                                            maxRows={5}
-                                            fontSize={11}
-                                            headerFontSize={10}
-                                        />
-                                    ) : preview.columns.length > 0 ? (
-                                        <Box sx={{ mb: 1.5 }}>
-                                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.5 }}>
-                                                {t('sidebar.previewColumnsHeader', { count: preview.columns.length })}
-                                            </Typography>
-                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                                {preview.columns.map((col, i) => (
-                                                    <Box key={i} sx={{
-                                                        display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                                                        px: 0.75, py: 0.25, borderRadius: 0.5,
-                                                        bgcolor: 'action.hover', fontSize: 11,
-                                                    }}>
-                                                        <span style={{ fontWeight: 500 }}>{col.name}</span>
-                                                        <span style={{ color: 'gray', fontSize: 10 }}>{col.type}</span>
-                                                    </Box>
-                                                ))}
-                                            </Box>
-                                        </Box>
-                                    ) : (
-                                        <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
-                                            {t('sidebar.noPreviewAvailable')}
-                                        </Typography>
-                                    )}
-                                </>
+                                <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
+                                    {t('sidebar.noPreviewAvailable')}
+                                </Typography>
                             )}
                         </Box>
 
-                        {/* Footer — Load button */}
+                        {/* Footer — single Load button */}
                         {(() => {
                             const pathKey = preview.node.path.join('/');
                             const alreadyLoaded = loadedTablesMap[preview.node.name] || loadedTablesMap[pathKey];
@@ -1067,26 +1131,25 @@ const DataSourceSidebarPanel: React.FC<{
                                             {t('sidebar.alreadyLoaded')}
                                         </Button>
                                     ) : (
-                                        <>
-                                        <Button
-                                            size="small"
-                                            variant="outlined"
-                                            disabled={importing || preview.loading}
-                                            onClick={() => handleImportTable(preview.connectorId, preview.node, true)}
-                                            sx={{ textTransform: 'none', fontSize: 12 }}
-                                        >
-                                            {t('sidebar.loadInNewWorkspace')}
-                                        </Button>
                                         <Button
                                             size="small"
                                             variant="contained"
                                             disabled={importing || preview.loading}
-                                            onClick={() => handleImportTable(preview.connectorId, preview.node)}
+                                            onClick={() => {
+                                                const opts: Record<string, any> = { size: previewRowLimit };
+                                                const validFilters = previewFilters.filter(f =>
+                                                    f.column && f.operator &&
+                                                    (f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL' || f.value.trim())
+                                                );
+                                                if (validFilters.length > 0) {
+                                                    opts.source_filters = validFilters;
+                                                }
+                                                handleImportTable(preview.connectorId, preview.node, opts);
+                                            }}
                                             sx={{ textTransform: 'none', fontSize: 12 }}
                                         >
                                             {importing ? t('sidebar.loadingEllipsis') : t('sidebar.load')}
                                         </Button>
-                                        </>
                                     )}
                                 </Box>
                             );

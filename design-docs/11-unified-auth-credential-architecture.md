@@ -1,9 +1,18 @@
 # 12. 统一认证与凭证管理架构（融合方案）
 
-> 状态：设计阶段  
+> 状态：**已实施（阶段 1–3 完成，2026-04-25）**  
 > 创建日期：2026-04-23  
 > 关联：`9-generalized-data-source-plugins.md`、`11-auth-architecture-frontend-vs-backend.md`  
-> 取代：`docs-cn/5-datasource_plugin-development-guide.md`（已过时）
+> 取代：`docs-cn/5-datasource_plugin-development-guide.md`（已过时）  
+>
+> ### 实施记录
+>
+> | 阶段 | 内容 | 状态 |
+> |------|------|------|
+> | 1 | 后端 OIDC + TokenStore + auth_config | ✅ 完成 |
+> | 2 | 导入过滤器 UI + 目录懒加载 | ✅ 完成 |
+> | 3 | Loader 自动发现 + 外部插件目录 | ✅ 完成 |
+> | 4 | 文档更新 | ✅ 完成 |
 
 ---
 
@@ -748,9 +757,18 @@ def connector_disconnect():
 
 ---
 
-## 6. Loader 自动发现
+## 6. Loader 自动发现与外部插件目录
 
-### 6.1 当前方式（显式注册）
+### 6.1 两级 Loader 来源
+
+| 来源 | 路径 | 适用场景 | 加载优先级 |
+|------|------|---------|-----------|
+| **内置 Loader** | 包内 `data_loader/` | DF 自带的数据源（MySQL、PG、Superset 等） | 先加载（可被外部覆盖） |
+| **外部插件 Loader** | `PLUGIN_DIR` 配置目录 | 部署后用户自定义的报表系统/数据源 | 后加载，同名覆盖内置 |
+
+`PLUGIN_DIR` 默认值：`~/.data-formulator/plugins/`，可通过环境变量 `DF_PLUGIN_DIR` 覆盖。
+
+### 6.2 当前方式（显式注册）
 
 ```python
 # data_loader/__init__.py — 需要手动加一行
@@ -760,55 +778,328 @@ _LOADER_SPECS = [
 ]
 ```
 
-### 6.2 改进：目录自动发现 + 显式注册共存
+### 6.3 改进：包内自动发现 + 外部 PLUGIN_DIR 扫描
 
 ```python
-# data_loader/__init__.py — 自动扫描 + 手动注册
+# data_loader/__init__.py — 两级自动扫描
 
-import importlib, pkgutil, logging
+import importlib, importlib.util, pkgutil, os, pathlib, logging
 
 logger = logging.getLogger(__name__)
 
-# 显式注册（优先级高，用于控制加载顺序或覆盖）
-_EXPLICIT_SPECS: list[tuple[str, str, str, str]] = [
-    # (loader_type, module_path, class_name, required_package)
-    # 留空即可，所有 Loader 均可通过自动发现加载
-]
-
-# 约定：文件名 *_data_loader.py，类名 *DataLoader 或 *Loader
 _AUTO_DISCOVER_PATTERN = "_data_loader"
+_DEFAULT_PLUGIN_DIR = pathlib.Path.home() / ".data-formulator" / "plugins"
 
 
-def _auto_discover() -> dict[str, type]:
-    """Scan data_loader/ for ExternalDataLoader subclasses."""
+def _scan_package_loaders() -> dict[str, type]:
+    """Level 1: Scan built-in data_loader/ package."""
     discovered = {}
     package = importlib.import_module("data_formulator.data_loader")
-    for importer, modname, ispkg in pkgutil.iter_modules(package.__path__):
+    for _importer, modname, _ispkg in pkgutil.iter_modules(package.__path__):
         if _AUTO_DISCOVER_PATTERN not in modname:
             continue
         try:
             mod = importlib.import_module(
                 f"data_formulator.data_loader.{modname}")
-            for attr_name in dir(mod):
-                cls = getattr(mod, attr_name)
-                if (isinstance(cls, type)
-                        and issubclass(cls, ExternalDataLoader)
-                        and cls is not ExternalDataLoader):
-                    loader_type = modname.replace(_AUTO_DISCOVER_PATTERN, "")
-                    discovered[loader_type] = cls
-                    logger.info("Auto-discovered loader: %s → %s",
-                                loader_type, cls.__name__)
+            _collect_loaders(mod, modname, discovered, source="builtin")
         except ImportError as exc:
-            logger.debug("Skipping %s (missing dependency: %s)",
+            logger.debug("Skipping builtin %s (missing dep: %s)",
                          modname, exc)
     return discovered
+
+
+def _scan_plugin_dir() -> dict[str, type]:
+    """Level 2: Scan PLUGIN_DIR for external *_data_loader.py files.
+
+    Allows deployed users to add custom loaders without modifying
+    the DF package. Just drop a file into PLUGIN_DIR and restart.
+    """
+    plugin_dir = pathlib.Path(
+        os.environ.get("DF_PLUGIN_DIR", str(_DEFAULT_PLUGIN_DIR))
+    )
+    if not plugin_dir.is_dir():
+        logger.debug("Plugin dir %s does not exist, skipping", plugin_dir)
+        return {}
+
+    discovered = {}
+    for py_file in sorted(plugin_dir.glob("*_data_loader.py")):
+        modname = py_file.stem
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"df_plugins.{modname}", py_file)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _collect_loaders(mod, modname, discovered, source="plugin")
+        except Exception as exc:
+            logger.warning("Failed to load plugin %s: %s", py_file, exc)
+    return discovered
+
+
+def _collect_loaders(mod, modname: str, out: dict, source: str):
+    """Extract ExternalDataLoader subclasses from a module."""
+    for attr_name in dir(mod):
+        cls = getattr(mod, attr_name)
+        if (isinstance(cls, type)
+                and issubclass(cls, ExternalDataLoader)
+                and cls is not ExternalDataLoader):
+            loader_type = modname.replace(_AUTO_DISCOVER_PATTERN, "")
+            out[loader_type] = cls
+            logger.info("[%s] Auto-discovered loader: %s → %s",
+                        source, loader_type, cls.__name__)
+
+
+def get_available_loaders() -> dict[str, type]:
+    """Merge built-in and plugin loaders. Plugins override built-ins."""
+    loaders = _scan_package_loaders()
+    plugins = _scan_plugin_dir()
+    if plugins:
+        for name, cls in plugins.items():
+            if name in loaders:
+                logger.info("Plugin %s overrides built-in loader", name)
+            loaders[name] = cls
+    return loaders
 ```
 
-**零修改原则**：新增一个 `xxx_data_loader.py` 文件，框架自动发现并注册，不需要改 `__init__.py` 或任何其他文件。
+### 6.4 外部插件开发示例
+
+部署用户只需在 `~/.data-formulator/plugins/` 中放入一个文件：
+
+```python
+# ~/.data-formulator/plugins/mybi_data_loader.py
+
+import os
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+
+class MyBIDataLoader(ExternalDataLoader):
+    """Custom BI system loader — drop this file into PLUGIN_DIR."""
+
+    @staticmethod
+    def auth_config() -> dict:
+        url = os.environ.get("PLG_MYBI_URL", "").rstrip("/")
+        return {
+            "mode": "sso_exchange",
+            "display_name": "My BI",
+            "exchange_url": f"{url}/api/df-token-exchange/",
+        }
+
+    @staticmethod
+    def list_params() -> list[dict]:
+        return [
+            {"name": "url", "display_name": "Server URL", "type": "string"},
+        ]
+
+    # ... 实现 test_connection, list_catalog, fetch_data_as_arrow 等
+```
+
+重启 DF 即可在前端统一界面中看到 "My BI" 数据源卡片。
+
+**零修改原则**：无论内置还是外部插件，都不需要改 `__init__.py` 或任何核心代码。内置 Loader 放 `data_loader/` 包内，外部插件放 `PLUGIN_DIR`。
 
 ---
 
-## 7. 后端 OIDC Gateway
+## 7. 导入过滤器 UI（统一前端数据过滤）
+
+### 7.1 问题
+
+1. **单数据集导入缺过滤**：当前前端 `DBTableManager` 在单数据集导入时只提供行数限制和排序，缺少列选择和 WHERE 过滤能力。
+2. **仪表盘导入强制全量**：`GroupLoadPanel` 导入仪表盘时，强制导入所有数据集，用户无法选择只导入其中部分。
+3. **过滤器控件粗粒度**：当前 `source_filters` 只有 `select`/`numeric`/文本三种控件，缺少日期选择器、数值范围等，而 Superset 后端已提供了细粒度的 `filterType`（`filter_time`、`filter_range` 等）。
+
+### 7.2 设计目标
+
+- **统一前端界面**：所有数据源（内置 + 外部插件）在同一个 `DataConnectorPanel` 中完成连接、浏览目录、设置过滤、导入
+- **仪表盘支持选择性导入**：用户可以勾选仪表盘下的部分数据集，而非强制全量
+- **过滤器控件与数据源声明匹配**：后端透传 Superset 等系统的原始过滤器类型，前端据此渲染最匹配的 UI 控件
+- **三层过滤能力**：
+
+| 过滤层 | 位置 | 说明 |
+|--------|------|------|
+| **列选择** | 前端 `FilterBuilder` | 用户勾选需要的列，`import_options.columns` |
+| **WHERE 条件** | 前端 `FilterBuilder` | 用户输入条件表达式，`import_options.filters` |
+| **数据源原生过滤** | 后端 Loader 声明 + 前端 `SourceFilterPanel` 渲染 | Loader 特有的 `source_filters`（如 Superset native filter） |
+
+### 7.3 前端组件设计
+
+```
+DataConnectorPanel (统一入口)
+├── ConnectionForm        — 连接表单（复用已有）
+├── CatalogTree           — 目录树浏览（复用已有）
+│
+├── [选中 table_group 时] GroupLoadPanel 改进版
+│   ├── TableSelector     — 【新增】数据集勾选列表（Checkbox，默认全选）
+│   ├── SourceFilterPanel — 数据源原生过滤（从 GroupLoadPanel 提取，按 input_type 渲染控件）
+│   ├── RowLimitControl   — 行数限制
+│   └── Actions           — 「设置过滤条件」(折叠/展开) + 「导入选中 (N)」
+│
+├── [选中 table 时] 单数据集导入面板
+│   ├── SourceFilterPanel — 如果 Loader 为该数据集声明了 source_filters（可选）
+│   ├── FilterBuilder     — 【新增】通用过滤器
+│   │   ├── ColumnSelector    — 列选择（基于 schema）
+│   │   └── WhereClauseInput  — WHERE 条件构造
+│   ├── RowLimitControl   — 行数限制
+│   └── ImportButton      — 导入按钮
+│
+└── ImportButton          — 导入按钮（附带 import_options）
+```
+
+### 7.4 仪表盘选择性导入
+
+当前 `GroupLoadPanel` 的 tables 列表只是展示，改进后增加勾选能力：
+
+```typescript
+// GroupLoadPanel 改进 — 增加数据集选择
+const [selectedIds, setSelectedIds] = useState<Set<number>>(
+    () => new Set(tables.map(t => t.dataset_id))  // 默认全选
+);
+
+// 提交时只发送选中的
+const tablesToImport = tables.filter(t => selectedIds.has(t.dataset_id));
+
+// UI: 每行加 Checkbox
+<Checkbox
+    size="small"
+    checked={selectedIds.has(tbl.dataset_id)}
+    onChange={(e) => {
+        const next = new Set(selectedIds);
+        e.target.checked ? next.add(tbl.dataset_id) : next.delete(tbl.dataset_id);
+        setSelectedIds(next);
+    }}
+/>
+```
+
+底部操作区两个按钮：
+- **「过滤条件」**：折叠/展开 SourceFilterPanel + RowLimit
+- **「导入选中 (N)」**：按当前过滤条件导入勾选的 N 个数据集
+
+### 7.5 过滤器控件类型映射
+
+#### 7.5.1 后端：透传 Superset filterType + 细粒度 input_type
+
+当前 `_infer_input_type` 把 Superset 的细粒度类型压缩为粗粒度的三种。改进后直接映射为前端可用的 `input_type`，并透传原始类型供调试：
+
+```python
+# superset_data_loader.py — 改进 _extract_dashboard_filters 返回值
+
+{
+    "name": "订单日期",
+    "column": "order_date",
+    "input_type": "date_range",         # ← 细粒度，前端直接使用
+    "source_filter_type": "filter_time", # ← Superset 原始值，供调试
+    "column_type": "TEMPORAL",
+    "multi": False,
+    "required": False,
+    "default_value": ["2024-01-01", "2024-12-31"],
+}
+```
+
+Superset `filterType` → `input_type` 映射表：
+
+| Superset `filterType` | 含义 | 映射 `input_type` | 前端控件 |
+|---|---|---|---|
+| `filter_select` | 下拉选择 | `select` | Autocomplete（已有） |
+| `filter_range` | 数值范围 | `numeric_range` | 两个 NumberInput（min/max） |
+| `filter_time` | 时间范围 | `date_range` | DateRangePicker |
+| `filter_timecolumn` | 时间列选择 | `time_column` | Select（列名列表） |
+| `filter_timegrain` | 时间粒度 | `time_grain` | Select（固定选项：day/week/month/quarter/year） |
+| 其他/未知 | — | `text` | TextField（兜底） |
+
+#### 7.5.2 前端：SourceFilterPanel 按 input_type 渲染
+
+```typescript
+// SourceFilterPanel — 根据 input_type 渲染匹配控件
+
+interface SourceFilter {
+    name: string;
+    column: string;
+    input_type: 'select' | 'numeric' | 'numeric_range' | 'date' | 'date_range'
+              | 'time_column' | 'time_grain' | 'text';
+    source_filter_type?: string;   // 原始类型（如 "filter_time"），供调试
+    column_type: string;
+    multi: boolean;
+    required: boolean;
+    default_value?: unknown;
+    applies_to?: number[];
+}
+
+// 渲染逻辑
+switch (filter.input_type) {
+    case 'select':        return <Autocomplete ... />;     // 已有
+    case 'numeric':       return <NumberInput ... />;      // 已有
+    case 'numeric_range': return <NumberRangeInput ... />; // 新增：min/max 两个输入框
+    case 'date':          return <DatePicker ... />;       // 新增
+    case 'date_range':    return <DateRangePicker ... />;  // 新增：两个 DatePicker
+    case 'time_column':   return <Select options={columnNames} ... />; // 新增
+    case 'time_grain':    return <Select options={['day','week','month','quarter','year']} ... />; // 新增
+    default:              return <TextField ... />;        // 兜底
+}
+```
+
+日期类 DatePicker 输出统一使用 ISO 8601 格式（`YYYY-MM-DD`），无论底层数据库是什么，SQL 引擎均可正确解析 `'2024-01-01'` 字面量。用户无需关心格式问题。
+
+### 7.6 FilterBuilder 组件（通用 SQL 过滤）
+
+面向单数据集导入，提供列选择和自由 WHERE 条件：
+
+```typescript
+// src/views/FilterBuilder.tsx — 新增
+
+interface FilterBuilderProps {
+    schema: ColumnSchema[];        // 来自 list_catalog/get_metadata 的列信息
+    onChange: (options: ImportFilterOptions) => void;
+}
+
+interface ImportFilterOptions {
+    columns?: string[];            // 选中的列名（null = 全部）
+    filters?: FilterExpression[];  // WHERE 条件
+    row_limit?: number;
+    sort_by?: string;
+}
+```
+
+### 7.7 后端协议
+
+后端 `ExternalDataLoader.fetch_data_as_arrow()` 已支持 `import_options` 参数，其中包含 `filters`、`columns`、`source_filters`。新增的前端只需正确传递这些参数，后端无需改动。
+
+对于 `source_filters`，Loader 通过 `ls()` 返回的 `CatalogNode.metadata` 中声明可用的过滤器。当前 Superset 的 `_build_dashboard_group_metadata` 已实现此机制（`table_group` 节点包含 `source_filters` 列表），改进后增强每个 filter 的元数据字段（`input_type`、`source_filter_type` 等）。
+
+其他 Loader（如未来的 Metabase 插件）同样通过 `ls()` 返回的 metadata 声明各自的 source_filters，前端 `SourceFilterPanel` 通用渲染，无需为每个系统写专用 UI。
+
+### 7.8 性能修复：目录加载懒化
+
+#### 7.8.1 当前问题
+
+`SupersetLoader.list_tables_tree()` 在连接时一次性执行以下操作：
+
+1. 获取所有仪表盘列表
+2. **对每个仪表盘**：获取其数据集列表 + 每个数据集的 `get_dataset_detail()`（列信息）
+3. **对所有数据集**（All Datasets）：获取每个的 `get_dataset_detail()` + **执行 `SELECT * FROM ... LIMIT 10` 取 sample_rows**
+
+假设 10 个仪表盘、50 个数据集 → 连接时约 170+ 次 Superset API 调用，其中 50 次是实际 SQL 查询。这是连接缓慢的根本原因。
+
+#### 7.8.2 修复方案：三级懒加载
+
+| 时机 | 加载内容 | API 调用数 |
+|------|---------|-----------|
+| **连接 / 列出根目录** | 仪表盘名称列表 + "All Datasets" 节点（不展开） | ~2 |
+| **展开仪表盘节点** | 该仪表盘下的数据集名称列表 + source_filters 定义 | ~3 |
+| **展开 "All Datasets"** | 分页获取数据集名称列表（不取 detail、不取 sample） | ~1 |
+| **点击某个数据集** | 该数据集的列信息 + sample_rows（按需） | ~3 |
+
+#### 7.8.3 代码改动要点
+
+**`list_tables_tree()` 改造**：根目录只返回轻量的仪表盘节点和 "All Datasets" 节点，不展开子节点。
+
+**`ls(path=[])` 改造**：`_build_dashboard_group_metadata` 中不再逐个调用 `get_dataset_detail()`，只返回数据集名称和基本信息（从 `get_dashboard_datasets` 的列表级响应中已包含 name/row_count/id）。
+
+**新增 `/api/connectors/get-node-detail` 路由**：前端点击数据集时按需获取 columns 和 sample_rows。
+
+**`list_tables()` 不再被 `list_tables_tree()` 调用**：`list_tables()` 保留为 eager 模式供其他场景使用（如 Agent 全量分析），但目录浏览不走这个路径。
+
+预期效果：连接耗时从数十秒降至 < 1 秒（仅 2 次 API 调用）。
+
+---
+
+## 8. 后端 OIDC Gateway
 
 DF 作为 Confidential Client 与 SSO 交互（替代前端 oidc-client-ts）：
 
@@ -925,7 +1216,7 @@ def _fetch_userinfo(access_token: str) -> dict | None:
 
 ---
 
-## 8. 前端适配
+## 9. 前端适配
 
 ### 8.1 get_auth_info 返回后端模式标识
 
@@ -990,12 +1281,15 @@ const handler = async (event: MessageEvent) => {
 
 ---
 
-## 9. 新增 Loader 开发 Checklist
+## 10. 新增 Loader 开发 Checklist
 
-适配自旧架构的 Checklist，基于新架构更新：
+适配自旧架构的 Checklist，基于新架构更新。分为两种场景：
 
-### 后端
+### 10.1 内置 Loader（DF 开发者在包内添加）
 
+#### 后端
+
+- [ ] 文件放在 `py-src/data_formulator/data_loader/` 目录
 - [ ] 文件命名符合 `<type>_data_loader.py` 约定（自动发现依赖此命名）
 - [ ] 继承 `ExternalDataLoader`
 - [ ] 实现 `auth_config()` 声明认证方式
@@ -1004,16 +1298,30 @@ const handler = async (event: MessageEvent) => {
 - [ ] 实现 `test_connection()` 用于 Vault 凭据验证
 - [ ] 外部 API 调用有合理的 timeout
 - [ ] 缺少必须依赖时 `ImportError` 被框架捕获，不崩溃
-- [ ] 缺少必须环境变量时不注册，不报错
 
-### 配置
+### 10.2 外部插件 Loader（部署用户自定义添加）
+
+#### 后端
+
+- [ ] 文件放在 `PLUGIN_DIR`（默认 `~/.data-formulator/plugins/`）
+- [ ] 文件命名符合 `<type>_data_loader.py` 约定
+- [ ] 继承 `ExternalDataLoader`（`from data_formulator.data_loader.external_data_loader import ExternalDataLoader`）
+- [ ] 实现 `auth_config()` 声明认证方式
+- [ ] 实现 `list_params()`、`test_connection()`、`list_catalog()`、`fetch_data_as_arrow()`
+- [ ] 外部 API 调用有合理的 timeout
+- [ ] 所有第三方依赖已在部署环境中安装
+- [ ] **重启 DF 后**前端统一界面中可见新数据源卡片
+
+### 10.3 通用检查项
+
+#### 配置
 
 - [ ] `.env.template` 中有本 Loader 的环境变量说明
 - [ ] 环境变量使用 `PLG_<ID>_` 前缀
 - [ ] 如果是 `sso_exchange` 模式，目标系统侧已部署 token-exchange 端点
 - [ ] 如果是 `delegated` 模式，目标系统侧已部署 Bridge 页面
 
-### 测试
+#### 测试
 
 - [ ] 认证流程测试（含 SSO 换票成功/失败、Vault 取用/过期）
 - [ ] 数据加载测试
@@ -1022,22 +1330,27 @@ const handler = async (event: MessageEvent) => {
 
 ---
 
-## 10. 决策记录
+## 11. 决策记录
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
 | TokenStore 是否取代 PluginAuthHandler | 是 | 统一接口，Agent 可用，减少 N 个 Plugin 的重复代码 |
 | 弹窗 postMessage 是否保留 | 是，作为降级策略 | 适用于无 token-exchange 端点或不同 IdP 的系统 |
 | auth_config 是否取代 auth_mode | 共存，auth_config 优先 | 向后兼容，渐进迁移 |
-| Loader 发现方式 | 自动发现 + 显式注册共存 | 满足零修改原则，同时保留手动控制能力 |
-| Session vs Redis | 初期 Session，后续可迁 Redis | Flask Session 足够起步，TokenStore 接口不依赖具体存储 |
+| Loader 发现方式 | 包内自动发现 + 外部 PLUGIN_DIR 扫描 | 内置 Loader 在包内，外部插件在 `~/.data-formulator/plugins/`，满足零修改 + 部署后扩展 |
+| 外部插件安装方式 | `PLUGIN_DIR` 目录扫描（`DF_PLUGIN_DIR` 环境变量可配） | 部署用户放文件即可，无需 pip 操作，降低使用门槛 |
+| Session vs Redis | 初期 Session（SQLite），后续可迁 Redis | Flask Session 足够起步，TokenStore 接口不依赖具体存储 |
 | OIDC Gateway 是否取代前端 oidc-client-ts | `AUTH_MODE=backend` 时取代 | 通过环境变量切换，两种模式共存 |
-| 前端独立 Plugin UI | 暂不保留 | 统一 UI 满足当前需求，未来按需扩展 |
+| 前端独立 Plugin UI | 暂不保留 | 所有数据源复用统一 UI（DataConnectorPanel），未来按需扩展 |
+| 导入过滤器 | FilterBuilder（通用）+ SourceFilterPanel（数据源声明式）双层叠加 | 通用过滤（列选择 + WHERE）适用于所有数据源；原生过滤（日期范围、下拉等）由 Loader 声明、前端按 input_type 渲染匹配控件 |
+| 仪表盘导入 | 支持选择性导入（数据集勾选） | 当前强制全量导入不合理，用户应能选择导入哪些数据集 |
+| 过滤器控件精度 | 后端透传 Superset filterType，前端细粒度渲染 | Superset 已提供 filter_time/filter_range 等类型，不应压缩为粗粒度三种；日期用 DatePicker 避免格式歧义 |
+| 目录加载策略 | 懒加载（连接时只取名称列表，点击时按需取详情） | 当前 eager 模式连接时 170+ API 调用（含 SQL 查询），导致连接极慢；懒加载降至 ~2 次 |
 | Vault 生命周期规则 | 完整保留旧架构规则 | logout 必须同时清 Session + Vault 是经过验证的设计 |
 
 ---
 
-## 11. 与现有代码的兼容映射
+## 12. 与现有代码的兼容映射
 
 | 当前代码 | 融合方案中的对应 | 改动方式 |
 |----------|-----------------|---------|

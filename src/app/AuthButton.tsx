@@ -19,17 +19,19 @@ import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import { useTranslation } from "react-i18next";
 import type { UserManager } from "oidc-client-ts";
 import type { DataFormulatorState } from "./dfSlice";
-import { getUserManager } from "./oidcConfig";
+import { getAuthInfo, getUserManager, type AuthInfo } from "./oidcConfig";
 import { persistor } from "./store";
 
 export const AuthButton: FC = () => {
     const { t } = useTranslation();
     const identity = useSelector((s: DataFormulatorState) => s.identity);
     const [mgr, setMgr] = useState<UserManager | null>(null);
+    const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
     const [initError, setInitError] = useState<string | null>(null);
     const [loginError, setLoginError] = useState<string | null>(null);
 
     useEffect(() => {
+        getAuthInfo().then(setAuthInfo).catch(() => {});
         getUserManager()
             .then(setMgr)
             .catch((err) => {
@@ -38,18 +40,23 @@ export const AuthButton: FC = () => {
             });
     }, []);
 
+    const isBackend = authInfo?.action === "backend";
+
     const handleSignOut = useCallback(async () => {
+        if (isBackend) {
+            await fetch(authInfo?.logout_url || "/api/auth/oidc/logout", { method: "POST" });
+            window.location.href = "/";
+            return;
+        }
         if (!mgr) return;
         try {
-            // Try IdP-initiated logout if end_session_endpoint is available
             await mgr.signoutRedirect();
         } catch {
-            // IdP has no end_session_endpoint — do a local sign-out instead
             await mgr.removeUser();
             await persistor.purge();
             window.location.href = "/";
         }
-    }, [mgr]);
+    }, [mgr, isBackend, authInfo]);
 
     if (identity?.type === "user") {
         const label = identity.displayName || identity.id;
@@ -58,7 +65,7 @@ export const AuthButton: FC = () => {
                 <Typography variant="body2" sx={{ fontSize: 12, opacity: 0.85 }}>
                     {label}
                 </Typography>
-                {mgr && (
+                {(mgr || isBackend) && (
                     <Tooltip title={t("auth.signOut")}>
                         <IconButton
                             size="small"
@@ -74,6 +81,10 @@ export const AuthButton: FC = () => {
     }
 
     const handleSignIn = useCallback(async () => {
+        if (isBackend) {
+            window.location.href = authInfo?.login_url || "/api/auth/oidc/login";
+            return;
+        }
         if (!mgr) return;
         try {
             await mgr.signinRedirect();
@@ -81,7 +92,7 @@ export const AuthButton: FC = () => {
             console.error("[AuthButton] signinRedirect failed:", err);
             setLoginError(err instanceof Error ? err.message : String(err));
         }
-    }, [mgr]);
+    }, [mgr, isBackend, authInfo]);
 
     if (initError) {
         return (
@@ -96,7 +107,7 @@ export const AuthButton: FC = () => {
         );
     }
 
-    if (mgr) {
+    if (mgr || isBackend) {
         return (
             <>
                 <Tooltip title={t("auth.ssoDescription")}>

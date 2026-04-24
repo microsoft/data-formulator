@@ -1,4 +1,18 @@
-# 数据源插件开发指南
+# ~~数据源插件开发指南~~ （已过时）
+
+> **⚠️ 此文档已过时。** 原始的 `DataSourcePlugin` 架构已被
+> `ExternalDataLoader` + `DataConnector` 体系取代。
+>
+> 新的开发指南请参考：
+> - [design-docs/11-unified-auth-credential-architecture.md](../design-docs/11-unified-auth-credential-architecture.md)
+>   — 统一认证凭证架构（含 Loader 自动发现、外部插件目录 `PLUGIN_DIR`、新增 Loader 开发 Checklist）
+> - `py-src/data_formulator/data_loader/external_data_loader.py` — 基类 API 参考
+>
+> 以下内容仅供历史参考。
+
+---
+
+# 数据源插件开发指南（历史版本）
 
 > **目标读者**：要为 Data Formulator 开发新数据源插件的开发者。
 >

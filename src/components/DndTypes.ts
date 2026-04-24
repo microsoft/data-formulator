@@ -10,6 +10,7 @@ export interface CatalogTableDragItem {
     type: typeof CATALOG_TABLE_ITEM;
     connectorId: string;
     tableName: string;
+    tableId?: string;
     tablePath: string[];
     sourceType: string;
 }
