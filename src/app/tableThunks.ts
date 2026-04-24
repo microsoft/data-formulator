@@ -248,6 +248,7 @@ export const loadTable = createAsyncThunk<
                                 size: frontendRowLimit,
                                 sort_columns: importOptions?.sortColumns,
                                 sort_order: importOptions?.sortOrder,
+                                source_filters: importOptions?.source_filters,
                             },
                         }),
                     });

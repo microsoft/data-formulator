@@ -91,7 +91,7 @@ interface CatalogCache {
 interface PreviewState {
     connectorId: string;
     node: CatalogTreeNode;
-    columns: { name: string; type: string }[];
+    columns: { name: string; type: string; source_type?: string }[];
     sampleRows: Record<string, any>[];
     rowCount: number | null;
     loading: boolean;
@@ -243,17 +243,36 @@ const DataSourceSidebarPanel: React.FC<{
     const [previewFilters, setPreviewFilters] = useState<{ column: string; operator: string; value: string; valueTo?: string }[]>([]);
     const sidebarRowLimitPresets = [20_000, 50_000, 100_000, 200_000, 300_000, 500_000];
 
-    // Smart filter: column type detection
-    const inferInputType = (rawType: string): 'time' | 'numeric' | 'select' | 'text' => {
-        const upper = (rawType || '').toUpperCase();
-        if (/DATE|TIME|TEMPORAL|TIMESTAMP|DATETIME/.test(upper)) return 'time';
-        if (/INT|FLOAT|DOUBLE|NUMERIC|DECIMAL|BIGINT|NUMBER/.test(upper)) return 'numeric';
-        if (/BOOL/.test(upper)) return 'text';
+    // Smart filter: column type detection.
+    // Prefers source_type (original DB/BI type like "TEMPORAL", "BOOLEAN",
+    // "timestamp") over pandas dtype ("object", "int64") for reliable detection.
+    const inferInputType = (pandasType: string, sourceType?: string): 'time' | 'numeric' | 'boolean' | 'select' | 'text' => {
+        const src = (sourceType || '').toUpperCase();
+        const pd = (pandasType || '').toUpperCase();
+
+        // Source type takes priority — backend normalizes to TEMPORAL/NUMERIC/BOOLEAN/STRING
+        if (src) {
+            if (src === 'TEMPORAL' || /DATE|TIME|TIMESTAMP|DATETIME/.test(src)) return 'time';
+            if (src === 'NUMERIC' || /INT|FLOAT|DOUBLE|DECIMAL|BIGINT|NUMBER/.test(src)) return 'numeric';
+            if (src === 'BOOLEAN' || /BOOL/.test(src)) return 'boolean';
+        }
+
+        // Fallback to pandas dtype
+        if (/DATETIME/.test(pd)) return 'time';
+        if (/INT|FLOAT/.test(pd)) return 'numeric';
+        if (/BOOL/.test(pd)) return 'boolean';
+
         return 'select';
     };
 
     const getOperatorsForType = (inputType: string) => {
         switch (inputType) {
+            case 'boolean':
+                return [
+                    { value: 'EQ', label: '=' },
+                    { value: 'IS_NULL', label: 'IS NULL' },
+                    { value: 'IS_NOT_NULL', label: 'IS NOT NULL' },
+                ];
             case 'select':
                 return [
                     { value: 'EQ', label: '=' },
@@ -276,6 +295,10 @@ const DataSourceSidebarPanel: React.FC<{
                 return [
                     { value: 'BETWEEN', label: t('sidebar.opBetween', { defaultValue: 'BETWEEN' }) },
                     { value: 'EQ', label: '=' },
+                    { value: 'GT', label: '>' },
+                    { value: 'GTE', label: '>=' },
+                    { value: 'LT', label: '<' },
+                    { value: 'LTE', label: '<=' },
                     { value: 'IS_NULL', label: 'IS NULL' },
                     { value: 'IS_NOT_NULL', label: 'IS NOT NULL' },
                 ];
@@ -292,6 +315,7 @@ const DataSourceSidebarPanel: React.FC<{
 
     const defaultOperatorForType = (inputType: string) => {
         if (inputType === 'time') return 'BETWEEN';
+        if (inputType === 'boolean') return 'EQ';
         if (inputType === 'select') return 'EQ';
         if (inputType === 'numeric') return 'EQ';
         return 'ILIKE';
@@ -607,14 +631,18 @@ const DataSourceSidebarPanel: React.FC<{
         })
             .then(r => r.json())
             .then(data => {
-                if (data.columns && data.rows) {
-                    setPreview(prev => prev ? {
-                        ...prev,
-                        columns: data.columns,
-                        sampleRows: data.rows,
-                        rowCount: data.total_row_count ?? prev.rowCount,
-                        loading: false,
-                    } : null);
+                if (data.columns) {
+                    setPreview(prev => {
+                        if (!prev) return null;
+                        const newCols = (data.columns as typeof prev.columns);
+                        return {
+                            ...prev,
+                            columns: newCols.length > 0 ? newCols : prev.columns,
+                            sampleRows: data.rows || [],
+                            rowCount: data.total_row_count ?? prev.rowCount,
+                            loading: false,
+                        };
+                    });
                 } else {
                     setPreview(prev => prev ? { ...prev, loading: false } : null);
                 }
@@ -1171,7 +1199,11 @@ const DataSourceSidebarPanel: React.FC<{
                 transformOrigin={{ vertical: 'center', horizontal: 'left' }}
                 slotProps={{
                     paper: {
-                        sx: { width: '66vw', maxWidth: 1100, minWidth: 600, maxHeight: 700, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+                        sx: {
+                            width: '66vw', maxWidth: '92vw', minWidth: 400, minHeight: 300, maxHeight: '85vh',
+                            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                            resize: 'both',
+                        },
                     },
                 }}
             >
@@ -1204,11 +1236,11 @@ const DataSourceSidebarPanel: React.FC<{
                                 )}
                             </Box>
                             {/* Filter conditions — smart inputs based on column type */}
-                            {!preview.loading && preview.columns.length > 0 && !(loadedTablesMap[preview.node.name] || loadedTablesMap[preview.node.path.join('/')]) && (
+                            {preview.columns.length > 0 && !(loadedTablesMap[preview.node.name] || loadedTablesMap[preview.node.path.join('/')]) && (
                                 <Box sx={{ mt: 1 }}>
                                     {previewFilters.map((f, idx) => {
                                         const colMeta = preview.columns.find(c => c.name === f.column);
-                                        const inputType = colMeta ? inferInputType(colMeta.type) : 'text';
+                                        const inputType = colMeta ? inferInputType(colMeta.type, colMeta.source_type) : 'text';
                                         const operators = f.column ? getOperatorsForType(inputType) : getOperatorsForType('text');
                                         const noValue = f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL';
                                         const isBetween = f.operator === 'BETWEEN';
@@ -1224,6 +1256,20 @@ const DataSourceSidebarPanel: React.FC<{
                                                     <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 10, flex: 1 }}>
                                                         {t('sidebar.noValueNeeded', { defaultValue: 'No value needed' })}
                                                     </Typography>
+                                                );
+                                            }
+                                            if (inputType === 'boolean') {
+                                                return (
+                                                    <TextField
+                                                        select size="small" value={f.value || ''}
+                                                        onChange={(e) => setPreviewFilters(prev => prev.map((r, i) => i === idx ? { ...r, value: e.target.value } : r))}
+                                                        sx={{ flex: 1, minWidth: 80, ...inputSx }}
+                                                        slotProps={{ select: { displayEmpty: true } }}
+                                                    >
+                                                        <MenuItem value="" sx={{ fontSize: 11, color: 'text.disabled' }}><em>—</em></MenuItem>
+                                                        <MenuItem value="true" sx={{ fontSize: 11 }}>True</MenuItem>
+                                                        <MenuItem value="false" sx={{ fontSize: 11 }}>False</MenuItem>
+                                                    </TextField>
                                                 );
                                             }
                                             if (inputType === 'select' && f.column) {
@@ -1340,7 +1386,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                     onChange={(e) => {
                                                         const newCol = e.target.value;
                                                         const newMeta = preview.columns.find(c => c.name === newCol);
-                                                        const newType = newMeta ? inferInputType(newMeta.type) : 'text';
+                                                        const newType = newMeta ? inferInputType(newMeta.type, newMeta.source_type) : 'text';
                                                         const newOps = getOperatorsForType(newType);
                                                         const opValid = newOps.some(op => op.value === f.operator);
                                                         setPreviewFilters(prev => prev.map((r, i) => i === idx ? {
@@ -1376,13 +1422,83 @@ const DataSourceSidebarPanel: React.FC<{
                                             </Box>
                                         );
                                     })}
-                                    <Button
-                                        size="small" startIcon={<AddIcon sx={{ fontSize: 14 }} />}
-                                        onClick={() => setPreviewFilters(prev => [...prev, { column: '', operator: 'EQ', value: '' }])}
-                                        sx={{ textTransform: 'none', fontSize: 11, px: 0.5, minHeight: 0, height: 22, color: 'text.secondary' }}
-                                    >
-                                        {t('sidebar.addFilter', { defaultValue: 'Add filter' })}
-                                    </Button>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <Button
+                                            size="small" startIcon={<AddIcon sx={{ fontSize: 14 }} />}
+                                            onClick={() => setPreviewFilters(prev => [...prev, { column: '', operator: 'EQ', value: '' }])}
+                                            sx={{ textTransform: 'none', fontSize: 11, px: 0.5, minHeight: 0, height: 22, color: 'text.secondary' }}
+                                        >
+                                            {t('sidebar.addFilter', { defaultValue: 'Add filter' })}
+                                        </Button>
+                                        {previewFilters.length > 0 && (
+                                            <Button
+                                                size="small" startIcon={<RefreshIcon sx={{ fontSize: 14 }} />}
+                                                disabled={preview.loading}
+                                                onClick={() => {
+                                                    const validFilters = previewFilters
+                                                        .filter(f => f.column && f.operator && (
+                                                            f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL' ||
+                                                            (f.operator === 'BETWEEN' ? (f.value || '').trim() && (f.valueTo || '').trim() : (f.value || '').trim())
+                                                        ))
+                                                        .map(f => {
+                                                            const colMeta = preview.columns.find(c => c.name === f.column);
+                                                            const iType = colMeta ? inferInputType(colMeta.type, colMeta.source_type) : 'text';
+                                                            if (f.operator === 'BETWEEN') {
+                                                                const v1 = iType === 'numeric' ? Number(f.value) : f.value;
+                                                                const v2 = iType === 'numeric' ? Number(f.valueTo) : f.valueTo;
+                                                                return { column: f.column, operator: f.operator, value: [v1, v2] };
+                                                            }
+                                                            if (f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL') {
+                                                                return { column: f.column, operator: f.operator };
+                                                            }
+                                                            let val: any = f.value;
+                                                            if (iType === 'numeric' && f.value) val = Number(f.value);
+                                                            else if (iType === 'boolean') val = f.value === 'true';
+                                                            return { column: f.column, operator: f.operator, value: val };
+                                                        });
+
+                                                    const ref = buildSourceTableRef(preview.node);
+                                                    setPreview(prev => prev ? { ...prev, loading: true } : null);
+                                                    fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({
+                                                            connector_id: preview.connectorId,
+                                                            source_table: ref,
+                                                            import_options: {
+                                                                size: 10,
+                                                                source_filters: validFilters.length > 0 ? validFilters : undefined,
+                                                            },
+                                                        }),
+                                                    })
+                                                        .then(r => r.json())
+                                                        .then(data => {
+                                                            if (data.columns && data.rows) {
+                                                                setPreview(prev => {
+                                                                    if (!prev) return null;
+                                                                    const newCols = (data.columns as typeof prev.columns);
+                                                                    return {
+                                                                        ...prev,
+                                                                        columns: newCols.length > 0 ? newCols : prev.columns,
+                                                                        sampleRows: data.rows,
+                                                                        rowCount: data.total_row_count ?? prev.rowCount,
+                                                                        loading: false,
+                                                                    };
+                                                                });
+                                                            } else {
+                                                                setPreview(prev => prev ? { ...prev, loading: false } : null);
+                                                            }
+                                                        })
+                                                        .catch(() => {
+                                                            setPreview(prev => prev ? { ...prev, loading: false } : null);
+                                                        });
+                                                }}
+                                                sx={{ textTransform: 'none', fontSize: 11, px: 0.5, minHeight: 0, height: 22, color: 'primary.main' }}
+                                            >
+                                                {t('sidebar.refreshPreview', { defaultValue: 'Preview' })}
+                                            </Button>
+                                        )}
+                                    </Box>
                                 </Box>
                             )}
                         </Box>
@@ -1393,7 +1509,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
                                     <CircularProgress size={20} />
                                 </Box>
-                            ) : preview.columns.length > 0 && preview.sampleRows.length > 0 ? (
+                            ) : preview.sampleRows.length > 0 ? (
                                 <DataFrameTable
                                     columns={preview.columns.map(c => c.name)}
                                     rows={preview.sampleRows}
@@ -1403,6 +1519,10 @@ const DataSourceSidebarPanel: React.FC<{
                                     fontSize={11}
                                     headerFontSize={10}
                                 />
+                            ) : preview.columns.length > 0 && previewFilters.length > 0 ? (
+                                <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
+                                    {t('sidebar.noMatchingRows', { defaultValue: 'No rows match the current filters' })}
+                                </Typography>
                             ) : (
                                 <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>
                                     {t('sidebar.noPreviewAvailable')}
@@ -1435,7 +1555,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                     ))
                                                     .map(f => {
                                                         const colMeta = preview!.columns.find(c => c.name === f.column);
-                                                        const iType = colMeta ? inferInputType(colMeta.type) : 'text';
+                                                        const iType = colMeta ? inferInputType(colMeta.type, colMeta.source_type) : 'text';
                                                         if (f.operator === 'BETWEEN') {
                                                             const v1 = iType === 'numeric' ? Number(f.value) : f.value;
                                                             const v2 = iType === 'numeric' ? Number(f.valueTo) : f.valueTo;
@@ -1444,7 +1564,9 @@ const DataSourceSidebarPanel: React.FC<{
                                                         if (f.operator === 'IS_NULL' || f.operator === 'IS_NOT_NULL') {
                                                             return { column: f.column, operator: f.operator };
                                                         }
-                                                        const val = iType === 'numeric' && f.value ? Number(f.value) : f.value;
+                                                        let val: any = f.value;
+                                                        if (iType === 'numeric' && f.value) val = Number(f.value);
+                                                        else if (iType === 'boolean') val = f.value === 'true';
                                                         return { column: f.column, operator: f.operator, value: val };
                                                     });
                                                 if (validFilters.length > 0) {

@@ -69,13 +69,13 @@ export function handleApiError(
     console.error(`[${context}] ${message}`, error);
 
     if (!options?.silent) {
-        store.dispatch(dfActions.addMessages([{
+        store.dispatch(dfActions.addMessages({
             type: 'error',
             component: context,
             timestamp: Date.now(),
             value: message,
             detail,
             diagnostics,
-        }]));
+        }));
     }
 }

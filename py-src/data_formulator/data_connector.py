@@ -1114,6 +1114,24 @@ def connector_preview_data():
         rows = _json.loads(df.to_json(orient="records", date_format="iso"))
         columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
 
+        # Enrich columns with source-level types from loader metadata.
+        # Source types (e.g. "timestamp", "varchar", "boolean") are far more
+        # reliable for UI widget selection than pandas dtypes ("object", "int64").
+        try:
+            meta = loader.get_column_types(source_id)
+            if not meta:
+                meta = {}
+            source_cols = {c["name"]: c for c in meta.get("columns", [])}
+            if source_cols:
+                for col_info in columns:
+                    src = source_cols.get(col_info["name"])
+                    if src:
+                        col_info["source_type"] = src.get("type", "")
+                        if src.get("is_dttm"):
+                            col_info["source_type"] = "TEMPORAL"
+        except Exception:
+            pass  # source type enrichment is best-effort
+
         # Get actual total row count (some loaders store it before slicing)
         total_row_count = getattr(loader, '_last_total_rows', None) or len(rows)
 

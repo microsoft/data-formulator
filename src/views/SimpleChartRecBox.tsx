@@ -425,19 +425,19 @@ export const SimpleChartRecBox: FC = function () {
                             const parsed = JSON.parse(trimmed);
                             if (parsed.type === 'error') {
                                 const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
-                                dispatch(dfActions.addMessages([{
+                                dispatch(dfActions.addMessages({
                                     timestamp: Date.now(), type: 'error',
                                     component: 'exploration', value: msg,
                                     diagnostics: parsed.error,
-                                }]));
+                                }));
                                 continue;
                             }
                             if (parsed.type === 'warning') {
-                                dispatch(dfActions.addMessages([{
+                                dispatch(dfActions.addMessages({
                                     timestamp: Date.now(), type: 'warning',
                                     component: 'exploration',
                                     value: parsed.warning?.message ?? 'Warning from server',
-                                }]));
+                                }));
                                 continue;
                             }
                             if (parsed.text) {
@@ -457,17 +457,17 @@ export const SimpleChartRecBox: FC = function () {
                     const parsed = JSON.parse(buffer.trim());
                     if (parsed.type === 'error') {
                         const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
-                        dispatch(dfActions.addMessages([{
+                        dispatch(dfActions.addMessages({
                             timestamp: Date.now(), type: 'error',
                             component: 'exploration', value: msg,
                             diagnostics: parsed.error,
-                        }]));
+                        }));
                     } else if (parsed.type === 'warning') {
-                        dispatch(dfActions.addMessages([{
+                        dispatch(dfActions.addMessages({
                             timestamp: Date.now(), type: 'warning',
                             component: 'exploration',
                             value: parsed.warning?.message ?? 'Warning from server',
-                        }]));
+                        }));
                     } else if (parsed.text) {
                         lines.push(parsed);
                     }
@@ -478,12 +478,12 @@ export const SimpleChartRecBox: FC = function () {
             if (error instanceof DOMException && error.name === 'AbortError') {
                 // user cancelled, no notification needed
             } else {
-                dispatch(dfActions.addMessages([{
+                dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'error',
                     component: 'exploration',
                     value: t('messages.agent.unexpectedError'),
                     detail: error instanceof Error ? error.message : String(error),
-                }]));
+                }));
             }
         } finally {
             setIsLoadingIdeas(false);
@@ -1064,10 +1064,10 @@ export const SimpleChartRecBox: FC = function () {
                                     const errMsg = data.error?.message || data.error_message || t('chartRec.errorDuringExploration');
                                     setIsChatFormulating(false);
                                     clearTimeout(timeoutId);
-                                    dispatch(dfActions.addMessages([{
+                                    dispatch(dfActions.addMessages({
                                         timestamp: Date.now(), type: 'error',
                                         component: 'data-agent', value: errMsg,
-                                    }]));
+                                    }));
                                     if (currentDraftId) {
                                         dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                                             from: 'data-agent', to: 'user', role: 'error',
@@ -1080,11 +1080,11 @@ export const SimpleChartRecBox: FC = function () {
                                 }
 
                                 if (data.type === "warning") {
-                                    dispatch(dfActions.addMessages([{
+                                    dispatch(dfActions.addMessages({
                                         timestamp: Date.now(), type: 'warning',
                                         component: 'data-agent',
                                         value: data.warning?.message ?? 'Warning from server',
-                                    }]));
+                                    }));
                                     continue;
                                 }
 
@@ -1097,10 +1097,10 @@ export const SimpleChartRecBox: FC = function () {
                                         const errMsg = data.error_message || t('chartRec.errorDuringExploration');
                                         setIsChatFormulating(false);
                                         clearTimeout(timeoutId);
-                                        dispatch(dfActions.addMessages([{
+                                        dispatch(dfActions.addMessages({
                                             timestamp: Date.now(), type: 'error',
                                             component: 'data-agent', value: errMsg,
-                                        }]));
+                                        }));
                                         if (currentDraftId) {
                                             dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
                                                 from: 'data-agent', to: 'user', role: 'error',
@@ -1248,16 +1248,16 @@ export const SimpleChartRecBox: FC = function () {
                         } else if (event.type === 'error') {
                             const errMsg = event.error?.message || event.content || 'Unknown error';
                             accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
-                            dispatch(dfActions.addMessages([{
+                            dispatch(dfActions.addMessages({
                                 timestamp: Date.now(), type: 'error',
                                 component: 'report-agent', value: errMsg,
-                            }]));
+                            }));
                         } else if (event.type === 'warning') {
-                            dispatch(dfActions.addMessages([{
+                            dispatch(dfActions.addMessages({
                                 timestamp: Date.now(), type: 'warning',
                                 component: 'report-agent',
                                 value: event.warning?.message ?? 'Warning from server',
-                            }]));
+                            }));
                         }
                         const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
                         dispatch(dfActions.updateGeneratedReportContent({

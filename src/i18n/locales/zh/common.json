@@ -663,6 +663,8 @@
     "filterOptionsTruncated": "结果已截断，输入关键字缩小范围",
     "noValueNeeded": "此操作无需填写值",
     "opBetween": "介于",
-    "opContains": "包含"
+    "opContains": "包含",
+    "refreshPreview": "预览",
+    "noMatchingRows": "没有符合当前筛选条件的数据"
   }
 }

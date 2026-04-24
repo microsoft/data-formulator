@@ -62,20 +62,22 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
         ? [...columns.slice(0, half), '\u2026', ...columns.slice(-half)]
         : columns;
 
-    const getCell = (row: Record<string, any>, col: string): string => {
-        if (col === '\u2026') return '\u2026';
+    const getCell = (row: Record<string, any>, col: string): { display: string; full: string; truncated: boolean } => {
+        if (col === '\u2026') return { display: '\u2026', full: '\u2026', truncated: false };
         const v = row[col];
-        if (v == null) return 'NaN';
-        if (v === '') return '';
+        if (v == null) return { display: 'NaN', full: 'NaN', truncated: false };
+        if (v === '') return { display: '', full: '', truncated: false };
         const s = String(v);
-        return s.length > maxCellLength ? s.slice(0, maxCellLength - 2) + '\u2026' : s;
+        const truncated = s.length > maxCellLength;
+        return { display: truncated ? s.slice(0, maxCellLength - 2) + '\u2026' : s, full: s, truncated };
     };
 
     return (
         <Box>
             {/* Column list removed — the abbreviated table header is sufficient */}
             <Box component="table" sx={{
-                borderCollapse: 'collapse',
+                borderCollapse: 'separate',
+                borderSpacing: 0,
                 fontSize,
                 fontFamily: CODE_FONT,
                 width: '100%',
@@ -111,6 +113,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                         )}
                         {displayCols.map((col, i) => (
                             <Typography component="th" key={i} variant="caption"
+                                title={col}
                                 sx={{ fontWeight: 600, fontSize: headerFontSize }}>
                                 {col}
                             </Typography>
@@ -127,12 +130,13 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                                 </Typography>
                             )}
                             {displayCols.map((col, ci) => {
-                                const cellVal = getCell(row, col);
+                                const cell = getCell(row, col);
                                 const isNull = col !== '\u2026' && row[col] == null;
                                 return (
                                     <Typography component="td" key={ci} variant="caption"
-                                        sx={{ fontSize, ...(isNull ? { color: 'text.disabled', fontStyle: 'italic' } : {}) }}>
-                                        {cellVal}
+                                        title={col !== '\u2026' ? cell.full : undefined}
+                                        sx={{ fontSize, ...(isNull ? { color: 'text.disabled', fontStyle: 'italic' } : {}), cursor: cell.truncated ? 'help' : undefined }}>
+                                        {cell.display}
                                     </Typography>
                                 );
                             })}

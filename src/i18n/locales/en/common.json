@@ -681,6 +681,8 @@
     "filterOptionsTruncated": "Results truncated, type to narrow",
     "noValueNeeded": "No value needed",
     "opBetween": "BETWEEN",
-    "opContains": "CONTAINS"
+    "opContains": "CONTAINS",
+    "refreshPreview": "Preview",
+    "noMatchingRows": "No rows match the current filters"
   }
 }

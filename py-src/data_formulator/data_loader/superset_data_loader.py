@@ -31,9 +31,35 @@ logger = logging.getLogger(__name__)
 # SQL building helpers
 # ---------------------------------------------------------------------------
 
-def _quote_identifier(name: str) -> str:
-    escaped = (name or "").replace('"', '""')
-    return f'"{escaped}"'
+def _detect_quote_char(detail: dict) -> str:
+    """Return the SQL identifier quote character for the dataset's database backend.
+
+    MySQL/MariaDB use backticks; PostgreSQL, SQLite, and most ANSI-compliant
+    databases use double quotes.
+    """
+    backend = ((detail.get("database") or {}).get("backend") or "").lower()
+    if backend in ("mysql", "mariadb"):
+        return "`"
+    return '"'
+
+
+def _quote_identifier(name: str, quote_char: str = '"') -> str:
+    escaped = (name or "").replace(quote_char, quote_char * 2)
+    return f'{quote_char}{escaped}{quote_char}'
+
+
+def _column_ref(name: str, quote_char: str = '"') -> str:
+    """Reference a column name in SQL, quoting only when necessary.
+
+    Simple word-character identifiers (including CJK / Unicode letters)
+    are returned unquoted — this avoids MySQL's double-quote-as-string
+    pitfall while keeping the SQL readable.  Only names with spaces,
+    parentheses, or other special characters are quoted.
+    """
+    stripped = (name or "").strip()
+    if re.fullmatch(r"\w+", stripped, flags=re.UNICODE):
+        return stripped
+    return _quote_identifier(stripped, quote_char)
 
 
 def _sql_literal(value: Any) -> str:
@@ -58,8 +84,9 @@ def _build_dataset_sql(detail: dict) -> tuple[int, str, str]:
     if dataset_kind == "virtual" and dataset_sql:
         return db_id, schema, f"SELECT * FROM ({dataset_sql.rstrip(';')}) AS _vds"
 
-    prefix = f'"{schema}".' if schema else ""
-    return db_id, schema, f'SELECT * FROM {prefix}"{table_name}"'
+    qc = _detect_quote_char(detail)
+    prefix = f'{_quote_identifier(schema, qc)}.' if schema else ""
+    return db_id, schema, f'SELECT * FROM {prefix}{_quote_identifier(table_name, qc)}'
 
 
 # ---------------------------------------------------------------------------
@@ -402,11 +429,17 @@ class SupersetLoader(ExternalDataLoader):
 
 
     @staticmethod
-    def _build_source_filter_clauses(source_filters: list[dict] | None) -> list[str]:
+    def _build_source_filter_clauses(
+        source_filters: list[dict] | None,
+        quote_char: str = '"',
+    ) -> list[str]:
         """Convert source_filters from import_options into SQL WHERE clause fragments.
 
         Each filter has: column, operator, value.
-        Uses safe quoting — column names are double-quoted, string values are escaped.
+        ``quote_char`` must match the target database dialect (backtick for
+        MySQL, double-quote for PostgreSQL / ANSI).  Simple Unicode-word
+        identifiers (CJK, Latin, etc.) are left unquoted via ``_column_ref``
+        so they work on all backends.
         """
         if not source_filters:
             return []
@@ -430,7 +463,7 @@ class SupersetLoader(ExternalDataLoader):
             if not col or op not in valid_ops:
                 continue
 
-            qcol = _quote_identifier(col)
+            qcol = _column_ref(col, quote_char)
 
             if op == "IS_NULL":
                 clauses.append(f"{qcol} IS NULL")
@@ -455,7 +488,7 @@ class SupersetLoader(ExternalDataLoader):
 
         return clauses
 
-    # -- get_metadata ------------------------------------------------------
+    # -- get_metadata / get_column_types ------------------------------------
 
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         if not path or len(path) < 2:
@@ -469,7 +502,11 @@ class SupersetLoader(ExternalDataLoader):
         try:
             detail = self._client.get_dataset_detail(token, dataset_id)
             columns = [
-                {"name": c.get("column_name", ""), "type": c.get("type", "")}
+                {
+                    "name": c.get("column_name", ""),
+                    "type": c.get("type", ""),
+                    "is_dttm": bool(c.get("is_dttm")),
+                }
                 for c in (detail.get("columns") or [])
             ]
             return {
@@ -483,6 +520,57 @@ class SupersetLoader(ExternalDataLoader):
         except Exception as e:
             logger.warning("get_metadata failed for dataset %s: %s", dataset_id, e)
             return {}
+
+    def get_column_types(self, source_table: str) -> dict[str, Any]:
+        """Return source-level column types from Superset dataset detail.
+
+        Includes ``is_dttm`` flag which reliably identifies temporal columns
+        regardless of the raw type string.
+        """
+        try:
+            dataset_id = int(source_table)
+        except (ValueError, TypeError):
+            return {}
+        token = self._ensure_token()
+        try:
+            detail = self._client.get_dataset_detail(token, dataset_id)
+            columns = []
+            for c in (detail.get("columns") or []):
+                col_type = self._normalize_column_type(c)
+                columns.append({
+                    "name": c.get("column_name", ""),
+                    "type": col_type,
+                    "is_dttm": bool(c.get("is_dttm")),
+                })
+            return {"columns": columns}
+        except Exception as e:
+            logger.warning("get_column_types failed for dataset %s: %s", source_table, e)
+            return {}
+
+    @staticmethod
+    def _normalize_column_type(column: dict[str, Any] | None) -> str:
+        """Normalize Superset column metadata to a standard type category.
+
+        Uses ``is_dttm``, ``type_generic``, and raw ``type`` to classify
+        into TEMPORAL / NUMERIC / BOOLEAN / STRING.
+        """
+        if not column:
+            return "STRING"
+        raw = str(
+            column.get("type_generic")
+            or column.get("type")
+            or column.get("python_date_format")
+            or ""
+        ).upper()
+        if column.get("is_dttm"):
+            return "TEMPORAL"
+        if any(t in raw for t in ("DATE", "TIME", "TEMPORAL", "TIMESTAMP")):
+            return "TEMPORAL"
+        if any(t in raw for t in ("INT", "FLOAT", "DOUBLE", "NUMERIC", "DECIMAL", "BIGINT", "NUMBER")):
+            return "NUMERIC"
+        if "BOOL" in raw:
+            return "BOOLEAN"
+        return "STRING"
 
     # -- get_column_values (smart filter support) ----------------------------
 
@@ -557,7 +645,8 @@ class SupersetLoader(ExternalDataLoader):
         try:
             detail = self._client.get_dataset_detail(token, dataset_id)
             db_id, schema, base_sql = _build_dataset_sql(detail)
-            qcol = _quote_identifier(column_name)
+            qc = _detect_quote_char(detail)
+            qcol = _column_ref(column_name, qc)
             where_parts = [f"{qcol} IS NOT NULL"]
             if trimmed:
                 where_parts.append(
@@ -615,8 +704,13 @@ class SupersetLoader(ExternalDataLoader):
         detail = self._client.get_dataset_detail(token, dataset_id)
         db_id, schema, base_sql = _build_dataset_sql(detail)
 
+        # Detect the database backend for correct identifier quoting
+        quote_char = _detect_quote_char(detail)
+
         # Build WHERE clauses from source_filters
-        where_clauses = self._build_source_filter_clauses(opts.get("source_filters"))
+        where_clauses = self._build_source_filter_clauses(
+            opts.get("source_filters"), quote_char,
+        )
 
         # Build SQL
         if where_clauses:
@@ -626,12 +720,38 @@ class SupersetLoader(ExternalDataLoader):
 
         # Execute via SQL Lab
         sql_session = self._client.create_sql_session(token)
+        logger.info(
+            "Superset SQL Lab execute: dataset_id=%s db_id=%s schema=%s sql=%s",
+            dataset_id, db_id, schema, full_sql,
+        )
         result = self._client.execute_sql_with_session(
             sql_session, db_id, full_sql, schema, size,
         )
 
         rows = result.get("data", []) or []
+        logger.info(
+            "Superset SQL Lab result: dataset_id=%s rows=%d status=%s",
+            dataset_id, len(rows), result.get("status", "unknown"),
+        )
+
         if not rows:
+            # Return a 0-row table that preserves column schema from the
+            # dataset metadata (same approach as 0.6).  ``pa.table({})``
+            # would lose all column info, causing the frontend filter UI
+            # to disappear.
+            col_names = [
+                c.get("column_name") or c.get("name") or c.get("label")
+                for c in (result.get("columns") or [])
+            ]
+            col_names = [n for n in col_names if n]
+            if not col_names:
+                col_names = [
+                    c.get("column_name", "")
+                    for c in (detail.get("columns") or [])
+                    if c.get("column_name")
+                ]
+            if col_names:
+                return pa.table({name: pa.array([], type=pa.string()) for name in col_names})
             return pa.table({})
 
         # Convert list-of-dicts to Arrow table

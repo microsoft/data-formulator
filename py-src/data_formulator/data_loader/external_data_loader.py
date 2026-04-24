@@ -563,6 +563,28 @@ class ExternalDataLoader(ABC):
                 return n.metadata or {}
         return {}
 
+    def get_column_types(self, source_table: str) -> dict[str, Any]:
+        """Return source-level column type info for a table.
+
+        Returns ``{"columns": [{"name": str, "type": str, "is_dttm": bool}, ...]}``.
+        The ``type`` is the *original* source type (e.g. ``TIMESTAMP``,
+        ``VARCHAR``, ``BOOLEAN``) — not pandas dtype — so the frontend can
+        choose the correct filter widget.
+
+        Default: tries ``get_metadata(path)`` where *path* is derived by
+        splitting ``source_table`` on ``"."``.  SQL-based loaders that
+        already implement ``get_metadata`` with ``information_schema``
+        queries get this for free.
+        """
+        try:
+            path = source_table.split(".")
+            meta = self.get_metadata(path)
+            if meta and "columns" in meta:
+                return {"columns": meta["columns"]}
+        except Exception:
+            pass
+        return {}
+
     def list_tables_tree(self, table_filter: str | None = None) -> dict:
         """Build a nested tree from :meth:`list_tables` results.
 
