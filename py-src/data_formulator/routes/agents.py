@@ -39,7 +39,7 @@ from data_formulator.model_registry import model_registry
 
 from data_formulator.agents.data_agent import DataAgent
 from data_formulator.agents.agent_language import build_language_instruction
-from data_formulator.security.sanitize import classify_llm_error
+from data_formulator.security.sanitize import classify_llm_error, sanitize_error_message
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -1049,7 +1049,9 @@ def refresh_derived_data():
         else:
             return jsonify({
                 "status": "error",
-                "message": result.get('content', 'Unknown error during transformation')
+                "message": sanitize_error_message(
+                    result.get('content', 'Unknown error during transformation')
+                )
             }), 400
 
     except Exception as e:

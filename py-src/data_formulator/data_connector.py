@@ -31,6 +31,7 @@ from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
 )
+from data_formulator.security.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -403,14 +404,16 @@ class DataConnector:
 def _resolve_connector(data: dict[str, Any]) -> DataConnector:
     """Look up a DataConnector from the request body's ``connector_id``.
 
-    Returns the connector or raises ``KeyError`` (→ 404).
+    Returns the connector or raises ``AppError``.
     """
+    from data_formulator.errors import AppError, ErrorCode
+
     connector_id = data.get("connector_id")
     if not connector_id:
-        raise KeyError("connector_id is required")
+        raise AppError(ErrorCode.INVALID_REQUEST, "connector_id is required", status_code=400)
     connector = DATA_CONNECTORS.get(connector_id)
     if connector is None:
-        raise KeyError(f"Unknown connector: {connector_id}")
+        raise AppError(ErrorCode.CONNECTOR_ERROR, "Connector not found", status_code=404)
     return connector
 
 
@@ -811,10 +814,7 @@ def connector_connect():
          "refresh_token": "...", "user": {...}, "params": {...}, "persist": true}
     """
     data = request.get_json() or {}
-    try:
-        source = _resolve_connector(data)
-    except KeyError as e:
-        return jsonify({"status": "error", "message": str(e)}), 404
+    source = _resolve_connector(data)
 
     try:
         mode = data.get("mode", "credentials")
@@ -872,10 +872,7 @@ def connector_connect():
 def connector_get_status():
     """Check connection status (no side effects — no auto-reconnect)."""
     data = request.get_json() or {}
-    try:
-        source = _resolve_connector(data)
-    except KeyError as e:
-        return jsonify({"status": "error", "message": str(e)}), 404
+    source = _resolve_connector(data)
 
     identity = source._get_identity()
     loader = source._get_loader(identity)
@@ -922,10 +919,7 @@ def connector_get_status():
 def connector_get_catalog():
     """Browse a catalog node (merged ls + metadata)."""
     data = request.get_json() or {}
-    try:
-        source = _resolve_connector(data)
-    except KeyError as e:
-        return jsonify({"status": "error", "message": str(e)}), 404
+    source = _resolve_connector(data)
 
     try:
         loader = source._require_loader()
@@ -954,10 +948,7 @@ def connector_get_catalog():
 def connector_get_catalog_tree():
     """Build nested tree from ``list_tables()`` with full metadata."""
     data = request.get_json() or {}
-    try:
-        source = _resolve_connector(data)
-    except KeyError as e:
-        return jsonify({"status": "error", "message": str(e)}), 404
+    source = _resolve_connector(data)
 
     try:
         loader = source._require_loader()
@@ -976,10 +967,7 @@ def connector_get_catalog_tree():
 @connectors_bp.route("/api/connectors/import-data", methods=["POST"])
 def connector_import_data():
     data = request.get_json() or {}
-    try:
-        source = _resolve_connector(data)
-    except KeyError as e:
-        return jsonify({"status": "error", "message": str(e)}), 404
+    source = _resolve_connector(data)
 
     try:
         loader = source._require_loader()
@@ -1021,10 +1009,7 @@ def connector_import_data():
 @connectors_bp.route("/api/connectors/refresh-data", methods=["POST"])
 def connector_refresh_data():
     data = request.get_json() or {}
-    try:
-        source = _resolve_connector(data)
-    except KeyError as e:
-        return jsonify({"status": "error", "message": str(e)}), 404
+    source = _resolve_connector(data)
 
     try:
         loader = source._require_loader()
@@ -1058,10 +1043,7 @@ def connector_refresh_data():
 @connectors_bp.route("/api/connectors/preview-data", methods=["POST"])
 def connector_preview_data():
     data = request.get_json() or {}
-    try:
-        source = _resolve_connector(data)
-    except KeyError as e:
-        return jsonify({"status": "error", "message": str(e)}), 404
+    source = _resolve_connector(data)
 
     try:
         loader = source._require_loader()
@@ -1100,10 +1082,7 @@ def connector_preview_data():
 def connector_import_group():
     """Import all tables from a table_group with shared filters."""
     data = request.get_json() or {}
-    try:
-        source = _resolve_connector(data)
-    except KeyError as e:
-        return jsonify({"status": "error", "message": str(e)}), 404
+    source = _resolve_connector(data)
 
     try:
         loader = source._require_loader()
@@ -1163,7 +1142,7 @@ def connector_import_group():
                     "status": "error",
                     "dataset_id": ds_id,
                     "table_name": ds_name,
-                    "message": str(e),
+                    "message": sanitize_error_message(str(e)),
                 })
 
         return jsonify({
