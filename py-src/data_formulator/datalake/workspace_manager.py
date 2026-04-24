@@ -235,15 +235,15 @@ class WorkspaceManager:
 
     def create_workspace(self, workspace_id: str) -> Path:
         """
-        Create a new empty workspace (idempotent).
+        Create a new empty workspace.
 
         Returns the workspace directory path.
-        If the workspace already exists, returns its path without error.
+        Raises ValueError if the workspace already exists.
         """
         safe = self._safe_id(workspace_id)
         ws_dir = self._root / safe
         if ws_dir.exists():
-            return ws_dir
+            raise ValueError(f"Workspace '{workspace_id}' already exists")
 
         ws_dir.mkdir(parents=True, exist_ok=True)
         (ws_dir / "data").mkdir(exist_ok=True)
