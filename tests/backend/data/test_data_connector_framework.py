@@ -249,6 +249,7 @@ class TestSharedRouteRegistration:
         assert "/api/connectors/import-group" in rules
         assert "/api/connectors/refresh-data" in rules
         assert "/api/connectors/preview-data" in rules
+        assert "/api/connectors/column-values" in rules
 
 
 # ==================================================================
@@ -542,6 +543,59 @@ class TestDataRoutes:
             resp = connected_client.post("/api/connectors/refresh-data", json={"connector_id": "mock_db"})
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
+
+    def test_column_values_success(self, connected_client):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+            resp = connected_client.post("/api/connectors/column-values", json={
+                "connector_id": "mock_db",
+                "source_table": "public.users",
+                "column_name": "name",
+            })
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["status"] == "ok"
+        assert "options" in data
+        assert "has_more" in data
+
+    def test_column_values_missing_source_table(self, connected_client):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+            resp = connected_client.post("/api/connectors/column-values", json={
+                "connector_id": "mock_db",
+                "column_name": "name",
+            })
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "error"
+
+    def test_column_values_missing_column_name(self, connected_client):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+            resp = connected_client.post("/api/connectors/column-values", json={
+                "connector_id": "mock_db",
+                "source_table": "public.users",
+            })
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "error"
+
+    def test_column_values_with_keyword(self, connected_client):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+            resp = connected_client.post("/api/connectors/column-values", json={
+                "connector_id": "mock_db",
+                "source_table": "public.users",
+                "column_name": "name",
+                "keyword": "ali",
+                "limit": 10,
+            })
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["status"] == "ok"
+
+    def test_column_values_not_connected(self, client):
+        with patch.object(DataConnector, "_get_identity", return_value="nobody"):
+            resp = client.post("/api/connectors/column-values", json={
+                "connector_id": "mock_db",
+                "source_table": "public.users",
+                "column_name": "name",
+            })
+        assert resp.status_code == 200
 
 
 # ==================================================================
