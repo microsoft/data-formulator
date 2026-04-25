@@ -20,6 +20,7 @@ Usage::
 """
 
 import dataclasses
+import inspect
 import json as _json
 import logging
 from pathlib import Path
@@ -37,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 # Registry of enabled DataConnector instances (populated at startup).
 DATA_CONNECTORS: dict[str, "DataConnector"] = {}
+
+_MAX_CATALOG_PAGE_SIZE = 1000
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +100,21 @@ def _node_to_dict(node: CatalogNode) -> dict[str, Any]:
 
 def _hierarchy_dicts(levels: list[dict[str, str]]) -> list[dict[str, str]]:
     return [{"key": l["key"], "label": l["label"]} for l in levels]
+
+
+def _catalog_pagination_args(data: dict[str, Any]) -> tuple[int | None, int]:
+    """Parse optional catalog pagination args from a request body."""
+    raw_limit = data.get("limit")
+    if raw_limit is None:
+        return None, 0
+    try:
+        limit = int(raw_limit)
+        offset = int(data.get("offset") or 0)
+    except (TypeError, ValueError):
+        return None, 0
+    if limit <= 0:
+        return None, 0
+    return min(limit, _MAX_CATALOG_PAGE_SIZE), max(0, offset)
 
 
 # ---------------------------------------------------------------------------
@@ -975,13 +993,30 @@ def connector_get_catalog():
         loader = source._require_loader()
         path = data.get("path", [])
         name_filter = data.get("filter")
+        limit, offset = _catalog_pagination_args(data)
 
-        nodes = loader.ls(path=path, filter=name_filter)
+        if limit is None:
+            nodes = loader.ls(path=path, filter=name_filter)
+            has_more = False
+            next_offset = None
+        else:
+            page_size = limit + 1
+            if "limit" in inspect.signature(loader.ls).parameters:
+                raw_nodes = loader.ls(path=path, filter=name_filter, limit=page_size, offset=offset)
+                nodes = raw_nodes[:limit]
+                has_more = len(raw_nodes) > limit
+            else:
+                raw_nodes = loader.ls(path=path, filter=name_filter)
+                nodes = raw_nodes[offset:offset + limit]
+                has_more = len(raw_nodes) > offset + limit
+            next_offset = offset + limit if has_more else None
         result: dict[str, Any] = {
             "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
             "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
             "path": path,
             "nodes": [_node_to_dict(n) for n in nodes],
+            "has_more": has_more,
+            "next_offset": next_offset,
         }
         if path:
             try:

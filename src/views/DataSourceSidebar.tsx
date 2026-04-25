@@ -65,9 +65,11 @@ import type { ConnectorInstance, DictTable } from '../components/ComponentType';
 import { ConnectorTablePreview } from '../components/ConnectorTablePreview';
 import type { ColumnMeta } from '../components/ConnectorTablePreview';
 import {
+    appendChildrenAtPath,
     CatalogTreeNode,
     collectNamespaceIds,
     findNodeByPath,
+    mergeChildrenAtPath,
     renderCatalogTreeItems,
 } from '../components/CatalogTree';
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
@@ -77,6 +79,16 @@ import type { CatalogTableDragItem } from '../components/DndTypes';
 
 const RAIL_WIDTH = 40;
 const PANEL_WIDTH = 260;
+const CATALOG_PAGE_SIZE = 200;
+
+function makeLoadMoreNode(parentPath: string[], nextOffset: number): CatalogTreeNode {
+    return {
+        name: 'Load more…',
+        node_type: 'load_more',
+        path: [...parentPath, `__load_more_${nextOffset}`],
+        metadata: { parentPath, nextOffset },
+    };
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -379,38 +391,59 @@ const DataSourceSidebarPanel: React.FC<{
     // Guard against concurrent fetches for the same connector
     const fetchingRef = useRef<Set<string>>(new Set());
 
-    const fetchCatalogTree = useCallback(async (connectorId: string) => {
-        // Skip if already fetching this connector (prevents race with DBTableManager)
-        if (fetchingRef.current.has(connectorId)) return;
-        fetchingRef.current.add(connectorId);
+    const fetchCatalogNodes = useCallback(async (
+        connectorId: string,
+        path: string[] = [],
+        options: { append?: boolean; offset?: number; filter?: string } = {},
+    ) => {
+        const offset = options.offset ?? 0;
+        const filter = options.filter?.trim() || null;
+        const fetchKey = `${connectorId}:${path.join('/')}:${offset}:${filter || ''}`;
+        if (fetchingRef.current.has(fetchKey)) return;
+        fetchingRef.current.add(fetchKey);
 
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: true }));
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
+            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CATALOG, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connectorId }),
+                body: JSON.stringify({ connector_id: connectorId, path, filter, limit: CATALOG_PAGE_SIZE, offset }),
             });
             const data = await resp.json();
-            if (data.tree) {
-                const tree: CatalogTreeNode[] = data.tree;
-                setCatalogCache(prev => ({
-                    ...prev,
-                    [connectorId]: { tree, fetchedAt: Date.now() },
+            if (data.nodes) {
+                const nodes: CatalogTreeNode[] = (data.nodes as CatalogTreeNode[]).map(n => ({
+                    ...n,
+                    children: n.node_type === 'namespace' ? undefined : n.children,
                 }));
-                setTreeExpanded(prev => ({
-                    ...prev,
-                    [connectorId]: collectNamespaceIds(tree),
-                }));
+                const pageNodes = data.has_more && data.next_offset != null
+                    ? [...nodes, makeLoadMoreNode(path, Number(data.next_offset))]
+                    : nodes;
+                setCatalogCache(prev => {
+                    const existing = prev[connectorId]?.tree || [];
+                    const merged = path.length === 0
+                        ? (options.append ? [...existing.filter(n => n.node_type !== 'load_more'), ...pageNodes] : pageNodes)
+                        : (options.append
+                            ? appendChildrenAtPath(existing, path, pageNodes)
+                            : mergeChildrenAtPath(existing, path, pageNodes));
+                    return {
+                        ...prev,
+                        [connectorId]: { tree: merged, fetchedAt: Date.now() },
+                    };
+                });
+                if (path.length === 0) {
+                    setTreeExpanded(prev => ({
+                        ...prev,
+                        [connectorId]: [],
+                    }));
+                }
             } else if (data.status === 'error') {
-                // Connection may have expired — flip to not-connected
                 setConnectors(prev => prev.map(c =>
                     c.id === connectorId ? { ...c, connected: false } : c
                 ));
             }
         } catch { /* catalog fetch is best-effort; connector remains usable */ }
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
-        fetchingRef.current.delete(connectorId);
+        fetchingRef.current.delete(fetchKey);
     }, []);
 
     // ── Loaded tables map ────────────────────────────────────────────────────
@@ -435,7 +468,9 @@ const DataSourceSidebarPanel: React.FC<{
         const q = query.toLowerCase();
         const result: CatalogTreeNode[] = [];
         for (const node of nodes) {
-            if (node.node_type === 'table') {
+            if (node.node_type === 'load_more') {
+                result.push(node);
+            } else if (node.node_type === 'table') {
                 if (node.name.toLowerCase().includes(q)) {
                     result.push(node);
                 }
@@ -473,14 +508,14 @@ const DataSourceSidebarPanel: React.FC<{
                 next.delete(connectorId);
             } else {
                 next.add(connectorId);
-                // Fetch tree on first expand
+                // Fetch root catalog on first expand
                 if (!catalogCacheRef.current[connectorId]) {
-                    fetchCatalogTree(connectorId);
+                    fetchCatalogNodes(connectorId);
                 }
             }
             return next;
         });
-    }, [fetchCatalogTree]);
+    }, [fetchCatalogNodes]);
 
     // ── Preview a table on click ──────────────────────────────────────────
 
@@ -601,8 +636,12 @@ const DataSourceSidebarPanel: React.FC<{
     const handleRefreshTable = useCallback((connectorId: string, node: CatalogTreeNode, e: React.MouseEvent) => {
         e.stopPropagation();
         const pathKey = node.path.join('/');
+        const sourceName = node.metadata?._source_name;
         const loaded = tableIdentities.find(
-            t => t.connectorId === connectorId && (t.databaseTable === pathKey || t.id === node.name)
+            t => t.connectorId === connectorId && (
+                t.databaseTable === pathKey || t.id === node.name ||
+                (sourceName && (t.databaseTable === sourceName || t.id === sourceName))
+            )
         );
         if (!loaded) return;
 
@@ -831,7 +870,7 @@ const DataSourceSidebarPanel: React.FC<{
                                             size="small"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                fetchCatalogTree(connector.id);
+                                                fetchCatalogNodes(connector.id);
                                             }}
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: isExpanded ? 'visible' : 'hidden' }}
                                         >
@@ -870,7 +909,16 @@ const DataSourceSidebarPanel: React.FC<{
                                             expandedItems={expanded}
                                             onExpandedItemsChange={(_e, items) => {
                                                 if (!isSearching) {
+                                                    const prevSet = new Set(expanded);
+                                                    const newlyExpanded = items.filter(id => !prevSet.has(id));
                                                     setTreeExpanded(prev => ({ ...prev, [connector.id]: items }));
+                                                    const fullCache = catalogCache[connector.id];
+                                                    for (const itemId of newlyExpanded) {
+                                                        const node = fullCache ? findNodeByPath(fullCache.tree, itemId) : null;
+                                                        if (node && (node.node_type === 'namespace' || node.node_type === 'table_group') && !node.children) {
+                                                            fetchCatalogNodes(connector.id, node.path, { filter: catalogSearch });
+                                                        }
+                                                    }
                                                 }
                                             }}
                                             onItemClick={(e, itemId) => {
@@ -886,13 +934,19 @@ const DataSourceSidebarPanel: React.FC<{
                                             {renderCatalogTreeItems(displayCache.tree, {
                                                 loadedMap: loadedTablesMap,
                                                 expandedSet: new Set(expanded),
+                                                onLoadMore: (node) => {
+                                                    const parentPath = (node.metadata?.parentPath || []) as string[];
+                                                    const nextOffset = Number(node.metadata?.nextOffset || 0);
+                                                    fetchCatalogNodes(connector.id, parentPath, { append: true, offset: nextOffset, filter: catalogSearch });
+                                                },
                                                 onDragStart: (node, event) => {
                                                     const dsId = node.metadata?.dataset_id;
+                                                    const sourceName = node.metadata?._source_name || node.name;
                                                     const item: CatalogTableDragItem = {
                                                         type: CATALOG_TABLE_ITEM,
                                                         connectorId: connector.id,
-                                                        tableName: node.name,
-                                                        tableId: dsId != null ? String(dsId) : undefined,
+                                                        tableName: sourceName,
+                                                        tableId: dsId != null ? String(dsId) : sourceName,
                                                         tablePath: node.path,
                                                         sourceType: connector.source_type,
                                                     };
@@ -901,7 +955,8 @@ const DataSourceSidebarPanel: React.FC<{
                                                 },
                                                 renderTableActions: (node) => {
                                                     const pathKey = node.path.join('/');
-                                                    const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey];
+                                                    const sourceName = node.metadata?._source_name;
+                                                    const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
                                                     if (!isLoaded) return null;
                                                     return (
                                                         <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>

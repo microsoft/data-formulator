@@ -441,7 +441,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     {rowCount != null && (
                         <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
                             {t('connectorPreview.rowCount', { count: Number(rowCount).toLocaleString(), defaultValue: '{{count}} rows' })}
-                            {sampleRows.length > 0 && rowCount > sampleRows.length && (
+                            {sampleRows.length > 0 && (
                                 <span style={{ opacity: 0.7, marginLeft: 4 }}>
                                     ({t('connectorPreview.previewRowsNotice', { count: sampleRows.length, defaultValue: `Preview shows first ${sampleRows.length} rows only` })})
                                 </span>

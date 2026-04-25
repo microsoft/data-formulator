@@ -1,11 +1,23 @@
 import json
 import logging
+import os
 from typing import Any
+
+_PG_CLIENT_ENCODING = "UTF8"
+# libpq/psycopg2 can consult this during connection startup, so set it before importing psycopg2.
+os.environ["PGCLIENTENCODING"] = _PG_CLIENT_ENCODING
 
 import pyarrow as pa
 import psycopg2
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, build_where_clause_inline, _esc_id, _esc_str
+from data_formulator.data_loader.external_data_loader import (
+    CatalogNode,
+    ExternalDataLoader,
+    build_source_filter_where_clause_inline,
+    build_where_clause_inline,
+    _esc_id,
+    _esc_str,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,29 +65,80 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         # for catalog browsing. The user can browse all databases via ls().
         connect_db = self.database or "postgres"
 
-        # Build psycopg2 connection
-        # Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
-        host_for_conn = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
-
         try:
-            self._conn = psycopg2.connect(
-                host=host_for_conn,
-                port=int(self.port),
-                user=self.user,
-                password=self.password or "",
-                dbname=connect_db,
-            )
+            self._conn = psycopg2.connect(**self._connection_kwargs(connect_db))
             self._conn.autocommit = True
+        except UnicodeDecodeError as e:
+            logger.error(
+                "Failed to connect to PostgreSQL (postgresql://%s:***@%s:%s/%s): psycopg2 could not decode the server error message: %s",
+                self.user,
+                self.host,
+                self.port,
+                connect_db,
+                e,
+            )
+            raise ValueError(
+                f"Failed to connect to PostgreSQL database '{connect_db}' on host '{self.host}': "
+                "PostgreSQL returned a connection error that psycopg2 could not decode. "
+                "Verify host, port, database, username, and password; this is common on localized "
+                f"Windows PostgreSQL installations. Decoder error: {e}"
+            ) from e
         except Exception as e:
-            logger.error(f"Failed to connect to PostgreSQL (postgresql://{self.user}:***@{self.host}:{self.port}/{connect_db}): {e}")
+            logger.error(
+                "Failed to connect to PostgreSQL (postgresql://%s:***@%s:%s/%s): %s",
+                self.user,
+                self.host,
+                self.port,
+                connect_db,
+                e,
+            )
             raise ValueError(f"Failed to connect to PostgreSQL database '{connect_db}' on host '{self.host}': {e}") from e
-        logger.info(f"Successfully connected to PostgreSQL: postgresql://{self.user}:***@{self.host}:{self.port}/{connect_db}")
+        logger.info(
+            "Successfully connected to PostgreSQL: postgresql://%s:***@%s:%s/%s",
+            self.user,
+            self.host,
+            self.port,
+            connect_db,
+        )
 
     # PostgreSQL types that may need special handling
     _SPATIAL_TYPES = {'geometry', 'geography'}  # PostGIS types → ST_AsText()
     _OTHER_UNSUPPORTED = {'box', 'circle', 'line', 'lseg', 'path', 'point',
                               'polygon', 'bit', 'bit varying', 'xml', 'tsvector', 'tsquery'}
     _UNSUPPORTED_TYPES = _SPATIAL_TYPES | _OTHER_UNSUPPORTED
+
+    def _connection_kwargs(self, dbname: str) -> dict[str, Any]:
+        # Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
+        host_for_conn = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
+        return {
+            "host": host_for_conn,
+            "port": int(self.port),
+            "user": self.user,
+            "password": self.password or "",
+            "dbname": dbname,
+            "client_encoding": _PG_CLIENT_ENCODING,
+            "options": f"-c client_encoding={_PG_CLIENT_ENCODING}",
+        }
+
+    def _resolve_source_table(self, source_table: str) -> tuple[str | None, str, str]:
+        """Parse a source_table string into (database, schema, table).
+
+        Accepts:
+          - ``"database.schema.table"`` — cross-database reference from lazy catalog
+          - ``"schema.table"``          — same-database reference
+          - ``"table"``                 — defaults to public schema
+
+        Returns ``(database_or_None, schema, table)``.  When *database* is
+        ``None``, callers should use the primary connection.
+        """
+        parts = source_table.split(".")
+        if len(parts) >= 3:
+            db, schema, table = parts[0], parts[1], ".".join(parts[2:])
+            current_db = self.database or "postgres"
+            return (db if db != current_db else None), schema, table
+        if len(parts) == 2:
+            return None, parts[0], parts[1]
+        return None, "public", parts[0]
 
     def _read_sql(self, query: str) -> pa.Table:
         """Execute a query and return results as a PyArrow Table (no pandas)."""
@@ -98,7 +161,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         finally:
             cur.close()
 
-    def _safe_select_list(self, schema: str, table_name: str) -> str:
+    def _safe_select_list(self, schema: str, table_name: str, dbname: str | None = None) -> str:
         """Build a SELECT column list that converts unsupported types to text.
         Uses ST_AsText() for PostGIS types, ::text for others.
         Returns '*' if no unsupported columns are found."""
@@ -109,7 +172,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 WHERE table_schema = '{_esc_str(schema)}' AND table_name = '{_esc_str(table_name)}'
                 ORDER BY ordinal_position
             """
-            cols_arrow = self._read_sql(columns_query)
+            cols_arrow = self._read_sql_on(columns_query, dbname) if dbname else self._read_sql(columns_query)
             cols_df = cols_arrow.to_pandas()
             has_unsupported = any(r['udt_name'].lower() in self._UNSUPPORTED_TYPES for _, r in cols_df.iterrows())
             if not has_unsupported:
@@ -140,24 +203,21 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
         conditions = opts.get("conditions", [])
+        source_filters = opts.get("source_filters", [])
 
         if not source_table:
             raise ValueError("source_table must be provided")
         
-        # Handle table names like "mypostgresdb.schema.table" -> "schema.table"
-        table_ref = source_table
-        if source_table.startswith("mypostgresdb."):
-            table_ref = source_table[len("mypostgresdb."):]
-        # Build safe column list for the resolved schema.table
-        if '.' in table_ref:
-            s, t = table_ref.split('.', 1)
-            col_list = self._safe_select_list(s.strip('"'), t.strip('"'))
-        else:
-            col_list = self._safe_select_list('public', table_ref.strip('"'))
-        base_query = f"SELECT {col_list} FROM {table_ref}"
+        db, schema, table = self._resolve_source_table(source_table)
 
-        # Add WHERE clause from filter conditions
-        where_clause = build_where_clause_inline(conditions, quote_char='"')
+        col_list = self._safe_select_list(schema, table, dbname=db)
+        qualified = f'{_esc_id(schema, chr(34))}.{_esc_id(table, chr(34))}'
+        base_query = f"SELECT {col_list} FROM {qualified}"
+
+        # Add WHERE clause from source filters, falling back to legacy conditions.
+        where_clause = build_source_filter_where_clause_inline(
+            source_filters, quote_char='"', dialect="postgres"
+        ) or build_where_clause_inline(conditions, quote_char='"')
         if where_clause:
             base_query = f"{base_query} {where_clause}"
         
@@ -173,8 +233,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         
         logger.info(f"Executing PostgreSQL query: {query[:200]}...")
         
-        # Execute query — returns Arrow table
-        arrow_table = self._read_sql(query)
+        arrow_table = self._read_sql_on(query, db) if db else self._read_sql(query)
         
         logger.info(f"Fetched {arrow_table.num_rows} rows from PostgreSQL")
         
@@ -192,6 +251,8 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 SELECT table_schema as schemaname, table_name as tablename 
                 FROM information_schema.tables 
                 WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast') 
+                AND table_schema !~ '^pg_temp_[0-9]+$'
+                AND table_schema !~ '^pg_toast_temp_[0-9]+$'
                 AND table_schema NOT LIKE '%_intern%' 
                 AND table_schema NOT LIKE '%timescaledb%'
                 AND table_name NOT LIKE '%/%'
@@ -281,14 +342,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
 
     def _connect_to_db(self, dbname: str):
         """Open a new connection to a specific database on the same server."""
-        host_for_conn = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
-        conn = psycopg2.connect(
-            host=host_for_conn,
-            port=int(self.port),
-            user=self.user,
-            password=self.password or "",
-            dbname=dbname,
-        )
+        conn = psycopg2.connect(**self._connection_kwargs(dbname))
         conn.autocommit = True
         return conn
 
@@ -303,7 +357,13 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         else:
             return self._execute_on_conn(self._conn, query)
 
-    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+    def ls(
+        self,
+        path: list[str] | None = None,
+        filter: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[CatalogNode]:
         path = path or []
         eff = self.effective_hierarchy()
 
@@ -314,10 +374,14 @@ class PostgreSQLDataLoader(ExternalDataLoader):
 
         # --- database level ---
         if level_key == "database":
-            query = """
+            pagination_clause = ""
+            if limit is not None:
+                pagination_clause = f" LIMIT {max(0, int(limit))} OFFSET {max(0, int(offset))}"
+            query = f"""
                 SELECT datname FROM pg_database
                 WHERE datistemplate = false AND datallowconn = true
                 ORDER BY datname
+                {pagination_clause}
             """
             rows = self._read_sql(query).to_pandas()
             nodes = []
@@ -338,13 +402,19 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             db = pinned.get("database") or (path[0] if path else None)
             if not db:
                 return []
-            query = """
+            pagination_clause = ""
+            if limit is not None:
+                pagination_clause = f" LIMIT {max(0, int(limit))} OFFSET {max(0, int(offset))}"
+            query = f"""
                 SELECT schema_name
                 FROM information_schema.schemata
                 WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+                  AND schema_name !~ '^pg_temp_[0-9]+$'
+                  AND schema_name !~ '^pg_toast_temp_[0-9]+$'
                   AND schema_name NOT LIKE '%%_intern%%'
                   AND schema_name NOT LIKE '%%timescaledb%%'
                 ORDER BY schema_name
+                {pagination_clause}
             """
             rows = self._read_sql_on(query, db).to_pandas()
             nodes = []
@@ -361,7 +431,6 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         # --- table level ---
         if level_key == "table":
             pinned = self.pinned_scope()
-            # Resolve database and schema from pinned values + path
             remaining_path = list(path)
             db = pinned.get("database")
             if not db:
@@ -373,6 +442,9 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 if not remaining_path:
                     return []
                 schema = remaining_path.pop(0)
+            pagination_clause = ""
+            if limit is not None:
+                pagination_clause = f" LIMIT {max(0, int(limit))} OFFSET {max(0, int(offset))}"
             query = f"""
                 SELECT table_name
                 FROM information_schema.tables
@@ -380,6 +452,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                   AND table_type = 'BASE TABLE'
                   AND table_name NOT LIKE '%%/%%'
                 ORDER BY table_name
+                {pagination_clause}
             """
             rows = self._read_sql_on(query, db).to_pandas()
             nodes = []
@@ -387,9 +460,11 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 name = r["table_name"]
                 if filter and filter.lower() not in name.lower():
                     continue
+                full_source = f"{db}.{schema}.{name}"
                 nodes.append(CatalogNode(
                     name=name, node_type="table",
                     path=path + [name],
+                    metadata={"_source_name": full_source},
                 ))
             return nodes
 
@@ -414,6 +489,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         if not remaining:
             return {}
         table_name = remaining[0]
+        full_source = f"{db}.{schema}.{table_name}"
         try:
             cols_query = f"""
                 SELECT column_name, data_type
@@ -436,6 +512,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             ).to_pandas()
             sample_rows = json.loads(sample_df.to_json(orient="records"))
             return {
+                "_source_name": full_source,
                 "row_count": row_count,
                 "columns": columns,
                 "sample_rows": sample_rows,

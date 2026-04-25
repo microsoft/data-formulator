@@ -16,7 +16,9 @@ import shutil
 import unittest
 from pathlib import Path
 from typing import Any, Dict
+from unittest.mock import patch
 
+from data_formulator.data_loader.external_data_loader import build_source_filter_where_clause_inline
 from data_formulator.data_loader.postgresql_data_loader import PostgreSQLDataLoader
 
 import logging
@@ -187,6 +189,173 @@ class TestPostgreSQLDataLoaderStatic(unittest.TestCase):
         instructions = PostgreSQLDataLoader.auth_instructions()
         self.assertIsInstance(instructions, str)
         self.assertIn("PostgreSQL", instructions)
+
+    def test_connect_forces_utf8_client_encoding(self) -> None:
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect") as mock_connect:
+            loader = PostgreSQLDataLoader({
+                "host": "localhost",
+                "port": "5432",
+                "user": "postgres",
+                "password": "secret",
+                "database": "postgres",
+            })
+
+        self.assertIs(loader._conn, mock_connect.return_value)
+        self.assertTrue(loader._conn.autocommit)
+        mock_connect.assert_called_once_with(
+            host="127.0.0.1",
+            port=5432,
+            user="postgres",
+            password="secret",
+            dbname="postgres",
+            client_encoding="UTF8",
+            options="-c client_encoding=UTF8",
+        )
+
+    def test_resolve_source_table_three_parts(self) -> None:
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect"):
+            loader = PostgreSQLDataLoader({
+                "host": "localhost", "port": "5432",
+                "user": "postgres", "password": "", "database": "mydb",
+            })
+        db, schema, table = loader._resolve_source_table("analytics.public.events")
+        self.assertEqual(db, "analytics")
+        self.assertEqual(schema, "public")
+        self.assertEqual(table, "events")
+
+    def test_resolve_source_table_three_parts_same_db(self) -> None:
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect"):
+            loader = PostgreSQLDataLoader({
+                "host": "localhost", "port": "5432",
+                "user": "postgres", "password": "", "database": "mydb",
+            })
+        db, schema, table = loader._resolve_source_table("mydb.public.events")
+        self.assertIsNone(db)
+        self.assertEqual(schema, "public")
+        self.assertEqual(table, "events")
+
+    def test_resolve_source_table_two_parts(self) -> None:
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect"):
+            loader = PostgreSQLDataLoader({
+                "host": "localhost", "port": "5432",
+                "user": "postgres", "password": "", "database": "mydb",
+            })
+        db, schema, table = loader._resolve_source_table("public.events")
+        self.assertIsNone(db)
+        self.assertEqual(schema, "public")
+        self.assertEqual(table, "events")
+
+    def test_resolve_source_table_one_part(self) -> None:
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect"):
+            loader = PostgreSQLDataLoader({
+                "host": "localhost", "port": "5432",
+                "user": "postgres", "password": "", "database": "mydb",
+            })
+        db, schema, table = loader._resolve_source_table("events")
+        self.assertIsNone(db)
+        self.assertEqual(schema, "public")
+        self.assertEqual(table, "events")
+
+    def test_ls_table_nodes_include_source_name(self) -> None:
+        """Table nodes from ls() should carry _source_name = db.schema.table."""
+        import pandas as pd
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect"):
+            loader = PostgreSQLDataLoader({
+                "host": "localhost", "port": "5432",
+                "user": "postgres", "password": "", "database": "",
+            })
+        fake_df = pd.DataFrame({"table_name": ["users", "orders"]})
+        with patch.object(loader, "_read_sql_on", return_value=__import__("pyarrow").Table.from_pandas(fake_df)):
+            nodes = loader.ls(path=["mydb", "public"])
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0].metadata["_source_name"], "mydb.public.users")
+        self.assertEqual(nodes[1].metadata["_source_name"], "mydb.public.orders")
+
+    def test_ls_schema_filters_postgresql_temp_schemas(self) -> None:
+        import pandas as pd
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect"):
+            loader = PostgreSQLDataLoader({
+                "host": "localhost", "port": "5432",
+                "user": "postgres", "password": "", "database": "",
+            })
+        fake_arrow = __import__("pyarrow").Table.from_pandas(pd.DataFrame({"schema_name": []}))
+        with patch.object(loader, "_read_sql_on", return_value=fake_arrow) as mock_read:
+            loader.ls(path=["mydb"])
+        query = mock_read.call_args.args[0]
+        self.assertIn("schema_name !~ '^pg_temp_[0-9]+$'", query)
+        self.assertIn("schema_name !~ '^pg_toast_temp_[0-9]+$'", query)
+
+    def test_ls_table_level_supports_limit_offset(self) -> None:
+        import pandas as pd
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect"):
+            loader = PostgreSQLDataLoader({
+                "host": "localhost", "port": "5432",
+                "user": "postgres", "password": "", "database": "",
+            })
+        fake_df = pd.DataFrame({"table_name": ["users"]})
+        with patch.object(loader, "_read_sql_on", return_value=__import__("pyarrow").Table.from_pandas(fake_df)) as mock_read:
+            nodes = loader.ls(path=["mydb", "public"], limit=201, offset=200)
+        query = mock_read.call_args.args[0]
+        self.assertIn("LIMIT 201 OFFSET 200", query)
+        self.assertEqual(nodes[0].metadata["_source_name"], "mydb.public.users")
+
+    def test_source_filter_helper_compiles_postgres_operators(self) -> None:
+        where_clause = build_source_filter_where_clause_inline(
+            [
+                {"column": "name", "operator": "ILIKE", "value": "acct"},
+                {"column": "amount", "operator": "GTE", "value": 10},
+                {"column": "deleted_at", "operator": "IS_NULL"},
+            ],
+            quote_char='"',
+            dialect="postgres",
+        )
+        self.assertEqual(
+            where_clause,
+            'WHERE "name" ILIKE \'%acct%\' AND "amount" >= 10 AND "deleted_at" IS NULL',
+        )
+
+    def test_fetch_data_as_arrow_uses_source_filters(self) -> None:
+        import pyarrow as pa
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect"):
+            loader = PostgreSQLDataLoader({
+                "host": "localhost", "port": "5432",
+                "user": "postgres", "password": "", "database": "mydb",
+            })
+        with (
+            patch.object(loader, "_safe_select_list", return_value="*"),
+            patch.object(loader, "_read_sql", return_value=pa.table({"id": []})) as mock_read,
+        ):
+            loader.fetch_data_as_arrow(
+                "public.users",
+                {"size": 10, "source_filters": [{"column": "name", "operator": "EQ", "value": "alice"}]},
+            )
+        query = mock_read.call_args.args[0]
+        self.assertIn('WHERE "name" = \'alice\'', query)
+        self.assertIn("LIMIT 10", query)
+
+    def test_secondary_connection_forces_utf8_client_encoding(self) -> None:
+        with patch("data_formulator.data_loader.postgresql_data_loader.psycopg2.connect") as mock_connect:
+            loader = PostgreSQLDataLoader({
+                "host": "db.example.com",
+                "port": "5432",
+                "user": "postgres",
+                "password": "",
+                "database": "postgres",
+            })
+            mock_connect.reset_mock()
+            conn = loader._connect_to_db("analytics")
+
+        self.assertIs(conn, mock_connect.return_value)
+        self.assertTrue(conn.autocommit)
+        mock_connect.assert_called_once_with(
+            host="db.example.com",
+            port=5432,
+            user="postgres",
+            password="",
+            dbname="analytics",
+            client_encoding="UTF8",
+            options="-c client_encoding=UTF8",
+        )
 
 
 def run_tests() -> bool:

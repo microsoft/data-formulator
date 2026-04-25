@@ -6,7 +6,14 @@ from typing import Any
 import pyarrow as pa
 import pymysql
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, build_where_clause_inline, _esc_id, _esc_str
+from data_formulator.data_loader.external_data_loader import (
+    CatalogNode,
+    ExternalDataLoader,
+    build_source_filter_where_clause_inline,
+    build_where_clause_inline,
+    _esc_id,
+    _esc_str,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +174,7 @@ class MySQLDataLoader(ExternalDataLoader):
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
         conditions = opts.get("conditions", [])
+        source_filters = opts.get("source_filters", [])
 
         if not source_table:
             raise ValueError("source_table must be provided")
@@ -180,8 +188,10 @@ class MySQLDataLoader(ExternalDataLoader):
             col_list = self._safe_select_list(self.database, source_table.strip('`'))
             base_query = f"SELECT {col_list} FROM `{source_table}`"
         
-        # Add WHERE clause from filter conditions
-        where_clause = build_where_clause_inline(conditions, quote_char='`')
+        # Add WHERE clause from source filters, falling back to legacy conditions.
+        where_clause = build_source_filter_where_clause_inline(
+            source_filters, quote_char='`', dialect="mysql"
+        ) or build_where_clause_inline(conditions, quote_char='`')
         if where_clause:
             base_query = f"{base_query} {where_clause}"
         

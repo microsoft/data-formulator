@@ -18,6 +18,19 @@
 
 审查了全部 9 个 DataLoader 后，发现两大类可改进的问题：
 
+### 已落地补充：懒加载 Catalog 与大目录分页
+
+当前统一连接器 UI 通过 `/api/connectors/get-catalog` 按层级懒加载数据源目录，而不是依赖一次性返回整棵树的 `/get-catalog-tree`。Loader 可以通过 `catalog_hierarchy()` 声明层级，通过 `ls(path, filter, limit, offset)` 返回当前层级节点。
+
+约定如下：
+
+- `path=[]` 返回第一层可浏览节点，展开节点时将该节点的 `path` 传回 `ls()` 加载下一层。
+- `filter` 只作用于当前可见层级，避免为了搜索表名扫描所有数据库或 schema。
+- `limit`/`offset` 用于大目录分页。前端默认按页加载，并用 `Load more...` 继续追加，避免 schema 下几千张表导致页面卡顿。
+- table 节点如果需要稳定源引用，应在 `metadata["_source_name"]` 中返回源系统可识别的完整标识符。
+
+PostgreSQL 已按上述方式实现 `database → schema → table` 的懒加载。当连接参数 `database` 为空时，刷新只加载可访问数据库；展开数据库加载 schema；展开 schema 分页加载 table。table 节点使用 `database.schema.table` 作为 `_source_name`，并且 catalog 查询隐藏 PostgreSQL 系统/临时 schema：`information_schema`、`pg_catalog`、`pg_toast`、`^pg_temp_[0-9]+$`、`^pg_toast_temp_[0-9]+$`。
+
 ### 缺陷一：数据库元数据（注释/描述）未拉取
 
 所有 DataLoader 的 `list_tables()` 只查了 `information_schema` 的列名和数据类型，**完全忽略了数据库自带的注释系统**。这些注释是 DBA 维护的宝贵业务知识：

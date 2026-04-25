@@ -45,13 +45,23 @@ import { RowLimitUnderlineSelect } from '../components/RowLimitUnderlineSelect';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
 
 import {
+    appendChildrenAtPath,
     CatalogTreeNode,
-    collectNamespaceIds,
     findNodeByPath,
-    StyledTreeItem,
-    countBadgeSx,
+    mergeChildrenAtPath,
     renderCatalogTreeItems,
 } from '../components/CatalogTree';
+
+const CATALOG_PAGE_SIZE = 200;
+
+function makeLoadMoreNode(parentPath: string[], nextOffset: number): CatalogTreeNode {
+    return {
+        name: 'Load more…',
+        node_type: 'load_more',
+        path: [...parentPath, `__load_more_${nextOffset}`],
+        metadata: { parentPath, nextOffset },
+    };
+}
 
 
 export const handleDBDownload = async (identityId: string) => {
@@ -688,45 +698,62 @@ export const DataLoaderForm: React.FC<{
     // Connection timeout in milliseconds (30 seconds)
     const CONNECTION_TIMEOUT_MS = 30_000;
 
-    // Helper: extract flat table metadata from the tree for preview/load logic
-    const extractTableMetadata = useCallback((tree: CatalogTreeNode[]) => {
-        const result: Record<string, any> = {};
-        const walk = (nodes: CatalogTreeNode[]) => {
-            for (const n of nodes) {
-                if (n.node_type === 'table') {
-                    // Use the path-based key so duplicate table names under different namespaces stay distinct
-                    const key = n.path.join('/');
-                    result[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path };
-                } else if (n.node_type === 'table_group') {
-                    const key = n.path.join('/');
-                    result[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path, _isGroup: true };
-                }
-                if (n.children) walk(n.children);
-            }
-        };
-        walk(tree);
-        return result;
-    }, []);
-
-    // Helper: fetch catalog tree and update state
-    const fetchCatalogTree = useCallback(async (filter?: string) => {
-        const treeResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
+    // Helper: fetch catalog nodes lazily and update state
+    const fetchCatalogNodes = useCallback(
+    async (path: string[] = [], filter?: string, options: { append?: boolean; offset?: number } = {}) => {
+        const offset = options.offset ?? 0;
+        const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CATALOG, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ connector_id: connectorIdRef.current, filter: filter?.trim() || null }),
+            body: JSON.stringify({
+                connector_id: connectorIdRef.current,
+                path,
+                filter: filter?.trim() || null,
+                limit: CATALOG_PAGE_SIZE,
+                offset,
+            }),
         });
-        const treeData = await treeResp.json();
-        if (treeData.tree) {
-            setCatalogTree(treeData.tree);
-            setExpandedItems(collectNamespaceIds(treeData.tree));
-            const flatMeta = extractTableMetadata(treeData.tree);
-            setTableMetadata(flatMeta);
-            return treeData;
-        } else if (treeData.status === 'error') {
-            throw new Error(treeData.message || 'Failed to load catalog tree');
+        const data = await resp.json();
+        if (data.nodes) {
+            const nodes: CatalogTreeNode[] = (data.nodes as CatalogTreeNode[]).map(n => ({
+                ...n,
+                children: n.node_type === 'namespace' ? undefined : n.children,
+            }));
+            const pageNodes = data.has_more && data.next_offset != null
+                ? [...nodes, makeLoadMoreNode(path, Number(data.next_offset))]
+                : nodes;
+            setCatalogTree(prev => {
+                if (path.length === 0) {
+                    return options.append ? [...prev.filter(n => n.node_type !== 'load_more'), ...pageNodes] : pageNodes;
+                }
+                return options.append
+                    ? appendChildrenAtPath(prev, path, pageNodes)
+                    : mergeChildrenAtPath(prev, path, pageNodes);
+            });
+            if (path.length === 0) {
+                setExpandedItems([]);
+            }
+            // Extract metadata from table nodes into flat map
+            const flatMeta: Record<string, any> = {};
+            for (const n of nodes) {
+                if (n.node_type === 'table') {
+                    const key = (path.length > 0 ? [...path, n.name] : n.path).join('/');
+                    flatMeta[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path };
+                } else if (n.node_type === 'table_group') {
+                    const key = (path.length > 0 ? [...path, n.name] : n.path).join('/');
+                    flatMeta[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path, _isGroup: true };
+                }
+            }
+            if (Object.keys(flatMeta).length > 0) {
+                setTableMetadata(prev => ({ ...prev, ...flatMeta }));
+            }
+            return data;
+        } else if (data.status === 'error') {
+            throw new Error(data.message || 'Failed to load catalog');
         }
-        return treeData;
-    }, [extractTableMetadata]);
+        return data;
+    },
+    []);
 
     // Helper: connect and list tables via data connector
     const connectAndListTables = useCallback(async (filter?: string) => {
@@ -751,10 +778,10 @@ export const DataLoaderForm: React.FC<{
             if (connectData.status !== 'connected') {
                 throw new Error(connectData.message || 'Connection failed');
             }
-            // Fetch catalog tree before promoting to "connected" state
+            // Fetch root catalog nodes before promoting to "connected" state
             const tableFilterValue = filter ?? (mergedParams as Record<string, any>).table_filter ?? '';
-            await fetchCatalogTree(tableFilterValue);
-            // Only promote to "connected" after tree is loaded
+            await fetchCatalogNodes([], tableFilterValue);
+            // Only promote to "connected" after root nodes are loaded
             onConnected?.();
         } catch (error: any) {
             clearTimeout(timeoutId);
@@ -766,7 +793,7 @@ export const DataLoaderForm: React.FC<{
         } finally {
             setIsConnecting(false);
         }
-    }, [mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, fetchCatalogTree, t]);
+    }, [mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, fetchCatalogNodes, t]);
 
     // Delegated (popup-based) login flow for token-based connectors
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -851,8 +878,8 @@ export const DataLoaderForm: React.FC<{
                     if (connectData.status !== 'connected') {
                         throw new Error(connectData.message || 'Token connection failed');
                     }
-                    // Fetch catalog tree
-                    await fetchCatalogTree(null as any);
+                    // Fetch root catalog nodes
+                    await fetchCatalogNodes();
                     onConnected?.();
                 } catch (err: any) {
                     onFinish("error", err.message || 'Login failed');
@@ -888,7 +915,7 @@ export const DataLoaderForm: React.FC<{
                 });
                 const statusData = await statusResp.json();
                 if (statusData.connected) {
-                    await fetchCatalogTree();
+                    await fetchCatalogNodes();
                 } else if (statusData.has_stored_credentials || statusData.sso_available) {
                     // Vault creds or SSO token available — attempt auto-connect.
                     // Backend _inject_sso_token handles SSO token passthrough transparently.
@@ -899,7 +926,7 @@ export const DataLoaderForm: React.FC<{
                     });
                     const connectData = await connectResp.json();
                     if (connectData.status === 'connected') {
-                        await fetchCatalogTree();
+                        await fetchCatalogNodes();
                         onConnected?.();
                     }
                 }
@@ -1083,6 +1110,8 @@ export const DataLoaderForm: React.FC<{
                 if (filteredChildren.length > 0) {
                     acc.push({ ...node, children: filteredChildren });
                 }
+            } else if (node.node_type === 'load_more') {
+                acc.push(node);
             } else {
                 if (node.name.toLowerCase().includes(lc)) {
                     acc.push(node);
@@ -1229,7 +1258,17 @@ export const DataLoaderForm: React.FC<{
                                 return (
                                     <SimpleTreeView
                                         expandedItems={expandedItems}
-                                        onExpandedItemsChange={(_event, itemIds) => setExpandedItems(itemIds)}
+                                        onExpandedItemsChange={(_event, itemIds) => {
+                                            const prevSet = new Set(expandedItems);
+                                            const newlyExpanded = itemIds.filter(id => !prevSet.has(id));
+                                            setExpandedItems(itemIds);
+                                            for (const itemId of newlyExpanded) {
+                                                const node = findNodeByPath(catalogTree, itemId);
+                                                if (node && node.node_type === 'namespace' && !node.children) {
+                                                    fetchCatalogNodes(node.path);
+                                                }
+                                            }
+                                        }}
                                         selectedItems={selectedPreviewTable}
                                         onSelectedItemsChange={(_event, itemId) => {
                                             if (itemId == null) return;
@@ -1241,7 +1280,15 @@ export const DataLoaderForm: React.FC<{
                                         itemChildrenIndentation={0}
                                         sx={{ px: 0.5 }}
                                     >
-                                        {renderCatalogTreeItems(visibleNodes, { loadedMap: effectiveLoadedTables, expandedSet: new Set(expandedItems) })}
+                                        {renderCatalogTreeItems(visibleNodes, {
+                                            loadedMap: effectiveLoadedTables,
+                                            expandedSet: new Set(expandedItems),
+                                            onLoadMore: (node) => {
+                                                const parentPath = (node.metadata?.parentPath || []) as string[];
+                                                const nextOffset = Number(node.metadata?.nextOffset || 0);
+                                                fetchCatalogNodes(parentPath, localTableFilter, { append: true, offset: nextOffset });
+                                            },
+                                        })}
                                     </SimpleTreeView>
                                 );
                             })()}
