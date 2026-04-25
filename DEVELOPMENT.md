@@ -493,6 +493,42 @@ Data Formulator uses a **namespaced identity** system with three tiers:
 3. **HTTPS**: Use a reverse proxy (nginx, Azure App Gateway) with TLS termination
 4. **`FLASK_SECRET_KEY`**: Set explicitly for production (auto-generated key changes on restart)
 
+### Server Migration Checklist
+
+When migrating Data Formulator to a new server (or rebuilding a Docker container), the following secrets and data files **must** be carried over. Losing any of them will break the corresponding functionality.
+
+| Item | Location | What breaks if lost |
+|------|----------|---------------------|
+| `FLASK_SECRET_KEY` | `.env` (env var) | All user sessions invalidated (SSO login, plugin tokens). Agent code signatures fail verification — saved charts cannot refresh until re-executed. |
+| `.vault_key` | `DATA_FORMULATOR_HOME/.vault_key` | `credentials.db` becomes undecryptable — all stored database passwords / service credentials are lost. |
+| `credentials.db` | `DATA_FORMULATOR_HOME/credentials.db` | Same as above — the encrypted credential store itself. |
+| `DF_CODE_SIGNING_SECRET` | `.env` (env var, optional) | If set, overrides Flask-derived signing key. Must match the old value or all code signatures break. |
+| `CREDENTIAL_VAULT_KEY` | `.env` (env var, optional) | If set, overrides `.vault_key` file. Must match or vault data is unreadable. |
+| `users/` & `workspaces/` | `DATA_FORMULATOR_HOME/` | User workspace data (parquet files, session metadata). |
+
+**Minimum migration steps:**
+
+```bash
+# On the OLD server — back up secrets + data
+cp .env                             /backup/.env
+cp $DATA_FORMULATOR_HOME/.vault_key /backup/.vault_key
+cp $DATA_FORMULATOR_HOME/credentials.db /backup/credentials.db
+# Copy workspace data if using local backend
+cp -r $DATA_FORMULATOR_HOME/users   /backup/users
+cp -r $DATA_FORMULATOR_HOME/workspaces /backup/workspaces
+
+# On the NEW server — restore before first start
+cp /backup/.env .env
+cp /backup/.vault_key $DATA_FORMULATOR_HOME/.vault_key
+cp /backup/credentials.db $DATA_FORMULATOR_HOME/credentials.db
+cp -r /backup/users $DATA_FORMULATOR_HOME/users
+cp -r /backup/workspaces $DATA_FORMULATOR_HOME/workspaces
+```
+
+> **Tip:** If you forgot to back up `FLASK_SECRET_KEY` and it was auto-generated, there is no way to recover it. Users will need to log in again, and any chart with a cached code signature will need to be re-executed by the Agent.
+
+> **中文版:** 详细的迁移操作指南见 [docs-cn/7-server-migration-guide.md](docs-cn/7-server-migration-guide.md)。
+
 ## Authentication Architecture
 
 Data Formulator supports a **hybrid identity system** with anonymous and authenticated modes.
