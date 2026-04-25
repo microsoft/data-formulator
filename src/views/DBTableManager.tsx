@@ -10,8 +10,6 @@ import {
   TextField,
   Divider,
   CircularProgress,
-  ToggleButton,
-  ToggleButtonGroup,
   MenuItem,
   Checkbox,
   FormControlLabel,
@@ -28,6 +26,7 @@ import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity, SourceTableRef } fro
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
 import { DataFrameTable } from './DataFrameTable';
+import { ConnectorTablePreview } from '../components/ConnectorTablePreview';
 import { DictTable } from '../components/ComponentType';
 import { useDispatch, useSelector } from 'react-redux';
 import { dfActions } from '../app/dfSlice';
@@ -46,13 +45,23 @@ import { RowLimitUnderlineSelect } from '../components/RowLimitUnderlineSelect';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
 
 import {
+    appendChildrenAtPath,
     CatalogTreeNode,
-    collectNamespaceIds,
     findNodeByPath,
-    StyledTreeItem,
-    countBadgeSx,
+    mergeChildrenAtPath,
     renderCatalogTreeItems,
 } from '../components/CatalogTree';
+
+const CATALOG_PAGE_SIZE = 200;
+
+function makeLoadMoreNode(parentPath: string[], nextOffset: number): CatalogTreeNode {
+    return {
+        name: 'Load more…',
+        node_type: 'load_more',
+        path: [...parentPath, `__load_more_${nextOffset}`],
+        metadata: { parentPath, nextOffset },
+    };
+}
 
 
 export const handleDBDownload = async (identityId: string) => {
@@ -112,6 +121,7 @@ export const DBManagerPane: React.FC<{
     const dispatch = useDispatch<AppDispatch>();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
 
     // Disabled data sources (missing deps) from app-config
     const disabledSources = serverConfig.DISABLED_SOURCES ?? {};
@@ -120,6 +130,10 @@ export const DBManagerPane: React.FC<{
     const [connectedIds, setConnectedIds] = useState<Set<string>>(
         new Set(serverConfig.CONNECTED_CONNECTORS ?? [])
     );
+
+    useEffect(() => {
+        setConnectedIds(new Set(serverConfig.CONNECTED_CONNECTORS ?? []));
+    }, [serverConfig.CONNECTED_CONNECTORS, identityKey]);
 
     // Split sources into connected vs available
     const allSources = serverConfig.CONNECTORS ?? [];
@@ -643,12 +657,6 @@ export const DataLoaderForm: React.FC<{
         () => [20_000, 50_000, 100_000, 200_000, 300_000, 500_000].filter(n => n <= frontendRowLimit),
         [frontendRowLimit],
     );
-    const [loadConfig, setLoadConfig] = useState<{
-        limit: number;
-        sortColumn: string;
-        sortOrder: 'asc' | 'desc';
-    }>({ limit: 50_000, sortColumn: '', sortOrder: 'desc' });
-
     // Track which tables have been loaded and how (persists across table selections)
     const [loadedTables, setLoadedTables] = useState<Record<string, string>>({});
 
@@ -695,45 +703,62 @@ export const DataLoaderForm: React.FC<{
     // Connection timeout in milliseconds (30 seconds)
     const CONNECTION_TIMEOUT_MS = 30_000;
 
-    // Helper: extract flat table metadata from the tree for preview/load logic
-    const extractTableMetadata = useCallback((tree: CatalogTreeNode[]) => {
-        const result: Record<string, any> = {};
-        const walk = (nodes: CatalogTreeNode[]) => {
-            for (const n of nodes) {
-                if (n.node_type === 'table') {
-                    // Use the path-based key so duplicate table names under different namespaces stay distinct
-                    const key = n.path.join('/');
-                    result[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path };
-                } else if (n.node_type === 'table_group') {
-                    const key = n.path.join('/');
-                    result[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path, _isGroup: true };
-                }
-                if (n.children) walk(n.children);
-            }
-        };
-        walk(tree);
-        return result;
-    }, []);
-
-    // Helper: fetch catalog tree and update state
-    const fetchCatalogTree = useCallback(async (filter?: string) => {
-        const treeResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
+    // Helper: fetch catalog nodes lazily and update state
+    const fetchCatalogNodes = useCallback(
+    async (path: string[] = [], filter?: string, options: { append?: boolean; offset?: number } = {}) => {
+        const offset = options.offset ?? 0;
+        const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CATALOG, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ connector_id: connectorIdRef.current, filter: filter?.trim() || null }),
+            body: JSON.stringify({
+                connector_id: connectorIdRef.current,
+                path,
+                filter: filter?.trim() || null,
+                limit: CATALOG_PAGE_SIZE,
+                offset,
+            }),
         });
-        const treeData = await treeResp.json();
-        if (treeData.tree) {
-            setCatalogTree(treeData.tree);
-            setExpandedItems(collectNamespaceIds(treeData.tree));
-            const flatMeta = extractTableMetadata(treeData.tree);
-            setTableMetadata(flatMeta);
-            return treeData;
-        } else if (treeData.status === 'error') {
-            throw new Error(treeData.message || 'Failed to load catalog tree');
+        const data = await resp.json();
+        if (data.nodes) {
+            const nodes: CatalogTreeNode[] = (data.nodes as CatalogTreeNode[]).map(n => ({
+                ...n,
+                children: n.node_type === 'namespace' ? undefined : n.children,
+            }));
+            const pageNodes = data.has_more && data.next_offset != null
+                ? [...nodes, makeLoadMoreNode(path, Number(data.next_offset))]
+                : nodes;
+            setCatalogTree(prev => {
+                if (path.length === 0) {
+                    return options.append ? [...prev.filter(n => n.node_type !== 'load_more'), ...pageNodes] : pageNodes;
+                }
+                return options.append
+                    ? appendChildrenAtPath(prev, path, pageNodes)
+                    : mergeChildrenAtPath(prev, path, pageNodes);
+            });
+            if (path.length === 0) {
+                setExpandedItems([]);
+            }
+            // Extract metadata from table nodes into flat map
+            const flatMeta: Record<string, any> = {};
+            for (const n of nodes) {
+                if (n.node_type === 'table') {
+                    const key = (path.length > 0 ? [...path, n.name] : n.path).join('/');
+                    flatMeta[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path };
+                } else if (n.node_type === 'table_group') {
+                    const key = (path.length > 0 ? [...path, n.name] : n.path).join('/');
+                    flatMeta[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path, _isGroup: true };
+                }
+            }
+            if (Object.keys(flatMeta).length > 0) {
+                setTableMetadata(prev => ({ ...prev, ...flatMeta }));
+            }
+            return data;
+        } else if (data.status === 'error') {
+            throw new Error(data.message || 'Failed to load catalog');
         }
-        return treeData;
-    }, [extractTableMetadata]);
+        return data;
+    },
+    []);
 
     // Helper: connect and list tables via data connector
     const connectAndListTables = useCallback(async (filter?: string) => {
@@ -758,10 +783,10 @@ export const DataLoaderForm: React.FC<{
             if (connectData.status !== 'connected') {
                 throw new Error(connectData.message || 'Connection failed');
             }
-            // Fetch catalog tree before promoting to "connected" state
+            // Fetch root catalog nodes before promoting to "connected" state
             const tableFilterValue = filter ?? (mergedParams as Record<string, any>).table_filter ?? '';
-            await fetchCatalogTree(tableFilterValue);
-            // Only promote to "connected" after tree is loaded
+            await fetchCatalogNodes([], tableFilterValue);
+            // Only promote to "connected" after root nodes are loaded
             onConnected?.();
         } catch (error: any) {
             clearTimeout(timeoutId);
@@ -773,7 +798,7 @@ export const DataLoaderForm: React.FC<{
         } finally {
             setIsConnecting(false);
         }
-    }, [mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, fetchCatalogTree, t]);
+    }, [mergedParams, persistCredentials, onFinish, onConnected, onBeforeConnect, fetchCatalogNodes, t]);
 
     // Delegated (popup-based) login flow for token-based connectors
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -858,8 +883,8 @@ export const DataLoaderForm: React.FC<{
                     if (connectData.status !== 'connected') {
                         throw new Error(connectData.message || 'Token connection failed');
                     }
-                    // Fetch catalog tree
-                    await fetchCatalogTree(null as any);
+                    // Fetch root catalog nodes
+                    await fetchCatalogNodes();
                     onConnected?.();
                 } catch (err: any) {
                     onFinish("error", err.message || 'Login failed');
@@ -895,7 +920,7 @@ export const DataLoaderForm: React.FC<{
                 });
                 const statusData = await statusResp.json();
                 if (statusData.connected) {
-                    await fetchCatalogTree();
+                    await fetchCatalogNodes();
                 } else if (statusData.has_stored_credentials || statusData.sso_available) {
                     // Vault creds or SSO token available — attempt auto-connect.
                     // Backend _inject_sso_token handles SSO token passthrough transparently.
@@ -906,7 +931,7 @@ export const DataLoaderForm: React.FC<{
                     });
                     const connectData = await connectResp.json();
                     if (connectData.status === 'connected') {
-                        await fetchCatalogTree();
+                        await fetchCatalogNodes();
                         onConnected?.();
                     }
                 }
@@ -927,11 +952,7 @@ export const DataLoaderForm: React.FC<{
     }, [tableMetadata]);
 
     // Reset load config when switching tables — always use a safe default
-    useEffect(() => {
-        if (selectedPreviewTable && tableMetadata[selectedPreviewTable]) {
-            setLoadConfig({ limit: 50_000, sortColumn: '', sortOrder: 'desc' });
-        }
-    }, [selectedPreviewTable]);
+    // (sort/limit config is now managed inside ConnectorTablePreview)
 
     const getSourceTableRef = useCallback((pathKey: string): SourceTableRef => {
         const meta = tableMetadata[pathKey];
@@ -1064,6 +1085,22 @@ export const DataLoaderForm: React.FC<{
 
     const isConnected = catalogTree.length > 0 || Object.keys(tableMetadata).length > 0;
 
+    const handleDisconnect = useCallback(async () => {
+        const cid = connectorIdRef.current;
+        if (cid) {
+            await fetchWithIdentity(CONNECTOR_ACTION_URLS.DISCONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: cid }),
+            }).catch(() => {});
+        }
+        setCatalogTree([]);
+        setTableMetadata({});
+        setSelectedPreviewTable(null);
+        setSelectedTreeNode(null);
+        setExpandedItems([]);
+    }, []);
+
     // Split catalog tree into dataset vs dashboard subsets for tabbed view
     const datasetNodes = useMemo(() => catalogTree.filter(n => n.node_type !== 'table_group'), [catalogTree]);
     const dashboardNodes = useMemo(() => catalogTree.filter(n => n.node_type === 'table_group'), [catalogTree]);
@@ -1080,6 +1117,8 @@ export const DataLoaderForm: React.FC<{
                 if (filteredChildren.length > 0) {
                     acc.push({ ...node, children: filteredChildren });
                 }
+            } else if (node.node_type === 'load_more') {
+                acc.push(node);
             } else {
                 if (node.name.toLowerCase().includes(lc)) {
                     acc.push(node);
@@ -1112,6 +1151,13 @@ export const DataLoaderForm: React.FC<{
                             </Typography>
                         ))}
                         <Box sx={{ flex: 1 }} />
+                        <Button
+                            variant="outlined" size="small"
+                            sx={{ textTransform: "none", fontSize: 11, height: 26, minWidth: 0 }}
+                            onClick={handleDisconnect}
+                        >
+                            {t('db.disconnect', { defaultValue: 'Disconnect' })}
+                        </Button>
                         {onDelete && connectorIdRef.current && (
                             <Button
                                 variant="outlined" size="small" color="error"
@@ -1219,7 +1265,17 @@ export const DataLoaderForm: React.FC<{
                                 return (
                                     <SimpleTreeView
                                         expandedItems={expandedItems}
-                                        onExpandedItemsChange={(_event, itemIds) => setExpandedItems(itemIds)}
+                                        onExpandedItemsChange={(_event, itemIds) => {
+                                            const prevSet = new Set(expandedItems);
+                                            const newlyExpanded = itemIds.filter(id => !prevSet.has(id));
+                                            setExpandedItems(itemIds);
+                                            for (const itemId of newlyExpanded) {
+                                                const node = findNodeByPath(catalogTree, itemId);
+                                                if (node && node.node_type === 'namespace' && !node.children) {
+                                                    fetchCatalogNodes(node.path);
+                                                }
+                                            }
+                                        }}
                                         selectedItems={selectedPreviewTable}
                                         onSelectedItemsChange={(_event, itemId) => {
                                             if (itemId == null) return;
@@ -1231,7 +1287,15 @@ export const DataLoaderForm: React.FC<{
                                         itemChildrenIndentation={0}
                                         sx={{ px: 0.5 }}
                                     >
-                                        {renderCatalogTreeItems(visibleNodes, { loadedMap: effectiveLoadedTables, expandedSet: new Set(expandedItems) })}
+                                        {renderCatalogTreeItems(visibleNodes, {
+                                            loadedMap: effectiveLoadedTables,
+                                            expandedSet: new Set(expandedItems),
+                                            onLoadMore: (node) => {
+                                                const parentPath = (node.metadata?.parentPath || []) as string[];
+                                                const nextOffset = Number(node.metadata?.nextOffset || 0);
+                                                fetchCatalogNodes(parentPath, localTableFilter, { append: true, offset: nextOffset });
+                                            },
+                                        })}
                                     </SimpleTreeView>
                                 );
                             })()}
@@ -1260,150 +1324,41 @@ export const DataLoaderForm: React.FC<{
                             })() : previewTable && selectedPreviewTable && tableMetadata[selectedPreviewTable] ? (() => {
                                 const metadata = tableMetadata[selectedPreviewTable];
                                 const displayName = metadata?._catalogName || selectedPreviewTable.split('/').pop() || selectedPreviewTable;
+                                const ref = getSourceTableRef(selectedPreviewTable);
                                 return (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-                                        {/* Table header + max rows selector */}
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexShrink: 0 }}>
-                                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                <Typography sx={{ fontSize: 14, fontWeight: 600 }} noWrap>
-                                                    {displayName}
-                                                </Typography>
-                                                {selectedTreeNode && selectedTreeNode.path.length > 1 && (
-                                                    <Typography sx={{ fontSize: 11, color: 'text.disabled' }} noWrap>
-                                                        {selectedTreeNode.path.slice(0, -1).join(' / ')}
-                                                    </Typography>
-                                                )}
-                                            </Box>
-                                            {!effectiveLoadedTables[selectedPreviewTable] && (
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-                                                    <RowLimitUnderlineSelect
-                                                        value={loadConfig.limit}
-                                                        presets={rowLimitPresets}
-                                                        onChange={(n) => setLoadConfig(prev => ({ ...prev, limit: n }))}
-                                                        fontSize={12}
-                                                    />
-                                                    <Typography sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap', lineHeight: 1 }}>
-                                                        {t('db.maxRows', { defaultValue: 'Max rows' })}
-                                                    </Typography>
-                                                </Box>
-                                            )}
-                                        </Box>
-                                        {/* Summary line */}
-                                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5, flexShrink: 0 }}>
-                                            {metadata?.row_count > 0 
-                                                ? t('db.rowsCount', { count: Number(metadata.row_count).toLocaleString() })
-                                                : t('db.sampleRowsCount', { count: previewTable.rows.length })
-                                            } × {previewTable.names.length} {t('db.columns')}
-                                            {metadata?.row_count > 0 && previewTable.rows.length < metadata.row_count && (
-                                                <span style={{ opacity: 0.7, marginLeft: 4 }}>
-                                                    ({t('db.showingPreview', { count: previewTable.rows.length, defaultValue: `showing ${previewTable.rows.length} preview rows` })})
-                                                </span>
-                                            )}
-                                        </Typography>
-                                        {/* Preview table — scrolls when tall, shrink-wraps when short */}
-                                        <Box sx={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto' }}>
-                                            <DataFrameTable
-                                                columns={previewTable.names}
-                                                rows={previewTable.rows}
-                                                totalRows={metadata?.row_count || undefined}
-                                                maxRows={10}
-                                                showIndex
-                                            />
-                                        </Box>
-
-                                        {/* Load & filter panel — pinned below table */}
-                                        <Box sx={{
-                                            mt: 1, pt: 1, flexShrink: 0,
-                                            borderTop: '1px solid', borderColor: 'divider',
-                                            display: 'flex', flexDirection: 'column', gap: 1,
-                                        }}>
-                                            {effectiveLoadedTables[selectedPreviewTable] ? (
-                                                /* Already loaded */
-                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                    <Button
-                                                        variant="outlined" size="small" disabled
-                                                        startIcon={<CheckIcon sx={{ fontSize: 14 }} />}
-                                                        sx={{ textTransform: 'none', fontSize: 12, px: 2, height: 30,
-                                                            color: 'success.main', borderColor: 'success.main',
-                                                            '&.Mui-disabled': { color: 'success.main', borderColor: 'success.main', opacity: 0.8 },
-                                                        }}
-                                                    >
-                                                        {t('db.loaded')}
-                                                    </Button>
-                                                    <Button
-                                                        variant="text" size="small"
-                                                        onClick={() => {
-                                                            const tableName = selectedPreviewTable;
-                                                            const wt = workspaceTables.find(t => t.source?.databaseTable === tableName && t.source?.type === 'database');
-                                                            if (wt) dispatch(dfActions.deleteTable(wt.id));
-                                                            setLoadedTables(prev => { const next = { ...prev }; delete next[tableName]; return next; });
-                                                        }}
-                                                        sx={{ textTransform: 'none', fontSize: 11, px: 1, minWidth: 0, height: 28, color: 'text.secondary',
-                                                            '&:hover': { color: 'error.main', backgroundColor: 'rgba(211,47,47,0.04)' },
-                                                        }}
-                                                    >
-                                                        {t('db.unload')}
-                                                    </Button>
-                                                </Box>
-                                            ) : (
-                                                /* Not yet loaded — show sort + load buttons */
-                                                <>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                                                        {metadata?.columns?.length > 0 && (<>
-                                                            <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>Sort</Typography>
-                                                            <TextField
-                                                                select size="small"
-                                                                value={loadConfig.sortColumn}
-                                                                onChange={(e) => setLoadConfig(prev => ({ ...prev, sortColumn: e.target.value }))}
-                                                                slotProps={{ select: { displayEmpty: true } }}
-                                                                sx={{ width: 110, '& .MuiInputBase-root': { fontSize: 11, height: 28 }, '& .MuiSelect-select': { py: 0.25, px: 0.75 } }}
-                                                            >
-                                                                <MenuItem value="" sx={{ fontSize: 11, color: 'text.disabled' }}><em>none</em></MenuItem>
-                                                                {(metadata.columns || []).map((col: any) => (
-                                                                    <MenuItem key={col.name} value={col.name} sx={{ fontSize: 11 }}>{col.name}</MenuItem>
-                                                                ))}
-                                                            </TextField>
-                                                            {loadConfig.sortColumn && (
-                                                                <ToggleButtonGroup
-                                                                    value={loadConfig.sortOrder} exclusive
-                                                                    onChange={(_, v) => { if (v) setLoadConfig(prev => ({ ...prev, sortOrder: v })); }}
-                                                                    size="small" sx={{ height: 28 }}
-                                                                >
-                                                                    <ToggleButton value="asc" sx={{ px: 0.75, py: 0, fontSize: 10, textTransform: 'none' }}>ASC</ToggleButton>
-                                                                    <ToggleButton value="desc" sx={{ px: 0.75, py: 0, fontSize: 10, textTransform: 'none' }}>DESC</ToggleButton>
-                                                                </ToggleButtonGroup>
-                                                            )}
-                                                        </>)}
-                                                        <Box sx={{ flex: 1 }} />
-                                                        <Button
-                                                            variant="outlined" size="small"
-                                                            sx={{ textTransform: 'none', fontSize: 12, px: 2, height: 30, flexShrink: 0 }}
-                                                            onClick={() => {
-                                                                const importOptions: any = { size: loadConfig.limit };
-                                                                if (loadConfig.sortColumn) {
-                                                                    importOptions.sortColumns = [loadConfig.sortColumn];
-                                                                    importOptions.sortOrder = loadConfig.sortOrder;
-                                                                }
-                                                                doLoadTable(importOptions, 'subset');
-                                                            }}
-                                                        >
-                                                            {t('db.loadWithFilters', { defaultValue: 'Load with Filters' })}
-                                                        </Button>
-                                                        <Button
-                                                            variant="contained" size="small"
-                                                            sx={{ textTransform: 'none', fontSize: 12, px: 3, height: 30, flexShrink: 0 }}
-                                                            onClick={() => {
-                                                                doLoadTable({ size: loadConfig.limit }, 'loaded');
-                                                            }}
-                                                        >
-                                                            {t('db.loadTableBtn')}
-                                                        </Button>
-                                                    </Box>
-
-                                                </>
-                                            )}
-                                        </Box>
-                                    </Box>
+                                    <ConnectorTablePreview
+                                        connectorId={connectorIdRef.current!}
+                                        sourceTable={ref}
+                                        displayName={displayName}
+                                        pathBreadcrumb={selectedTreeNode && selectedTreeNode.path.length > 1 ? selectedTreeNode.path.slice(0, -1).join(' / ') : undefined}
+                                        columns={(metadata.columns || []).map((c: any) => ({ name: c.name, type: c.type || 'unknown', source_type: c.source_type }))}
+                                        sampleRows={previewTable.rows}
+                                        rowCount={metadata?.row_count ?? null}
+                                        loading={false}
+                                        rowLimitPresets={rowLimitPresets}
+                                        defaultRowLimit={50_000}
+                                        alreadyLoaded={!!effectiveLoadedTables[selectedPreviewTable]}
+                                        enableFilters
+                                        enableSort
+                                        onLoad={(opts) => doLoadTable(opts, opts.source_filters ? 'subset' : 'loaded')}
+                                        onUnload={() => {
+                                            const tableName = selectedPreviewTable;
+                                            const wt = workspaceTables.find(t => t.source?.databaseTable === tableName && t.source?.type === 'database');
+                                            if (wt) dispatch(dfActions.deleteTable(wt.id));
+                                            setLoadedTables(prev => { const next = { ...prev }; delete next[tableName]; return next; });
+                                        }}
+                                        onRefreshPreview={(rows, cols, rc) => {
+                                            setTableMetadata(prev => ({
+                                                ...prev,
+                                                [selectedPreviewTable]: {
+                                                    ...prev[selectedPreviewTable],
+                                                    sample_rows: rows,
+                                                    columns: cols.length > 0 ? cols : prev[selectedPreviewTable]?.columns,
+                                                    row_count: rc ?? prev[selectedPreviewTable]?.row_count,
+                                                },
+                                            }));
+                                        }}
+                                    />
                                 );
                             })() : (
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'text.disabled' }}>

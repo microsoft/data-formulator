@@ -20,6 +20,7 @@ Usage::
 """
 
 import dataclasses
+import inspect
 import json as _json
 import logging
 from pathlib import Path
@@ -30,6 +31,7 @@ from flask import Blueprint, Flask, jsonify, request
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
+    SENSITIVE_PARAMS,
 )
 from data_formulator.security.sanitize import sanitize_error_message
 
@@ -37,6 +39,9 @@ logger = logging.getLogger(__name__)
 
 # Registry of enabled DataConnector instances (populated at startup).
 DATA_CONNECTORS: dict[str, "DataConnector"] = {}
+
+_MAX_CATALOG_PAGE_SIZE = 1000
+_USER_CONNECTOR_PREFIX = "user::"
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +102,126 @@ def _node_to_dict(node: CatalogNode) -> dict[str, Any]:
 
 def _hierarchy_dicts(levels: list[dict[str, str]]) -> list[dict[str, str]]:
     return [{"key": l["key"], "label": l["label"]} for l in levels]
+
+
+def _catalog_pagination_args(data: dict[str, Any]) -> tuple[int | None, int]:
+    """Parse optional catalog pagination args from a request body."""
+    raw_limit = data.get("limit")
+    if raw_limit is None:
+        return None, 0
+    try:
+        limit = int(raw_limit)
+        offset = int(data.get("offset") or 0)
+    except (TypeError, ValueError):
+        return None, 0
+    if limit <= 0:
+        return None, 0
+    return min(limit, _MAX_CATALOG_PAGE_SIZE), max(0, offset)
+
+
+def _user_connector_key(identity: str, source_id: str) -> str:
+    """Return the internal registry key for a user-owned connector."""
+    return f"{_USER_CONNECTOR_PREFIX}{identity}::{source_id}"
+
+
+def _is_user_connector_key(key: str) -> bool:
+    return key.startswith(_USER_CONNECTOR_PREFIX)
+
+
+def _public_connector_id(registry_key: str, connector: "DataConnector") -> str:
+    """Return the public connector ID exposed to clients."""
+    return connector._source_id
+
+
+def _param_defs_by_name(loader_class: type[ExternalDataLoader]) -> dict[str, dict[str, Any]]:
+    return {p.get("name", ""): p for p in loader_class.list_params()}
+
+
+def _is_sensitive_or_auth_param(
+    loader_class: type[ExternalDataLoader],
+    name: str,
+    *,
+    include_auth_tier: bool = False,
+) -> bool:
+    """Return whether a loader parameter should not be exposed as pinned config."""
+    param = _param_defs_by_name(loader_class).get(name, {})
+    lower = name.lower()
+    if param.get("sensitive") or param.get("type") == "password":
+        return True
+    if lower in SENSITIVE_PARAMS:
+        return True
+    if include_auth_tier and param.get("tier") == "auth":
+        return True
+    return False
+
+
+def _connector_config_params(
+    loader_class: type[ExternalDataLoader],
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep only non-sensitive, non-auth params in persisted connector config."""
+    return {
+        k: v for k, v in (params or {}).items()
+        if not _is_sensitive_or_auth_param(loader_class, k, include_auth_tier=True)
+    }
+
+
+def _loader_auth_mode(loader_class: type[ExternalDataLoader]) -> str:
+    """Return the effective auth mode, preferring modern auth_config()."""
+    config = loader_class.auth_config() if hasattr(loader_class, "auth_config") else None
+    return config.get("mode") if config else loader_class.auth_mode()
+
+
+def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConnector", bool]]:
+    """Return registry entries visible to the current identity.
+
+    Admin connectors are global. User connectors are keyed by identity in the
+    process registry. Raw non-admin entries are treated as legacy/test globals;
+    newly created user connectors should use ``_user_connector_key``.
+    """
+    if identity:
+        load_connectors(identity)
+
+    result = []
+    user_prefix = f"{_USER_CONNECTOR_PREFIX}{identity}::" if identity else None
+    for key, connector in DATA_CONNECTORS.items():
+        if key in _ADMIN_CONNECTOR_IDS:
+            result.append((key, connector, True))
+        elif user_prefix and key.startswith(user_prefix):
+            result.append((key, connector, False))
+        elif not _is_user_connector_key(key):
+            result.append((key, connector, key in _ADMIN_CONNECTOR_IDS))
+    return result
+
+
+def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnector"]:
+    """Look up a connector visible to the current request identity."""
+    from data_formulator.errors import AppError, ErrorCode
+
+    connector_id = data.get("connector_id")
+    if not connector_id:
+        raise AppError(ErrorCode.INVALID_REQUEST, "connector_id is required", status_code=400)
+
+    try:
+        identity = DataConnector._get_identity()
+    except Exception as exc:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Identity is required", status_code=400) from exc
+
+    # Admin/global connector IDs are public registry keys.
+    if connector_id in _ADMIN_CONNECTOR_IDS and connector_id in DATA_CONNECTORS:
+        return connector_id, DATA_CONNECTORS[connector_id]
+
+    user_key = _user_connector_key(identity, connector_id)
+    if user_key in DATA_CONNECTORS:
+        return user_key, DATA_CONNECTORS[user_key]
+
+    # Backward-compatible fallback for tests and pre-existing process-local
+    # globals. API-created user connectors no longer use this path.
+    legacy = DATA_CONNECTORS.get(connector_id)
+    if legacy is not None and not _is_user_connector_key(connector_id):
+        return connector_id, legacy
+
+    raise AppError(ErrorCode.CONNECTOR_ERROR, "Connector not found", status_code=404)
 
 
 # ---------------------------------------------------------------------------
@@ -180,8 +305,10 @@ class DataConnector:
         pinned_params: dict[str, Any] = {}
 
         for param in all_params:
-            if param["name"] in self._default_params:
-                pinned_params[param["name"]] = self._default_params[param["name"]]
+            name = param["name"]
+            if name in self._default_params:
+                if not _is_sensitive_or_auth_param(self._loader_class, name, include_auth_tier=True):
+                    pinned_params[name] = self._default_params[name]
             else:
                 form_fields.append(param)
 
@@ -363,6 +490,8 @@ class DataConnector:
         try:
             from data_formulator.auth.token_store import TokenStore
             token_store = TokenStore()
+            if token_store.is_sso_reconnect_blocked(self._source_id):
+                return
             access = token_store.get_access(self._source_id)
             if access:
                 if isinstance(access, dict):
@@ -377,6 +506,9 @@ class DataConnector:
         # Legacy fallback: inject raw SSO token for exchange
         try:
             from data_formulator.auth.identity import get_sso_token
+            from data_formulator.auth.token_store import TokenStore
+            if TokenStore().is_sso_reconnect_blocked(self._source_id):
+                return
             sso_token = get_sso_token()
             if sso_token:
                 params["sso_access_token"] = sso_token
@@ -438,14 +570,7 @@ def _resolve_connector(data: dict[str, Any]) -> DataConnector:
 
     Returns the connector or raises ``AppError``.
     """
-    from data_formulator.errors import AppError, ErrorCode
-
-    connector_id = data.get("connector_id")
-    if not connector_id:
-        raise AppError(ErrorCode.INVALID_REQUEST, "connector_id is required", status_code=400)
-    connector = DATA_CONNECTORS.get(connector_id)
-    if connector is None:
-        raise AppError(ErrorCode.CONNECTOR_ERROR, "Connector not found", status_code=404)
+    _, connector = _resolve_connector_with_key(data)
     return connector
 
 
@@ -633,34 +758,40 @@ def list_connectors():
         identity = None
 
     sso_token = None
+    token_store = None
     try:
         sso_token = get_sso_token() if identity else None
+        if sso_token is not None:
+            from data_formulator.auth.token_store import TokenStore
+            token_store = TokenStore()
     except Exception as e:
         logger.debug("SSO token unavailable for connector list", exc_info=e)
 
-    # Ensure user connectors are loaded
-    if identity:
-        load_connectors(identity)
-
     result = []
-    for sid, connector in DATA_CONNECTORS.items():
+    for registry_key, connector, is_admin in _visible_connector_items(identity):
         connected = False
         if identity:
             connected = (
                 connector._get_loader(identity) is not None
                 or connector.has_stored_credentials(identity)
             )
-        # SSO auto-connect: token-mode loader + user has SSO token + URL is pinned
+        auth_mode = _loader_auth_mode(connector._loader_class)
+        sso_blocked = (
+            token_store.is_sso_reconnect_blocked(connector._source_id)
+            if token_store else False
+        )
+        # SSO auto-connect: auth-capable loader + user has SSO token + URL is pinned
         sso_auto = (
             not connected
             and sso_token is not None
-            and connector._loader_class.auth_mode() == "token"
+            and auth_mode in ("token", "sso_exchange", "delegated")
+            and not sso_blocked
             and bool(connector._default_params.get("url"))
         )
-        is_admin = sid in _ADMIN_CONNECTOR_IDS
         cfg = connector.get_frontend_config()
+        public_id = _public_connector_id(registry_key, connector)
         result.append({
-            "id": sid,
+            "id": public_id,
             "source": "admin" if is_admin else "user",
             "deletable": not is_admin,
             "source_type": connector._loader_class.__name__,
@@ -696,7 +827,6 @@ def create_connector():
     Persists to ``DATA_FORMULATOR_HOME/users/<identity>/connectors.yaml``.
     """
     from data_formulator.data_loader import DATA_LOADERS
-    from data_formulator.auth.identity import get_identity_id
 
     data = request.get_json() or {}
     loader_type = data.get("loader_type")
@@ -709,7 +839,14 @@ def create_connector():
 
     display_name = data.get("display_name", loader_type.replace("_", " ").title())
     icon = data.get("icon", loader_type)
-    default_params = data.get("params", {})
+    raw_params = data.get("params", {})
+    default_params = _connector_config_params(loader_class, raw_params)
+
+    try:
+        identity = DataConnector._get_identity()
+    except Exception as e:
+        logger.warning("Cannot create connector without identity: %s", type(e).__name__)
+        return jsonify({"status": "error", "message": "Identity is required"})
 
     # Generate instance ID: loader_type:slug
     import re
@@ -717,11 +854,18 @@ def create_connector():
     slug = re.sub(r'-+', '-', slug)
     instance_id = f"{loader_type}:{slug}" if slug else loader_type
 
-    # Avoid collision with existing instances
-    if instance_id in DATA_CONNECTORS:
+    # Avoid collision with existing admin connectors and this identity's connectors.
+    def _connector_exists(candidate: str) -> bool:
+        return (
+            candidate in _ADMIN_CONNECTOR_IDS
+            or _user_connector_key(identity, candidate) in DATA_CONNECTORS
+            or (candidate in DATA_CONNECTORS and not _is_user_connector_key(candidate))
+        )
+
+    if _connector_exists(instance_id):
         for i in range(2, 100):
             candidate = f"{instance_id}-{i}"
-            if candidate not in DATA_CONNECTORS:
+            if not _connector_exists(candidate):
                 instance_id = candidate
                 display_name = f"{display_name} ({i})"
                 break
@@ -735,11 +879,11 @@ def create_connector():
         default_params=default_params,
         icon=icon,
     )
-    DATA_CONNECTORS[instance_id] = connector
+    registry_key = _user_connector_key(identity, instance_id)
+    DATA_CONNECTORS[registry_key] = connector
 
     # Persist to user connectors.yaml
     try:
-        identity = get_identity_id()
         _persist_user_connector(identity, SourceSpec(
             source_id=instance_id,
             loader_type=loader_type,
@@ -763,14 +907,14 @@ def create_connector():
         "deletable": True,
     }
 
-    if default_params:
+    connect_params = data.get("connect_params", raw_params)
+    if connect_params:
         try:
-            user_params = data.get("connect_params", default_params)
             persist = data.get("persist", True)
-            loader = connector._connect(user_params)
+            loader = connector._connect(connect_params)
             if loader.test_connection():
                 if persist:
-                    connector._persist_credentials(user_params)
+                    connector._persist_credentials(connect_params)
                 result_data["connected"] = True
             else:
                 identity_c = connector._get_identity()
@@ -816,13 +960,13 @@ def delete_connector(connector_id: str):
 
     Admin connectors cannot be deleted (returns 403).
     """
-    from data_formulator.auth.identity import get_identity_id
 
     if connector_id in _ADMIN_CONNECTOR_IDS:
         return jsonify({"status": "error", "message": "Admin connectors cannot be deleted"})
 
-    connector = DATA_CONNECTORS.get(connector_id)
-    if not connector:
+    try:
+        registry_key, connector = _resolve_connector_with_key({"connector_id": connector_id})
+    except Exception:
         return jsonify({"status": "error", "message": f"Unknown connector: {connector_id}"})
 
     # Full cleanup: in-memory loader + vault credentials
@@ -831,14 +975,13 @@ def delete_connector(connector_id: str):
     except Exception as e:
         logger.warning("Failed to delete credentials for connector '%s'", connector_id, exc_info=e)
 
-    DATA_CONNECTORS.pop(connector_id, None)
-
     # Remove from user connectors.yaml
     try:
-        identity = get_identity_id()
+        identity = DataConnector._get_identity()
         _remove_user_connector(identity, connector_id)
     except Exception as e:
         logger.warning("Failed to remove connector '%s' from user config: %s", connector_id, e)
+    DATA_CONNECTORS.pop(registry_key, None)
 
     logger.info("Deleted user connector '%s'", connector_id)
     return jsonify({"status": "deleted", "id": connector_id})
@@ -918,6 +1061,31 @@ def connector_connect():
         classify_and_raise_connector_error(e)
 
 
+@connectors_bp.route("/api/connectors/disconnect", methods=["POST"])
+def connector_disconnect():
+    """Disconnect a connector for the current identity.
+
+    This clears the in-memory loader and stored credentials for this connector,
+    but keeps the connector definition itself so it can be reconnected later.
+    """
+    data = request.get_json() or {}
+    source = _resolve_connector(data)
+
+    try:
+        identity = source._get_identity()
+        source._loaders.pop(identity, None)
+        source._vault_delete(identity)
+        try:
+            from data_formulator.auth.token_store import TokenStore
+            TokenStore().clear_service_token(source._source_id)
+        except Exception as exc:
+            logger.debug("TokenStore disconnect cleanup failed for %s: %s",
+                         source._source_id, type(exc).__name__)
+        return jsonify({"status": "disconnected"})
+    except Exception as e:
+        classify_and_raise_connector_error(e)
+
+
 @connectors_bp.route("/api/connectors/get-status", methods=["POST"])
 def connector_get_status():
     """Check connection status (no side effects — no auto-reconnect)."""
@@ -931,8 +1099,11 @@ def connector_get_status():
         sso_available = False
         try:
             from data_formulator.auth.identity import get_sso_token
+            from data_formulator.auth.token_store import TokenStore
+            auth_mode = _loader_auth_mode(source._loader_class)
             sso_available = (
-                source._loader_class.auth_mode() == "token"
+                auth_mode in ("token", "sso_exchange", "delegated")
+                and not TokenStore().is_sso_reconnect_blocked(source._source_id)
                 and get_sso_token() is not None
             )
         except Exception as e:
@@ -975,13 +1146,30 @@ def connector_get_catalog():
         loader = source._require_loader()
         path = data.get("path", [])
         name_filter = data.get("filter")
+        limit, offset = _catalog_pagination_args(data)
 
-        nodes = loader.ls(path=path, filter=name_filter)
+        if limit is None:
+            nodes = loader.ls(path=path, filter=name_filter)
+            has_more = False
+            next_offset = None
+        else:
+            page_size = limit + 1
+            if "limit" in inspect.signature(loader.ls).parameters:
+                raw_nodes = loader.ls(path=path, filter=name_filter, limit=page_size, offset=offset)
+                nodes = raw_nodes[:limit]
+                has_more = len(raw_nodes) > limit
+            else:
+                raw_nodes = loader.ls(path=path, filter=name_filter)
+                nodes = raw_nodes[offset:offset + limit]
+                has_more = len(raw_nodes) > offset + limit
+            next_offset = offset + limit if has_more else None
         result: dict[str, Any] = {
             "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
             "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
             "path": path,
             "nodes": [_node_to_dict(n) for n in nodes],
+            "has_more": has_more,
+            "next_offset": next_offset,
         }
         if path:
             try:
@@ -1473,8 +1661,11 @@ def load_connectors(identity: str | None = None) -> None:
 
     user_specs = _load_user_specs(identity)
     for spec in user_specs:
-        if spec.source_id in DATA_CONNECTORS:
+        if spec.source_id in _ADMIN_CONNECTOR_IDS:
             continue  # admin connector takes precedence
+        registry_key = _user_connector_key(identity, spec.source_id)
+        if registry_key in DATA_CONNECTORS:
+            continue
         loader_class = DATA_LOADERS.get(spec.loader_type)
         if not loader_class:
             continue
@@ -1485,7 +1676,7 @@ def load_connectors(identity: str | None = None) -> None:
             default_params=spec.default_params,
             icon=spec.icon or spec.loader_type,
         )
-        DATA_CONNECTORS[spec.source_id] = source
+        DATA_CONNECTORS[registry_key] = source
         logger.info("Loaded user connector '%s' (type=%s)", spec.source_id, spec.loader_type)
 
 

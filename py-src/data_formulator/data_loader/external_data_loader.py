@@ -19,9 +19,25 @@ SENSITIVE_PARAMS = {'password', 'api_key', 'secret', 'token', 'access_token', 'r
 # Valid operators for filter conditions (prevents SQL injection via operator field)
 _VALID_OPERATORS = frozenset({
     '=', '!=', '<>', '>', '<', '>=', '<=',
-    'LIKE', 'NOT LIKE', 'IN', 'NOT IN',
+    'LIKE', 'NOT LIKE', 'ILIKE', 'IN', 'NOT IN',
     'BETWEEN', 'IS NULL', 'IS NOT NULL',
 })
+
+_SOURCE_FILTER_OPERATOR_MAP = {
+    "EQ": "=",
+    "NEQ": "!=",
+    "GT": ">",
+    "GTE": ">=",
+    "LT": "<",
+    "LTE": "<=",
+    "LIKE": "LIKE",
+    "ILIKE": "ILIKE",
+    "IN": "IN",
+    "NOT_IN": "NOT IN",
+    "IS_NULL": "IS NULL",
+    "IS_NOT_NULL": "IS NOT NULL",
+    "BETWEEN": "BETWEEN",
+}
 
 # Identifier-name validation: reject characters that could indicate SQL injection
 # even after quote-doubling (semicolons, comment markers, null bytes).
@@ -129,6 +145,10 @@ def build_where_clause_inline(
         s = str(v).replace('\x00', '').replace("'", "''")
         return f"'{s}'"
 
+    def _contains_lit(v: Any) -> str:
+        s = str(v).replace('\x00', '').replace("'", "''")
+        return f"'%{s}%'"
+
     parts: list[str] = []
     for cond in conditions:
         col = cond.get("column", "")
@@ -151,6 +171,73 @@ def build_where_clause_inline(
         elif op == "BETWEEN":
             if isinstance(val, (list, tuple)) and len(val) == 2:
                 parts.append(f"{qcol} BETWEEN {_lit(val[0])} AND {_lit(val[1])}")
+        else:
+            parts.append(f"{qcol} {op} {_lit(val)}")
+
+    if not parts:
+        return ""
+    return "WHERE " + " AND ".join(parts)
+
+
+def build_source_filter_where_clause_inline(
+    source_filters: list[dict[str, Any]] | None,
+    quote_char: str = '`',
+    dialect: str = "ansi",
+) -> str:
+    """Build a SQL WHERE clause from frontend ``source_filters``.
+
+    ``source_filters`` use a source-agnostic operator vocabulary (``EQ``,
+    ``NEQ``, ``GTE``, ``ILIKE``, ...). SQL loaders should compile that contract
+    to their own dialect here instead of making the frontend emit dialect SQL.
+    """
+    if not source_filters:
+        return ""
+
+    def _lit(v: Any) -> str:
+        if v is None:
+            return "NULL"
+        if isinstance(v, bool):
+            return "TRUE" if v else "FALSE"
+        if isinstance(v, (int, float)):
+            return str(v)
+        s = str(v).replace('\x00', '').replace("'", "''")
+        return f"'{s}'"
+
+    def _contains_lit(v: Any) -> str:
+        s = str(v).replace('\x00', '').replace("'", "''")
+        return f"'%{s}%'"
+
+    parts: list[str] = []
+    for sf in source_filters:
+        if not isinstance(sf, dict):
+            continue
+        col = sf.get("column", "")
+        source_op = (sf.get("operator") or "").upper().strip()
+        op = _SOURCE_FILTER_OPERATOR_MAP.get(source_op)
+        val = sf.get("value")
+
+        if not col or not op:
+            continue
+
+        try:
+            qcol = _esc_id(col, quote_char)
+        except ValueError:
+            continue
+
+        if op in ("IS NULL", "IS NOT NULL"):
+            parts.append(f"{qcol} {op}")
+        elif op in ("IN", "NOT IN"):
+            vals = val if isinstance(val, (list, tuple)) else [val]
+            if not vals:
+                continue
+            parts.append(f"{qcol} {op} ({', '.join(_lit(v) for v in vals)})")
+        elif op == "BETWEEN":
+            if isinstance(val, (list, tuple)) and len(val) == 2:
+                parts.append(f"{qcol} BETWEEN {_lit(val[0])} AND {_lit(val[1])}")
+        elif op == "ILIKE" and dialect.lower() == "mysql":
+            parts.append(f"LOWER({qcol}) LIKE LOWER({_contains_lit(val)})")
+        elif op == "ILIKE":
+            parts.append(f"{qcol} ILIKE {_contains_lit(val)}")
         else:
             parts.append(f"{qcol} {op} {_lit(val)}")
 

@@ -17,6 +17,7 @@ import pytest
 from data_formulator.auth.gateways.oidc_gateway import (
     auth_tokens_bp,
     oidc_bp,
+    oidc_callback_bp,
 )
 
 pytestmark = [pytest.mark.backend, pytest.mark.auth]
@@ -26,21 +27,36 @@ pytestmark = [pytest.mark.backend, pytest.mark.auth]
 # Fixtures
 # ------------------------------------------------------------------
 
+_FAKE_OIDC_CONFIG = {
+    "authorize_url": "https://idp.example.com/authorize",
+    "token_url": "https://idp.example.com/token",
+    "userinfo_url": "https://idp.example.com/userinfo",
+    "jwks_url": "",
+    "client_id": "df-test-client",
+    "client_secret": "test-secret",
+}
+
+
 @pytest.fixture
 def app(monkeypatch):
-    monkeypatch.setenv("AUTH_MODE", "backend")
-    monkeypatch.setenv("OIDC_CLIENT_ID", "df-test-client")
     monkeypatch.setenv("OIDC_CLIENT_SECRET", "test-secret")
-    monkeypatch.setenv("OIDC_AUTHORIZE_URL", "https://idp.example.com/authorize")
-    monkeypatch.setenv("OIDC_TOKEN_URL", "https://idp.example.com/token")
-    monkeypatch.setenv("OIDC_USERINFO_URL", "https://idp.example.com/userinfo")
 
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.secret_key = "test-secret-key"
     _app.register_blueprint(oidc_bp)
+    _app.register_blueprint(oidc_callback_bp)
     _app.register_blueprint(auth_tokens_bp)
     return _app
+
+
+@pytest.fixture(autouse=True)
+def _mock_oidc_config():
+    with patch(
+        "data_formulator.auth.gateways.oidc_gateway._get_oidc_config",
+        return_value=dict(_FAKE_OIDC_CONFIG),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -70,23 +86,32 @@ class TestOIDCLogin:
             assert "_oauth_state" in sess
             assert len(sess["_oauth_state"]) > 10
 
-    def test_login_disabled_in_frontend_mode(self, app, monkeypatch):
-        monkeypatch.setenv("AUTH_MODE", "frontend")
+    def test_login_disabled_without_secret(self, app, monkeypatch):
+        monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
         c = app.test_client()
         resp = c.get("/api/auth/oidc/login")
         assert resp.status_code == 400
         assert "not enabled" in resp.get_json()["error"]
 
-    def test_login_fails_without_authorize_url(self, app, monkeypatch):
-        monkeypatch.delenv("OIDC_AUTHORIZE_URL", raising=False)
-        c = app.test_client()
-        resp = c.get("/api/auth/oidc/login")
+    def test_login_fails_without_authorize_url(self, app):
+        no_authz = {**_FAKE_OIDC_CONFIG, "authorize_url": ""}
+        with patch(
+            "data_formulator.auth.gateways.oidc_gateway._get_oidc_config",
+            return_value=no_authz,
+        ):
+            c = app.test_client()
+            resp = c.get("/api/auth/oidc/login")
         assert resp.status_code == 500
-        assert "OIDC_AUTHORIZE_URL" in resp.get_json()["error"]
+        assert "not available" in resp.get_json()["error"]
+
+    def test_login_redirect_uri_uses_auth_callback(self, client):
+        resp = client.get("/api/auth/oidc/login")
+        location = resp.headers["Location"]
+        assert "%2Fauth%2Fcallback" in location or "/auth/callback" in location
 
 
 # ==================================================================
-# oidc_bp: /api/auth/oidc/callback
+# oidc_callback_bp: /auth/callback
 # ==================================================================
 
 class TestOIDCCallback:
@@ -94,14 +119,16 @@ class TestOIDCCallback:
     def test_callback_rejects_missing_code(self, client):
         with client.session_transaction() as sess:
             sess["_oauth_state"] = "test-state"
-        resp = client.get("/api/auth/oidc/callback?state=test-state")
-        assert resp.status_code == 400
+        resp = client.get("/auth/callback?state=test-state")
+        assert resp.status_code == 302
+        assert "auth_error=invalid_state" in resp.headers["Location"]
 
     def test_callback_rejects_invalid_state(self, client):
         with client.session_transaction() as sess:
             sess["_oauth_state"] = "correct-state"
-        resp = client.get("/api/auth/oidc/callback?code=auth-code&state=wrong-state")
-        assert resp.status_code == 400
+        resp = client.get("/auth/callback?code=auth-code&state=wrong-state")
+        assert resp.status_code == 302
+        assert "auth_error=invalid_state" in resp.headers["Location"]
 
     def test_callback_success_stores_tokens_and_redirects(self, client):
         with client.session_transaction() as sess:
@@ -126,7 +153,7 @@ class TestOIDCCallback:
                     return_value=mock_token_resp), \
              patch("data_formulator.auth.gateways.oidc_gateway.http.get",
                    return_value=mock_userinfo_resp):
-            resp = client.get("/api/auth/oidc/callback?code=auth-code&state=valid-state")
+            resp = client.get("/auth/callback?code=auth-code&state=valid-state")
 
         assert resp.status_code == 302
         assert resp.headers["Location"].endswith("/")
@@ -143,17 +170,18 @@ class TestOIDCCallback:
         mock_resp.ok = False
         mock_resp.status_code = 400
         mock_resp.text = "invalid_grant"
+        mock_resp.json.side_effect = Exception("not json")
 
         with patch("data_formulator.auth.gateways.oidc_gateway.http.post",
                     return_value=mock_resp):
-            resp = client.get("/api/auth/oidc/callback?code=bad-code&state=valid-state")
-        assert resp.status_code == 502
-        assert resp.get_json()["error"] == "token_exchange_failed"
+            resp = client.get("/auth/callback?code=bad-code&state=valid-state")
+        assert resp.status_code == 302
+        assert "auth_error=token_exchange_failed" in resp.headers["Location"]
 
-    def test_callback_disabled_in_frontend_mode(self, app, monkeypatch):
-        monkeypatch.setenv("AUTH_MODE", "frontend")
+    def test_callback_disabled_without_secret(self, app, monkeypatch):
+        monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
         c = app.test_client()
-        resp = c.get("/api/auth/oidc/callback?code=x&state=y")
+        resp = c.get("/auth/callback?code=x&state=y")
         assert resp.status_code == 400
 
 
@@ -182,7 +210,7 @@ class TestOIDCStatus:
         assert data["authenticated"] is False
 
     def test_status_frontend_mode(self, app, monkeypatch):
-        monkeypatch.setenv("AUTH_MODE", "frontend")
+        monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
         c = app.test_client()
         resp = c.get("/api/auth/oidc/status")
         data = resp.get_json()
@@ -200,11 +228,88 @@ class TestOIDCLogout:
         with client.session_transaction() as sess:
             sess["sso"] = {"access_token": "tok"}
             sess["service_tokens"] = {"superset": {"access_token": "s-tok"}}
+            sess["sso_disconnected_services"] = {"superset": True}
+            sess["_oauth_state"] = "state"
         resp = client.post("/api/auth/oidc/logout")
         assert resp.get_json()["status"] == "ok"
         with client.session_transaction() as sess:
             assert "sso" not in sess
             assert "service_tokens" not in sess
+            assert "sso_disconnected_services" not in sess
+            assert "_oauth_state" not in sess
+
+    def test_logout_does_not_delete_vault_credentials(self, client):
+        with client.session_transaction() as sess:
+            sess["sso"] = {"access_token": "tok"}
+            sess["service_tokens"] = {"superset": {"access_token": "s-tok"}}
+        with patch(
+            "data_formulator.auth.gateways.oidc_gateway.TokenStore"
+        ) as MockTokenStore:
+            instance = MockTokenStore.return_value
+            instance.clear_session_tokens.side_effect = lambda: (
+                flask.session.pop("sso", None),
+                flask.session.pop("service_tokens", None),
+                flask.session.pop("sso_disconnected_services", None),
+            )
+            resp = client.post("/api/auth/oidc/logout")
+        assert resp.get_json()["status"] == "ok"
+        instance.clear_session_tokens.assert_called_once_with()
+        assert not instance.clear_service_token.called
+
+
+# ==================================================================
+# Auto-detection: is_backend_oidc_mode()
+# ==================================================================
+
+class TestAutoDetection:
+
+    def test_secret_present_implies_backend(self, monkeypatch):
+        monkeypatch.setenv("OIDC_CLIENT_SECRET", "s3cret")
+        monkeypatch.delenv("AUTH_MODE", raising=False)
+        from data_formulator.auth.providers.oidc import is_backend_oidc_mode
+        assert is_backend_oidc_mode() is True
+
+    def test_no_secret_implies_frontend(self, monkeypatch):
+        monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
+        monkeypatch.delenv("AUTH_MODE", raising=False)
+        from data_formulator.auth.providers.oidc import is_backend_oidc_mode
+        assert is_backend_oidc_mode() is False
+
+    def test_auth_mode_overrides_auto_detection(self, monkeypatch):
+        monkeypatch.setenv("OIDC_CLIENT_SECRET", "s3cret")
+        monkeypatch.setenv("AUTH_MODE", "frontend")
+        from data_formulator.auth.providers.oidc import is_backend_oidc_mode
+        assert is_backend_oidc_mode() is False
+
+    def test_auth_mode_backend_without_secret(self, monkeypatch):
+        monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
+        monkeypatch.setenv("AUTH_MODE", "backend")
+        from data_formulator.auth.providers.oidc import is_backend_oidc_mode
+        assert is_backend_oidc_mode() is True
+
+
+# ==================================================================
+# auth_tokens_bp: DELETE /api/auth/tokens/<system_id>
+# ==================================================================
+
+class TestClearServiceToken:
+
+    def test_clear_token_removes_from_session(self, client):
+        with client.session_transaction() as sess:
+            sess["service_tokens"] = {
+                "superset": {"access_token": "tok-1"},
+                "other": {"access_token": "tok-2"},
+            }
+        resp = client.delete("/api/auth/tokens/superset")
+        assert resp.get_json()["status"] == "ok"
+        with client.session_transaction() as sess:
+            tokens = sess.get("service_tokens", {})
+            assert "superset" not in tokens
+            assert "other" in tokens
+
+    def test_clear_nonexistent_token_is_ok(self, client):
+        resp = client.delete("/api/auth/tokens/nonexistent")
+        assert resp.get_json()["status"] == "ok"
 
 
 # ==================================================================

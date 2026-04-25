@@ -72,6 +72,36 @@ class TestStoreServiceToken:
             store.clear_service_token("sys")
             assert store._get_cached("sys") is None
 
+    def test_clear_sso_exchange_token_blocks_auto_reconnect(self, app, store):
+        with app.test_request_context():
+            flask.session.clear()
+            store.store_service_token("superset", "tok")
+            config = {"mode": "sso_exchange"}
+            with patch.object(store, "_get_auth_config", return_value=config):
+                store.clear_service_token("superset")
+            assert store._get_cached("superset") is None
+            assert store.is_sso_reconnect_blocked("superset") is True
+
+    def test_store_service_token_allows_auto_reconnect_again(self, app, store):
+        with app.test_request_context():
+            flask.session.clear()
+            store.block_sso_reconnect("superset")
+            store.store_service_token("superset", "tok")
+            assert store.is_sso_reconnect_blocked("superset") is False
+
+    def test_clear_session_tokens_preserves_vault(self, app, store):
+        with app.test_request_context():
+            flask.session.clear()
+            flask.session["sso"] = {"access_token": "sso-tok"}
+            flask.session["service_tokens"] = {"superset": {"access_token": "svc-tok"}}
+            store.block_sso_reconnect("superset")
+            with patch.object(store, "_vault_delete") as vault_delete:
+                store.clear_session_tokens()
+            assert "sso" not in flask.session
+            assert "service_tokens" not in flask.session
+            assert "sso_disconnected_services" not in flask.session
+            vault_delete.assert_not_called()
+
 
 # ------------------------------------------------------------------
 # SSO tokens
@@ -269,6 +299,17 @@ class TestSSOExchange:
             with patch.object(store, "get_sso_token", return_value="tok"):
                 result = store._do_sso_exchange("sys", {})
             assert result is None
+
+    def test_sso_exchange_skips_when_blocked(self, app, store):
+        with app.test_request_context():
+            flask.session.clear()
+            store.block_sso_reconnect("superset")
+            config = {"exchange_url": "https://superset/exchange"}
+            with patch.object(store, "get_sso_token", return_value="sso-tok"), \
+                 patch("requests.post") as post:
+                result = store._do_sso_exchange("superset", config)
+            assert result is None
+            post.assert_not_called()
 
 
 # ------------------------------------------------------------------

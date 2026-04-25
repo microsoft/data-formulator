@@ -77,6 +77,7 @@ import {
     Outlet,
     RouterProvider,
     useLocation,
+    useSearchParams,
 } from "react-router-dom";
 import { About } from '../views/About';
 import ChartGallery from '../gallery/ChartGallery';
@@ -725,13 +726,35 @@ const ErrorBoundaryFallback: React.FC = () => {
     );
 };
 
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+    invalid_state: 'auth.ssoErrorInvalidState',
+    invalid_client: 'auth.ssoErrorInvalidClient',
+    token_exchange_failed: 'auth.ssoErrorTokenExchange',
+    missing_token_endpoint: 'auth.ssoErrorMissingEndpoint',
+};
+
 const AppShell: FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
     const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+
+    useEffect(() => {
+        const authError = searchParams.get('auth_error');
+        if (!authError) return;
+        const i18nKey = AUTH_ERROR_MESSAGES[authError] || 'auth.ssoErrorGeneric';
+        dispatch(dfActions.addMessages({
+            type: 'error',
+            component: 'auth',
+            timestamp: Date.now(),
+            value: t(i18nKey, { defaultValue: 'SSO login failed. Please contact your administrator.' }),
+        }));
+        searchParams.delete('auth_error');
+        setSearchParams(searchParams, { replace: true });
+    }, []);
 
     // Auto-persist session state to the active workspace (debounced)
     useAutoSave();
@@ -1012,8 +1035,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                             if (status.authenticated && status.user) {
                                 resolvedIdentity = {
                                     type: 'user',
-                                    id: status.user.sub || status.user.id || 'session_user',
-                                    displayName: status.user.name ?? undefined,
+                                    id: String(status.user.sub || status.user.id || 'session_user'),
+                                    displayName: typeof status.user.name === 'string' ? status.user.name : undefined,
                                 };
                             }
                         } catch {
@@ -1025,8 +1048,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         if (user && !user.expired) {
                             resolvedIdentity = {
                                 type: 'user',
-                                id: user.profile.sub,
-                                displayName: user.profile.name ?? undefined,
+                                id: String(user.profile.sub),
+                                displayName: typeof user.profile.name === 'string' ? user.profile.name : undefined,
                             };
                         }
                     } else if (info?.action === 'transparent') {
@@ -1057,6 +1080,14 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             }
 
             dispatch(dfActions.setIdentity(resolvedIdentity));
+
+            try {
+                const configResp = await fetchWithIdentity(getUrls().APP_CONFIG);
+                const refreshedConfig = await configResp.json();
+                dispatch(dfActions.setServerConfig(refreshedConfig));
+            } catch {
+                // App config was already loaded; connector status refresh is best-effort.
+            }
 
             // Persist current identity type for next page load
             localStorage.setItem('df_identity_type', resolvedIdentity.type);
@@ -1170,7 +1201,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const router = useMemo(() => createBrowserRouter([
         {
-            path: "/callback",
+            path: "/auth/callback",
             element: <OidcCallback />,
         },
         {
@@ -1204,7 +1235,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     return (
         <ThemeProvider theme={theme}>
-            {configLoaded ? (
+            {configLoaded && authChecked ? (
                 <RouterProvider router={router} />
             ) : (
                 <AnvilLoader />

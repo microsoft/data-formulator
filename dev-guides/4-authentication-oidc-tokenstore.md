@@ -9,12 +9,16 @@
 
 ## 1. 概览
 
-DF 支持两种认证模式，通过环境变量 `AUTH_MODE` 切换：
+DF 支持两种认证模式，**自动根据 `OIDC_CLIENT_SECRET` 是否配置来推导**：
 
-| AUTH_MODE | 说明 | Token 存储 | 适用场景 |
-|-----------|------|-----------|---------|
-| `frontend` (默认) | 前端通过 oidc-client-ts 完成 OIDC 流程，token 保存在浏览器 | Bearer header | 本地部署、开发环境 |
-| `backend` | 后端作为 Confidential Client 完成 OIDC 授权码流程 | Flask Session (cookie) | 生产部署、多用户服务器 |
+| 模式 | 触发条件 | Token 存储 | 适用场景 |
+|------|---------|-----------|---------|
+| Frontend (Public Client) | 未设置 `OIDC_CLIENT_SECRET` | Bearer header (浏览器) | 公开客户端、本地开发 |
+| Backend (Confidential Client) | 设置了 `OIDC_CLIENT_SECRET` | Flask Session (cookie) | 机密客户端、生产部署 |
+
+> `AUTH_MODE` 环境变量可强制覆盖自动推导（`frontend` / `backend`），但通常不需要设置。
+
+两种模式共用回调地址 `/auth/callback`，SSO 侧只需注册一个 redirect URI。
 
 ---
 
@@ -43,19 +47,41 @@ Session-backed 凭证管理器，统一管理所有第三方系统的 token。
 | `store_service_token(system_id, ...)` | 存储弹窗/手动获取的 token |
 | `store_sso_tokens(...)` | 存储后端 OIDC 回调获取的 SSO token |
 | `clear_service_token(system_id)` | 清除 token（Session + Vault 同步清理） |
+| `clear_session_tokens()` | 仅清除当前 Flask Session 中的 SSO/service token，不删除 Vault 凭据 |
+
+**手动断开与自动 SSO 重连:**
+
+当用户手动断开 `mode="sso_exchange"` 的服务（例如 Superset）时，
+`TokenStore.clear_service_token(system_id)` 会在当前 Flask Session 中记录
+`sso_disconnected_services[system_id] = True`。之后自动 SSO exchange 会跳过该服务，
+避免刚断开又被 DF 的 SSO token 自动换回目标系统 token。用户通过弹窗/显式登录重新保存
+service token 后，`store_service_token()` 会清除此阻止标记。
+
+OIDC logout 使用 `clear_session_tokens()`，只清当前浏览器会话中的 `sso`、
+`service_tokens` 和 `sso_disconnected_services`，不删除按 `identity + source_id`
+隔离保存的 Vault 凭据。
 
 ### 2.2 OIDC Gateway (`auth/gateways/oidc_gateway.py`)
 
-后端 OIDC Confidential Client 网关，两个 Blueprint：
+后端 OIDC Confidential Client 网关。通过 `_get_oidc_config()` 从
+`OIDCProvider` 实例获取已解析的端点（含自动发现结果），不再直接读取
+`OIDC_*_URL` 环境变量。三个 Blueprint：
 
 **`oidc_bp`** (`/api/auth/oidc/`):
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
 | `/login` | GET | 重定向到 IdP 授权页 |
-| `/callback` | GET | 接收授权码，换取 token，自动触发 SSO Exchange |
 | `/status` | GET | 检查 SSO 登录状态 |
 | `/logout` | POST | 清除所有 token（SSO + 所有服务） |
+
+**`oidc_callback_bp`**（无前缀）:
+
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/auth/callback` | GET | 接收授权码，换取 token，自动触发 SSO Exchange |
+
+> 回调路径 `/auth/callback` 与前端 PKCE 模式共用，SSO 侧只需注册一个 redirect URI。
 
 **`auth_tokens_bp`** (`/api/auth/`):
 
@@ -93,13 +119,25 @@ def auth_config() -> dict:
 
 | 变量 | 说明 | 必需 |
 |------|------|------|
-| `AUTH_MODE` | `frontend` 或 `backend` | 否（默认 frontend） |
-| `OIDC_CLIENT_ID` | OIDC Client ID | backend 模式必需 |
-| `OIDC_CLIENT_SECRET` | OIDC Client Secret | backend 模式必需 |
-| `OIDC_AUTHORIZE_URL` | IdP 授权端点 | backend 模式必需 |
-| `OIDC_TOKEN_URL` | IdP Token 端点 | backend 模式必需 |
-| `OIDC_USERINFO_URL` | IdP UserInfo 端点 | 可选 |
-| `OIDC_ISSUER_URL` | IdP Issuer URL（前端模式 JWT 验证） | frontend 模式必需 |
+| `OIDC_ISSUER_URL` | IdP Issuer URL（自动发现 + JWT 验证） | 是 |
+| `OIDC_CLIENT_ID` | OIDC Client ID | 是 |
+| `OIDC_CLIENT_SECRET` | OIDC Client Secret（设置即启用 backend 模式） | 机密客户端必需 |
+| `AUTH_MODE` | 强制覆盖模式（`frontend` / `backend`） | 否（自动推导） |
+| `OIDC_AUTHORIZE_URL` | IdP 授权端点 | 否（自动发现） |
+| `OIDC_TOKEN_URL` | IdP Token 端点 | 否（自动发现） |
+| `OIDC_USERINFO_URL` | IdP UserInfo 端点 | 否（自动发现） |
+| `OIDC_JWKS_URL` | IdP JWKS 端点 | 否（自动发现） |
+
+> **自动发现**: `OIDCProvider.on_configure()` 在启动时请求
+> `{OIDC_ISSUER_URL}/.well-known/openid-configuration`，成功后自动填充
+> 上述端点 URL。手动设置的值始终优先于自动发现。
+>
+> **最小配置**（公开客户端）：`OIDC_ISSUER_URL` + `OIDC_CLIENT_ID`
+> **最小配置**（机密客户端）：上述两项 + `OIDC_CLIENT_SECRET`
+>
+> **模式自动推导** (`is_backend_oidc_mode()`):
+> 有 `OIDC_CLIENT_SECRET` → backend；无 → frontend。
+> `AUTH_MODE` 环境变量可强制覆盖（极少需要）。
 
 ---
 
@@ -116,6 +154,9 @@ def auth_config() -> dict:
 
 ## 5. 安全要求
 
+- **HTTPS 与 Frontend 模式**：Frontend (PKCE) 模式依赖浏览器的 `crypto.subtle` API，
+  该 API 仅在安全上下文（HTTPS 或 localhost）下可用。纯 HTTP 部署使用 Frontend 模式
+  会失败。如果无法配置 HTTPS，应使用 Backend（机密客户端）模式
 - **永远不要在日志中输出 token**：使用 `%s` 占位符记录 system_id，不记录 token 值
 - **Session 安全**：生产环境必须配置 `SESSION_COOKIE_SECURE=True`、`SESSION_COOKIE_HTTPONLY=True`
 - **client_secret 不暴露**：后端模式下 `client_secret` 仅在服务端使用，不传给前端

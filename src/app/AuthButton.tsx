@@ -11,19 +11,22 @@
  */
 
 import { FC, useCallback, useEffect, useState } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { Alert, Box, Button, IconButton, Snackbar, Tooltip, Typography } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import LoginIcon from "@mui/icons-material/Login";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import { useTranslation } from "react-i18next";
 import type { UserManager } from "oidc-client-ts";
-import type { DataFormulatorState } from "./dfSlice";
+import { dfActions, type DataFormulatorState } from "./dfSlice";
+import type { AppDispatch } from "./store";
 import { getAuthInfo, getUserManager, type AuthInfo } from "./oidcConfig";
 import { persistor } from "./store";
+import { getBrowserId } from "./identity";
 
 export const AuthButton: FC = () => {
     const { t } = useTranslation();
+    const dispatch = useDispatch<AppDispatch>();
     const identity = useSelector((s: DataFormulatorState) => s.identity);
     const [mgr, setMgr] = useState<UserManager | null>(null);
     const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
@@ -45,6 +48,11 @@ export const AuthButton: FC = () => {
     const handleSignOut = useCallback(async () => {
         if (isBackend) {
             await fetch(authInfo?.logout_url || "/api/auth/oidc/logout", { method: "POST" });
+            const browserId = getBrowserId();
+            dispatch(dfActions.setIdentity({ type: "browser", id: browserId }));
+            localStorage.setItem("df_identity_type", "browser");
+            localStorage.setItem("df_browser_id", browserId);
+            await persistor.flush();
             window.location.href = "/";
             return;
         }
@@ -56,10 +64,10 @@ export const AuthButton: FC = () => {
             await persistor.purge();
             window.location.href = "/";
         }
-    }, [mgr, isBackend, authInfo]);
+    }, [mgr, isBackend, authInfo, dispatch]);
 
     if (identity?.type === "user") {
-        const label = identity.displayName || identity.id;
+        const label = String(identity.displayName || identity.id || '');
         return (
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, ml: 1 }}>
                 <Typography variant="body2" sx={{ fontSize: 12, opacity: 0.85 }}>

@@ -16,6 +16,7 @@ import shutil
 import unittest
 from pathlib import Path
 from typing import Any, Dict
+from unittest.mock import patch
 
 from data_formulator.data_loader.mysql_data_loader import MySQLDataLoader
 
@@ -187,6 +188,28 @@ class TestMySQLDataLoaderStatic(unittest.TestCase):
         instructions = MySQLDataLoader.auth_instructions()
         self.assertIsInstance(instructions, str)
         self.assertIn("MySQL", instructions)
+
+    def test_fetch_data_as_arrow_uses_source_filters(self) -> None:
+        import pyarrow as pa
+        with patch("data_formulator.data_loader.mysql_data_loader.pymysql.connect"):
+            loader = MySQLDataLoader({
+                "host": "localhost",
+                "port": "3306",
+                "user": "root",
+                "password": "",
+                "database": "testdb",
+            })
+        with (
+            patch.object(loader, "_safe_select_list", return_value="*"),
+            patch.object(loader, "_read_sql", return_value=pa.table({"id": []})) as mock_read,
+        ):
+            loader.fetch_data_as_arrow(
+                "users",
+                {"size": 10, "source_filters": [{"column": "name", "operator": "ILIKE", "value": "alice"}]},
+            )
+        query = mock_read.call_args.args[0]
+        self.assertIn("WHERE LOWER(`name`) LIKE LOWER('%alice%')", query)
+        self.assertIn("LIMIT 10", query)
 
 
 def run_tests() -> bool:

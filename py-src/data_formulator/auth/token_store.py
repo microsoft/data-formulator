@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _SSO_NS = "sso"
 _SVC_NS = "service_tokens"
+_SSO_BLOCKED_NS = "sso_disconnected_services"
 
 
 class TokenStore:
@@ -73,8 +74,8 @@ class TokenStore:
 
     def get_sso_token(self) -> str | None:
         """Return the DF-level SSO access token."""
-        mode = os.environ.get("AUTH_MODE", "frontend")
-        if mode == "backend":
+        from data_formulator.auth.providers.oidc import is_backend_oidc_mode
+        if is_backend_oidc_mode():
             sso = session.get(_SSO_NS)
             if not sso:
                 return None
@@ -123,16 +124,45 @@ class TokenStore:
             "stored_at": time.time(),
         }
         session[_SVC_NS] = tokens
+        self.allow_sso_reconnect(system_id)
 
     def clear_service_token(self, system_id: str) -> None:
         """Clear cached token AND vault credentials for a system.
 
-        Session + vault are always cleared together (logout guarantee).
+        Session + vault are always cleared together for explicit disconnect.
+        SSO-backed systems are also blocked from auto-reconnecting in the
+        current browser session until the user logs in again explicitly.
         """
         tokens = session.get(_SVC_NS, {})
         tokens.pop(system_id, None)
         session[_SVC_NS] = tokens
         self._vault_delete(system_id)
+        config = self._get_auth_config(system_id) or {}
+        if config.get("mode") == "sso_exchange":
+            self.block_sso_reconnect(system_id)
+
+    def clear_session_tokens(self) -> None:
+        """Clear current-session SSO and service tokens without touching vault."""
+        session.pop(_SSO_NS, None)
+        session.pop(_SVC_NS, None)
+        session.pop(_SSO_BLOCKED_NS, None)
+
+    def block_sso_reconnect(self, system_id: str) -> None:
+        """Prevent SSO auto-exchange for a system in this browser session."""
+        blocked = session.get(_SSO_BLOCKED_NS, {})
+        blocked[system_id] = True
+        session[_SSO_BLOCKED_NS] = blocked
+
+    def allow_sso_reconnect(self, system_id: str) -> None:
+        """Allow SSO auto-exchange again after an explicit login."""
+        blocked = session.get(_SSO_BLOCKED_NS, {})
+        if system_id in blocked:
+            blocked.pop(system_id, None)
+            session[_SSO_BLOCKED_NS] = blocked
+
+    def is_sso_reconnect_blocked(self, system_id: str) -> bool:
+        """Return whether SSO auto-exchange is blocked for this system."""
+        return bool(session.get(_SSO_BLOCKED_NS, {}).get(system_id))
 
     def store_sso_tokens(
         self,
@@ -202,6 +232,8 @@ class TokenStore:
         """Exchange SSO token for a system-specific token."""
         import requests as http
 
+        if self.is_sso_reconnect_blocked(system_id):
+            return None
         sso_token = self.get_sso_token()
         if not sso_token:
             return None
@@ -338,7 +370,11 @@ class TokenStore:
         """What can the user do to authenticate this system?"""
         strategies: list[str] = []
         mode = config.get("mode", "credentials")
-        if mode == "sso_exchange" and self.get_sso_token():
+        if (
+            mode == "sso_exchange"
+            and not self.is_sso_reconnect_blocked(system_id)
+            and self.get_sso_token()
+        ):
             strategies.append("sso_exchange")
         if config.get("login_url"):
             strategies.append("delegated_popup")

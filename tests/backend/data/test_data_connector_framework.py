@@ -161,6 +161,31 @@ class FailingTestConnectionLoader(MockLoader):
         return False
 
 
+class AuthTierLoader(MockLoader):
+    @staticmethod
+    def list_params():
+        return [
+            {"name": "host", "type": "string", "required": True, "tier": "connection"},
+            {"name": "database", "type": "string", "required": False, "tier": "filter"},
+            {"name": "user", "type": "string", "required": True, "tier": "auth"},
+            {"name": "password", "type": "password", "required": True, "tier": "auth", "sensitive": True},
+        ]
+
+
+class SSOExchangeLoader(MockLoader):
+    @staticmethod
+    def auth_mode() -> str:
+        return "token"
+
+    @staticmethod
+    def auth_config() -> dict:
+        return {
+            "mode": "sso_exchange",
+            "display_name": "Superset",
+            "exchange_url": "https://superset.example/api/v1/df-token-exchange/",
+        }
+
+
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------
@@ -242,6 +267,7 @@ class TestSharedRouteRegistration:
     def test_shared_routes_registered(self, app, source):
         rules = [rule.rule for rule in app.url_map.iter_rules()]
         assert "/api/connectors/connect" in rules
+        assert "/api/connectors/disconnect" in rules
         assert "/api/connectors/get-status" in rules
         assert "/api/connectors/get-catalog" in rules
         assert "/api/connectors/get-catalog-tree" in rules
@@ -288,6 +314,52 @@ class TestFrontendConfig:
         assert "schema" in eff_keys
         assert "table" in eff_keys
         assert cfg["pinned_params"]["database"] == "testdb"
+
+    def test_pinned_params_do_not_expose_auth_or_sensitive_values(self):
+        source = DataConnector.from_loader(
+            AuthTierLoader,
+            source_id="private_db",
+            display_name="Private DB",
+            default_params={
+                "host": "db.local",
+                "database": "analytics",
+                "user": "alice",
+                "password": "secret",
+            },
+        )
+
+        cfg = source.get_frontend_config()
+
+        assert cfg["pinned_params"] == {
+            "host": "db.local",
+            "database": "analytics",
+        }
+        form_names = {f["name"] for f in cfg["params_form"]}
+        assert "user" not in form_names
+        assert "password" not in form_names
+
+
+class TestConnectorList:
+
+    def test_sso_auto_connect_respects_session_block(self, app):
+        source = DataConnector.from_loader(
+            SSOExchangeLoader,
+            source_id="superset",
+            display_name="Superset",
+            default_params={"url": "https://superset.example"},
+        )
+        DATA_CONNECTORS["superset"] = source
+        c = app.test_client()
+
+        with patch("data_formulator.auth.identity.get_identity_id", return_value="user:alice"), \
+             patch("data_formulator.auth.identity.get_sso_token", return_value="sso-token"), \
+             patch("data_formulator.auth.token_store.TokenStore.is_sso_reconnect_blocked", return_value=True):
+            resp = c.get("/api/connectors")
+
+        data = resp.get_json()
+        connector = data["connectors"][0]
+        assert connector["id"] == "superset"
+        assert connector["sso_auto_connect"] is False
 
 
 # ==================================================================
@@ -352,6 +424,22 @@ class TestAuthRoutes:
             resp = connected_client.delete("/api/connectors/mock_db")
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "deleted"
+
+    def test_disconnect_connector_clears_loader_and_credentials(self, connected_client, source):
+        """Disconnect keeps the connector but clears active and stored credentials."""
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(source, "_vault_delete") as vault_delete, \
+             patch("data_formulator.auth.token_store.TokenStore.clear_service_token") as clear_token:
+            assert source._get_loader("test-user") is not None
+            resp = connected_client.post("/api/connectors/disconnect", json={
+                "connector_id": "mock_db",
+            })
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["status"] == "disconnected"
+        assert source._get_loader("test-user") is None
+        vault_delete.assert_called_once_with("test-user")
+        clear_token.assert_called_once_with("mock_db")
 
     def test_status_connected(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):

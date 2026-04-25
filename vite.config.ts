@@ -46,6 +46,10 @@ export default defineConfig({
       '/api': {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
+      },
+      '/auth/callback': {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: true,
       }
     }
   }

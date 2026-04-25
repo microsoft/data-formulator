@@ -698,8 +698,13 @@ const AddConnectionPanel: React.FC<{
     const [selectedType, setSelectedType] = useState<string>('');
     const [displayName, setDisplayName] = useState('');
     const dispatch = useDispatch<AppDispatch>();
+    const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     // Track the created connector ID so DataLoaderForm can use it
     const createdIdRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        createdIdRef.current = null;
+    }, [identityKey]);
 
     // Fetch available loader types
     useEffect(() => {
@@ -899,6 +904,7 @@ export interface UnifiedDataUploadDialogProps {
     onClose: () => void;
     initialTab?: UploadTabType;
     hideSampleDatasets?: boolean;
+    onConnectorsChanged?: () => void;
 }
 
 export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = ({
@@ -906,6 +912,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     onClose,
     initialTab = 'menu',
     hideSampleDatasets = false,
+    onConnectorsChanged,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -915,6 +922,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const existingNames = new Set(existingTables.map(t => t.id));
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
@@ -934,9 +942,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
     useEffect(() => {
         if (open) {
+            setConnectorInstances([]);
             refreshConnectors();
         }
-    }, [open, refreshConnectors]);
+    }, [open, refreshConnectors, identityKey]);
 
     // Storage is determined by backend config — no user toggle
     const isEphemeral = serverConfig.WORKSPACE_BACKEND === 'ephemeral';
@@ -2096,6 +2105,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     setConnectorInstances(prev =>
                                         prev.map(c => c.id === conn.id ? { ...c, connected: true } : c)
                                     );
+                                    onConnectorsChanged?.();
                                 }}
                                 onDelete={conn.deletable ? async (cid) => {
                                     try {
@@ -2104,6 +2114,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         if (data.status === 'deleted') {
                                             setConnectorInstances(prev => prev.filter(c => c.id !== cid));
                                             setActiveTab('menu');
+                                            onConnectorsChanged?.();
                                             dispatch(dfActions.addMessages({
                                                 timestamp: Date.now(), component: 'connector', type: 'success',
                                                 value: t('upload.messages.deletedConnector', { name: conn.display_name, defaultValue: 'Deleted connector "{{name}}"' }),
@@ -2138,6 +2149,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 }
                                 return [...prev, newConnector];
                             });
+                            onConnectorsChanged?.();
                             // Jump to the new connector's tab
                             setActiveTab(`connector:${newConnector.id}` as UploadTabType);
                         }}
@@ -2159,6 +2171,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     if (exists) return prev.map(c => c.id === newConn.id ? newConn : c);
                                     return [...prev, newConn];
                                 });
+                                onConnectorsChanged?.();
                                 setActiveTab(`connector:${newConn.id}` as UploadTabType);
                             }}
                         />

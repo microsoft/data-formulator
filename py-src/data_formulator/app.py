@@ -193,10 +193,12 @@ def _register_blueprints():
     from data_formulator.auth.gateways.oidc_gateway import auth_tokens_bp
     app.register_blueprint(auth_tokens_bp)
 
-    # Register backend OIDC gateway (active only when AUTH_MODE=backend)
-    if os.environ.get("AUTH_MODE", "").lower() == "backend":
-        from data_formulator.auth.gateways.oidc_gateway import oidc_bp
+    # Register backend OIDC gateway (auto-detected: active when OIDC_CLIENT_SECRET is set)
+    from data_formulator.auth.providers.oidc import is_backend_oidc_mode
+    if is_backend_oidc_mode():
+        from data_formulator.auth.gateways.oidc_gateway import oidc_bp, oidc_callback_bp
         app.register_blueprint(oidc_bp)
+        app.register_blueprint(oidc_callback_bp)
 
     # Register credential vault API (safe even when vault is not configured)
     from data_formulator.routes.credentials import credential_bp
@@ -291,6 +293,7 @@ def get_app_config():
     # Return the server-assigned identity so the frontend can use it.
     # For localhost mode this is the fixed local:<os_username> identity;
     # for anonymous mode the server echoes back the browser-provided UUID.
+    identity = None
     try:
         from data_formulator.auth.identity import get_identity_id
         identity = get_identity_id()
@@ -304,26 +307,24 @@ def get_app_config():
     config["CREDENTIAL_VAULT_ENABLED"] = get_credential_vault() is not None
 
     # Expose data connectors to the frontend
-    from data_formulator.data_connector import DATA_CONNECTORS
-    if DATA_CONNECTORS:
+    from data_formulator.data_connector import _public_connector_id, _visible_connector_items
+    visible_connectors = _visible_connector_items(identity)
+    if visible_connectors:
         connectors_info: list[dict] = []
-        for sid, src in DATA_CONNECTORS.items():
+        for registry_key, src, _is_admin in visible_connectors:
             connectors_info.append(src.get_frontend_config())
+            connectors_info[-1]["source_id"] = _public_connector_id(registry_key, src)
         config["CONNECTORS"] = connectors_info
 
     # Tell the frontend which connectors the current user has vault credentials for
     # so it can render "Connected" vs "Available" without N status calls.
-    try:
-        from data_formulator.auth.identity import get_identity_id
-        identity = get_identity_id()
+    if identity:
         connected_ids: list[str] = []
-        for sid, src in DATA_CONNECTORS.items():
+        for registry_key, src, _is_admin in visible_connectors:
             if src.has_stored_credentials(identity) or src._get_loader(identity) is not None:
-                connected_ids.append(sid)
+                connected_ids.append(_public_connector_id(registry_key, src))
         if connected_ids:
             config["CONNECTED_CONNECTORS"] = connected_ids
-    except Exception:
-        pass  # No identity available (e.g. during startup); skip
 
     # Expose disabled data sources (missing deps) so UI can show greyed-out entries
     from data_formulator.data_loader import DISABLED_LOADERS
