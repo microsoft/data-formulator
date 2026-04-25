@@ -24,7 +24,7 @@ import secrets
 import urllib.parse
 
 import requests as http
-from flask import Blueprint, redirect, request, session, jsonify
+from flask import Blueprint, Response, redirect, request, session, jsonify
 
 from data_formulator.auth.providers.oidc import is_backend_oidc_mode
 from data_formulator.auth.token_store import TokenStore
@@ -95,7 +95,7 @@ def oidc_login():
     return redirect(f"{authorize_url}?{urllib.parse.urlencode(params)}")
 
 
-def _error_redirect(code: str) -> "Response":
+def _error_redirect(code: str) -> Response:
     """Redirect to the SPA root with an ``auth_error`` query param.
 
     This lets the frontend display a translated, user-friendly message
