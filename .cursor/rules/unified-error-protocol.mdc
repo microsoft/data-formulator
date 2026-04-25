@@ -6,7 +6,12 @@ alwaysApply: false
 
 # Unified Error Protocol
 
-All API error responses MUST follow the unified format. No new code should use legacy patterns.
+See `dev-guides/7-unified-error-handling.md` for the full developer guide.
+
+All application-controlled API failures MUST return HTTP 200 and mark the body
+with `status: "error"`. New code should prefer structured `error: {code,
+message, retry}` payloads. Existing routes may keep legacy-compatible `message`
+or `error_message` fields while they are being touched incrementally.
 
 ## Backend: Non-streaming JSON Format
 
@@ -26,6 +31,15 @@ All API error responses MUST follow the unified format. No new code should use l
     "token": "..."
 }
 ```
+
+Legacy-compatible existing routes may still return:
+
+```jsonc
+{"status": "error", "message": "..."}
+{"status": "error", "error_message": "..."}
+```
+
+Do not add HTTP 4xx/5xx status tuples to these responses.
 
 ## Backend: Streaming NDJSON Format
 

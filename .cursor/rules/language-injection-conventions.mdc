@@ -15,7 +15,7 @@ Language flows per-request: `Frontend i18n → Accept-Language header → get_la
 3. **Inject into system prompt only** — use `inject_language_instruction()` from `agent_language.py`. Never inject into user messages.
 4. **Do NOT inject** for non-user-facing calls (health checks, internal tool calls).
 5. **Do NOT duplicate** — if upstream messages already contain language instruction, skip.
-6. **Do NOT** use env vars, global interceptors, or hardcoded language strings (e.g. `"回答请使用中文"`) — always use `build_language_instruction()`.
+6. **Do NOT** use env vars, global interceptors, or hardcoded language strings (e.g. `"回答请使用中文"`) — route handlers should use `get_language_instruction(mode=...)`.
 7. **New language?** Add to `LANGUAGE_DISPLAY_NAMES` in `agents/agent_language.py` and add locale files in `src/i18n/locales/<lang>/`.
 
 ## Python-Side User-Visible Messages (message_code pattern)
@@ -36,9 +36,8 @@ yield {
     "message_code": "agent.emptyDataframe",
 }
 
-# ❌ BAD — backend does the translation
-from agent_messages import get_msg
-yield {"message": get_msg("empty_df", lang)}
+# ❌ BAD — backend-side translation dict
+yield {"message": translate_in_python("empty_df", lang)}
 ```
 
-For detailed architecture and anti-pattern explanations, see the language-injection skill.
+For detailed architecture and anti-pattern explanations, see `dev-guides/6-i18n-language-injection.md`.

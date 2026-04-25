@@ -1,6 +1,6 @@
 ---
 description: Require reading dev-guides before development and keeping docs in sync
-globs: 
+globs:
 alwaysApply: true
 ---
 
@@ -17,6 +17,9 @@ read the relevant documents in `dev-guides/`** to understand existing convention
 | `dev-guides/2-log-sanitization.md` | Any work involving logging, credentials, external services, or DataLoaders |
 | `dev-guides/3-data-loader-development.md` | Any work on ExternalDataLoader, DataConnector, or connector routes |
 | `dev-guides/4-authentication-oidc-tokenstore.md` | Any work on OIDC, TokenStore, AUTH_MODE, or SSO flows |
+| `dev-guides/6-i18n-language-injection.md` | Any work on Agent prompts, Agent routes, backend user-visible messages, or frontend i18n |
+| `dev-guides/7-unified-error-handling.md` | Any work on API errors, frontend API calls, streaming error events, or error tests |
+| `dev-guides/8-path-safety.md` | Any work on backend file access, downloads, Workspace paths, Agent tools, DataLoaders, or sandbox config |
 | `.cursor/rules/i18n-no-hardcoded-strings.mdc` | Any work adding or changing user-visible strings in `src/` |
 
 Also check `.cursor/rules/` and `.cursor/skills/` for related coding conventions.
@@ -27,7 +30,7 @@ When your work establishes a new development pattern, convention, or architectur
 decision, you MUST update documentation before considering the task complete:
 
 1. **Update existing dev-guide** — if your change extends an existing convention
-   (e.g. new sensitive key type → update `2.log-sanitization.md`)
+   (e.g. new sensitive key type → update `2-log-sanitization.md`)
 
 2. **Create new dev-guide** — if your change introduces a new cross-cutting convention
    that future developers must follow. Place in `dev-guides/` with the next number prefix.

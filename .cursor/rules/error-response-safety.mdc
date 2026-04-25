@@ -10,14 +10,19 @@ Never return raw exception text (`str(e)`, `f"...{e}"`) directly in HTTP respons
 Python exceptions may contain stack traces, file paths, database connection strings,
 API keys, or internal IP addresses — all of which are security risks (CWE-209).
 
+See `dev-guides/7-unified-error-handling.md` for the full error handling contract.
+
 ## Unified Error System
 
-All errors MUST use the `AppError` / `error_handler` infrastructure from `errors.py` and `error_handler.py`.
+New error paths should use the `AppError` / `error_handler` infrastructure from
+`errors.py` and `error_handler.py`. Existing routes may keep legacy-compatible
+`message` / `error_message` bodies while they are migrated incrementally.
 All application-controlled responses return **HTTP 200**. Errors are conveyed via `body.status === "error"`.
 
 ### Non-streaming routes
 
-Raise `AppError` — the global error handler returns HTTP 200 + JSON error envelope:
+Raise `AppError` for new code or when structured error codes are useful. The
+global error handler returns HTTP 200 + JSON error envelope:
 
 ```python
 from data_formulator.errors import AppError, ErrorCode
@@ -100,7 +105,7 @@ These functions still exist as wrappers but should NOT be used in new code:
 
 ## Rules
 
-1. **Application errors** — always HTTP 200 + `{"status": "error", "error": {...}}`; never expose exception details.
+1. **Application errors** — always HTTP 200 + `status: "error"`; prefer `error: {...}` for new code and never expose exception details.
 2. **Transport errors** (uncontrolled) — only `404` (no route), `413` (body limit), `500` (unhandled crash) may be non-200.
 3. **Streaming errors** — always use `stream_error_event()` for NDJSON error lines.
 4. **Logging** — always log the full exception server-side (`logger.warning` / `logger.error`

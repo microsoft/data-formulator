@@ -179,7 +179,7 @@ if (parsed.text) { ... }
 | `/refine-data` | `x-ndjson` | route `json.dumps({token,status,result})` | `stream_error_event` | ✅ `_with_warnings` |
 | `/get-recommendation-questions` | `x-ndjson` | route 累积碎片 → `_try_parse_explore_line` | `stream_error_event` | ✅ `_with_warnings` |
 | `/generate-report-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
-| `/data-loading-chat` | `x-ndjson` | route `json.dumps(event)` | `json.dumps({type:"error",...})` | ✅ `_with_warnings` |
+| `/data-loading-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
 | `/clean-data-stream` | `x-ndjson` | agent 直接 yield | `stream_error_event` | ✅ `_with_warnings` |
 
 ## 6. 新增端点 Checklist
@@ -189,7 +189,7 @@ if (parsed.text) { ... }
 - [ ] `mimetype='application/x-ndjson'`
 - [ ] 使用 `stream_with_context(_with_warnings(generate()))` 包裹
 - [ ] `generate()` 中的 `except` 使用 `stream_error_event(classify_and_wrap_llm_error(e))`
-- [ ] 非 JSON 请求返回 `stream_error_event(AppError(ErrorCode.INVALID_REQUEST, ...))`
+- [ ] 流建立前的校验失败返回 `200 application/json` + `{"status": "error", ...}`，不创建 NDJSON 流
 - [ ] Agent yield 的是 dict（Route 层负责 `json.dumps`）
 - [ ] 前端消费代码处理 `type: "error"` 和 `type: "warning"`
 - [ ] 不在响应体中使用 `str(e)` / `str(exc)`

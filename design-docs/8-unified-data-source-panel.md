@@ -379,6 +379,6 @@ The tree renderer is **one generic React component** (`<DataSourceTree />`) shar
 
 ## 7. Related Docs
 
-- [1-data-source-plugin-architecture.md](1-data-source-plugin-architecture.md) — Plugin system design
-- [1-sso-plugin-architecture.md](1-sso-plugin-architecture.md) — SSO authentication
+- ~~1-data-source-plugin-architecture.md~~ — 已删除，Plugin 架构已被 DataConnector 取代
+- ~~1-sso-plugin-architecture.md~~ — 已删除，SSO 架构已合并到 TokenStore + OIDC
 - [2-external-dataloader-enhancements.md](2-external-dataloader-enhancements.md) — Data loading improvements

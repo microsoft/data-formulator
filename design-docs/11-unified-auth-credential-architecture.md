@@ -12,7 +12,26 @@
 > | 1 | 后端 OIDC + TokenStore + auth_config | ✅ 完成 |
 > | 2 | 导入过滤器 UI + 目录懒加载 | ✅ 完成 |
 > | 3 | Loader 自动发现 + 外部插件目录 | ✅ 完成 |
-> | 4 | 文档更新 | ✅ 完成 |
+> | 4 | 文档迁移到 `dev-guides` / `docs-cn` | 🚧 进行中 |
+
+> ### 文档瘦身状态（2026-04-26）
+>
+> **已完成并已迁移到正式文档：**
+>
+> - OIDC + TokenStore + AUTH_MODE 开发规范已迁移到 `dev-guides/4-authentication-oidc-tokenstore.md`。
+> - DataConnector API、连接实例模型和 action routes 已迁移到 `dev-guides/5-data-connector-api.md`。
+> - 数据源连接用户流程已迁移到 `docs-cn/1-data-source-connections.md`。
+>
+> **仍需从本文迁移：**
+>
+> - CredentialVault 与 connector 凭证生命周期需要更新到 `docs-cn/6-credential-vault.md`。
+> - Superset SSO / delegated popup 的用户侧操作需要补充到 `docs-cn/5.1-superset-sso-oauth-config-guide.md`。
+> - 新 Loader 开发 checklist 中仍有价值的部分需要合并进 `dev-guides/3-data-loader-development.md`。
+>
+> **未完成或未来项：**
+>
+> - Metabase、Power BI 等未来系统的 `auth_config()` 示例仍是设计参考。
+> - 更完整的 Agent 自动授权 UX、跨系统 token exchange 策略仍需后续验证。
 
 ---
 

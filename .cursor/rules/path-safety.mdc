@@ -6,7 +6,7 @@ alwaysApply: false
 
 # 路径安全编码规范
 
-编辑此目录下的文件时，请遵守以下安全规则（详见 `.cursor/skills/path-safety/SKILL.md`）：
+编辑此目录下的文件时，请遵守以下安全规则（详见 `dev-guides/8-path-safety.md` 和 `.cursor/skills/path-safety/SKILL.md`）：
 
 ## 文件下载
 

@@ -1,7 +1,7 @@
 # 认证架构：OIDC + TokenStore + AUTH_MODE
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-25
+> **最后更新**: 2026-04-26
 > **适用范围**: `py-src/data_formulator/auth/` 下的认证模块、`oidc_gateway.py`、`token_store.py`
 > **设计文档**: `design-docs/11-unified-auth-credential-architecture.md`
 
@@ -145,10 +145,15 @@ def auth_config() -> dict:
 
 `DataConnector._inject_credentials()` 在每次建立连接时自动注入凭证：
 
-1. 检查 `params` 是否已有 `access_token` / `sso_access_token`（用户手动提供）
-2. 查询 Loader 的 `auth_config().mode`
-3. 通过 `TokenStore.get_access(source_id)` 获取最佳凭证
-4. 降级：通过 `auth.identity.get_sso_token()` 获取原始 SSO token
+1. 如果 `params` 已有 `access_token` / `sso_access_token`，保留调用方显式提供的 token，不再覆盖。
+2. 查询 Loader 的 `auth_config().mode`（旧 loader 回退到 `auth_mode()`）。
+3. 如果 mode 是 `credentials` 或 `connection`，直接返回；这类 loader 使用连接参数或 Vault 凭据，不走 TokenStore 的 SSO/service-token 注入链。
+4. 对 `token` / `sso_exchange` / `delegated` 等非默认模式，通过 `TokenStore.get_access(source_id)` 获取最佳凭证。返回 dict 时合并进 `params`，返回字符串时写入 `params["access_token"]`。
+5. 如果 TokenStore 不可用或没有可用凭证，降级尝试通过 `auth.identity.get_sso_token()` 注入原始 `sso_access_token`，供支持 SSO exchange 的 loader 使用。
+
+注意：通用注入框架只负责把 token 放进 loader 参数。具体数据库是否能使用该 token，
+仍取决于对应 loader 是否声明了非默认 `auth_config()`，并在 `__init__` 中把 token
+接入目标 SDK 或连接字符串。多数内置数据库 loader 当前仍是默认 `credentials` 模式。
 
 ---
 
