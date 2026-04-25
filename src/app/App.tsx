@@ -1048,8 +1048,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                         if (user && !user.expired) {
                             resolvedIdentity = {
                                 type: 'user',
-                                id: user.profile.sub,
-                                displayName: user.profile.name ?? undefined,
+                                id: String(user.profile.sub),
+                                displayName: typeof user.profile.name === 'string' ? user.profile.name : undefined,
                             };
                         }
                     } else if (info?.action === 'transparent') {
@@ -1227,7 +1227,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     return (
         <ThemeProvider theme={theme}>
-            {configLoaded ? (
+            {configLoaded && authChecked ? (
                 <RouterProvider router={router} />
             ) : (
                 <AnvilLoader />

@@ -59,7 +59,7 @@ export const AuthButton: FC = () => {
     }, [mgr, isBackend, authInfo]);
 
     if (identity?.type === "user") {
-        const label = identity.displayName || identity.id;
+        const label = String(identity.displayName || identity.id || '');
         return (
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, ml: 1 }}>
                 <Typography variant="body2" sx={{ fontSize: 12, opacity: 0.85 }}>
