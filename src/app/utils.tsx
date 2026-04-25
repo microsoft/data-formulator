@@ -94,6 +94,7 @@ export interface SourceTableRef {
  */
 export const CONNECTOR_ACTION_URLS = {
     CONNECT: '/api/connectors/connect',
+    DISCONNECT: '/api/connectors/disconnect',
     GET_STATUS: '/api/connectors/get-status',
     GET_CATALOG: '/api/connectors/get-catalog',
     GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',

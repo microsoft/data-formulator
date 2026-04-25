@@ -228,11 +228,33 @@ class TestOIDCLogout:
         with client.session_transaction() as sess:
             sess["sso"] = {"access_token": "tok"}
             sess["service_tokens"] = {"superset": {"access_token": "s-tok"}}
+            sess["sso_disconnected_services"] = {"superset": True}
+            sess["_oauth_state"] = "state"
         resp = client.post("/api/auth/oidc/logout")
         assert resp.get_json()["status"] == "ok"
         with client.session_transaction() as sess:
             assert "sso" not in sess
             assert "service_tokens" not in sess
+            assert "sso_disconnected_services" not in sess
+            assert "_oauth_state" not in sess
+
+    def test_logout_does_not_delete_vault_credentials(self, client):
+        with client.session_transaction() as sess:
+            sess["sso"] = {"access_token": "tok"}
+            sess["service_tokens"] = {"superset": {"access_token": "s-tok"}}
+        with patch(
+            "data_formulator.auth.gateways.oidc_gateway.TokenStore"
+        ) as MockTokenStore:
+            instance = MockTokenStore.return_value
+            instance.clear_session_tokens.side_effect = lambda: (
+                flask.session.pop("sso", None),
+                flask.session.pop("service_tokens", None),
+                flask.session.pop("sso_disconnected_services", None),
+            )
+            resp = client.post("/api/auth/oidc/logout")
+        assert resp.get_json()["status"] == "ok"
+        instance.clear_session_tokens.assert_called_once_with()
+        assert not instance.clear_service_token.called
 
 
 # ==================================================================

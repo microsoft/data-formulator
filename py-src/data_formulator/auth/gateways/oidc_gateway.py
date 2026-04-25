@@ -180,12 +180,10 @@ def oidc_status():
 
 @oidc_bp.route("/logout", methods=["POST"])
 def oidc_logout():
-    """Clear all tokens (SSO + all services)."""
+    """Clear current-session tokens (SSO + all services), preserving vault."""
     token_store = TokenStore()
-    for system_id in list(session.get("service_tokens", {}).keys()):
-        token_store.clear_service_token(system_id)
-    session.pop("sso", None)
-    session.pop("service_tokens", None)
+    token_store.clear_session_tokens()
+    session.pop("_oauth_state", None)
     return jsonify({"status": "ok"})
 
 

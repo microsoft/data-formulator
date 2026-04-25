@@ -184,6 +184,7 @@ PostgreSQL 额外约定：
 | `/api/connectors/preview-data` | POST | 返回预览数据，自动附带 `source_type` |
 | `/api/connectors/column-values` | POST | 返回列的可选值（智能筛选自动补全） |
 | `/api/connectors/import-group` | POST | 批量导入，支持 `source_filters` 参数 |
+| `/api/connectors/disconnect` | POST | 断开当前 identity 下的 connector，清除 in-memory loader 和已保存凭据，但保留 connector 定义 |
 
 ### 4.4 `source_filters` 格式
 

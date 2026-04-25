@@ -47,6 +47,19 @@ Session-backed 凭证管理器，统一管理所有第三方系统的 token。
 | `store_service_token(system_id, ...)` | 存储弹窗/手动获取的 token |
 | `store_sso_tokens(...)` | 存储后端 OIDC 回调获取的 SSO token |
 | `clear_service_token(system_id)` | 清除 token（Session + Vault 同步清理） |
+| `clear_session_tokens()` | 仅清除当前 Flask Session 中的 SSO/service token，不删除 Vault 凭据 |
+
+**手动断开与自动 SSO 重连:**
+
+当用户手动断开 `mode="sso_exchange"` 的服务（例如 Superset）时，
+`TokenStore.clear_service_token(system_id)` 会在当前 Flask Session 中记录
+`sso_disconnected_services[system_id] = True`。之后自动 SSO exchange 会跳过该服务，
+避免刚断开又被 DF 的 SSO token 自动换回目标系统 token。用户通过弹窗/显式登录重新保存
+service token 后，`store_service_token()` 会清除此阻止标记。
+
+OIDC logout 使用 `clear_session_tokens()`，只清当前浏览器会话中的 `sso`、
+`service_tokens` 和 `sso_disconnected_services`，不删除按 `identity + source_id`
+隔离保存的 Vault 凭据。
 
 ### 2.2 OIDC Gateway (`auth/gateways/oidc_gateway.py`)
 

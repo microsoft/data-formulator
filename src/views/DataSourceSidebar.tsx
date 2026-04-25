@@ -46,6 +46,7 @@ import ExploreOutlinedIcon from '@mui/icons-material/ExploreOutlined';
 import ContentPasteOutlinedIcon from '@mui/icons-material/ContentPasteOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
@@ -263,6 +264,7 @@ const DataSourceSidebarPanel: React.FC<{
     // Delete connector confirmation
     const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
     const [deleting, setDeleting] = useState(false);
+    const [disconnectingConnectorId, setDisconnectingConnectorId] = useState<string | null>(null);
 
     // Catalog search (pure frontend filtering)
     const [catalogSearch, setCatalogSearch] = useState('');
@@ -692,6 +694,15 @@ const DataSourceSidebarPanel: React.FC<{
             });
     }, [tableIdentities, dispatch, buildSourceTableRef]);
 
+    const clearConnectorUiState = useCallback((connectorId: string) => {
+        setCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        setExpandedSources(prev => { const next = new Set(prev); next.delete(connectorId); return next; });
+        setTreeExpanded(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        if (preview?.connectorId === connectorId) {
+            closePreview();
+        }
+    }, [closePreview, preview?.connectorId]);
+
     // ── Delete connector ──────────────────────────────────────────────────
 
     const handleDeleteConnector = useCallback(async () => {
@@ -702,9 +713,7 @@ const DataSourceSidebarPanel: React.FC<{
             const data = await resp.json();
             if (resp.ok || data.status === 'success') {
                 setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
-                setCatalogCache(prev => { const next = { ...prev }; delete next[deleteTarget.id]; return next; });
-                setExpandedSources(prev => { const next = new Set(prev); next.delete(deleteTarget.id); return next; });
-                setTreeExpanded(prev => { const next = { ...prev }; delete next[deleteTarget.id]; return next; });
+                clearConnectorUiState(deleteTarget.id);
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     type: 'success',
@@ -730,7 +739,53 @@ const DataSourceSidebarPanel: React.FC<{
             setDeleting(false);
             setDeleteTarget(null);
         }
-    }, [deleteTarget, dispatch, t]);
+    }, [clearConnectorUiState, deleteTarget, dispatch, t]);
+
+    const handleDisconnectConnector = useCallback(async (
+        connector: ConnectorInstance,
+        e: React.MouseEvent,
+    ) => {
+        e.stopPropagation();
+        setDisconnectingConnectorId(connector.id);
+        try {
+            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.DISCONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connector.id }),
+            });
+            const data = await resp.json();
+            if (resp.ok && data.status === 'disconnected') {
+                setConnectors(prev => prev.map(c => (
+                    c.id === connector.id
+                        ? { ...c, connected: false, sso_auto_connect: false }
+                        : c
+                )));
+                clearConnectorUiState(connector.id);
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'success',
+                    component: 'data source sidebar',
+                    value: t('sidebar.connectorDisconnected', { name: connector.display_name }),
+                }));
+            } else {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'error',
+                    component: 'data source sidebar',
+                    value: data.message || t('sidebar.failedDisconnectConnector'),
+                }));
+            }
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: t('sidebar.failedDisconnectConnector'),
+            }));
+        } finally {
+            setDisconnectingConnectorId(null);
+        }
+    }, [clearConnectorUiState, dispatch, t]);
 
     // ── Render ───────────────────────────────────────────────────────────────
 
@@ -866,6 +921,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     py: 0.75,
                                     cursor: 'pointer',
                                     '&:hover': { bgcolor: 'action.hover' },
+                                    '&:hover .disconnect-connector-btn': { visibility: 'visible' },
                                     '&:hover .delete-connector-btn': { visibility: 'visible' },
                                     userSelect: 'none',
                                 }}
@@ -892,6 +948,26 @@ const DataSourceSidebarPanel: React.FC<{
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: isExpanded ? 'visible' : 'hidden' }}
                                         >
                                             <RefreshIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                                {connector.connected && (
+                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect connector' })}>
+                                        <IconButton
+                                            size="small"
+                                            className="disconnect-connector-btn"
+                                            disabled={disconnectingConnectorId === connector.id}
+                                            onClick={(e) => handleDisconnectConnector(connector, e)}
+                                            sx={{
+                                                color: 'text.disabled',
+                                                p: 0.25,
+                                                visibility: isExpanded ? 'visible' : 'hidden',
+                                                '&:hover': { color: 'warning.main' },
+                                            }}
+                                        >
+                                            {disconnectingConnectorId === connector.id
+                                                ? <CircularProgress size={12} />
+                                                : <LinkOffIcon sx={{ fontSize: 14 }} />}
                                         </IconButton>
                                     </Tooltip>
                                 )}

@@ -1088,8 +1088,10 @@ export const DataLoaderForm: React.FC<{
     const handleDisconnect = useCallback(async () => {
         const cid = connectorIdRef.current;
         if (cid) {
-            await fetchWithIdentity(`/api/auth/tokens/${encodeURIComponent(cid)}`, {
-                method: 'DELETE',
+            await fetchWithIdentity(CONNECTOR_ACTION_URLS.DISCONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: cid }),
             }).catch(() => {});
         }
         setCatalogTree([]);

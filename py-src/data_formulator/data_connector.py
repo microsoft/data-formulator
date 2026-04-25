@@ -166,6 +166,12 @@ def _connector_config_params(
     }
 
 
+def _loader_auth_mode(loader_class: type[ExternalDataLoader]) -> str:
+    """Return the effective auth mode, preferring modern auth_config()."""
+    config = loader_class.auth_config() if hasattr(loader_class, "auth_config") else None
+    return config.get("mode") if config else loader_class.auth_mode()
+
+
 def _visible_connector_items(identity: str | None) -> list[tuple[str, "DataConnector", bool]]:
     """Return registry entries visible to the current identity.
 
@@ -484,6 +490,8 @@ class DataConnector:
         try:
             from data_formulator.auth.token_store import TokenStore
             token_store = TokenStore()
+            if token_store.is_sso_reconnect_blocked(self._source_id):
+                return
             access = token_store.get_access(self._source_id)
             if access:
                 if isinstance(access, dict):
@@ -498,6 +506,9 @@ class DataConnector:
         # Legacy fallback: inject raw SSO token for exchange
         try:
             from data_formulator.auth.identity import get_sso_token
+            from data_formulator.auth.token_store import TokenStore
+            if TokenStore().is_sso_reconnect_blocked(self._source_id):
+                return
             sso_token = get_sso_token()
             if sso_token:
                 params["sso_access_token"] = sso_token
@@ -747,8 +758,12 @@ def list_connectors():
         identity = None
 
     sso_token = None
+    token_store = None
     try:
         sso_token = get_sso_token() if identity else None
+        if sso_token is not None:
+            from data_formulator.auth.token_store import TokenStore
+            token_store = TokenStore()
     except Exception as e:
         logger.debug("SSO token unavailable for connector list", exc_info=e)
 
@@ -760,11 +775,17 @@ def list_connectors():
                 connector._get_loader(identity) is not None
                 or connector.has_stored_credentials(identity)
             )
-        # SSO auto-connect: token-mode loader + user has SSO token + URL is pinned
+        auth_mode = _loader_auth_mode(connector._loader_class)
+        sso_blocked = (
+            token_store.is_sso_reconnect_blocked(connector._source_id)
+            if token_store else False
+        )
+        # SSO auto-connect: auth-capable loader + user has SSO token + URL is pinned
         sso_auto = (
             not connected
             and sso_token is not None
-            and connector._loader_class.auth_mode() == "token"
+            and auth_mode in ("token", "sso_exchange", "delegated")
+            and not sso_blocked
             and bool(connector._default_params.get("url"))
         )
         cfg = connector.get_frontend_config()
@@ -1040,6 +1061,31 @@ def connector_connect():
         classify_and_raise_connector_error(e)
 
 
+@connectors_bp.route("/api/connectors/disconnect", methods=["POST"])
+def connector_disconnect():
+    """Disconnect a connector for the current identity.
+
+    This clears the in-memory loader and stored credentials for this connector,
+    but keeps the connector definition itself so it can be reconnected later.
+    """
+    data = request.get_json() or {}
+    source = _resolve_connector(data)
+
+    try:
+        identity = source._get_identity()
+        source._loaders.pop(identity, None)
+        source._vault_delete(identity)
+        try:
+            from data_formulator.auth.token_store import TokenStore
+            TokenStore().clear_service_token(source._source_id)
+        except Exception as exc:
+            logger.debug("TokenStore disconnect cleanup failed for %s: %s",
+                         source._source_id, type(exc).__name__)
+        return jsonify({"status": "disconnected"})
+    except Exception as e:
+        classify_and_raise_connector_error(e)
+
+
 @connectors_bp.route("/api/connectors/get-status", methods=["POST"])
 def connector_get_status():
     """Check connection status (no side effects — no auto-reconnect)."""
@@ -1053,8 +1099,11 @@ def connector_get_status():
         sso_available = False
         try:
             from data_formulator.auth.identity import get_sso_token
+            from data_formulator.auth.token_store import TokenStore
+            auth_mode = _loader_auth_mode(source._loader_class)
             sso_available = (
-                source._loader_class.auth_mode() == "token"
+                auth_mode in ("token", "sso_exchange", "delegated")
+                and not TokenStore().is_sso_reconnect_blocked(source._source_id)
                 and get_sso_token() is not None
             )
         except Exception as e:
