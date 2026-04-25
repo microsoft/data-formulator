@@ -672,22 +672,10 @@ class ExternalDataLoader(ABC):
             pass
         return {}
 
-    def list_tables_tree(self, table_filter: str | None = None) -> dict:
-        """Build a nested tree from :meth:`list_tables` results.
-
-        Returns ``{"hierarchy": [...], "effective_hierarchy": [...],
-        "tree": [...]}``.  Each table entry keeps the full metadata
-        (columns, sample_rows, row_count) from ``list_tables()`` plus
-        ``_source_name`` (the original name used for import).
-
-        If a table entry includes an explicit ``path`` list, it is used
-        directly to place the table in the tree.  Otherwise the ``name``
-        is split on ``"."`` as a fallback.
-        """
+    def _tables_to_catalog_tree(self, tables: list[dict[str, Any]]) -> list[dict]:
+        """Build a nested catalog tree from ``list_tables``-style entries."""
         eff = self.effective_hierarchy()
         num_ns = len(eff) - 1  # namespace levels before the leaf
-
-        tables = self.list_tables(table_filter=table_filter)
 
         # Normalise each entry into a (path_segments, original_name, metadata) tuple.
         # If the path has more segments than the effective hierarchy depth,
@@ -763,11 +751,45 @@ class ExternalDataLoader(ABC):
             return nodes
 
         tree = _build(entries, 0, [])
+        return tree
+
+    def list_tables_tree(self, table_filter: str | None = None) -> dict:
+        """Build a nested tree from :meth:`list_tables` results.
+
+        Returns ``{"hierarchy": [...], "effective_hierarchy": [...],
+        "tree": [...]}``.  Each table entry keeps the full metadata
+        (columns, sample_rows, row_count) from ``list_tables()`` plus
+        ``_source_name`` (the original name used for import).
+
+        If a table entry includes an explicit ``path`` list, it is used
+        directly to place the table in the tree.  Otherwise the ``name``
+        is split on ``"."`` as a fallback.
+        """
+        tree = self._tables_to_catalog_tree(self.list_tables(table_filter=table_filter))
 
         return {
             "hierarchy": self.catalog_hierarchy(),
-            "effective_hierarchy": eff,
+            "effective_hierarchy": self.effective_hierarchy(),
             "tree": tree,
+        }
+
+    def search_catalog(self, query: str, limit: int = 100) -> dict:
+        """Return lightweight catalog search results as a tree.
+
+        The default implementation reuses ``list_tables(table_filter=...)`` for
+        compatibility. Large or special loaders should override this to avoid
+        fetching columns, samples, or counts for search-only results.
+        """
+        text = (query or "").strip()
+        if not text:
+            return {"tree": [], "truncated": False}
+
+        max_results = max(1, int(limit or 100))
+        tables = self.list_tables(table_filter=text)
+        truncated = len(tables) > max_results
+        return {
+            "tree": self._tables_to_catalog_tree(tables[:max_results]),
+            "truncated": truncated,
         }
 
     def test_connection(self) -> bool:

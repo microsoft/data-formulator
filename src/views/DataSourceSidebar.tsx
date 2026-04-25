@@ -266,8 +266,11 @@ const DataSourceSidebarPanel: React.FC<{
     const [deleting, setDeleting] = useState(false);
     const [disconnectingConnectorId, setDisconnectingConnectorId] = useState<string | null>(null);
 
-    // Catalog search (pure frontend filtering)
+    // Catalog search: input changes are local; Enter/search button hits backend.
     const [catalogSearch, setCatalogSearch] = useState('');
+    const [serverSearchActive, setServerSearchActive] = useState(false);
+    const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
+    const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
     // Session hover tooltip cache: sessionId → summary string
     const [sessionTooltips, setSessionTooltips] = useState<Record<string, string>>({});
@@ -391,6 +394,9 @@ const DataSourceSidebarPanel: React.FC<{
     useEffect(() => {
         setConnectors([]);
         setCatalogCache({});
+        setSearchCatalogCache({});
+        setServerSearchActive(false);
+        setSearchingCatalog({});
         setLoadingCatalog({});
         setExpandedSources(new Set());
         setTreeExpanded({});
@@ -464,6 +470,79 @@ const DataSourceSidebarPanel: React.FC<{
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
         fetchingRef.current.delete(fetchKey);
     }, []);
+
+    const clearCatalogSearch = useCallback(() => {
+        setCatalogSearch('');
+        setServerSearchActive(false);
+        setSearchCatalogCache({});
+        setSearchingCatalog({});
+    }, []);
+
+    const handleCatalogSearchChange = useCallback((value: string) => {
+        setCatalogSearch(value);
+        setServerSearchActive(false);
+        setSearchCatalogCache({});
+        setSearchingCatalog({});
+    }, []);
+
+    const searchConnectorCatalog = useCallback(async (connector: ConnectorInstance, query: string) => {
+        setSearchingCatalog(prev => ({ ...prev, [connector.id]: true }));
+        try {
+            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connector.id, query, limit: 100 }),
+            });
+            const data = await resp.json();
+            if (data.status === 'error') {
+                throw new Error(data.error?.message || data.error_message || 'Catalog search failed');
+            }
+            const tree = (data.tree || []) as CatalogTreeNode[];
+            setSearchCatalogCache(prev => ({
+                ...prev,
+                [connector.id]: { tree, fetchedAt: Date.now() },
+            }));
+            setTreeExpanded(prev => ({
+                ...prev,
+                [connector.id]: collectNamespaceIds(tree),
+            }));
+        } catch {
+            setSearchCatalogCache(prev => ({
+                ...prev,
+                [connector.id]: { tree: [], fetchedAt: Date.now() },
+            }));
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'warning',
+                component: 'data source sidebar',
+                value: t('sidebar.failedSearchConnector', {
+                    connector: connector.display_name,
+                    defaultValue: `Failed to search ${connector.display_name}`,
+                }),
+            }));
+        } finally {
+            setSearchingCatalog(prev => ({ ...prev, [connector.id]: false }));
+        }
+    }, [dispatch, t]);
+
+    const runCatalogSearch = useCallback(() => {
+        const query = catalogSearch.trim();
+        if (!query) {
+            clearCatalogSearch();
+            return;
+        }
+        const connected = sortedConnectors.filter(connector => connector.connected);
+        setServerSearchActive(true);
+        setSearchCatalogCache({});
+        connected.forEach(connector => {
+            void searchConnectorCatalog(connector, query);
+        });
+    }, [catalogSearch, clearCatalogSearch, searchConnectorCatalog, sortedConnectors]);
+
+    const anyCatalogSearchLoading = useMemo(
+        () => Object.values(searchingCatalog).some(Boolean),
+        [searchingCatalog],
+    );
 
     // ── Loaded tables map ────────────────────────────────────────────────────
 
@@ -696,6 +775,8 @@ const DataSourceSidebarPanel: React.FC<{
 
     const clearConnectorUiState = useCallback((connectorId: string) => {
         setCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        setSearchCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        setSearchingCatalog(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setExpandedSources(prev => { const next = new Set(prev); next.delete(connectorId); return next; });
         setTreeExpanded(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         if (preview?.connectorId === connectorId) {
@@ -844,13 +925,19 @@ const DataSourceSidebarPanel: React.FC<{
                     {t('sidebar.dataConnectors', { defaultValue: 'Data connectors' })}
                 </Typography>
 
-                {/* Search box for filtering catalog tables */}
+                {/* Search box: typing filters local cache, Enter/button searches backend. */}
                 <Box sx={{ px: 1.5, pt: 0.5, pb: 0.5 }}>
                     <TextField
                         size="small"
                         fullWidth
                         value={catalogSearch}
-                        onChange={(e) => setCatalogSearch(e.target.value)}
+                        onChange={(e) => handleCatalogSearchChange(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                runCatalogSearch();
+                            }
+                        }}
                         placeholder={t('sidebar.searchTables', { defaultValue: 'Search tables...' })}
                         slotProps={{
                             input: {
@@ -860,8 +947,18 @@ const DataSourceSidebarPanel: React.FC<{
                                     </InputAdornment>
                                 ),
                                 endAdornment: catalogSearch ? (
-                                    <InputAdornment position="end">
-                                        <IconButton size="small" onClick={() => setCatalogSearch('')} sx={{ p: 0.25 }}>
+                                    <InputAdornment position="end" sx={{ gap: 0.25 }}>
+                                        <IconButton
+                                            size="small"
+                                            onClick={runCatalogSearch}
+                                            disabled={anyCatalogSearchLoading}
+                                            sx={{ p: 0.25 }}
+                                        >
+                                            {anyCatalogSearchLoading
+                                                ? <CircularProgress size={12} />
+                                                : <SearchIcon sx={{ fontSize: 14, color: 'text.disabled' }} />}
+                                        </IconButton>
+                                        <IconButton size="small" onClick={clearCatalogSearch} sx={{ p: 0.25 }}>
                                             <ClearIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
                                         </IconButton>
                                     </InputAdornment>
@@ -884,20 +981,32 @@ const DataSourceSidebarPanel: React.FC<{
 
                 {sortedConnectors
                     .filter((connector) => {
-                        if (!catalogSearch.trim()) return true;
+                        const searchText = catalogSearch.trim();
+                        if (!searchText) return true;
+                        if (serverSearchActive) {
+                            if (!connector.connected) return false;
+                            const serverCache = searchCatalogCache[connector.id];
+                            return !!searchingCatalog[connector.id] || !!(serverCache && serverCache.tree.length > 0);
+                        }
                         const cache = catalogCache[connector.id];
                         if (!cache) return true; // not yet loaded — keep visible
                         const filtered = filteredCatalogCache[connector.id];
                         return filtered && filtered.tree.length > 0;
                     })
                     .map((connector) => {
-                    const isSearching = !!catalogSearch.trim();
-                    const displayCache = isSearching ? filteredCatalogCache[connector.id] : catalogCache[connector.id];
-                    const isExpanded = isSearching
+                    const searchText = catalogSearch.trim();
+                    const localSearchActive = !!searchText && !serverSearchActive;
+                    const activeSearchMode = !!searchText;
+                    const displayCache = serverSearchActive
+                        ? searchCatalogCache[connector.id]
+                        : (localSearchActive ? filteredCatalogCache[connector.id] : catalogCache[connector.id]);
+                    const isExpanded = activeSearchMode
                         ? (!!displayCache && displayCache.tree.length > 0)
                         : expandedSources.has(connector.id);
-                    const isLoading = loadingCatalog[connector.id] ?? false;
-                    const expanded = isSearching
+                    const isLoading = serverSearchActive
+                        ? (searchingCatalog[connector.id] ?? false)
+                        : (loadingCatalog[connector.id] ?? false);
+                    const expanded = activeSearchMode
                         ? collectNamespaceIds(displayCache?.tree || [])
                         : (treeExpanded[connector.id] || []);
 
@@ -943,11 +1052,17 @@ const DataSourceSidebarPanel: React.FC<{
                                             size="small"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                fetchCatalogNodes(connector.id);
+                                                if (serverSearchActive && searchText) {
+                                                    void searchConnectorCatalog(connector, searchText);
+                                                } else {
+                                                    fetchCatalogNodes(connector.id);
+                                                }
                                             }}
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: isExpanded ? 'visible' : 'hidden' }}
                                         >
-                                            <RefreshIcon sx={{ fontSize: 14 }} />
+                                            {isLoading
+                                                ? <CircularProgress size={12} />
+                                                : <RefreshIcon sx={{ fontSize: 14 }} />}
                                         </IconButton>
                                     </Tooltip>
                                 )}
@@ -1001,7 +1116,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         <SimpleTreeView
                                             expandedItems={expanded}
                                             onExpandedItemsChange={(_e, items) => {
-                                                if (!isSearching) {
+                                                if (!activeSearchMode) {
                                                     const prevSet = new Set(expanded);
                                                     const newlyExpanded = items.filter(id => !prevSet.has(id));
                                                     setTreeExpanded(prev => ({ ...prev, [connector.id]: items }));
@@ -1015,8 +1130,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                 }
                                             }}
                                             onItemClick={(e, itemId) => {
-                                                const fullCache = catalogCache[connector.id];
-                                                const node = fullCache ? findNodeByPath(fullCache.tree, itemId) : null;
+                                                const node = displayCache ? findNodeByPath(displayCache.tree, itemId) : null;
                                                 if (node && node.node_type === 'table') {
                                                     handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
                                                 }

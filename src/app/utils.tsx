@@ -98,6 +98,7 @@ export const CONNECTOR_ACTION_URLS = {
     GET_STATUS: '/api/connectors/get-status',
     GET_CATALOG: '/api/connectors/get-catalog',
     GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',
+    SEARCH_CATALOG: '/api/connectors/search-catalog',
     IMPORT_DATA: '/api/connectors/import-data',
     REFRESH_DATA: '/api/connectors/refresh-data',
     PREVIEW_DATA: '/api/connectors/preview-data',

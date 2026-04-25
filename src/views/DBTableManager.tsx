@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 
 import SearchIcon from '@mui/icons-material/Search';
+import ClearIcon from '@mui/icons-material/Clear';
 
 
 import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity, SourceTableRef } from '../app/utils';
@@ -39,7 +40,6 @@ import Markdown from 'markdown-to-jsx';
 import CheckIcon from '@mui/icons-material/Check';
 
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import { TableIcon } from '../icons';
 import { RowLimitUnderlineSelect } from '../components/RowLimitUnderlineSelect';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
@@ -47,6 +47,7 @@ import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
 import {
     appendChildrenAtPath,
     CatalogTreeNode,
+    collectNamespaceIds,
     findNodeByPath,
     mergeChildrenAtPath,
     renderCatalogTreeItems,
@@ -649,6 +650,10 @@ export const DataLoaderForm: React.FC<{
     const [selectedPreviewTable, setSelectedPreviewTable] = useState<string | null>(null);
     // Catalog tree state (hierarchical browsing)
     const [catalogTree, setCatalogTree] = useState<CatalogTreeNode[]>([]);
+    const [searchCatalogTree, setSearchCatalogTree] = useState<CatalogTreeNode[]>([]);
+    const [catalogSearch, setCatalogSearch] = useState(params.table_filter || '');
+    const [serverSearchActive, setServerSearchActive] = useState(false);
+    const [isCatalogSearching, setIsCatalogSearching] = useState(false);
     const [selectedTreeNode, setSelectedTreeNode] = useState<CatalogTreeNode | null>(null);
     const [expandedItems, setExpandedItems] = useState<string[]>([]);
     // Import options for the currently selected table
@@ -697,11 +702,30 @@ export const DataLoaderForm: React.FC<{
         [params, sensitiveParams]
     );
 
-    // Ref for the connected-state table filter input (uncontrolled for performance)
-    const filterInputRef = useRef<HTMLInputElement>(null);
-
     // Connection timeout in milliseconds (30 seconds)
     const CONNECTION_TIMEOUT_MS = 30_000;
+
+    const collectTreeMetadata = useCallback((nodes: CatalogTreeNode[]) => {
+        const flatMeta: Record<string, any> = {};
+        const walk = (items: CatalogTreeNode[]) => {
+            for (const node of items) {
+                if (node.node_type === 'table' || node.node_type === 'table_group') {
+                    const key = node.path.join('/');
+                    flatMeta[key] = {
+                        ...node.metadata,
+                        _catalogName: node.name,
+                        _catalogPath: node.path,
+                        ...(node.node_type === 'table_group' ? { _isGroup: true } : {}),
+                    };
+                }
+                if (node.children) {
+                    walk(node.children);
+                }
+            }
+        };
+        walk(nodes);
+        return flatMeta;
+    }, []);
 
     // Helper: fetch catalog nodes lazily and update state
     const fetchCatalogNodes = useCallback(
@@ -738,17 +762,7 @@ export const DataLoaderForm: React.FC<{
             if (path.length === 0) {
                 setExpandedItems([]);
             }
-            // Extract metadata from table nodes into flat map
-            const flatMeta: Record<string, any> = {};
-            for (const n of nodes) {
-                if (n.node_type === 'table') {
-                    const key = (path.length > 0 ? [...path, n.name] : n.path).join('/');
-                    flatMeta[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path };
-                } else if (n.node_type === 'table_group') {
-                    const key = (path.length > 0 ? [...path, n.name] : n.path).join('/');
-                    flatMeta[key] = { ...n.metadata, _catalogName: n.name, _catalogPath: n.path, _isGroup: true };
-                }
-            }
+            const flatMeta = collectTreeMetadata(nodes);
             if (Object.keys(flatMeta).length > 0) {
                 setTableMetadata(prev => ({ ...prev, ...flatMeta }));
             }
@@ -758,7 +772,7 @@ export const DataLoaderForm: React.FC<{
         }
         return data;
     },
-    []);
+    [collectTreeMetadata]);
 
     // Helper: connect and list tables via data connector
     const connectAndListTables = useCallback(async (filter?: string) => {
@@ -1085,6 +1099,60 @@ export const DataLoaderForm: React.FC<{
 
     const isConnected = catalogTree.length > 0 || Object.keys(tableMetadata).length > 0;
 
+    const handleCatalogSearchChange = useCallback((filterValue: string) => {
+        setCatalogSearch(filterValue);
+        if (serverSearchActive) {
+            setServerSearchActive(false);
+            setSearchCatalogTree([]);
+            setExpandedItems([]);
+        }
+    }, [serverSearchActive]);
+
+    const clearCatalogSearch = useCallback(() => {
+        setCatalogSearch('');
+        setServerSearchActive(false);
+        setSearchCatalogTree([]);
+        setExpandedItems([]);
+    }, []);
+
+    const runCatalogSearch = useCallback(async (filterValue: string) => {
+        const query = filterValue.trim();
+        setCatalogSearch(filterValue);
+        dispatch(dfActions.updateDataLoaderConnectParam({
+            dataLoaderType,
+            paramName: 'table_filter',
+            paramValue: filterValue,
+        }));
+        if (!query) {
+            clearCatalogSearch();
+            return;
+        }
+        setIsCatalogSearching(true);
+        setServerSearchActive(true);
+        setSearchCatalogTree([]);
+        setSelectedPreviewTable(null);
+        setSelectedTreeNode(null);
+        try {
+            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorIdRef.current, query, limit: 100 }),
+            });
+            const data = await resp.json();
+            if (data.status === 'error') {
+                throw new Error(data.error?.message || data.error_message || 'Failed to search catalog');
+            }
+            const tree = (data.tree || []) as CatalogTreeNode[];
+            setSearchCatalogTree(tree);
+            setTableMetadata(prev => ({ ...prev, ...collectTreeMetadata(tree) }));
+            setExpandedItems(collectNamespaceIds(tree));
+        } catch (error: any) {
+            onFinish("error", error.message || 'Failed to load catalog');
+        } finally {
+            setIsCatalogSearching(false);
+        }
+    }, [clearCatalogSearch, collectTreeMetadata, dataLoaderType, dispatch, onFinish]);
+
     const handleDisconnect = useCallback(async () => {
         const cid = connectorIdRef.current;
         if (cid) {
@@ -1095,6 +1163,10 @@ export const DataLoaderForm: React.FC<{
             }).catch(() => {});
         }
         setCatalogTree([]);
+        setSearchCatalogTree([]);
+        setCatalogSearch('');
+        setServerSearchActive(false);
+        setIsCatalogSearching(false);
         setTableMetadata({});
         setSelectedPreviewTable(null);
         setSelectedTreeNode(null);
@@ -1102,11 +1174,11 @@ export const DataLoaderForm: React.FC<{
     }, []);
 
     // Split catalog tree into dataset vs dashboard subsets for tabbed view
-    const datasetNodes = useMemo(() => catalogTree.filter(n => n.node_type !== 'table_group'), [catalogTree]);
-    const dashboardNodes = useMemo(() => catalogTree.filter(n => n.node_type === 'table_group'), [catalogTree]);
+    const displayedCatalogTree = serverSearchActive ? searchCatalogTree : catalogTree;
+    const datasetNodes = useMemo(() => displayedCatalogTree.filter(n => n.node_type !== 'table_group'), [displayedCatalogTree]);
+    const dashboardNodes = useMemo(() => displayedCatalogTree.filter(n => n.node_type === 'table_group'), [displayedCatalogTree]);
     const hasBothTabs = datasetNodes.length > 0 && dashboardNodes.length > 0;
     const [catalogTab, setCatalogTab] = useState(0);
-    const [localTableFilter, setLocalTableFilter] = useState('');
 
     const filterTreeByName = useCallback((nodes: CatalogTreeNode[], keyword: string): CatalogTreeNode[] => {
         if (!keyword) return nodes;
@@ -1178,7 +1250,7 @@ export const DataLoaderForm: React.FC<{
                             overscrollBehavior: 'contain',
                             display: 'flex', flexDirection: 'column',
                         }}>
-                            {/* Inline search */}
+                            {/* Typing filters the loaded tree; Enter/search queries backend catalog search. */}
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 0.5, pb: 0.5, flexShrink: 0 }}>
                                 <SearchIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
                                 <TextField
@@ -1192,27 +1264,30 @@ export const DataLoaderForm: React.FC<{
                                     variant="standard" size="small"
                                     placeholder={t('db.tableFilterPlaceholder')}
                                     autoComplete="off"
-                                    defaultValue={params.table_filter || ''}
+                                    value={catalogSearch}
+                                    onChange={(e) => handleCatalogSearchChange(e.target.value)}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
-                                            const val = (e.target as HTMLInputElement).value;
-                                            dispatch(dfActions.updateDataLoaderConnectParam({dataLoaderType, paramName: 'table_filter', paramValue: val}));
-                                            connectAndListTables(val);
+                                            e.preventDefault();
+                                            runCatalogSearch(catalogSearch);
                                         }
                                     }}
-                                    inputRef={filterInputRef}
                                 />
                                 <IconButton
                                     size="small"
+                                    disabled={isCatalogSearching}
                                     sx={{ p: 0.25 }}
-                                    onClick={() => {
-                                        const val = filterInputRef.current?.value ?? params.table_filter ?? '';
-                                        dispatch(dfActions.updateDataLoaderConnectParam({dataLoaderType, paramName: 'table_filter', paramValue: val}));
-                                        connectAndListTables(val);
-                                    }}
+                                    onClick={() => runCatalogSearch(catalogSearch)}
                                 >
-                                    <RefreshIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                                    {isCatalogSearching
+                                        ? <CircularProgress size={12} />
+                                        : <SearchIcon sx={{ fontSize: 14, color: 'text.secondary' }} />}
                                 </IconButton>
+                                {catalogSearch && (
+                                    <IconButton size="small" sx={{ p: 0.25 }} onClick={clearCatalogSearch}>
+                                        <ClearIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                                    </IconButton>
+                                )}
                             </Box>
                             <Divider sx={{ mb: 0 }} />
                             {hasBothTabs && (
@@ -1230,33 +1305,12 @@ export const DataLoaderForm: React.FC<{
                                     <Tab label={`${t('db.dashboards', { defaultValue: 'Dashboards' })} (${dashboardNodes.length})`} />
                                 </Tabs>
                             )}
-                            {/* Local instant filter by table name */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 0.5, py: 0.5, flexShrink: 0 }}>
-                                <SearchIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                                <TextField
-                                    sx={{
-                                        flex: 1,
-                                        '& .MuiInputBase-root': { fontSize: 12 },
-                                        '& .MuiInputBase-input': { fontSize: 12, py: 0.25, px: 0.5 },
-                                        '& .MuiInputBase-input::placeholder': { fontSize: 11, opacity: 0.5 },
-                                        '& .MuiInput-underline:before, & .MuiInput-underline:after': { display: 'none' },
-                                    }}
-                                    variant="standard" size="small"
-                                    placeholder={t('db.localFilterPlaceholder', { defaultValue: 'Filter by name...' })}
-                                    autoComplete="off"
-                                    value={localTableFilter}
-                                    onChange={(e) => setLocalTableFilter(e.target.value)}
-                                />
-                                {localTableFilter && (
-                                    <IconButton size="small" sx={{ p: 0.25 }} onClick={() => setLocalTableFilter('')}>
-                                        <Typography sx={{ fontSize: 12, lineHeight: 1, color: 'text.disabled' }}>✕</Typography>
-                                    </IconButton>
-                                )}
-                            </Box>
                             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
                             {(() => {
-                                const baseNodes = hasBothTabs ? (catalogTab === 0 ? datasetNodes : dashboardNodes) : catalogTree;
-                                const visibleNodes = filterTreeByName(baseNodes, localTableFilter);
+                                const baseNodes = hasBothTabs ? (catalogTab === 0 ? datasetNodes : dashboardNodes) : displayedCatalogTree;
+                                const visibleNodes = serverSearchActive ? baseNodes : filterTreeByName(baseNodes, catalogSearch);
+                                const searchModeActive = !!catalogSearch.trim();
+                                const visibleExpandedItems = searchModeActive ? collectNamespaceIds(visibleNodes) : expandedItems;
                                 if (visibleNodes.length === 0) return (
                                     <Typography sx={{ fontSize: 11, color: 'text.disabled', p: 1.5, fontStyle: 'italic' }}>
                                         {t('db.noTablesFound')}
@@ -1264,13 +1318,14 @@ export const DataLoaderForm: React.FC<{
                                 );
                                 return (
                                     <SimpleTreeView
-                                        expandedItems={expandedItems}
+                                        expandedItems={visibleExpandedItems}
                                         onExpandedItemsChange={(_event, itemIds) => {
+                                            if (searchModeActive) return;
                                             const prevSet = new Set(expandedItems);
                                             const newlyExpanded = itemIds.filter(id => !prevSet.has(id));
                                             setExpandedItems(itemIds);
                                             for (const itemId of newlyExpanded) {
-                                                const node = findNodeByPath(catalogTree, itemId);
+                                                const node = findNodeByPath(displayedCatalogTree, itemId);
                                                 if (node && node.node_type === 'namespace' && !node.children) {
                                                     fetchCatalogNodes(node.path);
                                                 }
@@ -1289,11 +1344,11 @@ export const DataLoaderForm: React.FC<{
                                     >
                                         {renderCatalogTreeItems(visibleNodes, {
                                             loadedMap: effectiveLoadedTables,
-                                            expandedSet: new Set(expandedItems),
+                                            expandedSet: new Set(visibleExpandedItems),
                                             onLoadMore: (node) => {
                                                 const parentPath = (node.metadata?.parentPath || []) as string[];
                                                 const nextOffset = Number(node.metadata?.nextOffset || 0);
-                                                fetchCatalogNodes(parentPath, localTableFilter, { append: true, offset: nextOffset });
+                                                fetchCatalogNodes(parentPath, catalogSearch, { append: true, offset: nextOffset });
                                             },
                                         })}
                                     </SimpleTreeView>

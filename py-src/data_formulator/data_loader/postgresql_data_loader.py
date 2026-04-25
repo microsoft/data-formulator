@@ -330,6 +330,73 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             logger.error(f"Error listing tables: {e}")
             return []
 
+    def search_catalog(self, query: str, limit: int = 100) -> dict:
+        """Search database/schema/table names without fetching table metadata."""
+        text = (query or "").strip()
+        if not text:
+            return {"tree": [], "truncated": False}
+
+        max_results = max(1, int(limit or 100))
+        pattern = f"%{_esc_str(text.lower())}%"
+        entries: list[dict[str, Any]] = []
+
+        try:
+            if self.database:
+                databases = [self.database]
+            else:
+                db_rows = self._read_sql("""
+                    SELECT datname FROM pg_database
+                    WHERE datistemplate = false AND datallowconn = true
+                    ORDER BY datname
+                """).to_pandas()
+                databases = [r["datname"] for _, r in db_rows.iterrows()]
+
+            for db in databases:
+                db_matches = text.lower() in str(db).lower()
+                name_predicate = "TRUE" if db_matches else (
+                    f"(LOWER(table_schema) LIKE '{pattern}' OR LOWER(table_name) LIKE '{pattern}')"
+                )
+                remaining = max_results + 1 - len(entries)
+                if remaining <= 0:
+                    break
+                tables_query = f"""
+                    SELECT table_schema, table_name
+                    FROM information_schema.tables
+                    WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+                      AND table_schema !~ '^pg_temp_[0-9]+$'
+                      AND table_schema !~ '^pg_toast_temp_[0-9]+$'
+                      AND table_schema NOT LIKE '%%_intern%%'
+                      AND table_schema NOT LIKE '%%timescaledb%%'
+                      AND table_name NOT LIKE '%%/%%'
+                      AND table_type = 'BASE TABLE'
+                      AND {name_predicate}
+                    ORDER BY table_schema, table_name
+                    LIMIT {remaining}
+                """
+                try:
+                    rows = self._read_sql_on(tables_query, db).to_pandas()
+                except Exception as exc:
+                    logger.debug("PostgreSQL catalog search skipped database %s: %s", db, type(exc).__name__)
+                    continue
+                for _, row in rows.iterrows():
+                    schema = row["table_schema"]
+                    table_name = row["table_name"]
+                    full_source = f"{db}.{schema}.{table_name}"
+                    entries.append({
+                        "name": full_source,
+                        "path": [db, schema, table_name],
+                        "metadata": {"_source_name": full_source},
+                    })
+        except Exception as exc:
+            logger.warning("PostgreSQL catalog search failed: %s", type(exc).__name__)
+            entries = []
+
+        truncated = len(entries) > max_results
+        return {
+            "tree": self._tables_to_catalog_tree(entries[:max_results]),
+            "truncated": truncated,
+        }
+
     # -- Catalog tree API --------------------------------------------------
 
     @staticmethod

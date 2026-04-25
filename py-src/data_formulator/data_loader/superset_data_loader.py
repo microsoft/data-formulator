@@ -328,6 +328,92 @@ class SupersetLoader(ExternalDataLoader):
 
         return results
 
+    def search_catalog(self, query: str, limit: int = 100) -> dict:
+        """Search Superset datasets and dashboards as a lightweight tree."""
+        text = (query or "").strip()
+        if not text:
+            return {"tree": [], "truncated": False}
+
+        token = self._ensure_token()
+        needle = text.lower()
+        max_results = max(1, int(limit or 100))
+        tree: list[dict] = []
+        result_count = 0
+        truncated = False
+
+        def _dataset_name(ds: dict) -> str:
+            return ds.get("table_name") or ds.get("name") or f"dataset_{ds.get('id', '?')}"
+
+        def _dataset_meta(ds: dict) -> dict:
+            return {
+                "dataset_id": ds["id"],
+                "row_count": ds.get("row_count"),
+                "schema": ds.get("schema", ""),
+                "database": (ds.get("database") or {}).get("database_name", ""),
+            }
+
+        all_datasets = self._fetch_all_datasets(token)
+        dataset_children: list[dict] = []
+        for ds in all_datasets:
+            ds_name = _dataset_name(ds)
+            if needle not in ds_name.lower():
+                continue
+            if result_count >= max_results:
+                truncated = True
+                break
+            dataset_children.append({
+                "name": ds_name,
+                "node_type": "table",
+                "path": ["__all__", str(ds["id"])],
+                "metadata": _dataset_meta(ds),
+            })
+            result_count += 1
+
+        if dataset_children:
+            tree.append({
+                "name": "All Datasets",
+                "node_type": "namespace",
+                "path": ["__all__"],
+                "metadata": None,
+                "children": dataset_children,
+            })
+
+        raw_dashboards = self._client.list_dashboards(token, page=0, page_size=500)
+        for dash in raw_dashboards.get("result", []):
+            dash_title = dash.get("dashboard_title", f"Dashboard {dash['id']}")
+            if needle not in dash_title.lower():
+                continue
+            if result_count >= max_results:
+                truncated = True
+                break
+            dash_id = dash["id"]
+            tables = self._build_dashboard_group_metadata(token, dash_id)
+            tree.append({
+                "name": dash_title,
+                "node_type": "table_group",
+                "path": [str(dash_id)],
+                "metadata": {
+                    "dashboard_id": dash_id,
+                    "tables": tables,
+                },
+                "children": [
+                    {
+                        "name": tbl["name"],
+                        "node_type": "table",
+                        "path": [str(dash_id), str(tbl["dataset_id"])],
+                        "metadata": {
+                            "dataset_id": tbl["dataset_id"],
+                            "row_count": tbl.get("row_count"),
+                            "parent_group": str(dash_id),
+                        },
+                    }
+                    for tbl in tables
+                ],
+            })
+            result_count += 1
+
+        return {"tree": tree, "truncated": truncated}
+
     # -- ls (lazy/hierarchical) --------------------------------------------
 
     def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:

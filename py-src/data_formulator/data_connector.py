@@ -1202,6 +1202,33 @@ def connector_get_catalog_tree():
         classify_and_raise_connector_error(e)
 
 
+@connectors_bp.route("/api/connectors/search-catalog", methods=["POST"])
+def connector_search_catalog():
+    """Search a connected connector's catalog without reconnecting."""
+    data = request.get_json() or {}
+    source = _resolve_connector(data)
+
+    try:
+        loader = source._require_loader()
+        query = str(data.get("query") or "").strip()
+        try:
+            limit = int(data.get("limit") or 100)
+        except (TypeError, ValueError):
+            limit = 100
+        limit = min(max(limit, 1), _MAX_CATALOG_PAGE_SIZE)
+
+        result = loader.search_catalog(query=query, limit=limit)
+        return jsonify({
+            "status": "ok",
+            "connector_id": source._source_id,
+            "query": query,
+            "tree": result.get("tree", []),
+            "truncated": bool(result.get("truncated", False)),
+        })
+    except Exception as e:
+        classify_and_raise_connector_error(e)
+
+
 @connectors_bp.route("/api/connectors/import-data", methods=["POST"])
 def connector_import_data():
     data = request.get_json() or {}
