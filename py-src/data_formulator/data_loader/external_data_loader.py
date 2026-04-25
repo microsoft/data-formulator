@@ -203,6 +203,10 @@ def build_source_filter_where_clause_inline(
         s = str(v).replace('\x00', '').replace("'", "''")
         return f"'{s}'"
 
+    def _contains_lit(v: Any) -> str:
+        s = str(v).replace('\x00', '').replace("'", "''")
+        return f"'%{s}%'"
+
     parts: list[str] = []
     for sf in source_filters:
         if not isinstance(sf, dict):

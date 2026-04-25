@@ -34,8 +34,12 @@ from data_formulator.data_connector import (
     _load_admin_specs,
     _load_connectors_yaml,
     _load_user_specs,
+    _resolve_connector,
     _resolve_env_refs,
     _save_user_connectors,
+    _user_connector_key,
+    _visible_connector_items,
+    connectors_bp,
     load_connectors,
     register_data_connectors,
 )
@@ -75,6 +79,17 @@ class _StubLoader(ExternalDataLoader):
     @staticmethod
     def auth_instructions():
         return "Stub loader"
+
+
+class _CredentialStubLoader(_StubLoader):
+    @staticmethod
+    def list_params():
+        return [
+            {"name": "host", "type": "string", "required": True, "tier": "connection"},
+            {"name": "database", "type": "string", "required": False, "tier": "filter"},
+            {"name": "user", "type": "string", "required": True, "tier": "auth"},
+            {"name": "password", "type": "password", "required": True, "tier": "auth", "sensitive": True},
+        ]
 
 
 # ------------------------------------------------------------------
@@ -381,7 +396,7 @@ class TestLoadConnectors:
              patch("data_formulator.data_loader.DATA_LOADERS", mock_loaders):
             load_connectors("alice")
 
-        assert "user_db" in DATA_CONNECTORS
+        assert _user_connector_key("alice", "user_db") in DATA_CONNECTORS
 
     def test_does_not_overwrite_admin_connectors(self, tmp_path):
         """Admin connector should not be replaced by user connector with same ID."""
@@ -421,6 +436,84 @@ class TestLoadConnectors:
             load_connectors("alice")
             assert "alice" in _LOADED_USER_IDENTITIES
             load_connectors("alice")
+
+    def test_user_connectors_are_scoped_by_identity(self, tmp_path):
+        """Anonymous and authenticated users may have same public connector ID."""
+        browser_dir = tmp_path / "users" / "browser_anon"
+        user_dir = tmp_path / "users" / "user_alice"
+        browser_dir.mkdir(parents=True)
+        user_dir.mkdir(parents=True)
+        browser_dir.joinpath("connectors.yaml").write_text(textwrap.dedent("""\
+            connectors:
+              - type: stub
+                id: postgresql:local
+                name: "Anonymous PG"
+        """))
+        user_dir.joinpath("connectors.yaml").write_text(textwrap.dedent("""\
+            connectors:
+              - type: stub
+                id: postgresql:local
+                name: "Alice PG"
+        """))
+
+        def user_home(identity: str):
+            return browser_dir if identity == "browser:anon" else user_dir
+
+        mock_loaders = {"stub": _StubLoader}
+        with patch("data_formulator.datalake.workspace.get_user_home", side_effect=user_home), \
+             patch("data_formulator.data_loader.DATA_LOADERS", mock_loaders):
+            load_connectors("browser:anon")
+            load_connectors("user:alice")
+
+        browser_key = _user_connector_key("browser:anon", "postgresql:local")
+        user_key = _user_connector_key("user:alice", "postgresql:local")
+        assert browser_key in DATA_CONNECTORS
+        assert user_key in DATA_CONNECTORS
+        assert DATA_CONNECTORS[browser_key]._display_name == "Anonymous PG"
+        assert DATA_CONNECTORS[user_key]._display_name == "Alice PG"
+
+        visible_to_user = [
+            connector._display_name
+            for _key, connector, _is_admin in _visible_connector_items("user:alice")
+        ]
+        assert visible_to_user == ["Alice PG"]
+
+        with patch.object(DataConnector, "_get_identity", return_value="user:alice"):
+            assert _resolve_connector({"connector_id": "postgresql:local"})._display_name == "Alice PG"
+        with patch.object(DataConnector, "_get_identity", return_value="browser:anon"):
+            assert _resolve_connector({"connector_id": "postgresql:local"})._display_name == "Anonymous PG"
+
+    def test_create_connector_persists_only_non_auth_params(self, app, tmp_path):
+        """User/password are credentials, not connector metadata."""
+        app.register_blueprint(connectors_bp)
+        user_dir = tmp_path / "users" / "alice"
+        mock_loaders = {"stub": _CredentialStubLoader}
+
+        with patch.object(DataConnector, "_get_identity", return_value="user:alice"), \
+             patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir), \
+             patch("data_formulator.data_loader.DATA_LOADERS", mock_loaders), \
+             patch.object(DataConnector, "_get_vault", return_value=None):
+            resp = app.test_client().post("/api/connectors", json={
+                "loader_type": "stub",
+                "display_name": "Private DB",
+                "params": {
+                    "host": "db.local",
+                    "database": "analytics",
+                    "user": "alice",
+                    "password": "secret",
+                },
+                "persist": False,
+            })
+
+        assert resp.status_code == 201
+        connector_id = resp.get_json()["id"]
+        assert _user_connector_key("user:alice", connector_id) in DATA_CONNECTORS
+
+        entries = _load_connectors_yaml(user_dir / "connectors.yaml")
+        assert entries[0]["params"] == {
+            "host": "db.local",
+            "database": "analytics",
+        }
 
 
 # ==================================================================

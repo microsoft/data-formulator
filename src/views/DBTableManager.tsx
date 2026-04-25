@@ -121,6 +121,7 @@ export const DBManagerPane: React.FC<{
     const dispatch = useDispatch<AppDispatch>();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
 
     // Disabled data sources (missing deps) from app-config
     const disabledSources = serverConfig.DISABLED_SOURCES ?? {};
@@ -129,6 +130,10 @@ export const DBManagerPane: React.FC<{
     const [connectedIds, setConnectedIds] = useState<Set<string>>(
         new Set(serverConfig.CONNECTED_CONNECTORS ?? [])
     );
+
+    useEffect(() => {
+        setConnectedIds(new Set(serverConfig.CONNECTED_CONNECTORS ?? []));
+    }, [serverConfig.CONNECTED_CONNECTORS, identityKey]);
 
     // Split sources into connected vs available
     const allSources = serverConfig.CONNECTORS ?? [];

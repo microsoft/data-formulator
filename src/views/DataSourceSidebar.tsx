@@ -112,7 +112,8 @@ interface PreviewState {
 
 export const DataSourceSidebar: React.FC<{
     onOpenUploadDialog?: (tab?: string) => void;
-}> = ({ onOpenUploadDialog }) => {
+    connectorRefreshKey?: number;
+}> = ({ onOpenUploadDialog, connectorRefreshKey = 0 }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -169,7 +170,12 @@ export const DataSourceSidebar: React.FC<{
 
             {/* Panel — rendered when open, slides in/out */}
             {isOpen && (
-                <DataSourceSidebarPanel onOpenUploadDialog={onOpenUploadDialog} onCollapse={toggle} initialTab={initialTab} />
+                <DataSourceSidebarPanel
+                    onOpenUploadDialog={onOpenUploadDialog}
+                    onCollapse={toggle}
+                    initialTab={initialTab}
+                    connectorRefreshKey={connectorRefreshKey}
+                />
             )}
 
             {/* Edge collapse handle — sits on the border line */}
@@ -210,11 +216,15 @@ const DataSourceSidebarPanel: React.FC<{
     onOpenUploadDialog?: (tab?: string) => void;
     onCollapse: () => void;
     initialTab?: 'sources' | 'sessions';
-}> = ({ onOpenUploadDialog, onCollapse, initialTab = 'sources' }) => {
+    connectorRefreshKey?: number;
+}> = ({ onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0 }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const identityKey = useSelector(
+        (state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`,
+    );
 
     // Lightweight selector: only extract the fields we need from tables to avoid
     // re-rendering the entire sidebar when table row data changes.
@@ -277,7 +287,7 @@ const DataSourceSidebarPanel: React.FC<{
         listWorkspaces()
             .then(list => setSessions(list))    
             .catch(() => { /* session list is best-effort */ });
-    }, []);
+    }, [identityKey]);
 
     const handleHoverSession = useCallback((sessionId: string) => {
         if (sessionTooltips[sessionId] || sessionTooltipFetching.current.has(sessionId)) return;
@@ -375,10 +385,17 @@ const DataSourceSidebarPanel: React.FC<{
             .finally(() => setLoadingConnectors(false));
     }, []);
 
-    // Fetch on mount (panel is only mounted when sidebar is open)
+    // Fetch on mount and whenever identity changes.
     useEffect(() => {
+        setConnectors([]);
+        setCatalogCache({});
+        setLoadingCatalog({});
+        setExpandedSources(new Set());
+        setTreeExpanded({});
+        setPreview(null);
+        setPreviewAnchor(null);
         fetchConnectors();
-    }, [fetchConnectors]);
+    }, [fetchConnectors, identityKey, connectorRefreshKey]);
 
     // Sort connectors by category
     const sortedConnectors = useMemo(

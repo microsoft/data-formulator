@@ -161,6 +161,17 @@ class FailingTestConnectionLoader(MockLoader):
         return False
 
 
+class AuthTierLoader(MockLoader):
+    @staticmethod
+    def list_params():
+        return [
+            {"name": "host", "type": "string", "required": True, "tier": "connection"},
+            {"name": "database", "type": "string", "required": False, "tier": "filter"},
+            {"name": "user", "type": "string", "required": True, "tier": "auth"},
+            {"name": "password", "type": "password", "required": True, "tier": "auth", "sensitive": True},
+        ]
+
+
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------
@@ -288,6 +299,29 @@ class TestFrontendConfig:
         assert "schema" in eff_keys
         assert "table" in eff_keys
         assert cfg["pinned_params"]["database"] == "testdb"
+
+    def test_pinned_params_do_not_expose_auth_or_sensitive_values(self):
+        source = DataConnector.from_loader(
+            AuthTierLoader,
+            source_id="private_db",
+            display_name="Private DB",
+            default_params={
+                "host": "db.local",
+                "database": "analytics",
+                "user": "alice",
+                "password": "secret",
+            },
+        )
+
+        cfg = source.get_frontend_config()
+
+        assert cfg["pinned_params"] == {
+            "host": "db.local",
+            "database": "analytics",
+        }
+        form_names = {f["name"] for f in cfg["params_form"]}
+        assert "user" not in form_names
+        assert "password" not in form_names
 
 
 # ==================================================================

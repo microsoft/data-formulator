@@ -203,7 +203,28 @@ Loader 应在 SQL 构建时使用参数化或白名单校验运算符（参考 `
 
 ---
 
-## 5. 测试要求
+## 5. Connector 身份隔离与凭据边界
+
+用户创建的 connector 实例属于当前 identity（`browser:*` / `user:*` / `local:*`）。
+后端内部 registry 必须通过 identity-scoped key 保存 user connector；前端和 API
+仍使用公开 `source_id`。新增或修改 connector 路由时必须通过 `DataConnector`
+框架提供的可见性解析逻辑查找 connector，禁止直接用客户端传入的 `connector_id`
+读取全局 `DATA_CONNECTORS`。
+
+连接参数分为两类：
+
+- **Connector metadata**：可持久化到 `users/<identity>/connectors.yaml`，例如 host、
+  port、database、bucket、root_dir 等非敏感、非 auth-tier 参数。
+- **Credentials**：用户名、密码、token、access key、connection string、auth-tier 参数等。
+  这些只能用于本次连接并通过 vault 按 `identity + source_id` 保存，不能写入
+  `connectors.yaml`，也不能作为 `pinned_params` 返回前端。
+
+匿名用户登录后不会自动继承匿名 identity 下的 connector 或 vault 凭据。若产品需要
+迁移匿名 connector，必须像 workspace migration 一样提供显式确认流程。
+
+---
+
+## 6. 测试要求
 
 实现或修改 Loader 时：
 
@@ -223,7 +244,7 @@ Loader 应在 SQL 构建时使用参数化或白名单校验运算符（参考 `
 
 ---
 
-## 6. Data Loader vs Plugin（DataSourcePlugin）的区别
+## 7. Data Loader vs Plugin（DataSourcePlugin）的区别
 
 | 维度 | ExternalDataLoader | DataSourcePlugin |
 |------|-------------------|-----------------|

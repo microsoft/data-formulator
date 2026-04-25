@@ -1081,6 +1081,14 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
             dispatch(dfActions.setIdentity(resolvedIdentity));
 
+            try {
+                const configResp = await fetchWithIdentity(getUrls().APP_CONFIG);
+                const refreshedConfig = await configResp.json();
+                dispatch(dfActions.setServerConfig(refreshedConfig));
+            } catch {
+                // App config was already loaded; connector status refresh is best-effort.
+            }
+
             // Persist current identity type for next page load
             localStorage.setItem('df_identity_type', resolvedIdentity.type);
             if (resolvedIdentity.type === 'browser') {

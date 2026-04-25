@@ -82,6 +82,7 @@ export const DataFormulatorFC = ({ }) => {
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
+    const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
@@ -102,9 +103,15 @@ export const DataFormulatorFC = ({ }) => {
             .then(data => setPageConnectors(data.connectors || []))
             .catch(() => { /* connector list is optional on landing page */ });
     }, []);
-    useEffect(() => {
+    const [connectorRefreshKey, setConnectorRefreshKey] = useState(0);
+    const handleConnectorsChanged = useCallback(() => {
+        setConnectorRefreshKey(k => k + 1);
         refreshPageConnectors();
     }, [refreshPageConnectors]);
+    useEffect(() => {
+        setPageConnectors([]);
+        refreshPageConnectors();
+    }, [refreshPageConnectors, identityKey]);
 
     // ── Demo sessions (loaded from manifest, fallback to hardcoded) ─────
     const [demoSessions, setDemoSessions] = useState<ExampleSession[]>(exampleSessions);
@@ -432,7 +439,10 @@ export const DataFormulatorFC = ({ }) => {
 
     const fixedSplitPane = ( 
         <Box sx={{display: 'flex', flexDirection: 'row', height: '100%'}}>
-            <DataSourceSidebar onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)} />
+            <DataSourceSidebar
+                onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)}
+                connectorRefreshKey={connectorRefreshKey}
+            />
             <Box ref={containerRef} className="outer-allotment" sx={{
                     margin: '4px 8px 8px 8px', backgroundColor: 'white',
                     display: 'flex', height: 'calc(100% - 12px)', flex: 1, minWidth: 0, flexDirection: 'column',
@@ -640,7 +650,10 @@ export const DataFormulatorFC = ({ }) => {
             <DndProvider backend={HTML5Backend}>
                 {tables.length > 0 ? fixedSplitPane : (
                     <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
-                        <DataSourceSidebar onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)} />
+                        <DataSourceSidebar
+                            onOpenUploadDialog={(tab) => openUploadDialog((tab ?? 'add-connection') as UploadTabType)}
+                            connectorRefreshKey={connectorRefreshKey}
+                        />
                         {dataUploadRequestBox}
                     </Box>
                 )}
@@ -648,6 +661,7 @@ export const DataFormulatorFC = ({ }) => {
                     open={uploadDialogOpen}
                     onClose={() => { setUploadDialogOpen(false); refreshPageConnectors(); }}
                     initialTab={uploadDialogInitialTab}
+                    onConnectorsChanged={handleConnectorsChanged}
                 />
                 {/* Loading overlay for session loading */}
                 <Backdrop
