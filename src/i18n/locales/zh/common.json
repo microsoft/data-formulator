@@ -676,6 +676,7 @@
     "disconnectConnector": "断开连接器",
     "connectorDisconnected": "连接器「{{name}}」已断开",
     "failedDisconnectConnector": "断开连接器失败",
+    "failedSearchConnector": "搜索 {{connector}} 失败",
     "deleteConnector": "删除连接器",
     "deleteConnectorTitle": "删除连接器",
     "deleteConnectorConfirm": "确定要删除「{{name}}」吗？已导入的数据不会受到影响。",

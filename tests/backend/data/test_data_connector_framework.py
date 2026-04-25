@@ -271,6 +271,7 @@ class TestSharedRouteRegistration:
         assert "/api/connectors/get-status" in rules
         assert "/api/connectors/get-catalog" in rules
         assert "/api/connectors/get-catalog-tree" in rules
+        assert "/api/connectors/search-catalog" in rules
         assert "/api/connectors/import-data" in rules
         assert "/api/connectors/import-group" in rules
         assert "/api/connectors/refresh-data" in rules
@@ -569,6 +570,42 @@ class TestCatalogRoutes:
         data = resp.get_json()
         assert resp.status_code == 200
         assert "tree" in data
+
+    def test_search_catalog_route(self, connected_client):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+            resp = connected_client.post("/api/connectors/search-catalog", json={
+                "connector_id": "mock_db",
+                "query": "order",
+            })
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["status"] == "ok"
+        assert data["connector_id"] == "mock_db"
+        assert data["query"] == "order"
+        assert data["truncated"] is False
+        assert data["tree"][0]["name"] == "public"
+        assert data["tree"][0]["children"][0]["name"] == "orders"
+
+    def test_search_catalog_empty_query_returns_empty_tree(self, connected_client):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+            resp = connected_client.post("/api/connectors/search-catalog", json={
+                "connector_id": "mock_db",
+                "query": "",
+            })
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["status"] == "ok"
+        assert data["tree"] == []
+
+    def test_search_catalog_not_connected_returns_error(self, client):
+        with patch.object(DataConnector, "_get_identity", return_value="nobody"):
+            resp = client.post("/api/connectors/search-catalog", json={
+                "connector_id": "mock_db",
+                "query": "users",
+            })
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["status"] == "error"
 
 
 # ==================================================================

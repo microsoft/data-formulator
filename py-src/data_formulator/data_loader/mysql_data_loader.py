@@ -302,6 +302,57 @@ class MySQLDataLoader(ExternalDataLoader):
             logger.error(f"Error listing tables: {e}")
             return []
 
+    def search_catalog(self, query: str, limit: int = 100) -> dict:
+        """Search database/table names without fetching columns, samples, or counts."""
+        text = (query or "").strip()
+        if not text:
+            return {"tree": [], "truncated": False}
+
+        max_results = max(1, int(limit or 100))
+        pattern = f"%{_esc_str(text.lower())}%"
+
+        rows = None
+        with self._lock:
+            try:
+                if self.database:
+                    db_filter = f"TABLE_SCHEMA = '{_esc_str(self.database)}'"
+                else:
+                    db_filter = "TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')"
+                tables_query = f"""
+                    SELECT TABLE_SCHEMA, TABLE_NAME
+                    FROM information_schema.tables
+                    WHERE {db_filter}
+                      AND TABLE_TYPE = 'BASE TABLE'
+                      AND (
+                        LOWER(TABLE_SCHEMA) LIKE '{pattern}'
+                        OR LOWER(TABLE_NAME) LIKE '{pattern}'
+                      )
+                    ORDER BY TABLE_SCHEMA, TABLE_NAME
+                    LIMIT {max_results + 1}
+                """
+                rows = self._read_sql(tables_query).to_pandas()
+            except Exception as exc:
+                logger.warning("MySQL catalog search failed: %s", type(exc).__name__)
+        if rows is None:
+            return {"tree": [], "truncated": False}
+
+        entries = []
+        for _, row in rows.iterrows():
+            db = row["TABLE_SCHEMA"]
+            table_name = row["TABLE_NAME"]
+            full_source = f"{db}.{table_name}"
+            entries.append({
+                "name": full_source,
+                "path": [db, table_name],
+                "metadata": {"_source_name": full_source},
+            })
+
+        truncated = len(entries) > max_results
+        return {
+            "tree": self._tables_to_catalog_tree(entries[:max_results]),
+            "truncated": truncated,
+        }
+
     # -- Catalog tree API --------------------------------------------------
 
     @staticmethod
