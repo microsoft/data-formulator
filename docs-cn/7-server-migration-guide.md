@@ -21,7 +21,8 @@
 |---------------|---------|------|---------|
 | `FLASK_SECRET_KEY` | `.env` 环境变量 | 签名 Session Cookie、派生代码签名密钥 | 所有用户被踢出登录，Agent 生成的代码签名失效 |
 | `.vault_key` | `DATA_FORMULATOR_HOME/.vault_key` | 加密凭证保险箱的 Fernet 密钥 | `credentials.db` 中的数据库密码等凭证无法解密 |
-| `credentials.db` | `DATA_FORMULATOR_HOME/credentials.db` | 加密的凭证数据库 | 用户保存的数据库密码、插件凭证全部丢失 |
+| `credentials.db` | `DATA_FORMULATOR_HOME/credentials.db` | 加密的凭证数据库 | 用户保存的数据库密码、数据源服务凭证全部丢失 |
+| `connectors.yaml` | `DATA_FORMULATOR_HOME/connectors.yaml` | 管理员预配置的全局数据源连接 | 管理员配置的数据源卡片消失 |
 | `users/` 目录 | `DATA_FORMULATOR_HOME/users/` | 用户工作区数据（parquet、会话元数据） | 用户的图表和数据全部丢失 |
 | `workspaces/` 目录 | `DATA_FORMULATOR_HOME/workspaces/` | 遗留默认工作区（旧版数据） | 同上 |
 
@@ -31,6 +32,9 @@
 |--------|------|
 | `DF_CODE_SIGNING_SECRET` | 显式设定的代码签名密钥，优先级高于 Flask 密钥。设置过则必须带走，否则已有代码签名全部失效 |
 | `CREDENTIAL_VAULT_KEY` | 显式设定的 Vault 加密密钥，优先级高于 `.vault_key` 文件。设置过则必须带走，否则凭证数据库不可读 |
+| `DF_SOURCES__*` | 通过环境变量配置的数据源连接。设置过则必须迁移到新服务器的 `.env`、容器环境或 Secret Manager |
+| `DF_PLUGIN_DIR` | 外部 Data Loader 目录。设置过则必须同时迁移该目录内容 |
+| `PLG_SUPERSET_URL` | Superset 快捷配置。设置过则新服务器也需要保留，否则 Superset 数据源卡片不会自动注册 |
 
 ---
 
@@ -45,7 +49,7 @@
 Flask 使用此密钥对浏览器 Cookie 进行签名。密钥变更后：
 - 所有用户的 Session Cookie 签名校验失败 → 全体用户被踢出登录
 - SSO 登录状态（`session["df_user"]`）失效，需重新走 SSO 认证流程
-- 插件 Token（Superset 等）失效，需重新授权
+- 外部系统 Token（如 Superset）失效，需重新授权
 - 正在进行中的 OIDC 登录流程中断（`session["_oauth_state"]` 失效）
 
 **Agent 代码签名（影响：中）**
@@ -91,11 +95,17 @@ cp .env /backup/.env
 cp $DF_HOME/.vault_key      /backup/.vault_key
 cp $DF_HOME/credentials.db  /backup/credentials.db
 
-# 3. 备份用户工作区数据
+# 3. 备份管理员预配置连接（如存在）
+[ -f $DF_HOME/connectors.yaml ] && cp $DF_HOME/connectors.yaml /backup/connectors.yaml
+
+# 4. 备份用户工作区数据和用户连接配置
 cp -r $DF_HOME/users        /backup/users
 cp -r $DF_HOME/workspaces   /backup/workspaces
 
-# 4.（可选）如使用 Azure Blob 存储后端，工作区数据在云端，无需备份 users/ 和 workspaces/
+# 5.（可选）如设置了 DF_PLUGIN_DIR，备份外部 Loader 目录
+[ -n "$DF_PLUGIN_DIR" ] && cp -r $DF_PLUGIN_DIR /backup/df-plugins
+
+# 6.（可选）如使用 Azure Blob 存储后端，工作区数据在云端，无需备份 users/ 和 workspaces/
 ```
 
 ### 4.3 在新服务器上恢复
@@ -112,12 +122,16 @@ cp /backup/.env .env
 mkdir -p $DF_HOME
 cp /backup/.vault_key      $DF_HOME/.vault_key
 cp /backup/credentials.db  $DF_HOME/credentials.db
+[ -f /backup/connectors.yaml ] && cp /backup/connectors.yaml $DF_HOME/connectors.yaml
 
-# 4. 恢复工作区数据
+# 4. 恢复工作区数据和用户连接配置
 cp -r /backup/users        $DF_HOME/users
 cp -r /backup/workspaces   $DF_HOME/workspaces
 
-# 5. 启动服务
+# 5.（可选）恢复外部 Loader 目录，并确认 DF_PLUGIN_DIR 指向它
+[ -d /backup/df-plugins ] && cp -r /backup/df-plugins $DF_PLUGIN_DIR
+
+# 6. 启动服务
 data_formulator
 ```
 
@@ -166,7 +180,10 @@ docker compose up -d
 | SSO 认证 | 退出后重新 SSO 登录 | 能正常完成 SSO 流程 |
 | 已有图表 | 打开旧图表，点击刷新数据 | 正常刷新，不报签名错误 |
 | 数据库连接 | 打开数据源面板，查看已保存的连接 | 显示"已连接"状态，无需重新输入密码 |
-| 插件 Token | 打开 Superset 等插件 | 自动登录或正常授权 |
+| 外部系统 Token | 打开 Superset 等数据源连接 | 自动登录或正常授权 |
+| 管理员连接 | 打开 Load Data 页面 | `connectors.yaml` 或 `DF_SOURCES__*` 配置的数据源卡片正常显示 |
+| 用户连接 | 切换到已有用户 | 用户自己创建的数据源卡片正常显示 |
+| 外部 Loader | 打开 Add Connection | `DF_PLUGIN_DIR` 中的自定义 loader 正常出现在可选列表 |
 
 ---
 

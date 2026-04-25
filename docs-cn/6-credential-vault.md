@@ -1,31 +1,45 @@
 # 凭证保险箱（Credential Vault）
 
 > **适用版本**: Data Formulator 0.7+
-> **面向读者**: 部署运维人员、插件开发者
+> **面向读者**: 部署运维人员、管理员、需要理解凭证保存行为的用户
 
 ---
 
 ## 1. 功能简介
 
-当用户登录插件（如 Superset）时勾选"记住凭证"，密码会被 **Fernet 加密**后存储在服务端 SQLite 数据库中。下次打开插件时自动取用凭证登录，无需重新输入。
+Credential Vault 用于在服务端加密保存外部数据源凭证，例如数据库密码、访问 token、
+API key 等。DataConnector 连接成功后，可以把敏感凭证保存到 vault，后续用户打开同一个
+连接时无需重新输入。
+
+Vault 只保存凭证，不保存连接卡片本身。连接卡片定义保存在：
+
+```text
+DATA_FORMULATOR_HOME/connectors.yaml                  # 管理员全局连接
+DATA_FORMULATOR_HOME/users/<identity>/connectors.yaml # 用户个人连接
+```
 
 ---
 
 ## 2. 零配置启动
 
-本地使用无需任何配置。首次访问时系统自动：
+本地使用无需任何配置。首次使用 vault 时系统自动：
 
-1. 生成 Fernet 加密密钥 → `DATA_FORMULATOR_HOME/.vault_key`
-2. 创建加密数据库 → `DATA_FORMULATOR_HOME/credentials.db`
+1. 生成 Fernet 加密密钥：`DATA_FORMULATOR_HOME/.vault_key`
+2. 创建加密数据库：`DATA_FORMULATOR_HOME/credentials.db`
 
-```
+```text
 ~/.data_formulator/
-├── .vault_key         ← 自动生成的加密密钥
-├── credentials.db     ← 加密凭证数据库
-└── users/             ← 用户工作区数据
+├── .vault_key
+├── credentials.db
+├── connectors.yaml          # 可选，管理员预配置连接
+└── users/
+    └── <identity>/
+        ├── connectors.yaml  # 用户创建的连接
+        └── ...
 ```
 
-两个文件在重启和升级后持续保留。
+这些文件在重启和升级后持续保留。迁移服务器时必须一起备份，详见
+`docs-cn/7-server-migration-guide.md`。
 
 ---
 
@@ -34,115 +48,132 @@
 | 方面 | 设计 |
 |------|------|
 | 加密算法 | Fernet（AES-128-CBC + HMAC-SHA256） |
-| 密钥存储 | 文件系统（`DATA_FORMULATOR_HOME/.vault_key`），或 `CREDENTIAL_VAULT_KEY` 环境变量 |
-| 访问隔离 | 按 `(user_identity, source_key)` 索引 — 用户只能访问自己的凭证 |
-| 前端隔离 | 明文凭证从不离开服务端；前端只知道是否有已存储的凭证 |
+| 密钥存储 | `DATA_FORMULATOR_HOME/.vault_key`，或 `CREDENTIAL_VAULT_KEY` 环境变量 |
+| 数据库位置 | `DATA_FORMULATOR_HOME/credentials.db` |
+| 访问隔离 | 按 `(user_identity, connector_id)` 逻辑隔离 |
+| 前端隔离 | 明文凭证不返回前端；前端只看到连接状态、参数表单和非敏感配置 |
 | 传输安全 | 生产环境应使用 HTTPS |
 
----
-
-## 4. 工作流程
-
-### 4.1 首次登录
-
-```
-用户输入密码 → 勾选"记住凭证" → 后端登录成功
-                                      ↓
-                                加密并存入 credentials.db
-```
-
-### 4.2 后续访问
-
-```
-前端: GET /auth/status
-         ↓
-后端: Session 有 token? → 有 → 直接使用
-         ↓ 没有
-     Vault 有凭证?  → 有 → 取出 → 尝试登录外部系统
-         ↓                          ↓
-         ↓                    成功 → 无感登录
-         ↓                    失败 → 返回 vault_stale（密码已变更）
-         ↓ 没有
-     显示登录表单
-```
-
-### 4.3 外部系统密码变更
-
-当第三方系统密码被修改后，下次自动登录时：
-
-1. 后端从 Vault 取出凭证 → 尝试登录 → 失败（401）
-2. 返回 `vault_stale: true` 给前端
-3. 前端显示登录表单 + 警告"已保存的凭证已失效"
-4. 用户输入新密码：
-   - 勾选"记住" → 新凭证覆盖旧的
-   - 取消"记住" → 旧凭证从 Vault 删除
+Vault 是逻辑隔离，不是每个用户一个数据库文件。服务端进程持有加密密钥，因此备份和权限管理
+应以整个 `DATA_FORMULATOR_HOME` 为单位处理。
 
 ---
 
-## 5. API 接口
+## 4. DataConnector 工作流程
+
+### 4.1 创建连接
+
+```text
+用户填写连接参数
+  ↓
+POST /api/connectors
+  ↓
+后端创建用户 connector 定义
+  ↓
+如果参数足够，立即连接并测试
+  ↓
+非敏感参数写入 users/<identity>/connectors.yaml
+敏感凭证加密写入 credentials.db
+```
+
+### 4.2 重新连接
+
+```text
+用户点击已存在的数据源卡片
+  ↓
+后端按 identity + connector_id 查找连接定义
+  ↓
+如需要凭证，则从 vault 取出并创建 loader
+  ↓
+连接成功后进入 catalog 浏览和导入界面
+```
+
+### 4.3 断开和删除
+
+| 操作 | 连接卡片 | 当前 loader | Vault 凭证 |
+|------|----------|-------------|------------|
+| Disconnect | 保留 | 清除 | 清除当前服务 token/凭证 |
+| Delete | 删除 | 清除 | 删除 |
+
+Disconnect 适合临时切换账号或清理当前授权；Delete 表示不再需要该用户连接。管理员预配置的
+连接不能由普通用户删除。
+
+---
+
+## 5. TokenStore 与 SSO
+
+对于 Superset 等支持 SSO 或弹窗委托登录的数据源，TokenStore 会优先使用当前 Session 中的
+service token 或通过 SSO exchange 获取目标系统 token。
+
+简化优先级：
+
+1. Session 中已有目标系统 token。
+2. refresh token 可续期。
+3. 用 Data Formulator 的 SSO token 换取目标系统 token。
+4. 使用弹窗委托登录保存的 token。
+5. 使用 vault 中保存的静态凭证。
+6. 无可用凭证，提示用户重新授权或重新输入。
+
+开发细节见 `dev-guides/4-authentication-oidc-tokenstore.md`。
+
+---
+
+## 6. 手动 API
+
+系统仍保留通用凭证 API：
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| GET | `/api/credentials/list` | 列出有存储凭证的插件 ID（不暴露密码） |
+| GET | `/api/credentials/list` | 列出有存储凭证的 source key，不暴露密码 |
 | POST | `/api/credentials/store` | 存储或更新凭证 |
 | POST | `/api/credentials/delete` | 删除凭证 |
 
-`/list` 只返回 source_key 名称（如 `["superset"]`），**不返回密码或 token**。
-
-Vault 不可用时：`/list` 返回空数组，`/store` 和 `/delete` 返回 503。
+普通 DataConnector 流程通常不需要用户直接调用这些 API。连接、断开、删除操作会通过
+`/api/connectors/*` 路由完成对应的 vault 生命周期处理。
 
 ---
 
-## 6. Docker 部署
+## 7. Docker 部署
 
-挂载整个数据目录即可，密钥和数据库自动包含：
+挂载整个数据目录即可，密钥、凭证库、连接配置和用户数据都会包含在其中：
 
 ```yaml
 volumes:
   - df-data:/root/.data_formulator
 ```
 
-无需配置环境变量。密钥文件和数据库都在 `DATA_FORMULATOR_HOME` 下。
-
----
-
-## 7. 高级配置：手动指定密钥
-
-在密钥需要由外部 Secrets Manager 注入的场景，设置环境变量：
+如果使用外部 Secret Manager 管理密钥，可以通过环境变量注入：
 
 ```bash
 CREDENTIAL_VAULT_KEY=<your-fernet-key>
-```
-
-生成密钥：
-
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 设置后 `.vault_key` 文件将被忽略，直接使用环境变量中的密钥。
 
 ---
 
-## 8. 插件集成
+## 8. 生成 Vault 密钥
 
-插件通过 `PluginAuthHandler` 基类（见 `docs-cn/5-datasource_plugin-development-guide.md` §6–7）自动获得 Vault 生命周期管理。插件作者**不需要**手动编写 Vault 操作代码。
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
 
-基类自动处理：
-
-- 登录路由：`remember=true` → 存入 Vault，`remember=false` → 从 Vault 删除
-- 退出路由：始终从 Vault 删除（强制）
-- 状态路由：尝试用 Vault 凭证自动登录
-
-核心原则：Vault 操作是 best-effort — 当 Vault 不可用时静默跳过，不会崩溃。
+如果密钥丢失，`credentials.db` 中的已保存凭证无法恢复，用户需要重新输入外部数据源密码
+或重新授权。
 
 ---
 
-## 9. 文件结构
+## 9. 相关文件
 
+```text
+py-src/data_formulator/credential_vault/
+├── __init__.py
+├── base.py
+└── local_vault.py
 ```
-py-src/data_formulator/auth/vault/
-├── __init__.py      # get_credential_vault() 工厂 — 密钥自动解析 + 单例
-├── base.py          # CredentialVault 抽象基类
-└── local_vault.py   # LocalCredentialVault: SQLite + Fernet 实现
-```
+
+相关文档：
+
+- `docs-cn/1-data-source-connections.md`
+- `docs-cn/7-server-migration-guide.md`
+- `dev-guides/5-data-connector-api.md`

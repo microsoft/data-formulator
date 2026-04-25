@@ -1,7 +1,24 @@
 # Unified Source Filters Plan
 
-> Status: planning document
-> Last updated: 2026-04-25
+> Status: partially implemented planning document
+> Last updated: 2026-04-26
+
+## Documentation Slimming Status (2026-04-26)
+
+**已完成并已迁移到正式文档：**
+
+- `ConnectorTablePreview` 通过 `import_options.source_filters` 发送筛选条件。
+- `PostgreSQLDataLoader` 和 `MySQLDataLoader` 已读取 `source_filters` 并通过共享 SQL helper 编译。
+- `SupersetLoader` 已保留平台特定的 `source_filters` 编译逻辑。
+- 用户侧已在 `docs-cn/1-data-source-connections.md` 说明当前主要支持 PostgreSQL、MySQL、Superset。
+- Loader 开发侧已在 `dev-guides/3-data-loader-development.md` 记录 `source_filters` 格式和列值 API。
+
+**未完成，本文继续保留：**
+
+- loader capability flag 尚未正式接入 connector 响应。
+- 前端筛选 UI 仍未完全根据 capability 控制显示。
+- BigQuery、Athena、MSSQL、Kusto、MongoDB、文件类 loader 的编译策略仍是计划。
+- 不支持源端筛选的 connector 仍需更明确的用户提示策略。
 
 ## Goal
 
