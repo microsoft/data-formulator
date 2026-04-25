@@ -120,13 +120,15 @@ class TestOIDCCallback:
         with client.session_transaction() as sess:
             sess["_oauth_state"] = "test-state"
         resp = client.get("/auth/callback?state=test-state")
-        assert resp.status_code == 400
+        assert resp.status_code == 302
+        assert "auth_error=invalid_state" in resp.headers["Location"]
 
     def test_callback_rejects_invalid_state(self, client):
         with client.session_transaction() as sess:
             sess["_oauth_state"] = "correct-state"
         resp = client.get("/auth/callback?code=auth-code&state=wrong-state")
-        assert resp.status_code == 400
+        assert resp.status_code == 302
+        assert "auth_error=invalid_state" in resp.headers["Location"]
 
     def test_callback_success_stores_tokens_and_redirects(self, client):
         with client.session_transaction() as sess:
@@ -168,12 +170,13 @@ class TestOIDCCallback:
         mock_resp.ok = False
         mock_resp.status_code = 400
         mock_resp.text = "invalid_grant"
+        mock_resp.json.side_effect = Exception("not json")
 
         with patch("data_formulator.auth.gateways.oidc_gateway.http.post",
                     return_value=mock_resp):
             resp = client.get("/auth/callback?code=bad-code&state=valid-state")
-        assert resp.status_code == 502
-        assert resp.get_json()["error"] == "token_exchange_failed"
+        assert resp.status_code == 302
+        assert "auth_error=token_exchange_failed" in resp.headers["Location"]
 
     def test_callback_disabled_without_secret(self, app, monkeypatch):
         monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
