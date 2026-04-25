@@ -1035,8 +1035,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                             if (status.authenticated && status.user) {
                                 resolvedIdentity = {
                                     type: 'user',
-                                    id: status.user.sub || status.user.id || 'session_user',
-                                    displayName: status.user.name ?? undefined,
+                                    id: String(status.user.sub || status.user.id || 'session_user'),
+                                    displayName: typeof status.user.name === 'string' ? status.user.name : undefined,
                                 };
                             }
                         } catch {

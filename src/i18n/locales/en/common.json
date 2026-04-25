@@ -328,6 +328,7 @@
     "localFilterPlaceholder": "Filter by name...",
     "createConnector": "Create Connector",
     "deleteConnector": "Delete",
+    "disconnect": "Disconnect",
     "showingPreview": "showing {{count}} preview rows"
   },
   "connectorPreview": {

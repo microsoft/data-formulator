@@ -267,6 +267,30 @@ class TestAutoDetection:
 
 
 # ==================================================================
+# auth_tokens_bp: DELETE /api/auth/tokens/<system_id>
+# ==================================================================
+
+class TestClearServiceToken:
+
+    def test_clear_token_removes_from_session(self, client):
+        with client.session_transaction() as sess:
+            sess["service_tokens"] = {
+                "superset": {"access_token": "tok-1"},
+                "other": {"access_token": "tok-2"},
+            }
+        resp = client.delete("/api/auth/tokens/superset")
+        assert resp.get_json()["status"] == "ok"
+        with client.session_transaction() as sess:
+            tokens = sess.get("service_tokens", {})
+            assert "superset" not in tokens
+            assert "other" in tokens
+
+    def test_clear_nonexistent_token_is_ok(self, client):
+        resp = client.delete("/api/auth/tokens/nonexistent")
+        assert resp.get_json()["status"] == "ok"
+
+
+# ==================================================================
 # auth_tokens_bp: /api/auth/tokens/save
 # ==================================================================
 

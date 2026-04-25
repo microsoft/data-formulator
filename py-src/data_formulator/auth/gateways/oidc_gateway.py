@@ -227,6 +227,14 @@ def save_delegated_token():
     return jsonify({"status": "ok"})
 
 
+@auth_tokens_bp.route("/tokens/<system_id>", methods=["DELETE"])
+def clear_service_token(system_id: str):
+    """Disconnect from a specific service (clear its cached token)."""
+    token_store = TokenStore()
+    token_store.clear_service_token(system_id)
+    return jsonify({"status": "ok"})
+
+
 @auth_tokens_bp.route("/service-status", methods=["GET"])
 def auth_service_status():
     """Return authorization status for all configured systems.

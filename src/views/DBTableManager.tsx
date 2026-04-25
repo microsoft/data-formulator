@@ -1053,6 +1053,20 @@ export const DataLoaderForm: React.FC<{
 
     const isConnected = catalogTree.length > 0 || Object.keys(tableMetadata).length > 0;
 
+    const handleDisconnect = useCallback(async () => {
+        const cid = connectorIdRef.current;
+        if (cid) {
+            await fetchWithIdentity(`/api/auth/tokens/${encodeURIComponent(cid)}`, {
+                method: 'DELETE',
+            }).catch(() => {});
+        }
+        setCatalogTree([]);
+        setTableMetadata({});
+        setSelectedPreviewTable(null);
+        setSelectedTreeNode(null);
+        setExpandedItems([]);
+    }, []);
+
     // Split catalog tree into dataset vs dashboard subsets for tabbed view
     const datasetNodes = useMemo(() => catalogTree.filter(n => n.node_type !== 'table_group'), [catalogTree]);
     const dashboardNodes = useMemo(() => catalogTree.filter(n => n.node_type === 'table_group'), [catalogTree]);
@@ -1101,6 +1115,13 @@ export const DataLoaderForm: React.FC<{
                             </Typography>
                         ))}
                         <Box sx={{ flex: 1 }} />
+                        <Button
+                            variant="outlined" size="small"
+                            sx={{ textTransform: "none", fontSize: 11, height: 26, minWidth: 0 }}
+                            onClick={handleDisconnect}
+                        >
+                            {t('db.disconnect', { defaultValue: 'Disconnect' })}
+                        </Button>
                         {onDelete && connectorIdRef.current && (
                             <Button
                                 variant="outlined" size="small" color="error"

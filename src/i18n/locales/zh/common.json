@@ -321,6 +321,7 @@
     "localFilterPlaceholder": "按名称筛选…",
     "createConnector": "创建连接器",
     "deleteConnector": "删除",
+    "disconnect": "断开连接",
     "showingPreview": "显示 {{count}} 行预览数据"
   },
   "connectorPreview": {
