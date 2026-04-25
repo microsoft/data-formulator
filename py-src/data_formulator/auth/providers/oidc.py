@@ -27,8 +27,11 @@ Otherwise, set the endpoints manually::
 
 Manual values take precedence over discovery.
 
-Security: the frontend uses PKCE (Public Client). OIDC_CLIENT_SECRET is kept
-for server-side operations only and is NEVER sent to the browser.
+Client type auto-detection:
+    When ``OIDC_CLIENT_SECRET`` is set → backend (Confidential Client) mode.
+    When it is absent → frontend (Public Client / PKCE) mode.
+    ``AUTH_MODE`` env var can force a specific mode when auto-detection is
+    not desired (rare).
 """
 
 from __future__ import annotations
@@ -48,6 +51,19 @@ from .base import AuthProvider, AuthResult, AuthenticationError
 from data_formulator.security.log_sanitizer import sanitize_url, redact_token
 
 logger = logging.getLogger(__name__)
+
+
+def is_backend_oidc_mode() -> bool:
+    """Determine whether backend (Confidential Client) OIDC mode is active.
+
+    Auto-detected from ``OIDC_CLIENT_SECRET`` presence.
+    ``AUTH_MODE`` env var overrides auto-detection when explicitly set.
+    """
+    explicit = os.environ.get("AUTH_MODE", "").strip().lower()
+    if explicit in ("backend", "frontend"):
+        return explicit == "backend"
+    return bool(os.environ.get("OIDC_CLIENT_SECRET", "").strip())
+
 
 # Discovery path per protocol
 _DISCOVERY_PATHS: dict[str, str] = {
@@ -195,6 +211,25 @@ class OIDCProvider(AuthProvider):
                 "token validation will be skipped!"
             )
 
+    # -- resolved configuration (shared with oidc_gateway) ------------------
+
+    def get_resolved_config(self) -> dict[str, str]:
+        """Return resolved OIDC endpoints and credentials.
+
+        Values come from auto-discovery (populated during ``on_configure``)
+        with manual env-var overrides taking precedence.  Used by the backend
+        OIDC gateway so it does not need to repeat discovery or require
+        explicit ``OIDC_*_URL`` env vars.
+        """
+        return {
+            "authorize_url": self._authorize_url,
+            "token_url": self._token_url,
+            "userinfo_url": self._userinfo_url,
+            "jwks_url": self._jwks_url,
+            "client_id": self._client_id,
+            "client_secret": self._client_secret,
+        }
+
     # -- frontend self-description -----------------------------------------
 
     def _effective_scopes(self) -> str:
@@ -205,9 +240,7 @@ class OIDCProvider(AuthProvider):
         return "profile email offline_access"
 
     def get_auth_info(self) -> dict:
-        auth_mode = os.environ.get("AUTH_MODE", "frontend").lower()
-
-        if auth_mode == "backend":
+        if is_backend_oidc_mode():
             return {
                 "action": "backend",
                 "label": os.environ.get("AUTH_DISPLAY_NAME", "SSO Login"),
@@ -245,8 +278,7 @@ class OIDCProvider(AuthProvider):
     # -- request authentication --------------------------------------------
 
     def authenticate(self, request: Request) -> Optional[AuthResult]:
-        # Backend mode: authenticate from server-side session
-        if os.environ.get("AUTH_MODE", "").lower() == "backend":
+        if is_backend_oidc_mode():
             return self._authenticate_session()
 
         auth_header = request.headers.get("Authorization", "")

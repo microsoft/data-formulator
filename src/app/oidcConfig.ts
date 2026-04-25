@@ -92,7 +92,7 @@ export async function getOidcConfig(): Promise<OidcConfig | null> {
         authority: info.oidc.authority,
         clientId: info.oidc.clientId,
         scopes: info.oidc.scopes ?? "openid profile email",
-        redirectUri: `${window.location.origin}/callback`,
+        redirectUri: `${window.location.origin}/auth/callback`,
         metadata: info.oidc.metadata,
     };
 }

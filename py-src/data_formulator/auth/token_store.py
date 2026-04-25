@@ -73,8 +73,8 @@ class TokenStore:
 
     def get_sso_token(self) -> str | None:
         """Return the DF-level SSO access token."""
-        mode = os.environ.get("AUTH_MODE", "frontend")
-        if mode == "backend":
+        from data_formulator.auth.providers.oidc import is_backend_oidc_mode
+        if is_backend_oidc_mode():
             sso = session.get(_SSO_NS)
             if not sso:
                 return None

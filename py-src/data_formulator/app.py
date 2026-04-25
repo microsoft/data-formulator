@@ -193,10 +193,12 @@ def _register_blueprints():
     from data_formulator.auth.gateways.oidc_gateway import auth_tokens_bp
     app.register_blueprint(auth_tokens_bp)
 
-    # Register backend OIDC gateway (active only when AUTH_MODE=backend)
-    if os.environ.get("AUTH_MODE", "").lower() == "backend":
-        from data_formulator.auth.gateways.oidc_gateway import oidc_bp
+    # Register backend OIDC gateway (auto-detected: active when OIDC_CLIENT_SECRET is set)
+    from data_formulator.auth.providers.oidc import is_backend_oidc_mode
+    if is_backend_oidc_mode():
+        from data_formulator.auth.gateways.oidc_gateway import oidc_bp, oidc_callback_bp
         app.register_blueprint(oidc_bp)
+        app.register_blueprint(oidc_callback_bp)
 
     # Register credential vault API (safe even when vault is not configured)
     from data_formulator.routes.credentials import credential_bp

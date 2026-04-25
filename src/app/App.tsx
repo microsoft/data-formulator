@@ -1170,7 +1170,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const router = useMemo(() => createBrowserRouter([
         {
-            path: "/callback",
+            path: "/auth/callback",
             element: <OidcCallback />,
         },
         {
