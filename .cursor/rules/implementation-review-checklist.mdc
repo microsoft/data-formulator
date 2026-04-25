@@ -1,0 +1,28 @@
+---
+description: Require structural code review after implementation before final response
+globs:
+alwaysApply: true
+---
+
+# Implementation Review Checklist
+
+After any substantive implementation, before the final response, review the
+uncommitted diff from a maintainer/code-review perspective. Do not only verify
+that the feature works.
+
+## Required Checks
+
+- Inspect `git diff --stat` and relevant diffs to understand the actual blast radius.
+- Check responsibility boundaries: frontend UI, API route, service/helper, storage/session, and tests should each own the right part of the behavior.
+- Check API semantics: endpoint names, HTTP methods, response shapes, and side effects must match the product action. Similar UI actions should call the same backend API.
+- Check frontend/backend state consistency: after mutations, make sure Redux/local state, backend session/token/vault state, and subsequent list/status APIs agree.
+- Check duplication: if two paths clear the same state or perform the same API flow, extract a small helper or route instead of copying logic.
+- Check regression surfaces: refresh/reload/list/status paths must respect new flags or state, not just the primary click path.
+- Check tests: add or update focused tests for the changed contract; include at least one test for the bug/regression path when practical.
+- Check docs/rules/dev-guides when the change introduces or changes a cross-cutting convention.
+
+## Reporting
+
+If issues are found during this review, fix clear issues before finalizing. If a
+trade-off remains, call it out explicitly in the final response with the risk and
+why it was left as-is.
