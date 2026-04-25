@@ -443,7 +443,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                             {t('connectorPreview.rowCount', { count: Number(rowCount).toLocaleString(), defaultValue: '{{count}} rows' })}
                             {sampleRows.length > 0 && rowCount > sampleRows.length && (
                                 <span style={{ opacity: 0.7, marginLeft: 4 }}>
-                                    ({t('connectorPreview.showingPreview', { count: sampleRows.length, defaultValue: `showing ${sampleRows.length} preview rows` })})
+                                    ({t('connectorPreview.previewRowsNotice', { count: sampleRows.length, defaultValue: `Preview shows first ${sampleRows.length} rows only` })})
                                 </span>
                             )}
                         </Typography>
@@ -524,22 +524,12 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                         >
                             {t('connectorPreview.addFilter', { defaultValue: 'Add filter' })}
                         </Button>
-                        {filters.length > 0 && (
-                            <Button
-                                size="small" startIcon={<RefreshIcon sx={{ fontSize: 14 }} />}
-                                disabled={isLoading}
-                                onClick={handleRefreshPreview}
-                                sx={{ textTransform: 'none', fontSize: 11, px: 0.5, minHeight: 0, height: 22, color: 'primary.main' }}
-                            >
-                                {t('connectorPreview.refreshPreview', { defaultValue: 'Preview' })}
-                            </Button>
-                        )}
                     </Box>
                 </Box>
             )}
 
             {/* Preview table */}
-            <Box sx={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto' }}>
+            <Box sx={{ flex: '1 1 0', minHeight: 260, overflowY: 'auto' }}>
                 {isLoading ? (
                     <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
                         <CircularProgress size={20} />
@@ -621,6 +611,15 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                             )}
                         </>)}
                         <Box sx={{ flex: 1 }} />
+                        <Button
+                            variant="outlined" size="small"
+                            startIcon={<RefreshIcon sx={{ fontSize: 14 }} />}
+                            disabled={isLoading}
+                            onClick={handleRefreshPreview}
+                            sx={{ textTransform: 'none', fontSize: 12, px: 2, height: 30, flexShrink: 0 }}
+                        >
+                            {t('connectorPreview.refreshPreview', { defaultValue: 'Preview' })}
+                        </Button>
                         <Button
                             variant="contained" size="small"
                             disabled={isLoading}

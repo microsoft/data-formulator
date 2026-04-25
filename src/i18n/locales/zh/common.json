@@ -321,11 +321,12 @@
     "localFilterPlaceholder": "按名称筛选…",
     "createConnector": "创建连接器",
     "deleteConnector": "删除",
-    "showingPreview": "显示 {{count}} 行预览数据"
+    "showingPreview": "预览仅显示前 {{count}} 行"
   },
   "connectorPreview": {
     "rowCount": "{{count}} 行",
-    "showingPreview": "显示 {{count}} 行预览数据",
+    "showingPreview": "预览仅显示前 {{count}} 行",
+    "previewRowsNotice": "预览仅显示前 {{count}} 行",
     "maxRows": "最大行数",
     "addFilter": "添加筛选",
     "filterColumn": "列",

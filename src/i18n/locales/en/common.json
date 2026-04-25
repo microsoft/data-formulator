@@ -328,11 +328,12 @@
     "localFilterPlaceholder": "Filter by name...",
     "createConnector": "Create Connector",
     "deleteConnector": "Delete",
-    "showingPreview": "showing {{count}} preview rows"
+    "showingPreview": "Preview shows first {{count}} rows"
   },
   "connectorPreview": {
     "rowCount": "{{count}} rows",
-    "showingPreview": "showing {{count}} preview rows",
+    "showingPreview": "Preview shows first {{count}} rows",
+    "previewRowsNotice": "Preview shows first {{count}} rows only",
     "maxRows": "Max rows",
     "addFilter": "Add filter",
     "filterColumn": "Column",

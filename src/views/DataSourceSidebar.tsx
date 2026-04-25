@@ -1097,7 +1097,7 @@ const DataSourceSidebarPanel: React.FC<{
                     const alreadyLoaded = !!(loadedTablesMap[preview.node.name] || loadedTablesMap[pathKey]);
                     const sourceTableRef = buildSourceTableRef(preview.node);
                     return (
-                        <Box sx={{ p: 2, height: '100%', overflow: 'hidden' }}>
+                        <Box sx={{ p: 2, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
                             <ConnectorTablePreview
                                 connectorId={preview.connectorId}
                                 sourceTable={sourceTableRef}
