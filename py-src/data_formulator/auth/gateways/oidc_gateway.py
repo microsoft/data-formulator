@@ -95,6 +95,15 @@ def oidc_login():
     return redirect(f"{authorize_url}?{urllib.parse.urlencode(params)}")
 
 
+def _error_redirect(code: str) -> "Response":
+    """Redirect to the SPA root with an ``auth_error`` query param.
+
+    This lets the frontend display a translated, user-friendly message
+    instead of showing raw JSON to end-users.
+    """
+    return redirect(f"/?auth_error={urllib.parse.quote(code)}")
+
+
 @oidc_callback_bp.route("/auth/callback")
 def oidc_callback():
     """Exchange authorization code for tokens (backend confidential flow)."""
@@ -105,12 +114,14 @@ def oidc_callback():
     state = request.args.get("state")
 
     if not code or state != session.pop("_oauth_state", None):
-        return jsonify({"error": "invalid_state"}), 400
+        logger.warning("OIDC callback: invalid or missing state")
+        return _error_redirect("invalid_state")
 
     cfg = _get_oidc_config()
     token_url = cfg.get("token_url", "")
     if not token_url:
-        return jsonify({"error": "OIDC token endpoint not available (discovery failed and OIDC_TOKEN_URL not set)"}), 500
+        logger.error("OIDC token endpoint not available (discovery failed and OIDC_TOKEN_URL not set)")
+        return _error_redirect("missing_token_endpoint")
 
     resp = http.post(token_url, data={
         "grant_type": "authorization_code",
@@ -123,7 +134,14 @@ def oidc_callback():
     if not resp.ok:
         logger.error("OIDC token exchange failed: %s %s",
                       resp.status_code, resp.text[:200])
-        return jsonify({"error": "token_exchange_failed"}), 502
+        try:
+            body = resp.json()
+            sso_error = body.get("error", "")
+        except Exception:
+            sso_error = ""
+        if sso_error == "invalid_client":
+            return _error_redirect("invalid_client")
+        return _error_redirect("token_exchange_failed")
 
     tokens = resp.json()
     token_store = TokenStore()

@@ -77,6 +77,7 @@ import {
     Outlet,
     RouterProvider,
     useLocation,
+    useSearchParams,
 } from "react-router-dom";
 import { About } from '../views/About';
 import ChartGallery from '../gallery/ChartGallery';
@@ -725,13 +726,35 @@ const ErrorBoundaryFallback: React.FC = () => {
     );
 };
 
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+    invalid_state: 'auth.ssoErrorInvalidState',
+    invalid_client: 'auth.ssoErrorInvalidClient',
+    token_exchange_failed: 'auth.ssoErrorTokenExchange',
+    missing_token_endpoint: 'auth.ssoErrorMissingEndpoint',
+};
+
 const AppShell: FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const { t } = useTranslation();
     const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+
+    useEffect(() => {
+        const authError = searchParams.get('auth_error');
+        if (!authError) return;
+        const i18nKey = AUTH_ERROR_MESSAGES[authError] || 'auth.ssoErrorGeneric';
+        dispatch(dfActions.addMessages({
+            type: 'error',
+            component: 'auth',
+            timestamp: Date.now(),
+            value: t(i18nKey, { defaultValue: 'SSO login failed. Please contact your administrator.' }),
+        }));
+        searchParams.delete('auth_error');
+        setSearchParams(searchParams, { replace: true });
+    }, []);
 
     // Auto-persist session state to the active workspace (debounced)
     useAutoSave();

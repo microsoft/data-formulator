@@ -330,6 +330,26 @@
     "deleteConnector": "Delete",
     "showingPreview": "showing {{count}} preview rows"
   },
+  "connectorPreview": {
+    "rowCount": "{{count}} rows",
+    "showingPreview": "showing {{count}} preview rows",
+    "maxRows": "Max rows",
+    "addFilter": "Add filter",
+    "filterColumn": "Column",
+    "filterValue": "Value",
+    "filterValueTo": "To",
+    "filterValueSearch": "Enter & search",
+    "filterOptionsTruncated": "Results truncated, type to narrow",
+    "noValueNeeded": "No value needed",
+    "opBetween": "BETWEEN",
+    "opContains": "CONTAINS",
+    "refreshPreview": "Preview",
+    "noMatchingRows": "No rows match the current filters",
+    "noPreviewAvailable": "No preview available",
+    "loaded": "Loaded",
+    "unload": "Unload",
+    "loadTable": "Load Table"
+  },
   "dataThread": {
     "title": "Data Threads",
     "refreshNow": "Refresh now",
@@ -530,6 +550,11 @@
     "completingLogin": "Completing login…",
     "idpRedirecting": "Redirecting from SSO, please wait…",
     "callbackFailed": "Login callback failed: {{message}}",
+    "ssoErrorInvalidState": "SSO session expired or was interrupted. Please try signing in again.",
+    "ssoErrorInvalidClient": "SSO client credentials are incorrect. Please contact your administrator to verify the configuration.",
+    "ssoErrorTokenExchange": "SSO login failed during token exchange. Please try again or contact your administrator.",
+    "ssoErrorMissingEndpoint": "SSO is not properly configured (missing token endpoint). Please contact your administrator.",
+    "ssoErrorGeneric": "SSO login failed. Please try again or contact your administrator.",
     "sessionExpired": "Session expired. Please sign in again.",
     "silentRenewFailed": "Background token refresh failed. Redirecting to login…",
     "migration": {
