@@ -546,6 +546,9 @@ def data_agent_streaming():
 
     def generate():
         try:
+            from data_formulator.datalake.workspace import get_user_home
+            user_home = get_user_home(identity_id)
+
             agent = DataAgent(
                 client=client,
                 workspace=workspace,
@@ -554,6 +557,7 @@ def data_agent_streaming():
                 language_instruction=language_instruction,
                 max_iterations=max_iterations,
                 max_repair_attempts=max_repair_attempts,
+                user_home=user_home,
             )
 
             trajectory = None

@@ -22,6 +22,8 @@ The server-side while loop handles one action per iteration:
 import json
 import logging
 import time
+import uuid
+from pathlib import Path
 from typing import Any, Generator
 
 import litellm
@@ -264,6 +266,7 @@ class DataAgent:
         language_instruction: str = "",
         max_iterations: int = 5,
         max_repair_attempts: int = 2,
+        user_home: Path | str | None = None,
     ):
         self.client = client
         self.workspace = workspace
@@ -272,6 +275,17 @@ class DataAgent:
         self.language_instruction = language_instruction
         self.max_iterations = max_iterations
         self.max_repair_attempts = max_repair_attempts
+
+        from data_formulator.agents.reasoning_log import (
+            ReasoningLogger, _NullReasoningLogger,
+        )
+        self._session_id = uuid.uuid4().hex[:12]
+        if user_home:
+            self._reasoning_log = ReasoningLogger(
+                user_home, "DataAgent", self._session_id,
+            )
+        else:
+            self._reasoning_log = _NullReasoningLogger()
 
     # ------------------------------------------------------------------
     # Public API
@@ -298,225 +312,270 @@ class DataAgent:
             ``"completion"``  – final summary (loop terminates)
             ``"error"``       – error information
         """
-        if trajectory is None:
-            trajectory = self._build_initial_messages(
-                input_tables, user_question, focused_thread, other_threads,
-                primary_tables=primary_tables,
-                attached_images=attached_images,
-            )
-
+        rlog = self._reasoning_log
+        session_start_time = time.time()
+        total_llm_calls = 0
         completed_steps: list[dict[str, Any]] = []
         iteration = completed_step_count
-        action_retry_budget = 1  # one extra chance when the LLM fails to produce an action
+        final_status = "max_iterations"
 
-        while iteration < self.max_iterations:
-            iteration += 1
+        try:
+            rlog.log(
+                "session_start",
+                agent="DataAgent",
+                session_id=self._session_id,
+                user_question=user_question,
+                input_tables=[t.get("name", "") for t in input_tables],
+                model=self.client.model,
+                rules_injected=[
+                    r for r in [self.agent_exploration_rules, self.agent_coding_rules] if r
+                ],
+            )
 
-            # --- THINK: call LLM with tools, get action ---------------
-            t_start = time.time()
-            action = None
-            action_reason = "ok"
-            action_error = ""
-            for event in self._get_next_action(trajectory, input_tables):
-                if event.get("type") == "agent_action":
-                    action = event.get("action_data")
-                    action_reason = event.get("reason", "ok")
-                    action_error = event.get("error_message", "")
-                else:
-                    yield event
-            logger.info("[DataAgent] iteration %d total=%.2fs reason=%s",
-                        iteration, time.time() - t_start, action_reason)
+            if trajectory is None:
+                trajectory = self._build_initial_messages(
+                    input_tables, user_question, focused_thread, other_threads,
+                    primary_tables=primary_tables,
+                    attached_images=attached_images,
+                )
+                rlog.log(
+                    "context_built",
+                    system_prompt_tokens=len(trajectory[0].get("content", "")) // 4 if trajectory else 0,
+                    user_msg_tokens=len(str(trajectory[1].get("content", ""))) // 4 if len(trajectory) > 1 else 0,
+                    total_tables=len(input_tables),
+                    primary_tables=primary_tables or [],
+                )
 
-            if action is None:
-                # ① tool rounds exhausted → pause and let the user decide
-                if action_reason == "tool_rounds_exhausted":
-                    steps_desc = "\n".join(
-                        f"  • {s['display_instruction']}" for s in completed_steps
-                    ) or "(none yet)"
-                    yield {
-                        "type": "clarify",
-                        "iteration": iteration,
-                        "thought": "",
-                        "message": (
-                            "I've been exploring extensively but haven't reached "
-                            "a conclusion yet.\n\nCompleted steps so far:\n"
-                            f"{steps_desc}\n\n"
-                            "How would you like to proceed?"
-                        ),
-                        "message_code": "agent.clarifyExhausted",
-                        "message_params": {"steps": steps_desc},
-                        "options": [
-                            "Continue exploring",
-                            "Simplify the task",
-                            "Present what you have so far",
-                        ],
-                        "option_codes": [
-                            "agent.clarifyOptionContinue",
-                            "agent.clarifyOptionSimplify",
-                            "agent.clarifyOptionPresent",
-                        ],
-                        "trajectory": self._strip_images(trajectory),
-                        "completed_step_count": len(completed_steps),
-                    }
-                    return
+            action_retry_budget = 1  # one extra chance when the LLM fails to produce an action
 
-                # ② LLM API error (already retried in _call_llm) → fatal
-                if action_reason == "llm_error":
+            while iteration < self.max_iterations:
+                iteration += 1
+
+                # --- THINK: call LLM with tools, get action ---------------
+                t_start = time.time()
+                action = None
+                action_reason = "ok"
+                action_error = ""
+                for event in self._get_next_action(trajectory, input_tables, outer_iteration=iteration):
+                    if event.get("type") == "agent_action":
+                        action = event.get("action_data")
+                        action_reason = event.get("reason", "ok")
+                        action_error = event.get("error_message", "")
+                        total_llm_calls += event.get("llm_calls", 0)
+                    else:
+                        yield event
+                logger.info("[DataAgent] iteration %d total=%.2fs reason=%s",
+                            iteration, time.time() - t_start, action_reason)
+
+                if action is None:
+                    # ① tool rounds exhausted → pause and let the user decide
+                    if action_reason == "tool_rounds_exhausted":
+                        steps_desc = "\n".join(
+                            f"  • {s['display_instruction']}" for s in completed_steps
+                        ) or "(none yet)"
+                        final_status = "clarify_exhausted"
+                        yield {
+                            "type": "clarify",
+                            "iteration": iteration,
+                            "thought": "",
+                            "message": (
+                                "I've been exploring extensively but haven't reached "
+                                "a conclusion yet.\n\nCompleted steps so far:\n"
+                                f"{steps_desc}\n\n"
+                                "How would you like to proceed?"
+                            ),
+                            "message_code": "agent.clarifyExhausted",
+                            "message_params": {"steps": steps_desc},
+                            "options": [
+                                "Continue exploring",
+                                "Simplify the task",
+                                "Present what you have so far",
+                            ],
+                            "option_codes": [
+                                "agent.clarifyOptionContinue",
+                                "agent.clarifyOptionSimplify",
+                                "agent.clarifyOptionPresent",
+                            ],
+                            "trajectory": self._strip_images(trajectory),
+                            "completed_step_count": len(completed_steps),
+                        }
+                        self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                        return
+
+                    # ② LLM API error (already retried in _call_llm) → fatal
+                    if action_reason == "llm_error":
+                        final_status = "llm_error"
+                        yield self._error_event(
+                            iteration,
+                            action_error or "LLM API error",
+                            message_code="agent.llmApiError",
+                        )
+                        break
+
+                    # ③ json_parse_failed or unknown → retry once with context
+                    if action_retry_budget > 0:
+                        action_retry_budget -= 1
+                        logger.info("[DataAgent] action=None (reason=%s), retrying "
+                                    "(%d retries left)", action_reason, action_retry_budget)
+                        steps_summary = "\n".join(
+                            f"  - Step {i + 1}: {s['display_instruction']}"
+                            for i, s in enumerate(completed_steps)
+                        ) or "  (no completed steps)"
+                        trajectory.append({
+                            "role": "user",
+                            "content": (
+                                "[SYSTEM] Your previous response could not be parsed. "
+                                "Here is what was already completed:\n"
+                                f"{steps_summary}\n\n"
+                                "Please output a JSON action object (visualize / clarify / present) "
+                                "to continue."
+                            ),
+                        })
+                        continue
+
+                    final_status = "parse_failed"
                     yield self._error_event(
                         iteration,
-                        action_error or "LLM API error",
-                        message_code="agent.llmApiError",
+                        action_error or "Failed to parse agent action from LLM response",
+                        message_code="agent.parseActionFailed",
                     )
                     break
 
-                # ③ json_parse_failed or unknown → retry once with context
-                if action_retry_budget > 0:
-                    action_retry_budget -= 1
-                    logger.info("[DataAgent] action=None (reason=%s), retrying "
-                                "(%d retries left)", action_reason, action_retry_budget)
-                    steps_summary = "\n".join(
-                        f"  - Step {i + 1}: {s['display_instruction']}"
-                        for i, s in enumerate(completed_steps)
-                    ) or "  (no completed steps)"
+                action_type = action.get("action")
+                logger.info(f"[DataAgent] Iteration {iteration}: action={action_type}")
+
+                # --- ACT (only user-visible actions reach here) --------
+                if action_type == "clarify":
+                    rlog.log("action_execution", action="clarify", status="ok",
+                             iteration=iteration)
+                    final_status = "clarify"
+                    yield {
+                        "type": "clarify",
+                        "iteration": iteration,
+                        "thought": action.get("thought", ""),
+                        "message": action.get("message", ""),
+                        "options": action.get("options", []),
+                        "trajectory": self._strip_images(trajectory),
+                        "completed_step_count": len(completed_steps),
+                    }
+                    self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                    return
+
+                elif action_type == "present":
+                    rlog.log("action_execution", action="present", status="ok",
+                             iteration=iteration, total_steps=len(completed_steps))
+                    final_status = "success"
+                    yield {
+                        "type": "completion",
+                        "iteration": iteration,
+                        "status": "success",
+                        "content": {
+                            "thought": action.get("thought", ""),
+                            "summary": action.get("summary", ""),
+                            "total_steps": len(completed_steps),
+                        },
+                    }
+                    self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                    return
+
+                elif action_type == "visualize":
+                    code = action.get("code", "")
+                    output_variable = action.get("output_variable", "result_df")
+                    chart_spec = action.get("chart", {})
+                    field_metadata = action.get("field_metadata", {})
+                    field_display_names = action.get("field_display_names", {})
+                    display_instruction = action.get("display_instruction", "")
+
+                    yield {
+                        "type": "action",
+                        "iteration": iteration,
+                        "action": "visualize",
+                        "thought": action.get("thought", ""),
+                        "display_instruction": display_instruction,
+                        "input_tables": action.get("input_tables", []),
+                    }
+
+                    viz_result = self._execute_visualize(
+                        code=code,
+                        output_variable=output_variable,
+                        chart_spec=chart_spec,
+                        field_metadata=field_metadata,
+                        field_display_names=field_display_names,
+                        display_instruction=display_instruction,
+                        input_tables=input_tables,
+                        messages=trajectory,
+                        outer_iteration=iteration,
+                    )
+                    total_llm_calls += viz_result.get("repair_llm_calls", 0)
+
+                    if viz_result["status"] != "ok":
+                        error_msg = viz_result.get("error_message", "Unknown error")
+                        rlog.log("action_execution", action="visualize", status="error",
+                                 iteration=iteration, error=error_msg)
+                        observation = f"[OBSERVATION – Step {len(completed_steps) + 1} FAILED]\n\nError: {error_msg}"
+                        trajectory.append({"role": "user", "content": observation})
+                        yield self._error_event(iteration, error_msg, display_instruction=display_instruction)
+                        continue
+
+                    transform_result = viz_result["transform_result"]
+                    sign_result(transform_result)
+                    transformed_data = transform_result["content"]
+                    output_rows = len(transformed_data.get("rows", []))
+                    chart_type = chart_spec.get("chart_type", "")
+                    rlog.log("action_execution", action="visualize", status="ok",
+                             iteration=iteration, output_rows=output_rows,
+                             chart_type=chart_type)
+
+                    completed_steps.append({
+                        "display_instruction": display_instruction,
+                        "code": transform_result.get("code", ""),
+                    })
+
+                    yield {
+                        "type": "result",
+                        "iteration": iteration,
+                        "status": "success",
+                        "content": {
+                            "question": display_instruction,
+                            "result": transform_result,
+                        },
+                    }
+
+                    observation_msg = self._format_observation(
+                        step_index=len(completed_steps),
+                        display_instruction=display_instruction,
+                        thought=action.get("thought", ""),
+                        code=transform_result.get("code", ""),
+                        data=transformed_data,
+                        chart_image=None,
+                    )
+                    trajectory.append(observation_msg)
+
+                else:
                     trajectory.append({
                         "role": "user",
                         "content": (
-                            "[SYSTEM] Your previous response could not be parsed. "
-                            "Here is what was already completed:\n"
-                            f"{steps_summary}\n\n"
-                            "Please output a JSON action object (visualize / clarify / present) "
-                            "to continue."
+                            f"[ERROR] Unknown action '{action_type}'. "
+                            "Please choose one of: visualize, clarify, present."
                         ),
                     })
-                    continue
+                    yield self._error_event(iteration, f"Unknown action: {action_type}", message_code="agent.unknownAction")
 
-                yield self._error_event(
-                    iteration,
-                    action_error or "Failed to parse agent action from LLM response",
-                    message_code="agent.parseActionFailed",
-                )
-                break
-
-            action_type = action.get("action")
-            logger.info(f"[DataAgent] Iteration {iteration}: action={action_type}")
-
-            # --- ACT (only user-visible actions reach here) ------------
-            if action_type == "clarify":
-                yield {
-                    "type": "clarify",
-                    "iteration": iteration,
-                    "thought": action.get("thought", ""),
-                    "message": action.get("message", ""),
-                    "options": action.get("options", []),
-                    "trajectory": self._strip_images(trajectory),
-                    "completed_step_count": len(completed_steps),
-                }
-                return
-
-            elif action_type == "present":
+            # Exhausted max iterations (or break from error)
+            self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+            if final_status == "max_iterations":
                 yield {
                     "type": "completion",
                     "iteration": iteration,
-                    "status": "success",
+                    "status": "max_iterations",
                     "content": {
-                        "thought": action.get("thought", ""),
-                        "summary": action.get("summary", ""),
+                        "summary": "Reached the maximum number of exploration steps.",
+                        "summary_code": "agent.maxIterationsSummary",
                         "total_steps": len(completed_steps),
                     },
                 }
-                return
-
-            elif action_type == "visualize":
-                code = action.get("code", "")
-                output_variable = action.get("output_variable", "result_df")
-                chart_spec = action.get("chart", {})
-                field_metadata = action.get("field_metadata", {})
-                field_display_names = action.get("field_display_names", {})
-                display_instruction = action.get("display_instruction", "")
-
-                # Yield action event so the UI can show what the agent is doing
-                yield {
-                    "type": "action",
-                    "iteration": iteration,
-                    "action": "visualize",
-                    "thought": action.get("thought", ""),
-                    "display_instruction": display_instruction,
-                    "input_tables": action.get("input_tables", []),
-                }
-
-                # Execute with repair loop
-                viz_result = self._execute_visualize(
-                    code=code,
-                    output_variable=output_variable,
-                    chart_spec=chart_spec,
-                    field_metadata=field_metadata,
-                    field_display_names=field_display_names,
-                    display_instruction=display_instruction,
-                    input_tables=input_tables,
-                    messages=trajectory,
-                )
-
-                if viz_result["status"] != "ok":
-                    error_msg = viz_result.get("error_message", "Unknown error")
-                    observation = f"[OBSERVATION – Step {len(completed_steps) + 1} FAILED]\n\nError: {error_msg}"
-                    trajectory.append({"role": "user", "content": observation})
-                    yield self._error_event(iteration, error_msg, display_instruction=display_instruction)
-                    continue
-
-                # Successful visualization
-                transform_result = viz_result["transform_result"]
-                sign_result(transform_result)
-                transformed_data = transform_result["content"]
-
-                completed_steps.append({
-                    "display_instruction": display_instruction,
-                    "code": transform_result.get("code", ""),
-                })
-
-                # Yield the result to the frontend
-                yield {
-                    "type": "result",
-                    "iteration": iteration,
-                    "status": "success",
-                    "content": {
-                        "question": display_instruction,
-                        "result": transform_result,
-                    },
-                }
-
-                # Append rich observation to trajectory (data-only, no chart image —
-                # avoids rendering discrepancy between server and frontend)
-                observation_msg = self._format_observation(
-                    step_index=len(completed_steps),
-                    display_instruction=display_instruction,
-                    thought=action.get("thought", ""),
-                    code=transform_result.get("code", ""),
-                    data=transformed_data,
-                    chart_image=None,
-                )
-                trajectory.append(observation_msg)
-
-            else:
-                trajectory.append({
-                    "role": "user",
-                    "content": (
-                        f"[ERROR] Unknown action '{action_type}'. "
-                        "Please choose one of: visualize, clarify, present."
-                    ),
-                })
-                yield self._error_event(iteration, f"Unknown action: {action_type}", message_code="agent.unknownAction")
-
-        # Exhausted max iterations
-        yield {
-            "type": "completion",
-            "iteration": iteration,
-            "status": "max_iterations",
-            "content": {
-                "summary": "Reached the maximum number of exploration steps.",
-                "summary_code": "agent.maxIterationsSummary",
-                "total_steps": len(completed_steps),
-            },
-        }
+        finally:
+            rlog.close()
 
     # ------------------------------------------------------------------
     # Visualize execution (with repair)
@@ -532,8 +591,15 @@ class DataAgent:
         display_instruction: str,
         input_tables: list[dict[str, Any]],
         messages: list[dict],
+        outer_iteration: int = 0,
     ) -> dict[str, Any]:
-        """Execute a visualize action with repair retries."""
+        """Execute a visualize action with repair retries.
+
+        Returns a dict with at least ``status`` and, on success,
+        ``transform_result``.  Also includes ``repair_llm_calls`` —
+        the number of LLM calls made during repair attempts so that
+        the caller can accumulate them into ``total_llm_calls``.
+        """
         viz_result = self._run_visualize_code(
             code=code,
             output_variable=output_variable,
@@ -544,13 +610,14 @@ class DataAgent:
             messages=messages,
         )
 
+        rlog = self._reasoning_log
+        repair_llm_calls = 0
         attempt = 0
         while viz_result["status"] != "ok" and attempt < self.max_repair_attempts:
             attempt += 1
             error_msg = viz_result.get("error_message", "Unknown error")
             logger.warning(f"[DataAgent] Repair attempt {attempt}/{self.max_repair_attempts}: {error_msg}")
 
-            # Ask LLM to fix the code
             repair_messages = list(messages)
             repair_messages.append({
                 "role": "user",
@@ -560,9 +627,13 @@ class DataAgent:
                 ),
             })
             repair_action = None
-            for evt in self._get_next_action(repair_messages, input_tables):
+            for evt in self._get_next_action(
+                repair_messages, input_tables,
+                outer_iteration=outer_iteration,
+            ):
                 if evt.get("type") == "agent_action":
                     repair_action = evt.get("action_data")
+                    repair_llm_calls += evt.get("llm_calls", 0)
             if repair_action and repair_action.get("action") == "visualize":
                 viz_result = self._run_visualize_code(
                     code=repair_action.get("code", code),
@@ -573,9 +644,16 @@ class DataAgent:
                     display_instruction=display_instruction,
                     messages=messages,
                 )
+                rlog.log("repair_attempt", attempt=attempt,
+                         original_error=error_msg[:200],
+                         status=viz_result["status"])
             else:
+                rlog.log("repair_attempt", attempt=attempt,
+                         original_error=error_msg[:200],
+                         status="repair_failed")
                 break
 
+        viz_result["repair_llm_calls"] = repair_llm_calls
         return viz_result
 
     def _run_explore_code(
@@ -968,6 +1046,7 @@ class DataAgent:
         self,
         trajectory: list[dict],
         input_tables: list[dict[str, Any]] | None = None,
+        outer_iteration: int = 0,
     ) -> Generator[dict[str, Any], None, None]:
         """Call the LLM with tools, handle tool calls internally, then
         parse the structured JSON action from the text response.
@@ -975,21 +1054,36 @@ class DataAgent:
         Yields:
             - ``{"type": "tool_start", "tool": ..., ...}`` for each tool call
             - ``{"type": "tool_result", "tool": ..., ...}`` for each tool result
-            - ``{"type": "agent_action", "action_data": dict, "reason": ...}``
-              as the final yield.  ``action_data`` is *None* on failure;
+            - ``{"type": "agent_action", "action_data": dict, "reason": ...,
+                "llm_calls": int}`` as the final yield.
+              ``action_data`` is *None* on failure;
               ``reason`` is one of ``"ok"``, ``"json_parse_failed"``,
               ``"llm_error"``, ``"tool_rounds_exhausted"``.
+              ``llm_calls`` is the number of LLM calls made in this cycle.
         """
         max_tool_rounds = 8
         max_json_retries = 1
         json_retries = 0
         messages = trajectory
+        llm_calls_in_cycle = 0
+
+        rlog = self._reasoning_log
 
         for round_idx in range(max_tool_rounds):
-            # --- call LLM (transient errors already retried inside _call_llm) ---
+            llm_calls_in_cycle += 1
+            rlog.log("llm_request", iteration=outer_iteration,
+                     round=round_idx + 1,
+                     messages_count=len(messages),
+                     tools_available=[t["function"]["name"] for t in TOOLS])
+            llm_t0 = time.time()
             try:
                 response = self._call_llm(messages)
             except Exception as exc:
+                llm_latency = int((time.time() - llm_t0) * 1000)
+                rlog.log("llm_response", iteration=outer_iteration,
+                         round=round_idx + 1,
+                         latency_ms=llm_latency, finish_reason="error",
+                         error=type(exc).__name__)
                 logger.error("[DataAgent] LLM call failed", exc_info=exc)
                 from data_formulator.security.sanitize import classify_llm_error
                 yield {
@@ -997,17 +1091,35 @@ class DataAgent:
                     "action_data": None,
                     "reason": "llm_error",
                     "error_message": classify_llm_error(exc),
+                    "llm_calls": llm_calls_in_cycle,
                 }
                 return
 
+            llm_latency = int((time.time() - llm_t0) * 1000)
+
             if not response.choices:
+                rlog.log("llm_response", iteration=outer_iteration,
+                         round=round_idx + 1,
+                         latency_ms=llm_latency, finish_reason="empty")
                 yield {"type": "agent_action", "action_data": None, "reason": "llm_error",
-                       "error_message": "LLM returned empty response"}
+                       "error_message": "LLM returned empty response",
+                       "llm_calls": llm_calls_in_cycle}
                 return
 
             choice = response.choices[0]
             content = choice.message.content or ""
             tool_calls = getattr(choice.message, 'tool_calls', None)
+            finish_reason = getattr(choice, "finish_reason", "stop")
+
+            if tool_calls:
+                rlog.log("llm_response", iteration=outer_iteration,
+                         round=round_idx + 1,
+                         latency_ms=llm_latency, finish_reason="tool_calls",
+                         tool_calls=[{"name": tc.function.name} for tc in tool_calls])
+            else:
+                rlog.log("llm_response", iteration=outer_iteration,
+                         round=round_idx + 1,
+                         latency_ms=llm_latency, finish_reason=finish_reason)
 
             # --- tool calls: execute and loop back ---
             if tool_calls:
@@ -1047,6 +1159,9 @@ class DataAgent:
                         "query": tool_args.get("query") if tool_name == "search_data_tables" else None,
                     }
 
+                    tool_t0 = time.time()
+                    tool_status = "ok"
+
                     if tool_name == "think":
                         thought_msg = tool_args.get("message", "")
                         tool_content = "ok"
@@ -1057,12 +1172,13 @@ class DataAgent:
                             input_tables or [],
                         )
                         tool_content = result.get("stdout", "")
+                        tool_status = result.get("status", "ok")
                         if result.get("error"):
                             tool_content += f"\n\nError: {result['error']}"
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
-                            "status": result.get("status", "ok"),
+                            "status": tool_status,
                             "stdout": result.get("stdout", ""),
                             "error": result.get("error"),
                         }
@@ -1100,6 +1216,14 @@ class DataAgent:
                     else:
                         tool_content = f"Unknown tool: {tool_name}"
 
+                    tool_latency = int((time.time() - tool_t0) * 1000)
+                    output_summary = (tool_content[:200] + "...") if len(tool_content) > 200 else tool_content
+                    rlog.log("tool_execution", iteration=outer_iteration,
+                             tool=tool_name,
+                             input_summary=tool_args.get("purpose", "")[:200],
+                             output_summary=output_summary,
+                             latency_ms=tool_latency, status=tool_status)
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -1114,7 +1238,8 @@ class DataAgent:
             json_blocks = extract_json_objects(content)
             if json_blocks:
                 messages.append({"role": "assistant", "content": content})
-                yield {"type": "agent_action", "action_data": json_blocks[0], "reason": "ok"}
+                yield {"type": "agent_action", "action_data": json_blocks[0], "reason": "ok",
+                       "llm_calls": llm_calls_in_cycle}
                 return
 
             # --- JSON parse failed — focused retry (ask LLM to reformat only) ---
@@ -1135,12 +1260,14 @@ class DataAgent:
                 continue
 
             logger.warning("[DataAgent] JSON parse failed after retries: %s", content[:200])
-            yield {"type": "agent_action", "action_data": None, "reason": "json_parse_failed"}
+            yield {"type": "agent_action", "action_data": None, "reason": "json_parse_failed",
+                   "llm_calls": llm_calls_in_cycle}
             return
 
         # --- tool rounds exhausted ---
         logger.warning("[DataAgent] Exceeded %d tool rounds without producing an action", max_tool_rounds)
-        yield {"type": "agent_action", "action_data": None, "reason": "tool_rounds_exhausted"}
+        yield {"type": "agent_action", "action_data": None, "reason": "tool_rounds_exhausted",
+               "llm_calls": llm_calls_in_cycle}
         return
 
     _MAX_LLM_RETRIES = 3
@@ -1288,6 +1415,27 @@ class DataAgent:
             else:
                 stripped.append(msg)
         return stripped
+
+    @staticmethod
+    def _log_session_end(
+        rlog,
+        status: str,
+        total_iterations: int,
+        total_llm_calls: int,
+        session_start_time: float,
+    ) -> None:
+        """Write ``session_end`` to the reasoning log.
+
+        Does **not** close the log — the ``finally`` block in ``run()``
+        handles that so the fd is released even on unexpected exceptions.
+        """
+        rlog.log(
+            "session_end",
+            status=status,
+            total_iterations=total_iterations,
+            total_llm_calls=total_llm_calls,
+            total_latency_ms=int((time.time() - session_start_time) * 1000),
+        )
 
     @staticmethod
     def _error_event(
