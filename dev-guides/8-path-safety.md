@@ -1,8 +1,8 @@
 # 服务端路径安全开发规范
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-26
-> **适用范围**: 后端 route、Agent 工具、Workspace 文件访问、Data Loader、Sandbox、插件文件 I/O
+> **最后更新**: 2026-04-27
+> **适用范围**: 后端 route、Agent 工具、Workspace 文件访问、Data Loader、Sandbox、插件文件 I/O、知识库、推理日志
 
 ## 1. 核心原则
 
@@ -10,12 +10,17 @@
 
 | 场景 | 规范 |
 |------|------|
-| Workspace data 文件 | 优先使用 `Workspace.get_file_path()` |
-| 任意 root + relative path | 使用 `ConfinedDir` |
-| 文件下载 route | 校验 resolved path 后传给 `send_file()` |
-| Agent 读文件/列目录工具 | base path 在入口 `resolve()` 一次，后续复用 |
+| Workspace data 文件 | `Workspace.get_file_path()`（内部使用 `ConfinedDir`） |
+| Agent 读文件/列目录工具 | 入口创建 `ConfinedDir` 实例，传入各工具方法 |
+| 文件下载 route | `ConfinedDir(dir).resolve(filename)` 后传给 `send_file()` |
+| 文件上传 route | `secure_filename()` 清洗 + `ConfinedDir.resolve()` 二次校验 |
+| 任意 root + relative path | `ConfinedDir(root).resolve(relative)` |
+| 知识库文件读写 | 通过 `KnowledgeStore` 内部的 `ConfinedDir` |
+| 推理日志写入 | 通过 `ReasoningLogger` 内部的 `ConfinedDir` |
 | 读取宿主文件系统的 Loader | 必须注册多用户部署禁用规则 |
 | Sandbox 部署 | 多用户模式不得使用 `not_a_sandbox` |
+
+**绝对禁止**手写 `resolve() + relative_to()` 或 `resolve() + is_relative_to()` 路径检查模式。这些逻辑已统一封装在 `ConfinedDir.resolve()` 中，手写会导致逻辑重复、不一致和遗漏风险。
 
 禁止把用户、LLM、外部存储、HTTP body/query/path 参数直接用于裸路径拼接，例如 `Path(root) / user_input`、`root / filename`。
 
@@ -50,21 +55,32 @@ jail.write("scratch/output.csv", b"content")
 | `secure_filename()` | identity、URL/上传临时文件名等需要 ASCII 安全名的场景 |
 | `ConfinedDir.resolve()` | 校验清洗后的相对路径不会逃出 root |
 
-使用 `Workspace.get_file_path(filename)` 的场景不需要手动调用 `ConfinedDir`，因为它已包含 `safe_data_filename()` 和路径包含校验。
+使用 `Workspace.get_file_path(filename)` 的场景不需要手动调用 `ConfinedDir`，因为它内部已通过 `safe_data_filename()` + `ConfinedDir.resolve()` 实现两层防御。
 
 ## 4. 文件下载 Route
 
-下载接口必须让安全检查和实际发送使用同一个 resolved path。
+下载接口必须让安全检查和实际发送使用同一个 resolved path。使用 `ConfinedDir`：
 
 ```python
 from flask import send_file
+from data_formulator.security.path_safety import ConfinedDir
 
-scratch_root = scratch_dir.resolve()
-target = (scratch_root / filename).resolve()
-if not target.is_relative_to(scratch_root):
+scratch_jail = ConfinedDir(scratch_dir, mkdir=False)
+try:
+    target = scratch_jail.resolve(filename)
+except ValueError:
     return jsonify(status="error", message="Access denied")
 
 return send_file(target)
+```
+
+❌ **禁止**手写 resolve + relative_to 检查：
+
+```python
+# BAD — 手写检查，已弃用
+target = (scratch_dir / filename).resolve()
+if not target.is_relative_to(scratch_dir.resolve()):
+    return jsonify(status="error", message="Access denied")
 ```
 
 禁止在用户路径上使用 `send_from_directory(dir, filename)`。它会在 Flask 内部再次解析原始 `filename`，容易和前置安全检查形成 TOCTOU 不一致。
@@ -75,19 +91,38 @@ return send_file(target)
 
 Agent 工具参数由 LLM 生成，LLM 输入又来自用户，因此路径参数一律视为不可信。
 
-入口函数应先固定 resolved base path：
+入口函数应创建 `ConfinedDir` 实例，传入各工具方法：
 
 ```python
+from data_formulator.security.path_safety import ConfinedDir
+
 def _execute_tool(self, name, args):
-    workspace_path = self.workspace._path.resolve()
-    scratch_dir = workspace_path / "scratch"
-    scratch_dir.mkdir(exist_ok=True)
+    workspace_jail = ConfinedDir(self.workspace._path, mkdir=False)
+    scratch_jail = ConfinedDir(self.workspace._path / "scratch")
+
+    if name == "read_file":
+        return self._tool_read_file(args, workspace_jail)
+    elif name == "write_file":
+        return self._tool_write_file(args, scratch_jail)
     ...
 ```
 
-具体工具只复用这个 resolved base：
+具体工具通过 `ConfinedDir.resolve()` 获取安全路径：
 
 ```python
+def _tool_read_file(self, args, workspace_jail):
+    rel_path = args.get("path", "")
+    try:
+        target = workspace_jail.resolve(rel_path)
+    except ValueError:
+        return {"error": "Access denied: path outside workspace"}
+    ...
+```
+
+❌ **禁止**在工具方法中手写 `resolve() + relative_to()`：
+
+```python
+# BAD — 手写检查，已弃用
 target = (workspace_path / rel_path).resolve()
 try:
     target.relative_to(workspace_path)
@@ -95,7 +130,7 @@ except ValueError:
     return {"error": "Access denied: path outside workspace"}
 ```
 
-不要在工具函数内部反复调用 `workspace_path.resolve()`。base 路径多次 resolve 会扩大 TOCTOU 表面积。
+不要在工具函数内部反复创建 `ConfinedDir` 或反复调用 `resolve()`。在 `_execute_tool` 入口创建一次，所有工具方法复用同一个实例。
 
 ## 6. Data Loader 与宿主文件系统
 
@@ -151,7 +186,25 @@ def _enforce_deployment_restrictions():
 - [ ] 新模块是否接收用户、LLM、外部存储或 HTTP 传入的路径片段？
 - [ ] 是否使用了 `ConfinedDir` 或 `Workspace.get_file_path()`？
 - [ ] 是否避免了 `Path(root) / user_input` 裸拼接？
-- [ ] 路径包含判断是否使用 `Path.is_relative_to()`，而不是 `str.startswith()`？
-- [ ] 下载 route 是否用同一个 resolved path 做检查和 `send_file()`？
+- [ ] 是否避免了手写 `resolve() + relative_to()` / `is_relative_to()` 模式？（必须用 `ConfinedDir`）
+- [ ] 下载 route 是否用 `ConfinedDir.resolve()` 做检查并传给 `send_file()`？
+- [ ] 上传 route 是否同时使用 `secure_filename()` 和 `ConfinedDir.resolve()`？
 - [ ] 读取宿主文件系统的 Loader 是否注册了多用户禁用规则？
 - [ ] 多用户部署是否启用了 `docker` 或 `local` sandbox？
+
+## 10. 已迁移清单
+
+以下位置已从手写 `resolve() + relative_to()` 迁移到 `ConfinedDir`：
+
+| 文件 | 方法 | 迁移方式 |
+|------|------|----------|
+| `agent_data_loading_chat.py` | `_execute_tool` | 创建 `workspace_jail` + `scratch_jail` |
+| `agent_data_loading_chat.py` | `_tool_read_file` | `workspace_jail.resolve(rel_path)` |
+| `agent_data_loading_chat.py` | `_tool_list_directory` | `workspace_jail.resolve(rel_path)` |
+| `agent_data_loading_chat.py` | `_tool_write_file` | `scratch_jail.resolve(filename)` |
+| `agent_data_loading_chat.py` | `_preview_scratch_files` | `ConfinedDir(workspace._path).resolve(file_path)` |
+| `routes/agents.py` | `scratch_serve` | `ConfinedDir(scratch_dir).resolve(filename)` |
+| `routes/agents.py` | `scratch_upload` | `ConfinedDir(scratch_dir).resolve(final_name)` |
+| `datalake/workspace.py` | `__init__` (legacy) | `ConfinedDir(root).resolve(safe_id)` |
+| `datalake/workspace.py` | `get_file_path` | `ConfinedDir(data_dir).resolve(basename)` |
+| `local_folder_data_loader.py` | 全文件 | 已使用 `ConfinedDir`（原始采用者） |

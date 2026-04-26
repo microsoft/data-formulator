@@ -176,43 +176,40 @@ class KustoDataLoader(ExternalDataLoader):
         return arrow_table
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        query = ".show tables"
-        tables_df = self.query(query)
+        """List tables from Kusto database.
+
+        Uses `.show tables details` for lightweight metadata (name, schema,
+        DocString). Does NOT run per-table sample queries.
+        """
+        tables_df = self.query(".show tables details")
 
         tables = []
-        for table in tables_df.to_dict(orient="records"):
-            table_name = table['TableName']
-            
-            # Apply table filter if provided
+        for rec in tables_df.to_dict(orient="records"):
+            table_name = rec['TableName']
+
             if table_filter and table_filter.lower() not in table_name.lower():
                 continue
-                
-            schema_result = self.query(f".show table ['{table_name}'] schema as json").to_dict(orient="records")
-            columns = [{
-                'name': r["Name"],
-                'type': r["Type"]
-            } for r in json.loads(schema_result[0]['Schema'])['OrderedColumns']]
 
-            row_count_result = self.query(f".show table ['{table_name}'] details").to_dict(orient="records")
-            row_count = row_count_result[0]["TotalRowCount"]
+            try:
+                schema_result = self.query(
+                    f".show table ['{table_name}'] schema as json"
+                ).to_dict(orient="records")
+                columns = [
+                    {"name": r["Name"], "type": r["Type"]}
+                    for r in json.loads(schema_result[0]["Schema"])["OrderedColumns"]
+                ]
+            except Exception:
+                columns = []
 
-            sample_query = f"['{table_name}'] | take {5}"
-            sample_df = self.query(sample_query)
-            
-            # Convert sample data to JSON with proper datetime handling
-            sample_result = json.loads(sample_df.to_json(orient="records", date_format='iso'))
-
-            table_metadata = {
-                "row_count": row_count,
-                "columns": columns,
-                "sample_rows": sample_result
-            }
+            metadata: dict[str, Any] = {"columns": columns}
+            doc_string = rec.get("DocString")
+            if doc_string and str(doc_string).strip():
+                metadata["description"] = str(doc_string).strip()
 
             tables.append({
-                "type": "table",
                 "name": table_name,
                 "path": [table_name],
-                "metadata": table_metadata
+                "metadata": metadata,
             })
 
         return tables
@@ -291,7 +288,11 @@ class KustoDataLoader(ExternalDataLoader):
             row_count = int(details[0]["TotalRowCount"])
             sample_df = self.query(f"['{table_name}'] | take 5")
             sample_rows = json.loads(sample_df.to_json(orient="records", date_format="iso"))
-            return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+            result: dict[str, Any] = {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+            doc_string = details[0].get("DocString")
+            if doc_string and str(doc_string).strip():
+                result["description"] = str(doc_string).strip()
+            return result
         except Exception as e:
             logger.warning(f"get_metadata failed for {path}: {e}")
             return {}

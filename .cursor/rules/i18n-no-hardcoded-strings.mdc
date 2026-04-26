@@ -25,6 +25,22 @@ const { t } = useTranslation();
 <Tooltip content="No data available" />
 ```
 
+## Non-Component Contexts (thunks, utilities, helpers)
+
+When you cannot use hooks (Redux thunks, plain `.ts` utilities, store helpers), import the i18n instance directly:
+
+```ts
+import i18n from '../i18n';
+
+// ✅ GOOD — works outside React components
+i18n.t('messages.rowLimitReached', { count: 20000 })
+
+// ❌ BAD — hooks only work inside React function components
+const { t } = useTranslation();  // will crash in a thunk
+```
+
+The same rule applies: every user-visible string must use `i18n.t()` with a translation key, never a hardcoded literal.
+
 ## Translation Files
 
 - English: `src/i18n/locales/en/<namespace>.json`

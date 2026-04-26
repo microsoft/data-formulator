@@ -232,8 +232,9 @@ export interface DictTable {
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
     attachedMetadata: string; // a string of attached metadata explaining what the table is about (used for prompt)
+    /** Read-only description from the source system (e.g. database COMMENT). */
+    systemDescription?: string;
     
-    // New field: tracks the source of the data and refresh configuration
     source?: DataSourceConfig;
     
     // Content hash for detecting data changes during refresh

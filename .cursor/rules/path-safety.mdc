@@ -1,6 +1,6 @@
 ---
-description: 路径安全编码规范 — 编辑路由/Agent/Loader/Workspace 代码时自动提醒
-globs: py-src/data_formulator/{routes,agents,data_loader,datalake,security}/**/*.py
+description: 路径安全编码规范 — 编辑路由/Agent/Loader/Workspace/知识库代码时自动提醒
+globs: py-src/data_formulator/{routes,agents,data_loader,datalake,security,knowledge}/**/*.py
 alwaysApply: false
 ---
 
@@ -8,16 +8,60 @@ alwaysApply: false
 
 编辑此目录下的文件时，请遵守以下安全规则（详见 `dev-guides/8-path-safety.md` 和 `.cursor/skills/path-safety/SKILL.md`）：
 
-## 文件下载
+## ConfinedDir 是唯一的路径约束原语
 
-- 用 `send_file(resolved_path)`，**禁止** `send_from_directory(dir, user_input)`
-- 先 `resolve()` + `is_relative_to()` 校验，再传给 `send_file`
+所有接受用户可控路径的代码，**必须**通过 `ConfinedDir` 实例访问文件系统。
 
-## 路径校验
+```python
+from data_formulator.security.path_safety import ConfinedDir
 
-- 路径包含判断用 `Path.is_relative_to()`，**禁止** `str.startswith()`
-- base 路径只 `resolve()` 一次（在函数入口），后续复用
-- 用户输入拼路径用 `ConfinedDir` 或 `Workspace.get_file_path()`，**禁止** 裸 `Path(root) / user_input`
+jail = ConfinedDir(root_dir, mkdir=False)
+try:
+    target = jail.resolve(user_input)
+except ValueError:
+    return {"error": "Access denied"}
+```
+
+## 禁止的模式
+
+```python
+# ❌ BAD — 裸路径拼接
+target = Path(root) / user_input
+
+# ❌ BAD — 手写 resolve + relative_to（已弃用，必须用 ConfinedDir）
+target = (root / user_input).resolve()
+try:
+    target.relative_to(root)
+except ValueError: ...
+
+# ❌ BAD — 手写 is_relative_to（已弃用，必须用 ConfinedDir）
+resolved = (root / user_input).resolve()
+if not resolved.is_relative_to(root.resolve()): ...
+
+# ❌ BAD — 路径比较用 str.startswith
+if str(target).startswith(str(root)): ...
+```
+
+## 正确的模式
+
+```python
+# ✅ GOOD — Agent 工具
+workspace_jail = ConfinedDir(self.workspace._path, mkdir=False)
+scratch_jail = ConfinedDir(self.workspace._path / "scratch")
+target = workspace_jail.resolve(rel_path)
+
+# ✅ GOOD — 文件下载 route
+scratch_jail = ConfinedDir(scratch_dir, mkdir=False)
+target = scratch_jail.resolve(filename)
+return send_file(target)
+
+# ✅ GOOD — 文件上传（两层防御）
+safe_name = secure_filename(raw_filename)
+target = scratch_jail.resolve(safe_name)
+
+# ✅ GOOD — Workspace data 文件
+path = workspace.get_file_path(filename)  # 内部使用 ConfinedDir
+```
 
 ## 部署守卫
 

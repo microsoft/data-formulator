@@ -146,6 +146,21 @@ export const workspaceDB = {
         await tableDataDB.deleteAll(id);
     },
 
+    /** Update only the displayName (used by auto-name, manual rename). */
+    async updateDisplayName(id: string, displayName: string): Promise<void> {
+        const db = await openDB();
+        try {
+            const store = txStore(db, 'readwrite');
+            const existing: WorkspaceEntry | undefined = await reqToPromise(store.get(id));
+            if (!existing) return;
+            existing.displayName = displayName;
+            existing.updatedAt = new Date().toISOString();
+            await reqToPromise(store.put(existing));
+        } finally {
+            db.close();
+        }
+    },
+
     /** Check if a workspace exists. */
     async exists(id: string): Promise<boolean> {
         const entry = await this.load(id);

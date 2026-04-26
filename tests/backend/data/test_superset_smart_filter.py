@@ -9,14 +9,18 @@ Covers:
 - get_column_types (with mocked SupersetClient)
 - get_column_values three-tier fallback (with mocked SupersetClient)
 - SQL helper functions (_detect_quote_char, _sql_literal, etc.)
+- URL resolution (params → env fallback)
+- Unified validate_params / ConnectorParamError
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
+from data_formulator.data_connector import classify_and_raise_connector_error
 from data_formulator.data_loader.superset_data_loader import (
     SupersetLoader,
     _detect_quote_char,
@@ -340,3 +344,89 @@ class TestGetColumnValues:
         result = loader.get_column_values("42", "col")
         assert result["options"] == []
         assert result["has_more"] is False
+
+
+# ==================================================================
+# SupersetLoader __init__ — URL resolution & param validation
+# ==================================================================
+
+class TestSupersetURLResolution:
+    """Verify Superset URL comes from params or PLG_SUPERSET_URL env fallback."""
+
+    def test_url_from_params(self):
+        with patch.object(SupersetLoader, "_do_login"):
+            loader = SupersetLoader({
+                "url": "http://superset.test",
+                "username": "admin",
+                "password": "pass",
+            })
+        assert loader.url == "http://superset.test"
+
+    def test_url_from_env_fallback(self):
+        with patch.dict("os.environ", {"PLG_SUPERSET_URL": "http://env-superset.test"}):
+            with patch.object(SupersetLoader, "_do_login"):
+                loader = SupersetLoader({
+                    "username": "admin",
+                    "password": "pass",
+                })
+            assert loader.url == "http://env-superset.test"
+
+    def test_url_missing_raises(self):
+        with patch.dict("os.environ", {"PLG_SUPERSET_URL": ""}, clear=False):
+            with pytest.raises(ValueError, match="URL is required"):
+                SupersetLoader({"username": "admin", "password": "pass"})
+
+    def test_sso_token_with_env_url(self):
+        """SSO flow: url from env, access_token from SSO popup."""
+        with patch.dict("os.environ", {"PLG_SUPERSET_URL": "http://sso-superset.test"}):
+            loader = SupersetLoader({
+                "access_token": "eyJfake",
+            })
+        assert loader.url == "http://sso-superset.test"
+        assert loader._access_token == "eyJfake"
+
+
+class TestValidateParams:
+    """Test the unified validate_params classmethod."""
+
+    def test_all_required_present_passes(self):
+        SupersetLoader.validate_params({"url": "http://x"}, skip_auth_tier=True)
+
+    def test_missing_required_raises_with_names(self):
+        from data_formulator.data_loader.external_data_loader import ConnectorParamError
+        with pytest.raises(ConnectorParamError) as exc_info:
+            SupersetLoader.validate_params({}, skip_auth_tier=True)
+        assert "url" in exc_info.value.missing
+
+    def test_skip_auth_tier_ignores_auth_params(self):
+        """In SSO mode, auth-tier params should not be required."""
+        SupersetLoader.validate_params(
+            {"url": "http://x", "access_token": "tok"},
+            skip_auth_tier=True,
+        )
+
+    def test_empty_string_treated_as_missing(self):
+        from data_formulator.data_loader.external_data_loader import ConnectorParamError
+        with pytest.raises(ConnectorParamError) as exc_info:
+            SupersetLoader.validate_params({"url": "  "}, skip_auth_tier=True)
+        assert "url" in exc_info.value.missing
+
+
+class TestClassifyConnectorError:
+    """Verify classify_and_raise_connector_error passes through descriptive messages."""
+
+    def test_connector_param_error_preserves_message(self):
+        from data_formulator.data_loader.external_data_loader import ConnectorParamError
+        from data_formulator.errors import AppError
+        err = ConnectorParamError(["url", "host"], "TestLoader")
+        with pytest.raises(AppError) as exc_info:
+            classify_and_raise_connector_error(err)
+        assert "url" in str(exc_info.value)
+        assert "host" in str(exc_info.value)
+
+    def test_generic_required_error_passes_detail(self):
+        from data_formulator.errors import AppError
+        err = ValueError("database name is required")
+        with pytest.raises(AppError) as exc_info:
+            classify_and_raise_connector_error(err)
+        assert exc_info.value.status_code == 400

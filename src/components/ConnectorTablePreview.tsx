@@ -43,6 +43,7 @@ export interface ColumnMeta {
     name: string;
     type: string;
     source_type?: string;
+    description?: string;
 }
 
 export interface PreviewFilter {
@@ -64,6 +65,8 @@ export interface ConnectorTablePreviewProps {
     sourceTable: SourceTableRef;
     displayName: string;
     pathBreadcrumb?: string;
+    /** Table-level description from the source system. */
+    tableDescription?: string;
 
     columns: ColumnMeta[];
     sampleRows: Record<string, any>[];
@@ -141,6 +144,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     sourceTable,
     displayName,
     pathBreadcrumb,
+    tableDescription,
     columns,
     sampleRows,
     rowCount,
@@ -438,6 +442,11 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     {pathBreadcrumb && (
                         <Typography sx={{ fontSize: 11, color: 'text.disabled' }} noWrap>{pathBreadcrumb}</Typography>
                     )}
+                    {tableDescription && (
+                        <Typography sx={{ fontSize: 11, color: 'text.secondary', fontStyle: 'italic', mt: 0.25 }} noWrap>
+                            {tableDescription}
+                        </Typography>
+                    )}
                     {rowCount != null && (
                         <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
                             {t('connectorPreview.rowCount', { count: Number(rowCount).toLocaleString(), defaultValue: '{{count}} rows' })}
@@ -496,7 +505,11 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                                         <em>{t('connectorPreview.filterColumn', { defaultValue: 'Column' })}</em>
                                     </MenuItem>
                                     {columns.map(c => (
-                                        <MenuItem key={c.name} value={c.name} sx={{ fontSize: 11 }}>{c.name}</MenuItem>
+                                        <MenuItem key={c.name} value={c.name} sx={{ fontSize: 11 }}>
+                                            <Tooltip title={c.description || ''} placement="right" enterDelay={400} disableHoverListener={!c.description}>
+                                                <span>{c.name}</span>
+                                            </Tooltip>
+                                        </MenuItem>
                                     ))}
                                 </TextField>
                                 <TextField

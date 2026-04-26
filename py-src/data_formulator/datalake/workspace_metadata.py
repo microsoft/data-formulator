@@ -186,13 +186,21 @@ class ColumnInfo:
     """Information about a single column in a table."""
     name: str
     dtype: str
+    description: str | None = None
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "dtype": self.dtype}
+        result = {"name": self.name, "dtype": self.dtype}
+        if self.description is not None:
+            result["description"] = self.description
+        return result
 
     @classmethod
     def from_dict(cls, data: dict) -> "ColumnInfo":
-        return cls(name=data["name"], dtype=data["dtype"])
+        return cls(
+            name=data["name"],
+            dtype=data["dtype"],
+            description=data.get("description"),
+        )
 
 
 @dataclass
@@ -321,6 +329,48 @@ class WorkspaceMetadata:
     def list_tables(self) -> list[str]:
         """List all table names."""
         return list(self.tables.keys())
+
+    def search_tables(self, query: str, limit: int = 50) -> list[dict]:
+        """Search workspace tables by keyword across names, descriptions,
+        column names, and column descriptions.
+
+        Returns a list of match dicts sorted by relevance (name match first).
+        Each dict: ``{"name", "description", "matched_columns", "column_count", "score"}``.
+        """
+        needle = (query or "").strip().lower()
+        if not needle:
+            return []
+
+        results: list[dict] = []
+        for name, meta in self.tables.items():
+            score = 0
+            matched_cols: list[str] = []
+
+            if needle in name.lower():
+                score += 10
+
+            if meta.description and needle in meta.description.lower():
+                score += 5
+
+            for col in (meta.columns or []):
+                if needle in col.name.lower():
+                    matched_cols.append(col.name)
+                    score += 2
+                if col.description and needle in col.description.lower():
+                    matched_cols.append(col.name)
+                    score += 1
+
+            if score > 0:
+                results.append({
+                    "name": name,
+                    "description": meta.description or "",
+                    "matched_columns": list(dict.fromkeys(matched_cols)),
+                    "column_count": len(meta.columns) if meta.columns else 0,
+                    "score": score,
+                })
+
+        results.sort(key=lambda r: -r["score"])
+        return results[:limit]
 
     def to_dict(self) -> dict:
         """Convert to dictionary for YAML serialization."""

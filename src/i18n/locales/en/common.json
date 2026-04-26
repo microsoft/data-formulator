@@ -371,6 +371,7 @@
     "attachMetadataTo": "Attach metadata to {{table}}",
     "metadata": "metadata",
     "metadataPlaceholder": "Attach additional contexts or guidance so that AI agents can better understand and process the data.",
+    "sourceDescription": "Source description",
     "deleteMessage": "Delete message",
     "editTableName": "edit table name",
     "moreOptions": "more options",

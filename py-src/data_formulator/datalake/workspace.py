@@ -45,6 +45,7 @@ from data_formulator.datalake.parquet_utils import (
     sanitize_dataframe_for_arrow,
     DEFAULT_COMPRESSION,
 )
+from data_formulator.security.path_safety import ConfinedDir
 from werkzeug.utils import secure_filename
 
 logger = logging.getLogger(__name__)
@@ -196,9 +197,10 @@ class Workspace:
             self._path = self._root / self._safe_id
 
             # Verify the constructed path hasn't escaped the root directory
-            resolved = self._path.resolve()
-            root_resolved = self._root.resolve()
-            if not resolved.is_relative_to(root_resolved) or resolved == root_resolved:
+            root_jail = ConfinedDir(self._root, mkdir=False)
+            try:
+                root_jail.resolve(self._safe_id)
+            except ValueError:
                 raise ValueError(
                     "Path traversal detected: workspace path escapes root directory"
                 )
@@ -252,17 +254,12 @@ class Workspace:
         Returns:
             Full path to the file under data/
         """
-        data_dir = self._path / "data"
-        data_dir.mkdir(exist_ok=True)
-
+        data_jail = ConfinedDir(self._path / "data")
         basename = safe_data_filename(filename)
-        result = data_dir / basename
         try:
-            result.resolve().relative_to(data_dir.resolve())
+            return data_jail.resolve(basename)
         except ValueError:
             raise ValueError(f"Path traversal detected: {filename!r}")
-
-        return result
     
     def file_exists(self, filename: str) -> bool:
         """

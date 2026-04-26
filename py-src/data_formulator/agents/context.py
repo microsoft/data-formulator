@@ -172,6 +172,10 @@ def handle_inspect_source_data(
     """Handle an inspect_source_data tool call.
 
     Returns a data summary string for the requested tables.
+    Detail level adapts automatically to the number of tables:
+      - ≤3 tables → Level 2 (full schema + sample rows + column descriptions)
+      - >3 tables → Level 1 (schema overview only, no sample rows)
+
     If a table cannot be read (e.g. not found in workspace), the error
     is included in the summary instead of crashing the entire request.
     """
@@ -180,9 +184,13 @@ def handle_inspect_source_data(
         if t.get("name") in table_names
     ]
     if tables_to_inspect:
+        include_samples = len(tables_to_inspect) <= 3
+        char_limit = 5000 if include_samples else 3000
         try:
             content = generate_data_summary(
-                tables_to_inspect, workspace=workspace
+                tables_to_inspect,
+                workspace=workspace,
+                include_data_samples=include_samples,
             )
         except (FileNotFoundError, KeyError) as exc:
             logger.warning("Could not generate data summary: %s", exc)
@@ -194,5 +202,87 @@ def handle_inspect_source_data(
             content = f"Error reading table data: some tables could not be found in the workspace. Available tables may have changed."
     else:
         content = f"No tables found matching: {table_names}"
+        char_limit = 3000
 
-    return content[:3000] + "..." if len(content) > 3000 else content
+    return content[:char_limit] + "..." if len(content) > char_limit else content
+
+
+def handle_search_data_tables(
+    query: str,
+    scope: str,
+    workspace: Any,
+    user_home: str | None = None,
+) -> str:
+    """Handle a search_data_tables tool call.
+
+    Combines workspace metadata search (layer 1) and disk catalog cache
+    search (layer 2) into a single Level 0 result set.
+
+    Args:
+        user_home: Path to the user's home directory (``get_user_home(identity)``).
+            Catalog cache files live under ``<user_home>/catalog_cache/``.
+
+    Returns a text summary suitable for LLM consumption.  Results are
+    capped to keep context usage low (~3K tokens).
+    """
+    if not query or not query.strip():
+        return "Please provide a search keyword."
+
+    results: list[dict[str, Any]] = []
+
+    # ── Layer 1: workspace metadata search ───────────────────────────
+    if scope in ("workspace", "all"):
+        try:
+            ws_meta = workspace.get_metadata()
+            if ws_meta:
+                ws_hits = ws_meta.search_tables(query, limit=50)
+                for hit in ws_hits:
+                    results.append({
+                        "source": "workspace",
+                        "name": hit["name"],
+                        "description": (hit.get("description") or "")[:120],
+                        "matched_columns": hit.get("matched_columns", []),
+                        "column_count": hit.get("column_count", 0),
+                        "status": "imported",
+                    })
+        except Exception:
+            logger.debug("Workspace search failed", exc_info=True)
+
+    # ── Layer 2: disk catalog cache search ───────────────────────────
+    if scope in ("connected", "all") and user_home:
+        try:
+            from data_formulator.datalake.catalog_cache import search_catalog_cache
+            imported_names = {r["name"] for r in results}
+            cache_hits = search_catalog_cache(
+                user_home,
+                query,
+                limit_per_source=20,
+                exclude_tables=imported_names,
+            )
+            for hit in cache_hits:
+                results.append({
+                    "source": hit.get("source_id", "connected"),
+                    "name": hit["name"],
+                    "description": (hit.get("description") or "")[:120],
+                    "matched_columns": hit.get("matched_columns", []),
+                    "column_count": hit.get("column_count", 0),
+                    "status": "not imported",
+                })
+        except Exception:
+            logger.debug("Catalog cache search failed", exc_info=True)
+
+    if not results:
+        return f"No tables found matching '{query}'."
+
+    lines = [f"Search results for '{query}' ({len(results)} matches):\n"]
+    for i, r in enumerate(results, 1):
+        line = f"{i}. [{r['source']}] {r['name']}"
+        if r["description"]:
+            line += f" — {r['description']}"
+        if r["matched_columns"]:
+            line += f"  (matched columns: {', '.join(r['matched_columns'][:5])})"
+        line += f"  [{r['status']}]"
+        lines.append(line)
+
+    text = "\n".join(lines)
+    return text[:3000] + "\n..." if len(text) > 3000 else text

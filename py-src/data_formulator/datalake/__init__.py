@@ -71,6 +71,9 @@ from data_formulator.datalake.file_manager import (
     SUPPORTED_EXTENSIONS,
 )
 
+# Naming / ID sanitisation (lightweight, no heavy deps)
+from data_formulator.datalake.naming import safe_source_id
+
 # Parquet utilities (pure helpers, no Workspace dependency)
 from data_formulator.datalake.parquet_utils import (
     safe_data_filename,
@@ -115,6 +118,8 @@ __all__ = [
     "get_file_type",
     "get_file_info",
     "SUPPORTED_EXTENSIONS",
+    # Naming / ID sanitisation
+    "safe_source_id",
     # Parquet utilities
     "safe_data_filename",
     "sanitize_table_name",

@@ -38,6 +38,7 @@ from data_formulator.agents.context import (
     build_lightweight_table_context,
     build_peripheral_thread_context,
     handle_inspect_source_data,
+    handle_search_data_tables,
 )
 from data_formulator.agents.client_utils import Client
 from data_formulator.prompts.chart_creation_guide import CHART_CREATION_GUIDE
@@ -125,6 +126,33 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_data_tables",
+            "description": (
+                "Search for tables by keyword across workspace and connected "
+                "data sources. Returns Level 0 summaries: table name, one-line "
+                "description, and matched columns. Use inspect_source_data to "
+                "get full schema for specific tables."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Keyword to search for (matches table names, descriptions, column names, column descriptions).",
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["workspace", "connected", "all"],
+                        "description": "Search scope: 'workspace' (imported tables only), 'connected' (cached catalogs from connected sources), 'all' (both).",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -149,6 +177,9 @@ You have tools you can call to gather data and share reasoning:
   transforming, printing) into a single explore() call.
 - **inspect_source_data(table_names)** — get schema, stats, and sample rows
   for source tables (cheaper than explore for basic inspection).
+- **search_data_tables(query, scope)** — search for tables by keyword across
+  workspace and connected data sources.  Returns Level 0 summaries (name +
+  description + matched columns).  Use inspect_source_data to drill down.
 
 The initial context already includes sample rows and statistics for each
 table.  If the data is straightforward, proceed directly to your action
@@ -1013,6 +1044,7 @@ class DataAgent:
                         "purpose": tool_args.get("purpose") if tool_name == "explore" else None,
                         "code": tool_args.get("code") if tool_name == "explore" else None,
                         "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
+                        "query": tool_args.get("query") if tool_name == "search_data_tables" else None,
                     }
 
                     if tool_name == "think":
@@ -1038,6 +1070,26 @@ class DataAgent:
                         table_names = tool_args.get("table_names", [])
                         tool_content = handle_inspect_source_data(
                             table_names, input_tables or [], self.workspace
+                        )
+                        yield {
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "status": "ok",
+                            "stdout": tool_content,
+                        }
+                    elif tool_name == "search_data_tables":
+                        user_home = None
+                        try:
+                            from data_formulator.auth.identity import get_identity_id
+                            from data_formulator.datalake.workspace import get_user_home
+                            user_home = str(get_user_home(get_identity_id()))
+                        except Exception:
+                            pass
+                        tool_content = handle_search_data_tables(
+                            query=tool_args.get("query", ""),
+                            scope=tool_args.get("scope", "all"),
+                            workspace=self.workspace,
+                            user_home=user_home,
                         )
                         yield {
                             "type": "tool_result",

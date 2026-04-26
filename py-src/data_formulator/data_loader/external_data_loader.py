@@ -13,6 +13,41 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+class ConnectorParamError(ValueError):
+    """Raised when required connector parameters are missing or empty."""
+
+    def __init__(self, missing: list[str], loader_name: str = ""):
+        self.missing = missing
+        self.loader_name = loader_name
+        names = ", ".join(missing)
+        super().__init__(f"Missing required parameter(s): {names}")
+
+
+def _merge_source_metadata(
+    table_metadata: "TableMetadata",
+    source_meta: dict[str, Any],
+) -> None:
+    """Merge source-system metadata into a persisted ``TableMetadata``.
+
+    Updates the object **in place**:
+
+    * ``table_metadata.description`` ← ``source_meta["description"]`` if present.
+    * Each column's ``description`` ← matching column entry in
+      ``source_meta["columns"]`` if present.
+    """
+    if "description" in source_meta:
+        table_metadata.description = source_meta["description"] or None
+
+    src_cols = {c["name"]: c for c in source_meta.get("columns", [])}
+    if not src_cols or not table_metadata.columns:
+        return
+
+    for col in table_metadata.columns:
+        src = src_cols.get(col.name)
+        if src and "description" in src:
+            col.description = src["description"] or None
+
 # Sensitive parameter names that should be excluded from stored metadata
 SENSITIVE_PARAMS = {'password', 'api_key', 'secret', 'token', 'access_token', 'refresh_token', 'access_key', 'secret_key'}
 
@@ -379,6 +414,11 @@ class ExternalDataLoader(ABC):
         Uses PyArrow for efficient data transfer: External Source → Arrow → Parquet.
         This avoids pandas conversion overhead entirely.
         
+        After writing the parquet file, performs a best-effort metadata
+        enrichment: pulls table/column descriptions from the source system
+        via ``get_column_types()`` and merges them into the persisted
+        ``TableMetadata``.  Metadata failures never block the import.
+        
         Args:
             workspace: The workspace to store data in
             table_name: Name for the table in the workspace
@@ -388,13 +428,11 @@ class ExternalDataLoader(ABC):
         Returns:
             TableMetadata for the created parquet file
         """
-        # Fetch data as Arrow table (efficient, no pandas conversion)
         arrow_table = self.fetch_data_as_arrow(
             source_table=source_table,
             import_options=import_options,
         )
 
-        # Prepare loader metadata
         source_info = {
             "loader_type": self.__class__.__name__,
             "loader_params": self.get_safe_params(),
@@ -402,18 +440,29 @@ class ExternalDataLoader(ABC):
             "import_options": import_options,
         }
 
-        # Write Arrow table directly to parquet (no pandas conversion)
         table_metadata = workspace.write_parquet_from_arrow(
             table=arrow_table,
             table_name=table_name,
             source_info=source_info,
         )
-        
+
+        # Best-effort metadata enrichment from the source system.
+        try:
+            source_meta = self.get_column_types(source_table)
+            if source_meta:
+                _merge_source_metadata(table_metadata, source_meta)
+                workspace.add_table_metadata(table_metadata)
+        except Exception as e:
+            logger.debug(
+                "Metadata enrichment skipped for %s: %s",
+                table_name, type(e).__name__,
+            )
+
         logger.info(
-            f"Ingested {arrow_table.num_rows} rows from {self.__class__.__name__} "
-            f"to workspace as {table_name}.parquet"
+            "Ingested %d rows from %s to workspace as %s.parquet",
+            arrow_table.num_rows, self.__class__.__name__, table_name,
         )
-        
+
         return table_metadata
 
     @staticmethod
@@ -421,6 +470,32 @@ class ExternalDataLoader(ABC):
     def list_params() -> list[dict[str, Any]]:
         """Return list of parameters needed to configure this data loader."""
         pass
+
+    @classmethod
+    def validate_params(
+        cls,
+        params: dict[str, Any],
+        *,
+        skip_auth_tier: bool = False,
+    ) -> None:
+        """Validate params against ``list_params()`` declarations.
+
+        Raises ``ConnectorParamError`` listing all missing required parameters.
+        When *skip_auth_tier* is True, parameters with ``tier="auth"`` are
+        not checked (useful for SSO/token flows where auth comes externally).
+        """
+        missing: list[str] = []
+        for pdef in cls.list_params():
+            name = pdef.get("name", "")
+            if not pdef.get("required"):
+                continue
+            if skip_auth_tier and pdef.get("tier") == "auth":
+                continue
+            val = params.get(name)
+            if val is None or (isinstance(val, str) and not val.strip()):
+                missing.append(name)
+        if missing:
+            raise ConnectorParamError(missing, cls.__name__)
 
     @staticmethod
     @abstractmethod
@@ -653,7 +728,8 @@ class ExternalDataLoader(ABC):
     def get_column_types(self, source_table: str) -> dict[str, Any]:
         """Return source-level column type info for a table.
 
-        Returns ``{"columns": [{"name": str, "type": str, "is_dttm": bool}, ...]}``.
+        Returns ``{"columns": [{"name": str, "type": str, "is_dttm": bool}, ...],
+        "description": str | None}``.
         The ``type`` is the *original* source type (e.g. ``TIMESTAMP``,
         ``VARCHAR``, ``BOOLEAN``) — not pandas dtype — so the frontend can
         choose the correct filter widget.
@@ -667,7 +743,10 @@ class ExternalDataLoader(ABC):
             path = source_table.split(".")
             meta = self.get_metadata(path)
             if meta and "columns" in meta:
-                return {"columns": meta["columns"]}
+                result: dict[str, Any] = {"columns": meta["columns"]}
+                if meta.get("description"):
+                    result["description"] = meta["description"]
+                return result
         except Exception:
             pass
         return {}

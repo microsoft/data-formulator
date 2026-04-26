@@ -59,7 +59,8 @@ import { AppDispatch } from '../app/store';
 import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
-import { listWorkspaces, loadWorkspace, deleteWorkspace } from '../app/workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
+import type { WorkspaceSummary } from '../app/workspaceService';
 import { borderColor } from '../app/tokens';
 
 import type { ConnectorInstance, DictTable } from '../components/ComponentType';
@@ -104,6 +105,7 @@ interface PreviewState {
     columns: ColumnMeta[];
     sampleRows: Record<string, any>[];
     rowCount: number | null;
+    tableDescription?: string;
     loading: boolean;
 }
 
@@ -272,10 +274,6 @@ const DataSourceSidebarPanel: React.FC<{
     const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
-    // Session hover tooltip cache: sessionId → summary string
-    const [sessionTooltips, setSessionTooltips] = useState<Record<string, string>>({});
-    const sessionTooltipFetching = useRef<Set<string>>(new Set());
-
     // Sidebar tab: 'sources' or 'sessions'
     const [activeTab, setActiveTab] = useState<'sources' | 'sessions'>(initialTab);
 
@@ -286,40 +284,35 @@ const DataSourceSidebarPanel: React.FC<{
 
     // ── Sessions ─────────────────────────────────────────────────────────────
 
-    const [sessions, setSessions] = useState<{id: string, display_name: string, saved_at: string | null}[]>([]);
+    const [sessions, setSessions] = useState<WorkspaceSummary[]>([]);
+
+    const refreshSessions = useCallback(() => {
+        listWorkspaces()
+            .then(list => setSessions(list))
+            .catch(() => { /* session list is best-effort */ });
+    }, []);
 
     useEffect(() => {
-        listWorkspaces()
-            .then(list => setSessions(list))    
-            .catch(() => { /* session list is best-effort */ });
-    }, [identityKey]);
+        refreshSessions();
+    }, [identityKey, refreshSessions]);
 
-    const handleHoverSession = useCallback((sessionId: string) => {
-        if (sessionTooltips[sessionId] || sessionTooltipFetching.current.has(sessionId)) return;
-        sessionTooltipFetching.current.add(sessionId);
-        loadWorkspace(sessionId)
-            .then(result => {
-                if (result && result.state) {
-                    const tables = (result.state.tables || []) as any[];
-                    const charts = (result.state.charts || []) as any[];
-                    const parts: string[] = [];
-                    parts.push(t('sidebar.tableCount', { count: tables.length }));
-                    if (charts.length > 0) parts.push(t('sidebar.chartCount', { count: charts.length }));
-                    if (tables.length > 0) {
-                        const names = tables.slice(0, 3).map((t: any) => t.displayId || t.id || 'unknown');
-                        if (tables.length > 3) names.push(t('sidebar.andMore', { count: tables.length - 3 }));
-                        parts.push(names.join(', '));
-                    }
-                    setSessionTooltips(prev => ({ ...prev, [sessionId]: parts.join(' · ') }));
-                } else {
-                    setSessionTooltips(prev => ({ ...prev, [sessionId]: t('sidebar.emptyWorkspace') }));
-                }
-            })
-            .catch(() => {
-                setSessionTooltips(prev => ({ ...prev, [sessionId]: t('sidebar.unableToLoadInfo') }));
-            })
-            .finally(() => sessionTooltipFetching.current.delete(sessionId));
-    }, [sessionTooltips]);
+    useEffect(() => {
+        return onWorkspaceListChanged(refreshSessions);
+    }, [refreshSessions]);
+
+    const buildSessionTooltip = useCallback((s: WorkspaceSummary): string => {
+        const parts: string[] = [];
+        if (s.table_count != null) {
+            parts.push(t('sidebar.tableCount', { count: s.table_count }));
+        }
+        if (s.chart_count != null && s.chart_count > 0) {
+            parts.push(t('sidebar.chartCount', { count: s.chart_count }));
+        }
+        if (s.saved_at) {
+            parts.push(new Date(s.saved_at).toLocaleDateString());
+        }
+        return parts.length > 0 ? parts.join(' · ') : t('sidebar.clickToOpen');
+    }, [t]);
 
     const handleOpenSession = useCallback(async (sessionId: string) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('sidebar.openingWorkspace') }));
@@ -658,6 +651,7 @@ const DataSourceSidebarPanel: React.FC<{
                             columns: newCols.length > 0 ? newCols : prev.columns,
                             sampleRows: data.rows || [],
                             rowCount: data.total_row_count ?? prev.rowCount,
+                            tableDescription: data.description ?? prev.tableDescription,
                             loading: false,
                         };
                     });
@@ -1288,17 +1282,15 @@ const DataSourceSidebarPanel: React.FC<{
                         <Tooltip
                             key={s.id}
                             title={(() => {
-                                const info = sessionTooltips[s.id];
                                 const date = s.saved_at ? new Date(s.saved_at).toLocaleDateString() : '';
                                 if (activeWorkspace?.id === s.id) return date ? t('sidebar.currentSessionWithDate', { date }) : t('sidebar.currentSession');
-                                const base = info || t('sidebar.clickToOpen');
+                                const base = buildSessionTooltip(s);
                                 return date ? `${base} · ${date}` : base;
                             })()}
                             placement="right"
                             enterDelay={400}
                         >
                         <Box
-                            onMouseEnter={() => handleHoverSession(s.id)}
                             onClick={() => { if (activeWorkspace?.id !== s.id) handleOpenSession(s.id); }}
                             sx={{
                                 display: 'flex',
@@ -1364,6 +1356,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 connectorId={preview.connectorId}
                                 sourceTable={sourceTableRef}
                                 displayName={preview.node.name}
+                                tableDescription={preview.tableDescription}
                                 columns={preview.columns}
                                 sampleRows={preview.sampleRows}
                                 rowCount={preview.rowCount}

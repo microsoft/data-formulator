@@ -42,6 +42,7 @@
     "removeTable": "移除表格",
     "preview": "预览",
     "noTablesToPreview": "没有可预览的表格。",
+    "rowLimitReached": "已加载 {{count}} 行，达到所选行数上限，源数据可能还有更多行。",
     "report": {
       "component": "报告"
     },

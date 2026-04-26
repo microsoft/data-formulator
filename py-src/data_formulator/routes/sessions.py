@@ -20,6 +20,7 @@ Routes:
   POST /api/sessions/delete      — delete a workspace
   POST /api/sessions/create      — create a new workspace
   POST /api/sessions/rename      — rename a workspace
+  POST /api/sessions/update-meta — update display name (lightweight, no full state)
   POST /api/sessions/export      — export active workspace as zip
   POST /api/sessions/import      — import workspace from zip
 
@@ -108,10 +109,18 @@ def list_sessions():
     mgr = get_workspace_manager(identity_id)
     workspaces = mgr.list_workspaces()
 
-    sessions = [
-        {"id": w["id"], "display_name": w.get("display_name", w["id"]), "saved_at": w.get("updated_at")}
-        for w in workspaces
-    ]
+    sessions = []
+    for w in workspaces:
+        entry: dict = {
+            "id": w["id"],
+            "display_name": w.get("display_name", w["id"]),
+            "saved_at": w.get("updated_at"),
+        }
+        if w.get("table_count") is not None:
+            entry["table_count"] = w["table_count"]
+        if w.get("chart_count") is not None:
+            entry["chart_count"] = w["chart_count"]
+        sessions.append(entry)
     return jsonify(status="ok", sessions=sessions)
 
 
@@ -203,6 +212,30 @@ def rename_workspace_route():
         return jsonify(status="error", message="Rename failed — workspace not found or name conflict")
 
     return jsonify(status="ok", old_id=old_id, new_id=new_id)
+
+
+@session_bp.route("/update-meta", methods=["POST"])
+def update_workspace_meta():
+    """Update workspace display name without writing full session state."""
+    if _is_ephemeral():
+        return jsonify(status="ok", message="No-op in ephemeral mode")
+
+    data = request.get_json(force=True)
+    workspace_id: str = (data.get("id") or "").strip()
+    display_name: str = (data.get("display_name") or "").strip()
+    if not workspace_id:
+        return jsonify(status="error", message="Workspace id is required")
+    if not display_name:
+        return jsonify(status="error", message="display_name is required")
+
+    identity_id = get_identity_id()
+    mgr = get_workspace_manager(identity_id)
+
+    if not mgr.workspace_exists(workspace_id):
+        return jsonify(status="error", message="Workspace not found")
+
+    mgr.update_display_name(workspace_id, display_name)
+    return jsonify(status="ok", id=workspace_id, display_name=display_name)
 
 
 @session_bp.route("/export", methods=["POST"])

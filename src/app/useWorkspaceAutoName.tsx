@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from './dfSlice';
 import { fetchWithIdentity, getUrls } from './utils';
+import { updateWorkspaceMeta } from './workspaceService';
 import { AppDispatch } from './store';
 
 /**
@@ -72,8 +73,8 @@ export function useWorkspaceAutoName() {
                 });
                 const data = await res.json();
                 if (data.status === 'ok' && data.summary) {
-                    // Update display name only (id stays the same — no backend rename needed)
                     dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: data.summary }));
+                    updateWorkspaceMeta(wsId, data.summary).catch(() => {});
                 }
             } catch (e) {
                 // Best-effort: keep the timestamp name if auto-naming fails

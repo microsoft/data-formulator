@@ -42,6 +42,7 @@
     "removeTable": "Remove table",
     "preview": "Preview",
     "noTablesToPreview": "No tables to preview.",
+    "rowLimitReached": "Loaded {{count}} rows, reached the selected row limit. The source may contain more rows.",
     "report": {
       "component": "Report"
     },

@@ -244,9 +244,12 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         return self._list_tables(table_filter)
 
     def _list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List tables from PostgreSQL."""
+        """List tables from PostgreSQL.
+
+        Only queries information_schema and pg_description in batch; does NOT
+        run per-table SELECT * LIMIT or COUNT(*) to keep catalog browsing fast.
+        """
         try:
-            # Query tables from information_schema
             query = """
                 SELECT table_schema as schemaname, table_name as tablename 
                 FROM information_schema.tables 
@@ -261,69 +264,84 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             """
             tables_arrow = self._read_sql(query)
             tables_df = tables_arrow.to_pandas()
-            
+
             logger.info(f"Found {len(tables_df)} tables")
-            
+
+            schema_filter = """
+                table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+                AND table_schema !~ '^pg_temp_[0-9]+$'
+                AND table_schema !~ '^pg_toast_temp_[0-9]+$'
+                AND table_schema NOT LIKE '%_intern%'
+                AND table_schema NOT LIKE '%timescaledb%'
+            """
+
+            columns_query = f"""
+                SELECT c.table_schema, c.table_name, c.column_name, c.data_type,
+                       pgd.description AS column_comment
+                FROM information_schema.columns c
+                LEFT JOIN pg_catalog.pg_statio_all_tables st
+                  ON st.schemaname = c.table_schema AND st.relname = c.table_name
+                LEFT JOIN pg_catalog.pg_description pgd
+                  ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
+                WHERE {schema_filter}
+                ORDER BY c.table_schema, c.table_name, c.ordinal_position
+            """
+            cols_arrow = self._read_sql(columns_query)
+            cols_df = cols_arrow.to_pandas()
+
+            col_map: dict[str, list[dict]] = {}
+            for _, cr in cols_df.iterrows():
+                key = f"{cr['table_schema']}.{cr['table_name']}"
+                entry: dict[str, Any] = {
+                    "name": cr["column_name"],
+                    "type": cr["data_type"],
+                }
+                comment = cr.get("column_comment")
+                if comment and str(comment).strip():
+                    entry["description"] = str(comment).strip()
+                col_map.setdefault(key, []).append(entry)
+
+            # Batch-fetch table comments
+            table_comments_query = """
+                SELECT n.nspname AS schemaname,
+                       c.relname AS tablename,
+                       obj_description(c.oid) AS table_comment
+                FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relkind = 'r'
+                  AND obj_description(c.oid) IS NOT NULL
+            """
+            try:
+                tc_df = self._read_sql(table_comments_query).to_pandas()
+                table_comment_map: dict[str, str] = {}
+                for _, r in tc_df.iterrows():
+                    key = f"{r['schemaname']}.{r['tablename']}"
+                    comment = str(r['table_comment']).strip()
+                    if comment:
+                        table_comment_map[key] = comment
+            except Exception:
+                table_comment_map = {}
+
             results = []
-            
             for _, row in tables_df.iterrows():
                 schema = row['schemaname']
                 table_name = row['tablename']
                 full_table_name = f"{schema}.{table_name}"
-                
-                # Apply filter if provided
+
                 if table_filter and table_filter.lower() not in full_table_name.lower():
                     continue
-                
-                try:
-                    # Get column information
-                    columns_query = f"""
-                        SELECT column_name, data_type 
-                        FROM information_schema.columns 
-                        WHERE table_schema = '{_esc_str(schema)}' AND table_name = '{_esc_str(table_name)}'
-                        ORDER BY ordinal_position
-                    """
-                    columns_arrow = self._read_sql(columns_query)
-                    columns_df = columns_arrow.to_pandas()
-                    columns = [{
-                        'name': col_row['column_name'],
-                        'type': col_row['data_type']
-                    } for _, col_row in columns_df.iterrows()]
-                    
-                    # Build safe column list (casts unsupported types to TEXT)
-                    col_list = self._safe_select_list(schema, table_name)
-                    
-                    # Get sample data
-                    sample_rows = []
-                    sample_query = f'SELECT {col_list} FROM {_esc_id(schema, chr(34))}.{_esc_id(table_name, chr(34))} LIMIT 10'
-                    try:
-                        sample_arrow = self._read_sql(sample_query)
-                        sample_df = sample_arrow.to_pandas()
-                        sample_rows = json.loads(sample_df.to_json(orient="records"))
-                    except Exception as sample_err:
-                        logger.warning(f"Could not sample {full_table_name}: {sample_err}")
-                    
-                    # Get row count
-                    count_query = f'SELECT COUNT(*) as cnt FROM {_esc_id(schema, chr(34))}.{_esc_id(table_name, chr(34))}'
-                    count_arrow = self._read_sql(count_query)
-                    row_count = count_arrow.to_pandas()['cnt'].iloc[0]
-                    
-                    table_metadata = {
-                        "row_count": int(row_count),
-                        "columns": columns,
-                        "sample_rows": sample_rows
-                    }
-                    
-                    results.append({
-                        "name": full_table_name,
-                        "path": [schema, table_name],
-                        "metadata": table_metadata
-                    })
-                    
-                except Exception as e:
-                    logger.warning(f"Error processing table {full_table_name}: {e}")
-                    continue
-            
+
+                columns = col_map.get(full_table_name, [])
+                metadata: dict[str, Any] = {"columns": columns}
+                table_desc = table_comment_map.get(full_table_name)
+                if table_desc:
+                    metadata["description"] = table_desc
+                results.append({
+                    "name": full_table_name,
+                    "path": [schema, table_name],
+                    "metadata": metadata,
+                })
+
             return results
 
         except Exception as e:
@@ -540,7 +558,6 @@ class PostgreSQLDataLoader(ExternalDataLoader):
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
         if not path:
             return {}
-        # Resolve the actual database.schema.table from effective path + pinned
         pinned = self.pinned_scope()
         remaining = list(path)
         db = pinned.get("database")
@@ -559,16 +576,43 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         full_source = f"{db}.{schema}.{table_name}"
         try:
             cols_query = f"""
-                SELECT column_name, data_type
-                FROM information_schema.columns
-                WHERE table_schema = '{_esc_str(schema)}' AND table_name = '{_esc_str(table_name)}'
-                ORDER BY ordinal_position
+                SELECT c.column_name, c.data_type,
+                       pgd.description AS column_comment
+                FROM information_schema.columns c
+                LEFT JOIN pg_catalog.pg_statio_all_tables st
+                  ON st.schemaname = c.table_schema AND st.relname = c.table_name
+                LEFT JOIN pg_catalog.pg_description pgd
+                  ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
+                WHERE c.table_schema = '{_esc_str(schema)}'
+                  AND c.table_name = '{_esc_str(table_name)}'
+                ORDER BY c.ordinal_position
             """
             cols_df = self._read_sql_on(cols_query, db).to_pandas()
-            columns = [
-                {"name": r["column_name"], "type": r["data_type"]}
-                for _, r in cols_df.iterrows()
-            ]
+            columns = []
+            for _, r in cols_df.iterrows():
+                entry: dict[str, Any] = {"name": r["column_name"], "type": r["data_type"]}
+                comment = r.get("column_comment")
+                if comment and str(comment).strip():
+                    entry["description"] = str(comment).strip()
+                columns.append(entry)
+
+            # Table comment
+            table_desc_query = f"""
+                SELECT obj_description(c.oid) AS table_comment
+                FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = '{_esc_str(schema)}'
+                  AND c.relname = '{_esc_str(table_name)}'
+                  AND c.relkind = 'r'
+            """
+            table_description = None
+            try:
+                td_df = self._read_sql_on(table_desc_query, db).to_pandas()
+                if not td_df.empty and td_df["table_comment"].iloc[0]:
+                    table_description = str(td_df["table_comment"].iloc[0]).strip() or None
+            except Exception:
+                pass
+
             count_df = self._read_sql_on(
                 f'SELECT COUNT(*) AS cnt FROM {_esc_id(schema, chr(34))}.{_esc_id(table_name, chr(34))}', db
             ).to_pandas()
@@ -578,12 +622,15 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                 f'SELECT {col_list} FROM {_esc_id(schema, chr(34))}.{_esc_id(table_name, chr(34))} LIMIT 5', db
             ).to_pandas()
             sample_rows = json.loads(sample_df.to_json(orient="records"))
-            return {
+            result: dict[str, Any] = {
                 "_source_name": full_source,
                 "row_count": row_count,
                 "columns": columns,
                 "sample_rows": sample_rows,
             }
+            if table_description:
+                result["description"] = table_description
+            return result
         except Exception as e:
             logger.warning(f"get_metadata failed for {path}: {e}")
             return {}

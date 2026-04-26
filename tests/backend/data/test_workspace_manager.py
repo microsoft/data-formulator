@@ -1,4 +1,9 @@
-"""Tests for WorkspaceManager — multi-workspace lifecycle."""
+"""Tests for WorkspaceManager — multi-workspace lifecycle.
+
+Covers create/list/delete/rename, session-state persistence,
+workspace migration ops, and auto-repair of legacy workspaces
+that lack workspace_meta.json.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,10 @@ import pytest
 import yaml
 from pathlib import Path
 
-from data_formulator.datalake.workspace_manager import WorkspaceManager
+from data_formulator.datalake.workspace_manager import (
+    WorkspaceManager,
+    WORKSPACE_META_FILENAME,
+)
 
 
 pytestmark = [pytest.mark.backend]
@@ -26,6 +34,7 @@ class TestWorkspaceLifecycle:
         ws_path = manager.create_workspace("My Analysis")
         assert ws_path.exists()
         assert (ws_path / "data").is_dir()
+        assert (ws_path / WORKSPACE_META_FILENAME).exists()
 
     def test_create_duplicate_raises(self, manager):
         manager.create_workspace("test")
@@ -35,9 +44,6 @@ class TestWorkspaceLifecycle:
     def test_list_workspaces(self, manager):
         manager.create_workspace("first")
         manager.create_workspace("second")
-        # Write a workspace.yaml so they show up in listing
-        (manager.get_workspace_path("first") / "workspace.yaml").write_text("version: '2.0'")
-        (manager.get_workspace_path("second") / "workspace.yaml").write_text("version: '2.0'")
 
         ws_list = manager.list_workspaces()
         names = [w["id"] for w in ws_list]
@@ -48,12 +54,16 @@ class TestWorkspaceLifecycle:
     def test_workspace_exists(self, manager):
         assert not manager.workspace_exists("nope")
         manager.create_workspace("test")
-        (manager.get_workspace_path("test") / "workspace.yaml").write_text("version: '2.0'")
         assert manager.workspace_exists("test")
+
+    def test_workspace_exists_is_directory_based(self, manager):
+        """A bare directory (without any metadata files) counts as existing."""
+        bare_dir = manager.root / "bare_ws"
+        bare_dir.mkdir()
+        assert manager.workspace_exists("bare_ws")
 
     def test_delete_workspace(self, manager):
         manager.create_workspace("to_delete")
-        (manager.get_workspace_path("to_delete") / "workspace.yaml").write_text("v")
         assert manager.delete_workspace("to_delete") is True
         assert not manager.workspace_exists("to_delete")
 
@@ -62,11 +72,10 @@ class TestWorkspaceLifecycle:
 
     def test_rename_workspace(self, manager):
         manager.create_workspace("old_name")
-        (manager.get_workspace_path("old_name") / "workspace.yaml").write_text("v")
         new_path = manager.rename_workspace("old_name", "new_name")
         assert new_path.exists()
         assert not manager.workspace_exists("old_name")
-        assert (new_path / "workspace.yaml").exists()
+        assert manager.workspace_exists("new_name")
 
     def test_rename_nonexistent_raises(self, manager):
         with pytest.raises(ValueError, match="does not exist"):
@@ -75,8 +84,6 @@ class TestWorkspaceLifecycle:
     def test_rename_to_existing_raises(self, manager):
         manager.create_workspace("a")
         manager.create_workspace("b")
-        (manager.get_workspace_path("a") / "workspace.yaml").write_text("v")
-        (manager.get_workspace_path("b") / "workspace.yaml").write_text("v")
         with pytest.raises(ValueError, match="already exists"):
             manager.rename_workspace("a", "b")
 
@@ -84,7 +91,6 @@ class TestWorkspaceLifecycle:
 class TestSessionState:
     def test_save_and_load(self, manager):
         manager.create_workspace("test")
-        (manager.get_workspace_path("test") / "workspace.yaml").write_text("v")
 
         state = {
             "tables": [{"id": "t1", "name": "Table 1"}],
@@ -99,7 +105,6 @@ class TestSessionState:
 
     def test_sensitive_fields_stripped(self, manager):
         manager.create_workspace("test")
-        (manager.get_workspace_path("test") / "workspace.yaml").write_text("v")
 
         state = {
             "tables": [],
@@ -129,7 +134,6 @@ class TestSessionState:
 
     def test_overwrite_session_state(self, manager):
         manager.create_workspace("test")
-        (manager.get_workspace_path("test") / "workspace.yaml").write_text("v")
 
         manager.save_session_state("test", {"version": 1})
         manager.save_session_state("test", {"version": 2})
@@ -324,3 +328,95 @@ class TestWorkspaceMigrationOps:
         assert deleted == 1
         assert not mgr.get_workspace_path("can_delete").exists()
         assert mgr.get_workspace_path("is_locked").exists()
+
+
+class TestLegacyWorkspaceAutoRepair:
+    """Workspaces created before workspace_meta.json was introduced only
+    have workspace.yaml and/or session_state.json.  They should be
+    auto-repaired (meta.json created) on first access."""
+
+    def test_legacy_workspace_with_only_yaml_appears_in_list(self, manager):
+        """A directory with workspace.yaml but no workspace_meta.json
+        should be auto-repaired and visible in list_workspaces."""
+        ws_dir = manager.root / "legacy_ws"
+        ws_dir.mkdir(parents=True)
+        (ws_dir / "workspace.yaml").write_text(
+            yaml.safe_dump({"version": "1.1", "tables": {}}),
+            encoding="utf-8",
+        )
+
+        ws_list = manager.list_workspaces()
+        ids = [w["id"] for w in ws_list]
+        assert "legacy_ws" in ids
+
+        # workspace_meta.json should have been auto-created
+        assert (ws_dir / WORKSPACE_META_FILENAME).exists()
+
+    def test_legacy_workspace_with_only_session_state_appears_in_list(self, manager):
+        """A directory with only session_state.json should be auto-repaired."""
+        ws_dir = manager.root / "state_only"
+        ws_dir.mkdir(parents=True)
+        (ws_dir / "session_state.json").write_text(
+            json.dumps({
+                "tables": [],
+                "activeWorkspace": {"displayName": "My Old Session"},
+            }),
+            encoding="utf-8",
+        )
+
+        ws_list = manager.list_workspaces()
+        ids = [w["id"] for w in ws_list]
+        assert "state_only" in ids
+
+        # displayName should be inferred from session_state.json
+        entry = next(w for w in ws_list if w["id"] == "state_only")
+        assert entry["display_name"] == "My Old Session"
+
+    def test_legacy_workspace_with_empty_dir_appears_in_list(self, manager):
+        """Even a bare directory (no metadata files at all) should be listed."""
+        ws_dir = manager.root / "bare"
+        ws_dir.mkdir(parents=True)
+
+        ws_list = manager.list_workspaces()
+        ids = [w["id"] for w in ws_list]
+        assert "bare" in ids
+
+        # workspace_meta.json auto-created with fallback displayName = dir name
+        meta = json.loads((ws_dir / WORKSPACE_META_FILENAME).read_text(encoding="utf-8"))
+        assert meta["displayName"] == "bare"
+
+    def test_workspace_exists_consistent_with_create(self, manager):
+        """workspace_exists and create_workspace should use the same
+        definition: directory exists = workspace exists."""
+        ws_dir = manager.root / "orphan"
+        ws_dir.mkdir(parents=True)
+
+        assert manager.workspace_exists("orphan")
+        with pytest.raises(ValueError, match="already exists"):
+            manager.create_workspace("orphan")
+
+    def test_move_legacy_workspace_auto_repairs_meta(self, tmp_path):
+        """Moving a legacy workspace (no meta.json) should auto-repair it."""
+        src = WorkspaceManager(tmp_path / "src")
+        dst = WorkspaceManager(tmp_path / "dst")
+
+        # Create a legacy source workspace (no workspace_meta.json)
+        ws_dir = src.root / "old_ws"
+        ws_dir.mkdir(parents=True)
+        (ws_dir / "data").mkdir()
+        (ws_dir / "workspace.yaml").write_text(
+            yaml.safe_dump({
+                "version": "1.1",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "tables": {},
+            }),
+            encoding="utf-8",
+        )
+
+        moved = dst.move_workspaces_from(src.root)
+        assert "old_ws" in moved
+
+        # Destination should have workspace_meta.json
+        dst_ws = dst.get_workspace_path("old_ws")
+        assert (dst_ws / WORKSPACE_META_FILENAME).exists()

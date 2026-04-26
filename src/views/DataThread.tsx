@@ -302,7 +302,8 @@ const MetadataPopup = memo<{
     onSave: (metadata: string) => void;
     initialValue: string;
     tableName: string;
-}>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
+    systemDescription?: string;
+}>(({ open, anchorEl, onClose, onSave, initialValue, tableName, systemDescription }) => {
     const [metadata, setMetadata] = useState(initialValue);
     const { t } = useTranslation();
 
@@ -351,6 +352,16 @@ const MetadataPopup = memo<{
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
                         {t('dataThread.attachMetadataTo', { table: tableName })}
                     </Typography>
+                    {systemDescription && (
+                        <Box sx={{ mb: 1.5, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                                {t('dataThread.sourceDescription')}
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontSize: 12, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                                {systemDescription}
+                            </Typography>
+                        </Box>
+                    )}
                     <TextField
                         autoFocus
                         label={t('dataThread.metadata')}
@@ -1812,6 +1823,7 @@ let SingleThreadGroupView: FC<{
             onSave={handleSaveMetadata}
             initialValue={selectedTableForMetadata?.attachedMetadata || ''}
             tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
+            systemDescription={selectedTableForMetadata?.systemDescription}
         />
         <RenameTablePopup
             open={renamePopupOpen}

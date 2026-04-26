@@ -95,7 +95,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUrls, fetchWithIdentity } from './utils';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState } from './workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState, onWorkspaceListChanged } from './workspaceService';
 import { getSerializableState } from './useAutoSave';
 import store, { persistor } from './store';
 import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
@@ -276,6 +276,11 @@ const WorkspacePickerDialog: React.FC<{open: boolean, onClose: () => void}> = ({
     useEffect(() => {
         if (!open) return;
         fetchWsList();
+    }, [open, fetchWsList]);
+
+    useEffect(() => {
+        if (!open) return;
+        return onWorkspaceListChanged(fetchWsList);
     }, [open, fetchWsList]);
 
     const handleOpen = async (wsId: string) => {
