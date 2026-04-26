@@ -204,6 +204,10 @@ def _register_blueprints():
     from data_formulator.routes.credentials import credential_bp
     app.register_blueprint(credential_bp)
 
+    # Register knowledge management API (rules, skills, experiences)
+    from data_formulator.routes.knowledge import knowledge_bp
+    app.register_blueprint(knowledge_bp)
+
     # Auto-register all installed data loaders as DataConnector instances
     if not app.config['CLI_ARGS'].get('disable_data_connectors'):
         print("  Loading data connectors...", flush=True)

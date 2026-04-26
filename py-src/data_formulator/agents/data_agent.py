@@ -155,6 +155,60 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge",
+            "description": (
+                "Search the user's knowledge base (rules, skills, experiences) "
+                "for relevant entries. Returns title, category, snippet, and "
+                "path for each match. Use read_knowledge to get full content."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search keywords.",
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["rules", "skills", "experiences"],
+                        },
+                        "description": "Optional: limit search to specific categories.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_knowledge",
+            "description": (
+                "Read the full content of a knowledge entry. Use the category "
+                "and path from search_knowledge results."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["rules", "skills", "experiences"],
+                        "description": "Knowledge category.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to the knowledge file (from search_knowledge).",
+                    },
+                },
+                "required": ["category", "path"],
+            },
+        },
+    },
 ]
 
 
@@ -182,6 +236,9 @@ You have tools you can call to gather data and share reasoning:
 - **search_data_tables(query, scope)** — search for tables by keyword across
   workspace and connected data sources.  Returns Level 0 summaries (name +
   description + matched columns).  Use inspect_source_data to drill down.
+- **search_knowledge(query, categories?)** — search the user's knowledge base
+  (rules, skills, experiences) for relevant entries.
+- **read_knowledge(category, path)** — read the full content of a knowledge entry.
 
 The initial context already includes sample rows and statistics for each
 table.  If the data is straightforward, proceed directly to your action
@@ -287,6 +344,16 @@ class DataAgent:
         else:
             self._reasoning_log = _NullReasoningLogger()
 
+        self._knowledge_store = None
+        self._injected_knowledge: list[dict[str, Any]] = []
+        self._injected_rules: list[str] = []
+        if user_home:
+            try:
+                from data_formulator.knowledge.store import KnowledgeStore
+                self._knowledge_store = KnowledgeStore(user_home)
+            except Exception:
+                logger.warning("Failed to initialise KnowledgeStore", exc_info=True)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -344,6 +411,8 @@ class DataAgent:
                     user_msg_tokens=len(str(trajectory[1].get("content", ""))) // 4 if len(trajectory) > 1 else 0,
                     total_tables=len(input_tables),
                     primary_tables=primary_tables or [],
+                    knowledge_rules_injected=self._injected_rules,
+                    knowledge_injected=self._injected_knowledge,
                 )
 
             action_retry_budget = 1  # one extra chance when the LLM fails to produce an action
@@ -938,6 +1007,15 @@ class DataAgent:
                 "\n\n## Agent Coding Rules\n\n"
                 + self.agent_coding_rules.strip()
             )
+
+        # Inject rules from KnowledgeStore (Phase 3.1)
+        knowledge_rules = self._load_knowledge_rules()
+        self._injected_rules = [r["title"] for r in knowledge_rules]
+        if knowledge_rules:
+            prompt += "\n\n## User Rules\n"
+            for rule in knowledge_rules:
+                prompt += f"\n### {rule['title']}\n{rule['body']}\n"
+
         if self.language_instruction:
             prompt = prompt + "\n\n" + self.language_instruction
         return prompt
@@ -981,6 +1059,37 @@ class DataAgent:
             user_content += f"{focused_block}\n\n"
         if peripheral_block:
             user_content += f"{peripheral_block}\n\n"
+
+        # Search and inject relevant skills/experiences (Phase 3.2)
+        table_names = [t.get("name", "") for t in input_tables if t.get("name")]
+        relevant_knowledge = self._search_relevant_knowledge(user_question, table_names)
+        if relevant_knowledge:
+            knowledge_block = "[RELEVANT KNOWLEDGE]\n"
+            for item in relevant_knowledge:
+                knowledge_block += (
+                    f"\n### [{item['category']}] {item['title']}\n"
+                    f"{item['snippet']}\n"
+                )
+            user_content += f"{knowledge_block}\n\n"
+            self._injected_knowledge = [
+                {"category": item["category"], "title": item["title"], "path": item["path"]}
+                for item in relevant_knowledge
+            ]
+        else:
+            self._injected_knowledge = []
+
+        self._reasoning_log.log(
+            "knowledge_search",
+            source="auto_inject",
+            query=user_question,
+            table_names=table_names,
+            results_count=len(relevant_knowledge),
+            results=[
+                {"category": item["category"], "title": item["title"]}
+                for item in relevant_knowledge
+            ],
+        )
+
         user_content += f"[USER QUESTION]\n\n{user_question}"
 
         # Check if any step in the focused thread has a chart thumbnail
@@ -1156,7 +1265,7 @@ class DataAgent:
                         "purpose": tool_args.get("purpose") if tool_name == "explore" else None,
                         "code": tool_args.get("code") if tool_name == "explore" else None,
                         "table_names": tool_args.get("table_names") if tool_name == "inspect_source_data" else None,
-                        "query": tool_args.get("query") if tool_name == "search_data_tables" else None,
+                        "query": tool_args.get("query") if tool_name in ("search_data_tables", "search_knowledge") else None,
                     }
 
                     tool_t0 = time.time()
@@ -1207,6 +1316,25 @@ class DataAgent:
                             workspace=self.workspace,
                             user_home=user_home,
                         )
+                        yield {
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "status": "ok",
+                            "stdout": tool_content,
+                        }
+                    elif tool_name == "search_knowledge":
+                        tool_content = self._handle_search_knowledge(tool_args)
+                        rlog.log("knowledge_search",
+                                 query=tool_args.get("query", ""),
+                                 results_count=tool_content.count("- [") if tool_content else 0)
+                        yield {
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "status": "ok",
+                            "stdout": tool_content,
+                        }
+                    elif tool_name == "read_knowledge":
+                        tool_content = self._handle_read_knowledge(tool_args)
                         yield {
                             "type": "tool_result",
                             "tool": tool_name,
@@ -1395,6 +1523,105 @@ class DataAgent:
             return {"role": "user", "content": content}
 
         return {"role": "user", "content": text}
+
+    # ------------------------------------------------------------------
+    # Knowledge helpers
+    # ------------------------------------------------------------------
+
+    def _load_knowledge_rules(self) -> list[dict[str, str]]:
+        """Load all rules from KnowledgeStore for system prompt injection.
+
+        Returns a list of ``{"title": ..., "body": ...}`` dicts.
+        Returns empty list on failure (graceful degradation).
+        """
+        if not self._knowledge_store:
+            return []
+        try:
+            from data_formulator.knowledge.store import parse_front_matter
+            items = self._knowledge_store.list_all("rules")
+            result = []
+            for item in items:
+                try:
+                    content = self._knowledge_store.read("rules", item["path"])
+                    _, body = parse_front_matter(content)
+                    result.append({
+                        "title": item["title"],
+                        "body": body.strip(),
+                    })
+                except Exception:
+                    continue
+            return result
+        except Exception:
+            logger.warning("Failed to load knowledge rules", exc_info=True)
+            return []
+
+    def _search_relevant_knowledge(
+        self,
+        user_question: str,
+        table_names: list[str],
+        max_items: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Search skills and experiences relevant to the current session.
+
+        Extracts keywords from the user question and table names, then
+        searches the knowledge store.  Returns up to *max_items* results.
+        Graceful degradation: returns empty list on failure.
+        """
+        if not self._knowledge_store:
+            return []
+        try:
+            query_parts = [user_question]
+            query_parts.extend(table_names[:5])
+            query = " ".join(query_parts)
+
+            results = self._knowledge_store.search(
+                query,
+                categories=["skills", "experiences"],
+                max_results=max_items,
+            )
+            return results
+        except Exception:
+            logger.warning("Failed to search knowledge", exc_info=True)
+            return []
+
+    def _handle_search_knowledge(self, tool_args: dict) -> str:
+        """Handle the ``search_knowledge`` tool call."""
+        if not self._knowledge_store:
+            return "Knowledge base is not available."
+
+        query = tool_args.get("query", "")
+        categories = tool_args.get("categories")
+        try:
+            results = self._knowledge_store.search(query, categories=categories)
+            if not results:
+                return "No matching knowledge entries found."
+            lines = []
+            for r in results:
+                lines.append(
+                    f"- [{r['category']}] **{r['title']}** ({r['path']})\n"
+                    f"  {r['snippet'][:200]}"
+                )
+            return "\n".join(lines)
+        except Exception as exc:
+            logger.warning("search_knowledge tool error: %s", type(exc).__name__)
+            return f"Error searching knowledge: {type(exc).__name__}"
+
+    def _handle_read_knowledge(self, tool_args: dict) -> str:
+        """Handle the ``read_knowledge`` tool call."""
+        if not self._knowledge_store:
+            return "Knowledge base is not available."
+
+        category = tool_args.get("category", "")
+        path = tool_args.get("path", "")
+        try:
+            return self._knowledge_store.read(category, path)
+        except ValueError as exc:
+            return f"Invalid path: {exc}"
+        except FileNotFoundError:
+            return "Knowledge file not found."
+        except Exception as exc:
+            logger.warning("read_knowledge tool error: %s", type(exc).__name__)
+            return f"Error reading knowledge: {type(exc).__name__}"
 
     # ------------------------------------------------------------------
     # Helpers

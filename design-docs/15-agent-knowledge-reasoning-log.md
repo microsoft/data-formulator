@@ -388,8 +388,9 @@ class ExperienceDistillAgent:
 
 ```text
 POST /api/knowledge/distill-experience
-    body: { session_id, user_question, category_hint? }
+    body: { session_id, user_question, model, category_hint? }
     → 从推理日志提炼经验，保存到 knowledge/experiences/
+    → model: 必填，LLM 配置对象（与 data-agent-streaming 相同格式）
 
 POST /api/knowledge/list
     body: { category: "rules" | "skills" | "experiences" }

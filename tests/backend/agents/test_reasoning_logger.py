@@ -45,6 +45,7 @@ def _read_log_lines(user_home: Path, agent_type: str = "TestAgent",
 # ── log file creation ─────────────────────────────────────────────────────
 
 
+@patch.dict(os.environ, {"DF_AGENT_LOG": "on"})
 class TestLogFileCreation:
     def test_creates_file_in_correct_directory(self, tmp_path):
         with ReasoningLogger(tmp_path, "DataAgent", "abc-123") as rlog:
