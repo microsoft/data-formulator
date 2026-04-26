@@ -154,7 +154,7 @@ class SupersetLoader(ExternalDataLoader):
             "PLG_SUPERSET_SSO_LOGIN_URL",
             f"{superset_url.rstrip('/')}/df-sso-bridge/",
         )
-        return {"login_url": login_url, "label": "Login via Superset"}
+        return {"login_url": login_url}
 
     @staticmethod
     def catalog_hierarchy() -> list[dict[str, str]]:

@@ -55,6 +55,15 @@ import {
 
 const CATALOG_PAGE_SIZE = 200;
 
+/** Extract a user-visible error message from a connect response body,
+ *  compatible with both the unified `{error:{message}}` and legacy `{message}` formats. */
+function extractConnectError(body: any, fallback: string): string {
+    if (body.error && typeof body.error === 'object' && body.error.message) {
+        return body.error.message;
+    }
+    return body.error_message ?? body.message ?? fallback;
+}
+
 function makeLoadMoreNode(parentPath: string[], nextOffset: number): CatalogTreeNode {
     return {
         name: 'Load more…',
@@ -795,7 +804,7 @@ export const DataLoaderForm: React.FC<{
             clearTimeout(timeoutId);
             const connectData = await connectResp.json();
             if (connectData.status !== 'connected') {
-                throw new Error(connectData.message || 'Connection failed');
+                throw new Error(extractConnectError(connectData, 'Connection failed'));
             }
             // Fetch root catalog nodes before promoting to "connected" state
             const tableFilterValue = filter ?? (mergedParams as Record<string, any>).table_filter ?? '';
@@ -895,7 +904,7 @@ export const DataLoaderForm: React.FC<{
                     });
                     const connectData = await connectResp.json();
                     if (connectData.status !== 'connected') {
-                        throw new Error(connectData.message || 'Token connection failed');
+                        throw new Error(extractConnectError(connectData, 'Token connection failed'));
                     }
                     // Fetch root catalog nodes
                     await fetchCatalogNodes();
