@@ -32,6 +32,23 @@ export interface WorkspaceSummary {
     id: string;
     display_name: string;
     saved_at: string | null;
+    table_count?: number | null;
+    chart_count?: number | null;
+}
+
+// ── Workspace list change event ─────────────────────────────────────
+// Fired after mutations (save, delete, rename, meta-update) so all
+// list consumers can refresh without coupling to each other.
+
+const WORKSPACE_LIST_CHANGED = 'df:workspace-list-changed';
+
+export function onWorkspaceListChanged(cb: () => void): () => void {
+    window.addEventListener(WORKSPACE_LIST_CHANGED, cb);
+    return () => window.removeEventListener(WORKSPACE_LIST_CHANGED, cb);
+}
+
+function _notifyListChanged(): void {
+    window.dispatchEvent(new Event(WORKSPACE_LIST_CHANGED));
 }
 
 // ── Workspace CRUD ──────────────────────────────────────────────────────
@@ -76,6 +93,7 @@ export async function deleteWorkspace(id: string): Promise<void> {
     const backend = await _getBackend();
     if (backend === 'ephemeral') {
         await workspaceDB.delete(id);
+        _notifyListChanged();
         return;
     }
     await fetchWithIdentity(getUrls().SESSION_DELETE, {
@@ -83,6 +101,23 @@ export async function deleteWorkspace(id: string): Promise<void> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
     });
+    _notifyListChanged();
+}
+
+/** Update only the display name in workspace_meta.json (lightweight, no full state). */
+export async function updateWorkspaceMeta(id: string, displayName: string): Promise<void> {
+    const backend = await _getBackend();
+    if (backend === 'ephemeral') {
+        await workspaceDB.updateDisplayName(id, displayName);
+        _notifyListChanged();
+        return;
+    }
+    await fetchWithIdentity(getUrls().SESSION_UPDATE_META, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, display_name: displayName }),
+    });
+    _notifyListChanged();
 }
 
 /** Save current workspace state (called by auto-save). */
@@ -105,13 +140,15 @@ export async function saveWorkspaceState(state: Record<string, unknown>): Promis
             contentHash: t.contentHash,
         }));
         await workspaceDB.save(ws.id, ws.displayName, state, tableIndex);
+        _notifyListChanged();
         return;
     }
     await fetchWithIdentity(getUrls().SESSION_SAVE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state }),
+        body: JSON.stringify({ id: ws.id, state }),
     });
+    _notifyListChanged();
 }
 
 // ── Export / Import ─────────────────────────────────────────────────────

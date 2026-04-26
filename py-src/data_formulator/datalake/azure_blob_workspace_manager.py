@@ -9,6 +9,7 @@ instead of the local filesystem. Same interface, different backend.
 
 Layout (blob prefixes):
     <datalake_root>/users/<safe_id>/workspaces/<workspace_id>/
+      workspace_meta.json
       workspace.yaml
       session_state.json
       data/
@@ -23,6 +24,7 @@ from typing import Optional, TYPE_CHECKING
 from data_formulator.datalake.workspace_manager import (
     WorkspaceManager,
     SESSION_STATE_FILENAME,
+    WORKSPACE_META_FILENAME,
     _strip_sensitive,
 )
 
@@ -111,52 +113,66 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
 
     # ── WorkspaceManager overrides ───────────────────────────────────
 
+    def _upload_meta(
+        self,
+        workspace_id: str,
+        display_name: str,
+        *,
+        table_count: Optional[int] = None,
+        chart_count: Optional[int] = None,
+    ) -> None:
+        """Upload a lightweight ``workspace_meta.json`` blob for fast listing."""
+        meta: dict = {
+            "id": self._safe_id(workspace_id),
+            "displayName": display_name,
+            "updatedAt": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        if table_count is not None:
+            meta["tableCount"] = table_count
+        if chart_count is not None:
+            meta["chartCount"] = chart_count
+        blob_name = self._blob_name(workspace_id, WORKSPACE_META_FILENAME)
+        self._upload_blob(blob_name, json.dumps(meta, ensure_ascii=False))
+
     def list_workspaces(self) -> list[dict]:
-        """List all workspaces (newest first)."""
+        """List all workspaces (newest first).
+
+        Reads only the lightweight ``workspace_meta.json`` blob (~150 bytes)
+        per workspace instead of the full ``session_state.json``.
+        """
         workspaces = []
         for ws_id in self._list_workspace_prefixes():
-            display_name = ws_id
-            updated_at = None
+            meta_blob = self._blob_name(ws_id, WORKSPACE_META_FILENAME)
+            if not self._blob_exists(meta_blob):
+                continue
 
-            # Try to read displayName from session_state.json
-            sess_blob = self._blob_name(ws_id, SESSION_STATE_FILENAME)
-            if self._blob_exists(sess_blob):
-                try:
-                    data = json.loads(self._download_blob(sess_blob))
-                    aw = data.get("activeWorkspace")
-                    if isinstance(aw, dict) and aw.get("displayName"):
-                        display_name = aw["displayName"]
-                except Exception:
-                    pass
-
-            # Get updated_at from workspace.yaml blob properties
-            yaml_blob = self._blob_name(ws_id, "workspace.yaml")
             try:
-                props = self._container.get_blob_client(yaml_blob).get_blob_properties()
-                updated_at = props.last_modified.isoformat() if props.last_modified else None
+                meta = json.loads(self._download_blob(meta_blob))
             except Exception:
-                # Try session_state.json as fallback
-                try:
-                    props = self._container.get_blob_client(sess_blob).get_blob_properties()
-                    updated_at = props.last_modified.isoformat() if props.last_modified else None
-                except Exception:
-                    pass
+                continue
 
             workspaces.append({
                 "id": ws_id,
-                "display_name": display_name,
-                "updated_at": updated_at,
+                "display_name": meta.get("displayName", ws_id),
+                "updated_at": meta.get("updatedAt"),
+                "table_count": meta.get("tableCount"),
+                "chart_count": meta.get("chartCount"),
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)
         return workspaces
 
     def workspace_exists(self, workspace_id: str) -> bool:
-        """Check if a workspace exists (has a workspace.yaml or session_state.json blob)."""
+        """Check if a workspace exists."""
         ws_prefix = self._ws_prefix(workspace_id)
+        meta_blob = f"{ws_prefix}{WORKSPACE_META_FILENAME}"
         yaml_blob = f"{ws_prefix}workspace.yaml"
         sess_blob = f"{ws_prefix}{SESSION_STATE_FILENAME}"
-        return self._blob_exists(yaml_blob) or self._blob_exists(sess_blob)
+        return (
+            self._blob_exists(meta_blob)
+            or self._blob_exists(yaml_blob)
+            or self._blob_exists(sess_blob)
+        )
 
     def get_workspace_path(self, workspace_id: str):
         """Returns the blob prefix (not a filesystem path)."""
@@ -174,13 +190,15 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
 
         # Upload a minimal workspace.yaml to mark the workspace as existing
         from data_formulator.datalake.workspace_metadata import WorkspaceMetadata
-        meta = WorkspaceMetadata.create_new()
+        ws_meta = WorkspaceMetadata.create_new()
         import yaml
         yaml_content = yaml.safe_dump(
-            meta.to_dict(), default_flow_style=False, allow_unicode=True, sort_keys=False
+            ws_meta.to_dict(), default_flow_style=False, allow_unicode=True, sort_keys=False
         )
         yaml_blob = self._blob_name(workspace_id, "workspace.yaml")
         self._upload_blob(yaml_blob, yaml_content)
+
+        self._upload_meta(workspace_id, "Untitled Session")
 
         safe = self._safe_id(workspace_id)
         logger.info(f"Created Azure workspace '{safe}' at {self._ws_prefix(workspace_id)}")
@@ -219,10 +237,29 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
             "Use display name changes instead."
         )
 
+    def update_display_name(self, workspace_id: str, display_name: str) -> None:
+        """Update only the displayName in workspace_meta.json blob."""
+        meta_blob = self._blob_name(workspace_id, WORKSPACE_META_FILENAME)
+        if self._blob_exists(meta_blob):
+            try:
+                meta = json.loads(self._download_blob(meta_blob))
+            except Exception:
+                meta = {}
+        else:
+            meta = {}
+        meta["displayName"] = display_name
+        meta["updatedAt"] = datetime.now(tz=timezone.utc).isoformat()
+        meta.setdefault("id", self._safe_id(workspace_id))
+        self._upload_blob(meta_blob, json.dumps(meta, ensure_ascii=False))
+
     # ── Session state persistence ────────────────────────────────────
 
     def save_session_state(self, workspace_id: str, state: dict) -> None:
-        """Save frontend state to session_state.json blob."""
+        """Save frontend state to session_state.json blob.
+
+        Also updates the lightweight ``workspace_meta.json`` blob used by
+        :meth:`list_workspaces`.
+        """
         if not self.workspace_exists(workspace_id):
             raise ValueError(f"Workspace '{workspace_id}' does not exist")
 
@@ -232,6 +269,15 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
             blob_name,
             json.dumps(clean_state, default=str, ensure_ascii=False),
         )
+
+        aw = clean_state.get("activeWorkspace")
+        dn = aw["displayName"] if isinstance(aw, dict) and aw.get("displayName") else workspace_id
+        tables = clean_state.get("tables")
+        tc = len(tables) if isinstance(tables, list) else None
+        charts = clean_state.get("charts")
+        cc = len(charts) if isinstance(charts, list) else None
+        self._upload_meta(workspace_id, dn, table_count=tc, chart_count=cc)
+
         logger.debug(f"Saved session state to blob {blob_name}")
 
     def load_session_state(self, workspace_id: str) -> Optional[dict]:

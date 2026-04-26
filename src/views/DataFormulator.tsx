@@ -50,7 +50,7 @@ import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import type { DictTable } from '../components/ComponentType';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace } from '../app/workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
 import { AppDispatch } from '../app/store';
 import { generateUUID } from '../app/identity';
 import Card from '@mui/material/Card';
@@ -137,6 +137,10 @@ export const DataFormulatorFC = ({ }) => {
             fetchWorkspaces();
         }
     }, [activeWorkspace, tables.length, fetchWorkspaces]);
+
+    useEffect(() => {
+        return onWorkspaceListChanged(fetchWorkspaces);
+    }, [fetchWorkspaces]);
 
     const handleOpenWorkspace = useCallback(async (name: string) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));

@@ -5,6 +5,7 @@
 WorkspaceManager — manages multiple workspaces per user.
 
 Each workspace is a named folder containing:
+  - workspace_meta.json: lightweight metadata for fast listing
   - workspace.yaml: all table metadata (single file)
   - session_state.json: auto-persisted frontend state
   - data/: data files (parquet, csv, etc.)
@@ -26,6 +27,7 @@ from data_formulator.datalake.workspace import Workspace
 logger = logging.getLogger(__name__)
 
 SESSION_STATE_FILENAME = "session_state.json"
+WORKSPACE_META_FILENAME = "workspace_meta.json"
 
 # Fields that must never be persisted (contain secrets / ephemeral info)
 _SENSITIVE_FIELDS = frozenset([
@@ -51,6 +53,7 @@ class WorkspaceManager:
     Layout:
         <workspaces_root>/
           <workspace_id>/
+            workspace_meta.json
             workspace.yaml
             session_state.json
             data/
@@ -77,9 +80,36 @@ class WorkspaceManager:
             safe = "unnamed"
         return safe
 
+    def _write_meta(
+        self,
+        workspace_id: str,
+        display_name: str,
+        *,
+        table_count: Optional[int] = None,
+        chart_count: Optional[int] = None,
+    ) -> None:
+        """Write a lightweight ``workspace_meta.json`` used by list_workspaces."""
+        safe = self._safe_id(workspace_id)
+        meta_file = self._root / safe / WORKSPACE_META_FILENAME
+        meta: dict = {
+            "id": safe,
+            "displayName": display_name,
+            "updatedAt": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        if table_count is not None:
+            meta["tableCount"] = table_count
+        if chart_count is not None:
+            meta["chartCount"] = chart_count
+        meta_file.write_text(
+            json.dumps(meta, ensure_ascii=False), encoding="utf-8",
+        )
+
     def list_workspaces(self) -> list[dict]:
         """
         List all workspaces (newest first).
+
+        Reads only the lightweight ``workspace_meta.json`` (~150 bytes) per
+        workspace instead of the full ``session_state.json``.
 
         Returns list of {"id": str, "display_name": str, "updated_at": str}.
         """
@@ -90,33 +120,21 @@ class WorkspaceManager:
         for child in self._root.iterdir():
             if not child.is_dir():
                 continue
-            ws_yaml = child / "workspace.yaml"
-            sess_file = child / SESSION_STATE_FILENAME
-            if not ws_yaml.exists() and not sess_file.exists():
+            meta_file = child / WORKSPACE_META_FILENAME
+            if not meta_file.exists():
                 continue
 
-            mtime = 0.0
-            for f in [ws_yaml, sess_file]:
-                if f.exists():
-                    mtime = max(mtime, f.stat().st_mtime)
-
-            # Try to read displayName from session_state.json
-            display_name = child.name
-            if sess_file.exists():
-                try:
-                    state = json.loads(sess_file.read_text(encoding="utf-8"))
-                    aw = state.get("activeWorkspace")
-                    if isinstance(aw, dict) and aw.get("displayName"):
-                        display_name = aw["displayName"]
-                except Exception as e:
-                    logger.debug("Could not read session state for %s", child.name, exc_info=e)
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            except Exception:
+                continue
 
             workspaces.append({
                 "id": child.name,
-                "display_name": display_name,
-                "updated_at": datetime.fromtimestamp(
-                    mtime, tz=timezone.utc
-                ).isoformat() if mtime > 0 else None,
+                "display_name": meta.get("displayName", child.name),
+                "updated_at": meta.get("updatedAt"),
+                "table_count": meta.get("tableCount"),
+                "chart_count": meta.get("chartCount"),
             })
 
         workspaces.sort(key=lambda w: w.get("updated_at") or "", reverse=True)
@@ -127,7 +145,8 @@ class WorkspaceManager:
         safe = self._safe_id(workspace_id)
         ws_dir = self._root / safe
         return ws_dir.is_dir() and (
-            (ws_dir / "workspace.yaml").exists()
+            (ws_dir / WORKSPACE_META_FILENAME).exists()
+            or (ws_dir / "workspace.yaml").exists()
             or (ws_dir / SESSION_STATE_FILENAME).exists()
         )
 
@@ -212,6 +231,11 @@ class WorkspaceManager:
         elif src_yaml.exists():
             shutil.copy2(str(src_yaml), str(dest_yaml))
 
+        src_ws_meta = src / WORKSPACE_META_FILENAME
+        dest_ws_meta = dest / WORKSPACE_META_FILENAME
+        if src_ws_meta.exists() and not dest_ws_meta.exists():
+            shutil.copy2(str(src_ws_meta), str(dest_ws_meta))
+
     def delete_all_workspaces(self) -> int:
         """Delete every workspace under this manager's root.
 
@@ -247,6 +271,7 @@ class WorkspaceManager:
 
         ws_dir.mkdir(parents=True, exist_ok=True)
         (ws_dir / "data").mkdir(exist_ok=True)
+        self._write_meta(workspace_id, "Untitled Session")
 
         logger.info(f"Created workspace '{safe}' at {ws_dir}")
         return ws_dir
@@ -310,8 +335,37 @@ class WorkspaceManager:
             raise ValueError(f"Workspace '{new_id}' already exists")
 
         old_dir.rename(new_dir)
+
+        meta_file = new_dir / WORKSPACE_META_FILENAME
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                meta["id"] = new_safe
+                meta_file.write_text(
+                    json.dumps(meta, ensure_ascii=False), encoding="utf-8",
+                )
+            except Exception:
+                pass
+
         logger.info(f"Renamed workspace '{old_safe}' → '{new_safe}'")
         return new_dir
+
+    def update_display_name(self, workspace_id: str, display_name: str) -> None:
+        """Update only the displayName in workspace_meta.json (no full state write)."""
+        safe = self._safe_id(workspace_id)
+        meta_file = self._root / safe / WORKSPACE_META_FILENAME
+        if not meta_file.exists():
+            self._write_meta(workspace_id, display_name)
+            return
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+        meta["displayName"] = display_name
+        meta["updatedAt"] = datetime.now(tz=timezone.utc).isoformat()
+        meta_file.write_text(
+            json.dumps(meta, ensure_ascii=False), encoding="utf-8",
+        )
 
     # ── Session state persistence ────────────────────────────────────
 
@@ -319,7 +373,8 @@ class WorkspaceManager:
         """
         Save frontend state to session_state.json in a workspace.
 
-        Sensitive fields are automatically stripped.
+        Sensitive fields are automatically stripped.  Also updates the
+        lightweight ``workspace_meta.json`` used by :meth:`list_workspaces`.
         """
         safe = self._safe_id(workspace_id)
         ws_dir = self._root / safe
@@ -332,6 +387,15 @@ class WorkspaceManager:
             json.dumps(clean_state, default=str, ensure_ascii=False),
             encoding="utf-8",
         )
+
+        aw = clean_state.get("activeWorkspace")
+        dn = aw["displayName"] if isinstance(aw, dict) and aw.get("displayName") else workspace_id
+        tables = clean_state.get("tables")
+        tc = len(tables) if isinstance(tables, list) else None
+        charts = clean_state.get("charts")
+        cc = len(charts) if isinstance(charts, list) else None
+        self._write_meta(workspace_id, dn, table_count=tc, chart_count=cc)
+
         logger.debug(f"Saved session state to {state_file}")
 
     def load_session_state(self, workspace_id: str) -> Optional[dict]:
