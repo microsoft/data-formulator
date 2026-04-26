@@ -19,6 +19,7 @@ import { inferTypeFromValueArray } from '../data/utils';
 import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
 import { tableDataDB } from './workspaceDB';
+import i18n from '../i18n';
 
 /** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
 async function compressBlob(data: string): Promise<Blob> {
@@ -44,10 +45,12 @@ export interface LoadTablePayload {
     sourceTableRef?: SourceTableRef;
     connectorId?: string;
     importOptions?: {
+        size?: number;
         rowLimit?: number;
         sortColumns?: string[];
         sortOrder?: 'asc' | 'desc';
         conditions?: { column: string; operator: string; value?: any }[];
+        source_filters?: Record<string, any>[];
     };
 }
 
@@ -154,6 +157,19 @@ export const loadTable = createAsyncThunk<
                             if (wsTable) {
                                 finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
                             }
+                        }
+                        const selectedRowLimit = Number(importOptions?.size);
+                        const loadedRowCount = Number(data.row_count);
+                        if (
+                            Number.isFinite(selectedRowLimit) && selectedRowLimit > 0 &&
+                            Number.isFinite(loadedRowCount) && loadedRowCount >= selectedRowLimit
+                        ) {
+                            dispatch(dfActions.addMessages({
+                                timestamp: Date.now(),
+                                type: 'warning',
+                                component: 'data loader',
+                                value: i18n.t('messages.rowLimitReached', { count: loadedRowCount.toLocaleString() }),
+                            }));
                         }
                     } else {
                         throw new Error(data.message || 'Failed to ingest data');
