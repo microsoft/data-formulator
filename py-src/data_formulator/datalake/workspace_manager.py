@@ -104,12 +104,48 @@ class WorkspaceManager:
             json.dumps(meta, ensure_ascii=False), encoding="utf-8",
         )
 
+    def _ensure_meta(self, workspace_id: str) -> dict:
+        """Return the workspace_meta.json content, auto-creating it if missing.
+
+        Legacy workspaces (created before workspace_meta.json was introduced)
+        only have ``workspace.yaml`` and/or ``session_state.json``.  This
+        method infers a display name from ``session_state.json`` when possible
+        and writes a fresh ``workspace_meta.json`` so the workspace appears
+        in :meth:`list_workspaces`.
+        """
+        safe = self._safe_id(workspace_id)
+        ws_dir = self._root / safe
+        meta_file = ws_dir / WORKSPACE_META_FILENAME
+
+        if meta_file.exists():
+            try:
+                return json.loads(meta_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        # Infer display name from session_state.json if available
+        display_name = workspace_id
+        state_file = ws_dir / SESSION_STATE_FILENAME
+        if state_file.exists():
+            try:
+                state = json.loads(state_file.read_text(encoding="utf-8"))
+                aw = state.get("activeWorkspace")
+                if isinstance(aw, dict) and aw.get("displayName"):
+                    display_name = aw["displayName"]
+            except Exception:
+                pass
+
+        self._write_meta(workspace_id, display_name)
+        logger.info("Auto-created workspace_meta.json for legacy workspace '%s'", safe)
+        return json.loads(meta_file.read_text(encoding="utf-8"))
+
     def list_workspaces(self) -> list[dict]:
         """
         List all workspaces (newest first).
 
-        Reads only the lightweight ``workspace_meta.json`` (~150 bytes) per
-        workspace instead of the full ``session_state.json``.
+        Reads the lightweight ``workspace_meta.json`` (~150 bytes) per
+        workspace.  If a workspace directory lacks this file (legacy),
+        it is auto-repaired via :meth:`_ensure_meta`.
 
         Returns list of {"id": str, "display_name": str, "updated_at": str}.
         """
@@ -120,12 +156,9 @@ class WorkspaceManager:
         for child in self._root.iterdir():
             if not child.is_dir():
                 continue
-            meta_file = child / WORKSPACE_META_FILENAME
-            if not meta_file.exists():
-                continue
 
             try:
-                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                meta = self._ensure_meta(child.name)
             except Exception:
                 continue
 
@@ -141,14 +174,12 @@ class WorkspaceManager:
         return workspaces
 
     def workspace_exists(self, workspace_id: str) -> bool:
-        """Check if a workspace with the given ID exists."""
+        """Check if a workspace with the given ID exists.
+
+        A workspace exists if and only if its directory exists.
+        """
         safe = self._safe_id(workspace_id)
-        ws_dir = self._root / safe
-        return ws_dir.is_dir() and (
-            (ws_dir / WORKSPACE_META_FILENAME).exists()
-            or (ws_dir / "workspace.yaml").exists()
-            or (ws_dir / SESSION_STATE_FILENAME).exists()
-        )
+        return (self._root / safe).is_dir()
 
     def get_workspace_path(self, workspace_id: str) -> Path:
         """Get the filesystem path for a workspace."""
@@ -182,6 +213,9 @@ class WorkspaceManager:
             else:
                 shutil.copytree(str(child), str(dest))
                 logger.info("Copied workspace '%s' from %s", child.name, source_root)
+
+            # Ensure the destination has workspace_meta.json (source may be legacy)
+            self._ensure_meta(child.name)
             moved.append(child.name)
 
             # Best-effort source removal; on Windows files may still be
@@ -264,11 +298,11 @@ class WorkspaceManager:
         Returns the workspace directory path.
         Raises ValueError if the workspace already exists.
         """
-        safe = self._safe_id(workspace_id)
-        ws_dir = self._root / safe
-        if ws_dir.exists():
+        if self.workspace_exists(workspace_id):
             raise ValueError(f"Workspace '{workspace_id}' already exists")
 
+        safe = self._safe_id(workspace_id)
+        ws_dir = self._root / safe
         ws_dir.mkdir(parents=True, exist_ok=True)
         (ws_dir / "data").mkdir(exist_ok=True)
         self._write_meta(workspace_id, "Untitled Session")

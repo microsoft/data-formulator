@@ -134,20 +134,49 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         blob_name = self._blob_name(workspace_id, WORKSPACE_META_FILENAME)
         self._upload_blob(blob_name, json.dumps(meta, ensure_ascii=False))
 
+    def _ensure_meta(self, workspace_id: str) -> dict:
+        """Return workspace_meta.json content, auto-creating it if missing.
+
+        Legacy workspaces may only have ``workspace.yaml`` or
+        ``session_state.json``.  This method infers a display name from
+        ``session_state.json`` when possible and uploads a fresh
+        ``workspace_meta.json`` so the workspace appears in
+        :meth:`list_workspaces`.
+        """
+        meta_blob = self._blob_name(workspace_id, WORKSPACE_META_FILENAME)
+        if self._blob_exists(meta_blob):
+            try:
+                return json.loads(self._download_blob(meta_blob))
+            except Exception:
+                pass
+
+        display_name = workspace_id
+        sess_blob = self._blob_name(workspace_id, SESSION_STATE_FILENAME)
+        if self._blob_exists(sess_blob):
+            try:
+                state = json.loads(self._download_blob(sess_blob))
+                aw = state.get("activeWorkspace")
+                if isinstance(aw, dict) and aw.get("displayName"):
+                    display_name = aw["displayName"]
+            except Exception:
+                pass
+
+        self._upload_meta(workspace_id, display_name)
+        safe = self._safe_id(workspace_id)
+        logger.info("Auto-created workspace_meta.json for legacy workspace '%s'", safe)
+        return json.loads(self._download_blob(meta_blob))
+
     def list_workspaces(self) -> list[dict]:
         """List all workspaces (newest first).
 
-        Reads only the lightweight ``workspace_meta.json`` blob (~150 bytes)
-        per workspace instead of the full ``session_state.json``.
+        Reads the lightweight ``workspace_meta.json`` blob (~150 bytes)
+        per workspace.  If a workspace lacks this blob (legacy), it is
+        auto-repaired via :meth:`_ensure_meta`.
         """
         workspaces = []
         for ws_id in self._list_workspace_prefixes():
-            meta_blob = self._blob_name(ws_id, WORKSPACE_META_FILENAME)
-            if not self._blob_exists(meta_blob):
-                continue
-
             try:
-                meta = json.loads(self._download_blob(meta_blob))
+                meta = self._ensure_meta(ws_id)
             except Exception:
                 continue
 
@@ -163,16 +192,14 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         return workspaces
 
     def workspace_exists(self, workspace_id: str) -> bool:
-        """Check if a workspace exists."""
+        """Check if a workspace exists.
+
+        A workspace exists if any blob exists under its prefix.
+        """
         ws_prefix = self._ws_prefix(workspace_id)
-        meta_blob = f"{ws_prefix}{WORKSPACE_META_FILENAME}"
-        yaml_blob = f"{ws_prefix}workspace.yaml"
-        sess_blob = f"{ws_prefix}{SESSION_STATE_FILENAME}"
-        return (
-            self._blob_exists(meta_blob)
-            or self._blob_exists(yaml_blob)
-            or self._blob_exists(sess_blob)
-        )
+        for _ in self._container.list_blobs(name_starts_with=ws_prefix):
+            return True
+        return False
 
     def get_workspace_path(self, workspace_id: str):
         """Returns the blob prefix (not a filesystem path)."""
