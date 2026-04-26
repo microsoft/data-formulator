@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from data_formulator.agents.agent_data_loading_chat import DataLoadingAgent
+from data_formulator.security.path_safety import ConfinedDir
 
 pytestmark = [pytest.mark.backend]
 
@@ -36,6 +37,16 @@ def workspace_path(tmp_path):
 
 
 @pytest.fixture()
+def workspace_jail(workspace_path):
+    return ConfinedDir(workspace_path, mkdir=False)
+
+
+@pytest.fixture()
+def scratch_jail(workspace_path):
+    return ConfinedDir(workspace_path / "scratch", mkdir=False)
+
+
+@pytest.fixture()
 def agent(workspace_path):
     ws = _FakeWorkspace(workspace_path)
     a = DataLoadingAgent.__new__(DataLoadingAgent)
@@ -45,62 +56,104 @@ def agent(workspace_path):
 
 class TestToolReadFile:
 
-    def test_read_valid_file(self, agent, workspace_path):
+    def test_read_valid_file(self, agent, workspace_jail):
         result = agent._tool_read_file(
             {"path": "data/sales.csv"},
-            workspace_path.resolve(),
+            workspace_jail,
         )
         assert "content" in result
         assert "product,amount" in result["content"]
 
-    def test_traversal_blocked(self, agent, workspace_path):
+    def test_traversal_blocked(self, agent, workspace_jail):
         result = agent._tool_read_file(
             {"path": "../../etc/passwd"},
-            workspace_path.resolve(),
+            workspace_jail,
         )
         assert "error" in result
         assert "Access denied" in result["error"]
 
-    def test_absolute_path_blocked(self, agent, workspace_path):
+    def test_absolute_path_blocked(self, agent, workspace_jail):
         result = agent._tool_read_file(
             {"path": "/etc/passwd"},
-            workspace_path.resolve(),
+            workspace_jail,
         )
         assert "error" in result
 
-    def test_nonexistent_file(self, agent, workspace_path):
+    def test_nonexistent_file(self, agent, workspace_jail):
         result = agent._tool_read_file(
             {"path": "data/missing.csv"},
-            workspace_path.resolve(),
+            workspace_jail,
         )
         assert "error" in result
         assert "not found" in result["error"].lower()
 
-
-class TestToolListDirectory:
-
-    def test_list_valid_directory(self, agent, workspace_path):
-        result = agent._tool_list_directory(
-            {"path": "data"},
-            workspace_path.resolve(),
-        )
-        assert "entries" in result
-        assert "sales.csv" in result["entries"]
-
-    def test_traversal_blocked(self, agent, workspace_path):
-        result = agent._tool_list_directory(
-            {"path": "../../"},
-            workspace_path.resolve(),
+    def test_empty_path_blocked(self, agent, workspace_jail):
+        result = agent._tool_read_file(
+            {"path": ""},
+            workspace_jail,
         )
         assert "error" in result
         assert "Access denied" in result["error"]
 
-    def test_nonexistent_directory(self, agent, workspace_path):
+
+class TestToolListDirectory:
+
+    def test_list_valid_directory(self, agent, workspace_jail):
         result = agent._tool_list_directory(
-            {"path": "no_such_dir"},
-            workspace_path.resolve(),
+            {"path": "data"},
+            workspace_jail,
+        )
+        assert "entries" in result
+        assert "sales.csv" in result["entries"]
+
+    def test_list_root_directory(self, agent, workspace_jail):
+        result = agent._tool_list_directory(
+            {"path": ""},
+            workspace_jail,
+        )
+        assert "entries" in result
+        assert "data/" in result["entries"]
+
+    def test_traversal_blocked(self, agent, workspace_jail):
+        result = agent._tool_list_directory(
+            {"path": "../../"},
+            workspace_jail,
         )
         assert "error" in result
+        assert "Access denied" in result["error"]
+
+    def test_nonexistent_directory(self, agent, workspace_jail):
+        result = agent._tool_list_directory(
+            {"path": "no_such_dir"},
+            workspace_jail,
+        )
+        assert "error" in result
+
+
+class TestToolWriteFile:
+
+    def test_write_valid_file(self, agent, scratch_jail):
+        result = agent._tool_write_file(
+            {"path": "output.txt", "content": "hello"},
+            scratch_jail,
+        )
+        assert "path" in result
+        assert result["size"] == 5
+
+    def test_traversal_sanitized_and_confined(self, agent, scratch_jail, workspace_path):
+        """_secure_filename sanitizes first, then ConfinedDir validates.
+
+        The file is written with a sanitized name inside scratch/ — both
+        defense layers cooperate to prevent escape.
+        """
+        result = agent._tool_write_file(
+            {"path": "../../evil.txt", "content": "hacked"},
+            scratch_jail,
+        )
+        assert "path" in result
+        written = workspace_path / "scratch" / result["path"].split("/")[-1]
+        assert written.exists()
+        assert written.parent == workspace_path / "scratch"
 
 
 class TestPreviewScratchFiles:

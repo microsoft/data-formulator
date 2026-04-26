@@ -218,84 +218,72 @@ class MySQLDataLoader(ExternalDataLoader):
             return self._list_tables(table_filter)
     
     def _list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List tables from MySQL database(s) within pinned scope."""
+        """List tables from MySQL database(s) within pinned scope.
+
+        Only queries information_schema in batch; does NOT run per-table
+        SELECT * LIMIT or COUNT(*) to keep catalog browsing fast.
+        """
         try:
-            # If database is pinned, list only that database; otherwise all user-accessible DBs
             if self.database:
                 db_filter = f"TABLE_SCHEMA = '{_esc_str(self.database)}'"
             else:
                 db_filter = "TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')"
+
+            # Fetch tables with TABLE_COMMENT
             tables_query = f"""
-                SELECT TABLE_SCHEMA, TABLE_NAME 
+                SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_COMMENT
                 FROM information_schema.tables 
                 WHERE {db_filter}
                 AND TABLE_TYPE = 'BASE TABLE'
             """
             tables_arrow = self._read_sql(tables_query)
             tables_df = tables_arrow.to_pandas()
-            
+
             if tables_df.empty:
                 return []
-            
+
+            # Batch-fetch columns with COLUMN_COMMENT
+            columns_query = f"""
+                SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT
+                FROM information_schema.columns
+                WHERE {db_filter}
+                ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
+            """
+            cols_arrow = self._read_sql(columns_query)
+            cols_df = cols_arrow.to_pandas()
+
+            col_map: dict[str, list[dict]] = {}
+            for _, cr in cols_df.iterrows():
+                key = f"{cr['TABLE_SCHEMA']}.{cr['TABLE_NAME']}"
+                entry: dict[str, Any] = {
+                    "name": cr["COLUMN_NAME"],
+                    "type": cr["DATA_TYPE"],
+                }
+                comment = cr.get("COLUMN_COMMENT")
+                if comment and str(comment).strip():
+                    entry["description"] = str(comment).strip()
+                col_map.setdefault(key, []).append(entry)
+
             results = []
-            
             for _, row in tables_df.iterrows():
                 schema = row['TABLE_SCHEMA']
                 table_name = row['TABLE_NAME']
-                
+
                 if table_filter and table_filter.lower() not in table_name.lower():
                     continue
-                
+
                 full_table_name = f"{schema}.{table_name}"
-                
-                try:
-                    # Get column information
-                    columns_query = f"""
-                        SELECT COLUMN_NAME, DATA_TYPE 
-                        FROM information_schema.columns 
-                        WHERE TABLE_SCHEMA = '{_esc_str(schema)}' AND TABLE_NAME = '{_esc_str(table_name)}'
-                        ORDER BY ORDINAL_POSITION
-                    """
-                    columns_arrow = self._read_sql(columns_query)
-                    columns_df = columns_arrow.to_pandas()
-                    columns = [{
-                        'name': col_row['COLUMN_NAME'],
-                        'type': col_row['DATA_TYPE']
-                    } for _, col_row in columns_df.iterrows()]
-                    
-                    # Build safe column list (casts unsupported types to CHAR)
-                    col_list = self._safe_select_list(schema, table_name)
-                    
-                    # Get sample data
-                    sample_rows = []
-                    sample_query = f"SELECT {col_list} FROM {_esc_id(schema, '`')}.{_esc_id(table_name, '`')} LIMIT 10"
-                    try:
-                        sample_arrow = self._read_sql(sample_query)
-                        sample_df = sample_arrow.to_pandas()
-                        sample_rows = json.loads(sample_df.to_json(orient="records", date_format='iso'))
-                    except Exception as sample_err:
-                        logger.warning(f"Could not sample {full_table_name}: {sample_err}")
-                    
-                    # Get row count
-                    count_query = f"SELECT COUNT(*) as cnt FROM {_esc_id(schema, '`')}.{_esc_id(table_name, '`')}"
-                    count_arrow = self._read_sql(count_query)
-                    row_count = int(count_arrow.to_pandas()['cnt'].iloc[0])
-                    
-                    table_metadata = {
-                        "row_count": row_count,
-                        "columns": columns,
-                        "sample_rows": sample_rows
-                    }
-                    
-                    results.append({
-                        "name": full_table_name,
-                        "path": [schema, table_name],
-                        "metadata": table_metadata
-                    })
-                except Exception as e:
-                    logger.warning(f"Error processing table {full_table_name}: {e}")
-                    continue
-            
+                columns = col_map.get(full_table_name, [])
+                metadata: dict[str, Any] = {"columns": columns}
+                table_comment = row.get("TABLE_COMMENT")
+                if table_comment and str(table_comment).strip():
+                    metadata["description"] = str(table_comment).strip()
+                results.append({
+                    "name": full_table_name,
+                    "path": [schema, table_name],
+                    "metadata": metadata,
+                })
+
             return results
 
         except Exception as e:
@@ -428,16 +416,37 @@ class MySQLDataLoader(ExternalDataLoader):
         table_name = remaining[0]
         try:
             cols_query = f"""
-                SELECT COLUMN_NAME, DATA_TYPE
+                SELECT COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT
                 FROM information_schema.columns
                 WHERE TABLE_SCHEMA = '{_esc_str(db)}' AND TABLE_NAME = '{_esc_str(table_name)}'
                 ORDER BY ORDINAL_POSITION
             """
             cols_df = self._read_sql(cols_query).to_pandas()
-            columns = [
-                {"name": r["COLUMN_NAME"], "type": r["DATA_TYPE"]}
-                for _, r in cols_df.iterrows()
-            ]
+            columns = []
+            for _, r in cols_df.iterrows():
+                entry: dict[str, Any] = {"name": r["COLUMN_NAME"], "type": r["DATA_TYPE"]}
+                comment = r.get("COLUMN_COMMENT")
+                if comment and str(comment).strip():
+                    entry["description"] = str(comment).strip()
+                columns.append(entry)
+
+            # Table comment
+            table_description = None
+            try:
+                tc_query = f"""
+                    SELECT TABLE_COMMENT
+                    FROM information_schema.tables
+                    WHERE TABLE_SCHEMA = '{_esc_str(db)}'
+                      AND TABLE_NAME = '{_esc_str(table_name)}'
+                """
+                tc_df = self._read_sql(tc_query).to_pandas()
+                if not tc_df.empty:
+                    tc = tc_df["TABLE_COMMENT"].iloc[0]
+                    if tc and str(tc).strip():
+                        table_description = str(tc).strip()
+            except Exception:
+                pass
+
             count_df = self._read_sql(
                 f"SELECT COUNT(*) AS cnt FROM {_esc_id(db, '`')}.{_esc_id(table_name, '`')}"
             ).to_pandas()
@@ -447,11 +456,14 @@ class MySQLDataLoader(ExternalDataLoader):
                 f"SELECT {col_list} FROM {_esc_id(db, '`')}.{_esc_id(table_name, '`')} LIMIT 5"
             ).to_pandas()
             sample_rows = json.loads(sample_df.to_json(orient="records", date_format="iso"))
-            return {
+            result: dict[str, Any] = {
                 "row_count": row_count,
                 "columns": columns,
                 "sample_rows": sample_rows,
             }
+            if table_description:
+                result["description"] = table_description
+            return result
         except Exception as e:
             logger.warning(f"get_metadata failed for {path}: {e}")
             return {}

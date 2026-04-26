@@ -105,6 +105,7 @@ interface PreviewState {
     columns: ColumnMeta[];
     sampleRows: Record<string, any>[];
     rowCount: number | null;
+    tableDescription?: string;
     loading: boolean;
 }
 
@@ -650,6 +651,7 @@ const DataSourceSidebarPanel: React.FC<{
                             columns: newCols.length > 0 ? newCols : prev.columns,
                             sampleRows: data.rows || [],
                             rowCount: data.total_row_count ?? prev.rowCount,
+                            tableDescription: data.description ?? prev.tableDescription,
                             loading: false,
                         };
                     });
@@ -1354,6 +1356,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 connectorId={preview.connectorId}
                                 sourceTable={sourceTableRef}
                                 displayName={preview.node.name}
+                                tableDescription={preview.tableDescription}
                                 columns={preview.columns}
                                 sampleRows={preview.sampleRows}
                                 rowCount={preview.rowCount}

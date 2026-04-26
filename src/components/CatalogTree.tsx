@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { styled, Box, Typography } from '@mui/material';
+import { styled, Box, Tooltip, Typography } from '@mui/material';
 import { TreeItem, treeItemClasses } from '@mui/x-tree-view/TreeItem';
 
 import CheckIcon from '@mui/icons-material/Check';
@@ -165,6 +165,8 @@ export function renderCatalogTreeItems(
         const tableCount = isGroup ? (node.metadata?.tables?.length ?? 0) : 0;
         const isExpanded = expandedSet.has(itemId);
 
+        const nodeDescription = (isTable || isGroup) ? (node.metadata?.description || '') : '';
+
         const labelContent = isLoadMore ? (
             <Typography
                 component="span"
@@ -177,6 +179,12 @@ export function renderCatalogTreeItems(
                 {node.name}
             </Typography>
         ) : (
+            <Tooltip
+                title={nodeDescription}
+                placement="right"
+                enterDelay={400}
+                disableHoverListener={!nodeDescription}
+            >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
                 {isGroup
                     ? <DashboardOutlinedIcon sx={{ fontSize: 16, color: groupLoaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
@@ -205,6 +213,7 @@ export function renderCatalogTreeItems(
                 )}
                 {isTable && renderTableActions?.(node)}
             </Box>
+            </Tooltip>
         );
 
         const dragProps = isTable && onDragStart

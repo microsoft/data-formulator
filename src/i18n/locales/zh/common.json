@@ -371,6 +371,7 @@
     "attachMetadataTo": "为 {{table}} 附加元数据",
     "metadata": "元数据",
     "metadataPlaceholder": "附加额外上下文或指引，帮助 AI Agent 更好地理解并处理数据。",
+    "sourceDescription": "数据源描述",
     "deleteMessage": "删除消息",
     "editTableName": "编辑表名",
     "moreOptions": "更多选项",

@@ -30,6 +30,7 @@ from flask import Blueprint, Flask, jsonify, request
 
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
+    ConnectorParamError,
     ExternalDataLoader,
     SENSITIVE_PARAMS,
 )
@@ -61,6 +62,15 @@ def classify_and_raise_connector_error(error: Exception) -> None:
     msg = raw.lower()
     safe_detail = sanitize_error_message(raw)
 
+    # Structured param validation errors — pass through descriptive message
+    if isinstance(error, ConnectorParamError):
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            str(error),
+            status_code=400,
+            detail=safe_detail,
+        ) from error
+
     if any(kw in msg for kw in ("authenticat", "login", "credential",
                                  "unauthorized", "401", "forbidden", "403")):
         raise AppError(ErrorCode.LLM_AUTH_FAILED, "Authentication failed", status_code=401, detail=safe_detail) from error
@@ -76,7 +86,7 @@ def classify_and_raise_connector_error(error: Exception) -> None:
         raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection timed out", status_code=504, detail=safe_detail, retry=True) from error
 
     if "required" in msg or "invalid" in msg or "missing" in msg:
-        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid parameters", status_code=400, detail=safe_detail) from error
+        raise AppError(ErrorCode.INVALID_REQUEST, safe_detail or "Invalid parameters", status_code=400, detail=safe_detail) from error
 
     raise AppError(ErrorCode.CONNECTOR_ERROR, "An unexpected connector error occurred", status_code=500, detail=safe_detail) from error
 
@@ -426,6 +436,11 @@ class DataConnector:
         """
         merged = {**self._default_params, **user_params}
         self._inject_credentials(merged)
+
+        # Pre-validate: skip auth-tier params when tokens are present (SSO flow)
+        has_token = bool(merged.get("access_token") or merged.get("sso_access_token"))
+        self._loader_class.validate_params(merged, skip_auth_tier=has_token)
+
         loader = self._loader_class(merged)
         identity = self._get_identity()
         self._loaders[identity] = loader
@@ -824,7 +839,7 @@ def create_connector():
             "persist": true
         }
 
-    Persists to ``DATA_FORMULATOR_HOME/users/<identity>/connectors.yaml``.
+    Persists to ``DATA_FORMULATOR_HOME/users/<identity>/connectors/<source_id>.json``.
     """
     from data_formulator.data_loader import DATA_LOADERS
 
@@ -882,7 +897,6 @@ def create_connector():
     registry_key = _user_connector_key(identity, instance_id)
     DATA_CONNECTORS[registry_key] = connector
 
-    # Persist to user connectors.yaml
     try:
         _persist_user_connector(identity, SourceSpec(
             source_id=instance_id,
@@ -938,20 +952,51 @@ def create_connector():
     return jsonify(result_data), 201
 
 
+def _connectors_dir(identity: str) -> Path:
+    """Return ``DATA_FORMULATOR_HOME/users/<identity>/connectors/``."""
+    from data_formulator.datalake.workspace import get_user_home
+    return get_user_home(identity) / "connectors"
+
+
+def _safe_source_filename(source_id: str) -> str:
+    """Sanitise a source_id into a safe, collision-resistant filename component.
+
+    Delegates to :func:`datalake.naming.safe_source_id` — the single source
+    of truth shared with :mod:`datalake.catalog_cache`.
+    """
+    from data_formulator.datalake.naming import safe_source_id
+    return safe_source_id(source_id)
+
+
 def _persist_user_connector(identity: str, spec: "SourceSpec") -> None:
-    """Add a connector spec to the user's connectors.yaml (append, no duplicates)."""
-    existing = _load_user_specs(identity)
-    # Remove any existing entry with same ID
-    existing = [s for s in existing if s.source_id != spec.source_id]
-    existing.append(spec)
-    _save_user_connectors(identity, existing)
+    """Write a single connector spec to ``connectors/<source_id>.json``."""
+    cdir = _connectors_dir(identity)
+    cdir.mkdir(parents=True, exist_ok=True)
+    path = cdir / f"{_safe_source_filename(spec.source_id)}.json"
+    entry = {
+        "source_id": spec.source_id,
+        "loader_type": spec.loader_type,
+        "display_name": spec.display_name,
+        "default_params": spec.default_params,
+        "icon": spec.icon,
+    }
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            _json.dump(entry, f, ensure_ascii=False, indent=2)
+        logger.info("Persisted connector spec '%s' to %s", spec.source_id, path)
+    except Exception as e:
+        logger.warning("Failed to persist connector spec '%s': %s", spec.source_id, e)
 
 
 def _remove_user_connector(identity: str, connector_id: str) -> None:
-    """Remove a connector spec from the user's connectors.yaml."""
-    existing = _load_user_specs(identity)
-    existing = [s for s in existing if s.source_id != connector_id]
-    _save_user_connectors(identity, existing)
+    """Remove a connector spec from ``connectors/<source_id>.json``."""
+    path = _connectors_dir(identity) / f"{_safe_source_filename(connector_id)}.json"
+    try:
+        if path.exists():
+            path.unlink()
+            logger.info("Removed connector spec '%s'", connector_id)
+    except Exception as e:
+        logger.warning("Failed to remove connector spec '%s': %s", connector_id, e)
 
 
 @connectors_bp.route("/api/connectors/<path:connector_id>", methods=["DELETE"])
@@ -975,7 +1020,17 @@ def delete_connector(connector_id: str):
     except Exception as e:
         logger.warning("Failed to delete credentials for connector '%s'", connector_id, exc_info=e)
 
-    # Remove from user connectors.yaml
+    # Clean up catalog cache
+    try:
+        from data_formulator.datalake.catalog_cache import delete_catalog
+        from data_formulator.auth.identity import get_identity_id
+        from data_formulator.datalake.workspace import get_user_home
+        user_home = get_user_home(get_identity_id())
+        delete_catalog(user_home, connector_id)
+    except Exception:
+        logger.debug("Failed to delete catalog cache for '%s'", connector_id, exc_info=True)
+
+    # Remove from user connectors/
     try:
         identity = DataConnector._get_identity()
         _remove_user_connector(identity, connector_id)
@@ -1041,6 +1096,20 @@ def connector_connect():
             source._vault_delete(identity)
 
         safe = loader.get_safe_params()
+
+        # Best-effort: pull lightweight catalog and persist to disk for agent search.
+        # This uses list_tables() which only queries information_schema (fast).
+        try:
+            from data_formulator.datalake.catalog_cache import save_catalog
+            from data_formulator.datalake.workspace import get_user_home
+            identity_for_cache = source._get_identity()
+            user_home = get_user_home(identity_for_cache)
+            flat_tables = loader.list_tables()
+            save_catalog(user_home, source._source_id, flat_tables)
+        except Exception:
+            logger.debug("Failed to save catalog cache on connect for '%s'",
+                         source._source_id, exc_info=True)
+
         result = {
             "status": "connected",
             "persisted": persisted,
@@ -1081,6 +1150,13 @@ def connector_disconnect():
         except Exception as exc:
             logger.debug("TokenStore disconnect cleanup failed for %s: %s",
                          source._source_id, type(exc).__name__)
+        try:
+            from data_formulator.datalake.catalog_cache import delete_catalog
+            from data_formulator.datalake.workspace import get_user_home
+            user_home = get_user_home(identity)
+            delete_catalog(user_home, source._source_id)
+        except Exception:
+            logger.debug("Failed to delete catalog cache for '%s'", source._source_id, exc_info=True)
         return jsonify({"status": "disconnected"})
     except Exception as e:
         classify_and_raise_connector_error(e)
@@ -1192,11 +1268,25 @@ def connector_get_catalog_tree():
         loader = source._require_loader()
         name_filter = data.get("filter")
 
-        result = loader.list_tables_tree(table_filter=name_filter)
+        # Call list_tables() once, reuse for both tree building and cache
+        flat_tables = loader.list_tables(table_filter=name_filter)
+        tree = loader._tables_to_catalog_tree(flat_tables)
+
+        # Best-effort: persist lightweight catalog to disk for agent search
+        try:
+            from data_formulator.datalake.catalog_cache import save_catalog
+            from data_formulator.auth.identity import get_identity_id
+            from data_formulator.datalake.workspace import get_user_home
+            identity = get_identity_id()
+            user_home = get_user_home(identity)
+            save_catalog(user_home, source._source_id, flat_tables)
+        except Exception:
+            logger.debug("Failed to save catalog cache for '%s'", source._source_id, exc_info=True)
+
         return jsonify({
-            "hierarchy": _hierarchy_dicts(result["hierarchy"]),
-            "effective_hierarchy": _hierarchy_dicts(result["effective_hierarchy"]),
-            "tree": result["tree"],
+            "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
+            "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
+            "tree": tree,
         })
     except Exception as e:
         classify_and_raise_connector_error(e)
@@ -1293,6 +1383,17 @@ def connector_refresh_data():
             import_options=meta.import_options,
         )
         new_meta, data_changed = workspace.refresh_parquet_from_arrow(table_name, arrow_table)
+
+        # Best-effort: refresh source metadata (table/column descriptions).
+        try:
+            from data_formulator.data_loader.external_data_loader import _merge_source_metadata
+            source_meta = loader.get_column_types(meta.source_table)
+            if source_meta:
+                _merge_source_metadata(new_meta, source_meta)
+                workspace.add_table_metadata(new_meta)
+        except Exception:
+            pass  # keep existing descriptions if refresh fails
+
         return jsonify({
             "status": "success",
             "table_name": table_name,
@@ -1332,16 +1433,21 @@ def connector_preview_data():
         # Enrich columns with source-level types from loader metadata.
         # Source types (e.g. "timestamp", "varchar", "boolean") are far more
         # reliable for UI widget selection than pandas dtypes ("object", "int64").
+        table_description = None
         try:
             meta = loader.get_column_types(source_id)
             if not meta:
                 meta = {}
+            if meta.get("description"):
+                table_description = meta["description"]
             source_cols = {c["name"]: c for c in meta.get("columns", [])}
             if source_cols:
                 for col_info in columns:
                     src = source_cols.get(col_info["name"])
                     if src:
                         col_info["source_type"] = src.get("type", "")
+                        if src.get("description"):
+                            col_info["description"] = src["description"]
                         if src.get("is_dttm"):
                             col_info["source_type"] = "TEMPORAL"
         except Exception:
@@ -1350,13 +1456,16 @@ def connector_preview_data():
         # Get actual total row count (some loaders store it before slicing)
         total_row_count = getattr(loader, '_last_total_rows', None) or len(rows)
 
-        return jsonify({
+        result = {
             "status": "success",
             "columns": columns,
             "rows": rows,
             "row_count": len(rows),
             "total_row_count": total_row_count,
-        })
+        }
+        if table_description:
+            result["description"] = table_description
+        return jsonify(result)
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1524,34 +1633,6 @@ def _load_connectors_yaml(path: "Path") -> list[dict]:
         return []
 
 
-def _save_user_connectors(identity: str, specs: list[SourceSpec]) -> None:
-    """Write user-created connectors to DATA_FORMULATOR_HOME/users/<identity>/connectors.yaml."""
-    from data_formulator.datalake.workspace import get_user_home
-    user_dir = get_user_home(identity)
-    user_dir.mkdir(parents=True, exist_ok=True)
-    path = user_dir / "connectors.yaml"
-
-    entries = []
-    for s in specs:
-        entry: dict[str, Any] = {
-            "id": s.source_id,
-            "type": s.loader_type,
-            "name": s.display_name,
-        }
-        if s.default_params:
-            entry["params"] = s.default_params
-        if s.icon and s.icon != s.loader_type:
-            entry["icon"] = s.icon
-        entries.append(entry)
-
-    try:
-        import yaml
-        with open(path, "w") as f:
-            yaml.safe_dump({"connectors": entries}, f, default_flow_style=False, sort_keys=False)
-        logger.info("Saved %d user connector(s) to %s", len(entries), path)
-    except Exception as e:
-        logger.warning("Failed to write %s: %s", path, e)
-
 
 def _load_admin_specs() -> list[SourceSpec]:
     """Load admin connectors from DATA_FORMULATOR_HOME/connectors.yaml + env vars."""
@@ -1640,28 +1721,30 @@ def _load_admin_specs() -> list[SourceSpec]:
 
 
 def _load_user_specs(identity: str) -> list[SourceSpec]:
-    """Load user connectors from DATA_FORMULATOR_HOME/users/<identity>/connectors.yaml."""
+    """Load user connectors from ``connectors/`` directory."""
     try:
-        from data_formulator.datalake.workspace import get_user_home
-        user_path = get_user_home(identity) / "connectors.yaml"
+        cdir = _connectors_dir(identity)
     except Exception as e:
-        logger.debug("Could not resolve user home for %s", identity[:16], exc_info=e)
+        logger.debug("Could not resolve connectors dir for %s", identity[:16], exc_info=e)
         return []
 
     specs: list[SourceSpec] = []
-    for i, entry in enumerate(_load_connectors_yaml(user_path)):
-        loader_type = entry.get("type", "")
-        if not loader_type:
-            continue
-        sid = entry.get("id") or (f"{loader_type}_{i}" if i > 0 else loader_type)
-        specs.append(SourceSpec(
-            source_id=sid,
-            loader_type=loader_type,
-            display_name=entry.get("name", loader_type.replace("_", " ").title()),
-            default_params=_resolve_env_refs(entry.get("params", {})),
-            icon=entry.get("icon", ""),
-            source="user",
-        ))
+    if cdir.is_dir():
+        for json_file in sorted(cdir.glob("*.json")):
+            try:
+                with open(json_file, "r", encoding="utf-8") as f:
+                    entry = _json.load(f)
+                specs.append(SourceSpec(
+                    source_id=entry["source_id"],
+                    loader_type=entry["loader_type"],
+                    display_name=entry.get("display_name", ""),
+                    default_params=_resolve_env_refs(entry.get("default_params", {})),
+                    icon=entry.get("icon", ""),
+                    source="user",
+                ))
+            except Exception as e:
+                logger.warning("Failed to read connector spec %s: %s", json_file, e)
+
     return specs
 
 

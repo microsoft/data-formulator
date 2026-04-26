@@ -408,7 +408,7 @@ export function buildDictTableFromWorkspace(
         };
     }
 
-    return {
+    const result: DictTable = {
         kind: 'table' as const,
         id: wsTable.name,
         displayId: wsTable.name,
@@ -430,6 +430,10 @@ export function buildDictTableFromWorkspace(
         attachedMetadata: '',
         source: sourceConfig,
     };
+    if (wsTable.description) {
+        result.systemDescription = wsTable.description;
+    }
+    return result;
 }
 
 /**

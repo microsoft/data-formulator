@@ -4,7 +4,7 @@
 """Tests for config-driven data source registration.
 
 Covers:
-- connectors.yaml parsing and source spec generation (admin + user)
+- connectors.yaml parsing and source spec generation (admin)
 - Environment variable parsing (DF_SOURCES__<id>__<key>=<value>)
 - Config priority: env > connectors.yaml
 - Multiple instances of the same loader type
@@ -12,7 +12,7 @@ Covers:
 - register_data_connectors() end-to-end
 - _ensure_connectors_loaded() lazy user hydration
 - Admin connector immutability
-- User connector persistence (save/load/remove)
+- User connector persistence via connectors/ directory
 """
 from __future__ import annotations
 
@@ -34,9 +34,9 @@ from data_formulator.data_connector import (
     _load_admin_specs,
     _load_connectors_yaml,
     _load_user_specs,
+    _persist_user_connector,
     _resolve_connector,
     _resolve_env_refs,
-    _save_user_connectors,
     _user_connector_key,
     _visible_connector_items,
     connectors_bp,
@@ -339,22 +339,21 @@ class TestLoadAdminSpecs:
 class TestUserConnectorPersistence:
 
     def test_save_and_load_user_connectors(self, tmp_path):
+        from data_formulator.data_connector import _persist_user_connector
         user_dir = tmp_path / "users" / "test-user"
 
-        specs = [
-            SourceSpec(
-                source_id="mysql:prod",
-                loader_type="mysql",
-                display_name="MySQL Prod",
-                default_params={"host": "mysql.corp"},
-                source="user",
-            ),
-        ]
+        spec = SourceSpec(
+            source_id="mysql:prod",
+            loader_type="mysql",
+            display_name="MySQL Prod",
+            default_params={"host": "mysql.corp"},
+            source="user",
+        )
 
         with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
-            _save_user_connectors("test-user", specs)
+            _persist_user_connector("test-user", spec)
 
-        assert (user_dir / "connectors.yaml").is_file()
+        assert (user_dir / "connectors" / "mysql--prod.json").is_file()
 
         with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
             loaded = _load_user_specs("test-user")
@@ -381,16 +380,15 @@ class TestLoadConnectors:
     def test_loads_user_connectors_on_first_call(self, tmp_path):
         """User connectors should be lazily loaded on first call with identity."""
         user_dir = tmp_path / "users" / "alice"
-        user_dir.mkdir(parents=True)
-        yaml_content = textwrap.dedent("""\
-            connectors:
-              - type: stub
-                id: user_db
-                name: "Alice DB"
-        """)
-        (user_dir / "connectors.yaml").write_text(yaml_content)
+        spec = SourceSpec(
+            source_id="user_db", loader_type="stub",
+            display_name="Alice DB", source="user",
+        )
 
         mock_loaders = {"stub": _StubLoader}
+
+        with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
+            _persist_user_connector("alice", spec)
 
         with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir), \
              patch("data_formulator.data_loader.DATA_LOADERS", mock_loaders):
@@ -401,14 +399,13 @@ class TestLoadConnectors:
     def test_does_not_overwrite_admin_connectors(self, tmp_path):
         """Admin connector should not be replaced by user connector with same ID."""
         user_dir = tmp_path / "users" / "alice"
-        user_dir.mkdir(parents=True)
-        yaml_content = textwrap.dedent("""\
-            connectors:
-              - type: stub
-                id: shared_db
-                name: "User version"
-        """)
-        (user_dir / "connectors.yaml").write_text(yaml_content)
+        spec = SourceSpec(
+            source_id="shared_db", loader_type="stub",
+            display_name="User version", source="user",
+        )
+
+        with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
+            _persist_user_connector("alice", spec)
 
         admin_connector = DataConnector.from_loader(
             _StubLoader, source_id="shared_db", display_name="Admin version",
@@ -428,7 +425,6 @@ class TestLoadConnectors:
         """Second call with same identity should be a no-op."""
         user_dir = tmp_path / "users" / "alice"
         user_dir.mkdir(parents=True)
-        (user_dir / "connectors.yaml").write_text("connectors: []")
 
         mock_loaders = {"stub": _StubLoader}
         with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir), \
@@ -441,23 +437,22 @@ class TestLoadConnectors:
         """Anonymous and authenticated users may have same public connector ID."""
         browser_dir = tmp_path / "users" / "browser_anon"
         user_dir = tmp_path / "users" / "user_alice"
-        browser_dir.mkdir(parents=True)
-        user_dir.mkdir(parents=True)
-        browser_dir.joinpath("connectors.yaml").write_text(textwrap.dedent("""\
-            connectors:
-              - type: stub
-                id: postgresql:local
-                name: "Anonymous PG"
-        """))
-        user_dir.joinpath("connectors.yaml").write_text(textwrap.dedent("""\
-            connectors:
-              - type: stub
-                id: postgresql:local
-                name: "Alice PG"
-        """))
 
         def user_home(identity: str):
             return browser_dir if identity == "browser:anon" else user_dir
+
+        spec_browser = SourceSpec(
+            source_id="postgresql:local", loader_type="stub",
+            display_name="Anonymous PG", source="user",
+        )
+        spec_user = SourceSpec(
+            source_id="postgresql:local", loader_type="stub",
+            display_name="Alice PG", source="user",
+        )
+
+        with patch("data_formulator.datalake.workspace.get_user_home", side_effect=user_home):
+            _persist_user_connector("browser:anon", spec_browser)
+            _persist_user_connector("user:alice", spec_user)
 
         mock_loaders = {"stub": _StubLoader}
         with patch("data_formulator.datalake.workspace.get_user_home", side_effect=user_home), \
@@ -509,8 +504,15 @@ class TestLoadConnectors:
         connector_id = resp.get_json()["id"]
         assert _user_connector_key("user:alice", connector_id) in DATA_CONNECTORS
 
-        entries = _load_connectors_yaml(user_dir / "connectors.yaml")
-        assert entries[0]["params"] == {
+        # Connector spec is persisted as individual JSON in connectors/ dir
+        import json as _json
+        cdir = user_dir / "connectors"
+        assert cdir.is_dir()
+        json_files = list(cdir.glob("*.json"))
+        assert len(json_files) == 1
+        with open(json_files[0], "r", encoding="utf-8") as f:
+            entry = _json.load(f)
+        assert entry["default_params"] == {
             "host": "db.local",
             "database": "analytics",
         }

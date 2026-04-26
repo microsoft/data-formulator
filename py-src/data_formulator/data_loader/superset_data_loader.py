@@ -164,9 +164,13 @@ class SupersetLoader(ExternalDataLoader):
         ]
 
     def __init__(self, params: dict[str, Any]):
+        import os
         self.params = params
 
-        self.url = (params.get("url") or "").rstrip("/")
+        self.url = (
+            params.get("url")
+            or os.environ.get("PLG_SUPERSET_URL", "")
+        ).strip().rstrip("/")
         if self.url and not self.url.startswith(("http://", "https://")):
             self.url = f"http://{self.url}"
         self.username = params.get("username", "")
@@ -587,22 +591,32 @@ class SupersetLoader(ExternalDataLoader):
         token = self._ensure_token()
         try:
             detail = self._client.get_dataset_detail(token, dataset_id)
-            columns = [
-                {
+            columns = []
+            for c in (detail.get("columns") or []):
+                entry: dict[str, Any] = {
                     "name": c.get("column_name", ""),
                     "type": c.get("type", ""),
                     "is_dttm": bool(c.get("is_dttm")),
                 }
-                for c in (detail.get("columns") or [])
-            ]
-            return {
+                col_desc = (
+                    c.get("verbose_name")
+                    or c.get("description")
+                    or ""
+                ).strip()
+                if col_desc:
+                    entry["description"] = col_desc
+                columns.append(entry)
+            result: dict[str, Any] = {
                 "dataset_id": dataset_id,
                 "row_count": detail.get("row_count"),
                 "columns": columns,
                 "schema": detail.get("schema", ""),
                 "database": (detail.get("database") or {}).get("database_name", ""),
-                "description": detail.get("description", ""),
             }
+            dataset_desc = (detail.get("description") or "").strip()
+            if dataset_desc:
+                result["description"] = dataset_desc
+            return result
         except Exception as e:
             logger.warning("get_metadata failed for dataset %s: %s", dataset_id, e)
             return {}
@@ -611,7 +625,8 @@ class SupersetLoader(ExternalDataLoader):
         """Return source-level column types from Superset dataset detail.
 
         Includes ``is_dttm`` flag which reliably identifies temporal columns
-        regardless of the raw type string.
+        regardless of the raw type string, and ``description`` from the
+        column's ``verbose_name`` or ``description`` field when available.
         """
         try:
             dataset_id = int(source_table)
@@ -623,12 +638,24 @@ class SupersetLoader(ExternalDataLoader):
             columns = []
             for c in (detail.get("columns") or []):
                 col_type = self._normalize_column_type(c)
-                columns.append({
+                entry: dict[str, Any] = {
                     "name": c.get("column_name", ""),
                     "type": col_type,
                     "is_dttm": bool(c.get("is_dttm")),
-                })
-            return {"columns": columns}
+                }
+                col_desc = (
+                    c.get("verbose_name")
+                    or c.get("description")
+                    or ""
+                ).strip()
+                if col_desc:
+                    entry["description"] = col_desc
+                columns.append(entry)
+            result: dict[str, Any] = {"columns": columns}
+            dataset_desc = (detail.get("description") or "").strip()
+            if dataset_desc:
+                result["description"] = dataset_desc
+            return result
         except Exception as e:
             logger.warning("get_column_types failed for dataset %s: %s", source_table, e)
             return {}

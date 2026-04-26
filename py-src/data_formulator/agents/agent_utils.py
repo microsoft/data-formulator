@@ -266,8 +266,7 @@ def supplement_missing_block(client, messages, assistant_content,
     return parsed_json, code_blocks, None, 0.0
 
 
-def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
-    # Convert lists to strings to make them hashable
+def get_field_summary(field_name, df, field_sample_size, max_val_chars=100, column_description=None):
     def make_hashable(val):
         if val is None:
             return None
@@ -302,7 +301,10 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
 
     val_str = ', '.join([sample_val_cap(str(s)) for s in val_sample])
 
-    return f"{field_name} -- type: {df[field_name].dtype}, values: {val_str}"
+    line = f"{field_name} -- type: {df[field_name].dtype}, values: {val_str}"
+    if column_description:
+        line += f"  ({column_description})"
+    return line
 
 def generate_data_summary(
     input_tables,
@@ -338,9 +340,32 @@ def generate_data_summary(
     Returns:
         Formatted string summary of all tables
     """
+    # Build column description lookup from workspace metadata
+    col_desc_cache: dict[str, dict[str, str]] = {}
+    table_desc_cache: dict[str, str] = {}
+    try:
+        ws_meta = workspace.get_metadata()
+        if ws_meta:
+            for tname, tmeta in ws_meta.tables.items():
+                if tmeta.description:
+                    table_desc_cache[tname] = tmeta.description
+                if tmeta.columns:
+                    cd = {}
+                    for col in tmeta.columns:
+                        if col.description:
+                            cd[col.name] = col.description
+                    if cd:
+                        col_desc_cache[tname] = cd
+    except Exception:
+        pass
+
     def assemble_table_summary(table, idx):
         table_name = table['name']
         description = table.get("attached_metadata", "")
+
+        # Fall back to source system description from workspace metadata
+        if not description:
+            description = table_desc_cache.get(table_name, "")
 
         try:
             df = workspace.read_data_as_df(table_name)
@@ -370,8 +395,10 @@ def generate_data_summary(
         if description:
             sections.append(f"### Description\n{description}\n")
 
+        col_descs = col_desc_cache.get(table_name, {})
         fields_summary = '\n'.join([
-            '  - ' + get_field_summary(fname, df, field_sample_size, max_val_chars)
+            '  - ' + get_field_summary(fname, df, field_sample_size, max_val_chars,
+                                       column_description=col_descs.get(fname))
             for fname in df.columns
         ])
         sections.append(f"### Schema ({num_cols} fields)\n{fields_summary}\n")

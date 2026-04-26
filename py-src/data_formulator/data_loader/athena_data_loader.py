@@ -395,34 +395,40 @@ Enter `aws_access_key_id` and `aws_secret_access_key` directly. Add `aws_session
                         table_name = table['Name']
                         full_table_name = f"{db_name}.{table_name}"
 
-                        # Apply filter if provided
                         if table_filter and table_filter.lower() not in full_table_name.lower():
                             continue
 
-                        # Get column information
                         columns = []
-                        for col in table.get('Columns', [])[:20]:  # Limit columns
-                            columns.append({
+                        for col in table.get('Columns', [])[:20]:
+                            col_entry: dict[str, Any] = {
                                 'name': col['Name'],
-                                'type': col.get('Type', 'unknown')
-                            })
+                                'type': col.get('Type', 'unknown'),
+                            }
+                            col_comment = (col.get('Comment') or '').strip()
+                            if col_comment:
+                                col_entry['description'] = col_comment
+                            columns.append(col_entry)
 
-                        # Add partition columns
                         for col in table.get('PartitionKeys', []):
-                            columns.append({
+                            col_entry = {
                                 'name': col['Name'],
-                                'type': col.get('Type', 'unknown') + ' (partition)'
-                            })
+                                'type': col.get('Type', 'unknown') + ' (partition)',
+                            }
+                            col_comment = (col.get('Comment') or '').strip()
+                            if col_comment:
+                                col_entry['description'] = col_comment
+                            columns.append(col_entry)
+
+                        metadata: dict[str, Any] = {"columns": columns}
+                        table_params = table.get('Parameters', {})
+                        table_comment = (table_params.get('comment') or '').strip()
+                        if table_comment:
+                            metadata["description"] = table_comment
 
                         results.append({
                             "name": full_table_name,
                             "path": [db_name, table_name],
-                            "metadata": {
-                                "row_count": 0,  # Athena doesn't provide row counts directly
-                                "columns": columns,
-                                "sample_rows": [],  # Would require query execution
-                                "table_type": table.get('TableType', 'EXTERNAL_TABLE')
-                            }
+                            "metadata": metadata,
                         })
 
                         if len(results) >= 100:
@@ -510,10 +516,25 @@ Enter `aws_access_key_id` and `aws_secret_access_key` directly. Add `aws_session
                 CatalogName="AwsDataCatalog", DatabaseName=db_name, TableName=table_name,
             )
             t = resp.get("TableMetadata", {})
-            columns = [{"name": c["Name"], "type": c.get("Type", "unknown")} for c in t.get("Columns", [])]
+            columns = []
+            for c in t.get("Columns", []):
+                entry: dict[str, Any] = {"name": c["Name"], "type": c.get("Type", "unknown")}
+                col_comment = (c.get("Comment") or "").strip()
+                if col_comment:
+                    entry["description"] = col_comment
+                columns.append(entry)
             for c in t.get("PartitionKeys", []):
-                columns.append({"name": c["Name"], "type": c.get("Type", "unknown") + " (partition)"})
-            return {"row_count": 0, "columns": columns, "sample_rows": []}
+                entry = {"name": c["Name"], "type": c.get("Type", "unknown") + " (partition)"}
+                col_comment = (c.get("Comment") or "").strip()
+                if col_comment:
+                    entry["description"] = col_comment
+                columns.append(entry)
+            result: dict[str, Any] = {"row_count": 0, "columns": columns, "sample_rows": []}
+            table_params = t.get("Parameters", {})
+            table_comment = (table_params.get("comment") or "").strip()
+            if table_comment:
+                result["description"] = table_comment
+            return result
         except Exception as e:
             log.warning(f"get_metadata failed for {path}: {e}")
             return {}

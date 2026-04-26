@@ -101,15 +101,15 @@ export const handleDBDownload = async (identityId: string) => {
 
 interface DBTable {
     name: string;
+    description?: string;
     columns: {
         name: string;
         type: string;
+        description?: string;
     }[];
     row_count: number;
     sample_rows: any[];
     view_source: string | null;
-    // Source metadata for refreshable tables (from data loaders)
-    // Backend stores connection info; frontend manages refresh timing
     source_metadata?: {
         table_name: string;
         data_loader_type: string;
@@ -1395,7 +1395,8 @@ export const DataLoaderForm: React.FC<{
                                         sourceTable={ref}
                                         displayName={displayName}
                                         pathBreadcrumb={selectedTreeNode && selectedTreeNode.path.length > 1 ? selectedTreeNode.path.slice(0, -1).join(' / ') : undefined}
-                                        columns={(metadata.columns || []).map((c: any) => ({ name: c.name, type: c.type || 'unknown', source_type: c.source_type }))}
+                                        tableDescription={metadata?.description}
+                                        columns={(metadata.columns || []).map((c: any) => ({ name: c.name, type: c.type || 'unknown', source_type: c.source_type, description: c.description }))}
                                         sampleRows={previewTable.rows}
                                         rowCount={metadata?.row_count ?? null}
                                         loading={false}

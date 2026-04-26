@@ -95,28 +95,31 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Lea
                         # Get basic table info without full schema for performance
                         try:
                             table_ref = self.client.get_table(table.reference)
-                            columns = [{"name": field.name, "type": field.field_type} for field in table_ref.schema[:10]]  # Limit columns shown
-                            
+                            columns = []
+                            for f in table_ref.schema:
+                                col: dict[str, Any] = {"name": f.name, "type": f.field_type}
+                                if f.description:
+                                    col["description"] = f.description
+                                columns.append(col)
+
+                            metadata: dict[str, Any] = {
+                                "row_count": table_ref.num_rows or 0,
+                                "columns": columns,
+                            }
+                            if table_ref.description:
+                                metadata["description"] = table_ref.description
+
                             results.append({
                                 "name": full_table_name,
                                 "path": [dataset_id, table.table_id],
-                                "metadata": {
-                                    "row_count": table_ref.num_rows or 0,
-                                    "columns": columns,
-                                    "sample_rows": []  # Empty for performance, can be populated later
-                                }
+                                "metadata": metadata,
                             })
                         except Exception as e:
                             log.warning(f"Error getting schema for table {full_table_name}: {e}")
-                            # Add table without detailed schema
                             results.append({
                                 "name": full_table_name,
                                 "path": [dataset_id, table.table_id],
-                                "metadata": {
-                                    "row_count": 0,
-                                    "columns": [],
-                                    "sample_rows": []
-                                }
+                                "metadata": {"columns": []},
                             })
                         
                         # Limit total results for performance
@@ -283,8 +286,20 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Lea
         full_table = f"{self.project_id}.{dataset}.{table_name}"
         try:
             table_ref = self.client.get_table(full_table)
-            columns = [{"name": f.name, "type": f.field_type} for f in table_ref.schema]
-            return {"row_count": table_ref.num_rows or 0, "columns": columns, "sample_rows": []}
+            columns = []
+            for f in table_ref.schema:
+                col: dict[str, Any] = {"name": f.name, "type": f.field_type}
+                if f.description:
+                    col["description"] = f.description
+                columns.append(col)
+            result: dict[str, Any] = {
+                "row_count": table_ref.num_rows or 0,
+                "columns": columns,
+                "sample_rows": [],
+            }
+            if table_ref.description:
+                result["description"] = table_ref.description
+            return result
         except Exception as e:
             log.warning(f"get_metadata failed for {path}: {e}")
             return {}

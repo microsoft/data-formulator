@@ -261,154 +261,102 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         return arrow_table
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List all tables from SQL Server database."""
+        """List all tables from SQL Server database.
+
+        Only queries INFORMATION_SCHEMA in batch; does NOT run per-table
+        SELECT TOP or COUNT(*) to keep catalog browsing fast.
+        """
         try:
             tables_query = """
-                SELECT 
-                    TABLE_SCHEMA, 
-                    TABLE_NAME,
-                    TABLE_TYPE
+                SELECT TABLE_SCHEMA, TABLE_NAME
                 FROM INFORMATION_SCHEMA.TABLES 
                 WHERE TABLE_TYPE = 'BASE TABLE' 
                 AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             """
-
             tables_df = self._execute_query(tables_query).to_pandas()
-            results = []
 
+            columns_query = """
+                SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+                ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
+            """
+            cols_df = self._execute_query(columns_query).to_pandas()
+
+            col_map: dict[str, list[dict]] = {}
+            for _, cr in cols_df.iterrows():
+                key = f"{cr['TABLE_SCHEMA']}.{cr['TABLE_NAME']}"
+                col_map.setdefault(key, []).append({
+                    "name": cr["COLUMN_NAME"],
+                    "type": cr["DATA_TYPE"],
+                })
+
+            # Batch-fetch MS_Description for tables and columns
+            table_desc_map: dict[str, str] = {}
+            col_desc_map: dict[str, str] = {}
+            try:
+                table_desc_query = """
+                    SELECT s.name AS schema_name, t.name AS table_name,
+                           CAST(ep.value AS NVARCHAR(4000)) AS description
+                    FROM sys.tables t
+                    JOIN sys.schemas s ON t.schema_id = s.schema_id
+                    JOIN sys.extended_properties ep
+                      ON ep.major_id = t.object_id AND ep.minor_id = 0
+                         AND ep.name = 'MS_Description'
+                """
+                td_df = self._execute_query(table_desc_query).to_pandas()
+                for _, r in td_df.iterrows():
+                    desc = str(r["description"]).strip() if r["description"] else ""
+                    if desc:
+                        table_desc_map[f"{r['schema_name']}.{r['table_name']}"] = desc
+            except Exception:
+                pass
+
+            try:
+                col_desc_query = """
+                    SELECT s.name AS schema_name, t.name AS table_name,
+                           c.name AS column_name,
+                           CAST(ep.value AS NVARCHAR(4000)) AS description
+                    FROM sys.columns c
+                    JOIN sys.tables t ON c.object_id = t.object_id
+                    JOIN sys.schemas s ON t.schema_id = s.schema_id
+                    JOIN sys.extended_properties ep
+                      ON ep.major_id = c.object_id AND ep.minor_id = c.column_id
+                         AND ep.name = 'MS_Description'
+                """
+                cd_df = self._execute_query(col_desc_query).to_pandas()
+                for _, r in cd_df.iterrows():
+                    desc = str(r["description"]).strip() if r["description"] else ""
+                    if desc:
+                        col_desc_map[f"{r['schema_name']}.{r['table_name']}.{r['column_name']}"] = desc
+            except Exception:
+                pass
+
+            results = []
             for _, row in tables_df.iterrows():
                 schema = row["TABLE_SCHEMA"]
                 table_name = row["TABLE_NAME"]
-                table_type = row.get("TABLE_TYPE", "BASE TABLE")
                 full_table_name = f"{schema}.{table_name}"
 
                 if table_filter and table_filter.lower() not in full_table_name.lower():
                     continue
 
-                try:
-                    # Get column information
-                    columns_query = f"""
-                        SELECT 
-                            COLUMN_NAME, 
-                            DATA_TYPE, 
-                            IS_NULLABLE, 
-                            COLUMN_DEFAULT,
-                            CHARACTER_MAXIMUM_LENGTH,
-                            NUMERIC_PRECISION,
-                            NUMERIC_SCALE
-                        FROM INFORMATION_SCHEMA.COLUMNS 
-                        WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table_name}'
-                        ORDER BY ORDINAL_POSITION
-                    """
-                    columns_df = self._execute_query(columns_query).to_pandas()
+                columns = col_map.get(full_table_name, [])
+                for col_entry in columns:
+                    cd_key = f"{full_table_name}.{col_entry['name']}"
+                    if cd_key in col_desc_map:
+                        col_entry["description"] = col_desc_map[cd_key]
 
-                    columns = []
-                    for _, col_row in columns_df.iterrows():
-                        col_info = {
-                            "name": col_row["COLUMN_NAME"],
-                            "type": col_row["DATA_TYPE"],
-                            "nullable": col_row["IS_NULLABLE"] == "YES",
-                            "default": col_row["COLUMN_DEFAULT"],
-                        }
+                metadata: dict[str, Any] = {"columns": columns}
+                if full_table_name in table_desc_map:
+                    metadata["description"] = table_desc_map[full_table_name]
 
-                        # Add length/precision info for relevant types with NaN handling
-                        if (
-                            col_row["CHARACTER_MAXIMUM_LENGTH"] is not None
-                            and not _is_nan(col_row["CHARACTER_MAXIMUM_LENGTH"])
-                        ):
-                            try:
-                                col_info["max_length"] = int(col_row["CHARACTER_MAXIMUM_LENGTH"])
-                            except (ValueError, TypeError):
-                                pass  # Skip if conversion fails
-
-                        if (
-                            col_row["NUMERIC_PRECISION"] is not None
-                            and not _is_nan(col_row["NUMERIC_PRECISION"])
-                        ):
-                            try:
-                                col_info["precision"] = int(col_row["NUMERIC_PRECISION"])
-                            except (ValueError, TypeError):
-                                pass  # Skip if conversion fails
-
-                        if (
-                            col_row["NUMERIC_SCALE"] is not None
-                            and not _is_nan(col_row["NUMERIC_SCALE"])
-                        ):
-                            try:
-                                col_info["scale"] = int(col_row["NUMERIC_SCALE"])
-                            except (ValueError, TypeError):
-                                pass  # Skip if conversion fails
-
-                        columns.append(col_info)
-
-                    # Build safe column list (casts unsupported types to NVARCHAR)
-                    col_list = self._safe_select_list(schema, table_name)
-
-                    # Get sample data (first 10 rows)
-                    sample_rows = []
-                    sample_query = f"SELECT TOP 10 {col_list} FROM [{schema}].[{table_name}]"
-                    try:
-                        sample_table = self._execute_query(sample_query)
-                        sample_rows = sample_table.to_pydict()
-                        # Convert to list-of-dicts format
-                        if sample_table.num_rows > 0:
-                            cols = sample_table.column_names
-                            sample_rows = [
-                                {c: str(sample_table.column(c)[i].as_py()) if sample_table.column(c)[i].as_py() is not None else None for c in cols}
-                                for i in range(sample_table.num_rows)
-                            ]
-                        else:
-                            sample_rows = []
-                    except Exception as e:
-                        log.warning(
-                            f"Failed to sample table {schema}.{table_name}: {e}"
-                        )
-
-                    # Get row count
-                    count_query = f"SELECT COUNT(*) as row_count FROM [{schema}].[{table_name}]"
-                    count_table = self._execute_query(count_query)
-
-                    # Handle NaN values in row count
-                    raw_count = count_table.column("row_count")[0].as_py()
-                    if _is_nan(raw_count):
-                        row_count = 0
-                        log.warning(
-                            f"Row count for table {schema}.{table_name} returned NaN, using 0"
-                        )
-                    else:
-                        try:
-                            row_count = int(raw_count)
-                        except (ValueError, TypeError):
-                            row_count = 0
-                            log.warning(
-                                f"Could not convert row count '{raw_count}' to integer for table {schema}.{table_name}, using 0"
-                            )
-
-                    table_metadata = {
-                        "row_count": row_count,
-                        "columns": columns,
-                        "sample_rows": sample_rows,
-                        "table_type": table_type,
-                    }
-
-                    results.append({"name": full_table_name, "path": [schema, table_name], "metadata": table_metadata})
-
-                except Exception as e:
-                    log.warning(f"Failed to get metadata for table {full_table_name}: {e}")
-                    # Add table without detailed metadata
-                    results.append(
-                        {
-                            "name": full_table_name,
-                            "path": [schema, table_name],
-                            "metadata": {
-                                "row_count": 0,
-                                "columns": [],
-                                "sample_rows": [],
-                                "table_type": table_type,
-                            },
-                        }
-                    )
+                results.append({
+                    "name": full_table_name,
+                    "path": [schema, table_name],
+                    "metadata": metadata,
+                })
 
         except Exception as e:
             log.error(f"Failed to list tables from SQL Server: {e}")
@@ -526,6 +474,45 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
                 ORDER BY ORDINAL_POSITION
             """).to_pandas()
             columns = [{"name": r["COLUMN_NAME"], "type": r["DATA_TYPE"]} for _, r in cols_df.iterrows()]
+
+            # Column descriptions from MS_Description
+            try:
+                cd_df = self._execute_query(f"""
+                    SELECT c.name AS column_name,
+                           CAST(ep.value AS NVARCHAR(4000)) AS description
+                    FROM [{db}].sys.columns c
+                    JOIN [{db}].sys.tables t ON c.object_id = t.object_id
+                    JOIN [{db}].sys.schemas s ON t.schema_id = s.schema_id
+                    JOIN [{db}].sys.extended_properties ep
+                      ON ep.major_id = c.object_id AND ep.minor_id = c.column_id
+                         AND ep.name = 'MS_Description'
+                    WHERE s.name = '{schema}' AND t.name = '{table_name}'
+                """).to_pandas()
+                col_descs = {r["column_name"]: str(r["description"]).strip()
+                             for _, r in cd_df.iterrows() if r["description"]}
+                for col_entry in columns:
+                    if col_entry["name"] in col_descs:
+                        col_entry["description"] = col_descs[col_entry["name"]]
+            except Exception:
+                pass
+
+            # Table description
+            table_description = None
+            try:
+                td_df = self._execute_query(f"""
+                    SELECT CAST(ep.value AS NVARCHAR(4000)) AS description
+                    FROM [{db}].sys.tables t
+                    JOIN [{db}].sys.schemas s ON t.schema_id = s.schema_id
+                    JOIN [{db}].sys.extended_properties ep
+                      ON ep.major_id = t.object_id AND ep.minor_id = 0
+                         AND ep.name = 'MS_Description'
+                    WHERE s.name = '{schema}' AND t.name = '{table_name}'
+                """).to_pandas()
+                if not td_df.empty and td_df["description"].iloc[0]:
+                    table_description = str(td_df["description"].iloc[0]).strip() or None
+            except Exception:
+                pass
+
             count_df = self._execute_query(
                 f"SELECT COUNT(*) AS cnt FROM [{db}].[{schema}].[{table_name}]"
             ).to_pandas()
@@ -535,7 +522,10 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
                 f"SELECT TOP 5 {col_list} FROM [{db}].[{schema}].[{table_name}]"
             ).to_pandas()
             sample_rows = json.loads(sample_df.fillna(value=None).to_json(orient="records", date_format="iso", default_handler=str))
-            return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+            result: dict[str, Any] = {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+            if table_description:
+                result["description"] = table_description
+            return result
         except Exception as e:
             log.warning(f"get_metadata failed for {path}: {e}")
             return {}

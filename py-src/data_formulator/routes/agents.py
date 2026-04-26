@@ -1138,6 +1138,7 @@ def scratch_upload():
     """
     import hashlib
     from werkzeug.utils import secure_filename as _werkzeug_secure_filename
+    from data_formulator.security.path_safety import ConfinedDir
 
     if 'file' not in request.files:
         return jsonify(status="error", message="No file in request")
@@ -1148,17 +1149,18 @@ def scratch_upload():
 
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
-    scratch_dir = workspace._path / "scratch"
-    scratch_dir.mkdir(exist_ok=True)
+    scratch_jail = ConfinedDir(workspace._path / "scratch")
 
-    # Create safe filename with hash prefix
     raw = file.read()
     file_hash = hashlib.sha256(raw).hexdigest()[:8]
     safe_name = _werkzeug_secure_filename(file.filename)
     base, ext = os.path.splitext(safe_name)
     final_name = f"{base}_{file_hash}{ext}"
 
-    dest = scratch_dir / final_name
+    try:
+        dest = scratch_jail.resolve(final_name)
+    except ValueError:
+        return jsonify(status="error", message="Invalid filename")
     dest.write_bytes(raw)
 
     return jsonify(
@@ -1172,15 +1174,14 @@ def scratch_upload():
 def scratch_serve(filename):
     """Serve a file from the workspace scratch/ folder."""
     from flask import send_file
+    from data_formulator.security.path_safety import ConfinedDir
 
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
-    scratch_dir = workspace._path / "scratch"
+    scratch_jail = ConfinedDir(workspace._path / "scratch", mkdir=False)
 
-    # Security: confine to scratch dir
-    target = (scratch_dir / filename).resolve()
     try:
-        target.relative_to(scratch_dir.resolve())
+        target = scratch_jail.resolve(filename)
     except ValueError:
         return jsonify(status="error", message="Access denied")
 

@@ -22,6 +22,7 @@ import openai
 import pandas as pd
 
 from data_formulator.agents.agent_data_clean_stream import parse_table_sections
+from data_formulator.security.path_safety import ConfinedDir
 
 logger = logging.getLogger(__name__)
 
@@ -414,33 +415,29 @@ class DataLoadingAgent:
 
     def _execute_tool(self, name, args):
         """Execute a tool and return result dict."""
-        workspace_path = self.workspace._path.resolve()
-        scratch_dir = workspace_path / "scratch"
-        scratch_dir.mkdir(exist_ok=True)
+        workspace_jail = ConfinedDir(self.workspace._path, mkdir=False)
+        scratch_jail = ConfinedDir(self.workspace._path / "scratch")
 
         if name == "read_file":
-            return self._tool_read_file(args, workspace_path)
+            return self._tool_read_file(args, workspace_jail)
         elif name == "write_file":
-            return self._tool_write_file(args, scratch_dir)
+            return self._tool_write_file(args, scratch_jail)
         elif name == "list_directory":
-            return self._tool_list_directory(args, workspace_path)
+            return self._tool_list_directory(args, workspace_jail)
         elif name == "execute_python":
             return self._tool_execute_python(args)
         elif name == "list_sample_datasets":
             return self._tool_list_sample_datasets()
         elif name == "show_user_data_preview":
-            return self._tool_show_user_data_preview(args, scratch_dir)
+            return self._tool_show_user_data_preview(args, scratch_jail)
         else:
             return {"error": f"Unknown tool: {name}"}
 
-    def _tool_read_file(self, args, workspace_path):
+    def _tool_read_file(self, args, workspace_jail):
         """Read a file from workspace, confined to workspace directory."""
         rel_path = args.get("path", "")
-        target = (workspace_path / rel_path).resolve()
-
-        # Security: confine to workspace (workspace_path already resolved by _execute_tool)
         try:
-            target.relative_to(workspace_path)
+            target = workspace_jail.resolve(rel_path)
         except ValueError:
             return {"error": "Access denied: path outside workspace"}
 
@@ -457,17 +454,19 @@ class DataLoadingAgent:
                 content = "\n".join(lines[:max_lines])
                 if len(lines) > max_lines:
                     content += f"\n... ({len(lines) - max_lines} more lines)"
-            # Limit response size to prevent oversized LLM context
             if len(content) > 50000:
                 content = content[:50000] + "\n... (truncated)"
             return {"content": content}
         except Exception as e:
             return {"error": f"Failed to read file: {e}"}
 
-    def _tool_write_file(self, args, scratch_dir):
+    def _tool_write_file(self, args, scratch_jail):
         """Write a file to scratch directory."""
         filename = _secure_filename(args.get("path", "output.txt"))
-        target = scratch_dir / filename
+        try:
+            target = scratch_jail.resolve(filename)
+        except ValueError:
+            return {"error": "Access denied: invalid filename"}
         content = args.get("content", "")
 
         try:
@@ -476,14 +475,11 @@ class DataLoadingAgent:
         except Exception as e:
             return {"error": f"Failed to write file: {e}"}
 
-    def _tool_list_directory(self, args, workspace_path):
+    def _tool_list_directory(self, args, workspace_jail):
         """List files in a workspace directory."""
         rel_path = args.get("path") or ""
-        target = (workspace_path / rel_path).resolve()
-
-        # Security: confine to workspace (workspace_path already resolved by _execute_tool)
         try:
-            target.relative_to(workspace_path)
+            target = workspace_jail.resolve(rel_path) if rel_path else workspace_jail.root
         except ValueError:
             return {"error": "Access denied: path outside workspace"}
 
@@ -575,7 +571,7 @@ class DataLoadingAgent:
             logger.error("execute_python failed", exc_info=e)
             return {"stdout": "", "error": "Code execution failed"}
 
-    def _tool_show_user_data_preview(self, args, scratch_dir):
+    def _tool_show_user_data_preview(self, args, scratch_jail):
         """Unified data preview with 3 modes."""
         dataset_name = args.get("dataset_name")
         saved_dfs = args.get("saved_dfs")
@@ -584,20 +580,23 @@ class DataLoadingAgent:
         if dataset_name:
             return self._preview_sample_dataset(dataset_name)
         elif saved_dfs:
-            return self._preview_saved_dfs(saved_dfs, scratch_dir)
+            return self._preview_saved_dfs(saved_dfs, scratch_jail)
         elif tables:
-            return self._preview_inline_tables(tables, scratch_dir)
+            return self._preview_inline_tables(tables, scratch_jail)
         else:
             return {"error": "Provide one of: dataset_name, saved_dfs, or tables."}
 
-    def _preview_saved_dfs(self, df_names, scratch_dir):
+    def _preview_saved_dfs(self, df_names, scratch_jail):
         """Preview DataFrames auto-saved by execute_python."""
-        workspace_path = self.workspace._path
         actions = []
 
         for name in df_names:
             safe_name = _secure_filename(name)
-            csv_path = workspace_path / "scratch" / f"{safe_name}.csv"
+            try:
+                csv_path = scratch_jail.resolve(f"{safe_name}.csv")
+            except ValueError:
+                actions.append({"type": "preview_table", "name": name, "error": "Access denied: invalid name"})
+                continue
 
             if not csv_path.exists():
                 actions.append({"type": "preview_table", "name": name,
@@ -620,7 +619,7 @@ class DataLoadingAgent:
 
         return {"actions": actions}
 
-    def _preview_inline_tables(self, tables, scratch_dir):
+    def _preview_inline_tables(self, tables, scratch_jail):
         """Preview inline CSV tables (from text/image extraction)."""
         actions = []
 
@@ -630,7 +629,7 @@ class DataLoadingAgent:
 
             try:
                 df = pd.read_csv(io.StringIO(csv_data))
-                csv_path = scratch_dir / f"{name}.csv"
+                csv_path = scratch_jail.resolve(f"{name}.csv")
                 df.to_csv(csv_path, index=False)
 
                 actions.append({
@@ -649,17 +648,15 @@ class DataLoadingAgent:
 
     def _preview_scratch_files(self, scratch_files, scratch_dir):
         """Read scratch CSV files and build preview actions."""
-        workspace_path = self.workspace._path.resolve()
+        workspace_jail = ConfinedDir(self.workspace._path, mkdir=False)
         actions = []
 
         for spec in scratch_files:
             file_path = spec.get("path", "")
             table_name = _secure_filename(spec.get("name", "table"))
 
-            target = (workspace_path / file_path).resolve()
-            # Security: confine to workspace (workspace_path already resolved above)
             try:
-                target.relative_to(workspace_path)
+                target = workspace_jail.resolve(file_path)
             except ValueError:
                 actions.append({"type": "preview_table", "name": table_name, "error": "Path outside workspace"})
                 continue

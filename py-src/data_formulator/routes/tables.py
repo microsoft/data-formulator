@@ -193,7 +193,12 @@ def list_tables():
                 meta = workspace.get_table_metadata(table_name)
                 if meta is None:
                     continue
-                columns = [{"name": c.name, "type": c.dtype} for c in (meta.columns or [])]
+                columns = []
+                for c in (meta.columns or []):
+                    col_entry: dict = {"name": c.name, "type": c.dtype}
+                    if c.description is not None:
+                        col_entry["description"] = c.description
+                    columns.append(col_entry)
                 if not columns and meta.file_type == "parquet":
                     try:
                         schema_info = workspace.get_parquet_schema(table_name)
@@ -234,7 +239,7 @@ def list_tables():
                     except Exception as e:
                         logger.warning("Could not read sample rows for %s", table_name, exc_info=e)
                 source_metadata = _table_metadata_to_source_metadata(meta)
-                result.append({
+                table_entry: dict = {
                     "name": table_name,
                     "columns": columns,
                     "row_count": row_count,
@@ -244,7 +249,10 @@ def list_tables():
                     "source_type": meta.source_type,
                     "source_filename": meta.filename,
                     "original_name": meta.original_name,
-                })
+                }
+                if meta.description is not None:
+                    table_entry["description"] = meta.description
+                result.append(table_entry)
             except Exception as e:
                 logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
                 continue
