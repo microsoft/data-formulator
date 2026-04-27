@@ -14,7 +14,7 @@ from flask import Blueprint, jsonify, request
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import get_user_home
 from data_formulator.errors import AppError, ErrorCode
-from data_formulator.knowledge.store import KnowledgeStore, VALID_CATEGORIES
+from data_formulator.knowledge.store import KnowledgeStore, VALID_CATEGORIES, KNOWLEDGE_LIMITS
 knowledge_bp = Blueprint("knowledge", __name__, url_prefix="/api/knowledge")
 
 
@@ -52,6 +52,15 @@ def _require_context_list(context: dict, field: str) -> list:
             f"'experience_context.{field}' must be a list",
         )
     return value
+
+
+# ── limits ─────────────────────────────────────────────────────────────────
+
+
+@knowledge_bp.route("/limits", methods=["POST"])
+def knowledge_limits():
+    """Return body-length and description limits so the frontend stays in sync."""
+    return jsonify({"status": "ok", "limits": KNOWLEDGE_LIMITS})
 
 
 # ── list ──────────────────────────────────────────────────────────────────

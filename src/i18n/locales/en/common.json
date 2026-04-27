@@ -765,6 +765,12 @@
     "collapse": "Collapse",
     "expand": "Expand",
     "emptyState": "Add rules, skills, or experiences to help AI agents work better.",
-    "markdownEditor": "Markdown Editor"
+    "markdownEditor": "Markdown Editor",
+    "description": "Description",
+    "descriptionPlaceholder": "Short summary of this rule (max {{max}} chars)",
+    "alwaysApply": "Always apply",
+    "alwaysApplyHint": "When enabled, this rule is always injected into the agent prompt",
+    "charCount": "{{current}} / {{max}}",
+    "charCountExceeded": "Exceeds {{max}} character limit ({{current}} / {{max}})"
   }
 }

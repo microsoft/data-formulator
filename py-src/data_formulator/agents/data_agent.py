@@ -1613,7 +1613,11 @@ class DataAgent:
     # ------------------------------------------------------------------
 
     def _load_knowledge_rules(self) -> list[dict[str, str]]:
-        """Load all rules from KnowledgeStore for system prompt injection.
+        """Load ``alwaysApply`` rules from KnowledgeStore for system prompt injection.
+
+        Only rules whose front-matter ``alwaysApply`` is true (the default)
+        are returned here.  Non-alwaysApply rules are picked up via
+        :meth:`_search_relevant_knowledge` instead.
 
         Returns a list of ``{"title": ..., "body": ...}`` dicts.
         Returns empty list on failure (graceful degradation).
@@ -1625,6 +1629,8 @@ class DataAgent:
             items = self._knowledge_store.list_all("rules")
             result = []
             for item in items:
+                if not item.get("alwaysApply", True):
+                    continue
                 try:
                     content = self._knowledge_store.read("rules", item["path"])
                     _, body = parse_front_matter(content)
@@ -1645,7 +1651,7 @@ class DataAgent:
         table_names: list[str],
         max_items: int = 5,
     ) -> list[dict[str, Any]]:
-        """Search skills and experiences relevant to the current session.
+        """Search skills, experiences, and non-alwaysApply rules relevant to the current session.
 
         Extracts keywords from the user question and table names, then
         searches the knowledge store.  Returns up to *max_items* results.
@@ -1660,7 +1666,7 @@ class DataAgent:
 
             results = self._knowledge_store.search(
                 query,
-                categories=["skills", "experiences"],
+                categories=["rules", "skills", "experiences"],
                 max_results=max_items,
             )
             return results

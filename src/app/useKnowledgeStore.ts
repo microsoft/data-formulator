@@ -21,9 +21,11 @@ import {
     deleteKnowledge,
     searchKnowledge,
     distillExperience,
+    fetchKnowledgeLimits,
     type ExperienceContext,
     type KnowledgeCategory,
     type KnowledgeItem,
+    type KnowledgeLimits,
     type KnowledgeSearchResult,
 } from '../api/knowledgeApi';
 
@@ -45,6 +47,9 @@ export function useKnowledgeStore() {
 
     const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
     const [searching, setSearching] = useState(false);
+
+    const DEFAULT_LIMITS: KnowledgeLimits = { rule_description_max: 100, rules: 350, skills: 2000, experiences: 2000 };
+    const [limits, setLimits] = useState<KnowledgeLimits>(DEFAULT_LIMITS);
 
     const stateMap = { rules, skills, experiences };
     const setterMap = useRef({ rules: setRules, skills: setSkills, experiences: setExperiences });
@@ -71,6 +76,7 @@ export function useKnowledgeStore() {
             fetchList('rules'),
             fetchList('skills'),
             fetchList('experiences'),
+            fetchKnowledgeLimits().then(setLimits).catch(() => { /* best-effort */ }),
         ]);
     }, [fetchList]);
 
@@ -211,6 +217,7 @@ export function useKnowledgeStore() {
         skills,
         experiences,
         stateMap,
+        limits,
         searchResults,
         searching,
         fetchList,

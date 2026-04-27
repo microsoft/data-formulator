@@ -63,7 +63,6 @@ export let buildTriggerCard = (
             <TriggerCard className={selectedClassName} trigger={trigger} 
                 hideFields={!!(trigger.interaction && trigger.interaction.length > 0)} 
                 highlighted={highlighted}
-                dimmed={dimmed}
                 sx={{
                     '& .MuiBox-root': { mx: 0.5, my: 0.25 },
                     '& .MuiSvgIcon-root': { width: '12px', height: '12px' },
@@ -282,11 +281,9 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                     </ButtonGroup>
                 )}
                 {table?.derive && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0,
-                        '& .save-exp-btn': { opacity: 0, transition: 'opacity 0.15s' },
-                    }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         {table.derive.trigger.interaction?.some(
-                            e => e.from === 'user' && e.role === 'prompt'
+                            e => e.from === 'user'
                         ) && (
                             <Box className="save-exp-btn" onClick={(e) => e.stopPropagation()}>
                                 <SaveExperienceButton

@@ -22,6 +22,17 @@ export interface KnowledgeItem {
     path: string;
     source: string;
     created: string;
+    /** Rules only: short one-line description (max 100 chars). */
+    description?: string;
+    /** Rules only: if true the rule is always injected into the agent prompt. */
+    alwaysApply?: boolean;
+}
+
+export interface KnowledgeLimits {
+    rule_description_max: number;
+    rules: number;
+    skills: number;
+    experiences: number;
 }
 
 export interface KnowledgeSearchResult {
@@ -63,6 +74,19 @@ export interface ExperienceContext {
 // ── API functions ────────────────────────────────────────────────────────
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+
+export async function fetchKnowledgeLimits(): Promise<KnowledgeLimits> {
+    const resp = await fetchWithIdentity('/api/knowledge/limits', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: '{}',
+    });
+    const body = await resp.json();
+    if (body.status === 'error') {
+        parseApiResponse(body, resp.status);
+    }
+    return body.limits;
+}
 
 export async function listKnowledge(
     category: KnowledgeCategory,

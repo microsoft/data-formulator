@@ -36,6 +36,13 @@ _MAX_DEPTH = {
     "experiences": 2,  # one sub-dir: "category/file.md"
 }
 
+KNOWLEDGE_LIMITS: dict[str, int] = {
+    "rule_description_max": 100,
+    "rules": 350,
+    "skills": 2000,
+    "experiences": 2000,
+}
+
 
 # ---------------------------------------------------------------------------
 # Front matter parsing
@@ -70,7 +77,7 @@ def parse_front_matter(content: str) -> tuple[dict[str, Any], str]:
     return meta, body
 
 
-def _ensure_front_matter(content: str, path: str) -> str:
+def _ensure_front_matter(content: str, path: str, category: str = "") -> str:
     """If *content* lacks front matter, prepend a minimal header."""
     meta, _ = parse_front_matter(content)
     if meta:
@@ -78,13 +85,22 @@ def _ensure_front_matter(content: str, path: str) -> str:
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     stem = Path(path).stem
-    header = (
-        f"---\ntitle: {stem}\n"
-        f"created: {today}\n"
-        f"updated: {today}\n"
-        f"source: manual\n---\n\n"
-    )
-    return header + content
+    lines = [
+        "---",
+        f"title: {stem}",
+    ]
+    if category == "rules":
+        lines.append("description: \"\"")
+        lines.append("alwaysApply: true")
+    lines += [
+        f"created: {today}",
+        f"updated: {today}",
+        "source: manual",
+        "---",
+        "",
+        "",
+    ]
+    return "\n".join(lines) + content
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +169,7 @@ class KnowledgeStore:
 
         Returns a list of dicts with ``title``, ``tags``, ``path``,
         ``source``, and ``created`` parsed from front matter.
+        For rules, also includes ``description`` and ``alwaysApply``.
         """
         jail = self._jail(category)
         items: list[dict[str, Any]] = []
@@ -166,13 +183,17 @@ class KnowledgeStore:
 
             meta, _ = parse_front_matter(raw)
             rel = str(md_file.relative_to(jail.root)).replace("\\", "/")
-            items.append({
+            item: dict[str, Any] = {
                 "title": meta.get("title", md_file.stem),
                 "tags": meta.get("tags", []),
                 "path": rel,
                 "source": meta.get("source", "manual"),
                 "created": str(meta.get("created", "")),
-            })
+            }
+            if category == "rules":
+                item["description"] = meta.get("description", "")
+                item["alwaysApply"] = meta.get("alwaysApply", True)
+            items.append(item)
 
         return items
 
@@ -185,9 +206,32 @@ class KnowledgeStore:
         """Create or update a knowledge file.
 
         If *content* lacks YAML front matter, a minimal header is prepended.
+        Validates body length and (for rules) description length against
+        :data:`KNOWLEDGE_LIMITS`.
         """
         self.validate_path(category, path)
-        content = _ensure_front_matter(content, path)
+        content = _ensure_front_matter(content, path, category)
+
+        meta, body = parse_front_matter(content)
+
+        if category == "rules":
+            desc = meta.get("description", "")
+            desc_limit = KNOWLEDGE_LIMITS["rule_description_max"]
+            if isinstance(desc, str) and len(desc) > desc_limit:
+                raise ValueError(
+                    f"Rule description exceeds {desc_limit} characters "
+                    f"(got {len(desc)})"
+                )
+
+        body_limit = KNOWLEDGE_LIMITS.get(category)
+        if body_limit is not None:
+            body_len = len(body.strip())
+            if body_len > body_limit:
+                raise ValueError(
+                    f"{category} body exceeds {body_limit} characters "
+                    f"(got {body_len})"
+                )
+
         return self._jail(category).write_text(path, content)
 
     def delete(self, category: str, path: str) -> None:

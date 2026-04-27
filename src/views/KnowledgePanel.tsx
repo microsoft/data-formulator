@@ -28,6 +28,8 @@ import {
     MenuItem,
     Select,
     FormControl,
+    FormControlLabel,
+    Switch,
     InputLabel,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -39,6 +41,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import Editor from 'react-simple-code-editor';
 
 import { useKnowledgeStore } from '../app/useKnowledgeStore';
@@ -102,6 +105,10 @@ export const KnowledgePanel: React.FC = () => {
     const [editorSaving, setEditorSaving] = useState(false);
     const [editorLoading, setEditorLoading] = useState(false);
 
+    // Rules-specific editor fields
+    const [editorDescription, setEditorDescription] = useState('');
+    const [editorAlwaysApply, setEditorAlwaysApply] = useState(true);
+
     // Delete confirmation
     const [deleteTarget, setDeleteTarget] = useState<{ category: KnowledgeCategory; path: string; title: string } | null>(null);
     const [deleting, setDeleting] = useState(false);
@@ -109,7 +116,7 @@ export const KnowledgePanel: React.FC = () => {
     // Fetch all on mount
     useEffect(() => {
         store.fetchAll();
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, []);
 
     // ── Search ───────────────────────────────────────────────────────────
 
@@ -155,6 +162,8 @@ export const KnowledgePanel: React.FC = () => {
         setEditorPath('');
         setEditorContent('');
         setEditorOriginalPath('');
+        setEditorDescription('');
+        setEditorAlwaysApply(true);
         setEditorOpen(true);
     }, []);
 
@@ -164,6 +173,8 @@ export const KnowledgePanel: React.FC = () => {
         setEditorPath(item.path);
         setEditorOriginalPath(item.path);
         setEditorContent('');
+        setEditorDescription(item.description ?? '');
+        setEditorAlwaysApply(item.alwaysApply ?? true);
         setEditorOpen(true);
         setEditorLoading(true);
 
@@ -174,17 +185,32 @@ export const KnowledgePanel: React.FC = () => {
         setEditorLoading(false);
     }, [store]);
 
+    const patchRuleFrontMatter = useCallback((raw: string): string => {
+        if (editorCategory !== 'rules') return raw;
+        const fmMatch = raw.match(/^---[ \t]*\r?\n([\s\S]*?\r?\n)---[ \t]*\r?\n?/);
+        if (fmMatch) {
+            let fm = fmMatch[1];
+            fm = fm.replace(/^description:.*$/m, '').replace(/^alwaysApply:.*$/m, '');
+            fm = fm.replace(/\n{2,}/g, '\n').trim();
+            fm += `\ndescription: "${editorDescription.replace(/"/g, '\\"')}"\nalwaysApply: ${editorAlwaysApply}\n`;
+            return `---\n${fm}---\n` + raw.slice(fmMatch[0].length);
+        }
+        const header = `---\ndescription: "${editorDescription.replace(/"/g, '\\"')}"\nalwaysApply: ${editorAlwaysApply}\n---\n\n`;
+        return header + raw;
+    }, [editorCategory, editorDescription, editorAlwaysApply]);
+
     const handleSave = useCallback(async () => {
         if (!editorPath.trim() || !editorContent.trim()) return;
         setEditorSaving(true);
 
         const path = editorPath.endsWith('.md') ? editorPath : `${editorPath}.md`;
-        const success = await store.save(editorCategory, path, editorContent);
+        const contentToSave = patchRuleFrontMatter(editorContent);
+        const success = await store.save(editorCategory, path, contentToSave);
         setEditorSaving(false);
         if (success) {
             setEditorOpen(false);
         }
-    }, [editorPath, editorContent, editorCategory, store]);
+    }, [editorPath, editorContent, editorCategory, store, patchRuleFrontMatter]);
 
     const handleDelete = useCallback(async () => {
         if (!deleteTarget) return;
@@ -204,12 +230,13 @@ export const KnowledgePanel: React.FC = () => {
         nested = false,
     ) => {
         const displayName = item.path.split('/').pop()?.replace('.md', '') || item.title;
+        const isRule = category === 'rules';
         return (
             <Box
                 key={`${category}/${item.path}`}
                 onClick={() => openEditDialog(category, item)}
                 sx={{
-                    display: 'flex', alignItems: 'center', gap: 0.5,
+                    display: 'flex', alignItems: 'flex-start', gap: 0.5,
                     pl: nested ? 5.5 : 3.5, pr: 1.5, py: 0.4,
                     cursor: 'pointer',
                     '&:hover': { bgcolor: 'action.hover' },
@@ -217,10 +244,24 @@ export const KnowledgePanel: React.FC = () => {
                     userSelect: 'none',
                 }}
             >
-                <DescriptionOutlinedIcon sx={{ fontSize: 13, color: 'text.disabled' }} />
-                <Typography noWrap sx={{ fontSize: 11, flex: 1, color: 'text.primary' }}>
-                    {displayName}
-                </Typography>
+                <DescriptionOutlinedIcon sx={{ fontSize: 13, color: 'text.disabled', mt: 0.25 }} />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography noWrap sx={{ fontSize: 11, color: 'text.primary' }}>
+                            {displayName}
+                        </Typography>
+                        {isRule && item.alwaysApply && (
+                            <Tooltip title={t('knowledge.alwaysApply')}>
+                                <PushPinOutlinedIcon sx={{ fontSize: 10, color: 'primary.main', opacity: 0.7 }} />
+                            </Tooltip>
+                        )}
+                    </Box>
+                    {isRule && item.description && (
+                        <Typography noWrap sx={{ fontSize: 10, color: 'text.disabled', lineHeight: 1.3 }}>
+                            {item.description}
+                        </Typography>
+                    )}
+                </Box>
                 {item.source === 'agent_summarized' && (
                     <Tooltip title={t('knowledge.sourceAgent')}>
                         <SmartToyOutlinedIcon sx={{ fontSize: 11, color: 'text.disabled' }} />
@@ -478,34 +519,85 @@ export const KnowledgePanel: React.FC = () => {
                         </Box>
                     )}
 
+                    {editorCategory === 'rules' && !editorLoading && (
+                        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+                            <TextField
+                                size="small"
+                                label={t('knowledge.description')}
+                                placeholder={t('knowledge.descriptionPlaceholder', { max: store.limits.rule_description_max })}
+                                value={editorDescription}
+                                onChange={(e) => setEditorDescription(e.target.value)}
+                                error={editorDescription.length > store.limits.rule_description_max}
+                                helperText={editorDescription.length > store.limits.rule_description_max
+                                    ? t('knowledge.charCountExceeded', { max: store.limits.rule_description_max, current: editorDescription.length })
+                                    : `${editorDescription.length} / ${store.limits.rule_description_max}`}
+                                sx={{ flex: 1, '& .MuiInputBase-input': { fontSize: 12 }, '& .MuiFormHelperText-root': { fontSize: 10 } }}
+                                slotProps={{ inputLabel: { sx: { fontSize: 12 } } }}
+                            />
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        size="small"
+                                        checked={editorAlwaysApply}
+                                        onChange={(e) => setEditorAlwaysApply(e.target.checked)}
+                                    />
+                                }
+                                label={
+                                    <Tooltip title={t('knowledge.alwaysApplyHint')} placement="top">
+                                        <Typography sx={{ fontSize: 12 }}>{t('knowledge.alwaysApply')}</Typography>
+                                    </Tooltip>
+                                }
+                                sx={{ ml: 0, mr: 0, flexShrink: 0 }}
+                            />
+                        </Box>
+                    )}
+
                     {editorLoading ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                             <CircularProgress size={24} />
                         </Box>
                     ) : (
-                        <Box sx={{
-                            border: `1px solid ${borderColor.component}`,
-                            borderRadius: radius.sm,
-                            overflow: 'auto',
-                            maxHeight: '60vh',
-                            minHeight: 200,
-                        }}>
-                            <Editor
-                                value={editorContent}
-                                onValueChange={setEditorContent}
-                                highlight={(code) => code}
-                                padding={16}
-                                placeholder="# Title\n\nWrite your knowledge content in Markdown..."
-                                style={{
-                                    fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
-                                    fontSize: 12,
-                                    lineHeight: 1.5,
-                                    minHeight: 200,
-                                    whiteSpace: 'pre-wrap',
-                                    outline: 'none',
-                                }}
-                            />
-                        </Box>
+                        <>
+                            <Box sx={{
+                                border: `1px solid ${borderColor.component}`,
+                                borderRadius: radius.sm,
+                                overflow: 'auto',
+                                maxHeight: '60vh',
+                                minHeight: 200,
+                            }}>
+                                <Editor
+                                    value={editorContent}
+                                    onValueChange={setEditorContent}
+                                    highlight={(code) => code}
+                                    padding={16}
+                                    placeholder="# Title\n\nWrite your knowledge content in Markdown..."
+                                    style={{
+                                        fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                                        fontSize: 12,
+                                        lineHeight: 1.5,
+                                        minHeight: 200,
+                                        whiteSpace: 'pre-wrap',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </Box>
+                            {(() => {
+                                const bodyLimit = store.limits[editorCategory as keyof typeof store.limits] as number | undefined;
+                                if (!bodyLimit) return null;
+                                const bodyLen = editorContent.trim().length;
+                                const exceeded = bodyLen > bodyLimit;
+                                return (
+                                    <Typography sx={{
+                                        fontSize: 10, textAlign: 'right',
+                                        color: exceeded ? 'error.main' : bodyLen > bodyLimit * 0.9 ? 'warning.main' : 'text.disabled',
+                                    }}>
+                                        {exceeded
+                                            ? t('knowledge.charCountExceeded', { max: bodyLimit, current: bodyLen })
+                                            : t('knowledge.charCount', { max: bodyLimit, current: bodyLen })}
+                                    </Typography>
+                                );
+                            })()}
+                        </>
                     )}
                 </DialogContent>
                 <DialogActions>
@@ -527,7 +619,13 @@ export const KnowledgePanel: React.FC = () => {
                     </Button>
                     <Button
                         onClick={handleSave}
-                        disabled={editorSaving || !editorContent.trim() || (editorMode === 'create' && !editorPath.trim())}
+                        disabled={
+                            editorSaving
+                            || !editorContent.trim()
+                            || (editorMode === 'create' && !editorPath.trim())
+                            || (editorCategory === 'rules' && editorDescription.length > store.limits.rule_description_max)
+                            || editorContent.trim().length > (store.limits[editorCategory as keyof typeof store.limits] as number ?? Infinity)
+                        }
                         variant="contained"
                         sx={{ textTransform: 'none', fontSize: 12 }}
                     >

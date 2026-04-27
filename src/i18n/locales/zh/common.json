@@ -754,6 +754,12 @@
     "collapse": "收起",
     "expand": "展开",
     "emptyState": "添加规则、技能或经验，帮助 AI Agent 更好地工作。",
-    "markdownEditor": "Markdown 编辑器"
+    "markdownEditor": "Markdown 编辑器",
+    "description": "描述",
+    "descriptionPlaceholder": "规则的简短描述（最多 {{max}} 字符）",
+    "alwaysApply": "始终应用",
+    "alwaysApplyHint": "启用后，此规则会始终注入到 Agent 提示词中",
+    "charCount": "{{current}} / {{max}}",
+    "charCountExceeded": "超出 {{max}} 字符限制（{{current}} / {{max}}）"
   }
 }

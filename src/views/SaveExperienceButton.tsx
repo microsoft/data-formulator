@@ -39,9 +39,12 @@ function buildExperienceContext(table: DictTable): ExperienceContext | null {
     if (!derive) return null;
 
     const interaction = derive.trigger.interaction || [];
-    const userQuestion = interaction.find(
+    const userEntry = interaction.find(
         e => e.from === 'user' && e.role === 'prompt',
-    )?.content || '';
+    ) || interaction.find(
+        e => e.from === 'user',
+    );
+    const userQuestion = userEntry?.content || '';
     if (!userQuestion) return null;
 
     const instruction = interaction.find(
@@ -91,9 +94,8 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
         try {
             const modelConfig = {
                 endpoint: selectedModel.endpoint,
-                key: selectedModel.key,
+                api_key: selectedModel.api_key,
                 model: selectedModel.model,
-                provider: (selectedModel as any).provider,
             };
             await distillExperience(experienceContext, modelConfig, categoryHint.trim() || undefined);
             dispatch(dfActions.addMessages({
