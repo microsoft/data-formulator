@@ -328,10 +328,10 @@ class TestMergeSourceMetadataEmptyClear:
 # ── Progressive context — inspect_source_data level adjustment ────────
 
 class TestProgressiveContext:
-    """Verify inspect_source_data auto-adjusts detail level by table count."""
+    """Verify inspect_source_data keeps bounded samples for each table."""
 
     def test_few_tables_includes_samples(self):
-        """≤3 tables → Level 2 (include_data_samples=True)."""
+        """Few tables include bounded sample rows."""
         from data_formulator.agents.context import handle_inspect_source_data
         import pandas as pd
 
@@ -344,8 +344,8 @@ class TestProgressiveContext:
         result = handle_inspect_source_data(["t1", "t2"], tables, workspace)
         assert "Sample" in result or "sample" in result.lower()
 
-    def test_many_tables_excludes_samples(self):
-        """>3 tables → Level 1 (no sample rows)."""
+    def test_many_tables_include_bounded_samples(self):
+        """>3 tables still include per-table bounded sample rows."""
         from data_formulator.agents.context import handle_inspect_source_data
         import pandas as pd
 
@@ -357,4 +357,4 @@ class TestProgressiveContext:
         tables = [{"name": f"t{i}"} for i in range(5)]
         names = [f"t{i}" for i in range(5)]
         result = handle_inspect_source_data(names, tables, workspace)
-        assert "Sample" not in result
+        assert "Sample" in result

@@ -20,6 +20,8 @@ export interface StreamIdeasOptions {
     onIdeas: (ideas: IdeaItem[]) => void;
     onThinkingBuffer: (buffer: string) => void;
     onLoadingChange: (loading: boolean) => void;
+    /** Backend progress phase updates (e.g. "building_context", "generating") */
+    onProgress?: (phase: string) => void;
     /** Chart image (PNG data URL) for current visualization context */
     currentChartImage?: string | null;
     /** Sample rows from the current table */
@@ -190,7 +192,7 @@ export function useFormulateData() {
     async function streamIdeas(options: StreamIdeasOptions): Promise<void> {
         const {
             actionTableIds, currentTable,
-            onIdeas, onThinkingBuffer, onLoadingChange,
+            onIdeas, onThinkingBuffer, onLoadingChange, onProgress,
             currentChartImage, currentDataSample,
             startQuestion,
         } = options;
@@ -290,6 +292,10 @@ export function useFormulateData() {
                                     component: 'exploration',
                                     value: parsed.warning?.message ?? 'Warning from server',
                                 }));
+                                continue;
+                            }
+                            if (parsed.type === 'progress') {
+                                onProgress?.(parsed.phase);
                                 continue;
                             }
                             if (parsed.text) {

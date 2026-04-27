@@ -138,6 +138,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     
     // Add state for loading ideas
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
+    const [ideaPhase, setIdeaPhase] = useState<string>('');
+    const [ideaElapsed, setIdeaElapsed] = useState(0);
+
+    useEffect(() => {
+        if (!isLoadingIdeas) { setIdeaElapsed(0); setIdeaPhase(''); return; }
+        const timer = setInterval(() => setIdeaElapsed(e => e + 1), 1000);
+        return () => clearInterval(timer);
+    }, [isLoadingIdeas]);
 
     // Use the provided tableId and find additional available tables for multi-table operations
     const currentTable = tables.find(t => t.id === tableId);
@@ -170,6 +178,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             onIdeas: setIdeas,
             onThinkingBuffer: setThinkingBuffer,
             onLoadingChange: setIsLoadingIdeas,
+            onProgress: setIdeaPhase,
             startQuestion,
         });
         setThinkingBuffer("");
@@ -381,7 +390,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 </span>
             </Tooltip>
             </Box>
-            {(ideas.length > 0 || thinkingBuffer) && (
+            {(ideas.length > 0 || thinkingBuffer || (isLoadingIdeas && ideaPhase)) && (
                 <Box sx={{
                     display: 'flex', 
                     flexWrap: 'wrap', 
@@ -406,6 +415,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         />
                     ))}
                     {isLoadingIdeas && thinkingBuffer && thinkingBufferEffect}
+                    {isLoadingIdeas && !thinkingBuffer && ideaPhase && (
+                        <Typography sx={{ fontSize: 10, color: 'text.disabled', width: '100%', textAlign: 'center' }}>
+                            {ideaPhase === 'building_context' ? t('chartRec.progressBuildingContext')
+                               : ideaPhase === 'generating' ? t('chartRec.progressGenerating')
+                               : t('chartRec.generatingIdeas')}
+                            {ideaElapsed > 0 ? ` (${ideaElapsed}s)` : ''}
+                        </Typography>
+                    )}
                 </Box>
             )}
         </Box>

@@ -836,6 +836,15 @@ def get_recommendation_questions():
                 exploration_thread=exploration_thread,
                 current_data_sample=current_data_sample,
             ):
+                if isinstance(chunk, dict):
+                    # Flush pending text before emitting structured event
+                    while "\n" in text_buf:
+                        line, text_buf = text_buf.split("\n", 1)
+                        ndjson_line = _try_parse_explore_line(line)
+                        if ndjson_line:
+                            yield ndjson_line
+                    yield json.dumps(chunk, ensure_ascii=False) + "\n"
+                    continue
                 text_buf += chunk
                 while "\n" in text_buf:
                     line, text_buf = text_buf.split("\n", 1)

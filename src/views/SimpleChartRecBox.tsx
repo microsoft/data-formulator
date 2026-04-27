@@ -52,9 +52,10 @@ import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 
-const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () => void }> = ({ message, theme, onCancel }) => {
+const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void }> = ({ message, elapsed, theme, onCancel }) => {
     const { t } = useTranslation();
     const latestMessage = message || t('dataThread.thinking');
+    const elapsedSuffix = elapsed != null && elapsed > 0 ? ` (${elapsed}s)` : '';
     return (
         <Box sx={{
             position: 'absolute',
@@ -97,7 +98,7 @@ const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () =>
                 lineHeight: 1.3,
                 wordBreak: 'break-word',
             }}>
-                {latestMessage}
+                {latestMessage}{elapsedSuffix}
             </Typography>
             <LinearProgress sx={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: '0 0 8px 8px' }} />
         </Box>
@@ -123,6 +124,8 @@ export const SimpleChartRecBox: FC = function () {
     const [ideas, setIdeas] = useState<{text: string, goal: string, tag: string}[]>([]);
     const [isLoadingIdeas, setIsLoadingIdeas] = useState(false);
     const [thinkingBuffer, setThinkingBuffer] = useState('');
+    const [ideaPhase, setIdeaPhase] = useState<string>('');
+    const [ideaElapsed, setIdeaElapsed] = useState(0);
     const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
     const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
     const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
@@ -131,6 +134,12 @@ export const SimpleChartRecBox: FC = function () {
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const agentAbortRef = useRef<AbortController | null>(null);
     const ideasAbortRef = useRef<AbortController | null>(null);
+
+    useEffect(() => {
+        if (!isLoadingIdeas) { setIdeaElapsed(0); setIdeaPhase(''); return; }
+        const timer = setInterval(() => setIdeaElapsed(e => e + 1), 1000);
+        return () => clearInterval(timer);
+    }, [isLoadingIdeas]);
 
     // pendingClarification is now derived from Redux (stored on the agentAction itself)
     // so it persists when user clicks away and comes back.
@@ -437,6 +446,10 @@ export const SimpleChartRecBox: FC = function () {
                                     component: 'exploration',
                                     value: parsed.warning?.message ?? 'Warning from server',
                                 }));
+                                continue;
+                            }
+                            if (parsed.type === 'progress') {
+                                setIdeaPhase(parsed.phase);
                                 continue;
                             }
                             if (parsed.text) {
@@ -1787,7 +1800,10 @@ export const SimpleChartRecBox: FC = function () {
             {/* Ideas-loading overlay — scoped to input area only, keeps idea chips visible */}
             {isLoadingIdeas && !isChatFormulating && (
                 <AgentWorkingOverlay 
-                    message={t('chartRec.generatingIdeas')}
+                    message={ideaPhase === 'building_context' ? t('chartRec.progressBuildingContext')
+                           : ideaPhase === 'generating' ? t('chartRec.progressGenerating')
+                           : t('chartRec.generatingIdeas')}
+                    elapsed={ideaElapsed}
                     theme={theme}
                     onCancel={() => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); }}
                 />

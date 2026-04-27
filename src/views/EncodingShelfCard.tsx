@@ -364,34 +364,51 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const [chartState, setChartState] = useState<Record<string, {
         ideas: {text: string, goal: string, tag: string}[],
         thinkingBuffer: string,
-        isLoading: boolean
+        isLoading: boolean,
+        phase: string,
     }>>({});
-    
+    const [ideaElapsed, setIdeaElapsed] = useState(0);
+
     // Get current chart's state
-    const currentState = chartState[chartId] || { ideas: [], thinkingBuffer: "", isLoading: false };
+    const currentState = chartState[chartId] || { ideas: [], thinkingBuffer: "", isLoading: false, phase: "" };
     const currentChartIdeas = currentState.ideas;
     const thinkingBuffer = currentState.thinkingBuffer;
     const isLoadingIdeas = currentState.isLoading;
+    const ideaPhase = currentState.phase;
+
+    useEffect(() => {
+        if (!isLoadingIdeas) { setIdeaElapsed(0); return; }
+        const timer = setInterval(() => setIdeaElapsed(e => e + 1), 1000);
+        return () => clearInterval(timer);
+    }, [isLoadingIdeas]);
     
-    // Helper functions to update current chart's state
+    const defaultChartState = { ideas: [] as any[], thinkingBuffer: "", isLoading: false, phase: "" };
+
     const setIdeas = (ideas: {text: string, goal: string, tag: string}[]) => {
         setChartState(prev => ({
             ...prev,
-            [chartId]: { ...prev[chartId] || { thinkingBuffer: "", isLoading: false }, ideas }
+            [chartId]: { ...defaultChartState, ...prev[chartId], ideas }
         }));
     };
-    
+
     const setThinkingBuffer = (thinkingBuffer: string) => {
         setChartState(prev => ({
             ...prev,
-            [chartId]: { ...prev[chartId] || { ideas: [], isLoading: false }, thinkingBuffer }
+            [chartId]: { ...defaultChartState, ...prev[chartId], thinkingBuffer }
         }));
     };
-    
+
     const setIsLoadingIdeas = (isLoading: boolean) => {
         setChartState(prev => ({
             ...prev,
-            [chartId]: { ...prev[chartId] || { ideas: [], thinkingBuffer: "" }, isLoading }
+            [chartId]: { ...defaultChartState, ...prev[chartId], isLoading }
+        }));
+    };
+
+    const setIdeaPhase = (phase: string) => {
+        setChartState(prev => ({
+            ...prev,
+            [chartId]: { ...defaultChartState, ...prev[chartId], phase }
         }));
     };
     
@@ -461,6 +478,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             onIdeas: setIdeas,
             onThinkingBuffer: setThinkingBuffer,
             onLoadingChange: setIsLoadingIdeas,
+            onProgress: setIdeaPhase,
             currentChartImage: currentChartPng,
             currentDataSample: currentTable.rows.slice(0, 10),
         });
@@ -987,7 +1005,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             )}
             {isLoadingIdeas && !thinkingBuffer && (
                 <Box sx={{ padding: '2px 0' }}>
-                    {ThinkingBanner(t('encoding.ideating'))}
+                    {ThinkingBanner(
+                        (ideaPhase === 'building_context' ? t('chartRec.progressBuildingContext')
+                           : ideaPhase === 'generating' ? t('chartRec.progressGenerating')
+                           : t('encoding.ideating'))
+                        + (ideaElapsed > 0 ? ` (${ideaElapsed}s)` : '')
+                    )}
                 </Box>
             )}
         </Box>

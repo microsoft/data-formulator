@@ -491,6 +491,8 @@
     "clearIdeas": "Clear ideas",
     "interruptedByRefresh": "Interrupted by page refresh",
     "generatingIdeas": "Generating exploration ideas...",
+    "progressBuildingContext": "Preparing data context...",
+    "progressGenerating": "AI is generating suggestions...",
     "conversationEnded": "Conversation ended by user.",
     "explorationCancelled": "Exploration cancelled",
     "explorationTimedOut": "Exploration timed out",

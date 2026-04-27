@@ -497,6 +497,8 @@
     "clearIdeas": "清除建议",
     "interruptedByRefresh": "因页面刷新中断",
     "generatingIdeas": "正在生成探索建议...",
+    "progressBuildingContext": "正在准备数据上下文...",
+    "progressGenerating": "AI 正在生成建议...",
     "conversationEnded": "用户已结束对话。",
     "explorationCancelled": "探索已取消",
     "explorationTimedOut": "探索已超时",

@@ -3,6 +3,8 @@
 
 import json
 import logging
+import time
+
 import pandas as pd
 
 import litellm
@@ -52,7 +54,7 @@ INTENT_TAGS = ['deep-dive', 'pivot', 'broaden', 'cross-data', 'statistical']
 SYSTEM_PROMPT = '''You are a data exploration expert who suggests interesting questions to help users explore their datasets.
 
 The user message contains tiered context:
-- **[PRIMARY TABLE(S)]** / **[OTHER AVAILABLE TABLES]**: Lightweight schema of available datasets. Call `inspect_source_data` if you need detailed stats or sample rows.
+- **[PRIMARY TABLE(S)]** / **[OTHER AVAILABLE TABLES]**: Compact dataset context with schema, metadata descriptions, representative field values, numeric stats, and bounded sample rows.
 - **[FOCUSED THREAD]** (optional): The exploration thread the user is continuing — each step shows what was asked, what was created, and what chart was made.
 - **[OTHER THREADS]** (optional): Brief summaries of other exploration threads in the workspace.
 - **[CURRENT CHART]** (optional): Image of the chart the user is currently viewing.
@@ -104,6 +106,7 @@ class InteractiveExploreAgent(object):
             current_chart=None,
             # Legacy params — kept for backward compatibility
             exploration_thread=None, current_data_sample=None,
+            enable_inspect_round=False,
             **kwargs):
         """
         Suggest exploration questions for a dataset or exploration thread.
@@ -117,9 +120,16 @@ class InteractiveExploreAgent(object):
             current_chart: PNG data URL of the current visualization
             exploration_thread: Legacy — flat list of tables (used if focused_thread not provided)
             current_data_sample: Legacy — raw rows (ignored when focused_thread is provided)
+            enable_inspect_round: Optional fallback for unusual cases where an
+                extra inspect_source_data tool round is explicitly requested.
         """
 
+        # ── Progress: context building ─────────────────────────────────
+        yield {"type": "progress", "phase": "building_context"}
+
         # ── Build tiered context ──────────────────────────────────────
+        t_ctx = time.time()
+
         context = build_lightweight_table_context(
             input_tables, self.workspace, primary_tables=primary_tables
         )
@@ -175,8 +185,17 @@ class InteractiveExploreAgent(object):
         if self.language_instruction:
             system_prompt = system_prompt + "\n\n" + self.language_instruction
 
-        logger.debug(f"Interactive explore agent input: {context}")
-        logger.info(f"[InteractiveExploreAgent] run start")
+        ctx_elapsed = time.time() - t_ctx
+        logger.info(
+            "[InteractiveExploreAgent] context: %d chars (~%d tokens), "
+            "tables=%d, primary=%s, built in %.2fs",
+            len(context), len(context) // 4,
+            len(input_tables),
+            primary_tables,
+            ctx_elapsed,
+        )
+        logger.debug("Interactive explore agent input: %s", context)
+        logger.info("[InteractiveExploreAgent] run start")
 
         # ── Build initial messages ────────────────────────────────────
         if current_chart:
@@ -192,8 +211,12 @@ class InteractiveExploreAgent(object):
             {"role": "user", "content": user_content},
         ]
 
-        # ── Optional inspect_source_data tool round ───────────────────
-        messages = self._run_inspect_round(messages, input_tables)
+        # ── Optional inspect_source_data fallback ─────────────────────
+        if enable_inspect_round:
+            messages = self._run_inspect_round(messages, input_tables)
+
+        # ── Progress: generating ──────────────────────────────────────
+        yield {"type": "progress", "phase": "generating"}
 
         # ── Stream the final response ─────────────────────────────────
         try:
@@ -206,13 +229,24 @@ class InteractiveExploreAgent(object):
             else:
                 raise
 
+        t_llm = time.time()
+        first_token = False
         for part in stream:
             if hasattr(part, 'choices') and len(part.choices) > 0:
                 delta = part.choices[0].delta
                 if hasattr(delta, 'content') and delta.content:
+                    if not first_token:
+                        first_token = True
+                        logger.info(
+                            "[InteractiveExploreAgent] TTFB: %.2fs",
+                            time.time() - t_llm,
+                        )
                     yield delta.content
 
-        logger.info(f"[InteractiveExploreAgent] run done")
+        logger.info(
+            "[InteractiveExploreAgent] LLM total: %.2fs, run done",
+            time.time() - t_llm,
+        )
 
     def _run_inspect_round(self, messages, input_tables):
         """Run one non-streaming LLM call with the inspect_source_data tool.
