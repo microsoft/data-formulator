@@ -30,24 +30,69 @@ import type { DictTable } from '../components/ComponentType';
 
 export interface SaveExperienceButtonProps {
     table: DictTable;
+    tables: DictTable[];
     /** If true, render as a full button. Otherwise a small icon button. */
     variant?: 'button' | 'icon';
 }
 
-function buildExperienceContext(table: DictTable): ExperienceContext | null {
+/**
+ * True leaf: derived table with no un-anchored children deriving from it.
+ * Layout-promoted "extra leaves" in DataThread still have children, so they
+ * won't pass this check.
+ */
+export function isLeafDerivedTable(table: DictTable, tables: DictTable[]): boolean {
+    if (!table.derive) return false;
+    return !tables.some(
+        t => t.derive?.trigger.tableId === table.id && !t.anchored,
+    );
+}
+
+/**
+ * Walk the visible chain from `leaf` back to the root source table,
+ * collecting only tables that still exist in `tables`.
+ * Returns the chain ordered root-first.
+ */
+function walkVisibleChain(leaf: DictTable, tables: DictTable[]): DictTable[] {
+    const chain: DictTable[] = [leaf];
+    const visited = new Set<string>([leaf.id]);
+    let current = leaf;
+    while (current.derive) {
+        const parentId = current.derive.trigger.tableId;
+        if (visited.has(parentId)) break;
+        visited.add(parentId);
+        const parent = tables.find(t => t.id === parentId);
+        if (!parent) break;
+        chain.push(parent);
+        if (!parent.derive) break;
+        current = parent;
+    }
+    chain.reverse();
+    return chain;
+}
+
+export function buildExperienceContext(
+    table: DictTable,
+    tables: DictTable[],
+): ExperienceContext | null {
     const derive = table.derive;
     if (!derive) return null;
 
-    const interaction = derive.trigger.interaction || [];
-    const userEntry = interaction.find(
+    const chain = walkVisibleChain(table, tables);
+
+    const allInteraction = chain.flatMap(
+        t => t.derive?.trigger.interaction || [],
+    );
+    const userEntry = allInteraction.find(
         e => e.from === 'user' && e.role === 'prompt',
-    ) || interaction.find(
+    ) || allInteraction.find(
         e => e.from === 'user',
     );
     const userQuestion = userEntry?.content || '';
     if (!userQuestion) return null;
 
-    const instruction = interaction.find(
+    const allDialog = chain.flatMap(t => t.derive?.dialog || []);
+
+    const instruction = allInteraction.find(
         e => e.from === 'data-agent' && e.role === 'instruction',
     );
     const chart = derive.trigger.chart as any;
@@ -56,8 +101,8 @@ function buildExperienceContext(table: DictTable): ExperienceContext | null {
         context_id: table.id,
         source_table_id: derive.trigger.tableId,
         user_question: userQuestion,
-        dialog: derive.dialog || [],
-        interaction,
+        dialog: allDialog,
+        interaction: allInteraction,
         result_summary: {
             display_instruction: instruction?.displayContent || instruction?.content,
             output_variable: derive.outputVariable,
@@ -73,6 +118,7 @@ function buildExperienceContext(table: DictTable): ExperienceContext | null {
 
 export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
     table,
+    tables,
     variant = 'button',
 }) => {
     const { t } = useTranslation();
@@ -88,7 +134,7 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
     const selectedModel = allModels.find(m => m.id === selectedModelId);
 
     const handleDistill = useCallback(async () => {
-        const experienceContext = buildExperienceContext(table);
+        const experienceContext = buildExperienceContext(table, tables);
         if (!experienceContext || !selectedModel) return;
         setDistilling(true);
         try {
@@ -116,9 +162,9 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
         } finally {
             setDistilling(false);
         }
-    }, [table, selectedModel, categoryHint, dispatch, t]);
+    }, [table, tables, selectedModel, categoryHint, dispatch, t]);
 
-    if (!buildExperienceContext(table)) return null;
+    if (!buildExperienceContext(table, tables)) return null;
 
     return (
         <>

@@ -342,11 +342,11 @@ Tool: read_knowledge
 ```text
 用户完成一次满意的分析
     ↓
-前端展示"保存为经验"按钮
+前端在当前分析链最后一个 leaf table 上展示"保存为经验"按钮
     ↓
 用户确认 → 调用后端 /api/knowledge/distill-experience
     ↓
-前端提交该分析的 experience_context（dialog、interaction、result_summary、execution_attempts）
+前端提交该 leaf table 对应的 experience_context（dialog、interaction、result_summary、execution_attempts）
     ↓
 调用 LLM 总结为经验文档
     ↓
@@ -354,6 +354,8 @@ Tool: read_knowledge
     ↓
 前端知识面板刷新
 ```
+
+`experience_context` 只描述用户当前保留并可见的最终分析链。若用户在推理过程中删除过某些中间 table，保存经验时不回放这些已删除节点，也不包含它们对应的中间结果摘要或 table-level step。最终 leaf table 仍可保存为经验；只要失败/修复尝试属于该 leaf table 的最终成功过程，就保留在 `execution_attempts` 中，否则随被删除的中间 table 一并排除。
 
 ### 经验提炼 Agent
 
@@ -463,11 +465,16 @@ POST /api/knowledge/search
 
 ### 经验保存入口
 
-在 DataAgent 完成一次分析（`present` action）后，前端在结果卡片上增加一个"保存为经验"按钮。点击后：
+在 DataAgent 完成一次分析（`present` action）后，前端只在当前分析链最后一个 leaf table 的结果卡片上增加一个"保存为经验"按钮。leaf table 指当前仍存在、且没有其他未锚定 derived table 继续从它派生的最终结果 table。
+
+如果一次分析生成多个中间 table，中间 table 不直接展示该按钮，避免用户误把半成品步骤保存为完整经验。若用户删除了某个中间 table，前端构建经验上下文时以当前仍存在的链为准，跳过已删除节点；最终 leaf table 仍然可以保存为经验。
+
+点击后：
 
 1. 弹出确认对话框，可选择子目录和编辑标题
 2. 调用 `/api/knowledge/distill-experience`
-3. Agent 提炼完成后在知识面板中显示新条目
+3. 前端提交该 leaf table 的 `experience_context`
+4. Agent 提炼完成后在知识面板中显示新条目
 
 ### 与现有 AgentRulesDialog 的关系
 
@@ -824,6 +831,8 @@ Workspace.confined_* / KnowledgeStore / ReasoningLogger
 
 `execution_attempts` 用于表达“初始失败代码”和“修复代码”的结构化摘要，例如非空代码行数、聚合/过滤/连接等操作类型；
 它不保存失败代码或修复代码原文，避免把原始数据处理细节直接送入经验提炼 LLM。
+
+前端生成 `experience_context` 时应从触发保存的 leaf table 回溯当前仍存在的 derived chain，只收集该链上仍可见的 `dialog`、`interaction`、`result_summary` 和 `execution_attempts`。用户已删除的中间 table 被视为不再认可的过程节点，不纳入经验；如果删除后 Redux 将子 table 重挂到祖先 table，经验上下文也应以重挂后的当前链为准。属于最终 leaf table 成功过程的失败/修复摘要可以保留，用于沉淀“如何修复并得到最终结果”的经验。
 
 ---
 

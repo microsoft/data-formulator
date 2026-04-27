@@ -24,7 +24,7 @@ import AddchartIcon from '@mui/icons-material/Addchart';
 
 import { TriggerCard } from './EncodingShelfCard';
 import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
-import { SaveExperienceButton } from './SaveExperienceButton';
+import { SaveExperienceButton, isLeafDerivedTable } from './SaveExperienceButton';
 
 
 // ─── Chart Card ──────────────────────────────────────────────────────────────
@@ -282,12 +282,11 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                 )}
                 {table?.derive && (
                     <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                        {table.derive.trigger.interaction?.some(
-                            e => e.from === 'user'
-                        ) && (
+                        {isLeafDerivedTable(table, tables) && (
                             <Box className="save-exp-btn" onClick={(e) => e.stopPropagation()}>
                                 <SaveExperienceButton
                                     table={table!}
+                                    tables={tables}
                                 />
                             </Box>
                         )}
