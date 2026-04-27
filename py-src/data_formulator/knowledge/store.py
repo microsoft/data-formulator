@@ -77,6 +77,64 @@ def parse_front_matter(content: str) -> tuple[dict[str, Any], str]:
     return meta, body
 
 
+# ---------------------------------------------------------------------------
+# Type-safe front matter model
+# ---------------------------------------------------------------------------
+
+class KnowledgeItemMeta:
+    """Type-safe representation of a knowledge file's front matter.
+
+    Guarantees all fields are the expected types regardless of what YAML
+    produced.  Construct via ``from_raw(meta_dict, fallback_stem)``.
+    """
+
+    __slots__ = ("title", "tags", "source", "created", "description", "always_apply")
+
+    def __init__(
+        self,
+        title: str,
+        tags: list[str],
+        source: str,
+        created: str,
+        description: str,
+        always_apply: bool,
+    ):
+        self.title = title
+        self.tags = tags
+        self.source = source
+        self.created = created
+        self.description = description
+        self.always_apply = always_apply
+
+    @classmethod
+    def from_raw(cls, meta: dict[str, Any], fallback_stem: str = "") -> "KnowledgeItemMeta":
+        """Build from a raw YAML-parsed dict with type coercion."""
+        title = meta.get("title", fallback_stem)
+        title = str(title) if title is not None else fallback_stem
+
+        raw_tags = meta.get("tags", [])
+        if isinstance(raw_tags, list):
+            tags = [str(t) for t in raw_tags]
+        elif raw_tags is None:
+            tags = []
+        else:
+            tags = [str(raw_tags)]
+
+        source = str(meta.get("source", "manual") or "manual")
+        created = str(meta.get("created", "") or "")
+        description = str(meta.get("description", "") or "")
+        always_apply = bool(meta.get("alwaysApply", True))
+
+        return cls(
+            title=title,
+            tags=tags,
+            source=source,
+            created=created,
+            description=description,
+            always_apply=always_apply,
+        )
+
+
 def _ensure_front_matter(content: str, path: str, category: str = "") -> str:
     """If *content* lacks front matter, prepend a minimal header."""
     meta, _ = parse_front_matter(content)
@@ -181,18 +239,19 @@ class KnowledgeStore:
                 logger.warning("Failed to read knowledge file %s", md_file.name)
                 continue
 
-            meta, _ = parse_front_matter(raw)
+            raw_meta, _ = parse_front_matter(raw)
+            km = KnowledgeItemMeta.from_raw(raw_meta, md_file.stem)
             rel = str(md_file.relative_to(jail.root)).replace("\\", "/")
             item: dict[str, Any] = {
-                "title": meta.get("title", md_file.stem),
-                "tags": meta.get("tags", []),
+                "title": km.title,
+                "tags": km.tags,
                 "path": rel,
-                "source": meta.get("source", "manual"),
-                "created": str(meta.get("created", "")),
+                "source": km.source,
+                "created": km.created,
             }
             if category == "rules":
-                item["description"] = meta.get("description", "")
-                item["alwaysApply"] = meta.get("alwaysApply", True)
+                item["description"] = km.description
+                item["alwaysApply"] = km.always_apply
             items.append(item)
 
         return items
@@ -270,26 +329,21 @@ class KnowledgeStore:
                 except Exception:
                     continue
 
-                meta, body = parse_front_matter(raw)
-                title = meta.get("title", md_file.stem)
-                tags = meta.get("tags", [])
-                if not isinstance(tags, list):
-                    tags = [str(tags)]
-                stem = md_file.stem
-                body_prefix = body[:200]
+                raw_meta, body = parse_front_matter(raw)
+                km = KnowledgeItemMeta.from_raw(raw_meta, md_file.stem)
 
-                score = self._match_score(q, title, tags, stem, body_prefix)
+                score = self._match_score(q, km.title, km.tags, md_file.stem, body[:200])
                 if score == 0:
                     continue
 
                 rel = str(md_file.relative_to(jail.root)).replace("\\", "/")
                 scored.append((score, {
                     "category": cat,
-                    "title": title,
-                    "tags": tags,
+                    "title": km.title,
+                    "tags": km.tags,
                     "path": rel,
                     "snippet": body[:500].strip(),
-                    "source": meta.get("source", "manual"),
+                    "source": km.source,
                 }))
 
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -303,7 +357,11 @@ class KnowledgeStore:
         stem: str,
         body_prefix: str,
     ) -> int:
-        """Compute a relevance score (0 = no match)."""
+        """Compute a relevance score (0 = no match).
+
+        All inputs are guaranteed str/list[str] by KnowledgeItemMeta,
+        but we keep str() as belt-and-suspenders defense.
+        """
         score = 0
         if query in title.lower():
             score += 100
