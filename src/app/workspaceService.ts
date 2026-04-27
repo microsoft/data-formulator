@@ -163,7 +163,7 @@ export async function exportWorkspace(id: string): Promise<Blob> {
         if (state.activeWorkspace?.id === id) {
             const EXCLUDED = new Set([
                 'models', 'selectedModelId', 'testedModels',
-                'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
+                'dataLoaderConnectParams', 'identity', 'serverConfig',
                 'chartSynthesisInProgress', 'chartInsightInProgress',
                 'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',
             ]);

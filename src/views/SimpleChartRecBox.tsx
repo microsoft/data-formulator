@@ -111,7 +111,6 @@ export const SimpleChartRecBox: FC = function () {
     const charts = useSelector(dfSelectors.getAllCharts);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
-    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
 
@@ -388,7 +387,6 @@ export const SimpleChartRecBox: FC = function () {
                     attached_metadata: t.attachedMetadata
                 })),
                 exploration_thread: explorationThread,
-                agent_exploration_rules: agentRules.exploration,
             });
 
             const controller = new AbortController();
@@ -490,7 +488,7 @@ export const SimpleChartRecBox: FC = function () {
             setThinkingBuffer('');
             ideasAbortRef.current = null;
         }
-    }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, agentRules, config, dispatch, t]);
+    }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, config, dispatch, t]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         trajectory: any[];
@@ -653,8 +651,6 @@ export const SimpleChartRecBox: FC = function () {
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
             model: activeModel,
             max_iterations: 5,
-            agent_exploration_rules: agentRules.exploration,
-            agent_coding_rules: agentRules.coding
         };
 
         if (isResume) {
@@ -1141,7 +1137,7 @@ export const SimpleChartRecBox: FC = function () {
                 currentDraftId = null;
             }
         });
-    }, [focusedTableId, tables, draftNodes, activeModel, agentRules, config, conceptShelfItems, dispatch, t]);
+    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, dispatch, t]);
 
     // ── Report generation via report agent ──────────────────────────
 

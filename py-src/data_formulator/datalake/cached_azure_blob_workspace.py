@@ -71,6 +71,7 @@ from data_formulator.datalake.workspace_metadata import (
 )
 from data_formulator.datalake.parquet_utils import sanitize_table_name
 from data_formulator.datalake.workspace import Workspace, get_data_formulator_home
+from data_formulator.security.path_safety import ConfinedDir
 
 if TYPE_CHECKING:
     from azure.storage.blob import ContainerClient
@@ -177,6 +178,7 @@ class CachedAzureBlobWorkspace(AzureBlobWorkspace):
             else:
                 self._cache_dir = base / safe_id
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._cache_jail = ConfinedDir(self._cache_dir, mkdir=False)
 
         self._max_cache_bytes = max_cache_bytes
 
@@ -230,16 +232,10 @@ class CachedAzureBlobWorkspace(AzureBlobWorkspace):
     def _cache_path(self, filename: str) -> Path:
         """Return the local cache path for *filename*.
 
-        Raises ``ValueError`` if the resolved path escapes the cache
-        directory (defence-in-depth against path-traversal attacks).
+        Delegates to :class:`ConfinedDir` which raises ``ValueError``
+        if the resolved path escapes the cache directory.
         """
-        resolved = (self._cache_dir / filename).resolve()
-        if not resolved.is_relative_to(self._cache_dir.resolve()):
-            raise ValueError(
-                f"Path traversal detected: {filename!r} resolves outside "
-                f"the cache directory"
-            )
-        return resolved
+        return self._cache_jail.resolve(filename)
 
     # ------------------------------------------------------------------
     # Low-level blob overrides (write-through cache)

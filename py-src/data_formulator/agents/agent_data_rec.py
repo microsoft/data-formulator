@@ -168,9 +168,41 @@ You will produce two outputs: a JSON spec (```json```) and a Python script (```p
 {SHARED_DUCKDB_NOTES}'''
 
 
+def _load_knowledge_rules(knowledge_store) -> list[dict]:
+    """Load rules from KnowledgeStore. Returns list of {title, body} dicts."""
+    if not knowledge_store:
+        return []
+    try:
+        from data_formulator.knowledge.store import parse_front_matter
+        items = knowledge_store.list_all("rules")
+        result = []
+        for item in items:
+            try:
+                content = knowledge_store.read("rules", item["path"])
+                _, body = parse_front_matter(content)
+                if body.strip():
+                    result.append({"title": item["title"], "body": body.strip()})
+            except Exception:
+                pass
+        return result
+    except Exception:
+        logger.warning("Failed to load knowledge rules", exc_info=True)
+        return []
+
+
+def _combine_rules(text_rules: str, knowledge_rules: list[dict]) -> str:
+    """Merge text rules and knowledge-file rules into a single string."""
+    parts = []
+    if text_rules and text_rules.strip():
+        parts.append(text_rules.strip())
+    for rule in knowledge_rules:
+        parts.append(f"### {rule['title']}\n{rule['body']}")
+    return "\n\n".join(parts)
+
+
 class DataRecAgent(object):
 
-    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", language_instruction="", max_display_rows=10000, model_info=None):
+    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", language_instruction="", max_display_rows=10000, model_info=None, knowledge_store=None):
         self.client = client
         self.workspace = workspace
         self.max_display_rows = max_display_rows
@@ -178,14 +210,17 @@ class DataRecAgent(object):
         self._agent_coding_rules = agent_coding_rules
         self._language_instruction = language_instruction
 
+        knowledge_rules = _load_knowledge_rules(knowledge_store)
+        combined_rules = _combine_rules(agent_coding_rules, knowledge_rules)
+
         if system_prompt is not None:
             self._base_prompt = system_prompt
             self.system_prompt = system_prompt
         else:
             self._base_prompt = SYSTEM_PROMPT
             base_prompt = SYSTEM_PROMPT
-            if agent_coding_rules and agent_coding_rules.strip():
-                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should prioritize user instructions.\n\n" + agent_coding_rules.strip()
+            if combined_rules:
+                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should prioritize user instructions.\n\n" + combined_rules
             else:
                 self.system_prompt = base_prompt
 

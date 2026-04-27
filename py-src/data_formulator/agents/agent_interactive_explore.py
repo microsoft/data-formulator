@@ -91,11 +91,12 @@ Output a list of JSON objects, one per line (NDJSON format). Each line must be v
 
 class InteractiveExploreAgent(object):
 
-    def __init__(self, client, workspace, agent_exploration_rules="", language_instruction=""):
+    def __init__(self, client, workspace, agent_exploration_rules="", language_instruction="", knowledge_store=None):
         self.client = client
         self.agent_exploration_rules = agent_exploration_rules
         self.workspace = workspace
         self.language_instruction = language_instruction
+        self._knowledge_store = knowledge_store
 
     def run(self, input_tables, start_question=None,
             focused_thread=None, other_threads=None,
@@ -146,6 +147,24 @@ class InteractiveExploreAgent(object):
 
         if start_question:
             context += f"\n\n[START QUESTION]\n\n{start_question}"
+
+        # ── Inject relevant experiences from knowledge store ──────────
+        if self._knowledge_store:
+            try:
+                query = start_question or ""
+                table_names = [t.get("name", "") for t in input_tables if t.get("name")]
+                search_query = " ".join([query] + table_names[:5]).strip()
+                if search_query:
+                    relevant = self._knowledge_store.search(
+                        search_query, categories=["experiences"], max_results=3,
+                    )
+                    if relevant:
+                        knowledge_block = "[RELEVANT EXPERIENCES]\n"
+                        for item in relevant:
+                            knowledge_block += f"\n### {item['title']}\n{item['snippet']}\n"
+                        context += f"\n\n{knowledge_block}"
+            except Exception:
+                logger.warning("Failed to search knowledge experiences", exc_info=True)
 
         # ── Build system prompt ───────────────────────────────────────
         system_prompt = SYSTEM_PROMPT

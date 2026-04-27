@@ -21,6 +21,21 @@ class _FakeWorkspace:
     """Minimal workspace stub for tool tests."""
     def __init__(self, path: Path):
         self._path = path
+        self._confined_root = ConfinedDir(path, mkdir=False)
+        self._confined_data = ConfinedDir(path / "data")
+        self._confined_scratch = ConfinedDir(path / "scratch")
+
+    @property
+    def confined_root(self):
+        return self._confined_root
+
+    @property
+    def confined_data(self):
+        return self._confined_data
+
+    @property
+    def confined_scratch(self):
+        return self._confined_scratch
 
 
 @pytest.fixture()

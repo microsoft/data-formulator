@@ -397,6 +397,7 @@ class DataAgent:
                 rules_injected=[
                     r for r in [self.agent_exploration_rules, self.agent_coding_rules] if r
                 ],
+                knowledge_injected=[],
             )
 
             if trajectory is None:

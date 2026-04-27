@@ -22,7 +22,6 @@ import openai
 import pandas as pd
 
 from data_formulator.agents.agent_data_clean_stream import parse_table_sections
-from data_formulator.security.path_safety import ConfinedDir
 
 logger = logging.getLogger(__name__)
 
@@ -223,11 +222,12 @@ def _secure_filename(name: str) -> str:
 class DataLoadingAgent:
     """Conversational agent for data loading and extraction."""
 
-    def __init__(self, client, workspace, available_datasets=None, language_instruction=""):
+    def __init__(self, client, workspace, available_datasets=None, language_instruction="", knowledge_store=None):
         self.client = client
         self.workspace = workspace
         self.available_datasets = available_datasets or []
         self.language_instruction = language_instruction
+        self._knowledge_store = knowledge_store
 
     # ------------------------------------------------------------------
     # Main streaming entry point
@@ -415,8 +415,8 @@ class DataLoadingAgent:
 
     def _execute_tool(self, name, args):
         """Execute a tool and return result dict."""
-        workspace_jail = ConfinedDir(self.workspace._path, mkdir=False)
-        scratch_jail = ConfinedDir(self.workspace._path / "scratch")
+        workspace_jail = self.workspace.confined_root
+        scratch_jail = self.workspace.confined_scratch
 
         if name == "read_file":
             return self._tool_read_file(args, workspace_jail)
@@ -542,16 +542,15 @@ class DataLoadingAgent:
                     "error": None,
                 }
 
-                # Auto-save each DataFrame to scratch/ and build summary
-                scratch_dir = self.workspace._path / "scratch"
-                scratch_dir.mkdir(exist_ok=True)
+                scratch_jail = self.workspace.confined_scratch
                 saved = {}
                 for name, df in dfs.items():
                     if isinstance(df, pd.DataFrame):
-                        csv_path = scratch_dir / f"{_secure_filename(name)}.csv"
+                        safe_name = _secure_filename(name)
+                        csv_path = scratch_jail.resolve(f"{safe_name}.csv")
                         df.to_csv(csv_path, index=False)
                         saved[name] = {
-                            "path": f"scratch/{_secure_filename(name)}.csv",
+                            "path": f"scratch/{safe_name}.csv",
                             "rows": len(df),
                             "columns": list(df.columns),
                             "preview": df.head(3).to_dict(orient="records"),
@@ -648,7 +647,7 @@ class DataLoadingAgent:
 
     def _preview_scratch_files(self, scratch_files, scratch_dir):
         """Read scratch CSV files and build preview actions."""
-        workspace_jail = ConfinedDir(self.workspace._path, mkdir=False)
+        workspace_jail = self.workspace.confined_root
         actions = []
 
         for spec in scratch_files:
@@ -791,6 +790,22 @@ class DataLoadingAgent:
         prompt = SYSTEM_PROMPT.format(
             table_names=table_names,
         )
+
+        # Inject relevant skills from knowledge store
+        if self._knowledge_store:
+            try:
+                relevant = self._knowledge_store.search(
+                    "data loading cleaning preparation",
+                    categories=["skills"],
+                    max_results=3,
+                )
+                if relevant:
+                    skills_block = "[RELEVANT SKILLS]\n"
+                    for item in relevant:
+                        skills_block += f"\n### {item['title']}\n{item['snippet']}\n"
+                    prompt += "\n\n" + skills_block
+            except Exception:
+                logger.warning("Failed to search knowledge skills", exc_info=True)
 
         if self.language_instruction:
             prompt += "\n\n" + self.language_instruction

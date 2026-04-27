@@ -53,6 +53,10 @@ import ClearIcon from '@mui/icons-material/Clear';
 
 import HistoryIcon from '@mui/icons-material/History';
 
+import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
+
+import { KnowledgePanel } from './KnowledgePanel';
+
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
@@ -127,7 +131,7 @@ export const DataSourceSidebar: React.FC<{
 
     const toggle = () => dispatch(dfActions.setDataSourceSidebarOpen(!isOpen));
 
-    const [initialTab, setInitialTab] = useState<'sources' | 'sessions'>('sources');
+    const [initialTab, setInitialTab] = useState<'sources' | 'sessions' | 'knowledge'>('sources');
 
     return (
         <Box sx={{
@@ -167,6 +171,15 @@ export const DataSourceSidebar: React.FC<{
                         borderRadius: 1,
                     }}>
                         <HistoryIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('sidebar.knowledge', { defaultValue: 'Knowledge' })} placement="right">
+                    <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
+                        borderRadius: 1,
+                    }}>
+                        <MenuBookOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
             </Box>
@@ -218,7 +231,7 @@ export const DataSourceSidebar: React.FC<{
 const DataSourceSidebarPanel: React.FC<{
     onOpenUploadDialog?: (tab?: string) => void;
     onCollapse: () => void;
-    initialTab?: 'sources' | 'sessions';
+    initialTab?: 'sources' | 'sessions' | 'knowledge';
     connectorRefreshKey?: number;
 }> = ({ onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0 }) => {
     const { t } = useTranslation();
@@ -274,8 +287,8 @@ const DataSourceSidebarPanel: React.FC<{
     const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
-    // Sidebar tab: 'sources' or 'sessions'
-    const [activeTab, setActiveTab] = useState<'sources' | 'sessions'>(initialTab);
+    // Sidebar tab: 'sources' or 'sessions' or 'knowledge'
+    const [activeTab, setActiveTab] = useState<'sources' | 'sessions' | 'knowledge'>(initialTab);
 
     // Sync tab when rail icon switches it
     useEffect(() => {
@@ -1326,6 +1339,25 @@ const DataSourceSidebarPanel: React.FC<{
                     ))
                 )}
             </Box>
+            </Box>
+            )}
+
+            {/* ── Knowledge tab ── */}
+            {activeTab === 'knowledge' && (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box
+                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                >
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                        {t('knowledge.title', { defaultValue: 'Knowledge Base' })}
+                    </Typography>
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+                <KnowledgePanel />
             </Box>
             )}
 

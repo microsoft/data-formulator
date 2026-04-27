@@ -36,6 +36,7 @@ from data_formulator.agents.agent_interactive_explore import InteractiveExploreA
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
 from data_formulator.model_registry import model_registry
+from data_formulator.knowledge.store import KnowledgeStore
 
 from data_formulator.agents.data_agent import DataAgent
 from data_formulator.agents.agent_language import build_language_instruction
@@ -56,6 +57,16 @@ def get_language_instruction(*, mode: str = "full") -> str:
     mode: "full" for text-heavy agents, "compact" for code-generation agents.
     """
     return build_language_instruction(_get_ui_lang(), mode=mode)
+
+
+def _get_knowledge_store(identity_id: str) -> KnowledgeStore | None:
+    """Create a KnowledgeStore for the given user, or None on failure."""
+    try:
+        from data_formulator.datalake.workspace import get_user_home
+        return KnowledgeStore(get_user_home(identity_id))
+    except Exception:
+        logger.warning("Failed to create KnowledgeStore", exc_info=True)
+        return None
 
 
 agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
@@ -423,11 +434,13 @@ def derive_data():
                 "api_base": content['model'].get("api_base", ""),
             }
 
+            knowledge_store = _get_knowledge_store(identity_id)
+
             if mode == "recommendation":
-                agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
+                agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
                 results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages, primary_tables=primary_tables)
             else:
-                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
+                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
                 results = agent.run(input_tables, instruction, prev_messages,
                                     current_visualization=current_visualization, expected_visualization=expected_visualization)
 
@@ -643,7 +656,8 @@ def refine_data():
                 "api_base": content['model'].get("api_base", ""),
             }
 
-            agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info)
+            knowledge_store = _get_knowledge_store(identity_id)
+            agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
             results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
                                     current_visualization=current_visualization, expected_visualization=expected_visualization)
 
@@ -743,8 +757,10 @@ def request_chart_insight():
         workspace = get_workspace(identity_id)
 
         try:
+            knowledge_store = _get_knowledge_store(identity_id)
             agent = ChartInsightAgent(client=client, workspace=workspace,
-                                      language_instruction=get_language_instruction())
+                                      language_instruction=get_language_instruction(),
+                                      knowledge_store=knowledge_store)
             candidates = agent.run(chart_image, chart_type, field_names, input_tables)
 
             if candidates and len(candidates) > 0:
@@ -791,10 +807,13 @@ def get_recommendation_questions():
     exploration_thread = content.get("exploration_thread", None)
     current_data_sample = content.get("current_data_sample", None)
 
+    knowledge_store = _get_knowledge_store(identity_id)
+
     def generate():
         agent = InteractiveExploreAgent(client=client, workspace=workspace,
                                         agent_exploration_rules=agent_exploration_rules,
-                                        language_instruction=get_language_instruction())
+                                        language_instruction=get_language_instruction(),
+                                        knowledge_store=knowledge_store)
         try:
             text_buf = ""
             for chunk in agent.run(
@@ -1142,7 +1161,6 @@ def scratch_upload():
     """
     import hashlib
     from werkzeug.utils import secure_filename as _werkzeug_secure_filename
-    from data_formulator.security.path_safety import ConfinedDir
 
     if 'file' not in request.files:
         return jsonify(status="error", message="No file in request")
@@ -1153,7 +1171,7 @@ def scratch_upload():
 
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
-    scratch_jail = ConfinedDir(workspace._path / "scratch")
+    scratch_jail = workspace.confined_scratch
 
     raw = file.read()
     file_hash = hashlib.sha256(raw).hexdigest()[:8]
@@ -1178,11 +1196,10 @@ def scratch_upload():
 def scratch_serve(filename):
     """Serve a file from the workspace scratch/ folder."""
     from flask import send_file
-    from data_formulator.security.path_safety import ConfinedDir
 
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
-    scratch_jail = ConfinedDir(workspace._path / "scratch", mkdir=False)
+    scratch_jail = workspace.confined_scratch
 
     try:
         target = scratch_jail.resolve(filename)
@@ -1230,6 +1247,7 @@ def data_loading_chat():
 
     language_instruction = get_language_instruction()
     messages = content.get("messages", [])
+    knowledge_store = _get_knowledge_store(identity_id)
 
     def generate():
         try:
@@ -1238,6 +1256,7 @@ def data_loading_chat():
                 workspace=workspace,
                 available_datasets=available_datasets,
                 language_instruction=language_instruction,
+                knowledge_store=knowledge_store,
             )
 
             for event in agent.stream(messages):

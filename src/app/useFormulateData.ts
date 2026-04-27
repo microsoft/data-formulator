@@ -75,7 +75,6 @@ export function useFormulateData() {
     const dispatch = useDispatch<AppDispatch>();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
-    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const activeModel = useSelector(dfSelectors.getActiveModel);
 
@@ -220,7 +219,6 @@ export function useFormulateData() {
                 })(),
                 ...(focusedThread.length > 0 ? { focused_thread: focusedThread } : {}),
                 ...(otherThreads.length > 0 ? { other_threads: otherThreads } : {}),
-                agent_exploration_rules: agentRules.exploration,
                 ...(currentChartImage ? { current_chart: currentChartImage } : {}),
                 ...(startQuestion ? { start_question: startQuestion } : {}),
             });
@@ -394,7 +392,6 @@ export function useFormulateData() {
             primary_tables: primaryTableNames,
             extra_prompt: instruction,
             model: activeModel,
-            agent_coding_rules: agentRules.coding,
             ...(currentVisualization ? { current_visualization: currentVisualization } : {}),
             ...(expectedVisualization ? { expected_visualization: expectedVisualization } : {}),
         };
@@ -420,7 +417,6 @@ export function useFormulateData() {
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
-                    agent_coding_rules: agentRules.coding,
                     ...(currentVisualization ? { current_visualization: currentVisualization } : {}),
                     ...(expectedVisualization ? { expected_visualization: expectedVisualization } : {}),
                 };
