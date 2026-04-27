@@ -571,6 +571,7 @@ def data_agent_streaming():
                 max_iterations=max_iterations,
                 max_repair_attempts=max_repair_attempts,
                 user_home=user_home,
+                identity_id=identity_id,
             )
 
             trajectory = None

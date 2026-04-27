@@ -855,6 +855,7 @@ export const SimpleChartRecBox: FC = function () {
                     outputVariable: refinedGoal?.output_variable || 'result_df',
                     source: resolvedSourceIds.length > 0 ? resolvedSourceIds : selectedTableIds,
                     dialog: dialog || [],
+                    executionAttempts: transformResult.execution_attempts || [],
                     trigger: {
                         tableId: triggerTableId,
                         resultTableId: candidateTableId,

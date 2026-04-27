@@ -324,6 +324,7 @@ class DataAgent:
         max_iterations: int = 5,
         max_repair_attempts: int = 2,
         user_home: Path | str | None = None,
+        identity_id: str | None = None,
     ):
         self.client = client
         self.workspace = workspace
@@ -337,10 +338,14 @@ class DataAgent:
             ReasoningLogger, _NullReasoningLogger,
         )
         self._session_id = uuid.uuid4().hex[:12]
-        if user_home:
-            self._reasoning_log = ReasoningLogger(
-                user_home, "DataAgent", self._session_id,
-            )
+        if identity_id:
+            try:
+                self._reasoning_log = ReasoningLogger(
+                    identity_id, "DataAgent", self._session_id,
+                )
+            except Exception:
+                logger.warning("Failed to initialise ReasoningLogger", exc_info=True)
+                self._reasoning_log = _NullReasoningLogger()
         else:
             self._reasoning_log = _NullReasoningLogger()
 
@@ -651,6 +656,43 @@ class DataAgent:
     # Visualize execution (with repair)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _summarize_execution_code(code: Any) -> str:
+        """Summarize generated code shape without storing source text."""
+        text = "" if code is None else str(code)
+        lines = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        checks = (
+            ("groupby", "groupby"),
+            ("agg(", "aggregate"),
+            (".sum(", "sum"),
+            ("merge(", "merge/join"),
+            (".join(", "merge/join"),
+            ("pivot", "pivot"),
+            ("melt(", "reshape"),
+            ("query(", "filter"),
+            (".loc[", "filter"),
+            ("sort_values", "sort"),
+            ("reset_index", "reset-index"),
+            ("assign(", "derive-column"),
+            ("value_counts", "count"),
+            ("to_datetime", "datetime-conversion"),
+            ("fillna", "missing-value handling"),
+            ("dropna", "missing-value handling"),
+        )
+        operations = [label for needle, label in checks if needle in text]
+        unique_operations = list(dict.fromkeys(operations))
+
+        if unique_operations:
+            return (
+                f"{len(lines)} non-empty lines; operations="
+                f"{', '.join(unique_operations)}"
+            )
+        return f"{len(lines)} non-empty lines; operations=unspecified"
+
     def _execute_visualize(
         self,
         code: str,
@@ -683,6 +725,20 @@ class DataAgent:
         rlog = self._reasoning_log
         repair_llm_calls = 0
         attempt = 0
+        initial_code_summary = self._summarize_execution_code(code)
+        initial_attempt: dict[str, Any] = {
+            "kind": "visualize",
+            "attempt": attempt,
+            "status": viz_result["status"],
+            "summary": display_instruction,
+            "code_summary": initial_code_summary,
+            "error": (viz_result.get("error_message") or "")[:500],
+        }
+        last_failed_code_summary = ""
+        if viz_result["status"] != "ok":
+            initial_attempt["failed_code_summary"] = initial_code_summary
+            last_failed_code_summary = initial_code_summary
+        execution_attempts: list[dict[str, Any]] = [initial_attempt]
         while viz_result["status"] != "ok" and attempt < self.max_repair_attempts:
             attempt += 1
             error_msg = viz_result.get("error_message", "Unknown error")
@@ -705,8 +761,10 @@ class DataAgent:
                     repair_action = evt.get("action_data")
                     repair_llm_calls += evt.get("llm_calls", 0)
             if repair_action and repair_action.get("action") == "visualize":
+                repair_code = repair_action.get("code", code)
+                repair_code_summary = self._summarize_execution_code(repair_code)
                 viz_result = self._run_visualize_code(
-                    code=repair_action.get("code", code),
+                    code=repair_code,
                     output_variable=repair_action.get("output_variable", output_variable),
                     chart_spec=repair_action.get("chart", chart_spec),
                     field_metadata=repair_action.get("field_metadata", field_metadata),
@@ -714,16 +772,41 @@ class DataAgent:
                     display_instruction=display_instruction,
                     messages=messages,
                 )
+                repair_attempt: dict[str, Any] = {
+                    "kind": "repair",
+                    "attempt": attempt,
+                    "status": viz_result["status"],
+                    "summary": repair_action.get("display_instruction", display_instruction),
+                    "code_summary": repair_code_summary,
+                    "repair_code_summary": repair_code_summary,
+                    "error": (viz_result.get("error_message") or "")[:500],
+                }
+                if viz_result["status"] != "ok":
+                    repair_attempt["failed_code_summary"] = repair_code_summary
+                    last_failed_code_summary = repair_code_summary
+                execution_attempts.append(repair_attempt)
                 rlog.log("repair_attempt", attempt=attempt,
                          original_error=error_msg[:200],
                          status=viz_result["status"])
             else:
+                execution_attempts.append({
+                    "kind": "repair",
+                    "attempt": attempt,
+                    "status": "error",
+                    "summary": "repair action not produced",
+                    "failed_code_summary": last_failed_code_summary,
+                    "error": error_msg[:500],
+                })
                 rlog.log("repair_attempt", attempt=attempt,
                          original_error=error_msg[:200],
                          status="repair_failed")
                 break
 
         viz_result["repair_llm_calls"] = repair_llm_calls
+        if viz_result.get("status") == "ok" and isinstance(viz_result.get("transform_result"), dict):
+            viz_result["transform_result"]["execution_attempts"] = execution_attempts
+        else:
+            viz_result["execution_attempts"] = execution_attempts
         return viz_result
 
     def _run_explore_code(

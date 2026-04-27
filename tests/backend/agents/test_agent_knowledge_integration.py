@@ -28,6 +28,8 @@ from data_formulator.agents.data_agent import DataAgent
 
 pytestmark = [pytest.mark.backend]
 
+TEST_IDENTITY = "user:test-knowledge@example.com"
+
 
 RULE_MD = """\
 ---
@@ -248,17 +250,21 @@ class TestGracefulDegradation:
 
 class TestReasoningLogIntegration:
     @patch.dict(os.environ, {"DF_AGENT_LOG": "on"})
-    def test_session_start_includes_rules(self, mock_client, mock_workspace, user_home):
+    def test_session_start_includes_rules(self, mock_client, mock_workspace, user_home, tmp_path):
         """session_start log event should be written (file-based check)."""
-        agent = _make_agent(mock_client, mock_workspace, user_home)
-        rlog = agent._reasoning_log
-        rlog.log(
-            "session_start",
-            rules_injected=["ROI Standard"],
-            knowledge_injected=agent._injected_knowledge,
-        )
-        rlog.close()
-        # Verify the log file was created (Phase 1 already tested format)
-        logs_dir = user_home / "agent-logs"
+        with patch.dict(os.environ, {"DATA_FORMULATOR_HOME": str(tmp_path)}):
+            agent = _make_agent(
+                mock_client, mock_workspace, user_home,
+                identity_id=TEST_IDENTITY,
+            )
+            rlog = agent._reasoning_log
+            rlog.log(
+                "session_start",
+                rules_injected=["ROI Standard"],
+                knowledge_injected=agent._injected_knowledge,
+            )
+            rlog.close()
+        # Logs are now stored system-level under DATA_FORMULATOR_HOME/agent-logs/
+        logs_dir = tmp_path / "agent-logs"
         jsonl_files = list(logs_dir.rglob("*.jsonl"))
         assert len(jsonl_files) >= 1

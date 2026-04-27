@@ -9,20 +9,12 @@ current user via ``get_identity_id()`` and confined via ``ConfinedDir``.
 
 from __future__ import annotations
 
-import json
-import logging
-from pathlib import Path
-
 from flask import Blueprint, jsonify, request
 
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import get_user_home
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.knowledge.store import KnowledgeStore, VALID_CATEGORIES
-from data_formulator.security.path_safety import ConfinedDir
-
-logger = logging.getLogger(__name__)
-
 knowledge_bp = Blueprint("knowledge", __name__, url_prefix="/api/knowledge")
 
 
@@ -40,6 +32,26 @@ def _require_json_field(data: dict, field: str) -> str:
             f"'{field}' is required",
         )
     return value.strip()
+
+
+def _require_context_string(context: dict, field: str) -> str:
+    value = context.get(field, "")
+    if not value or not isinstance(value, str) or not value.strip():
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            f"'experience_context.{field}' is required",
+        )
+    return value.strip()
+
+
+def _require_context_list(context: dict, field: str) -> list:
+    value = context.get(field)
+    if not isinstance(value, list):
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            f"'experience_context.{field}' must be a list",
+        )
+    return value
 
 
 # ── list ──────────────────────────────────────────────────────────────────
@@ -151,30 +163,34 @@ def knowledge_search():
 
 @knowledge_bp.route("/distill-experience", methods=["POST"])
 def distill_experience():
-    """Distill a reasoning log into a reusable experience document.
+    """Distill user-visible analysis context into a reusable experience.
 
-    Required body fields: ``session_id``, ``user_question``, ``model``.
+    Required body fields: ``experience_context`` and ``model``.
     Optional: ``category_hint`` (sub-directory under experiences/).
     """
     data = request.get_json(silent=True) or {}
-    session_id = _require_json_field(data, "session_id")
-    user_question = _require_json_field(data, "user_question")
+    experience_context = data.get("experience_context")
+    if not isinstance(experience_context, dict):
+        raise AppError(ErrorCode.INVALID_REQUEST, "'experience_context' is required")
+
+    _require_context_string(experience_context, "user_question")
+    _require_context_list(experience_context, "dialog")
+    _require_context_list(experience_context, "interaction")
+    if not isinstance(experience_context.get("result_summary"), dict):
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            "'experience_context.result_summary' is required",
+        )
+
     model_config = data.get("model")
     if not model_config or not isinstance(model_config, dict):
         raise AppError(ErrorCode.INVALID_REQUEST, "'model' configuration is required")
 
-    category_hint = data.get("category_hint", "").strip()
+    category_hint_raw = data.get("category_hint", "")
+    category_hint = category_hint_raw.strip() if isinstance(category_hint_raw, str) else ""
 
     identity_id = get_identity_id()
     user_home = get_user_home(identity_id)
-
-    # Read the reasoning log for the given session
-    log_lines = _read_session_log(user_home, session_id)
-    if not log_lines:
-        raise AppError(
-            ErrorCode.INVALID_REQUEST,
-            "No reasoning log found for this session",
-        )
 
     # Build client and run distillation
     from data_formulator.routes.agents import get_client, get_language_instruction
@@ -187,11 +203,12 @@ def distill_experience():
         client=client,
         language_instruction=language_instruction,
     )
-    md_content = agent.run(log_lines, user_question, session_id=session_id)
+    md_content = agent.run_from_context(experience_context)
 
     # Save to knowledge/experiences/
-    store = _get_store()
-    filename = _experience_filename(session_id, md_content)
+    store = KnowledgeStore(user_home)
+    context_id = str(experience_context.get("context_id") or "experience")
+    filename = _experience_filename(context_id, md_content)
     if category_hint:
         rel_path = f"{category_hint}/{filename}"
     else:
@@ -207,40 +224,6 @@ def distill_experience():
         "path": rel_path,
         "category": "experiences",
     })
-
-
-def _read_session_log(user_home: Path, session_id: str) -> list[dict]:
-    """Find and read the JSONL log file for *session_id*.
-
-    Searches all date sub-directories under ``agent-logs/`` for a file
-    whose name starts with the session_id.  All I/O goes through
-    :class:`ConfinedDir` for path safety.
-    """
-    logs_root = user_home / "agent-logs"
-    if not logs_root.is_dir():
-        return []
-
-    try:
-        jail = ConfinedDir(logs_root, mkdir=False)
-    except Exception:
-        return []
-
-    for date_dir in sorted(jail.iterdir(), reverse=True):
-        if not date_dir.is_dir():
-            continue
-        rel_date = date_dir.name
-        for log_file in jail.iterdir(rel_date):
-            if log_file.name.startswith(session_id) and log_file.suffix == ".jsonl":
-                try:
-                    rel_path = f"{rel_date}/{log_file.name}"
-                    content = jail.read_text(rel_path)
-                    lines = content.strip().splitlines()
-                    return [json.loads(line) for line in lines if line.strip()]
-                except Exception:
-                    logger.warning("Failed to read log file %s", log_file.name)
-                    return []
-
-    return []
 
 
 def _experience_filename(session_id: str, md_content: str) -> str:

@@ -33,6 +33,33 @@ export interface KnowledgeSearchResult {
     source: string;
 }
 
+export interface ExperienceContext {
+    context_id?: string;
+    source_table_id?: string;
+    user_question: string;
+    dialog: Array<Record<string, any>>;
+    interaction: Array<Record<string, any>>;
+    result_summary: {
+        display_instruction?: string;
+        output_variable?: string;
+        source_tables?: string[];
+        output_fields?: string[];
+        output_rows?: number;
+        chart_type?: string;
+        code?: string;
+    };
+    execution_attempts?: Array<{
+        kind: 'visualize' | 'repair' | 'tool' | 'clarify' | string;
+        attempt?: number;
+        status: 'ok' | 'error' | 'skipped' | string;
+        summary: string;
+        code_summary?: string;
+        failed_code_summary?: string;
+        repair_code_summary?: string;
+        error?: string;
+    }>;
+}
+
 // ── API functions ────────────────────────────────────────────────────────
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
@@ -117,8 +144,7 @@ export interface DistillExperienceResult {
 }
 
 export async function distillExperience(
-    sessionId: string,
-    userQuestion: string,
+    experienceContext: ExperienceContext,
     model: Record<string, any>,
     categoryHint?: string,
 ): Promise<DistillExperienceResult> {
@@ -126,8 +152,7 @@ export async function distillExperience(
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({
-            session_id: sessionId,
-            user_question: userQuestion,
+            experience_context: experienceContext,
             model,
             category_hint: categoryHint,
         }),

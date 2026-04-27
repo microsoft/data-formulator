@@ -44,11 +44,10 @@
 
 ```text
 ~/.data_formulator/
-└── users/
-    └── <safe_identity_id>/
-        └── agent-logs/                          ← 推理日志根目录
-            └── <date>/                          ← 按日期分目录，便于清理
-                └── <session_id>-<agent_type>.jsonl
+└── agent-logs/                                  ← 管理员/开发者日志根目录
+    └── <date>/                                  ← 按日期分目录，便于清理
+        └── <safe_identity_id>/                  ← 管理员检索维度，不是用户存储边界
+            └── <session_id>-<agent_type>.jsonl
 ```
 
 单个文件对应一次 Agent 会话（一次 `/api/agent/data-agent-streaming` 请求）。文件名包含 session_id 和 agent 类型，便于查找。
@@ -88,8 +87,9 @@
 
 ```text
 class ReasoningLogger:
-    def __init__(self, user_home: Path, agent_type: str, session_id: str):
-        log_dir = ConfinedDir(user_home / "agent-logs" / today_str())
+    def __init__(self, identity_id: str, agent_type: str, session_id: str):
+        safe_id = sanitize_identity_dirname(identity_id)
+        log_dir = ConfinedDir(get_data_formulator_home() / "agent-logs" / today_str() / safe_id)
         self._file = log_dir.resolve(f"{session_id}-{agent_type}.jsonl", mkdir_parents=True)
         self._fd = open(self._file, "a", encoding="utf-8")
 
@@ -128,7 +128,7 @@ class ReasoningLogger:
 - 日志中不能包含 API key、凭证、连接串。
 - `on` 模式下只记录结构化摘要，不含用户数据原文。
 - `verbose` 模式下完整内容必须经过 `log_sanitizer` 清洗后才写入。
-- 日志文件通过 `ConfinedDir` 约束到用户目录下。
+- 日志文件通过 `ConfinedDir` 约束到系统级 `agent-logs/<date>/<safe_identity_id>/` 目录下。
 
 ---
 
@@ -202,7 +202,7 @@ front matter 字段：
 | `created` | 是 | 创建日期 |
 | `updated` | 是 | 最后更新日期 |
 | `source` | 否 | 来源：`manual`（人工）或 `agent_summarized`（Agent 提炼） |
-| `source_session` | 否 | 当 source=agent_summarized 时，关联的推理日志 session_id |
+| `source_context` | 否 | 当 source=agent_summarized 时，关联的前端分析上下文 ID |
 | `relevance` | 否 | Skills/Experiences 可选的领域标签，如 `["sales", "time-series"]` |
 
 ### 目录结构约束
@@ -346,7 +346,7 @@ Tool: read_knowledge
     ↓
 用户确认 → 调用后端 /api/knowledge/distill-experience
     ↓
-后端取出该分析的推理日志
+前端提交该分析的 experience_context（dialog、interaction、result_summary、execution_attempts）
     ↓
 调用 LLM 总结为经验文档
     ↓
@@ -357,14 +357,14 @@ Tool: read_knowledge
 
 ### 经验提炼 Agent
 
-这是一个新的轻量 Agent，输入是推理日志，输出是结构化的经验文档：
+这是一个新的轻量 Agent，输入是用户当前会话可见的分析上下文，输出是结构化的经验文档：
 
 ```text
 class ExperienceDistillAgent:
-    """从推理日志提炼经验。"""
+    """从 experience_context 提炼经验。"""
 
     SYSTEM_PROMPT = """
-    你是一个数据分析经验总结专家。给定一次数据分析的完整推理日志，
+    你是一个数据分析经验总结专家。给定一次数据分析的可见上下文，
     提炼出一条可复用的经验。经验应包含：
 
     1. 标题：简短描述这个经验
@@ -376,10 +376,10 @@ class ExperienceDistillAgent:
     输出格式为 Markdown with YAML front matter。
     """
 
-    def run(self, reasoning_log: list[dict], user_question: str) -> str:
-        # 只提取日志中的关键信息，不传完整 messages
-        summary = self._extract_log_summary(reasoning_log)
-        prompt = f"用户问题：{user_question}\n\n推理过程：\n{summary}"
+    def run_from_context(self, experience_context: dict) -> str:
+        # 提取用户问题、用户澄清、执行尝试、最终结果等关键信息
+        summary = self._extract_context_summary(experience_context)
+        prompt = f"经验上下文：\n{summary}"
         response = self.client.get_completion(...)
         return response  # Markdown 内容
 ```
@@ -388,8 +388,8 @@ class ExperienceDistillAgent:
 
 ```text
 POST /api/knowledge/distill-experience
-    body: { session_id, user_question, model, category_hint? }
-    → 从推理日志提炼经验，保存到 knowledge/experiences/
+    body: { experience_context, model, category_hint? }
+    → 从当前用户可见的分析上下文提炼经验，保存到 knowledge/experiences/
     → model: 必填，LLM 配置对象（与 data-agent-streaming 相同格式）
 
 POST /api/knowledge/list
@@ -607,13 +607,13 @@ user_home = get_user_home(identity_id)
 # 知识库
 knowledge_jail = ConfinedDir(user_home / "knowledge")
 
-# 推理日志
-logs_jail = ConfinedDir(user_home / "agent-logs")
-
 # Workspace — 已有，通过 Workspace.confined_* 访问
 
 # Connectors
 connectors_jail = ConfinedDir(user_home / "connectors")
+
+# 推理日志是系统级管理员日志，不在 user_home 下
+logs_jail = ConfinedDir(get_data_formulator_home() / "agent-logs" / date / safe_identity_id)
 ```
 
 #### 6. `ConfinedDir` 需要增强的 API
@@ -697,7 +697,7 @@ Workspace.confined_* / KnowledgeStore / ReasoningLogger
 | `datalake/workspace.py` `get_file_path` | 手写 resolve+relative_to | `self._confined_data.resolve()` | 中 |
 | `cached_azure_blob_workspace.py` `_cache_path` | 手写 resolve+is_relative_to | `self._cache_jail.resolve()` | 中 |
 | **新增** `KnowledgeStore` | — | `ConfinedDir(user_home / "knowledge" / category)` | Phase 2 |
-| **新增** `ReasoningLogger` | — | `ConfinedDir(user_home / "agent-logs" / date)` | Phase 1 |
+| **新增** `ReasoningLogger` | — | `ConfinedDir(DATA_FORMULATOR_HOME / "agent-logs" / date / safe_identity_id)` | Phase 1 |
 
 ### 安全检查清单
 
@@ -739,7 +739,7 @@ Workspace.confined_* / KnowledgeStore / ReasoningLogger
 
 | Agent | 用途 |
 |---|---|
-| `ExperienceDistillAgent` | 从推理日志提炼经验文档 |
+| `ExperienceDistillAgent` | 从用户可见的 experience_context 提炼经验文档 |
 
 ### 新增模块
 
@@ -768,7 +768,7 @@ Workspace.confined_* / KnowledgeStore / ReasoningLogger
     │
     ├─── 2. Agent 初始化
     │    DataAgent(client, workspace, knowledge_store=knowledge, ...)
-    │    reasoning_log = ReasoningLogger(user_home, "DataAgent", session_id)
+    │    reasoning_log = ReasoningLogger(identity_id, "DataAgent", session_id)
     │    reasoning_log.log("session_start", user_question=..., ...)
     │
     ├─── 3. 知识注入
@@ -799,29 +799,31 @@ Workspace.confined_* / KnowledgeStore / ReasoningLogger
     │
     └─── 6. 可选：用户点击"保存为经验"
          POST /api/knowledge/distill-experience
-         → 读取推理日志
+         → 使用前端提交的 experience_context
          → ExperienceDistillAgent 提炼
          → 写入 knowledge/experiences/
 ```
 
-### 推理日志 → 经验 的数据流
+### experience_context → 经验 的数据流
 
 ```text
-推理日志 (JSONL)              经验提炼 Agent              经验文件 (.md)
+前端 experience_context       经验提炼 Agent              经验文件 (.md)
 ┌─────────────────┐          ┌──────────────┐          ┌──────────────────┐
-│ session_start   │          │              │          │ ---              │
-│ context_built   │    →     │  提取关键信息  │    →     │ title: 季度趋势  │
-│ llm_request     │          │  调用 LLM     │          │ tags: [sales]   │
-│ llm_response    │          │  生成 Markdown │          │ ---             │
-│ tool_execution  │          │              │          │                 │
-│ action_execution│          └──────────────┘          │ ## 场景          │
-│ session_end     │                                    │ 分析订单数据时... │
+│ dialog          │          │              │          │ ---              │
+│ interaction     │    →     │  提取关键信息  │    →     │ title: 季度趋势  │
+│ result_summary  │          │  调用 LLM     │          │ tags: [sales]   │
+│ execution_attempts│        │  生成 Markdown │          │ ---             │
+│ user_question   │          └──────────────┘          │ ## 场景          │
+│                 │                                    │ 分析订单数据时... │
 └─────────────────┘                                    │ ## 方法          │
                                                        │ 1. 按季度聚合... │
                                                        │ ## 要点          │
                                                        │ 注意排除退货...  │
                                                        └──────────────────┘
 ```
+
+`execution_attempts` 用于表达“初始失败代码”和“修复代码”的结构化摘要，例如非空代码行数、聚合/过滤/连接等操作类型；
+它不保存失败代码或修复代码原文，避免把原始数据处理细节直接送入经验提炼 LLM。
 
 ---
 

@@ -290,11 +290,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                         ) && (
                             <Box className="save-exp-btn" onClick={(e) => e.stopPropagation()}>
                                 <SaveExperienceButton
-                                    userQuestion={
-                                        table.derive.trigger.interaction?.find(
-                                            e => e.from === 'user' && e.role === 'prompt'
-                                        )?.content || ''
-                                    }
+                                    table={table!}
                                 />
                             </Box>
                         )}

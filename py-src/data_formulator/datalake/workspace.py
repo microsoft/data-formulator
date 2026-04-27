@@ -91,11 +91,11 @@ def get_user_home(identity_id: str) -> Path:
     Shared helper used by workspace_factory, data_connector, and any
     code that needs per-user storage paths.
     """
-    safe_id = _sanitize_identity_id(identity_id)
+    safe_id = sanitize_identity_dirname(identity_id)
     return get_data_formulator_home() / "users" / safe_id
 
 
-def _sanitize_identity_id(identity_id: str) -> str:
+def sanitize_identity_dirname(identity_id: str) -> str:
     """Sanitize identity_id for use as a directory name.
 
     Uses ``secure_filename`` to produce a safe single-component name.
@@ -107,6 +107,11 @@ def _sanitize_identity_id(identity_id: str) -> str:
     if not result:
         raise ValueError("identity_id sanitized to empty string")
     return result
+
+
+def _sanitize_identity_id(identity_id: str) -> str:
+    """Backward-compatible alias for identity directory sanitization."""
+    return sanitize_identity_dirname(identity_id)
 
 
 def cleanup_stale_temp_files(workspace_path: Path, max_age_hours: int = 24) -> int:

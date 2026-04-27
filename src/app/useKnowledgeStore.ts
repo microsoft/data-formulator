@@ -21,6 +21,7 @@ import {
     deleteKnowledge,
     searchKnowledge,
     distillExperience,
+    type ExperienceContext,
     type KnowledgeCategory,
     type KnowledgeItem,
     type KnowledgeSearchResult,
@@ -180,13 +181,12 @@ export function useKnowledgeStore() {
     }, []);
 
     const distill = useCallback(async (
-        sessionId: string,
-        userQuestion: string,
+        experienceContext: ExperienceContext,
         model: Record<string, any>,
         categoryHint?: string,
     ): Promise<boolean> => {
         try {
-            await distillExperience(sessionId, userQuestion, model, categoryHint);
+            await distillExperience(experienceContext, model, categoryHint);
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'success',

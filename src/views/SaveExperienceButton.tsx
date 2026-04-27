@@ -2,8 +2,8 @@
 // Licensed under the MIT License.
 
 /**
- * SaveExperienceButton — a button that distills the current session's
- * reasoning log into a reusable experience document via the backend.
+ * SaveExperienceButton — a button that distills the current result's
+ * user-visible analysis context into a reusable experience document.
  *
  * Placed on result cards after successful DataAgent analyses.
  */
@@ -25,25 +25,56 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { distillExperience } from '../api/knowledgeApi';
+import { distillExperience, type ExperienceContext } from '../api/knowledgeApi';
+import type { DictTable } from '../components/ComponentType';
 
 export interface SaveExperienceButtonProps {
-    userQuestion: string;
-    /** Defaults to the active workspace id */
-    sessionId?: string;
+    table: DictTable;
     /** If true, render as a full button. Otherwise a small icon button. */
     variant?: 'button' | 'icon';
 }
 
+function buildExperienceContext(table: DictTable): ExperienceContext | null {
+    const derive = table.derive;
+    if (!derive) return null;
+
+    const interaction = derive.trigger.interaction || [];
+    const userQuestion = interaction.find(
+        e => e.from === 'user' && e.role === 'prompt',
+    )?.content || '';
+    if (!userQuestion) return null;
+
+    const instruction = interaction.find(
+        e => e.from === 'data-agent' && e.role === 'instruction',
+    );
+    const chart = derive.trigger.chart as any;
+
+    return {
+        context_id: table.id,
+        source_table_id: derive.trigger.tableId,
+        user_question: userQuestion,
+        dialog: derive.dialog || [],
+        interaction,
+        result_summary: {
+            display_instruction: instruction?.displayContent || instruction?.content,
+            output_variable: derive.outputVariable,
+            source_tables: derive.source,
+            output_fields: table.names,
+            output_rows: table.virtual?.rowCount ?? table.rows?.length,
+            chart_type: chart?.mark || chart?.chartType || chart?.chart_type,
+            code: derive.code,
+        },
+        execution_attempts: derive.executionAttempts || [],
+    };
+}
+
 export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
-    userQuestion,
-    sessionId: explicitSessionId,
+    table,
     variant = 'button',
 }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
-    const workspaceId = useSelector((s: DataFormulatorState) => s.activeWorkspace?.id);
     const selectedModelId = useSelector((s: DataFormulatorState) => s.selectedModelId);
     const allModels = useSelector((s: DataFormulatorState) => [...s.globalModels, ...s.models]);
 
@@ -51,12 +82,11 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
     const [categoryHint, setCategoryHint] = useState('');
     const [distilling, setDistilling] = useState(false);
 
-    const sessionId = explicitSessionId || workspaceId;
-
     const selectedModel = allModels.find(m => m.id === selectedModelId);
 
     const handleDistill = useCallback(async () => {
-        if (!sessionId || !selectedModel) return;
+        const experienceContext = buildExperienceContext(table);
+        if (!experienceContext || !selectedModel) return;
         setDistilling(true);
         try {
             const modelConfig = {
@@ -65,7 +95,7 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
                 model: selectedModel.model,
                 provider: (selectedModel as any).provider,
             };
-            await distillExperience(sessionId, userQuestion, modelConfig, categoryHint.trim() || undefined);
+            await distillExperience(experienceContext, modelConfig, categoryHint.trim() || undefined);
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'success',
@@ -84,9 +114,9 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
         } finally {
             setDistilling(false);
         }
-    }, [sessionId, selectedModel, userQuestion, categoryHint, dispatch, t]);
+    }, [table, selectedModel, categoryHint, dispatch, t]);
 
-    if (!sessionId) return null;
+    if (!buildExperienceContext(table)) return null;
 
     return (
         <>

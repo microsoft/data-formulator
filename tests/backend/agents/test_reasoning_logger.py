@@ -25,17 +25,26 @@ from data_formulator.agents.reasoning_log import (
     _LOG_RETENTION_DAYS,
     _today_str,
 )
+from data_formulator.datalake.workspace import sanitize_identity_dirname
 
 pytestmark = [pytest.mark.backend]
+TEST_IDENTITY = "user:alice@example.com"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
 
 
-def _read_log_lines(user_home: Path, agent_type: str = "TestAgent",
+@pytest.fixture(autouse=True)
+def _agent_log_home(tmp_path, monkeypatch):
+    """Use tmp_path as DATA_FORMULATOR_HOME for system-level agent logs."""
+    monkeypatch.setenv("DATA_FORMULATOR_HOME", str(tmp_path))
+
+
+def _read_log_lines(data_home: Path, agent_type: str = "TestAgent",
                     session_id: str = "sess-1") -> list[dict]:
     """Find and parse the JSONL log file for the given session."""
-    logs_dir = user_home / "agent-logs" / _today_str()
+    safe_id = sanitize_identity_dirname(TEST_IDENTITY)
+    logs_dir = data_home / "agent-logs" / _today_str() / safe_id
     log_file = logs_dir / f"{session_id}-{agent_type}.jsonl"
     assert log_file.exists(), f"Expected log file not found: {log_file}"
     lines = log_file.read_text(encoding="utf-8").strip().splitlines()
@@ -48,16 +57,19 @@ def _read_log_lines(user_home: Path, agent_type: str = "TestAgent",
 @patch.dict(os.environ, {"DF_AGENT_LOG": "on"})
 class TestLogFileCreation:
     def test_creates_file_in_correct_directory(self, tmp_path):
-        with ReasoningLogger(tmp_path, "DataAgent", "abc-123") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "DataAgent", "abc-123") as rlog:
             rlog.log("session_start", user_question="hello")
 
-        expected_dir = tmp_path / "agent-logs" / _today_str()
+        expected_dir = (
+            tmp_path / "agent-logs" / _today_str()
+            / sanitize_identity_dirname(TEST_IDENTITY)
+        )
         assert expected_dir.is_dir()
         log_file = expected_dir / "abc-123-DataAgent.jsonl"
         assert log_file.exists()
 
     def test_jsonl_format_each_line_parseable(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("session_start", model="gpt-4o")
             rlog.log("llm_request", iteration=1, messages_count=3)
             rlog.log("session_end", status="success")
@@ -68,7 +80,7 @@ class TestLogFileCreation:
             assert isinstance(line, dict)
 
     def test_each_line_has_step_type_and_ts(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("context_built", system_prompt_tokens=1200)
 
         lines = _read_log_lines(tmp_path)
@@ -78,7 +90,7 @@ class TestLogFileCreation:
         datetime.fromisoformat(lines[0]["ts"])
 
     def test_close_makes_file_complete(self, tmp_path):
-        rlog = ReasoningLogger(tmp_path, "TestAgent", "sess-1")
+        rlog = ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1")
         rlog.log("session_start")
         rlog.log("session_end", status="ok")
         rlog.close()
@@ -88,7 +100,7 @@ class TestLogFileCreation:
         assert lines[1]["step_type"] == "session_end"
 
     def test_close_is_idempotent(self, tmp_path):
-        rlog = ReasoningLogger(tmp_path, "TestAgent", "sess-1")
+        rlog = ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1")
         rlog.log("session_start")
         rlog.close()
         rlog.close()  # should not raise
@@ -100,7 +112,7 @@ class TestLogFileCreation:
 class TestOffMode:
     @patch.dict(os.environ, {"DF_AGENT_LOG": "off"})
     def test_off_creates_no_file(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("session_start", user_question="ignored")
 
         logs_dir = tmp_path / "agent-logs"
@@ -108,7 +120,7 @@ class TestOffMode:
 
     @patch.dict(os.environ, {"DF_AGENT_LOG": "OFF"})
     def test_off_case_insensitive(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("session_start")
         logs_dir = tmp_path / "agent-logs"
         assert not logs_dir.exists() or not any(logs_dir.rglob("*.jsonl"))
@@ -120,7 +132,7 @@ class TestOffMode:
 class TestOnMode:
     @patch.dict(os.environ, {"DF_AGENT_LOG": "on"})
     def test_on_writes_structured_summary(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("llm_request", iteration=1, messages_count=5,
                      tools_available=["think", "explore"])
 
@@ -132,7 +144,7 @@ class TestOnMode:
     def test_on_strips_messages_defensively(self, tmp_path):
         """Even if a caller accidentally passes ``messages``, the ``on``
         mode logger strips it before writing."""
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("llm_request", iteration=1, messages_count=3,
                      messages=[{"role": "user", "content": "should be stripped"}])
 
@@ -140,12 +152,30 @@ class TestOnMode:
         assert "messages" not in lines[0]
         assert lines[0]["messages_count"] == 3
 
+    @patch.dict(os.environ, {"DF_AGENT_LOG": "on"})
+    def test_on_auto_fields_cannot_be_overridden(self, tmp_path):
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
+            rlog.log(
+                "llm_request",
+                ts="fake",
+                session_id="fake",
+                agent_type="fake",
+                identity_id="fake",
+            )
+
+        lines = _read_log_lines(tmp_path)
+        assert lines[0]["step_type"] == "llm_request"
+        assert lines[0]["ts"] != "fake"
+        assert lines[0]["session_id"] == "sess-1"
+        assert lines[0]["agent_type"] == "TestAgent"
+        assert lines[0]["identity_id"] == TEST_IDENTITY
+
     def test_default_is_off(self, tmp_path):
         """When DF_AGENT_LOG is not set, default to ``off`` (no file)."""
         env = os.environ.copy()
         env.pop("DF_AGENT_LOG", None)
         with patch.dict(os.environ, env, clear=True):
-            with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+            with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
                 rlog.log("session_start")
             logs_dir = tmp_path / "agent-logs"
             assert not logs_dir.exists() or not any(logs_dir.rglob("*.jsonl"))
@@ -157,7 +187,7 @@ class TestOnMode:
 class TestVerboseMode:
     @patch.dict(os.environ, {"DF_AGENT_LOG": "verbose"})
     def test_verbose_writes_full_content(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("llm_request", iteration=1,
                      messages=[{"role": "user", "content": "hello"}])
 
@@ -166,7 +196,7 @@ class TestVerboseMode:
 
     @patch.dict(os.environ, {"DF_AGENT_LOG": "verbose"})
     def test_verbose_sanitizes_api_key(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("llm_request",
                      config={"api_key": "sk-secret-12345", "model": "gpt-4o"})
 
@@ -177,7 +207,7 @@ class TestVerboseMode:
 
     @patch.dict(os.environ, {"DF_AGENT_LOG": "verbose"})
     def test_verbose_sanitizes_password_in_list(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("tool_execution",
                      params=[{"password": "hunter2", "host": "db.local"}])
 
@@ -188,7 +218,7 @@ class TestVerboseMode:
     @patch.dict(os.environ, {"DF_AGENT_LOG": "verbose"})
     def test_verbose_sanitizes_top_level_kwargs(self, tmp_path):
         """Top-level sensitive keys (e.g. ``api_key``) must be redacted."""
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("session_start", api_key="sk-top-level-secret",
                      model="gpt-4o")
 
@@ -198,7 +228,7 @@ class TestVerboseMode:
 
     @patch.dict(os.environ, {"DF_AGENT_LOG": "VERBOSE"})
     def test_verbose_case_insensitive(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("session_start")
         lines = _read_log_lines(tmp_path)
         assert len(lines) == 1
@@ -210,30 +240,41 @@ class TestVerboseMode:
 class TestSecurityConstraints:
     @patch.dict(os.environ, {"DF_AGENT_LOG": "verbose"})
     def test_no_api_key_in_log(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("session_start",
                      config={"api_key": "sk-abc123xyz", "endpoint": "openai"})
 
-        raw = (tmp_path / "agent-logs" / _today_str() / "sess-1-TestAgent.jsonl").read_text()
+        raw = (
+            tmp_path / "agent-logs" / _today_str()
+            / sanitize_identity_dirname(TEST_IDENTITY)
+            / "sess-1-TestAgent.jsonl"
+        ).read_text()
         assert "sk-abc123xyz" not in raw
 
     @patch.dict(os.environ, {"DF_AGENT_LOG": "verbose"})
     def test_no_connection_string_in_log(self, tmp_path):
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("tool_execution",
                      config={"connection_string": "postgresql://user:pass@host/db"})
 
-        raw = (tmp_path / "agent-logs" / _today_str() / "sess-1-TestAgent.jsonl").read_text()
+        raw = (
+            tmp_path / "agent-logs" / _today_str()
+            / sanitize_identity_dirname(TEST_IDENTITY)
+            / "sess-1-TestAgent.jsonl"
+        ).read_text()
         assert "postgresql://user:pass@host/db" not in raw
 
     @patch.dict(os.environ, {"DF_AGENT_LOG": "on"})
     def test_confined_dir_prevents_traversal(self, tmp_path):
-        """The log file path is confined to the user directory."""
+        """The log file path is confined to the identity log directory."""
         # ReasoningLogger creates a ConfinedDir internally — verify that
         # a traversal in session_id would be caught.  We test via the
         # ConfinedDir used inside; direct injection is blocked by resolve().
         from data_formulator.security.path_safety import ConfinedDir
-        jail = ConfinedDir(tmp_path / "agent-logs" / _today_str())
+        jail = ConfinedDir(
+            tmp_path / "agent-logs" / _today_str()
+            / sanitize_identity_dirname(TEST_IDENTITY)
+        )
         with pytest.raises(ValueError):
             jail.resolve("../../etc/passwd")
 
@@ -299,7 +340,7 @@ class TestExpiredLogCleanup:
         old_dir.mkdir()
         (old_dir / "test.jsonl").write_text("old")
 
-        rlog = ReasoningLogger(tmp_path, "TestAgent", "sess-bg")
+        rlog = ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-bg")
         rlog.log("session_start")
         rlog.close()
 
@@ -315,7 +356,7 @@ class TestContextManager:
     @patch.dict(os.environ, {"DF_AGENT_LOG": "on"})
     def test_exception_still_closes_file(self, tmp_path):
         try:
-            with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+            with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
                 rlog.log("session_start")
                 raise RuntimeError("boom")
         except RuntimeError:
@@ -327,7 +368,7 @@ class TestContextManager:
     @patch.dict(os.environ, {"DF_AGENT_LOG": "off"})
     def test_off_mode_context_manager_safe(self, tmp_path):
         """Off mode should work fine as a context manager."""
-        with ReasoningLogger(tmp_path, "TestAgent", "sess-1") as rlog:
+        with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
             rlog.log("session_start")
         # No file, no error
 

@@ -10,8 +10,6 @@ KnowledgeStore backed by tmp_path (no external deps).
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import patch
 
 import flask
@@ -202,3 +200,63 @@ class TestKnowledgeSearch:
         data = resp.get_json()
         assert data["status"] == "ok"
         assert len(data["results"]) == 0
+
+
+EXPERIENCE_CONTEXT = {
+    "context_id": "table-123",
+    "source_table_id": "source-1",
+    "user_question": "Analyze monthly sales",
+    "dialog": [{"role": "user", "content": "Analyze monthly sales"}],
+    "interaction": [
+        {"from": "user", "role": "prompt", "content": "Analyze monthly sales"},
+        {"from": "data-agent", "role": "summary", "content": "Sales increased"},
+    ],
+    "result_summary": {
+        "display_instruction": "Monthly sales trend",
+        "output_fields": ["month", "sales"],
+        "output_rows": 12,
+        "code": "result_df = df.groupby('month').sum()",
+    },
+    "execution_attempts": [
+        {"kind": "visualize", "status": "ok", "summary": "Monthly sales trend"},
+    ],
+}
+
+
+class TestDistillExperience:
+    def test_distill_experience_from_context(self, client, tmp_path):
+        with patch("data_formulator.routes.agents.get_client", return_value=object()), \
+             patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
+             patch(
+                 "data_formulator.agents.agent_experience_distill."
+                 "ExperienceDistillAgent.run_from_context",
+                 return_value=SAMPLE_MD,
+             ) as run_from_context:
+            resp = client.post("/api/knowledge/distill-experience", json={
+                "experience_context": EXPERIENCE_CONTEXT,
+                "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
+            })
+
+        data = resp.get_json()
+        assert data["status"] == "ok"
+        assert data["category"] == "experiences"
+        assert (tmp_path / "knowledge" / "experiences" / data["path"]).exists()
+        assert not (tmp_path / "agent-logs").exists()
+        run_from_context.assert_called_once()
+
+    def test_distill_experience_missing_context(self, client):
+        resp = client.post("/api/knowledge/distill-experience", json={
+            "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
+        })
+        data = resp.get_json()
+        assert data["status"] == "error"
+
+    def test_distill_experience_missing_required_context_field(self, client):
+        bad_context = {**EXPERIENCE_CONTEXT}
+        bad_context.pop("result_summary")
+        resp = client.post("/api/knowledge/distill-experience", json={
+            "experience_context": bad_context,
+            "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
+        })
+        data = resp.get_json()
+        assert data["status"] == "error"

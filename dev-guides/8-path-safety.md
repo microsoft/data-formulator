@@ -211,5 +211,5 @@ def _enforce_deployment_restrictions():
 | `routes/agents.py` | `scratch_upload` | `workspace.confined_scratch.resolve(final_name)` |
 | `cached_azure_blob_workspace.py` | `_cache_path` | `self._cache_jail.resolve(filename)` |
 | `knowledge/store.py` | CRUD | `ConfinedDir(user_home / "knowledge" / category)` |
-| `agents/reasoning_log.py` | log | `ConfinedDir(user_home / "agent-logs" / date)` |
+| `agents/reasoning_log.py` | log | `ConfinedDir(DATA_FORMULATOR_HOME / "agent-logs" / date / safe_identity_id)` |
 | `local_folder_data_loader.py` | 全文件 | 已使用 `ConfinedDir`（原始采用者） |

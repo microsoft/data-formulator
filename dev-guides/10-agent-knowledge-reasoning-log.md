@@ -12,7 +12,7 @@ Agent 知识系统由三部分组成：
 |------|------|------|
 | **KnowledgeStore** | `py-src/data_formulator/knowledge/store.py` | 知识文件的 CRUD、搜索、路径安全 |
 | **ReasoningLogger** | `py-src/data_formulator/agents/reasoning_log.py` | Agent 会话的结构化 JSONL 日志 |
-| **ExperienceDistillAgent** | `py-src/data_formulator/agents/agent_experience_distill.py` | 从推理日志蒸馏出可复用的经验文档 |
+| **ExperienceDistillAgent** | `py-src/data_formulator/agents/agent_experience_distill.py` | 从前端 experience_context 蒸馏出可复用的经验文档 |
 
 ### 知识分类
 
@@ -64,7 +64,7 @@ results = store.search("pandas groupby", categories=["rules", "skills"])
 | `/<category>/write` | POST | 创建/更新知识文件 |
 | `/<category>/delete` | POST | 删除知识文件 |
 | `/search` | POST | 跨类别搜索知识 |
-| `/distill` | POST | 从推理日志蒸馏经验 |
+| `/distill-experience` | POST | 从前端 experience_context 蒸馏经验 |
 
 ## 3. 推理日志（ReasoningLogger）
 
@@ -75,7 +75,7 @@ results = store.search("pandas groupby", categories=["rules", "skills"])
 | 值 | 行为 |
 |----|------|
 | `off`（默认） | 不写日志 |
-| `on` | 写入 JSONL 到 `user_home/agent-logs/` |
+| `on` | 写入 JSONL 到 `DATA_FORMULATOR_HOME/agent-logs/<date>/<safe_identity_id>/` |
 
 ### 日志事件类型
 
@@ -147,6 +147,9 @@ def _get_knowledge_store(identity_id: str) -> KnowledgeStore | None:
 
 - 组件：`src/views/SaveExperienceButton.tsx`
 - 放置位置：派生表结果卡片上（`DataThreadCards.tsx`）
+- 数据来源：当前派生表的 `derive.dialog`、`derive.trigger.interaction`、`result_summary` 和 `execution_attempts`
+  （其中 `execution_attempts` 只携带失败/修复代码的结构化摘要，不携带代码原文）
+- 后端 API：`/api/knowledge/distill-experience` 接收 `experience_context`，不读取管理员推理日志
 - 成功后通过 `window.dispatchEvent(new CustomEvent('knowledge-changed'))` 通知知识面板刷新
 
 ### 跨组件刷新

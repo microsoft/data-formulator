@@ -5,17 +5,15 @@
 
 Covers:
 - _extract_log_summary correctly extracts key info
+- _extract_context_summary correctly extracts experience context
 - Output Markdown includes valid YAML front matter
-- front matter contains source: agent_summarized and source_session
-- Session log not found returns appropriate error
+- front matter contains source: agent_summarized and source metadata
 - Generated experience file written to correct directory
 - category_hint controls sub-directory
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import flask
@@ -71,6 +69,45 @@ SAMPLE_LOG_LINES = [
     },
 ]
 
+SAMPLE_EXPERIENCE_CONTEXT = {
+    "context_id": "table-123",
+    "source_table_id": "source-table",
+    "user_question": "Show sales by region",
+    "dialog": [
+        {"role": "user", "content": "Show sales by region"},
+        {"role": "assistant", "content": "[tool: explore]\nChecked region values"},
+    ],
+    "interaction": [
+        {"from": "user", "role": "prompt", "content": "Show sales by region"},
+        {"from": "data-agent", "role": "clarify", "content": "Which metric?"},
+        {"from": "user", "role": "prompt", "content": "Use revenue"},
+    ],
+    "result_summary": {
+        "display_instruction": "Revenue by region",
+        "output_fields": ["region", "revenue"],
+        "output_rows": 4,
+        "chart_type": "bar",
+        "code": "result_df = sales.groupby('region').revenue.sum().reset_index()",
+    },
+    "execution_attempts": [
+        {
+            "kind": "visualize",
+            "attempt": 0,
+            "status": "error",
+            "summary": "Initial chart",
+            "failed_code_summary": "1 non-empty lines; operations=count",
+            "error": "missing column",
+        },
+        {
+            "kind": "repair",
+            "attempt": 1,
+            "status": "ok",
+            "summary": "Use revenue column",
+            "repair_code_summary": "1 non-empty lines; operations=groupby, sum",
+        },
+    ],
+}
+
 
 # ── _extract_log_summary ──────────────────────────────────────────────────
 
@@ -91,6 +128,27 @@ class TestExtractLogSummary:
         lines = [{"step_type": "unknown_type", "data": "value"}]
         summary = ExperienceDistillAgent._extract_log_summary(lines)
         assert isinstance(summary, str)
+
+
+class TestExtractContextSummary:
+    def test_extracts_context_signals(self):
+        summary = ExperienceDistillAgent._extract_context_summary(SAMPLE_EXPERIENCE_CONTEXT)
+        assert "sales by region" in summary
+        assert "Which metric" in summary
+        assert "missing column" in summary
+        assert "revenue" in summary
+        assert "Dialog structure" in summary
+        assert "explore" in summary
+        assert "Checked region values" not in summary
+        assert "result_df =" not in summary
+        assert "groupby" in summary
+        assert "Failed code summary" in summary
+        assert "Repair code summary" in summary
+
+    def test_empty_context_returns_marker(self):
+        summary = ExperienceDistillAgent._extract_context_summary({})
+        assert "empty" not in summary.lower()
+        assert "User question" in summary
 
 
 # ── run (mocked LLM) ─────────────────────────────────────────────────────
@@ -121,6 +179,11 @@ When analyzing sales data broken down by geographical regions.
 
 - Bar charts are effective for comparing discrete regional categories.
 """
+
+MOCK_CONTEXT_RESPONSE = MOCK_LLM_RESPONSE.replace(
+    "source_session: sess-test",
+    "source_context: table-123",
+)
 
 
 class TestRunWithMockedLLM:
@@ -161,33 +224,28 @@ class TestRunWithMockedLLM:
         assert meta["source"] == "agent_summarized"
         assert meta["source_session"] == "sess-x"
 
+    def test_run_from_context_produces_valid_markdown(self):
+        client = self._mock_client()
+        agent = ExperienceDistillAgent(client=client)
 
-# ── _read_session_log (in knowledge route) ────────────────────────────────
+        with patch.object(agent, "_call_llm", return_value=MOCK_CONTEXT_RESPONSE):
+            result = agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
 
+        assert result.startswith("---")
+        meta, _ = parse_front_matter(result)
+        assert meta["source"] == "agent_summarized"
+        assert meta["source_context"] == "table-123"
 
-class TestReadSessionLog:
-    def test_reads_existing_log(self, tmp_path):
-        from data_formulator.routes.knowledge import _read_session_log
+    def test_run_from_context_fallback_front_matter_added(self):
+        client = self._mock_client()
+        agent = ExperienceDistillAgent(client=client)
 
-        log_dir = tmp_path / "agent-logs" / "2026-04-26"
-        log_dir.mkdir(parents=True)
-        log_file = log_dir / "sess-abc-DataAgent.jsonl"
-        lines = [json.dumps(line) for line in SAMPLE_LOG_LINES]
-        log_file.write_text("\n".join(lines), encoding="utf-8")
+        with patch.object(agent, "_call_llm", return_value="# Experience\n\nContent"):
+            result = agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
 
-        result = _read_session_log(tmp_path, "sess-abc")
-        assert len(result) == len(SAMPLE_LOG_LINES)
-        assert result[0]["step_type"] == "session_start"
-
-    def test_nonexistent_session_returns_empty(self, tmp_path):
-        from data_formulator.routes.knowledge import _read_session_log
-        result = _read_session_log(tmp_path, "nonexistent")
-        assert result == []
-
-    def test_no_logs_dir_returns_empty(self, tmp_path):
-        from data_formulator.routes.knowledge import _read_session_log
-        result = _read_session_log(tmp_path, "anything")
-        assert result == []
+        meta, _ = parse_front_matter(result)
+        assert meta["source"] == "agent_summarized"
+        assert meta["source_context"] == "table-123"
 
 
 # ── _experience_filename ──────────────────────────────────────────────────
@@ -222,13 +280,6 @@ class TestDistillEndpoint:
         _app.register_blueprint(knowledge_bp)
         register_error_handlers(_app)
 
-        # Create a reasoning log for the test
-        log_dir = tmp_path / "agent-logs" / "2026-04-26"
-        log_dir.mkdir(parents=True)
-        log_file = log_dir / "sess-test-DataAgent.jsonl"
-        lines = [json.dumps(line) for line in SAMPLE_LOG_LINES]
-        log_file.write_text("\n".join(lines), encoding="utf-8")
-
         (tmp_path / "knowledge" / "experiences").mkdir(parents=True)
 
         with patch("data_formulator.routes.knowledge.get_identity_id", return_value="test-user"), \
@@ -239,40 +290,39 @@ class TestDistillEndpoint:
     def client(self, app):
         return app.test_client()
 
-    def test_missing_session_id_returns_error(self, client):
+    def test_missing_context_returns_error(self, client):
         resp = client.post("/api/knowledge/distill-experience",
-                           json={"user_question": "test", "model": {"endpoint": "openai", "model": "gpt-4o"}})
+                           json={"model": {"endpoint": "openai", "model": "gpt-4o"}})
         data = resp.get_json()
         assert data["status"] == "error"
 
     def test_missing_model_returns_error(self, client):
         resp = client.post("/api/knowledge/distill-experience",
-                           json={"session_id": "sess-test", "user_question": "test"})
+                           json={"experience_context": SAMPLE_EXPERIENCE_CONTEXT})
         data = resp.get_json()
         assert data["status"] == "error"
 
-    def test_nonexistent_session_returns_error(self, client):
+    def test_missing_context_field_returns_error(self, client):
+        bad_context = {**SAMPLE_EXPERIENCE_CONTEXT}
+        bad_context.pop("result_summary")
         resp = client.post("/api/knowledge/distill-experience",
                            json={
-                               "session_id": "no-such-session",
-                               "user_question": "test",
+                               "experience_context": bad_context,
                                "model": {"endpoint": "openai", "model": "gpt-4o", "api_key": "test"},
                            })
         data = resp.get_json()
         assert data["status"] == "error"
-        assert "No reasoning log" in data.get("error", {}).get("message", "")
 
     def test_successful_distill(self, client, tmp_path):
         with patch("data_formulator.routes.agents.get_client") as mock_gc, \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
-             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run",
-                   return_value=MOCK_LLM_RESPONSE):
+             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run_from_context",
+                   return_value=MOCK_CONTEXT_RESPONSE):
 
             mock_gc.return_value = MagicMock()
             resp = client.post("/api/knowledge/distill-experience",
                                json={
-                                   "session_id": "sess-test",
-                                   "user_question": "Show sales by region",
+                                   "experience_context": SAMPLE_EXPERIENCE_CONTEXT,
                                    "model": {"endpoint": "openai", "model": "gpt-4o", "api_key": "test"},
                                })
             data = resp.get_json()
@@ -284,18 +334,18 @@ class TestDistillEndpoint:
             exp_dir = tmp_path / "knowledge" / "experiences"
             md_files = list(exp_dir.rglob("*.md"))
             assert len(md_files) >= 1
+            assert not (tmp_path / "agent-logs").exists()
 
     def test_category_hint_creates_subdir(self, client, tmp_path):
         with patch("data_formulator.routes.agents.get_client") as mock_gc, \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
-             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run",
-                   return_value=MOCK_LLM_RESPONSE):
+             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run_from_context",
+                   return_value=MOCK_CONTEXT_RESPONSE):
 
             mock_gc.return_value = MagicMock()
             resp = client.post("/api/knowledge/distill-experience",
                                json={
-                                   "session_id": "sess-test",
-                                   "user_question": "test",
+                                   "experience_context": SAMPLE_EXPERIENCE_CONTEXT,
                                    "model": {"endpoint": "openai", "model": "gpt-4o", "api_key": "test"},
                                    "category_hint": "sales",
                                })
