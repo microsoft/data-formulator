@@ -34,6 +34,7 @@ from data_formulator.data_loader.external_data_loader import (
     ExternalDataLoader,
     SENSITIVE_PARAMS,
 )
+from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
 from data_formulator.security.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
@@ -1428,7 +1429,7 @@ def connector_preview_data():
         )
         df = arrow_table.to_pandas()
         rows = _json.loads(df.to_json(orient="records", date_format="iso"))
-        columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
+        columns = [{"name": col, "type": normalize_dtype_to_app_type(str(df[col].dtype))} for col in df.columns]
 
         # Enrich columns with source-level types from loader metadata.
         # Source types (e.g. "timestamp", "varchar", "boolean") are far more

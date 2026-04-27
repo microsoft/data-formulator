@@ -12,6 +12,7 @@ import logging
 from typing import Any
 
 from data_formulator.agents.agent_utils import generate_data_summary
+from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
 
 logger = logging.getLogger(__name__)
 
@@ -92,17 +93,7 @@ def build_lightweight_table_context(
 
             col_info = []
             for col in df.columns:
-                dtype = str(df[col].dtype)
-                if 'int' in dtype:
-                    dtype = 'int'
-                elif 'float' in dtype:
-                    dtype = 'float'
-                elif dtype == 'object':
-                    dtype = 'str'
-                elif 'datetime' in dtype:
-                    dtype = 'datetime'
-                elif 'bool' in dtype:
-                    dtype = 'bool'
+                dtype = normalize_dtype_to_app_type(str(df[col].dtype))
                 col_info.append(f"{col}({dtype})")
 
             lines = [

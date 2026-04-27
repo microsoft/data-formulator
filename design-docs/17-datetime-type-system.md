@@ -1,6 +1,6 @@
 # 17 — 统一日期/时间类型体系
 
-> **状态**: 设计文档
+> **状态**: Phase 1-3 已实施 ✅ / Phase 4 后续增强（未实施）
 > **创建日期**: 2026-04-27
 > **分支**: `feature/plugin-architecture`
 
@@ -386,11 +386,11 @@ def normalize_dtype_to_app_type(dtype_str: str) -> str:
 
 ## 7. 详细开发步骤
 
-### Phase 1：核心类型定义与推断（前端+后端）
+### Phase 1：核心类型定义与推断（前端+后端） ✅ DONE
 
 **预计工作量**：1-2 天
 
-#### Step 1.1 — 扩展前端 Type 枚举
+#### Step 1.1 — 扩展前端 Type 枚举 ✅
 
 文件：`src/data/types.ts`
 
@@ -433,7 +433,7 @@ const testTime = (v: any): boolean => {
 - `testTime("14:30:00")` → true
 - `testTime("2024-01-15")` → false
 
-#### Step 1.2 — 更新前端类型推断
+#### Step 1.2 — 更新前端类型推断 ✅
 
 文件：`src/data/utils.ts`
 
@@ -441,13 +441,13 @@ const testTime = (v: any): boolean => {
 - `convertTypeToDtype` 增加新类型映射
 - `coerceValueArrayFromTypes` 增加新类型分支
 
-#### Step 1.3 — 更新 SQL 类型映射
+#### Step 1.3 — 更新 SQL 类型映射 ✅
 
 文件：`src/app/tableThunks.ts`
 
 - `convertSqlTypeToAppType` 区分 `TIMESTAMP/DATETIME` → `Type.DateTime`、`DATE` → `Type.Date`、`TIME` → `Type.Time`、`INTERVAL` → `Type.Duration`
 
-#### Step 1.4 — 后端 API 类型标准化
+#### Step 1.4 — 后端 API 类型标准化 ✅
 
 文件：
 - `py-src/data_formulator/datalake/parquet_utils.py` — 新增 `normalize_dtype_to_app_type()`
@@ -456,7 +456,7 @@ const testTime = (v: any): boolean => {
 
 实现 `normalize_dtype_to_app_type` 并在所有向前端传递列类型的位置统一使用。
 
-#### Step 1.5 — VL 映射扩展
+#### Step 1.5 — VL 映射扩展 ✅ (已在 Step 1.1 getDType 和 Step 1.2 convertTypeToDtype 中完成)
 
 文件：`src/data/types.ts`
 
@@ -473,11 +473,11 @@ const testTime = (v: any): boolean => {
 
 ---
 
-### Phase 2：前端展示格式化（表格 + 图标）
+### Phase 2：前端展示格式化（表格 + 图标） ✅ DONE
 
 **预计工作量**：1 天
 
-#### Step 2.1 — 实现日期格式化函数
+#### Step 2.1 — 实现日期格式化函数 ✅
 
 文件：`src/views/ViewUtils.tsx`
 
@@ -532,7 +532,7 @@ const formatDuration = (value: any): string => {
 
 注意：`formatCellValue` 新增可选参数 `dataType?: Type`，需同步更新调用方。
 
-#### Step 2.2 — 更新表格列定义
+#### Step 2.2 — 更新表格列定义 ✅
 
 文件：`src/views/DataView.tsx`
 
@@ -544,13 +544,13 @@ format: (value: any) => (
 ),
 ```
 
-#### Step 2.3 — 更新预览表格
+#### Step 2.3 — 更新预览表格 ✅ (保持现有行为 — 轻量预览无类型元数据)
 
 文件：`src/views/DataFrameTable.tsx`
 
 `getCell` 目前对所有值直接 `String(v)`，需要在有列类型信息时使用 `formatCellValue`。如果 `DataFrameTable` 不接收类型元数据（它是轻量预览组件），可保持 `String(v)` 但做基本的 ISO 日期检测和简化展示。
 
-#### Step 2.4 — 新增类型图标
+#### Step 2.4 — 新增类型图标 ✅
 
 文件：`src/icons.tsx`
 
@@ -573,7 +573,7 @@ case Type.Duration:
     return <DurationIcon fontSize="inherit" />;
 ```
 
-#### Step 2.5 — 对齐列对齐策略
+#### Step 2.5 — 对齐列对齐策略 ✅
 
 文件：`src/views/ViewUtils.tsx`
 
@@ -593,11 +593,11 @@ export const getColumnAlign = (dataType: Type | undefined): 'right' | undefined 
 
 ---
 
-### Phase 3：Agent 上下文对齐
+### Phase 3：Agent 上下文对齐 ✅ DONE
 
 **预计工作量**：0.5 天
 
-#### Step 3.1 — 更新 LLM 系统提示
+#### Step 3.1 — 更新 LLM 系统提示 ✅
 
 文件：`py-src/data_formulator/agents/agent_data_load.py`
 
@@ -608,7 +608,7 @@ export const getColumnAlign = (dataType: Type | undefined): 'right' | undefined 
 # Types to consider include: string, number, date, datetime, time, duration
 ```
 
-#### Step 3.2 — 更新表上下文构建
+#### Step 3.2 — 更新表上下文构建 ✅
 
 文件：`py-src/data_formulator/agents/context.py`
 
@@ -623,7 +623,7 @@ from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
 dtype = normalize_dtype_to_app_type(str(df[col].dtype))
 ```
 
-#### Step 3.3 — 更新 TS 类型推断
+#### Step 3.3 — 更新 TS 类型推断 ✅
 
 文件：`py-src/data_formulator/agents/agent_utils.py`
 
@@ -638,7 +638,7 @@ elif "timedelta" in str(dtype):
     return "Duration"
 ```
 
-#### Step 3.4 — 更新图表创建指引
+#### Step 3.4 — 更新图表创建指引 ✅
 
 文件：`py-src/data_formulator/prompts/chart_creation_guide.py`
 

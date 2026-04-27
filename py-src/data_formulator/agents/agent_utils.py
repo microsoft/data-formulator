@@ -29,18 +29,20 @@ def field_name_to_ts_variable_name(field_name):
 def infer_ts_datatype(df, name):
     if name not in df.columns:
         return "any"
-        
-    dtype = df[name].dtype
-    if dtype == "object":  
-        return "string"  
-    elif dtype == "int64" or dtype == "float64":  
-        return "number"  
-    elif dtype == "bool":  
-        return "boolean"  
-    elif dtype == "datetime64":  
-        return "Date"  
-    else:  
-        return "any"  
+
+    dtype = str(df[name].dtype)
+    if dtype == "object":
+        return "string"
+    elif "int" in dtype or "float" in dtype:
+        return "number"
+    elif "bool" in dtype:
+        return "boolean"
+    elif "datetime" in dtype:
+        return "DateTime"
+    elif "timedelta" in dtype:
+        return "Duration"
+    else:
+        return "any"
 
 def value_handling_func(val):
     """process values to make it comparable"""

@@ -91,7 +91,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
                 minWidth, 
                 width, 
                 align: getColumnAlign(dataType), 
-                format: (value: any) => <Typography fontSize="inherit">{formatCellValue(value)}</Typography>, 
+                format: (value: any) => <Typography fontSize="inherit">{formatCellValue(value, dataType)}</Typography>, 
                 dataType,
                 source: conceptShelfItems.find(f => f.name == name)?.source || "original", 
             };

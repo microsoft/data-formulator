@@ -26,7 +26,7 @@ Given a dataset provided by the user,
 2. identify their type and semantic type
 3. provide a very short summary of the dataset.
 
-Types to consider include: string, number, date
+Types to consider include: string, number, date, datetime, time, duration
 
 ''' + generate_semantic_types_prompt() + '''
 

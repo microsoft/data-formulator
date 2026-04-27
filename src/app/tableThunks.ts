@@ -14,7 +14,7 @@
 
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
-import { Type } from '../data/types';
+import { Type, mapApiTypeToAppType } from '../data/types';
 import { inferTypeFromValueArray } from '../data/utils';
 import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
@@ -368,17 +368,24 @@ export function buildDictTableFromWorkspace(
     source: DataSourceConfig | undefined,
 ): DictTable {
     const convertSqlTypeToAppType = (sqlType: string): Type => {
-        sqlType = sqlType.toUpperCase();
-        if (sqlType.includes('INT') || sqlType === 'BIGINT' || sqlType === 'SMALLINT' || sqlType === 'TINYINT') {
+        const upper = sqlType.toUpperCase();
+        if (upper.includes('INT') || upper === 'BIGINT' || upper === 'SMALLINT' || upper === 'TINYINT') {
             return Type.Integer;
-        } else if (sqlType.includes('FLOAT') || sqlType.includes('DOUBLE') || sqlType.includes('DECIMAL') || sqlType.includes('NUMERIC') || sqlType.includes('REAL')) {
+        } else if (upper.includes('FLOAT') || upper.includes('DOUBLE') || upper.includes('DECIMAL') || upper.includes('NUMERIC') || upper.includes('REAL')) {
             return Type.Number;
-        } else if (sqlType.includes('BOOL')) {
+        } else if (upper.includes('BOOL')) {
             return Type.Boolean;
-        } else if (sqlType.includes('DATE') || sqlType.includes('TIME') || sqlType.includes('TIMESTAMP')) {
+        } else if (upper.includes('TIMESTAMP') || upper === 'DATETIME') {
+            return Type.DateTime;
+        } else if (upper.includes('DATE')) {
             return Type.Date;
+        } else if (upper === 'TIME' || upper.startsWith('TIME ') || upper.startsWith('TIME(')) {
+            return Type.Time;
+        } else if (upper.includes('INTERVAL')) {
+            return Type.Duration;
         } else {
-            return Type.String;
+            // Fall back to the generic API-type mapper for standardized labels
+            return mapApiTypeToAppType(sqlType);
         }
     };
 

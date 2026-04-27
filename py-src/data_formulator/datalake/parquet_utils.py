@@ -89,14 +89,41 @@ def get_sample_rows_from_arrow(
     return make_json_safe(sample.to_pylist())
 
 
+def normalize_dtype_to_app_type(dtype_str: str) -> str:
+    """Map a pandas/Arrow dtype string to a standardized App Type label.
+
+    The labels are consumed by the frontend ``mapApiTypeToAppType()`` and must
+    stay in sync with the ``Type`` enum in ``src/data/types.ts``.
+
+    Returns one of: 'datetime', 'date', 'time', 'duration',
+                     'integer', 'number', 'boolean', 'string'.
+    """
+    t = dtype_str.lower()
+    if 'datetime' in t or 'timestamp' in t:
+        return 'datetime'
+    if t == 'date' or t.startswith('date32') or t.startswith('date64'):
+        return 'date'
+    if t == 'time' or t.startswith('time32') or t.startswith('time64'):
+        return 'time'
+    if 'timedelta' in t or 'duration' in t:
+        return 'duration'
+    if 'int' in t:
+        return 'integer'
+    if 'float' in t or 'double' in t:
+        return 'number'
+    if 'bool' in t:
+        return 'boolean'
+    return 'string'
+
+
 def get_arrow_column_info(table: pa.Table) -> list[ColumnInfo]:
     """Extract column information from a PyArrow Table."""
-    return [ColumnInfo(name=field.name, dtype=str(field.type)) for field in table.schema]
+    return [ColumnInfo(name=field.name, dtype=normalize_dtype_to_app_type(str(field.type))) for field in table.schema]
 
 
 def get_column_info(df: pd.DataFrame) -> list[ColumnInfo]:
     """Extract column information from a pandas DataFrame."""
-    return [ColumnInfo(name=str(col), dtype=str(df[col].dtype)) for col in df.columns]
+    return [ColumnInfo(name=str(col), dtype=normalize_dtype_to_app_type(str(df[col].dtype))) for col in df.columns]
 
 
 # ---------------------------------------------------------------------------

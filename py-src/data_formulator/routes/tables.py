@@ -16,7 +16,7 @@ from pathlib import Path
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
-from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename
+from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename, normalize_dtype_to_app_type
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, get_file_type, normalize_text_encoding
 from data_formulator.datalake.workspace_metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
 import re
@@ -195,20 +195,20 @@ def list_tables():
                     continue
                 columns = []
                 for c in (meta.columns or []):
-                    col_entry: dict = {"name": c.name, "type": c.dtype}
+                    col_entry: dict = {"name": c.name, "type": normalize_dtype_to_app_type(c.dtype)}
                     if c.description is not None:
                         col_entry["description"] = c.description
                     columns.append(col_entry)
                 if not columns and meta.file_type == "parquet":
                     try:
                         schema_info = workspace.get_parquet_schema(table_name)
-                        columns = [{"name": c["name"], "type": c["type"]} for c in schema_info.get("columns", [])]
+                        columns = [{"name": c["name"], "type": normalize_dtype_to_app_type(c["type"])} for c in schema_info.get("columns", [])]
                     except Exception as e:
                         logger.warning("Could not read parquet schema for %s", table_name, exc_info=e)
                 if not columns:
                     try:
                         df = workspace.read_data_as_df(table_name)
-                        columns = [{"name": str(c), "type": str(df[c].dtype)} for c in df.columns]
+                        columns = [{"name": str(c), "type": normalize_dtype_to_app_type(str(df[c].dtype))} for c in df.columns]
                     except Exception as e:
                         logger.warning("Could not read columns for %s", table_name, exc_info=e)
                 row_count = meta.row_count

@@ -215,6 +215,41 @@ const DateIcon: React.FunctionComponent<SvgIconProps> = (props) => {
     );
 };
 
+/** Calendar + clock overlay — represents DateTime (date with time component). */
+const DateTimeIcon: React.FunctionComponent<SvgIconProps> = (props) => {
+    return (
+        <SvgIcon {...props}>
+            {/* Calendar base (scaled down to make room for clock) */}
+            <path d="M16,3.5v-1H15v1H7v-1H6v1H2.5v14h11.05A5.5,5.5,0,0,1,13,15H3.5V8.5h14v.55A5.47,5.47,0,0,1,19,8.05V3.5Zm1.5,4H3.5v-3H6v1H7v-1h8v1h1v-1h1.5Z" />
+            {/* Small clock in bottom-right corner */}
+            <circle cx="18" cy="15" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.3"/>
+            <polyline points="18,12.5 18,15 20,16.2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+        </SvgIcon>
+    );
+};
+
+/** Pure clock icon — represents Time (no date component). */
+const TimeIcon: React.FunctionComponent<SvgIconProps> = (props) => {
+    return (
+        <SvgIcon {...props}>
+            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+            <polyline points="12,6.5 12,12 16,14.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+        </SvgIcon>
+    );
+};
+
+/** Hourglass icon — represents Duration / time interval. */
+const DurationIcon: React.FunctionComponent<SvgIconProps> = (props) => {
+    return (
+        <SvgIcon {...props}>
+            <path d="M6,2H18V6.5a.5.5,0,0,1-.15.35L13.5,11.2a.5.5,0,0,0,0,.6l4.35,4.35A.5.5,0,0,1,18,16.5V22H6V16.5a.5.5,0,0,1,.15-.35L10.5,11.8a.5.5,0,0,0,0-.6L6.15,6.85A.5.5,0,0,1,6,6.5Z"
+                fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+            <line x1="6" y1="2" x2="18" y2="2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="6" y1="22" x2="18" y2="22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        </SvgIcon>
+    );
+};
+
 const UnknownIcon: React.FunctionComponent<SvgIconProps> = (props) => {
     return (
         <SvgIcon {...props}>
@@ -223,4 +258,4 @@ const UnknownIcon: React.FunctionComponent<SvgIconProps> = (props) => {
     );
 };
 
-export { BooleanIcon, NumericalIcon, StringIcon, DateIcon, UnknownIcon };
+export { BooleanIcon, NumericalIcon, StringIcon, DateIcon, DateTimeIcon, TimeIcon, DurationIcon, UnknownIcon };

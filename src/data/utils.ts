@@ -160,13 +160,19 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
 };
 
 export const inferTypeFromValueArray = (values: any[]): Type => {
-    let types: Type[] = [Type.Boolean, Type.Integer, Type.Date, Type.Number, Type.String];
+    // More specific types first; the first surviving candidate wins.
+    let types: Type[] = [
+        Type.Boolean, Type.Integer,
+        Type.DateTime, Type.Date, Type.Time, Type.Duration,
+        Type.Number, Type.String,
+    ];
 
     for (let i = 0; i < values.length; i++) {
         const v = values[i];
+        if (v == null || v === '') continue;
 
         for (let t = 0; t < types.length; t++) {
-            if (v != null && !TestType[types[t]](v)) {
+            if (!TestType[types[t]](v)) {
                 types.splice(t, 1);
                 t -= 1;
             }
@@ -177,13 +183,20 @@ export const inferTypeFromValueArray = (values: any[]): Type => {
 };
 
 export const convertTypeToDtype = (type: Type | undefined): string => {
-    return type === Type.Integer || type === Type.Number
-        ? 'quantitative'
-        : type === Type.Boolean
-        ? 'boolean'
-        : type === Type.Date
-        ? 'date'
-        : 'nominal';
+    switch (type) {
+        case Type.Integer:
+        case Type.Number:
+        case Type.Duration:
+            return 'quantitative';
+        case Type.Boolean:
+            return 'boolean';
+        case Type.Date:
+        case Type.DateTime:
+        case Type.Time:
+            return 'date';
+        default:
+            return 'nominal';
+    }
 };
 
 export const coerceValueArrayFromTypes = (values: any[], type: Type): any[] => {
