@@ -103,11 +103,18 @@ def _sanitize_error(error: Exception) -> tuple[str, int]:
 
 
 def _node_to_dict(node: CatalogNode) -> dict[str, Any]:
+    meta = node.metadata
+    if meta is not None and node.node_type in ("table", "table_group"):
+        if "source_metadata_status" not in meta:
+            from data_formulator.data_loader.external_data_loader import (
+                infer_source_metadata_status,
+            )
+            meta = {**meta, "source_metadata_status": infer_source_metadata_status(meta)}
     return {
         "name": node.name,
         "node_type": node.node_type,
         "path": node.path,
-        "metadata": node.metadata,
+        "metadata": meta,
     }
 
 

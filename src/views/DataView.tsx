@@ -89,6 +89,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
             return {
                 id: name, 
                 label: targetTable?.metadata[name]?.displayName || name, 
+                description: targetTable?.metadata[name]?.description,
                 minWidth, 
                 width, 
                 align: getColumnAlign(dataType), 

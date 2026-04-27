@@ -15,7 +15,13 @@ from data_formulator.datalake.workspace_metadata import (
     TableMetadata,
     WorkspaceMetadata,
 )
-from data_formulator.data_loader.external_data_loader import _merge_source_metadata
+from data_formulator.data_loader.external_data_loader import (
+    _merge_source_metadata,
+    infer_source_metadata_status,
+    SOURCE_METADATA_OK,
+    SOURCE_METADATA_PARTIAL,
+    SOURCE_METADATA_UNAVAILABLE,
+)
 
 pytestmark = [pytest.mark.backend]
 
@@ -315,3 +321,94 @@ class TestGetColumnTypesDefault:
 
         loader = EmptyLoader({})
         assert loader.get_column_types("t") == {}
+
+
+# ── source_metadata_status inference ──────────────────────────────────
+
+class TestInferSourceMetadataStatus:
+    def test_none_metadata_returns_unavailable(self):
+        assert infer_source_metadata_status(None) == SOURCE_METADATA_UNAVAILABLE
+
+    def test_empty_metadata_returns_unavailable(self):
+        assert infer_source_metadata_status({}) == SOURCE_METADATA_UNAVAILABLE
+
+    def test_table_desc_only_returns_partial(self):
+        meta = {"description": "Order table", "columns": [{"name": "id"}]}
+        assert infer_source_metadata_status(meta) == SOURCE_METADATA_PARTIAL
+
+    def test_col_desc_only_returns_partial(self):
+        meta = {"columns": [{"name": "id", "description": "Primary key"}]}
+        assert infer_source_metadata_status(meta) == SOURCE_METADATA_PARTIAL
+
+    def test_both_descs_returns_ok(self):
+        meta = {
+            "description": "Order table",
+            "columns": [{"name": "id", "description": "PK"}],
+        }
+        assert infer_source_metadata_status(meta) == SOURCE_METADATA_OK
+
+    def test_explicit_status_overrides_inference(self):
+        meta = {"source_metadata_status": "unavailable", "description": "Override"}
+        assert infer_source_metadata_status(meta) == SOURCE_METADATA_UNAVAILABLE
+
+    def test_no_columns_key_returns_partial_with_desc(self):
+        meta = {"description": "Table only"}
+        assert infer_source_metadata_status(meta) == SOURCE_METADATA_PARTIAL
+
+
+# ── _tables_to_catalog_tree injects status ────────────────────────────
+
+class TestCatalogTreeMetadataStatus:
+    def _make_loader(self):
+        from data_formulator.data_loader.external_data_loader import ExternalDataLoader
+        import pyarrow as pa
+
+        class StubLoader(ExternalDataLoader):
+            def __init__(self, params):
+                self.params = params
+
+            @staticmethod
+            def list_params():
+                return []
+
+            @staticmethod
+            def auth_instructions():
+                return ""
+
+            def list_tables(self, table_filter=None):
+                return []
+
+            def fetch_data_as_arrow(self, source_table, import_options=None):
+                return pa.table({"x": [1]})
+
+        return StubLoader({})
+
+    def test_tree_leaf_has_status_injected(self):
+        loader = self._make_loader()
+        tables = [
+            {
+                "name": "orders",
+                "metadata": {
+                    "description": "Full",
+                    "columns": [{"name": "id", "description": "PK"}],
+                },
+            },
+            {
+                "name": "bare_table",
+                "metadata": {"columns": [{"name": "x"}]},
+            },
+        ]
+        tree = loader._tables_to_catalog_tree(tables)
+        orders = next(n for n in tree if n["name"] == "orders")
+        bare = next(n for n in tree if n["name"] == "bare_table")
+        assert orders["metadata"]["source_metadata_status"] == SOURCE_METADATA_OK
+        assert bare["metadata"]["source_metadata_status"] == SOURCE_METADATA_UNAVAILABLE
+
+    def test_explicit_status_preserved_in_tree(self):
+        loader = self._make_loader()
+        tables = [{
+            "name": "custom",
+            "metadata": {"source_metadata_status": "partial"},
+        }]
+        tree = loader._tables_to_catalog_tree(tables)
+        assert tree[0]["metadata"]["source_metadata_status"] == "partial"

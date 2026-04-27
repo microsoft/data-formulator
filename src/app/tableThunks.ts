@@ -425,7 +425,8 @@ export function buildDictTableFromWorkspace(
             [col.name]: {
                 type: convertSqlTypeToAppType(col.type),
                 semanticType: "",
-                levels: []
+                levels: [],
+                ...(col.description ? { description: col.description } : {}),
             }
         }), {}),
         rows: wsTable.sample_rows,

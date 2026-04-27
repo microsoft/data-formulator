@@ -207,6 +207,7 @@ export interface DictTable {
         intrinsicDomain?: [number, number],
         unit?: string,
         displayName?: string,
+        description?: string,
     }}; // metadata of the table
 
     rows: any[]; // table content, each entry is a row

@@ -290,6 +290,33 @@ def sanitize_table_name(name_as: str) -> str:
 # Catalog tree model
 # ---------------------------------------------------------------------------
 
+SOURCE_METADATA_OK = "ok"
+SOURCE_METADATA_PARTIAL = "partial"
+SOURCE_METADATA_UNAVAILABLE = "unavailable"
+
+
+def infer_source_metadata_status(metadata: dict[str, Any] | None) -> str:
+    """Infer ``source_metadata_status`` from a catalog node's metadata dict.
+
+    Returns ``"ok"`` when both table description and at least one column
+    description are present, ``"partial"`` when only table or column info
+    exists, and ``"unavailable"`` otherwise.  Loaders may override the
+    status by setting ``source_metadata_status`` explicitly.
+    """
+    if not metadata:
+        return SOURCE_METADATA_UNAVAILABLE
+    if "source_metadata_status" in metadata:
+        return metadata["source_metadata_status"]
+    has_table_desc = bool(metadata.get("description"))
+    columns = metadata.get("columns") or []
+    has_col_desc = any(c.get("description") for c in columns if isinstance(c, dict))
+    if has_table_desc and has_col_desc:
+        return SOURCE_METADATA_OK
+    if has_table_desc or has_col_desc:
+        return SOURCE_METADATA_PARTIAL
+    return SOURCE_METADATA_UNAVAILABLE
+
+
 @dataclass
 class CatalogNode:
     """A node in the data source's catalog tree.
@@ -780,18 +807,18 @@ class ExternalDataLoader(ABC):
         def _build(items: list[tuple[list[str], str, dict | None]], depth: int, prefix: list[str]) -> list[dict]:
             if depth >= num_ns:
                 # Leaf level — use last segment as the table name
-                return [
-                    {
+                result = []
+                for segs, orig, meta in items:
+                    merged = {**(meta or {}), "_source_name": orig}
+                    if "source_metadata_status" not in merged:
+                        merged["source_metadata_status"] = infer_source_metadata_status(meta)
+                    result.append({
                         "name": segs[-1] if segs else orig,
                         "node_type": "table",
                         "path": prefix + [segs[-1] if segs else orig],
-                        "metadata": {
-                            **(meta or {}),
-                            "_source_name": orig,
-                        },
-                    }
-                    for segs, orig, meta in items
-                ]
+                        "metadata": merged,
+                    })
+                return result
 
             # Group by first path segment
             from collections import OrderedDict
@@ -818,14 +845,14 @@ class ExternalDataLoader(ABC):
                 })
             for segs, orig, meta in ungrouped:
                 leaf_name = segs[0] if segs else orig
+                merged = {**(meta or {}), "_source_name": orig}
+                if "source_metadata_status" not in merged:
+                    merged["source_metadata_status"] = infer_source_metadata_status(meta)
                 nodes.append({
                     "name": leaf_name,
                     "node_type": "table",
                     "path": prefix + [leaf_name],
-                    "metadata": {
-                        **(meta or {}),
-                        "_source_name": orig,
-                    },
+                    "metadata": merged,
                 })
             return nodes
 

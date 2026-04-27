@@ -32,7 +32,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import { generateUUID } from '../app/identity';
-import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
+import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 
 import StorageIcon from '@mui/icons-material/Storage';
 import AddIcon from '@mui/icons-material/Add';
@@ -76,7 +76,6 @@ import {
     collectNamespaceIds,
     findNodeByPath,
     mergeChildrenAtPath,
-    renderCatalogTreeItems,
 } from '../components/CatalogTree';
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
@@ -1120,72 +1119,62 @@ const DataSourceSidebarPanel: React.FC<{
                                         </Box>
                                     )}
                                     {displayCache && displayCache.tree.length > 0 && (
-                                        <SimpleTreeView
-                                            expandedItems={expanded}
-                                            onExpandedItemsChange={(_e, items) => {
+                                        <VirtualizedCatalogTree
+                                            nodes={displayCache.tree}
+                                            loadedMap={loadedTablesMap}
+                                            expandedIds={expanded}
+                                            onExpandedChange={(newIds) => {
                                                 if (!activeSearchMode) {
-                                                    const prevSet = new Set(expanded);
-                                                    const newlyExpanded = items.filter(id => !prevSet.has(id));
-                                                    setTreeExpanded(prev => ({ ...prev, [connector.id]: items }));
-                                                    const fullCache = catalogCache[connector.id];
-                                                    for (const itemId of newlyExpanded) {
-                                                        const node = fullCache ? findNodeByPath(fullCache.tree, itemId) : null;
-                                                        if (node && (node.node_type === 'namespace' || node.node_type === 'table_group') && !node.children) {
-                                                            fetchCatalogNodes(connector.id, node.path, { filter: catalogSearch });
-                                                        }
-                                                    }
+                                                    setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
                                                 }
                                             }}
-                                            onItemClick={(e, itemId) => {
-                                                const node = displayCache ? findNodeByPath(displayCache.tree, itemId) : null;
-                                                if (node && node.node_type === 'table') {
+                                            onLazyExpand={(node) => {
+                                                fetchCatalogNodes(connector.id, node.path, { filter: catalogSearch });
+                                            }}
+                                            onItemClick={(node, e) => {
+                                                if (node.node_type === 'table') {
                                                     handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
                                                 }
                                             }}
-                                            itemChildrenIndentation={0}
+                                            onLoadMore={(node) => {
+                                                const parentPath = (node.metadata?.parentPath || []) as string[];
+                                                const nextOffset = Number(node.metadata?.nextOffset || 0);
+                                                fetchCatalogNodes(connector.id, parentPath, { append: true, offset: nextOffset, filter: catalogSearch });
+                                            }}
+                                            onDragStart={(node, event) => {
+                                                const dsId = node.metadata?.dataset_id;
+                                                const sourceName = node.metadata?._source_name || node.name;
+                                                const item: CatalogTableDragItem = {
+                                                    type: CATALOG_TABLE_ITEM,
+                                                    connectorId: connector.id,
+                                                    tableName: sourceName,
+                                                    tableId: dsId != null ? String(dsId) : sourceName,
+                                                    tablePath: node.path,
+                                                    sourceType: connector.source_type,
+                                                };
+                                                event.dataTransfer.setData('application/json', JSON.stringify(item));
+                                                event.dataTransfer.effectAllowed = 'copy';
+                                            }}
+                                            renderTableActions={(node) => {
+                                                const pathKey = node.path.join('/');
+                                                const sourceName = node.metadata?._source_name;
+                                                const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
+                                                if (!isLoaded) return null;
+                                                return (
+                                                    <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => { e.stopPropagation(); handleRefreshTable(connector.id, node, e); }}
+                                                            sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                                        >
+                                                            <RefreshIcon sx={{ fontSize: 13 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                );
+                                            }}
+                                            maxHeight={320}
                                             sx={{ px: 0.5 }}
-                                        >
-                                            {renderCatalogTreeItems(displayCache.tree, {
-                                                loadedMap: loadedTablesMap,
-                                                expandedSet: new Set(expanded),
-                                                onLoadMore: (node) => {
-                                                    const parentPath = (node.metadata?.parentPath || []) as string[];
-                                                    const nextOffset = Number(node.metadata?.nextOffset || 0);
-                                                    fetchCatalogNodes(connector.id, parentPath, { append: true, offset: nextOffset, filter: catalogSearch });
-                                                },
-                                                onDragStart: (node, event) => {
-                                                    const dsId = node.metadata?.dataset_id;
-                                                    const sourceName = node.metadata?._source_name || node.name;
-                                                    const item: CatalogTableDragItem = {
-                                                        type: CATALOG_TABLE_ITEM,
-                                                        connectorId: connector.id,
-                                                        tableName: sourceName,
-                                                        tableId: dsId != null ? String(dsId) : sourceName,
-                                                        tablePath: node.path,
-                                                        sourceType: connector.source_type,
-                                                    };
-                                                    event.dataTransfer.setData('application/json', JSON.stringify(item));
-                                                    event.dataTransfer.effectAllowed = 'copy';
-                                                },
-                                                renderTableActions: (node) => {
-                                                    const pathKey = node.path.join('/');
-                                                    const sourceName = node.metadata?._source_name;
-                                                    const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
-                                                    if (!isLoaded) return null;
-                                                    return (
-                                                        <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={(e) => handleRefreshTable(connector.id, node, e)}
-                                                                sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
-                                                            >
-                                                                <RefreshIcon sx={{ fontSize: 13 }} />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                    );
-                                                },
-                                            })}
-                                        </SimpleTreeView>
+                                        />
                                     )}
                                     {displayCache && displayCache.tree.length === 0 && !isLoading && (
                                         <Typography sx={{ fontSize: 11, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>

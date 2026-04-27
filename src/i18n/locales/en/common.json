@@ -715,7 +715,9 @@
     "opContains": "CONTAINS",
     "refreshPreview": "Preview",
     "noMatchingRows": "No rows match the current filters",
-    "knowledge": "Knowledge"
+    "knowledge": "Knowledge",
+    "metadataPartial": "Partial metadata",
+    "metadataUnavailable": "Metadata unavailable"
   },
   "knowledge": {
     "title": "Knowledge Base",

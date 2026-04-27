@@ -1,7 +1,7 @@
 # 数据加载器（ExternalDataLoader）开发规范
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-26
+> **最后更新**: 2026-04-28
 > **适用范围**: `py-src/data_formulator/data_loader/` 下的所有 Loader 实现
 
 ---
@@ -250,6 +250,9 @@ Loader type 注册后，`DataConnector` 会自动把它包装成 connector insta
 2. **外部 loader 插件**：不修改仓库源码，把 `*_data_loader.py` 放到
    `DF_PLUGIN_DIR` 指向的目录。默认目录是 `~/.data-formulator/plugins/`。
 
+内置 loader 当前**不是**包内自动发现；新增内置 loader 必须显式更新 `_LOADER_SPECS`。
+零源码修改只适用于外部 `DF_PLUGIN_DIR` 插件。
+
 外部 loader 文件会在服务启动时被扫描。系统会导入每个匹配 `*_data_loader.py` 的文件，
 找到其中公开的 `ExternalDataLoader` 子类，并注册到 `DATA_LOADERS`。注册 key 来自文件名：
 
@@ -282,6 +285,41 @@ my_report_data_loader.py -> my_report
 | `AzureBlobDataLoader` | Azure Blob Storage | PyArrow |
 | `MongoDBDataLoader` | MongoDB | |
 | `LocalFolderDataLoader` | 本机目录 | 仅桌面模式可用，见 §3 |
+
+### 2.4 新 Loader 检查清单
+
+新增或改造 loader 时，按以下清单自查：
+
+**文件与注册**
+
+- [ ] 内置 loader 文件放在 `py-src/data_formulator/data_loader/`，命名为 `<type>_data_loader.py`。
+- [ ] 内置 loader 已加入 `data_loader/__init__.py` 的 `_LOADER_SPECS`，并填写缺失依赖的 pip 包名。
+- [ ] 外部 loader 放在 `DF_PLUGIN_DIR` 指向的目录，文件名匹配 `*_data_loader.py`，并定义公开的 `ExternalDataLoader` 子类。
+- [ ] 若 loader 访问用户可控的宿主文件路径，已在 `_enforce_deployment_restrictions()` 中添加多用户部署禁用规则。
+
+**认证与参数**
+
+- [ ] 实现 `auth_config()`；旧 loader 可保留 `auth_mode()`，但新代码以 `auth_config()` 为准。
+- [ ] `auth_config()` 不包含明文密钥；client id、client secret、token URL 等可部署差异通过环境变量或非敏感 params 注入。
+- [ ] `list_params()` 中密码、token、access key、connection string 等字段标记 `sensitive=True` 或 `type="password"`；认证专用字段标记 `tier="auth"`。
+- [ ] 连接成功后需要复用的敏感凭据只进入 vault，不写入 `connectors.yaml`，也不作为 `pinned_params` 返回前端。
+- [ ] `delegated` 或 `sso_exchange` loader 已在 `__init__` 中真正消费 `access_token` / `sso_access_token`，不能只声明 `auth_config()`。
+
+**数据与 catalog**
+
+- [ ] `list_tables()` 返回轻量 metadata，不做逐表采样、计数或大数据读取。
+- [ ] 大目录优先实现 `ls(path, filter, limit, offset)` 与 `search_catalog(query)`，避免前端展开时全量扫描。
+- [ ] table 节点携带稳定源标识符，例如 `metadata["_source_name"]`，供 preview/import/refresh 使用。
+- [ ] `fetch_data_as_arrow()` 尊重 `import_options` 中的 `size`、`columns`、`sort_columns`、`sort_order`、`filters`、`source_filters`。
+- [ ] SQL 类 loader 构造筛选条件时使用参数化、标识符白名单或受控运算符集合，禁止拼接未校验的 operator/column。
+
+**可靠性与测试**
+
+- [ ] 外部 API 调用设置合理 timeout。
+- [ ] 缺少可选依赖时只禁用该 loader，不让整个应用启动失败。
+- [ ] `test_connection()` 做轻量真实验证，用于连接创建和 vault 自动重连校验。
+- [ ] 覆盖连接成功/失败、凭据持久化、vault 自动重连、source filters、metadata best-effort 失败不阻断等关键路径。
+- [ ] 数据库类 loader 的集成测试放在 `tests/database-dockers/`，普通行为测试放在 `tests/backend/`。
 
 ---
 
