@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { Box, Typography, useTheme } from '@mui/material';
+import { Box, Tooltip, Typography, useTheme } from '@mui/material';
 
 const CODE_FONT = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace';
 
@@ -36,6 +36,8 @@ export interface DataFrameTableProps {
     headerFontSize?: number;
     /** Whether to show a row index column (default false) */
     showIndex?: boolean;
+    /** Optional column descriptions keyed by column name, shown as header tooltips. */
+    columnDescriptions?: Record<string, string>;
 }
 
 export const DataFrameTable: React.FC<DataFrameTableProps> = ({
@@ -48,6 +50,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
     fontSize = 11,
     headerFontSize = 10,
     showIndex = false,
+    columnDescriptions,
 }) => {
     const theme = useTheme();
     const visibleRows = maxRows != null ? rows.slice(0, maxRows) : rows;
@@ -111,13 +114,21 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                                 sx={{ fontWeight: 600, fontSize: headerFontSize, color: 'text.disabled', minWidth: 28, textAlign: 'right' }}>
                             </Typography>
                         )}
-                        {displayCols.map((col, i) => (
-                            <Typography component="th" key={i} variant="caption"
-                                title={col}
-                                sx={{ fontWeight: 600, fontSize: headerFontSize }}>
-                                {col}
-                            </Typography>
-                        ))}
+                        {displayCols.map((col, i) => {
+                            const desc = col !== '\u2026' ? columnDescriptions?.[col] : undefined;
+                            return (
+                                <Tooltip key={i} title={desc || ''} placement="top"
+                                    enterDelay={400} disableHoverListener={!desc}>
+                                    <Typography component="th" variant="caption"
+                                        title={desc ? undefined : col}
+                                        sx={{ fontWeight: 600, fontSize: headerFontSize,
+                                            ...(desc ? { cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 2 } : {}),
+                                        }}>
+                                        {col}
+                                    </Typography>
+                                </Tooltip>
+                            );
+                        })}
                     </tr>
                 </thead>
                 <tbody>

@@ -1,7 +1,7 @@
 # 认证架构：OIDC + TokenStore + AUTH_MODE
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-26
+> **最后更新**: 2026-04-28
 > **适用范围**: `py-src/data_formulator/auth/` 下的认证模块、`oidc_gateway.py`、`token_store.py`
 > **设计文档**: `design-docs/11-unified-auth-credential-architecture.md`
 
@@ -43,11 +43,14 @@ Session-backed 凭证管理器，统一管理所有第三方系统的 token。
 |------|------|
 | `get_access(system_id)` | 返回最佳可用凭证（str / dict / None） |
 | `get_sso_token()` | 获取 DF 级 SSO token |
-| `get_auth_status()` | 批量查询所有系统的认证状态 |
+| `get_auth_status()` | 批量查询所有系统的认证状态，包含 `requires_user_action` 与 `available_strategies` |
 | `store_service_token(system_id, ...)` | 存储弹窗/手动获取的 token |
 | `store_sso_tokens(...)` | 存储后端 OIDC 回调获取的 SSO token |
 | `clear_service_token(system_id)` | 清除 token（Session + Vault 同步清理） |
 | `clear_session_tokens()` | 仅清除当前 Flask Session 中的 SSO/service token，不删除 Vault 凭据 |
+
+`get_access(system_id)` 本身只返回凭证或 `None`。前端和 Agent 需要判断是否需要用户操作时，
+应调用 `/api/auth/service-status`，不要假设 `get_access()` 会附带状态字段。
 
 **手动断开与自动 SSO 重连:**
 
@@ -73,7 +76,7 @@ OIDC logout 使用 `clear_session_tokens()`，只清当前浏览器会话中的 
 |------|------|------|
 | `/login` | GET | 重定向到 IdP 授权页 |
 | `/status` | GET | 检查 SSO 登录状态 |
-| `/logout` | POST | 清除所有 token（SSO + 所有服务） |
+| `/logout` | POST | 清除当前浏览器 Session 中的 SSO/service token，不删除 Vault 凭据 |
 
 **`oidc_callback_bp`**（无前缀）:
 
@@ -87,8 +90,22 @@ OIDC logout 使用 `clear_session_tokens()`，只清当前浏览器会话中的 
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/tokens/save` | POST | 接收弹窗登录获取的 token |
+| `/tokens/save` | POST | 接收弹窗登录获取的 token，并通过 `store_service_token()` 写入 TokenStore |
+| `/tokens/<system_id>` | DELETE | 显式断开某个 service token，并清理对应 Vault 凭据 |
 | `/service-status` | GET | 返回所有系统的认证状态 |
+
+### 2.2.1 前端 `auth/info` 合约
+
+前端不直接读取 `AUTH_MODE` 环境变量，而是调用 `/api/auth/info`。OIDC provider 返回：
+
+| `action` | 前端行为 |
+|----------|----------|
+| `backend` | `AuthButton` 跳转到 `login_url`，登出时 POST `logout_url`，后续请求依赖 session cookie |
+| `frontend` | 使用 `oidc-client-ts` 走浏览器 PKCE，并由 `fetchWithIdentity()` 附加 Bearer token |
+| `transparent` | 平台已完成身份注入，前端不展示普通 OIDC 登录按钮 |
+| `none` | 未启用外部认证 |
+
+历史设计草案中的 `backend_redirect` 不是当前实现字段；新代码必须使用 `backend`。
 
 ### 2.3 Loader 的 `auth_config()` 声明
 
@@ -112,6 +129,18 @@ def auth_config() -> dict:
 - `sso_exchange` — SSO token 自动交换
 - `delegated` — 弹窗委托登录
 - `oauth2` — OAuth2 重定向
+
+### 2.4 Delegated popup 约定
+
+支持弹窗委托登录的 loader 应同时提供：
+
+- `auth_config()` 中的 `mode="delegated"` 或可降级的 `login_url`。
+- `delegated_login_config()` 返回前端可打开的 `login_url` 和可选按钮 `label`。
+- 弹窗页面通过 `window.opener.postMessage()` 发送 `type: "df-sso-auth"`、`access_token`、可选 `refresh_token` 和 `user`。
+- 前端收到消息后调用 `POST /api/auth/tokens/save`，请求体包含 `system_id`、`access_token`、可选 `refresh_token`、`user`、`remember`。
+- Loader 的 `__init__` 必须消费注入的 `access_token` 或 `sso_access_token`，否则声明 delegated/SSO 模式没有实际效果。
+
+用户或运维侧 Superset 配置步骤见 `docs-cn/5.1-superset-sso-oauth-config-guide.md`。
 
 ---
 

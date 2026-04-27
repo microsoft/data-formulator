@@ -76,8 +76,8 @@ export function buildMetadata(data: Record<string, any>[]): Record<string, { typ
         const levels = [...new Set(values)];
         // Assign semantic types heuristically
         let semanticType = '';
-        if (type === Type.Date) semanticType = 'Date';
-        else if (type === Type.Number) semanticType = 'Quantity';
+        if (type === Type.Date || type === Type.DateTime || type === Type.Time) semanticType = 'Date';
+        else if (type === Type.Number || type === Type.Duration) semanticType = 'Quantity';
         else semanticType = 'Category';
         meta[key] = { type, semanticType, levels };
     }

@@ -4,5 +4,12 @@
         "npx tsc": true,
         "npx vite": true,
         "npx tsx": true
-    }
+    },
+    "python-envs.pythonProjects": [
+        {
+            "path": "",
+            "envManager": "ms-python.python:conda",
+            "packageManager": "ms-python.python:conda"
+        }
+    ]
 }

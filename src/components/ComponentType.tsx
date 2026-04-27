@@ -207,6 +207,7 @@ export interface DictTable {
         intrinsicDomain?: [number, number],
         unit?: string,
         displayName?: string,
+        description?: string,
     }}; // metadata of the table
 
     rows: any[]; // table content, each entry is a row
@@ -223,6 +224,16 @@ export interface DictTable {
             }[]
         },
         dialog: any[], // the log of how the data is derived with LLM (the LLM conversation log)
+        executionAttempts?: {
+            kind: string;
+            attempt?: number;
+            status: string;
+            summary: string;
+            code_summary?: string;
+            failed_code_summary?: string;
+            repair_code_summary?: string;
+            error?: string;
+        }[],
         trigger: Trigger,
         status?: DeriveStatus, // lifecycle state (new — completed tables may omit for backward compat)
     };
@@ -251,6 +262,16 @@ export function createDictTable(
             concepts: {field: string, explanation: string}[]}, 
             source: string[], 
             dialog: any[], 
+            executionAttempts?: {
+                kind: string;
+                attempt?: number;
+                status: string;
+                summary: string;
+                code_summary?: string;
+                failed_code_summary?: string;
+                repair_code_summary?: string;
+                error?: string;
+            }[],
             trigger: Trigger
         } | undefined = undefined,
     virtual: {tableId: string, rowCount: number} = { tableId: id, rowCount: rows.length },

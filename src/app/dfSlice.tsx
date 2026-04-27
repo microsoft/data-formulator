@@ -82,6 +82,7 @@ export interface ModelConfig {
     api_key?: string;
     api_base?: string;
     api_version?: string;
+    supports_vision?: boolean;
     /** True for models configured server-side via .env. Their credentials never leave the server. */
     is_global?: boolean;
 }
@@ -120,10 +121,6 @@ export interface GeneratedReport {
 
 export interface DataFormulatorState {
 
-    agentRules: {
-        coding: string;
-        exploration: string;
-    };
 
     // Identity management: local (localhost), user (SSO), or browser (anonymous multi-user)
     // Initialized with browser identity, then updated from server config or auth provider
@@ -190,10 +187,6 @@ export interface DataFormulatorState {
 // Define the initial state using that type
 const initialState: DataFormulatorState = {
 
-    agentRules: {
-        coding: "",
-        exploration: "",
-    },
 
     identity: { type: 'browser', id: getBrowserId() },
     globalModels: [],
@@ -230,7 +223,7 @@ const initialState: DataFormulatorState = {
     },
 
     config: {
-        formulateTimeoutSeconds: 60,
+        formulateTimeoutSeconds: 180,
         defaultChartWidth: 400,
         defaultChartHeight: 300,
         maxStretchFactor: 2.0,
@@ -522,7 +515,7 @@ export const dataFormulatorSlice = createSlice({
         resetState: (state) => {
             //state.table = undefined;
             
-            // Preserve: models, selectedModelId, testedModels, agentRules,
+            // Preserve: models, selectedModelId, testedModels,
             //           config, dataLoaderConnectParams, identity
 
             state.tables = [];
@@ -570,7 +563,6 @@ export const dataFormulatorSlice = createSlice({
             return {
                 ...initialState,
                 identity: state.identity,
-                agentRules: state.agentRules,
                 globalModels: state.globalModels,
                 models: state.models,
                 selectedModelId: state.selectedModelId,
@@ -594,7 +586,6 @@ export const dataFormulatorSlice = createSlice({
             return {
                 // Preserve local-only / sensitive fields from current state
                 identity: state.identity,
-                agentRules: state.agentRules || initialState.agentRules,
                 globalModels: state.globalModels || [],
                 models: state.models || [],
                 selectedModelId: state.selectedModelId || undefined,
@@ -667,9 +658,6 @@ export const dataFormulatorSlice = createSlice({
         },
         setViewMode: (state, action: PayloadAction<'editor' | 'report'>) => {
             state.viewMode = action.payload;
-        },
-        setAgentRules: (state, action: PayloadAction<{coding: string, exploration: string}>) => {
-            state.agentRules = action.payload;
         },
         selectModel: (state, action: PayloadAction<string | undefined>) => {
             state.selectedModelId = action.payload;

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,48 @@ class ConfinedDir:
         target = self.resolve(relative, mkdir_parents=True)
         target.write_bytes(data)
         return target
+
+    # -- extended API ------------------------------------------------------
+
+    def read_text(self, relative: str, encoding: str = "utf-8") -> str:
+        """Read a text file within this jail."""
+        return self.resolve(relative).read_text(encoding=encoding)
+
+    def write_text(self, relative: str, content: str,
+                   encoding: str = "utf-8") -> Path:
+        """Write a text file within this jail (auto-creates parent dirs)."""
+        target = self.resolve(relative, mkdir_parents=True)
+        target.write_text(content, encoding=encoding)
+        return target
+
+    def exists(self, relative: str) -> bool:
+        """Check whether a file/directory exists inside this jail.
+
+        Returns ``False`` for paths that would escape the jail instead
+        of raising, so callers can treat traversal as "not found".
+        """
+        try:
+            return self.resolve(relative).exists()
+        except ValueError:
+            return False
+
+    def iterdir(self, relative: str = "") -> Iterator[Path]:
+        """List immediate children of *relative* (or the root)."""
+        target = self.resolve(relative) if relative else self._root
+        if target.is_dir():
+            yield from target.iterdir()
+
+    def rglob(self, pattern: str, relative: str = "") -> Iterator[Path]:
+        """Recursively glob *pattern* starting from *relative* (or the root)."""
+        target = self.resolve(relative) if relative else self._root
+        if target.is_dir():
+            yield from target.rglob(pattern)
+
+    def unlink(self, relative: str) -> None:
+        """Delete a file inside this jail."""
+        self.resolve(relative).unlink()
+
+    # -- operators ---------------------------------------------------------
 
     def __truediv__(self, relative: str) -> Path:
         """Operator overload: ``jail / "sub/path"`` → ``jail.resolve("sub/path")``."""

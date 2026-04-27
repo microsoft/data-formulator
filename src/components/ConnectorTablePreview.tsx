@@ -557,6 +557,10 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                         fontSize={11}
                         headerFontSize={10}
                         showIndex
+                        columnDescriptions={columns.reduce<Record<string, string>>((acc, c) => {
+                            if (c.description) acc[c.name] = c.description;
+                            return acc;
+                        }, {})}
                     />
                 ) : columns.length > 0 && filters.length > 0 ? (
                     <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic', py: 2, textAlign: 'center' }}>

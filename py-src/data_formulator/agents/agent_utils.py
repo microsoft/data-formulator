@@ -11,6 +11,34 @@ import re
 
 _logger = logging.getLogger(__name__)
 
+def format_dataframe_sample_with_budget(
+    df,
+    max_rows: int = 5,
+    max_chars: int = 1000,
+    *,
+    index: bool = False,
+    max_colwidth: int | None = None,
+) -> tuple[str, int, bool]:
+    """Return the largest head() sample that fits within a character budget."""
+    if df is None or len(df) == 0 or max_rows <= 0 or max_chars <= 0:
+        return "", 0, False
+
+    row_count = min(max_rows, len(df))
+    to_string_kwargs = {"index": index}
+    if max_colwidth is not None:
+        to_string_kwargs["max_colwidth"] = max_colwidth
+
+    for rows in range(row_count, 0, -1):
+        sample = df.head(rows).to_string(**to_string_kwargs)
+        if len(sample) <= max_chars:
+            return sample, rows, rows < row_count
+
+    sample = df.head(1).to_string(**to_string_kwargs)
+    suffix = "\n... (truncated)"
+    if max_chars <= len(suffix):
+        return sample[:max_chars], 1, True
+    return sample[:max_chars - len(suffix)] + suffix, 1, True
+
 def string_to_py_varname(var_str): 
     var_name = re.sub(r'\W|^(?=\d)', '_', var_str)
     if keyword.iskeyword(var_name):
@@ -29,18 +57,20 @@ def field_name_to_ts_variable_name(field_name):
 def infer_ts_datatype(df, name):
     if name not in df.columns:
         return "any"
-        
-    dtype = df[name].dtype
-    if dtype == "object":  
-        return "string"  
-    elif dtype == "int64" or dtype == "float64":  
-        return "number"  
-    elif dtype == "bool":  
-        return "boolean"  
-    elif dtype == "datetime64":  
-        return "Date"  
-    else:  
-        return "any"  
+
+    dtype = str(df[name].dtype)
+    if dtype == "object":
+        return "string"
+    elif "int" in dtype or "float" in dtype:
+        return "number"
+    elif "bool" in dtype:
+        return "boolean"
+    elif "datetime" in dtype:
+        return "DateTime"
+    elif "timedelta" in dtype:
+        return "Duration"
+    else:
+        return "any"
 
 def value_handling_func(val):
     """process values to make it comparable"""
@@ -312,6 +342,7 @@ def generate_data_summary(
     include_data_samples=True,
     field_sample_size=7,
     row_sample_size=5,
+    sample_char_limit=None,
     max_val_chars=140,
     table_name_prefix="Table",
     primary_tables=None,
@@ -333,6 +364,7 @@ def generate_data_summary(
         include_data_samples: whether to include sample data
         field_sample_size: number of example values per field
         row_sample_size: number of sample rows to show
+        sample_char_limit: optional max characters for each table's sample rows
         max_val_chars: max characters per value
         table_name_prefix: prefix for table headers
         primary_tables: list of primary (focused) table names; enables tiered output
@@ -404,10 +436,22 @@ def generate_data_summary(
         sections.append(f"### Schema ({num_cols} fields)\n{fields_summary}\n")
 
         if include_data_samples and num_rows > 0:
-            sample_df = df.head(row_sample_size)
+            if sample_char_limit is None:
+                sample_df = df.head(row_sample_size)
+                sample = sample_df.to_string()
+                displayed_rows = min(row_sample_size, num_rows)
+                suffix = ""
+            else:
+                sample, displayed_rows, sample_truncated = format_dataframe_sample_with_budget(
+                    df,
+                    max_rows=row_sample_size,
+                    max_chars=sample_char_limit,
+                    index=True,
+                )
+                suffix = " (truncated to fit context budget)" if sample_truncated else ""
             sections.append(
-                f"### Sample Data (first {min(row_sample_size, num_rows)} rows)\n"
-                f"```\n{sample_df.to_string()}\n```\n"
+                f"### Sample Data (first {displayed_rows} rows{suffix})\n"
+                f"```\n{sample}\n```\n"
             )
 
         return '\n'.join(sections)

@@ -12,7 +12,7 @@ import { saveWorkspaceState } from './workspaceService';
  */
 const EXCLUDED_FIELDS = new Set([
     'models', 'selectedModelId', 'testedModels',
-    'dataLoaderConnectParams', 'identity', 'agentRules', 'serverConfig',
+    'dataLoaderConnectParams', 'identity', 'serverConfig',
     // Transient fields that shouldn't trigger or be included in saves
     'chartSynthesisInProgress', 'chartInsightInProgress',
     'cleanInProgress', 'sessionLoading', 'sessionLoadingLabel',

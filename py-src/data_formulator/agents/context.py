@@ -11,9 +11,39 @@ peripheral threads) from the same code.
 import logging
 from typing import Any
 
-from data_formulator.agents.agent_utils import generate_data_summary
+from data_formulator.agents.agent_utils import (
+    format_dataframe_sample_with_budget,
+    generate_data_summary,
+    get_field_summary,
+)
+from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
 
 logger = logging.getLogger(__name__)
+
+TABLE_SAMPLE_MAX_ROWS = 5
+TABLE_SAMPLE_CHAR_LIMIT = 1000
+
+
+def _get_workspace_metadata_lookups(workspace: Any) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+    """Return table and column descriptions from workspace metadata."""
+    table_descs: dict[str, str] = {}
+    col_descs: dict[str, dict[str, str]] = {}
+    try:
+        ws_meta = workspace.get_metadata()
+        if not ws_meta:
+            return table_descs, col_descs
+        for tname, tmeta in ws_meta.tables.items():
+            if tmeta.description:
+                table_descs[tname] = tmeta.description
+            table_cols = {}
+            for col in tmeta.columns or []:
+                if col.description:
+                    table_cols[col.name] = col.description
+            if table_cols:
+                col_descs[tname] = table_cols
+    except Exception:
+        logger.debug("Could not read workspace metadata for agent context", exc_info=True)
+    return table_descs, col_descs
 
 
 def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
@@ -77,43 +107,63 @@ def build_lightweight_table_context(
     workspace: Any,
     primary_tables: list[str] | None = None,
 ) -> str:
-    """Build lightweight table context: name, filename, columns+types, row count.
+    """Build compact table context with schema, metadata, value samples, and rows.
 
     When ``primary_tables`` is provided, tables are grouped into
     [PRIMARY TABLE(S)] and [OTHER AVAILABLE TABLES] sections.
-    The agent can use ``inspect_source_data`` to get details on demand.
     """
+    table_desc_cache, col_desc_cache = _get_workspace_metadata_lookups(workspace)
+
     def _table_section(table: dict[str, Any]) -> str:
         table_name = table['name']
         try:
             df = workspace.read_data_as_df(table_name)
             data_file_path = workspace.get_relative_data_file_path(table_name)
             num_rows = len(df)
+            description = table.get("attached_metadata", "") or table_desc_cache.get(table_name, "")
+            column_descriptions = col_desc_cache.get(table_name, {})
 
             col_info = []
             for col in df.columns:
-                dtype = str(df[col].dtype)
-                if 'int' in dtype:
-                    dtype = 'int'
-                elif 'float' in dtype:
-                    dtype = 'float'
-                elif dtype == 'object':
-                    dtype = 'str'
-                elif 'datetime' in dtype:
-                    dtype = 'datetime'
-                elif 'bool' in dtype:
-                    dtype = 'bool'
-                col_info.append(f"{col}({dtype})")
+                dtype = normalize_dtype_to_app_type(str(df[col].dtype))
+                col_text = f"{col}({dtype})"
+                if column_descriptions.get(col):
+                    col_text += f": {column_descriptions[col]}"
+                col_info.append(col_text)
 
             lines = [
                 f"Table: {table_name} (file: {data_file_path}, {num_rows:,} rows)",
                 f"  Columns: {', '.join(col_info)}",
             ]
 
+            if description:
+                lines.append(f"  Description: {description}")
+
+            if len(df.columns) > 0:
+                field_lines = [
+                    "    " + get_field_summary(
+                        col,
+                        df,
+                        field_sample_size=7,
+                        max_val_chars=80,
+                        column_description=column_descriptions.get(col),
+                    )
+                    for col in df.columns
+                ]
+                lines.append("  Field value samples:\n" + "\n".join(field_lines))
+
             # Sample rows so LLM can see actual data without calling tools
             try:
-                sample = df.head(3).to_string(index=False, max_colwidth=40)
-                lines.append(f"  Sample (first 3 rows):\n{sample}")
+                sample, displayed_rows, sample_truncated = format_dataframe_sample_with_budget(
+                    df,
+                    max_rows=TABLE_SAMPLE_MAX_ROWS,
+                    max_chars=TABLE_SAMPLE_CHAR_LIMIT,
+                    index=False,
+                    max_colwidth=40,
+                )
+                if sample:
+                    suffix = " (truncated to fit context budget)" if sample_truncated else ""
+                    lines.append(f"  Sample (first {displayed_rows} rows{suffix}):\n{sample}")
             except Exception:
                 pass
 
@@ -130,7 +180,7 @@ def build_lightweight_table_context(
 
             return "\n".join(lines)
         except Exception as e:
-            logger.warning(f"Could not read table {table_name}: {e}")
+            logger.warning("Could not read table %s: %s", table_name, type(e).__name__)
             from data_formulator.error_handler import collect_stream_warning
             collect_stream_warning(
                 f"Table '{table_name}' schema unavailable",
@@ -172,9 +222,8 @@ def handle_inspect_source_data(
     """Handle an inspect_source_data tool call.
 
     Returns a data summary string for the requested tables.
-    Detail level adapts automatically to the number of tables:
-      - ≤3 tables → Level 2 (full schema + sample rows + column descriptions)
-      - >3 tables → Level 1 (schema overview only, no sample rows)
+    Every table includes at most 5 sample rows, bounded by 1000 characters
+    per table so wide tables do not cut off later schema or metadata content.
 
     If a table cannot be read (e.g. not found in workspace), the error
     is included in the summary instead of crashing the entire request.
@@ -184,13 +233,13 @@ def handle_inspect_source_data(
         if t.get("name") in table_names
     ]
     if tables_to_inspect:
-        include_samples = len(tables_to_inspect) <= 3
-        char_limit = 5000 if include_samples else 3000
         try:
             content = generate_data_summary(
                 tables_to_inspect,
                 workspace=workspace,
-                include_data_samples=include_samples,
+                include_data_samples=True,
+                row_sample_size=TABLE_SAMPLE_MAX_ROWS,
+                sample_char_limit=TABLE_SAMPLE_CHAR_LIMIT,
             )
         except (FileNotFoundError, KeyError) as exc:
             logger.warning("Could not generate data summary: %s", exc)
@@ -202,9 +251,8 @@ def handle_inspect_source_data(
             content = f"Error reading table data: some tables could not be found in the workspace. Available tables may have changed."
     else:
         content = f"No tables found matching: {table_names}"
-        char_limit = 3000
 
-    return content[:char_limit] + "..." if len(content) > char_limit else content
+    return content
 
 
 def handle_search_data_tables(

@@ -486,7 +486,7 @@ const ConfigDialog: React.FC = () => {
     const rowLimitMax = DEFAULT_ROW_LIMIT;
 
 
-    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 60);
+    const [formulateTimeoutSeconds, setFormulateTimeoutSeconds] = useState(config.formulateTimeoutSeconds ?? 180);
     const [defaultChartWidth, setDefaultChartWidth] = useState(config.defaultChartWidth ?? 300);
     const [defaultChartHeight, setDefaultChartHeight] = useState(config.defaultChartHeight ?? 300);
     const [maxStretchFactor, setMaxStretchFactor] = useState(config.maxStretchFactor ?? 2.0);
@@ -692,7 +692,7 @@ const ConfigDialog: React.FC = () => {
                 </DialogContent>
                 <DialogActions sx={{'.MuiButton-root': {textTransform: 'none'}}}>
                     <Button sx={{marginRight: 'auto'}} onClick={() => {
-                        setFormulateTimeoutSeconds(60);
+                        setFormulateTimeoutSeconds(180);
                         setDefaultChartWidth(300);
                         setDefaultChartHeight(300);
                         setMaxStretchFactor(2.0);

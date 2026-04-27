@@ -40,6 +40,7 @@ export interface ColumnDef {
     id: string;
     label: string;
     dataType: Type;
+    description?: string;
     minWidth?: number;
     width?: number;
     align?: 'right';
@@ -217,10 +218,19 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                     {getIconFromType(columnDef.dataType)}
                 </span>
                 <Tooltip 
-                    title={semanticType ? (
-                        <Typography sx={{ fontSize: 11 }}>
-                            <b>{columnDef.label}</b>: <i>{semanticType}</i>
-                        </Typography>
+                    title={(semanticType || columnDef.description) ? (
+                        <Box>
+                            {semanticType && (
+                                <Typography sx={{ fontSize: 11 }}>
+                                    <b>{columnDef.label}</b>: <i>{semanticType}</i>
+                                </Typography>
+                            )}
+                            {columnDef.description && (
+                                <Typography sx={{ fontSize: 11, color: 'grey.300', mt: semanticType ? 0.25 : 0 }}>
+                                    {columnDef.description}
+                                </Typography>
+                            )}
+                        </Box>
                     ) : ''}
                     arrow
                     placement="top"

@@ -72,7 +72,10 @@
       "unableExtractTables": "Unable to extract tables from response",
       "unableExtractScript": "Unable to extract script from response",
       "errorCallingModel": "Error calling model: {{error}}",
-      "noModelConfigured": "No model configured"
+      "noModelConfigured": "No model configured",
+      "requestTimedOut": "The request exceeded {{seconds}} seconds without a complete response. The frontend stopped waiting automatically. You can retry later or increase \"Formulate timeout\" in Settings.",
+      "suggestionsTimedOut": "AI suggestion generation exceeded {{seconds}} seconds without a result. The frontend stopped waiting. You can retry or increase \"Formulate timeout\" in Settings.",
+      "formulationTimedOut": "Data formulation timed out after {{seconds}} seconds. Consider breaking down the task, using a different model, or increasing \"Formulate timeout\" in Settings."
     }
   }
 }

@@ -85,13 +85,15 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
         let colDefs = targetTable ? targetTable.names.map((name, i) => {
             const { minWidth, width } = calculateColumnWidth(name);
             const dataType = targetTable?.metadata[name].type as Type;
+            const semanticType = targetTable?.metadata[name].semanticType;
             return {
                 id: name, 
                 label: targetTable?.metadata[name]?.displayName || name, 
+                description: targetTable?.metadata[name]?.description,
                 minWidth, 
                 width, 
                 align: getColumnAlign(dataType), 
-                format: (value: any) => <Typography fontSize="inherit">{formatCellValue(value)}</Typography>, 
+                format: (value: any) => <Typography fontSize="inherit">{formatCellValue(value, dataType, semanticType)}</Typography>, 
                 dataType,
                 source: conceptShelfItems.find(f => f.name == name)?.source || "original", 
             };

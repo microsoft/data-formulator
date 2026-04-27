@@ -26,6 +26,8 @@ from data_formulator.datalake.catalog_cache import (
     load_catalog,
     save_catalog,
     search_catalog_cache,
+    _search_python,
+    _search_duckdb,
 )
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
@@ -189,6 +191,96 @@ class TestSearchCatalogCache:
             limit_per_source=5,
         )
         assert len(results) <= 5
+
+
+# ==================================================================
+# Tests: DuckDB search and Python fallback consistency
+# ==================================================================
+
+RICH_TABLES: list[dict[str, Any]] = [
+    {
+        "name": "public.orders",
+        "metadata": {
+            "columns": [
+                {"name": "order_id", "type": "int", "description": "Primary key"},
+                {"name": "customer_name", "type": "varchar"},
+            ],
+            "description": "订单事实表",
+        },
+    },
+    {
+        "name": "public.products",
+        "metadata": {
+            "columns": [
+                {"name": "product_id", "type": "int"},
+                {"name": "title", "type": "varchar", "description": "Product title"},
+            ],
+            "description": "Product catalog",
+        },
+    },
+    {
+        "name": "public.empty_meta",
+        "metadata": {"columns": []},
+    },
+]
+
+
+class TestDuckDBSearchConsistency:
+    """Verify DuckDB and Python search produce equivalent results."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_cache(self, tmp_path: Path) -> None:
+        self.user_home = tmp_path
+        save_catalog(tmp_path, "pg_prod", RICH_TABLES)
+
+    def _compare(self, query: str, exclude: set[str] | None = None) -> None:
+        exc = exclude or set()
+        ids = list_cached_sources(self.user_home)
+        needle = query.strip().lower()
+        py_results = _search_python(self.user_home, needle, ids, exc, 20)
+        duck_results = _search_duckdb(self.user_home, needle, ids, exc, 20)
+        assert len(py_results) == len(duck_results), f"Count mismatch for '{query}'"
+        for pr, dr in zip(py_results, duck_results):
+            assert pr["name"] == dr["name"], f"Name mismatch for '{query}'"
+            assert pr["score"] == dr["score"], f"Score mismatch for '{query}': {pr} vs {dr}"
+            assert set(pr["matched_columns"]) == set(dr["matched_columns"])
+
+    def test_table_name_match(self) -> None:
+        self._compare("orders")
+
+    def test_table_description_match(self) -> None:
+        self._compare("订单")
+
+    def test_column_name_match(self) -> None:
+        self._compare("customer_name")
+
+    def test_column_description_match(self) -> None:
+        self._compare("Primary key")
+
+    def test_no_match(self) -> None:
+        self._compare("zzz_nonexistent_zzz")
+
+    def test_exclude_tables(self) -> None:
+        exc = {"public.orders"}
+        ids = list_cached_sources(self.user_home)
+        needle = "orders"
+        py_results = _search_python(self.user_home, needle, ids, exc, 20)
+        duck_results = _search_duckdb(self.user_home, needle, ids, exc, 20)
+        assert all(r["name"] != "public.orders" for r in py_results)
+        assert all(r["name"] != "public.orders" for r in duck_results)
+
+    def test_search_catalog_cache_uses_duckdb_by_default(self) -> None:
+        """Top-level search_catalog_cache should still work end-to-end."""
+        results = search_catalog_cache(self.user_home, "product")
+        assert len(results) >= 1
+        assert any(r["name"] == "public.products" for r in results)
+
+    def test_fallback_when_duckdb_fails(self) -> None:
+        with patch("data_formulator.datalake.catalog_cache._search_duckdb",
+                    side_effect=RuntimeError("DuckDB broken")):
+            results = search_catalog_cache(self.user_home, "orders")
+            assert len(results) >= 1
+            assert results[0]["name"] == "public.orders"
 
 
 # ==================================================================

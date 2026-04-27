@@ -1,7 +1,7 @@
 # 服务端路径安全开发规范
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-27
+> **最后更新**: 2026-04-28
 > **适用范围**: 后端 route、Agent 工具、Workspace 文件访问、Data Loader、Sandbox、插件文件 I/O、知识库、推理日志
 
 ## 1. 核心原则
@@ -11,9 +11,10 @@
 | 场景 | 规范 |
 |------|------|
 | Workspace data 文件 | `Workspace.get_file_path()`（内部使用 `ConfinedDir`） |
-| Agent 读文件/列目录工具 | 入口创建 `ConfinedDir` 实例，传入各工具方法 |
-| 文件下载 route | `ConfinedDir(dir).resolve(filename)` 后传给 `send_file()` |
-| 文件上传 route | `secure_filename()` 清洗 + `ConfinedDir.resolve()` 二次校验 |
+| Workspace 根/data/scratch 子目录 | `workspace.confined_root` / `confined_data` / `confined_scratch` 属性 |
+| Agent 读文件/列目录工具 | `workspace.confined_root` / `workspace.confined_scratch`，传入各工具方法 |
+| 文件下载 route | `workspace.confined_scratch.resolve(filename)` 后传给 `send_file()` |
+| 文件上传 route | `secure_filename()` 清洗 + `workspace.confined_scratch.resolve()` 二次校验 |
 | 任意 root + relative path | `ConfinedDir(root).resolve(relative)` |
 | 知识库文件读写 | 通过 `KnowledgeStore` 内部的 `ConfinedDir` |
 | 推理日志写入 | 通过 `ReasoningLogger` 内部的 `ConfinedDir` |
@@ -63,9 +64,8 @@ jail.write("scratch/output.csv", b"content")
 
 ```python
 from flask import send_file
-from data_formulator.security.path_safety import ConfinedDir
 
-scratch_jail = ConfinedDir(scratch_dir, mkdir=False)
+scratch_jail = workspace.confined_scratch
 try:
     target = scratch_jail.resolve(filename)
 except ValueError:
@@ -91,14 +91,12 @@ if not target.is_relative_to(scratch_dir.resolve()):
 
 Agent 工具参数由 LLM 生成，LLM 输入又来自用户，因此路径参数一律视为不可信。
 
-入口函数应创建 `ConfinedDir` 实例，传入各工具方法：
+入口函数应使用 `Workspace.confined_*` 属性获取 `ConfinedDir` 实例，传入各工具方法：
 
 ```python
-from data_formulator.security.path_safety import ConfinedDir
-
 def _execute_tool(self, name, args):
-    workspace_jail = ConfinedDir(self.workspace._path, mkdir=False)
-    scratch_jail = ConfinedDir(self.workspace._path / "scratch")
+    workspace_jail = self.workspace.confined_root
+    scratch_jail = self.workspace.confined_scratch
 
     if name == "read_file":
         return self._tool_read_file(args, workspace_jail)
@@ -161,7 +159,7 @@ def _enforce_deployment_restrictions():
 - `WORKSPACE_BACKEND != "local"` 时必须使用 `SANDBOX=docker` 或 `SANDBOX=local`。
 - 新部署模板应默认选择隔离沙箱。
 
-应用启动时已有安全检查：多用户模式搭配 `not_a_sandbox` 会输出 critical 日志。
+应用启动时已有安全检查：多用户模式搭配 `not_a_sandbox` 会输出 critical 日志。当前实现是告警而非硬阻断，因此生产部署还必须在部署配置或启动脚本层强制 `SANDBOX=local` / `SANDBOX=docker`。
 
 ## 8. 测试要求
 
@@ -180,6 +178,8 @@ def _enforce_deployment_restrictions():
 - `tests/backend/agents/test_tool_path_safety.py`
 - `tests/backend/security/test_local_folder_deployment.py`
 - `tests/backend/security/test_startup_safety.py`
+- `tests/backend/security/test_confined_dir_extended.py`
+- `tests/backend/security/test_confined_dir_migration.py`
 
 ## 9. New Module Checklist
 
@@ -198,13 +198,18 @@ def _enforce_deployment_restrictions():
 
 | 文件 | 方法 | 迁移方式 |
 |------|------|----------|
-| `agent_data_loading_chat.py` | `_execute_tool` | 创建 `workspace_jail` + `scratch_jail` |
+| `datalake/workspace.py` | `__init__` | 创建 `_confined_root` / `_confined_data` / `_confined_scratch`，暴露属性 |
+| `datalake/workspace.py` | `get_file_path` | `self._confined_data.resolve(basename)` |
+| `datalake/workspace.py` | `__init__` (legacy root) | `ConfinedDir(root).resolve(safe_id)` |
+| `agent_data_loading_chat.py` | `_execute_tool` | `workspace.confined_root` + `workspace.confined_scratch` |
 | `agent_data_loading_chat.py` | `_tool_read_file` | `workspace_jail.resolve(rel_path)` |
 | `agent_data_loading_chat.py` | `_tool_list_directory` | `workspace_jail.resolve(rel_path)` |
 | `agent_data_loading_chat.py` | `_tool_write_file` | `scratch_jail.resolve(filename)` |
-| `agent_data_loading_chat.py` | `_preview_scratch_files` | `ConfinedDir(workspace._path).resolve(file_path)` |
-| `routes/agents.py` | `scratch_serve` | `ConfinedDir(scratch_dir).resolve(filename)` |
-| `routes/agents.py` | `scratch_upload` | `ConfinedDir(scratch_dir).resolve(final_name)` |
-| `datalake/workspace.py` | `__init__` (legacy) | `ConfinedDir(root).resolve(safe_id)` |
-| `datalake/workspace.py` | `get_file_path` | `ConfinedDir(data_dir).resolve(basename)` |
+| `agent_data_loading_chat.py` | `_tool_execute_python` | `workspace.confined_scratch.resolve(safe_name + ".csv")` |
+| `agent_data_loading_chat.py` | `_preview_scratch_files` | `workspace.confined_root.resolve(file_path)` |
+| `routes/agents.py` | `scratch_serve` | `workspace.confined_scratch.resolve(filename)` |
+| `routes/agents.py` | `scratch_upload` | `workspace.confined_scratch.resolve(final_name)` |
+| `cached_azure_blob_workspace.py` | `_cache_path` | `self._cache_jail.resolve(filename)` |
+| `knowledge/store.py` | CRUD | `ConfinedDir(user_home / "knowledge" / category)` |
+| `agents/reasoning_log.py` | log | `ConfinedDir(DATA_FORMULATOR_HOME / "agent-logs" / date / safe_identity_id)` |
 | `local_folder_data_loader.py` | 全文件 | 已使用 `ConfinedDir`（原始采用者） |

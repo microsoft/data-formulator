@@ -1,7 +1,7 @@
 # DataConnector API 与连接实例规范
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-26
+> **最后更新**: 2026-04-28
 > **适用范围**: `py-src/data_formulator/data_connector.py`、前端连接器调用、数据源实例配置
 
 ---
@@ -222,6 +222,10 @@ Loader type discovery 来自 `DATA_LOADERS`：
 不要新增 `/api/connectors/{id}/...` 风格的 per-instance route。Flask blueprint
 不能在首个请求后动态注册，固定 action route 能避免 ghost endpoint 和动态注册问题。
 
+当前没有独立的 `/api/connectors/get-node-detail` 路由。需要获取某个 catalog 节点详细
+metadata 时，前端继续调用 `/api/connectors/get-catalog` 并传入该节点的非空 `path`；
+后端会 best-effort 调用 `loader.get_metadata(path)` 并在响应中附加 `metadata`。
+
 ---
 
 ## 9. 连接与认证
@@ -278,6 +282,11 @@ Loader type discovery 来自 `DATA_LOADERS`：
 返回体包含 `nodes`、`has_more`、`next_offset`。大目录 loader 应在 `ls()` 中实现
 源端分页；框架只为不支持分页的 loader 做内存切片兜底。
 
+当请求包含非空 `path` 时，响应还可能包含当前节点的 `metadata`。该 metadata 用于按需
+展示列、类型、描述、样例等详细信息；读取失败必须降级为无 metadata，不应阻断目录浏览。
+前端主路径以 `get-catalog` 懒加载为准，`get-catalog-tree` 仅用于需要 eager tree 的兼容
+场景或测试。
+
 导入和刷新统一通过 workspace parquet 元数据记录源信息：
 
 - `import-data` 调用 `loader.ingest_to_workspace(...)`
@@ -294,6 +303,21 @@ Superset dashboard。成员表放在节点 `metadata["tables"]` 中。
 `import-group` 会遍历请求中的 `tables`，为每个成员表单独写入 workspace。若传入
 `source_filters`，只把 `applies_to` 命中的筛选条件传给对应成员表。
 
+`source_filters` 是数据源原生筛选条件，不等同于通用前端 WHERE 构造器。格式与
+`dev-guides/3-data-loader-development.md` 保持一致：
+
+```json
+[
+  {"column": "status", "operator": "EQ", "value": "active"},
+  {"column": "age", "operator": "BETWEEN", "value": [18, 65]},
+  {"column": "region", "operator": "IN", "value": ["US", "EU"], "applies_to": [42]}
+]
+```
+
+Loader 应在 `fetch_data_as_arrow(source_table, import_options)` 中读取
+`import_options.source_filters`。SQL 类 loader 必须白名单校验 operator 和 column，不能把
+前端传入的筛选对象直接拼进 SQL。
+
 ---
 
 ## 12. Disconnect vs Delete
@@ -305,6 +329,15 @@ Superset dashboard。成员表放在节点 `metadata["tables"]` 中。
 
 当前实现中 `disconnect` 会调用 connector 的 vault/token 清理逻辑。用户连接定义仍保留，
 因此卡片继续显示；admin connector 不能 delete。
+
+生命周期边界：
+
+- `disconnect` 清除当前 identity 下的 in-memory loader、该 connector 的 vault 凭据，并调用
+  `TokenStore.clear_service_token(connector_id)` 清理 service token。
+- `delete` 在 `disconnect` 的基础上删除用户 connector 定义；admin connector 不允许普通用户删除。
+- OIDC logout 不等同于 connector disconnect。OIDC logout 只清当前 Flask Session 中的 SSO 和
+  service token，不删除按 `identity + connector_id` 保存的 vault 凭据。
+- `get-status` 必须保持无副作用；它不能为了显示 connected 状态而自动创建 loader 或写 vault。
 
 ---
 

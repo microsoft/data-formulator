@@ -91,6 +91,11 @@ try {
 }
 ```
 
+New or reworked DF API consumers should prefer `apiRequest()` / `streamRequest()`
+plus `handleApiError()`. Existing `fetchWithIdentity()` paths may be migrated
+incrementally, but they must not rely only on `!response.ok`; application errors
+are indicated by `body.status === "error"`.
+
 ## HTTP Status Code Policy
 
 **All application-controlled responses return HTTP 200.** Errors are communicated via `body.status === "error"`.
@@ -102,6 +107,11 @@ Only transport-layer errors (not controlled by application code) use non-200:
 
 **Streaming endpoints**: validation failures before the stream starts return `200 application/json` (not NDJSON).
 The frontend `streamRequest()` detects this via `content-type` header and throws `ApiRequestError`.
+
+Special cases need their own protocol check before applying the normal JSON API
+pattern: file downloads / CSV streaming, SPA fallback, OIDC redirect flows,
+frontend fetches to third-party URLs, and errors after a streaming response has
+already started.
 
 ## Prohibited Patterns
 

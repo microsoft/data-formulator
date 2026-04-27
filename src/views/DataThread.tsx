@@ -85,6 +85,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 
 import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
+
 import { SimpleChartRecBox } from './SimpleChartRecBox';
 import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
 

@@ -25,10 +25,11 @@ Respond with a JSON object in exactly this format (no markdown fences):
 
 class ChartInsightAgent(object):
 
-    def __init__(self, client, workspace=None, language_instruction=""):
+    def __init__(self, client, workspace=None, language_instruction="", knowledge_store=None):
         self.client = client
         self.workspace = workspace
         self.language_instruction = language_instruction
+        self._knowledge_store = knowledge_store
 
     def run(self, chart_image_base64, chart_type, field_names, input_tables=None, n=1):
         """
@@ -52,6 +53,22 @@ class ChartInsightAgent(object):
                 include_data_samples=True, row_sample_size=3
             )
             context_parts.append(f"\nData summary:\n{data_summary}")
+
+        # Search relevant experiences for analysis context
+        if self._knowledge_store:
+            try:
+                search_query = " ".join([chart_type] + field_names[:5]).strip()
+                if search_query:
+                    relevant = self._knowledge_store.search(
+                        search_query, categories=["experiences"], max_results=3,
+                    )
+                    if relevant:
+                        exp_parts = ["Relevant analysis experiences:"]
+                        for item in relevant:
+                            exp_parts.append(f"- {item['title']}: {item['snippet'][:200]}")
+                        context_parts.append("\n".join(exp_parts))
+            except Exception:
+                logger.warning("Failed to search knowledge experiences", exc_info=True)
 
         context = "\n".join(context_parts)
 

@@ -42,16 +42,14 @@ import CheckIcon from '@mui/icons-material/Check';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import { TableIcon } from '../icons';
 import { RowLimitUnderlineSelect } from '../components/RowLimitUnderlineSelect';
-import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
-
 import {
     appendChildrenAtPath,
     CatalogTreeNode,
     collectNamespaceIds,
     findNodeByPath,
     mergeChildrenAtPath,
-    renderCatalogTreeItems,
 } from '../components/CatalogTree';
+import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 
 const CATALOG_PAGE_SIZE = 200;
 
@@ -1314,7 +1312,7 @@ export const DataLoaderForm: React.FC<{
                                     <Tab label={`${t('db.dashboards', { defaultValue: 'Dashboards' })} (${dashboardNodes.length})`} />
                                 </Tabs>
                             )}
-                            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+                            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'hidden', overflowX: 'hidden' }}>
                             {(() => {
                                 const baseNodes = hasBothTabs ? (catalogTab === 0 ? datasetNodes : dashboardNodes) : displayedCatalogTree;
                                 const visibleNodes = serverSearchActive ? baseNodes : filterTreeByName(baseNodes, catalogSearch);
@@ -1326,41 +1324,31 @@ export const DataLoaderForm: React.FC<{
                                     </Typography>
                                 );
                                 return (
-                                    <SimpleTreeView
-                                        expandedItems={visibleExpandedItems}
-                                        onExpandedItemsChange={(_event, itemIds) => {
+                                    <VirtualizedCatalogTree
+                                        nodes={visibleNodes}
+                                        loadedMap={effectiveLoadedTables}
+                                        expandedIds={visibleExpandedItems}
+                                        onExpandedChange={(newIds) => {
                                             if (searchModeActive) return;
-                                            const prevSet = new Set(expandedItems);
-                                            const newlyExpanded = itemIds.filter(id => !prevSet.has(id));
-                                            setExpandedItems(itemIds);
-                                            for (const itemId of newlyExpanded) {
-                                                const node = findNodeByPath(displayedCatalogTree, itemId);
-                                                if (node && node.node_type === 'namespace' && !node.children) {
-                                                    fetchCatalogNodes(node.path);
-                                                }
-                                            }
+                                            setExpandedItems(newIds);
                                         }}
-                                        selectedItems={selectedPreviewTable}
-                                        onSelectedItemsChange={(_event, itemId) => {
-                                            if (itemId == null) return;
-                                            const node = findNodeByPath(visibleNodes, itemId);
-                                            if (node && (node.node_type === 'table' || node.node_type === 'table_group')) {
+                                        onLazyExpand={(node) => {
+                                            fetchCatalogNodes(node.path);
+                                        }}
+                                        onItemClick={(node) => {
+                                            if (node.node_type === 'table' || node.node_type === 'table_group') {
                                                 handleTreeTableSelect(node);
                                             }
                                         }}
-                                        itemChildrenIndentation={0}
+                                        onLoadMore={(node) => {
+                                            const parentPath = (node.metadata?.parentPath || []) as string[];
+                                            const nextOffset = Number(node.metadata?.nextOffset || 0);
+                                            fetchCatalogNodes(parentPath, catalogSearch, { append: true, offset: nextOffset });
+                                        }}
+                                        selectedItemId={selectedPreviewTable}
+                                        maxHeight={500}
                                         sx={{ px: 0.5 }}
-                                    >
-                                        {renderCatalogTreeItems(visibleNodes, {
-                                            loadedMap: effectiveLoadedTables,
-                                            expandedSet: new Set(visibleExpandedItems),
-                                            onLoadMore: (node) => {
-                                                const parentPath = (node.metadata?.parentPath || []) as string[];
-                                                const nextOffset = Number(node.metadata?.nextOffset || 0);
-                                                fetchCatalogNodes(parentPath, catalogSearch, { append: true, offset: nextOffset });
-                                            },
-                                        })}
-                                    </SimpleTreeView>
+                                    />
                                 );
                             })()}
                             </Box>

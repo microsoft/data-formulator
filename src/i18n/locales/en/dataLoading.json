@@ -18,6 +18,7 @@
     "stopped": "— stopped",
     "uploaded": "[Uploaded: {{name}}]",
     "defaultImageMessage": "Extract data from this image",
+    "imageModelUnsupported": "The selected model does not support image input. Please switch to a vision-capable model or remove the image.",
     "toolLabels": {
       "readingFile": "Reading file",
       "writingFile": "Writing file",

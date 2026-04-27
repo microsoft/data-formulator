@@ -52,9 +52,10 @@ import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 
-const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () => void }> = ({ message, theme, onCancel }) => {
+const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void }> = ({ message, elapsed, theme, onCancel }) => {
     const { t } = useTranslation();
     const latestMessage = message || t('dataThread.thinking');
+    const elapsedSuffix = elapsed != null && elapsed > 0 ? ` (${elapsed}s)` : '';
     return (
         <Box sx={{
             position: 'absolute',
@@ -97,7 +98,7 @@ const AgentWorkingOverlay: FC<{ message?: string; theme: Theme; onCancel?: () =>
                 lineHeight: 1.3,
                 wordBreak: 'break-word',
             }}>
-                {latestMessage}
+                {latestMessage}{elapsedSuffix}
             </Typography>
             <LinearProgress sx={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: '0 0 8px 8px' }} />
         </Box>
@@ -111,7 +112,6 @@ export const SimpleChartRecBox: FC = function () {
     const charts = useSelector(dfSelectors.getAllCharts);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
-    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
 
@@ -124,6 +124,8 @@ export const SimpleChartRecBox: FC = function () {
     const [ideas, setIdeas] = useState<{text: string, goal: string, tag: string}[]>([]);
     const [isLoadingIdeas, setIsLoadingIdeas] = useState(false);
     const [thinkingBuffer, setThinkingBuffer] = useState('');
+    const [ideaPhase, setIdeaPhase] = useState<string>('');
+    const [ideaElapsed, setIdeaElapsed] = useState(0);
     const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
     const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
     const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
@@ -132,6 +134,12 @@ export const SimpleChartRecBox: FC = function () {
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const agentAbortRef = useRef<AbortController | null>(null);
     const ideasAbortRef = useRef<AbortController | null>(null);
+
+    useEffect(() => {
+        if (!isLoadingIdeas) { setIdeaElapsed(0); setIdeaPhase(''); return; }
+        const timer = setInterval(() => setIdeaElapsed(e => e + 1), 1000);
+        return () => clearInterval(timer);
+    }, [isLoadingIdeas]);
 
     // pendingClarification is now derived from Redux (stored on the agentAction itself)
     // so it persists when user clicks away and comes back.
@@ -359,6 +367,7 @@ export const SimpleChartRecBox: FC = function () {
         setIsLoadingIdeas(true);
         setIdeas([]);
         setThinkingBuffer('');
+        let timedOut = false;
 
         try {
             let explorationThread: any[] = [];
@@ -388,12 +397,11 @@ export const SimpleChartRecBox: FC = function () {
                     attached_metadata: t.attachedMetadata
                 })),
                 exploration_thread: explorationThread,
-                agent_exploration_rules: agentRules.exploration,
             });
 
             const controller = new AbortController();
             ideasAbortRef.current = controller;
-            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
+            const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
             const response = await fetchWithIdentity(getUrls().GET_RECOMMENDATION_QUESTIONS, {
                 method: 'POST',
@@ -409,7 +417,7 @@ export const SimpleChartRecBox: FC = function () {
 
             const decoder = new TextDecoder();
             let buffer = '';
-            let lines: string[] = [];
+            let lines: { text: string; goal: string; tag?: string }[] = [];
 
             try {
                 while (true) {
@@ -438,6 +446,10 @@ export const SimpleChartRecBox: FC = function () {
                                     component: 'exploration',
                                     value: parsed.warning?.message ?? 'Warning from server',
                                 }));
+                                continue;
+                            }
+                            if (parsed.type === 'progress') {
+                                setIdeaPhase(parsed.phase);
                                 continue;
                             }
                             if (parsed.text) {
@@ -476,7 +488,13 @@ export const SimpleChartRecBox: FC = function () {
             setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
-                // user cancelled, no notification needed
+                if (timedOut) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'exploration',
+                        value: t('messages.agent.suggestionsTimedOut', { seconds: config.formulateTimeoutSeconds }),
+                    }));
+                }
             } else {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'error',
@@ -490,7 +508,7 @@ export const SimpleChartRecBox: FC = function () {
             setThinkingBuffer('');
             ideasAbortRef.current = null;
         }
-    }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, agentRules, config, dispatch, t]);
+    }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, config, dispatch, t]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         trajectory: any[];
@@ -653,8 +671,6 @@ export const SimpleChartRecBox: FC = function () {
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
             model: activeModel,
             max_iterations: 5,
-            agent_exploration_rules: agentRules.exploration,
-            agent_coding_rules: agentRules.coding
         };
 
         if (isResume) {
@@ -672,7 +688,8 @@ export const SimpleChartRecBox: FC = function () {
 
         const controller = new AbortController();
         agentAbortRef.current = controller;
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 6 * 1000);
+        let timedOut = false;
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 6 * 1000);
 
         let allResults: any[] = [];
         let createdTables: DictTable[] = [];
@@ -851,6 +868,7 @@ export const SimpleChartRecBox: FC = function () {
                     outputVariable: refinedGoal?.output_variable || 'result_df',
                     source: resolvedSourceIds.length > 0 ? resolvedSourceIds : selectedTableIds,
                     dialog: dialog || [],
+                    executionAttempts: transformResult.execution_attempts || [],
                     trigger: {
                         tableId: triggerTableId,
                         resultTableId: candidateTableId,
@@ -1126,9 +1144,21 @@ export const SimpleChartRecBox: FC = function () {
             setIsChatFormulating(false);
             agentAbortRef.current = null;
             clearTimeout(timeoutId);
-            const isCancelled = error.name === 'AbortError' && !isCompleted;
-            const errorMessage = isCancelled ? t('chartRec.explorationCancelled') : error.name === 'AbortError' ? t('chartRec.explorationTimedOut') : t('chartRec.explorationFailed', { message: error.message });
-            // Clean up draft on error/cancel
+            const isAbort = error.name === 'AbortError';
+            const isCancelled = isAbort && !isCompleted && !timedOut;
+            const isTimeout = isAbort && timedOut;
+            const errorMessage = isCancelled
+                ? t('chartRec.explorationCancelled')
+                : isTimeout
+                    ? t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 })
+                    : t('chartRec.explorationFailed', { message: error.message });
+            if (isTimeout) {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'data-agent',
+                    value: t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 }),
+                }));
+            }
             if (currentDraftId) {
                 if (isCancelled) {
                     dispatch(dfActions.removeDraftNode(currentDraftId));
@@ -1141,7 +1171,7 @@ export const SimpleChartRecBox: FC = function () {
                 currentDraftId = null;
             }
         });
-    }, [focusedTableId, tables, draftNodes, activeModel, agentRules, config, conceptShelfItems, dispatch, t]);
+    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, dispatch, t]);
 
     // ── Report generation via report agent ──────────────────────────
 
@@ -1770,7 +1800,10 @@ export const SimpleChartRecBox: FC = function () {
             {/* Ideas-loading overlay — scoped to input area only, keeps idea chips visible */}
             {isLoadingIdeas && !isChatFormulating && (
                 <AgentWorkingOverlay 
-                    message={t('chartRec.generatingIdeas')}
+                    message={ideaPhase === 'building_context' ? t('chartRec.progressBuildingContext')
+                           : ideaPhase === 'generating' ? t('chartRec.progressGenerating')
+                           : t('chartRec.generatingIdeas')}
+                    elapsed={ideaElapsed}
                     theme={theme}
                     onCancel={() => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); }}
                 />

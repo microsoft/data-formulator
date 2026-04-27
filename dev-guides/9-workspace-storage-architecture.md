@@ -86,8 +86,9 @@ tables:
     content_hash: f4cca39e...      # 内容指纹，用于刷新去重
     file_size: 16211
     row_count: 682
+    description: "源系统提供的表描述"   # 可选，只读 system description
     columns:
-      - {name: year, dtype: int64}
+      - {name: year, dtype: int64, description: "年份"}
       - {name: country, dtype: object}
     loader_type: superset          # Data Loader 来源信息（可选）
     source_table: gapminder        # 远程表名（可选）
@@ -96,11 +97,27 @@ tables:
 **用途**:
 
 - Agent 生成代码时获取表 schema（列名、类型）
+- Agent 和 UI 获取源系统只读描述（`TableMetadata.description`、`ColumnInfo.description`）
 - DuckDB SQL 查询通过 filename 定位 parquet 文件
 - 刷新导入数据时通过 content_hash 判断是否变化
 - Data Loader 记录数据来源溯源信息
 
-**不存**: 数据行、图表配置、UI 状态。
+**不存**: 数据行、图表配置、UI 状态、用户编辑的 `attachedMetadata`。
+
+源系统描述与用户描述是两个独立字段：
+
+| 字段 | Owner | 来源 | 权限 | 写入时机 |
+|------|-------|------|------|----------|
+| `TableMetadata.description` | 后端 `Workspace` | 源系统表/数据集/报表描述 | 只读展示 | Data Loader import / refresh |
+| `ColumnInfo.description` | 后端 `Workspace` | 源系统字段注释 | 只读展示 | Data Loader import / refresh |
+| `DictTable.attachedMetadata` | 前端 Redux | 用户手写业务说明 | 用户可编辑 | 元数据弹窗保存 |
+
+规则：
+
+- 源系统描述永远不覆盖 `attachedMetadata`。
+- `attachedMetadata` 不写入 `workspace.yaml`，随前端状态进入 `session_state.json`。
+- Data Loader 返回空字符串 `description` 表示源端已清空描述；缺少 `description` key 表示保留已有描述。
+- 旧 `workspace.yaml` 没有列描述时必须继续正常加载。
 
 ### 2.3 `session_state.json` — 前端状态快照
 
@@ -167,9 +184,39 @@ tables:
 **用途**: 缓存数据源的轻量 catalog 元数据（表名、描述、列名、列类型），
 供 Agent 搜索工具在无活跃连接时也能发现数据。
 
+文件形状：
+
+```json
+{
+  "source_id": "postgresql:prod-db",
+  "tables": [
+    {
+      "name": "public.orders",
+      "metadata": {
+        "_source_name": "public.orders",
+        "description": "订单事实表",
+        "columns": [
+          {"name": "order_id", "type": "INTEGER", "description": "订单唯一标识"},
+          {"name": "created_at", "type": "TIMESTAMP"}
+        ]
+      }
+    }
+  ]
+}
+```
+
 **写入时机**: 连接数据源成功后，best-effort 调用 `list_tables()` 并持久化。
+点击刷新 catalog 时，也会重新调用 `list_tables()` 并覆盖同名缓存文件。
 **删除时机**: 断开连接或删除连接器时同步清理。
 **不常驻内存**: 搜索时按需加载，用完释放。
+**安全边界**: cache 位于当前 identity 的用户目录，只保存 catalog 轻量信息，不能包含 `loader_params`、凭据、连接串或内部文件路径。
+
+Agent 的 `search_data_tables` 使用两层只读搜索：
+
+1. `WorkspaceMetadata.search_tables()` 搜索当前 workspace 已导入表。
+2. `catalog_cache/*.json` 搜索当前用户已连接数据源的轻量 catalog。
+
+缓存不存在或损坏时跳过，不触发远程连接或实时拉取。
 
 ---
 
@@ -340,6 +387,9 @@ def _ensure_meta(self, workspace_id: str) -> dict:
 - 表元数据变更通过 `_atomic_update_metadata()` 而非直接 `save_metadata()`
 - `workspace_exists` 语义 = 目录存在，不要引入新的文件检查条件
 - 新增表字段同时更新 `TableMetadata.to_dict()` 和 `from_dict()`
+- 新增列字段同时更新 `ColumnInfo.to_dict()` 和 `from_dict()`，并验证旧 metadata 兼容
+- 修改 Data Loader 源描述链路时，确认 `TableMetadata.description` / `ColumnInfo.description` 不覆盖前端 `attachedMetadata`
+- 修改 connector 生命周期时，确认 `catalog_cache/<source_id>.json` 的写入、刷新、断开和删除语义一致
 - 敏感字段加入 `_SENSITIVE_FIELDS` 集合，禁止持久化到 session_state.json
 - Azure blob 后端的 `AzureBlobWorkspaceManager` 需同步修改
 - 考虑 ephemeral 模式是否需要适配（通常 session 路由返回 no-op 即可）

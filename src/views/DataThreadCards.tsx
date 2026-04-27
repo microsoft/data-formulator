@@ -24,6 +24,7 @@ import AddchartIcon from '@mui/icons-material/Addchart';
 
 import { TriggerCard } from './EncodingShelfCard';
 import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
+import { SaveExperienceButton, isLeafDerivedTable } from './SaveExperienceButton';
 
 
 // ─── Chart Card ──────────────────────────────────────────────────────────────
@@ -62,7 +63,6 @@ export let buildTriggerCard = (
             <TriggerCard className={selectedClassName} trigger={trigger} 
                 hideFields={!!(trigger.interaction && trigger.interaction.length > 0)} 
                 highlighted={highlighted}
-                dimmed={dimmed}
                 sx={{
                     '& .MuiBox-root': { mx: 0.5, my: 0.25 },
                     '& .MuiSvgIcon-root': { width: '12px', height: '12px' },
@@ -255,8 +255,8 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                 dispatch(dfActions.setFocused({ type: 'table', tableId }));
             }}>
             <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
-                '& .delete-table-btn': { opacity: 0, transition: 'opacity 0.15s' },
-                '&:hover .delete-table-btn': { opacity: 1 },
+                '& .delete-table-btn, & .save-exp-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                '&:hover .delete-table-btn, &:hover .save-exp-btn': { opacity: 1 },
             }}>
                 <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
                     {sourceTooltip
@@ -281,19 +281,29 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                     </ButtonGroup>
                 )}
                 {table?.derive && (
-                    <Tooltip title={t('dataThread.deleteTable')}>
-                        <IconButton className="delete-table-btn" aria-label={t('dataThread.deleteTable')} size="small" color="error" sx={{ 
-                            padding: 0.5, flexShrink: 0, mr: 0.25,
-                            '&:hover': { transform: 'scale(1.15)' },
-                        }}
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                dispatch(dfActions.deleteTable(tableId));
+                    <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                        {isLeafDerivedTable(table, tables) && (
+                            <Box className="save-exp-btn" onClick={(e) => e.stopPropagation()}>
+                                <SaveExperienceButton
+                                    table={table!}
+                                    tables={tables}
+                                />
+                            </Box>
+                        )}
+                        <Tooltip title={t('dataThread.deleteTable')}>
+                            <IconButton className="delete-table-btn" aria-label={t('dataThread.deleteTable')} size="small" color="error" sx={{ 
+                                padding: 0.5, flexShrink: 0, mr: 0.25,
+                                '&:hover': { transform: 'scale(1.15)' },
                             }}
-                        >
-                            <DeleteIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                    </Tooltip>
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    dispatch(dfActions.deleteTable(tableId));
+                                }}
+                            >
+                                <DeleteIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
                 )}
             </Box>
         </Card>

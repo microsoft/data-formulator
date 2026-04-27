@@ -91,11 +91,11 @@ def get_user_home(identity_id: str) -> Path:
     Shared helper used by workspace_factory, data_connector, and any
     code that needs per-user storage paths.
     """
-    safe_id = _sanitize_identity_id(identity_id)
+    safe_id = sanitize_identity_dirname(identity_id)
     return get_data_formulator_home() / "users" / safe_id
 
 
-def _sanitize_identity_id(identity_id: str) -> str:
+def sanitize_identity_dirname(identity_id: str) -> str:
     """Sanitize identity_id for use as a directory name.
 
     Uses ``secure_filename`` to produce a safe single-component name.
@@ -107,6 +107,11 @@ def _sanitize_identity_id(identity_id: str) -> str:
     if not result:
         raise ValueError("identity_id sanitized to empty string")
     return result
+
+
+def _sanitize_identity_id(identity_id: str) -> str:
+    """Backward-compatible alias for identity directory sanitization."""
+    return sanitize_identity_dirname(identity_id)
 
 
 def cleanup_stale_temp_files(workspace_path: Path, max_age_hours: int = 24) -> int:
@@ -208,6 +213,12 @@ class Workspace:
         # Ensure workspace directory exists
         self._path.mkdir(parents=True, exist_ok=True)
 
+        # ConfinedDir jails for sub-directories — single source of truth for
+        # all callers that need path-safe access (agents, routes, etc.).
+        self._confined_root = ConfinedDir(self._path, mkdir=False)
+        self._confined_data = ConfinedDir(self._path / "data")
+        self._confined_scratch = ConfinedDir(self._path / "scratch")
+
         # Initialize metadata if it doesn't exist
         if not metadata_exists(self._path):
             self._init_metadata()
@@ -232,6 +243,21 @@ class Workspace:
         """
         return _sanitize_identity_id(identity_id)
     
+    @property
+    def confined_root(self) -> ConfinedDir:
+        """ConfinedDir jail for the workspace root directory."""
+        return self._confined_root
+
+    @property
+    def confined_data(self) -> ConfinedDir:
+        """ConfinedDir jail for the ``data/`` sub-directory."""
+        return self._confined_data
+
+    @property
+    def confined_scratch(self) -> ConfinedDir:
+        """ConfinedDir jail for the ``scratch/`` sub-directory."""
+        return self._confined_scratch
+
     def _init_metadata(self) -> None:
         """Initialize a new workspace with empty metadata."""
         metadata = WorkspaceMetadata.create_new()
@@ -254,10 +280,9 @@ class Workspace:
         Returns:
             Full path to the file under data/
         """
-        data_jail = ConfinedDir(self._path / "data")
         basename = safe_data_filename(filename)
         try:
-            return data_jail.resolve(basename)
+            return self._confined_data.resolve(basename)
         except ValueError:
             raise ValueError(f"Path traversal detected: {filename!r}")
     

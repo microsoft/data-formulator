@@ -184,6 +184,18 @@ if (body.status === 'error') {
 | RTK thunk rejected | 必须有 `.rejected` handler，过滤 `AbortError` |
 | `AbortError` | 可直接忽略 |
 
+### 4.4 特例边界
+
+以下路径不能简单套普通 JSON API 规范，评审时先确认具体协议：
+
+| 场景 | 规范 |
+|------|------|
+| 文件下载 / CSV streaming | 成功响应可能是文件流或下载响应；错误响应仍应尽量使用安全的 `status: "error"` body，不能暴露 `str(exc)` |
+| SPA fallback | 非 `/api/` 路径没有匹配 Flask route 时继续返回前端入口；不要按 JSON API 处理 |
+| OIDC redirect flow | 部分错误需要通过 redirect query param 传回前端展示；后端内部 JSON helper 仍要避免泄露原始异常 |
+| 外部 URL fetch | 前端请求第三方 URL 时，`!response.ok` 属于第三方传输语义，不适用 DF API 的 `body.status` 约定 |
+| 已建立的流式响应 | 流运行中出错只能通过 NDJSON `type: "error"` 事件传递，不能再修改 HTTP 状态码 |
+
 ## 5. 错误码和 i18n
 
 新增结构化错误码时同步修改：

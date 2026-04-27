@@ -30,6 +30,8 @@ The following reference material applies when you call the `visualize` tool.
 {SHARED_DUCKDB_NOTES}
 
 **Datetime handling:**
+- `date` columns contain date-only values (YYYY-MM-DD). `datetime` columns contain date+time (ISO 8601).
+- `time` columns contain time-only values (HH:mm:ss). `duration` columns are time intervals.
 - Year → number. Year-month / year-month-day → string ("2020-01" / "2020-01-01").
 - Hour alone → number. Hour:min or h:m:s → string. Never return raw datetime objects.
 

@@ -146,6 +146,18 @@ handleApiError(e, 'MyComponent', {
 });
 ```
 
+### Migration and special cases
+
+New or reworked DF API consumers should use `apiRequest()` / `streamRequest()`
+and `handleApiError()`. Existing `fetchWithIdentity()` calls can remain during
+incremental migration, but they must inspect `body.status === "error"` for
+application failures instead of relying only on `!response.ok`.
+
+Do not apply the normal JSON API protocol mechanically to file downloads / CSV
+streaming, SPA fallback, OIDC redirect flows, frontend fetches to third-party
+URLs, or errors after a streaming response has already started. Check the route's
+protocol first, then preserve safe error bodies and avoid `str(exc)` exposure.
+
 ## Adding a New Error Code
 
 1. **Backend** — Add to `py-src/data_formulator/errors.py` `ErrorCode`:

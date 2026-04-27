@@ -32,7 +32,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
 import { generateUUID } from '../app/identity';
-import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
+import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 
 import StorageIcon from '@mui/icons-material/Storage';
 import AddIcon from '@mui/icons-material/Add';
@@ -53,6 +53,10 @@ import ClearIcon from '@mui/icons-material/Clear';
 
 import HistoryIcon from '@mui/icons-material/History';
 
+import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
+
+import { KnowledgePanel } from './KnowledgePanel';
+
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
@@ -72,7 +76,6 @@ import {
     collectNamespaceIds,
     findNodeByPath,
     mergeChildrenAtPath,
-    renderCatalogTreeItems,
 } from '../components/CatalogTree';
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
@@ -127,7 +130,7 @@ export const DataSourceSidebar: React.FC<{
 
     const toggle = () => dispatch(dfActions.setDataSourceSidebarOpen(!isOpen));
 
-    const [initialTab, setInitialTab] = useState<'sources' | 'sessions'>('sources');
+    const [initialTab, setInitialTab] = useState<'sources' | 'sessions' | 'knowledge'>('sources');
 
     return (
         <Box sx={{
@@ -167,6 +170,15 @@ export const DataSourceSidebar: React.FC<{
                         borderRadius: 1,
                     }}>
                         <HistoryIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('sidebar.knowledge', { defaultValue: 'Knowledge' })} placement="right">
+                    <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
+                        borderRadius: 1,
+                    }}>
+                        <MenuBookOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
             </Box>
@@ -218,7 +230,7 @@ export const DataSourceSidebar: React.FC<{
 const DataSourceSidebarPanel: React.FC<{
     onOpenUploadDialog?: (tab?: string) => void;
     onCollapse: () => void;
-    initialTab?: 'sources' | 'sessions';
+    initialTab?: 'sources' | 'sessions' | 'knowledge';
     connectorRefreshKey?: number;
 }> = ({ onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0 }) => {
     const { t } = useTranslation();
@@ -274,8 +286,8 @@ const DataSourceSidebarPanel: React.FC<{
     const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
-    // Sidebar tab: 'sources' or 'sessions'
-    const [activeTab, setActiveTab] = useState<'sources' | 'sessions'>(initialTab);
+    // Sidebar tab: 'sources' or 'sessions' or 'knowledge'
+    const [activeTab, setActiveTab] = useState<'sources' | 'sessions' | 'knowledge'>(initialTab);
 
     // Sync tab when rail icon switches it
     useEffect(() => {
@@ -1107,72 +1119,62 @@ const DataSourceSidebarPanel: React.FC<{
                                         </Box>
                                     )}
                                     {displayCache && displayCache.tree.length > 0 && (
-                                        <SimpleTreeView
-                                            expandedItems={expanded}
-                                            onExpandedItemsChange={(_e, items) => {
+                                        <VirtualizedCatalogTree
+                                            nodes={displayCache.tree}
+                                            loadedMap={loadedTablesMap}
+                                            expandedIds={expanded}
+                                            onExpandedChange={(newIds) => {
                                                 if (!activeSearchMode) {
-                                                    const prevSet = new Set(expanded);
-                                                    const newlyExpanded = items.filter(id => !prevSet.has(id));
-                                                    setTreeExpanded(prev => ({ ...prev, [connector.id]: items }));
-                                                    const fullCache = catalogCache[connector.id];
-                                                    for (const itemId of newlyExpanded) {
-                                                        const node = fullCache ? findNodeByPath(fullCache.tree, itemId) : null;
-                                                        if (node && (node.node_type === 'namespace' || node.node_type === 'table_group') && !node.children) {
-                                                            fetchCatalogNodes(connector.id, node.path, { filter: catalogSearch });
-                                                        }
-                                                    }
+                                                    setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
                                                 }
                                             }}
-                                            onItemClick={(e, itemId) => {
-                                                const node = displayCache ? findNodeByPath(displayCache.tree, itemId) : null;
-                                                if (node && node.node_type === 'table') {
+                                            onLazyExpand={(node) => {
+                                                fetchCatalogNodes(connector.id, node.path, { filter: catalogSearch });
+                                            }}
+                                            onItemClick={(node, e) => {
+                                                if (node.node_type === 'table') {
                                                     handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
                                                 }
                                             }}
-                                            itemChildrenIndentation={0}
+                                            onLoadMore={(node) => {
+                                                const parentPath = (node.metadata?.parentPath || []) as string[];
+                                                const nextOffset = Number(node.metadata?.nextOffset || 0);
+                                                fetchCatalogNodes(connector.id, parentPath, { append: true, offset: nextOffset, filter: catalogSearch });
+                                            }}
+                                            onDragStart={(node, event) => {
+                                                const dsId = node.metadata?.dataset_id;
+                                                const sourceName = node.metadata?._source_name || node.name;
+                                                const item: CatalogTableDragItem = {
+                                                    type: CATALOG_TABLE_ITEM,
+                                                    connectorId: connector.id,
+                                                    tableName: sourceName,
+                                                    tableId: dsId != null ? String(dsId) : sourceName,
+                                                    tablePath: node.path,
+                                                    sourceType: connector.source_type,
+                                                };
+                                                event.dataTransfer.setData('application/json', JSON.stringify(item));
+                                                event.dataTransfer.effectAllowed = 'copy';
+                                            }}
+                                            renderTableActions={(node) => {
+                                                const pathKey = node.path.join('/');
+                                                const sourceName = node.metadata?._source_name;
+                                                const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
+                                                if (!isLoaded) return null;
+                                                return (
+                                                    <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => { e.stopPropagation(); handleRefreshTable(connector.id, node, e); }}
+                                                            sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                                        >
+                                                            <RefreshIcon sx={{ fontSize: 13 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                );
+                                            }}
+                                            maxHeight={320}
                                             sx={{ px: 0.5 }}
-                                        >
-                                            {renderCatalogTreeItems(displayCache.tree, {
-                                                loadedMap: loadedTablesMap,
-                                                expandedSet: new Set(expanded),
-                                                onLoadMore: (node) => {
-                                                    const parentPath = (node.metadata?.parentPath || []) as string[];
-                                                    const nextOffset = Number(node.metadata?.nextOffset || 0);
-                                                    fetchCatalogNodes(connector.id, parentPath, { append: true, offset: nextOffset, filter: catalogSearch });
-                                                },
-                                                onDragStart: (node, event) => {
-                                                    const dsId = node.metadata?.dataset_id;
-                                                    const sourceName = node.metadata?._source_name || node.name;
-                                                    const item: CatalogTableDragItem = {
-                                                        type: CATALOG_TABLE_ITEM,
-                                                        connectorId: connector.id,
-                                                        tableName: sourceName,
-                                                        tableId: dsId != null ? String(dsId) : sourceName,
-                                                        tablePath: node.path,
-                                                        sourceType: connector.source_type,
-                                                    };
-                                                    event.dataTransfer.setData('application/json', JSON.stringify(item));
-                                                    event.dataTransfer.effectAllowed = 'copy';
-                                                },
-                                                renderTableActions: (node) => {
-                                                    const pathKey = node.path.join('/');
-                                                    const sourceName = node.metadata?._source_name;
-                                                    const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
-                                                    if (!isLoaded) return null;
-                                                    return (
-                                                        <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={(e) => handleRefreshTable(connector.id, node, e)}
-                                                                sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
-                                                            >
-                                                                <RefreshIcon sx={{ fontSize: 13 }} />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                    );
-                                                },
-                                            })}
-                                        </SimpleTreeView>
+                                        />
                                     )}
                                     {displayCache && displayCache.tree.length === 0 && !isLoading && (
                                         <Typography sx={{ fontSize: 11, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>
@@ -1326,6 +1328,25 @@ const DataSourceSidebarPanel: React.FC<{
                     ))
                 )}
             </Box>
+            </Box>
+            )}
+
+            {/* ── Knowledge tab ── */}
+            {activeTab === 'knowledge' && (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box
+                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                >
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                        {t('knowledge.title', { defaultValue: 'Knowledge Base' })}
+                    </Typography>
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+                <KnowledgePanel />
             </Box>
             )}
 

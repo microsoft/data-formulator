@@ -86,25 +86,14 @@ def list_cached_sources(workspace_root: Path | str) -> list[str]:
     return [p.stem for p in cache_dir.glob("*.json")]
 
 
-def search_catalog_cache(
+def _search_python(
     workspace_root: Path | str,
-    query: str,
-    source_ids: list[str] | None = None,
-    limit_per_source: int = 20,
-    exclude_tables: set[str] | None = None,
+    needle: str,
+    all_ids: list[str],
+    exclude: set[str],
+    limit_per_source: int,
 ) -> list[dict[str, Any]]:
-    """Search across cached catalogs for tables matching a keyword.
-
-    Returns a flat list of match dicts:
-    ``{"source_id", "name", "description", "matched_columns", "score"}``.
-    Already-imported tables (in ``exclude_tables``) are excluded.
-    """
-    needle = (query or "").strip().lower()
-    if not needle:
-        return []
-
-    exclude = exclude_tables or set()
-    all_ids = source_ids or list_cached_sources(workspace_root)
+    """Python-based structured field search (original implementation)."""
     results: list[dict[str, Any]] = []
 
     for sid in all_ids:
@@ -154,3 +143,117 @@ def search_catalog_cache(
 
     results.sort(key=lambda r: -r["score"])
     return results
+
+
+def _search_duckdb(
+    workspace_root: Path | str,
+    needle: str,
+    all_ids: list[str],
+    exclude: set[str],
+    limit_per_source: int,
+) -> list[dict[str, Any]]:
+    """DuckDB-based catalog cache search using read_json_auto + SQL."""
+    import duckdb
+
+    results: list[dict[str, Any]] = []
+    like_pat = f"%{needle}%"
+
+    for sid in all_ids:
+        path = _cache_file(workspace_root, sid)
+        if not path.exists():
+            continue
+
+        escaped = str(path).replace("'", "''")
+        conn = duckdb.connect(":memory:")
+        try:
+            # Flatten tables array from the JSON cache file
+            rows = conn.execute(f"""
+                WITH raw AS (
+                    SELECT unnest(tables) AS t
+                    FROM read_json_auto('{escaped}', format='newline_delimited',
+                         union_by_name=true, maximum_object_size=104857600)
+                ),
+                base AS (
+                    SELECT
+                        t.name                       AS tname,
+                        COALESCE(t.metadata.description, '')  AS tdesc,
+                        t.metadata.columns           AS cols,
+                        CASE WHEN lower(t.name) LIKE ? THEN 10 ELSE 0 END
+                        + CASE WHEN COALESCE(t.metadata.description, '') != ''
+                               AND lower(COALESCE(t.metadata.description, '')) LIKE ?
+                               THEN 5 ELSE 0 END     AS base_score
+                    FROM raw
+                )
+                SELECT tname, tdesc, cols, base_score
+                FROM base
+                WHERE tname NOT IN (SELECT unnest(?::VARCHAR[]))
+                ORDER BY base_score DESC
+            """, [like_pat, like_pat, list(exclude)]).fetchall()
+
+            # Determine original source_id from file
+            raw = _load_catalog_raw(workspace_root, sid)
+            original_source_id = raw.get("source_id", sid) if raw else sid
+
+            source_hits: list[dict[str, Any]] = []
+            for tname, tdesc, cols_raw, base_score in rows:
+                score = base_score
+                matched_cols: list[str] = []
+                cols = cols_raw if isinstance(cols_raw, list) else []
+                for col in cols:
+                    if not isinstance(col, dict):
+                        continue
+                    cname = col.get("name", "")
+                    if needle in cname.lower():
+                        matched_cols.append(cname)
+                        score += 2
+                    cdesc = col.get("description", "")
+                    if cdesc and needle in cdesc.lower():
+                        matched_cols.append(cname)
+                        score += 1
+
+                if score > 0:
+                    source_hits.append({
+                        "source_id": original_source_id,
+                        "name": tname,
+                        "description": tdesc,
+                        "matched_columns": list(dict.fromkeys(matched_cols)),
+                        "score": score,
+                    })
+
+            source_hits.sort(key=lambda r: -r["score"])
+            results.extend(source_hits[:limit_per_source])
+        finally:
+            conn.close()
+
+    results.sort(key=lambda r: -r["score"])
+    return results
+
+
+def search_catalog_cache(
+    workspace_root: Path | str,
+    query: str,
+    source_ids: list[str] | None = None,
+    limit_per_source: int = 20,
+    exclude_tables: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Search across cached catalogs for tables matching a keyword.
+
+    Returns a flat list of match dicts:
+    ``{"source_id", "name", "description", "matched_columns", "score"}``.
+    Already-imported tables (in ``exclude_tables``) are excluded.
+
+    Prefers DuckDB SQL search for performance on large caches; falls back
+    to Python structured field search if DuckDB is unavailable or errors.
+    """
+    needle = (query or "").strip().lower()
+    if not needle:
+        return []
+
+    exclude = exclude_tables or set()
+    all_ids = source_ids or list_cached_sources(workspace_root)
+
+    try:
+        return _search_duckdb(workspace_root, needle, all_ids, exclude, limit_per_source)
+    except Exception:
+        logger.debug("DuckDB catalog search failed, falling back to Python", exc_info=True)
+        return _search_python(workspace_root, needle, all_ids, exclude, limit_per_source)

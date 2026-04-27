@@ -1,7 +1,7 @@
 # 服务端路径安全加固 — ConfinedDir 状态页
 
 > **状态**：部分完成，不能删除。
-> **最后核对**：2026-04-26
+> **最后核对**：2026-04-28
 > **正式开发规范**：`dev-guides/8-path-safety.md`
 > **历史审计背景**：`design-docs/issues/002-arbitrary-file-read-audit.md`
 
@@ -15,7 +15,7 @@
 - `ConfinedDir` 的使用场景和防护层次。
 - `safe_data_filename()`、`secure_filename()`、`ConfinedDir` 的职责边界。
 - 文件下载 route 使用 `send_file(resolved_path)`，禁止用 `send_from_directory(dir, user_input)` 发送用户路径。
-- Agent 文件工具的 base path 只在入口 `resolve()` 一次。
+- Agent 文件工具通过 `workspace.confined_root` / `workspace.confined_scratch` 复用 `ConfinedDir`。
 - 读取宿主文件系统的 Loader 必须注册多用户部署禁用规则。
 - 多用户部署不得使用 `not_a_sandbox`。
 - 新模块路径安全检查清单和测试要求。
@@ -25,11 +25,13 @@
 | 项目 | 当前实现 |
 |------|----------|
 | `ConfinedDir` 原语 | `py-src/data_formulator/security/path_safety.py` |
-| `ConfinedDir` 单元测试 | `tests/backend/data/test_local_folder_loader.py` |
+| `ConfinedDir` 单元测试 | `tests/backend/data/test_local_folder_loader.py`、`tests/backend/security/test_confined_dir_extended.py`、`tests/backend/security/test_confined_dir_migration.py` |
 | `LocalFolderDataLoader` 路径约束 | 使用 `ConfinedDir` 约束 `root_dir` 下的相对访问 |
 | `local_folder` 多用户禁用 | `py-src/data_formulator/data_loader/__init__.py::_enforce_deployment_restrictions()` |
-| Agent `read_file` / `list_directory` 路径校验 | `py-src/data_formulator/agents/agent_data_loading_chat.py` |
+| Agent `read_file` / `list_directory` 路径校验 | `py-src/data_formulator/agents/agent_data_loading_chat.py` 使用 `workspace.confined_*` |
 | `scratch_serve` 下载 TOCTOU 修复 | `py-src/data_formulator/routes/agents.py` 使用 `send_file(target)` |
+| `CachedAzureBlobWorkspace._cache_path()` | 使用 `self._cache_jail.resolve(filename)` |
+| `Workspace.get_file_path()` | 使用 `safe_data_filename()` + `self._confined_data.resolve(basename)` |
 | 多用户无沙箱启动告警 | `py-src/data_formulator/app.py::_safety_checks()` |
 | Cursor 自动提醒规则 | `.cursor/rules/path-safety.mdc` |
 | Agent skill | `.cursor/skills/path-safety/SKILL.md` |
@@ -71,39 +73,7 @@ local_file = dst / rel
 - 对非法 blob key 捕获 `ValueError`，记录 warning 并跳过。
 - 和 `local_dir()` 共用或复用同一组 blob path traversal 回归测试。
 
-### 3.3 `CachedAzureBlobWorkspace._cache_path()` 统一风格
-
-**文件**：`py-src/data_formulator/datalake/cached_azure_blob_workspace.py`
-
-当前已有 `resolve() + is_relative_to()` 防护，功能上是安全的，但仍是手写逻辑：
-
-```python
-resolved = (self._cache_dir / filename).resolve()
-if not resolved.is_relative_to(self._cache_dir.resolve()):
-    raise ValueError(...)
-```
-
-期望改造：
-
-- 在初始化时创建 `self._cache_jail = ConfinedDir(self._cache_dir, mkdir=True)`。
-- `_cache_path(filename)` 直接返回 `self._cache_jail.resolve(filename)`。
-
-此项是统一风格和降低静态扫描噪音，不是当前阻塞级漏洞。
-
-### 3.4 `Workspace.get_file_path()` 可选统一
-
-**文件**：`py-src/data_formulator/datalake/workspace.py`
-
-当前已有 `safe_data_filename()` + `resolve().relative_to()` 双重防护，功能上是安全的。
-
-可选改造：
-
-- 为 `data/` 目录建立 `ConfinedDir`。
-- `get_file_path()` 先调用 `safe_data_filename(filename)`，再走 `ConfinedDir.resolve()`。
-
-此项不是删除本 design doc 的硬性条件。
-
-### 3.5 `ConfinedDir` 包导出
+### 3.3 `ConfinedDir` 包导出
 
 **文件**：`py-src/data_formulator/security/__init__.py`
 
@@ -115,7 +85,7 @@ from data_formulator.security.path_safety import ConfinedDir
 
 是否必须导出取决于项目导入风格；当前代码直接从 `data_formulator.security.path_safety` 导入，不影响运行。
 
-### 3.6 `Content-Disposition` 下载名清洗
+### 3.4 `Content-Disposition` 下载名清洗
 
 **文件**：`py-src/data_formulator/routes/tables.py`
 
@@ -135,7 +105,6 @@ from data_formulator.security.path_safety import ConfinedDir
 - `AzureBlobWorkspace.local_dir()` 使用 `ConfinedDir` 并有回归测试。
 - `AzureBlobWorkspace.save_workspace_snapshot()` 使用 `ConfinedDir` 并有回归测试。
 - `Content-Disposition` 下载名清洗 helper 和 route 改造完成，并有测试。
-- 决定是否执行 `CachedAzureBlobWorkspace._cache_path()` 和 `Workspace.get_file_path()` 的统一改造；若不做，在代码注释或 PR 说明中明确“现有防护等价且接受保留”。
 - `dev-guides/8-path-safety.md`、`.cursor/skills/path-safety/SKILL.md`、`.cursor/rules/path-safety.mdc` 均不再引用本 design doc 作为规范来源。
 
 ## 5. 参考
@@ -143,4 +112,4 @@ from data_formulator.security.path_safety import ConfinedDir
 - `dev-guides/8-path-safety.md` — 当前正式开发者规范。
 - `.cursor/skills/path-safety/SKILL.md` — Agent 执行路径安全任务时的操作规范。
 - `.cursor/rules/path-safety.mdc` — 编辑相关 Python 文件时的自动提醒规则。
-- `design-docs/issues/002-arbitrary-file-read-audit.md` — 历史安全审计与 FINDING-1 至 FINDING-5 背景。
+- `design-docs/issues/002-arbitrary-file-read-audit.md` — 安全审计复核与 FINDING-1 至 FINDING-5 当前状态。

@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { useSelector, useDispatch } from 'react-redux';
+import { useTranslation } from 'react-i18next';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType } from './dfSlice';
 import { AppDispatch } from './store';
 import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../components/ComponentType';
@@ -19,6 +20,8 @@ export interface StreamIdeasOptions {
     onIdeas: (ideas: IdeaItem[]) => void;
     onThinkingBuffer: (buffer: string) => void;
     onLoadingChange: (loading: boolean) => void;
+    /** Backend progress phase updates (e.g. "building_context", "generating") */
+    onProgress?: (phase: string) => void;
     /** Chart image (PNG data URL) for current visualization context */
     currentChartImage?: string | null;
     /** Sample rows from the current table */
@@ -73,9 +76,9 @@ function generateTableId(tables: DictTable[]): string {
  */
 export function useFormulateData() {
     const dispatch = useDispatch<AppDispatch>();
+    const { t } = useTranslation();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
-    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const activeModel = useSelector(dfSelectors.getActiveModel);
 
@@ -189,7 +192,7 @@ export function useFormulateData() {
     async function streamIdeas(options: StreamIdeasOptions): Promise<void> {
         const {
             actionTableIds, currentTable,
-            onIdeas, onThinkingBuffer, onLoadingChange,
+            onIdeas, onThinkingBuffer, onLoadingChange, onProgress,
             currentChartImage, currentDataSample,
             startQuestion,
         } = options;
@@ -220,14 +223,14 @@ export function useFormulateData() {
                 })(),
                 ...(focusedThread.length > 0 ? { focused_thread: focusedThread } : {}),
                 ...(otherThreads.length > 0 ? { other_threads: otherThreads } : {}),
-                agent_exploration_rules: agentRules.exploration,
                 ...(currentChartImage ? { current_chart: currentChartImage } : {}),
                 ...(startQuestion ? { start_question: startQuestion } : {}),
             });
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
+            let timedOut = false;
+            const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
             const response = await fetchWithIdentity(engine, {
                 method: 'POST',
@@ -291,6 +294,10 @@ export function useFormulateData() {
                                 }));
                                 continue;
                             }
+                            if (parsed.type === 'progress') {
+                                onProgress?.(parsed.phase);
+                                continue;
+                            }
                             if (parsed.text) {
                                 lines.push(trimmed);
                                 updateState(lines);
@@ -332,14 +339,20 @@ export function useFormulateData() {
             }
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
-                // user cancelled
+                if (timedOut) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'exploration',
+                        value: t('messages.agent.suggestionsTimedOut', { seconds: config.formulateTimeoutSeconds }),
+                    }));
+                }
             } else {
                 dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "type": "error",
-                    "component": "chart builder",
-                    "value": error instanceof Error ? error.message : "Failed to get ideas from the exploration agent. Please try again.",
-                    "detail": error instanceof Error ? error.message : 'Unknown error',
+                    timestamp: Date.now(),
+                    type: "error",
+                    component: "chart builder",
+                    value: error instanceof Error ? error.message : t('messages.agent.unexpectedError'),
+                    detail: error instanceof Error ? error.message : 'Unknown error',
                 }));
             }
         } finally {
@@ -394,7 +407,6 @@ export function useFormulateData() {
             primary_tables: primaryTableNames,
             extra_prompt: instruction,
             model: activeModel,
-            agent_coding_rules: agentRules.coding,
             ...(currentVisualization ? { current_visualization: currentVisualization } : {}),
             ...(expectedVisualization ? { expected_visualization: expectedVisualization } : {}),
         };
@@ -420,7 +432,6 @@ export function useFormulateData() {
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
-                    agent_coding_rules: agentRules.coding,
                     ...(currentVisualization ? { current_visualization: currentVisualization } : {}),
                     ...(expectedVisualization ? { expected_visualization: expectedVisualization } : {}),
                 };
@@ -429,7 +440,8 @@ export function useFormulateData() {
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
+        let timedOut = false;
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
         fetchWithIdentity(engine, {
             method: 'POST',
@@ -635,21 +647,22 @@ export function useFormulateData() {
         })
         .catch((error) => {
             if (error.name === 'AbortError') {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
-                    "detail": "Request exceeded timeout limit",
-                }));
+                if (timedOut) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        component: "chart builder",
+                        type: "warning",
+                        value: t('messages.agent.formulationTimedOut', { seconds: config.formulateTimeoutSeconds }),
+                    }));
+                }
             } else {
                 console.error(error);
                 dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": "Data formulation failed, please try again.",
-                    "detail": error.message,
+                    timestamp: Date.now(),
+                    component: "chart builder",
+                    type: "error",
+                    value: t('messages.agent.unexpectedError'),
+                    detail: error.message,
                 }));
             }
             onError?.(error);
