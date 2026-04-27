@@ -72,7 +72,10 @@
       "unableExtractTables": "无法从响应中提取表格",
       "unableExtractScript": "无法从响应中提取脚本",
       "errorCallingModel": "调用模型出错：{{error}}",
-      "noModelConfigured": "未配置模型"
+      "noModelConfigured": "未配置模型",
+      "requestTimedOut": "请求已超过 {{seconds}} 秒，模型仍未返回完整结果，前端已自动停止等待。可稍后重试，或在设置中调大「生成超时」后再试。",
+      "suggestionsTimedOut": "AI 建议生成已超过 {{seconds}} 秒，模型仍未返回结果，前端已自动停止等待。可稍后重试，或在设置中调大「生成超时」后再试。",
+      "formulationTimedOut": "数据生成已超过 {{seconds}} 秒，前端已自动停止等待。可尝试简化任务、更换模型，或在设置中调大「生成超时」后重试。"
     }
   }
 }

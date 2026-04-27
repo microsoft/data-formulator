@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { useSelector, useDispatch } from 'react-redux';
+import { useTranslation } from 'react-i18next';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType } from './dfSlice';
 import { AppDispatch } from './store';
 import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../components/ComponentType';
@@ -73,6 +74,7 @@ function generateTableId(tables: DictTable[]): string {
  */
 export function useFormulateData() {
     const dispatch = useDispatch<AppDispatch>();
+    const { t } = useTranslation();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -225,7 +227,8 @@ export function useFormulateData() {
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
+            let timedOut = false;
+            const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
             const response = await fetchWithIdentity(engine, {
                 method: 'POST',
@@ -330,14 +333,20 @@ export function useFormulateData() {
             }
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
-                // user cancelled
+                if (timedOut) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'exploration',
+                        value: t('messages.agent.suggestionsTimedOut', { seconds: config.formulateTimeoutSeconds }),
+                    }));
+                }
             } else {
                 dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "type": "error",
-                    "component": "chart builder",
-                    "value": error instanceof Error ? error.message : "Failed to get ideas from the exploration agent. Please try again.",
-                    "detail": error instanceof Error ? error.message : 'Unknown error',
+                    timestamp: Date.now(),
+                    type: "error",
+                    component: "chart builder",
+                    value: error instanceof Error ? error.message : t('messages.agent.unexpectedError'),
+                    detail: error instanceof Error ? error.message : 'Unknown error',
                 }));
             }
         } finally {
@@ -425,7 +434,8 @@ export function useFormulateData() {
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
+        let timedOut = false;
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
         fetchWithIdentity(engine, {
             method: 'POST',
@@ -631,21 +641,22 @@ export function useFormulateData() {
         })
         .catch((error) => {
             if (error.name === 'AbortError') {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
-                    "detail": "Request exceeded timeout limit",
-                }));
+                if (timedOut) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        component: "chart builder",
+                        type: "warning",
+                        value: t('messages.agent.formulationTimedOut', { seconds: config.formulateTimeoutSeconds }),
+                    }));
+                }
             } else {
                 console.error(error);
                 dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": "Data formulation failed, please try again.",
-                    "detail": error.message,
+                    timestamp: Date.now(),
+                    component: "chart builder",
+                    type: "error",
+                    value: t('messages.agent.unexpectedError'),
+                    detail: error.message,
                 }));
             }
             onError?.(error);

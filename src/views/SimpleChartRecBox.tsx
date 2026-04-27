@@ -358,6 +358,7 @@ export const SimpleChartRecBox: FC = function () {
         setIsLoadingIdeas(true);
         setIdeas([]);
         setThinkingBuffer('');
+        let timedOut = false;
 
         try {
             let explorationThread: any[] = [];
@@ -391,7 +392,7 @@ export const SimpleChartRecBox: FC = function () {
 
             const controller = new AbortController();
             ideasAbortRef.current = controller;
-            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
+            const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
             const response = await fetchWithIdentity(getUrls().GET_RECOMMENDATION_QUESTIONS, {
                 method: 'POST',
@@ -407,7 +408,7 @@ export const SimpleChartRecBox: FC = function () {
 
             const decoder = new TextDecoder();
             let buffer = '';
-            let lines: string[] = [];
+            let lines: { text: string; goal: string; tag?: string }[] = [];
 
             try {
                 while (true) {
@@ -474,7 +475,13 @@ export const SimpleChartRecBox: FC = function () {
             setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
-                // user cancelled, no notification needed
+                if (timedOut) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'exploration',
+                        value: t('messages.agent.suggestionsTimedOut', { seconds: config.formulateTimeoutSeconds }),
+                    }));
+                }
             } else {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'error',
@@ -668,7 +675,8 @@ export const SimpleChartRecBox: FC = function () {
 
         const controller = new AbortController();
         agentAbortRef.current = controller;
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 6 * 1000);
+        let timedOut = false;
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 6 * 1000);
 
         let allResults: any[] = [];
         let createdTables: DictTable[] = [];
@@ -1122,9 +1130,21 @@ export const SimpleChartRecBox: FC = function () {
             setIsChatFormulating(false);
             agentAbortRef.current = null;
             clearTimeout(timeoutId);
-            const isCancelled = error.name === 'AbortError' && !isCompleted;
-            const errorMessage = isCancelled ? t('chartRec.explorationCancelled') : error.name === 'AbortError' ? t('chartRec.explorationTimedOut') : t('chartRec.explorationFailed', { message: error.message });
-            // Clean up draft on error/cancel
+            const isAbort = error.name === 'AbortError';
+            const isCancelled = isAbort && !isCompleted && !timedOut;
+            const isTimeout = isAbort && timedOut;
+            const errorMessage = isCancelled
+                ? t('chartRec.explorationCancelled')
+                : isTimeout
+                    ? t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 })
+                    : t('chartRec.explorationFailed', { message: error.message });
+            if (isTimeout) {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'data-agent',
+                    value: t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 }),
+                }));
+            }
             if (currentDraftId) {
                 if (isCancelled) {
                     dispatch(dfActions.removeDraftNode(currentDraftId));
