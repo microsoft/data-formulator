@@ -70,7 +70,7 @@ DATA_FORMULATOR_HOME/
 |---|---|
 | `off`（默认） | 不写日志 |
 | `on` | 写结构化摘要 |
-| `verbose` | 写更完整 kwargs，并做脱敏 |
+| `verbose` | 写调用方传入的更完整 kwargs，并做脱敏 |
 
 DataAgent 已记录 `session_start`、`context_built`、`knowledge_search`、`llm_request`、`llm_response`、`tool_execution`、`action_execution`、`repair_attempt`、`session_end` 等事件。
 
@@ -125,6 +125,8 @@ POST /api/knowledge/distill-experience
 以下差异以代码实现为准，已经写入 `dev-guides/10-agent-knowledge-reasoning-log.md`：
 
 - `DF_AGENT_LOG` 默认值是 `off`，不是原设计中的 `on`。
+- `verbose` 模式支持记录并脱敏调用方传入的完整 kwargs；DataAgent 当前埋点没有把完整 `messages` 传给 logger，因此不会自动记录完整 conversation。
+- `on` 模式当前会记录 `session_start.user_question` 和 `knowledge_search.query` 等问题文本；这与原设计中“on 模式不记录用户数据原文”的严格表述不同，当前开发规范已按实际实现说明。
 - 知识 API 实现为 `/api/knowledge/list|read|write|delete|search` 的 POST body 参数形式，不是 `/<category>/list` REST 形式。
 - 推理日志事件实际使用 `llm_request` / `llm_response`，不是统一的 `llm_call`。
 - Rules 支持 `description` 和 `alwaysApply` front matter 字段。
@@ -138,8 +140,9 @@ POST /api/knowledge/distill-experience
 1. `KnowledgeStore.search()` 仍是整串子串匹配，需要升级为分词加权匹配。
 2. `test_relevant_knowledge_injected` 的断言仍有无命中兜底，需要在搜索修复后加强。
 3. `KnowledgeStore.list_all()` / `search()` 内部读取风格尚未统一为 `jail.read_text(rel)`。
+4. 推理日志 `on` 模式是否应继续记录 `user_question` / `query` 需要产品/安全取舍；如果恢复原设计的严格隐私目标，需要收紧 DataAgent 埋点并补测试。
 
-第 4 项“保存为经验按钮位置与 experience_context 边界”已经基本实现：`DataThreadCards.tsx` 只在 `isLeafDerivedTable()` 为 true 时渲染 `SaveExperienceButton`，`SaveExperienceButton.tsx` 会从当前可见 leaf chain 构建 `experience_context`。
+“保存为经验按钮位置与 experience_context 边界”已经基本实现：`DataThreadCards.tsx` 只在 `isLeafDerivedTable()` 为 true 时渲染 `SaveExperienceButton`，`SaveExperienceButton.tsx` 会从当前可见 leaf chain 构建 `experience_context`。
 
 ## 文档处置
 
@@ -147,7 +150,7 @@ POST /api/knowledge/distill-experience
 - 已完成开发计划：`design-docs/15.1-agent-knowledge-reasoning-log-dev-plan.md`
 - 仍需保留的 follow-up：`design-docs/15.2-knowledge-system-followup-improvements.md`
 
-如果后续完成 `15.2` 的三个未完成项，可以把对应最终规范补进 `dev-guides/10`，然后删除 `15.2`。
+如果后续完成 `15.2` 的未完成项，可以把对应最终规范补进 `dev-guides/10`，然后删除 `15.2`。
 
 ## 关联文档
 
