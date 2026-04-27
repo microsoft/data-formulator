@@ -28,6 +28,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
+import type { ModelConfig } from '../app/dfSlice';
 import { borderColor, transition, radius, shadow } from '../app/tokens';
 import exampleImageTable from '../assets/example-image-table.png';
 import { getUrls, fetchWithIdentity } from '../app/utils';
@@ -41,6 +42,12 @@ import { DataFrameTable } from './DataFrameTable';
 /** Returns true when the model name suggests it does not support image input. */
 export function checkIsLikelyTextOnlyModel(modelName: string | undefined): boolean {
     return (modelName || '').toLowerCase().includes('deepseek-chat');
+}
+
+export function checkModelSupportsImageInput(model: Pick<ModelConfig, 'model' | 'supports_vision'> | undefined): boolean {
+    if (!model) return false;
+    if (model.supports_vision === false) return false;
+    return !checkIsLikelyTextOnlyModel(model.model);
 }
 
 // ---------------------------------------------------------------------------
@@ -686,6 +693,15 @@ export const DataLoadingChat: React.FC = () => {
         const text = prompt.trim();
         if (!text && userImages.length === 0) return;
         if (chatInProgress) return;
+        if (userImages.length > 0 && !checkModelSupportsImageInput(activeModel)) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'warning',
+                component: t('dataLoading.title'),
+                value: t('dataLoading.imageModelUnsupported'),
+            }));
+            return;
+        }
 
         const attachments: ChatAttachment[] = userImages.map((url, i) => ({
             type: 'image' as const, name: `image-${i + 1}`, url,
@@ -724,6 +740,13 @@ export const DataLoadingChat: React.FC = () => {
         })
         .then(async (response) => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const body = await response.json();
+                if (body.status === 'error') {
+                    throw new Error(body.error?.message || body.message || t('dataLoading.error'));
+                }
+            }
             const reader = response.body?.getReader();
             if (!reader) throw new Error('No reader');
 
@@ -845,7 +868,7 @@ export const DataLoadingChat: React.FC = () => {
                                     fullText = event.full_text || fullText;
                                     break;
                                 case 'error':
-                                    fullText += `\n\n**Error:** ${event.error}`;
+                                    fullText += `\n\n**${t('dataLoading.error')}:** ${event.error?.message || event.error || t('dataLoading.error')}`;
                                     break;
                             }
                         } catch { /* skip unparseable */ }
@@ -897,8 +920,8 @@ export const DataLoadingChat: React.FC = () => {
                 dispatch(dfActions.addChatMessage({
                     id: `msg-${Date.now()}-assistant`, role: 'assistant',
                     content: partialContent
-                        ? partialContent + `\n\n**Error:** ${error.message}`
-                        : `**Error:** ${error.message}`,
+                        ? partialContent + `\n\n**${t('dataLoading.error')}:** ${error.message}`
+                        : `**${t('dataLoading.error')}:** ${error.message}`,
                     timestamp: Date.now(),
                 }));
             }

@@ -82,6 +82,7 @@ export interface ModelConfig {
     api_key?: string;
     api_base?: string;
     api_version?: string;
+    supports_vision?: boolean;
     /** True for models configured server-side via .env. Their credentials never leave the server. */
     is_global?: boolean;
 }

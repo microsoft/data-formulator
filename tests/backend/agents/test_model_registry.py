@@ -10,7 +10,12 @@ from unittest.mock import patch
 
 import pytest
 
-from data_formulator.model_registry import ModelRegistry, BUILTIN_PROVIDERS
+from data_formulator.model_registry import (
+    ModelRegistry,
+    BUILTIN_PROVIDERS,
+    is_likely_text_only_model,
+    model_supports_vision,
+)
 
 pytestmark = [pytest.mark.backend]
 
@@ -106,6 +111,7 @@ class TestPublicListingSecurity:
             assert "id" in model
             assert "endpoint" in model
             assert "model" in model
+            assert "supports_vision" in model
             assert "is_global" in model
             assert model["is_global"] is True
 
@@ -149,3 +155,28 @@ class TestCustomProvider:
         config = registry.get_config("global-myvendor-my-model")
         assert config is not None
         assert config["endpoint"] == "openai"
+
+
+# ---------------------------------------------------------------------------
+# Tests: image input capability hints
+# ---------------------------------------------------------------------------
+
+class TestVisionCapability:
+    @pytest.mark.parametrize("model_name", ["deepseek-chat", "provider/deepseek-chat-v2", "DeepSeek-Chat"])
+    def test_known_text_only_models_are_detected(self, model_name):
+        assert is_likely_text_only_model(model_name) is True
+
+    @pytest.mark.parametrize("model_name", ["gpt-4o", "claude-sonnet-4-20250514", "deepseek-reasoner", None])
+    def test_other_models_are_not_marked_text_only(self, model_name):
+        assert is_likely_text_only_model(model_name) is False
+
+    @patch.dict(os.environ, SAMPLE_ENV, clear=True)
+    def test_public_listing_marks_deepseek_chat_as_not_vision_capable(self):
+        registry = ModelRegistry()
+        by_id = {m["id"]: m for m in registry.list_public()}
+
+        assert by_id["global-deepseek-deepseek-chat"]["supports_vision"] is False
+        assert by_id["global-openai-gpt-4o"]["supports_vision"] is True
+
+    def test_explicit_supports_vision_false_wins(self):
+        assert model_supports_vision({"model": "gpt-4o", "supports_vision": False}) is False

@@ -35,7 +35,7 @@ from data_formulator.agents.agent_chart_insight import ChartInsightAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
-from data_formulator.model_registry import model_registry
+from data_formulator.model_registry import model_registry, model_supports_vision
 from data_formulator.knowledge.store import KnowledgeStore
 
 from data_formulator.agents.data_agent import DataAgent
@@ -108,6 +108,15 @@ def _with_warnings(gen):
         yield chunk
     for w in flush_stream_warnings():
         yield w
+
+
+def _messages_include_image(messages: list[dict]) -> bool:
+    """Return True when a chat payload contains user image attachments."""
+    for msg in messages:
+        for att in msg.get("attachments") or []:
+            if att.get("type") == "image" and att.get("url"):
+                return True
+    return False
 
 
 @agent_bp.after_request
@@ -1236,6 +1245,14 @@ def data_loading_chat():
     content = request.get_json()
     logger.info("# data-loading-chat request")
 
+    messages = content.get("messages", [])
+    if _messages_include_image(messages) and not model_supports_vision(content.get("model")):
+        return jsonify({"status": "error", "error": {
+            "code": ErrorCode.INVALID_REQUEST,
+            "message": "The selected model does not support image input. Please switch to a vision-capable model or remove the image.",
+            "retry": False,
+        }})
+
     client = get_client(content['model'])
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
@@ -1247,7 +1264,6 @@ def data_loading_chat():
     ]
 
     language_instruction = get_language_instruction()
-    messages = content.get("messages", [])
     knowledge_store = _get_knowledge_store(identity_id)
 
     def generate():

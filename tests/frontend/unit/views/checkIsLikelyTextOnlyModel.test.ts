@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkIsLikelyTextOnlyModel } from '../../../../src/views/DataLoadingChat';
+import { checkIsLikelyTextOnlyModel, checkModelSupportsImageInput } from '../../../../src/views/DataLoadingChat';
 
 describe('checkIsLikelyTextOnlyModel', () => {
   it('returns true for deepseek-chat', () => {
@@ -36,5 +36,23 @@ describe('checkIsLikelyTextOnlyModel', () => {
 
   it('returns false for empty string', () => {
     expect(checkIsLikelyTextOnlyModel('')).toBe(false);
+  });
+});
+
+describe('checkModelSupportsImageInput', () => {
+  it('returns false when the model is explicitly marked text-only', () => {
+    expect(checkModelSupportsImageInput({ model: 'gpt-4o', supports_vision: false })).toBe(false);
+  });
+
+  it('returns false for known text-only model names', () => {
+    expect(checkModelSupportsImageInput({ model: 'deepseek-chat' })).toBe(false);
+  });
+
+  it('returns true for likely multimodal models', () => {
+    expect(checkModelSupportsImageInput({ model: 'gpt-4o' })).toBe(true);
+  });
+
+  it('returns false without an active model', () => {
+    expect(checkModelSupportsImageInput(undefined)).toBe(false);
   });
 });

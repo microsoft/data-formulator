@@ -777,7 +777,7 @@ class DataLoadingAgent:
         try:
             metadata = self.workspace.list_tables()
             if metadata:
-                table_names = ", ".join(m.table_name for m in metadata)
+                table_names = ", ".join(self._table_display_name(m) for m in metadata)
         except Exception as e:
             logger.warning("Could not list tables for system prompt", exc_info=e)
             from data_formulator.error_handler import collect_stream_warning
@@ -812,6 +812,15 @@ class DataLoadingAgent:
 
         return prompt
 
+    @staticmethod
+    def _table_display_name(table) -> str:
+        """Return a table name from workspace strings or metadata-like objects."""
+        if isinstance(table, str):
+            return table
+        if isinstance(table, dict):
+            return str(table.get("table_name") or table.get("name") or table)
+        return str(getattr(table, "table_name", table))
+
     def _convert_message(self, msg):
         """Convert a chat message to LLM message format."""
         role = msg.get("role", "user")
@@ -821,15 +830,18 @@ class DataLoadingAgent:
         if not attachments:
             return {"role": role, "content": content}
 
-        # Build multimodal content parts
+        # Build multimodal content parts. Text comes first so vision models get
+        # the user's instruction before the attached images.
         parts = []
+        image_parts = []
+        file_parts = []
 
         for att in attachments:
             att_type = att.get("type", "")
             if att_type == "image":
                 url = att.get("url", "")
                 if url:
-                    parts.append({
+                    image_parts.append({
                         "type": "image_url",
                         "image_url": {"url": url, "detail": "high"},
                     })
@@ -839,12 +851,17 @@ class DataLoadingAgent:
                 preview = att.get("preview", "")
                 name = att.get("name", "file")
                 if scratch_path:
-                    parts.append({
+                    file_parts.append({
                         "type": "text",
                         "text": f"[Uploaded file: {name} at {scratch_path}]\n{preview}",
                     })
 
         if content:
             parts.append({"type": "text", "text": content})
+        if image_parts:
+            label = "[USER ATTACHMENT]" if len(image_parts) == 1 else "[USER ATTACHMENTS]"
+            parts.append({"type": "text", "text": f"{label}: image(s) provided by the user."})
+            parts.extend(image_parts)
+        parts.extend(file_parts)
 
         return {"role": role, "content": parts if parts else content}
