@@ -214,6 +214,22 @@ export const TypeList = [Type.Auto, Type.Number, Type.Date, Type.DateTime, Type.
 | Year / Month / Day / Hour | 时间粒度是语义概念，App 层用 Number 或 String 即可 |
 | YearMonth / YearQuarter / YearWeek | 同上，语义层已有覆盖 |
 
+#### 5.1.1 DateGranule 与语义数字展示
+
+`Year` / `Month` / `Week` / `Day` / `Hour` / `Decade` 这类 DateGranule 不应进入前端 App `Type` 枚举。App `Type` 继续表达基础数据形态（`Integer` / `Number` / `String`），而 `semanticType` 表达业务语义。
+
+这会带来一个展示层要求：数字列不能只根据 `Type.Integer` / `Type.Number` 决定是否加千分位。部分数字虽然物理类型是整数，但语义上不是可聚合度量：
+
+| 示例列 | App Type | semanticType | 展示方式 |
+|--------|----------|--------------|----------|
+| `year = 2026` | `Integer` | `Year` | `2026`，不显示为 `2,026` |
+| `month = 12` | `Integer` | `Month` | `12`，不做度量格式化 |
+| `hour = 23` | `Integer` | `Hour` | `23`，不做度量格式化 |
+| `zip = 10001` | `Integer` / `String` | `ZipCode` | `10001`，不显示为 `10,001` |
+| `sales = 1234567` | `Number` | `Amount` / `Quantity` | `1,234,567`，保留千分位 |
+
+前端表格格式化应采用 `formatCellValue(value, dataType, semanticType?)`。当 `semanticType` 属于 DateGranule、Identifier 或其他非度量数字时，整数应按原值字符串展示；当 `semanticType` 是 `Amount`、`Count`、`Quantity`、`Number` 等真实度量时，继续使用千分位。
+
 ### 5.2 统一格式规范
 
 #### 5.2.1 存储格式（内部传输/持久化）
@@ -233,6 +249,8 @@ export const TypeList = [Type.Auto, Type.Number, Type.Date, Type.DateTime, Type.
 | `DateTime` | `toLocaleString()` | `2024/1/15 14:30:00` | `1/15/2024, 2:30:00 PM` |
 | `Time` | `toLocaleTimeString()` | `14:30:00` | `2:30:00 PM` |
 | `Duration` | 可读格式化 | `2小时30分` | `2h 30m` |
+| `Integer` / `Number` + 非度量 `semanticType` | 原值字符串 | `2026` | `2026` |
+| `Integer` / `Number` + 度量 `semanticType` | 数字格式化 | `1,234,567` | `1,234,567` |
 
 使用 `Intl.DateTimeFormat` 做本地化，无需第三方库。
 

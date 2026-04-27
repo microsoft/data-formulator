@@ -55,14 +55,16 @@ export const getIconFromType = (t: Type | undefined): JSX.Element => {
  *
  * - Numbers get thousand separators (e.g. 1,234,567)
  * - Floats are capped at a reasonable number of decimal places
+ * - Non-measure numeric semantics (e.g. Year, ID) stay ungrouped
  * - Date/DateTime/Time get locale-aware formatting via Intl
  * - Duration gets human-readable h/m/s format
  */
-export const formatCellValue = (value: any, dataType?: Type): string => {
+export const formatCellValue = (value: any, dataType?: Type, semanticType?: string): string => {
     if (value == null) return '';
 
     if (typeof value === 'number' && dataType !== Type.Duration) {
         if (!Number.isFinite(value)) return String(value);
+        if (shouldDisplayNumericSemanticAsPlainText(semanticType)) return String(value);
         if (Number.isInteger(value)) {
             return value.toLocaleString('en-US');
         }
@@ -83,6 +85,28 @@ export const formatCellValue = (value: any, dataType?: Type): string => {
     if (typeof value === 'object') return String(value);
     return String(value);
 };
+
+const PLAIN_NUMERIC_SEMANTIC_TYPES = new Set([
+    'year',
+    'month',
+    'week',
+    'day',
+    'hour',
+    'quarter',
+    'decade',
+    'yearmonth',
+    'yearquarter',
+    'yearweek',
+    'id',
+    'zipcode',
+    'rank',
+]);
+
+const normalizeSemanticType = (semanticType?: string): string =>
+    (semanticType || '').replace(/[\s_-]/g, '').toLowerCase();
+
+const shouldDisplayNumericSemanticAsPlainText = (semanticType?: string): boolean =>
+    PLAIN_NUMERIC_SEMANTIC_TYPES.has(normalizeSemanticType(semanticType));
 
 const formatTemporalValue = (value: any, dataType: Type): string => {
     if (dataType === Type.Time) {

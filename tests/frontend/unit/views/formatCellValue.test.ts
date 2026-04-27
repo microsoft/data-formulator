@@ -15,6 +15,17 @@ describe('formatCellValue', () => {
     expect(formatCellValue(3.14159)).toMatch(/3\.141/);
   });
 
+  it('should not add separators for non-measure numeric semantics', () => {
+    expect(formatCellValue(2026, Type.Integer, 'Year')).toBe('2026');
+    expect(formatCellValue(10001, Type.Integer, 'ZipCode')).toBe('10001');
+    expect(formatCellValue(123456, Type.Integer, 'ID')).toBe('123456');
+  });
+
+  it('should keep separators for measure numeric semantics', () => {
+    expect(formatCellValue(1234567, Type.Number, 'Amount')).toBe('1,234,567');
+    expect(formatCellValue(1234567, Type.Integer, 'Count')).toBe('1,234,567');
+  });
+
   it('should format booleans as strings', () => {
     expect(formatCellValue(true)).toBe('true');
     expect(formatCellValue(false)).toBe('false');
