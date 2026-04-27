@@ -2,6 +2,7 @@
 *env
 .venv/
 .env
+.vscode/settings.json
 **/*.ipynb_checkpoints/
 .DS_Store
 build/
