@@ -222,7 +222,7 @@ const initialState: DataFormulatorState = {
     },
 
     config: {
-        formulateTimeoutSeconds: 60,
+        formulateTimeoutSeconds: 180,
         defaultChartWidth: 400,
         defaultChartHeight: 300,
         maxStretchFactor: 2.0,
