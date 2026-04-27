@@ -9,12 +9,17 @@ current user via ``get_identity_id()`` and confined via ``ConfinedDir``.
 
 from __future__ import annotations
 
+import logging
+
 from flask import Blueprint, jsonify, request
 
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import get_user_home
 from data_formulator.errors import AppError, ErrorCode
 from data_formulator.knowledge.store import KnowledgeStore, VALID_CATEGORIES, KNOWLEDGE_LIMITS
+
+logger = logging.getLogger(__name__)
+
 knowledge_bp = Blueprint("knowledge", __name__, url_prefix="/api/knowledge")
 
 
@@ -212,7 +217,12 @@ def distill_experience():
         client=client,
         language_instruction=language_instruction,
     )
-    md_content = agent.run_from_context(experience_context)
+    try:
+        md_content = agent.run_from_context(experience_context)
+    except Exception as exc:
+        logger.warning("Experience distillation LLM call failed: %s", type(exc).__name__)
+        from data_formulator.error_handler import classify_and_wrap_llm_error
+        raise classify_and_wrap_llm_error(exc) from exc
 
     # Save to knowledge/experiences/
     store = KnowledgeStore(user_home)
@@ -242,7 +252,7 @@ def _experience_filename(session_id: str, md_content: str) -> str:
     meta, _ = parse_front_matter(md_content)
     title = meta.get("title", "")
     if title:
-        slug = title.strip().replace(" ", "-").lower()[:50]
+        slug = title.strip().replace(" ", "-").lower()[:80]
         try:
             name = safe_data_filename(f"{slug}.md")
         except ValueError:

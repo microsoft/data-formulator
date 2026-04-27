@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     isLeafDerivedTable,
     buildExperienceContext,
+    buildDistillModelConfig,
 } from '../../../../src/views/SaveExperienceButton';
 import type { DictTable } from '../../../../src/components/ComponentType';
 
@@ -193,5 +194,45 @@ describe('buildExperienceContext', () => {
         expect(ctx!.execution_attempts).toHaveLength(2);
         expect(ctx!.execution_attempts![0].status).toBe('error');
         expect(ctx!.execution_attempts![1].status).toBe('ok');
+    });
+});
+
+describe('buildDistillModelConfig', () => {
+    it('preserves global model identity so the backend can resolve server credentials', () => {
+        const config = buildDistillModelConfig({
+            id: 'global-openai-gpt-4o',
+            endpoint: 'openai',
+            model: 'gpt-4o',
+            api_base: 'https://proxy.example.com/v1',
+            api_version: '2025-04-01-preview',
+            is_global: true,
+        });
+
+        expect(config).toMatchObject({
+            id: 'global-openai-gpt-4o',
+            endpoint: 'openai',
+            model: 'gpt-4o',
+            api_base: 'https://proxy.example.com/v1',
+            api_version: '2025-04-01-preview',
+            is_global: true,
+        });
+    });
+
+    it('preserves user model api_base for custom endpoints', () => {
+        const config = buildDistillModelConfig({
+            id: 'custom-model',
+            endpoint: 'openai',
+            model: 'qwen',
+            api_key: 'test-key',
+            api_base: 'https://dashscope.example.com/compatible-mode/v1',
+        });
+
+        expect(config).toMatchObject({
+            id: 'custom-model',
+            endpoint: 'openai',
+            model: 'qwen',
+            api_key: 'test-key',
+            api_base: 'https://dashscope.example.com/compatible-mode/v1',
+        });
     });
 });

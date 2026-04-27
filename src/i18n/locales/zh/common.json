@@ -757,8 +757,8 @@
     "markdownEditor": "Markdown 编辑器",
     "description": "描述",
     "descriptionPlaceholder": "规则的简短描述（最多 {{max}} 字符）",
-    "alwaysApply": "始终应用",
-    "alwaysApplyHint": "启用后，此规则会始终注入到 Agent 提示词中",
+    "alwaysApply": "始终加载到 AI",
+    "alwaysApplyHint": "启用后，无论什么场景，此规则都会自动注入到每次 AI Agent 的提示词中",
     "charCount": "{{current}} / {{max}}",
     "charCountExceeded": "超出 {{max}} 字符限制（{{current}} / {{max}}）"
   }

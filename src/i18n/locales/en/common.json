@@ -768,8 +768,8 @@
     "markdownEditor": "Markdown Editor",
     "description": "Description",
     "descriptionPlaceholder": "Short summary of this rule (max {{max}} chars)",
-    "alwaysApply": "Always apply",
-    "alwaysApplyHint": "When enabled, this rule is always injected into the agent prompt",
+    "alwaysApply": "Always loaded into AI",
+    "alwaysApplyHint": "When enabled, this rule is always injected into every AI agent prompt, regardless of context",
     "charCount": "{{current}} / {{max}}",
     "charCountExceeded": "Exceeds {{max}} character limit ({{current}} / {{max}})"
   }

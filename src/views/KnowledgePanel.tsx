@@ -31,6 +31,7 @@ import {
     FormControlLabel,
     Switch,
     InputLabel,
+    Autocomplete,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -45,7 +46,7 @@ import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import Editor from 'react-simple-code-editor';
 
 import { useKnowledgeStore } from '../app/useKnowledgeStore';
-import type { KnowledgeCategory } from '../api/knowledgeApi';
+import { deleteKnowledge, type KnowledgeCategory } from '../api/knowledgeApi';
 import type { KnowledgeItem } from '../api/knowledgeApi';
 import { borderColor, radius } from '../app/tokens';
 
@@ -99,6 +100,7 @@ export const KnowledgePanel: React.FC = () => {
     const [editorOpen, setEditorOpen] = useState(false);
     const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create');
     const [editorCategory, setEditorCategory] = useState<KnowledgeCategory>('rules');
+    const [editorSubDir, setEditorSubDir] = useState('');
     const [editorPath, setEditorPath] = useState('');
     const [editorContent, setEditorContent] = useState('');
     const [editorOriginalPath, setEditorOriginalPath] = useState('');
@@ -108,6 +110,17 @@ export const KnowledgePanel: React.FC = () => {
     // Rules-specific editor fields
     const [editorDescription, setEditorDescription] = useState('');
     const [editorAlwaysApply, setEditorAlwaysApply] = useState(true);
+
+    const existingSubDirs = useMemo(() => {
+        const catState = store.stateMap[editorCategory];
+        if (!catState?.items) return [];
+        const dirs = new Set<string>();
+        for (const item of catState.items) {
+            const slash = item.path.indexOf('/');
+            if (slash > 0) dirs.add(item.path.slice(0, slash));
+        }
+        return [...dirs].sort();
+    }, [editorCategory, store.stateMap]);
 
     // Delete confirmation
     const [deleteTarget, setDeleteTarget] = useState<{ category: KnowledgeCategory; path: string; title: string } | null>(null);
@@ -159,6 +172,7 @@ export const KnowledgePanel: React.FC = () => {
     const openCreateDialog = useCallback((category: KnowledgeCategory) => {
         setEditorMode('create');
         setEditorCategory(category);
+        setEditorSubDir('');
         setEditorPath('');
         setEditorContent('');
         setEditorOriginalPath('');
@@ -170,7 +184,14 @@ export const KnowledgePanel: React.FC = () => {
     const openEditDialog = useCallback(async (category: KnowledgeCategory, item: KnowledgeItem) => {
         setEditorMode('edit');
         setEditorCategory(category);
-        setEditorPath(item.path);
+        const slash = item.path.indexOf('/');
+        if (slash > 0) {
+            setEditorSubDir(item.path.slice(0, slash));
+            setEditorPath(item.path.slice(slash + 1));
+        } else {
+            setEditorSubDir('');
+            setEditorPath(item.path);
+        }
         setEditorOriginalPath(item.path);
         setEditorContent('');
         setEditorDescription(item.description ?? '');
@@ -203,14 +224,19 @@ export const KnowledgePanel: React.FC = () => {
         if (!editorPath.trim() || !editorContent.trim()) return;
         setEditorSaving(true);
 
-        const path = editorPath.endsWith('.md') ? editorPath : `${editorPath}.md`;
+        const fileName = editorPath.endsWith('.md') ? editorPath : `${editorPath}.md`;
+        const subDir = (editorCategory !== 'rules') ? editorSubDir.trim() : '';
+        const path = subDir ? `${subDir}/${fileName}` : fileName;
         const contentToSave = patchRuleFrontMatter(editorContent);
         const success = await store.save(editorCategory, path, contentToSave);
+        if (success && editorMode === 'edit' && editorOriginalPath && path !== editorOriginalPath) {
+            try { await deleteKnowledge(editorCategory, editorOriginalPath); } catch { /* best-effort */ }
+        }
         setEditorSaving(false);
         if (success) {
             setEditorOpen(false);
         }
-    }, [editorPath, editorContent, editorCategory, store, patchRuleFrontMatter]);
+    }, [editorPath, editorSubDir, editorMode, editorOriginalPath, editorContent, editorCategory, store, patchRuleFrontMatter]);
 
     const handleDelete = useCallback(async () => {
         if (!deleteTarget) return;
@@ -483,17 +509,12 @@ export const KnowledgePanel: React.FC = () => {
                 fullWidth
                 sx={{ '& .MuiDialog-paper': { maxHeight: '90vh' } }}
             >
-                <DialogTitle sx={{ fontSize: 15, pb: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
                     {editorMode === 'create' ? t('knowledge.createTitle') : t('knowledge.editTitle')}
-                    {editorMode === 'edit' && editorOriginalPath && (
-                        <Typography variant="caption" color="text.secondary">
-                            {editorCategory}/{editorOriginalPath}
-                        </Typography>
-                    )}
                 </DialogTitle>
                 <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: '8px !important' }}>
-                    {editorMode === 'create' && (
-                        <Box sx={{ display: 'flex', gap: 1.5 }}>
+                    <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                        {editorMode === 'create' && (
                             <FormControl size="small" sx={{ minWidth: 120 }}>
                                 <InputLabel sx={{ fontSize: 12 }}>{t('knowledge.category')}</InputLabel>
                                 <Select
@@ -507,17 +528,36 @@ export const KnowledgePanel: React.FC = () => {
                                     <MenuItem value="experiences" sx={{ fontSize: 12 }}>{t('knowledge.experiences')}</MenuItem>
                                 </Select>
                             </FormControl>
-                            <TextField
+                        )}
+                        {(editorCategory === 'skills' || editorCategory === 'experiences') && (
+                            <Autocomplete
+                                freeSolo
                                 size="small"
-                                label={t('knowledge.fileName')}
-                                placeholder={t('knowledge.fileNamePlaceholder')}
-                                value={editorPath}
-                                onChange={(e) => setEditorPath(e.target.value)}
-                                sx={{ flex: 1, '& .MuiInputBase-input': { fontSize: 12 } }}
-                                slotProps={{ inputLabel: { sx: { fontSize: 12 } } }}
+                                options={existingSubDirs}
+                                value={editorSubDir}
+                                onInputChange={(_e, val) => setEditorSubDir(val)}
+                                sx={{ minWidth: 160 }}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label={t('knowledge.subDirectory')}
+                                        placeholder={t('knowledge.subDirectoryPlaceholder')}
+                                        slotProps={{ inputLabel: { sx: { fontSize: 12 } } }}
+                                        sx={{ '& .MuiInputBase-input': { fontSize: 12 } }}
+                                    />
+                                )}
                             />
-                        </Box>
-                    )}
+                        )}
+                        <TextField
+                            size="small"
+                            label={t('knowledge.fileName')}
+                            placeholder={t('knowledge.fileNamePlaceholder')}
+                            value={editorPath}
+                            onChange={(e) => setEditorPath(e.target.value)}
+                            sx={{ flex: 1, minWidth: 150, '& .MuiInputBase-input': { fontSize: 12 } }}
+                            slotProps={{ inputLabel: { sx: { fontSize: 12 } } }}
+                        />
+                    </Box>
 
                     {editorCategory === 'rules' && !editorLoading && (
                         <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
@@ -622,7 +662,7 @@ export const KnowledgePanel: React.FC = () => {
                         disabled={
                             editorSaving
                             || !editorContent.trim()
-                            || (editorMode === 'create' && !editorPath.trim())
+                            || !editorPath.trim()
                             || (editorCategory === 'rules' && editorDescription.length > store.limits.rule_description_max)
                             || editorContent.trim().length > (store.limits[editorCategory as keyof typeof store.limits] as number ?? Infinity)
                         }

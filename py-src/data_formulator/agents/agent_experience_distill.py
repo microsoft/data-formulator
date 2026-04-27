@@ -33,11 +33,17 @@ successful data analysis session, distill a reusable experience document.
 
 The experience document must include:
 
-1. **Title**: a short, descriptive title (one line)
+1. **Title**: a descriptive title following the pattern \
+"[Data domain / source table name]: [Analysis technique or goal] — [Key outcome]". \
+The title must be specific enough that a reader can understand what data was \
+analyzed, what method was applied, and what was discovered, without reading \
+the body. Aim for 15–40 words.
 2. **Scenario**: when is this experience applicable?
 3. **Method**: the concrete analysis steps or techniques used
 4. **Key findings**: important discoveries or caveats
-5. **Tags**: keywords for future search (as a YAML list)
+5. **Tags**: keywords for future search (as a YAML list). Include the data \
+domain, source table names, chart type, key pandas/vega operations, and \
+outcome keywords so that future semantic search can match this experience.
 
 Output the result as a Markdown file with YAML front matter, like this:
 
@@ -73,6 +79,10 @@ Rules:
 - Tags should be broad enough to match future queries.
 - Do NOT include raw data, private identifiers, API keys, or sensitive information.
 - Output ONLY the Markdown document, nothing else.
+- The `title` value, all section headings (Scenario / Method / Key Findings), \
+all section body text, and `tags` MUST be written in the user's language \
+(see [LANGUAGE INSTRUCTION] below). Only YAML front-matter keys and the \
+literal values of `source`, `source_context`, `created`, `updated` stay in English.
 
 {language_instruction}
 """
@@ -85,11 +95,17 @@ experience document.
 
 The experience document must include:
 
-1. **Title**: a short, descriptive title (one line)
+1. **Title**: a descriptive title following the pattern \
+"[Data domain / source table name]: [Analysis technique or goal] — [Key outcome]". \
+The title must be specific enough that a reader can understand what data was \
+analyzed, what method was applied, and what was discovered, without reading \
+the body. Aim for 15–40 words.
 2. **Scenario**: when is this experience applicable?
 3. **Method**: the concrete analysis steps or techniques used
 4. **Key findings**: important discoveries or caveats
-5. **Tags**: keywords for future search (as a YAML list)
+5. **Tags**: keywords for future search (as a YAML list). Include the data \
+domain, source table names, chart type, key pandas/vega operations, and \
+outcome keywords so that future semantic search can match this experience.
 
 Output the result as a Markdown file with YAML front matter, like this:
 
@@ -125,6 +141,10 @@ Rules:
 - Tags should be broad enough to match future queries.
 - Do NOT include raw data, private identifiers, API keys, or sensitive information.
 - Output ONLY the Markdown document, nothing else.
+- The `title` value, all section headings (Scenario / Method / Key Findings), \
+all section body text, and `tags` MUST be written in the user's language \
+(see [LANGUAGE INSTRUCTION] below). Only YAML front-matter keys and the \
+literal values of `source`, `source_session`, `created`, `updated` stay in English.
 
 {language_instruction}
 """
@@ -404,6 +424,9 @@ class ExperienceDistillAgent:
 
         result = context.get("result_summary", {})
         if isinstance(result, dict):
+            source_tables = result.get("source_tables") or []
+            if source_tables:
+                parts.append(f"- Source tables: {source_tables}")
             parts.append(
                 f"- Final result: fields={result.get('output_fields', [])}, "
                 f"rows={result.get('output_rows')}, "

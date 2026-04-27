@@ -171,6 +171,7 @@ export async function distillExperience(
     experienceContext: ExperienceContext,
     model: Record<string, any>,
     categoryHint?: string,
+    signal?: AbortSignal,
 ): Promise<DistillExperienceResult> {
     const resp = await fetchWithIdentity('/api/knowledge/distill-experience', {
         method: 'POST',
@@ -180,6 +181,7 @@ export async function distillExperience(
             model,
             category_hint: categoryHint,
         }),
+        signal,
     });
     const body = await resp.json();
     if (body.status === 'error') {

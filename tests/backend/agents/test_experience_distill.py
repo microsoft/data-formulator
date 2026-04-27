@@ -84,6 +84,7 @@ SAMPLE_EXPERIENCE_CONTEXT = {
     ],
     "result_summary": {
         "display_instruction": "Revenue by region",
+        "source_tables": ["sales", "regions"],
         "output_fields": ["region", "revenue"],
         "output_rows": 4,
         "chart_type": "bar",
@@ -144,6 +145,8 @@ class TestExtractContextSummary:
         assert "groupby" in summary
         assert "Failed code summary" in summary
         assert "Repair code summary" in summary
+        assert "Source tables" in summary
+        assert "sales" in summary and "regions" in summary
 
     def test_empty_context_returns_marker(self):
         summary = ExperienceDistillAgent._extract_context_summary({})
@@ -246,6 +249,44 @@ class TestRunWithMockedLLM:
         meta, _ = parse_front_matter(result)
         assert meta["source"] == "agent_summarized"
         assert meta["source_context"] == "table-123"
+
+    def test_language_instruction_injected_into_system_prompt(self):
+        client = self._mock_client()
+        zh_instruction = "[LANGUAGE INSTRUCTION]\nWrite in Simplified Chinese."
+        agent = ExperienceDistillAgent(client=client, language_instruction=zh_instruction)
+
+        captured_messages = []
+
+        def fake_call_llm(messages):
+            captured_messages.extend(messages)
+            return MOCK_CONTEXT_RESPONSE
+
+        with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
+            agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+
+        system_content = captured_messages[0]["content"]
+        assert "[LANGUAGE INSTRUCTION]" in system_content
+        assert "Simplified Chinese" in system_content
+        assert "title" in system_content and "user's language" in system_content
+
+    def test_language_instruction_injected_into_log_prompt(self):
+        client = self._mock_client()
+        zh_instruction = "[LANGUAGE INSTRUCTION]\nWrite in Simplified Chinese."
+        agent = ExperienceDistillAgent(client=client, language_instruction=zh_instruction)
+
+        captured_messages = []
+
+        def fake_call_llm(messages):
+            captured_messages.extend(messages)
+            return MOCK_LLM_RESPONSE
+
+        with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
+            agent.run(SAMPLE_LOG_LINES, "Show sales by region", session_id="sess-test")
+
+        system_content = captured_messages[0]["content"]
+        assert "[LANGUAGE INSTRUCTION]" in system_content
+        assert "Simplified Chinese" in system_content
+        assert "title" in system_content and "user's language" in system_content
 
 
 # ── _experience_filename ──────────────────────────────────────────────────

@@ -8,7 +8,7 @@
  * Placed on result cards after successful DataAgent analyses.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import {
@@ -23,7 +23,7 @@ import {
 } from '@mui/material';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
-import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, type ModelConfig } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { distillExperience, type ExperienceContext } from '../api/knowledgeApi';
 import type { DictTable } from '../components/ComponentType';
@@ -116,6 +116,18 @@ export function buildExperienceContext(
     };
 }
 
+export function buildDistillModelConfig(selectedModel: ModelConfig): Record<string, any> {
+    return {
+        id: selectedModel.id,
+        endpoint: selectedModel.endpoint,
+        api_key: selectedModel.api_key,
+        api_base: selectedModel.api_base,
+        api_version: selectedModel.api_version,
+        model: selectedModel.model,
+        is_global: selectedModel.is_global,
+    };
+}
+
 export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
     table,
     tables,
@@ -130,20 +142,29 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
     const [dialogOpen, setDialogOpen] = useState(false);
     const [categoryHint, setCategoryHint] = useState('');
     const [distilling, setDistilling] = useState(false);
+    const abortRef = useRef<AbortController | null>(null);
 
     const selectedModel = allModels.find(m => m.id === selectedModelId);
+
+    const handleCancel = useCallback(() => {
+        if (abortRef.current) {
+            abortRef.current.abort();
+            abortRef.current = null;
+        }
+        setDistilling(false);
+        setDialogOpen(false);
+    }, []);
 
     const handleDistill = useCallback(async () => {
         const experienceContext = buildExperienceContext(table, tables);
         if (!experienceContext || !selectedModel) return;
+
+        const controller = new AbortController();
+        abortRef.current = controller;
         setDistilling(true);
         try {
-            const modelConfig = {
-                endpoint: selectedModel.endpoint,
-                api_key: selectedModel.api_key,
-                model: selectedModel.model,
-            };
-            await distillExperience(experienceContext, modelConfig, categoryHint.trim() || undefined);
+            const modelConfig = buildDistillModelConfig(selectedModel);
+            await distillExperience(experienceContext, modelConfig, categoryHint.trim() || undefined, controller.signal);
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'success',
@@ -152,7 +173,8 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
             }));
             window.dispatchEvent(new CustomEvent('knowledge-changed', { detail: { category: 'experiences' } }));
             setDialogOpen(false);
-        } catch {
+        } catch (e: unknown) {
+            if (e instanceof DOMException && e.name === 'AbortError') return;
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
@@ -160,6 +182,7 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
                 value: t('knowledge.failedToDistill'),
             }));
         } finally {
+            abortRef.current = null;
             setDistilling(false);
         }
     }, [table, tables, selectedModel, categoryHint, dispatch, t]);
@@ -186,7 +209,7 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
 
             <Dialog
                 open={dialogOpen}
-                onClose={() => { if (!distilling) setDialogOpen(false); }}
+                onClose={handleCancel}
                 maxWidth="xs"
                 fullWidth
             >
@@ -215,8 +238,7 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
                 </DialogContent>
                 <DialogActions>
                     <Button
-                        onClick={() => setDialogOpen(false)}
-                        disabled={distilling}
+                        onClick={handleCancel}
                         sx={{ textTransform: 'none', fontSize: 12 }}
                     >
                         {t('app.cancel')}
