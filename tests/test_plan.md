@@ -130,8 +130,9 @@ case insensitivity, glob edge cases, pattern loading.
 #### 4c. `scratch_serve` path safety ✅ covered
 
 Tests in `tests/backend/security/test_scratch_serve.py`:
-path traversal → 403, absolute path → 403, normal file → 200, nonexistent → 404,
-verified `send_file` used instead of `send_from_directory` (FINDING-1 from issue-002).
+path traversal and missing files return HTTP 200 with `status: "error"` per the
+unified error protocol, normal file → 200, and `send_file` usage is verified
+instead of `send_from_directory` (FINDING-1 from issue-002).
 
 #### 4d. Agent tool path confinement ✅ covered
 
@@ -148,8 +149,9 @@ multi-user mode disables `local_folder` connector, local mode keeps it,
 #### 4f. Workspace path safety ✅ covered
 
 Tests in `tests/backend/data/test_workspace_path_safety.py`:
-`Workspace.__init__` rejects traversal identities, paths are strictly under root,
-uses `is_relative_to` instead of `str.startswith` (FINDING-4 from issue-002).
+`Workspace.__init__` sanitizes traversal-shaped identities, rejects root-equivalent
+workspace paths, and delegates legacy root checks to `ConfinedDir` instead of
+using `str.startswith` (FINDING-4 from issue-002).
 
 #### 4g. Startup safety checks ✅ covered
 

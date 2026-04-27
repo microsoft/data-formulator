@@ -24,7 +24,7 @@ Security audit test files (added per `design-docs/issues/002-arbitrary-file-read
 | `security/test_scratch_serve.py` | #1 | `scratch_serve` path traversal, `send_file` usage |
 | `agents/test_tool_path_safety.py` | #2 | Agent tool path confinement (`_tool_read_file`, etc.) |
 | `security/test_local_folder_deployment.py` | #3 | `local_folder` disabled in multi-user mode |
-| `data/test_workspace_path_safety.py` | #4 | `Workspace.__init__` uses `is_relative_to` |
+| `data/test_workspace_path_safety.py` | #4 | `Workspace.__init__` sanitizes identity paths and uses `ConfinedDir` |
 | `security/test_startup_safety.py` | #5 | Startup warning for unsafe sandbox config |
 
 Docker-gated database tests live separately in `tests/database-dockers/` and are not auto-discovered by pytest.

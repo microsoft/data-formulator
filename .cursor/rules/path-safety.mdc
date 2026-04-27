@@ -46,12 +46,12 @@ if str(target).startswith(str(root)): ...
 
 ```python
 # ✅ GOOD — Agent 工具
-workspace_jail = ConfinedDir(self.workspace._path, mkdir=False)
-scratch_jail = ConfinedDir(self.workspace._path / "scratch")
+workspace_jail = self.workspace.confined_root
+scratch_jail = self.workspace.confined_scratch
 target = workspace_jail.resolve(rel_path)
 
 # ✅ GOOD — 文件下载 route
-scratch_jail = ConfinedDir(scratch_dir, mkdir=False)
+scratch_jail = workspace.confined_scratch
 target = scratch_jail.resolve(filename)
 return send_file(target)
 

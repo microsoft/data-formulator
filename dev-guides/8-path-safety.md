@@ -1,7 +1,7 @@
 # 服务端路径安全开发规范
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-27
+> **最后更新**: 2026-04-28
 > **适用范围**: 后端 route、Agent 工具、Workspace 文件访问、Data Loader、Sandbox、插件文件 I/O、知识库、推理日志
 
 ## 1. 核心原则
@@ -159,7 +159,7 @@ def _enforce_deployment_restrictions():
 - `WORKSPACE_BACKEND != "local"` 时必须使用 `SANDBOX=docker` 或 `SANDBOX=local`。
 - 新部署模板应默认选择隔离沙箱。
 
-应用启动时已有安全检查：多用户模式搭配 `not_a_sandbox` 会输出 critical 日志。
+应用启动时已有安全检查：多用户模式搭配 `not_a_sandbox` 会输出 critical 日志。当前实现是告警而非硬阻断，因此生产部署还必须在部署配置或启动脚本层强制 `SANDBOX=local` / `SANDBOX=docker`。
 
 ## 8. 测试要求
 
