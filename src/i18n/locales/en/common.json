@@ -510,7 +510,8 @@
     "switchToReport": "Switch to Report mode",
     "switchToExplore": "Switch to Explore mode",
     "modeExplore": "Explore",
-    "modeReport": "Report"
+    "modeReport": "Report",
+    "autoContinueCountdown": "{{seconds}}s"
   },
   "dataGrid": {
     "loading": "Loading ...",
@@ -719,7 +720,12 @@
     "noMatchingRows": "No rows match the current filters",
     "knowledge": "Knowledge",
     "metadataPartial": "Partial metadata",
-    "metadataUnavailable": "Metadata unavailable"
+    "metadataUnavailable": "Metadata unavailable",
+    "editAnnotation": "Edit annotation",
+    "editAnnotationTitle": "Edit table annotation",
+    "annotationDescription": "Description",
+    "annotationNotes": "Notes",
+    "saving": "Saving..."
   },
   "knowledge": {
     "title": "Knowledge Base",

@@ -51,6 +51,7 @@ import { renderFieldHighlights } from './InteractionEntryCard';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
+import { shouldAutoFocusGeneratedChart, shouldAutoSelectClarification } from '../app/agentInteractionPolicy';
 
 const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void }> = ({ message, elapsed, theme, onCancel }) => {
     const { t } = useTranslation();
@@ -134,12 +135,29 @@ export const SimpleChartRecBox: FC = function () {
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const agentAbortRef = useRef<AbortController | null>(null);
     const ideasAbortRef = useRef<AbortController | null>(null);
+    const userChartFocusLockedRef = useRef(false);
+    const lastAutoFocusedChartIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         if (!isLoadingIdeas) { setIdeaElapsed(0); setIdeaPhase(''); return; }
         const timer = setInterval(() => setIdeaElapsed(e => e + 1), 1000);
         return () => clearInterval(timer);
     }, [isLoadingIdeas]);
+
+    useEffect(() => {
+        if (!isChatFormulating) {
+            userChartFocusLockedRef.current = false;
+            lastAutoFocusedChartIdRef.current = null;
+            return;
+        }
+        if (focusedId?.type === 'chart') {
+            if (focusedId.chartId !== lastAutoFocusedChartIdRef.current) {
+                userChartFocusLockedRef.current = true;
+            }
+        } else {
+            userChartFocusLockedRef.current = false;
+        }
+    }, [focusedId, isChatFormulating]);
 
     // pendingClarification is now derived from Redux (stored on the agentAction itself)
     // so it persists when user clicks away and comes back.
@@ -319,22 +337,26 @@ export const SimpleChartRecBox: FC = function () {
         return lastEntry?.options || [];
     }, [pendingClarification, draftNodes]);
 
-    // Clarification auto-select countdown (60s)
-    const CLARIFY_TIMEOUT_MS = 60_000;
+    // Auto-select is only for bounded "continue exploring" prompts.
+    const CLARIFY_AUTO_SELECT_TIMEOUT_MS = 60_000;
     const [clarifyDeadline, setClarifyDeadline] = useState<number | null>(null);
     const [clarifyProgress, setClarifyProgress] = useState(1); // 1 → 0
+    const [clarifySecondsRemaining, setClarifySecondsRemaining] = useState<number | null>(null);
     const clarifyTimerRef = useRef<number | null>(null);
+    const shouldAutoResolveClarification = pendingClarification?.autoSelect === true;
 
     // Start / reset deadline whenever a new clarification appears
     useEffect(() => {
-        if (pendingClarification && clarificationOptions.length > 0 && !isChatFormulating) {
-            setClarifyDeadline(Date.now() + CLARIFY_TIMEOUT_MS);
+        if (shouldAutoResolveClarification && clarificationOptions.length > 0 && !isChatFormulating) {
+            setClarifyDeadline(Date.now() + CLARIFY_AUTO_SELECT_TIMEOUT_MS);
             setClarifyProgress(1);
+            setClarifySecondsRemaining(CLARIFY_AUTO_SELECT_TIMEOUT_MS / 1000);
         } else {
             setClarifyDeadline(null);
             setClarifyProgress(1);
+            setClarifySecondsRemaining(null);
         }
-    }, [pendingClarification?.draftId, clarificationOptions.length, isChatFormulating]);
+    }, [shouldAutoResolveClarification, pendingClarification?.draftId, clarificationOptions.length, isChatFormulating]);
 
     // Animate the countdown bar & auto-select on expiry
     useEffect(() => {
@@ -347,6 +369,7 @@ export const SimpleChartRecBox: FC = function () {
             if (remaining <= 0) {
                 setClarifyProgress(0);
                 setClarifyDeadline(null);
+                setClarifySecondsRemaining(null);
                 // Auto-select first option
                 if (clarificationOptions.length > 0 && pendingClarification) {
                     const first = clarificationOptions[0];
@@ -355,12 +378,13 @@ export const SimpleChartRecBox: FC = function () {
                 }
                 return;
             }
-            setClarifyProgress(remaining / CLARIFY_TIMEOUT_MS);
+            setClarifyProgress(remaining / CLARIFY_AUTO_SELECT_TIMEOUT_MS);
+            setClarifySecondsRemaining(Math.ceil(remaining / 1000));
             clarifyTimerRef.current = requestAnimationFrame(tick);
         };
         clarifyTimerRef.current = requestAnimationFrame(tick);
         return () => { if (clarifyTimerRef.current) cancelAnimationFrame(clarifyTimerRef.current); };
-    }, [clarifyDeadline]);
+    }, [clarifyDeadline, clarificationOptions, pendingClarification]);
 
     const getIdeasFromAgent = useCallback(async () => {
         if (!currentTable || isLoadingIdeas) return;
@@ -670,7 +694,7 @@ export const SimpleChartRecBox: FC = function () {
             primary_tables: primaryTableNames,
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
             model: activeModel,
-            max_iterations: 5,
+            max_iterations: 10,
         };
 
         if (isResume) {
@@ -947,7 +971,10 @@ export const SimpleChartRecBox: FC = function () {
                 let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
                 createdCharts.push(newChart);
                 dispatch(dfActions.addChart(newChart));
-                dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
+                if (shouldAutoFocusGeneratedChart(userChartFocusLockedRef.current)) {
+                    lastAutoFocusedChartIdRef.current = newChart.id;
+                    dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
+                }
 
                 if (conceptsToAdd.length > 0) {
                     dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -997,6 +1024,7 @@ export const SimpleChartRecBox: FC = function () {
                         trajectory: result.trajectory || [],
                         completedStepCount: result.completed_step_count || 0,
                         lastCreatedTableId,
+                        autoSelect: shouldAutoSelectClarification(result.message_code),
                     }}));
                     if (currentDraftParentTableId) {
                         dispatch(dfActions.setFocused({ type: 'table', tableId: currentDraftParentTableId }));
@@ -1413,25 +1441,27 @@ export const SimpleChartRecBox: FC = function () {
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '3px', pl: '20px' }}>
                             {clarificationOptions.map((option, idx) => (
                                 <Box key={idx} sx={{ position: 'relative', width: 'fit-content', overflow: 'hidden', borderRadius: '6px' }}>
-                                    {/* Countdown fill behind the first (default) option */}
-                                    {idx === 0 && clarifyDeadline != null && (
+                                    {idx === 0 && shouldAutoResolveClarification && clarifyDeadline != null && (
                                         <Box sx={{
                                             position: 'absolute',
-                                            inset: 0,
+                                            left: 0,
+                                            right: 0,
+                                            bottom: 0,
+                                            height: 3,
                                             transformOrigin: 'left center',
                                             transform: `scaleX(${clarifyProgress})`,
-                                            background: `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.12)}, ${alpha(theme.palette.primary.light, 0.06)})`,
-                                            borderRadius: 'inherit',
+                                            background: `linear-gradient(90deg, ${theme.palette.primary.dark}, ${theme.palette.primary.main})`,
+                                            borderRadius: '0 0 6px 6px',
                                             pointerEvents: 'none',
-                                            zIndex: 0,
+                                            zIndex: 2,
                                         }} />
                                     )}
-                                    <Typography component="div" variant="body2" onClick={() => { setClarifyDeadline(null); setChatPrompt(option); exploreFromChat(option, pendingClarification); }} sx={{
+                                    <Typography component="div" variant="body2" onClick={() => { setClarifyDeadline(null); setClarifySecondsRemaining(null); setChatPrompt(option); exploreFromChat(option, pendingClarification); }} sx={{
                                         position: 'relative', zIndex: 1,
-                                        px: '8px', py: '4px',
+                                        px: '8px', py: '4px', pb: idx === 0 && shouldAutoResolveClarification ? '6px' : '4px',
                                         borderRadius: '6px',
                                         border: `1px solid ${idx === 0 ? alpha(theme.palette.primary.main, 0.25) : alpha(theme.palette.text.primary, 0.12)}`,
-                                        backgroundColor: idx === 0 ? 'transparent' : 'white',
+                                        backgroundColor: 'white',
                                         cursor: 'pointer',
                                         fontSize: 11,
                                         width: 'fit-content',
@@ -1444,6 +1474,11 @@ export const SimpleChartRecBox: FC = function () {
                                         },
                                     }}>
                                         {renderFieldHighlights(option, alpha(theme.palette.primary.main, 0.08))}
+                                        {idx === 0 && shouldAutoResolveClarification && clarifySecondsRemaining != null && (
+                                            <Typography component="span" sx={{ ml: 0.75, fontSize: 10, color: theme.palette.primary.dark, fontWeight: 600 }}>
+                                                {t('chartRec.autoContinueCountdown', { seconds: clarifySecondsRemaining })}
+                                            </Typography>
+                                        )}
                                     </Typography>
                                 </Box>
                             ))}

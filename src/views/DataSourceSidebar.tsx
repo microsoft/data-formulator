@@ -28,6 +28,10 @@ import {
     DialogActions,
     TextField,
     InputAdornment,
+    Menu,
+    MenuItem,
+    ListItemIcon,
+    ListItemText,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -48,6 +52,7 @@ import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 
@@ -60,7 +65,7 @@ import { KnowledgePanel } from './KnowledgePanel';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
+import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
@@ -71,30 +76,21 @@ import type { ConnectorInstance, DictTable } from '../components/ComponentType';
 import { ConnectorTablePreview } from '../components/ConnectorTablePreview';
 import type { ColumnMeta } from '../components/ConnectorTablePreview';
 import {
-    appendChildrenAtPath,
     CatalogTreeNode,
     collectNamespaceIds,
-    findNodeByPath,
-    mergeChildrenAtPath,
 } from '../components/CatalogTree';
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
+import { ResizeHandle } from '../components/ResizeHandle';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const RAIL_WIDTH = 40;
-const PANEL_WIDTH = 260;
-const CATALOG_PAGE_SIZE = 200;
+const DEFAULT_PANEL_WIDTH = 260;
+const MIN_PANEL_WIDTH = 200;
+const MAX_PANEL_WIDTH = 450;
 
-function makeLoadMoreNode(parentPath: string[], nextOffset: number): CatalogTreeNode {
-    return {
-        name: 'Load more…',
-        node_type: 'load_more',
-        path: [...parentPath, `__load_more_${nextOffset}`],
-        metadata: { parentPath, nextOffset },
-    };
-}
-
+const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface CatalogCache {
@@ -132,11 +128,33 @@ export const DataSourceSidebar: React.FC<{
 
     const [initialTab, setInitialTab] = useState<'sources' | 'sessions' | 'knowledge'>('sources');
 
+    // Resizable panel width, persisted in localStorage
+    const [panelWidth, setPanelWidth] = useState<number>(() => {
+        const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+        return saved ? Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, Number(saved))) : DEFAULT_PANEL_WIDTH;
+    });
+
+    const handleResize = useCallback((delta: number) => {
+        setPanelWidth(prev => {
+            const next = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, prev + delta));
+            return next;
+        });
+    }, []);
+
+    const handleResizeEnd = useCallback(() => {
+        setPanelWidth(prev => {
+            localStorage.setItem(SIDEBAR_WIDTH_KEY, String(prev));
+            return prev;
+        });
+    }, []);
+
+    const totalWidth = isOpen ? RAIL_WIDTH + panelWidth : RAIL_WIDTH;
+
     return (
         <Box sx={{
-            width: isOpen ? PANEL_WIDTH : RAIL_WIDTH,
-            minWidth: isOpen ? PANEL_WIDTH : RAIL_WIDTH,
-            transition: 'width 0.2s ease, min-width 0.2s ease',
+            width: totalWidth,
+            minWidth: totalWidth,
+            transition: isOpen ? undefined : 'width 0.2s ease, min-width 0.2s ease',
             display: 'flex',
             flexDirection: 'row',
             borderRight: `1px solid ${borderColor.view}`,
@@ -183,7 +201,7 @@ export const DataSourceSidebar: React.FC<{
                 </Tooltip>
             </Box>
 
-            {/* Panel — rendered when open, slides in/out */}
+            {/* Panel — rendered when open */}
             {isOpen && (
                 <DataSourceSidebarPanel
                     onOpenUploadDialog={onOpenUploadDialog}
@@ -193,33 +211,13 @@ export const DataSourceSidebar: React.FC<{
                 />
             )}
 
-            {/* Edge collapse handle — sits on the border line */}
+            {/* Resize handle — draggable right edge */}
             {isOpen && (
-                <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="right">
-                    <Box
-                        onClick={toggle}
-                        sx={{
-                            position: 'absolute',
-                            right: -6,
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            width: 12,
-                            height: 28,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            borderRadius: 4,
-                            border: `1px solid ${borderColor.view}`,
-                            bgcolor: 'background.paper',
-                            zIndex: 1,
-                            color: 'text.disabled',
-                            '&:hover': { color: 'text.secondary' },
-                        }}
-                    >
-                        <ChevronLeftIcon sx={{ fontSize: 12 }} />
-                    </Box>
-                </Tooltip>
+                <ResizeHandle
+                    direction="horizontal"
+                    onResize={handleResize}
+                    onResizeEnd={handleResizeEnd}
+                />
             )}
         </Box>
     );
@@ -280,11 +278,25 @@ const DataSourceSidebarPanel: React.FC<{
     const [deleting, setDeleting] = useState(false);
     const [disconnectingConnectorId, setDisconnectingConnectorId] = useState<string | null>(null);
 
+    // Add-connector menu anchor
+    const [addConnectorAnchor, setAddConnectorAnchor] = useState<HTMLElement | null>(null);
+
     // Catalog search: input changes are local; Enter/search button hits backend.
     const [catalogSearch, setCatalogSearch] = useState('');
     const [serverSearchActive, setServerSearchActive] = useState(false);
     const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
+
+    // Annotation editing
+    const [annotationEdit, setAnnotationEdit] = useState<{
+        connectorId: string;
+        tableKey: string;
+        tableName: string;
+        description: string;
+        notes: string;
+        version: number | null;
+    } | null>(null);
+    const [annotationSaving, setAnnotationSaving] = useState(false);
 
     // Sidebar tab: 'sources' or 'sessions' or 'knowledge'
     const [activeTab, setActiveTab] = useState<'sources' | 'sessions' | 'knowledge'>(initialTab);
@@ -421,60 +433,79 @@ const DataSourceSidebarPanel: React.FC<{
     // Guard against concurrent fetches for the same connector
     const fetchingRef = useRef<Set<string>>(new Set());
 
-    const fetchCatalogNodes = useCallback(async (
-        connectorId: string,
-        path: string[] = [],
-        options: { append?: boolean; offset?: number; filter?: string } = {},
-    ) => {
-        const offset = options.offset ?? 0;
-        const filter = options.filter?.trim() || null;
-        const fetchKey = `${connectorId}:${path.join('/')}:${offset}:${filter || ''}`;
-        if (fetchingRef.current.has(fetchKey)) return;
-        fetchingRef.current.add(fetchKey);
-
+    const syncCatalogMetadata = useCallback(async (connectorId: string) => {
+        const syncKey = `sync:${connectorId}`;
+        if (fetchingRef.current.has(syncKey)) return;
+        fetchingRef.current.add(syncKey);
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: true }));
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CATALOG, {
+            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connectorId, path, filter, limit: CATALOG_PAGE_SIZE, offset }),
+                body: JSON.stringify({ connector_id: connectorId }),
             });
             const data = await resp.json();
-            if (data.nodes) {
-                const nodes: CatalogTreeNode[] = (data.nodes as CatalogTreeNode[]).map(n => ({
-                    ...n,
-                    children: n.node_type === 'namespace' ? undefined : n.children,
+            if (data.status === 'ok' && data.tree) {
+                setCatalogCache(prev => ({
+                    ...prev,
+                    [connectorId]: { tree: data.tree as CatalogTreeNode[], fetchedAt: Date.now() },
                 }));
-                const pageNodes = data.has_more && data.next_offset != null
-                    ? [...nodes, makeLoadMoreNode(path, Number(data.next_offset))]
-                    : nodes;
-                setCatalogCache(prev => {
-                    const existing = prev[connectorId]?.tree || [];
-                    const merged = path.length === 0
-                        ? (options.append ? [...existing.filter(n => n.node_type !== 'load_more'), ...pageNodes] : pageNodes)
-                        : (options.append
-                            ? appendChildrenAtPath(existing, path, pageNodes)
-                            : mergeChildrenAtPath(existing, path, pageNodes));
-                    return {
-                        ...prev,
-                        [connectorId]: { tree: merged, fetchedAt: Date.now() },
-                    };
-                });
-                if (path.length === 0) {
-                    setTreeExpanded(prev => ({
-                        ...prev,
-                        [connectorId]: [],
+                setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
+                if (data.message_code === 'catalog.syncPartial') {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'data-source-sidebar',
+                        value: translateBackend(data.message, data.message_code, data.message_params),
                     }));
                 }
             } else if (data.status === 'error') {
-                setConnectors(prev => prev.map(c =>
-                    c.id === connectorId ? { ...c, connected: false } : c
-                ));
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'data-source-sidebar',
+                    value: data.error?.message || t('dataLoading.syncPartial'),
+                }));
             }
-        } catch { /* catalog fetch is best-effort; connector remains usable */ }
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'warning',
+                component: 'data-source-sidebar',
+                value: t('dataLoading.syncPartial'),
+            }));
+        }
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
-        fetchingRef.current.delete(fetchKey);
-    }, []);
+        fetchingRef.current.delete(syncKey);
+    }, [dispatch, t]);
+
+    /** Load catalog from backend disk cache (fast). Falls back to live sync on miss. */
+    const loadCachedCatalog = useCallback(async (connectorId: string) => {
+        const cacheKey = `cache:${connectorId}`;
+        if (fetchingRef.current.has(cacheKey)) return;
+        fetchingRef.current.add(cacheKey);
+        setLoadingCatalog(prev => ({ ...prev, [connectorId]: true }));
+        try {
+            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CACHED_CATALOG_TREE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorId }),
+            });
+            const data = await resp.json();
+            if (data.status === 'ok' && data.tree) {
+                setCatalogCache(prev => ({
+                    ...prev,
+                    [connectorId]: { tree: data.tree as CatalogTreeNode[], fetchedAt: Date.now() },
+                }));
+                setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
+                fetchingRef.current.delete(cacheKey);
+                return;
+            }
+        } catch {
+            // cache read failed — fall through to live sync
+        }
+        setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
+        fetchingRef.current.delete(cacheKey);
+        // Cache miss — fall back to live sync
+        syncCatalogMetadata(connectorId);
+    }, [syncCatalogMetadata]);
 
     const clearCatalogSearch = useCallback(() => {
         setCatalogSearch('');
@@ -611,14 +642,13 @@ const DataSourceSidebarPanel: React.FC<{
                 next.delete(connectorId);
             } else {
                 next.add(connectorId);
-                // Fetch root catalog on first expand
                 if (!catalogCacheRef.current[connectorId]) {
-                    fetchCatalogNodes(connectorId);
+                    loadCachedCatalog(connectorId);
                 }
             }
             return next;
         });
-    }, [fetchCatalogNodes]);
+    }, [loadCachedCatalog]);
 
     // ── Preview a table on click ──────────────────────────────────────────
 
@@ -779,6 +809,79 @@ const DataSourceSidebarPanel: React.FC<{
             });
     }, [tableIdentities, dispatch, buildSourceTableRef]);
 
+    // ── Annotation editing ──────────────────────────────────────────────────
+
+    const handleOpenAnnotation = useCallback((connectorId: string, node: CatalogTreeNode) => {
+        const tableKey = node.metadata?.table_key || node.metadata?._source_name || node.name;
+        fetchWithIdentity(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS + `?connector_id=${encodeURIComponent(connectorId)}`, {
+            method: 'GET',
+        })
+            .then(r => r.json())
+            .then(data => {
+                const tables = data.annotations?.tables || {};
+                const existing = tables[tableKey] || {};
+                setAnnotationEdit({
+                    connectorId,
+                    tableKey,
+                    tableName: node.name,
+                    description: existing.description || '',
+                    notes: existing.notes || '',
+                    version: data.annotations?.version ?? null,
+                });
+            })
+            .catch(() => {
+                setAnnotationEdit({
+                    connectorId,
+                    tableKey,
+                    tableName: node.name,
+                    description: '',
+                    notes: '',
+                    version: null,
+                });
+            });
+    }, []);
+
+    const handleSaveAnnotation = useCallback(async () => {
+        if (!annotationEdit) return;
+        setAnnotationSaving(true);
+        try {
+            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    connector_id: annotationEdit.connectorId,
+                    table_key: annotationEdit.tableKey,
+                    expected_version: annotationEdit.version ?? 0,
+                    description: annotationEdit.description,
+                    notes: annotationEdit.notes,
+                }),
+            });
+            const data = await resp.json();
+            if (data.status === 'ok') {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'success',
+                    component: 'data-source-sidebar',
+                    value: translateBackend(data.message ?? t('dataLoading.annotationSaved'), data.message_code),
+                }));
+                setAnnotationEdit(null);
+            } else if (data.error?.code === 'ANNOTATION_CONFLICT') {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'data-source-sidebar',
+                    value: t('dataLoading.annotationConflict'),
+                }));
+            }
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'data-source-sidebar',
+                value: t('dataLoading.annotationConflict'),
+            }));
+        } finally {
+            setAnnotationSaving(false);
+        }
+    }, [annotationEdit, dispatch, t]);
+
     const clearConnectorUiState = useCallback((connectorId: string) => {
         setCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setSearchCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
@@ -927,9 +1030,41 @@ const DataSourceSidebarPanel: React.FC<{
                 <Divider />
 
                 {/* ── Data Connectors section ── */}
-                <Typography sx={{ px: 1.5, pt: 1, pb: 0.25, fontSize: 10, color: 'text.secondary', letterSpacing: 0.3, textTransform: 'uppercase' }}>
-                    {t('sidebar.dataConnectors', { defaultValue: 'Data connectors' })}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pt: 1, pb: 0.25 }}>
+                    <Typography sx={{ flex: 1, fontSize: 10, color: 'text.secondary', letterSpacing: 0.3, textTransform: 'uppercase' }}>
+                        {t('sidebar.dataConnectors', { defaultValue: 'Data connectors' })}
+                    </Typography>
+                    <Tooltip title={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}>
+                        <IconButton
+                            size="small"
+                            onClick={(e) => setAddConnectorAnchor(e.currentTarget)}
+                            sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.primary' } }}
+                        >
+                            <AddIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                    <Menu
+                        anchorEl={addConnectorAnchor}
+                        open={Boolean(addConnectorAnchor)}
+                        onClose={() => setAddConnectorAnchor(null)}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                        slotProps={{ paper: { sx: { minWidth: 180 } } }}
+                    >
+                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.(); }} sx={{ fontSize: 12, py: 0.75 }}>
+                            <ListItemIcon><StorageIcon sx={{ fontSize: 16 }} /></ListItemIcon>
+                            <ListItemText primaryTypographyProps={{ fontSize: 12 }}>
+                                {t('sidebar.addConnector', { defaultValue: 'Add data connector' })}
+                            </ListItemText>
+                        </MenuItem>
+                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.('local-folder'); }} sx={{ fontSize: 12, py: 0.75 }}>
+                            <ListItemIcon><FolderOpenIcon sx={{ fontSize: 16 }} /></ListItemIcon>
+                            <ListItemText primaryTypographyProps={{ fontSize: 12 }}>
+                                {t('sidebar.linkLocalFolder', { defaultValue: 'Link local folder' })}
+                            </ListItemText>
+                        </MenuItem>
+                    </Menu>
+                </Box>
 
                 {/* Search box: typing filters local cache, Enter/button searches backend. */}
                 <Box sx={{ px: 1.5, pt: 0.5, pb: 0.5 }}>
@@ -1061,7 +1196,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                 if (serverSearchActive && searchText) {
                                                     void searchConnectorCatalog(connector, searchText);
                                                 } else {
-                                                    fetchCatalogNodes(connector.id);
+                                                    syncCatalogMetadata(connector.id);
                                                 }
                                             }}
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: isExpanded ? 'visible' : 'hidden' }}
@@ -1128,18 +1263,10 @@ const DataSourceSidebarPanel: React.FC<{
                                                     setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
                                                 }
                                             }}
-                                            onLazyExpand={(node) => {
-                                                fetchCatalogNodes(connector.id, node.path, { filter: catalogSearch });
-                                            }}
                                             onItemClick={(node, e) => {
                                                 if (node.node_type === 'table') {
                                                     handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
                                                 }
-                                            }}
-                                            onLoadMore={(node) => {
-                                                const parentPath = (node.metadata?.parentPath || []) as string[];
-                                                const nextOffset = Number(node.metadata?.nextOffset || 0);
-                                                fetchCatalogNodes(connector.id, parentPath, { append: true, offset: nextOffset, filter: catalogSearch });
                                             }}
                                             onDragStart={(node, event) => {
                                                 const dsId = node.metadata?.dataset_id;
@@ -1159,20 +1286,33 @@ const DataSourceSidebarPanel: React.FC<{
                                                 const pathKey = node.path.join('/');
                                                 const sourceName = node.metadata?._source_name;
                                                 const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
-                                                if (!isLoaded) return null;
                                                 return (
-                                                    <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={(e) => { e.stopPropagation(); handleRefreshTable(connector.id, node, e); }}
-                                                            sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
-                                                        >
-                                                            <RefreshIcon sx={{ fontSize: 13 }} />
-                                                        </IconButton>
-                                                    </Tooltip>
+                                                    <>
+                                                        <Tooltip title={t('sidebar.editAnnotation', { defaultValue: 'Edit annotation' })}>
+                                                            <IconButton
+                                                                size="small"
+                                                                className="catalog-hover-action"
+                                                                onClick={(e) => { e.stopPropagation(); handleOpenAnnotation(connector.id, node); }}
+                                                                sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                                            >
+                                                                <EditOutlinedIcon sx={{ fontSize: 13 }} />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                        {isLoaded && (
+                                                            <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={(e) => { e.stopPropagation(); handleRefreshTable(connector.id, node, e); }}
+                                                                    sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                                                >
+                                                                    <RefreshIcon sx={{ fontSize: 13 }} />
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                        )}
+                                                    </>
                                                 );
                                             }}
-                                            maxHeight={320}
+                                            maxHeight="none"
                                             sx={{ px: 0.5 }}
                                         />
                                     )}
@@ -1188,45 +1328,6 @@ const DataSourceSidebarPanel: React.FC<{
                     );
                 })}
 
-                {/* Actions below connectors */}
-                <Box
-                    onClick={() => onOpenUploadDialog?.()}
-                    sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        px: 1.5,
-                        py: 0.75,
-                        cursor: 'pointer',
-                        color: 'text.secondary',
-                        '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-                        userSelect: 'none',
-                    }}
-                >
-                    <AddIcon sx={{ fontSize: 16, opacity: 0.7 }} />
-                    <Typography noWrap sx={{ fontSize: 12, fontWeight: 500 }}>
-                        {t('sidebar.addConnector', { defaultValue: 'Add data connector' })}
-                    </Typography>
-                </Box>
-                <Box
-                    onClick={() => onOpenUploadDialog?.('local-folder')}
-                    sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        px: 1.5,
-                        py: 0.75,
-                        cursor: 'pointer',
-                        color: 'text.secondary',
-                        '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-                        userSelect: 'none',
-                    }}
-                >
-                    <AddIcon sx={{ fontSize: 16, opacity: 0.7 }} />
-                    <Typography noWrap sx={{ fontSize: 12, fontWeight: 500 }}>
-                        {t('sidebar.linkLocalFolder', { defaultValue: 'Link local folder' })}
-                    </Typography>
-                </Box>
             </Box>
             </Box>
             )}
@@ -1439,6 +1540,66 @@ const DataSourceSidebarPanel: React.FC<{
                         {deleting
                             ? t('sidebar.deletingEllipsis', { defaultValue: 'Deleting...' })
                             : t('sidebar.deleteConfirmBtn', { defaultValue: 'Delete' })}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Annotation editing dialog */}
+            <Dialog
+                open={!!annotationEdit}
+                onClose={() => { if (!annotationSaving) setAnnotationEdit(null); }}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
+                    {t('sidebar.editAnnotationTitle', { defaultValue: 'Edit table annotation' })}
+                </DialogTitle>
+                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
+                    <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                        {annotationEdit?.tableName}
+                    </Typography>
+                    <TextField
+                        label={t('sidebar.annotationDescription', { defaultValue: 'Description' })}
+                        value={annotationEdit?.description ?? ''}
+                        onChange={(e) => setAnnotationEdit(prev => prev ? { ...prev, description: e.target.value } : prev)}
+                        size="small"
+                        fullWidth
+                        multiline
+                        minRows={2}
+                        maxRows={4}
+                        InputProps={{ sx: { fontSize: 13 } }}
+                        InputLabelProps={{ sx: { fontSize: 13 } }}
+                    />
+                    <TextField
+                        label={t('sidebar.annotationNotes', { defaultValue: 'Notes' })}
+                        value={annotationEdit?.notes ?? ''}
+                        onChange={(e) => setAnnotationEdit(prev => prev ? { ...prev, notes: e.target.value } : prev)}
+                        size="small"
+                        fullWidth
+                        multiline
+                        minRows={2}
+                        maxRows={6}
+                        InputProps={{ sx: { fontSize: 13 } }}
+                        InputLabelProps={{ sx: { fontSize: 13 } }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setAnnotationEdit(null)}
+                        disabled={annotationSaving}
+                        sx={{ textTransform: 'none', fontSize: 12 }}
+                    >
+                        {t('app.cancel', { defaultValue: 'Cancel' })}
+                    </Button>
+                    <Button
+                        onClick={handleSaveAnnotation}
+                        disabled={annotationSaving}
+                        variant="contained"
+                        sx={{ textTransform: 'none', fontSize: 12 }}
+                    >
+                        {annotationSaving
+                            ? t('sidebar.saving', { defaultValue: 'Saving...' })
+                            : t('common.save', { defaultValue: 'Save' })}
                     </Button>
                 </DialogActions>
             </Dialog>

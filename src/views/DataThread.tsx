@@ -2781,25 +2781,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             direction: 'ltr',
             height: 'calc(100% - 16px)',
             width: panelWidth,
-            '&::-webkit-scrollbar': {
-                width: '8px',
-            },
-            '&::-webkit-scrollbar-thumb': {
-                backgroundColor: 'transparent',
-                borderRadius: '4px',
-                transition: 'background-color 0.2s',
-            },
-            '&:hover::-webkit-scrollbar-thumb': {
-                backgroundColor: 'rgba(0,0,0,0.2)',
-            },
-            '&::-webkit-scrollbar-track': {
-                backgroundColor: 'transparent',
-            },
-            scrollbarWidth: 'thin',
-            scrollbarColor: 'transparent transparent',
-            '&:hover': {
-                scrollbarColor: 'rgba(0,0,0,0.2) transparent',
-            },
         }}>
             <Box sx={{
                 display: 'flex',

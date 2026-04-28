@@ -2,11 +2,27 @@
 
 Stored as JSON files under ``<workspace_root>/catalog_cache/<source_id>.json``.
 Used by agents to search available data without live connections.
+
+File format::
+
+    {
+        "source_id": "superset_prod",
+        "synced_at": "2026-04-28T10:00:00Z",
+        "tables": [
+            {
+                "table_key": "a1b2c3d4-...",
+                "name": "42:monthly_orders",
+                "path": ["Sales Dashboard", "monthly_orders"],
+                "metadata": { ... }
+            }
+        ]
+    }
 """
 
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -35,8 +51,13 @@ def save_catalog(
         cache_dir = _cache_dir(workspace_root)
         cache_dir.mkdir(parents=True, exist_ok=True)
         path = _cache_file(workspace_root, source_id)
+        payload = {
+            "source_id": source_id,
+            "synced_at": datetime.now(timezone.utc).isoformat(),
+            "tables": tables,
+        }
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"source_id": source_id, "tables": tables}, f, ensure_ascii=False, default=str)
+            json.dump(payload, f, ensure_ascii=False, default=str)
         logger.debug("Catalog cache written: %s (%d tables)", path, len(tables))
     except Exception:
         logger.debug("Failed to write catalog cache for %s", source_id, exc_info=True)
@@ -92,9 +113,16 @@ def _search_python(
     all_ids: list[str],
     exclude: set[str],
     limit_per_source: int,
+    annotations_by_source: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Python-based structured field search (original implementation)."""
+    """Python-based structured field search with annotation overlay.
+
+    ``annotations_by_source`` maps ``source_id`` → full annotation data
+    (as returned by ``load_annotations``). User annotation matches carry
+    higher weight than source metadata matches.
+    """
     results: list[dict[str, Any]] = []
+    ann_map = annotations_by_source or {}
 
     for sid in all_ids:
         raw = _load_catalog_raw(workspace_root, sid)
@@ -103,6 +131,7 @@ def _search_python(
 
         original_source_id = raw.get("source_id", sid)
         tables = raw.get("tables", [])
+        ann_tables = (ann_map.get(sid) or {}).get("tables", {})
 
         source_hits: list[dict[str, Any]] = []
         for t in tables:
@@ -112,30 +141,70 @@ def _search_python(
 
             score = 0
             matched_cols: list[str] = []
+            match_reasons: list[str] = []
             meta = t.get("metadata") or {}
+            table_key = t.get("table_key", "")
+            ann = ann_tables.get(table_key, {}) if table_key else {}
 
             if needle in tname.lower():
                 score += 10
-            desc = meta.get("description", "")
-            if desc and needle in desc.lower():
+                match_reasons.append("table_name")
+
+            # Source description
+            src_desc = meta.get("description", "")
+            if src_desc and needle in src_desc.lower():
                 score += 5
+                match_reasons.append("source_description")
+
+            # User annotation description (higher weight)
+            user_desc = ann.get("description", "")
+            if user_desc and needle in user_desc.lower():
+                score += 8
+                match_reasons.append("user_description")
+
+            # User notes
+            user_notes = ann.get("notes", "")
+            if user_notes and needle in user_notes.lower():
+                score += 3
+                match_reasons.append("user_notes")
+
+            # Source columns
             for col in meta.get("columns", []):
                 cname = col.get("name", "")
                 if needle in cname.lower():
                     matched_cols.append(cname)
                     score += 2
+                    if "column_name" not in match_reasons:
+                        match_reasons.append("column_name")
                 cdesc = col.get("description", "")
                 if cdesc and needle in cdesc.lower():
                     matched_cols.append(cname)
                     score += 1
+                    if "source_column_description" not in match_reasons:
+                        match_reasons.append("source_column_description")
+
+            # User column annotations (higher weight)
+            user_cols = ann.get("columns", {})
+            for col_name, col_ann in user_cols.items():
+                col_desc = col_ann.get("description", "") if isinstance(col_ann, dict) else ""
+                if col_desc and needle in col_desc.lower():
+                    matched_cols.append(col_name)
+                    score += 3
+                    if "user_column_description" not in match_reasons:
+                        match_reasons.append("user_column_description")
+
+            display_desc = user_desc or src_desc
 
             if score > 0:
                 source_hits.append({
                     "source_id": original_source_id,
+                    "table_key": table_key,
                     "name": tname,
-                    "description": desc,
+                    "description": display_desc,
                     "matched_columns": list(dict.fromkeys(matched_cols)),
                     "score": score,
+                    "match_reasons": match_reasons,
+                    "metadata_status": meta.get("source_metadata_status", ""),
                 })
 
         source_hits.sort(key=lambda r: -r["score"])
@@ -222,6 +291,8 @@ def _search_duckdb(
 
             source_hits.sort(key=lambda r: -r["score"])
             results.extend(source_hits[:limit_per_source])
+        except Exception:
+            logger.debug("DuckDB search failed for source %s", sid, exc_info=True)
         finally:
             conn.close()
 
@@ -235,15 +306,21 @@ def search_catalog_cache(
     source_ids: list[str] | None = None,
     limit_per_source: int = 20,
     exclude_tables: set[str] | None = None,
+    annotations_by_source: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Search across cached catalogs for tables matching a keyword.
 
-    Returns a flat list of match dicts:
-    ``{"source_id", "name", "description", "matched_columns", "score"}``.
-    Already-imported tables (in ``exclude_tables``) are excluded.
+    Returns a flat list of match dicts with fields:
+    ``source_id``, ``table_key``, ``name``, ``description``,
+    ``matched_columns``, ``score``, ``match_reasons``, ``metadata_status``.
 
-    Prefers DuckDB SQL search for performance on large caches; falls back
-    to Python structured field search if DuckDB is unavailable or errors.
+    When ``annotations_by_source`` is provided, user annotation fields
+    (description, notes, column descriptions) are also searched with
+    higher weight than source metadata.
+
+    Prefers DuckDB for initial candidate retrieval, then overlays
+    annotations in Python. Falls back to pure Python search if DuckDB
+    is unavailable.
     """
     needle = (query or "").strip().lower()
     if not needle:
@@ -251,6 +328,14 @@ def search_catalog_cache(
 
     exclude = exclude_tables or set()
     all_ids = source_ids or list_cached_sources(workspace_root)
+
+    # Always use Python path when annotations are provided (for overlay).
+    # DuckDB path is used only for cache-only search without annotations.
+    if annotations_by_source:
+        return _search_python(
+            workspace_root, needle, all_ids, exclude, limit_per_source,
+            annotations_by_source=annotations_by_source,
+        )
 
     try:
         return _search_duckdb(workspace_root, needle, all_ids, exclude, limit_per_source)

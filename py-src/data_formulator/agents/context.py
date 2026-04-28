@@ -299,13 +299,25 @@ def handle_search_data_tables(
     # ── Layer 2: disk catalog cache search ───────────────────────────
     if scope in ("connected", "all") and user_home:
         try:
-            from data_formulator.datalake.catalog_cache import search_catalog_cache
+            from data_formulator.datalake.catalog_cache import (
+                search_catalog_cache, list_cached_sources,
+            )
+            from data_formulator.datalake.catalog_annotations import load_annotations
+            from pathlib import Path
+
+            ann_by_source: dict[str, Any] = {}
+            for sid in list_cached_sources(user_home):
+                ann = load_annotations(Path(user_home), sid)
+                if ann:
+                    ann_by_source[sid] = ann
+
             imported_names = {r["name"] for r in results}
             cache_hits = search_catalog_cache(
                 user_home,
                 query,
                 limit_per_source=20,
                 exclude_tables=imported_names,
+                annotations_by_source=ann_by_source or None,
             )
             for hit in cache_hits:
                 results.append({
@@ -334,3 +346,97 @@ def handle_search_data_tables(
 
     text = "\n".join(lines)
     return text[:3000] + "\n..." if len(text) > 3000 else text
+
+
+def handle_read_catalog_metadata(
+    source_id: str,
+    table_key: str,
+    user_home: str | None = None,
+) -> str:
+    """Handle a read_catalog_metadata tool call.
+
+    Reads the cached catalog entry and overlays user annotations to
+    produce a merged metadata view for the LLM.  Returns a text
+    summary safe for LLM consumption (no credentials or internal paths).
+    """
+    if not source_id or not table_key:
+        return "Both source_id and table_key are required."
+
+    if not user_home:
+        return "Cannot read catalog metadata: user home not available."
+
+    from pathlib import Path
+    from data_formulator.datalake.catalog_cache import load_catalog
+    from data_formulator.datalake.catalog_annotations import load_annotations
+    from data_formulator.datalake.catalog_merge import merge_table_metadata
+
+    catalog = load_catalog(Path(user_home), source_id)
+    if not catalog:
+        return f"No cached catalog found for source '{source_id}'."
+
+    target = None
+    for t in catalog:
+        if t.get("table_key") == table_key:
+            target = t
+            break
+
+    if target is None:
+        return f"Table with key '{table_key}' not found in source '{source_id}'."
+
+    annotations = load_annotations(Path(user_home), source_id)
+    ann_entry = (annotations or {}).get("tables", {}).get(table_key)
+    merged = merge_table_metadata(target, ann_entry)
+    meta = merged.get("metadata", {})
+
+    # Build LLM-friendly text output with field whitelist
+    lines = [f"## {merged.get('name', table_key)}"]
+    lines.append(f"Source: {source_id}")
+    lines.append(f"Table key: {table_key}")
+
+    if merged.get("path"):
+        lines.append(f"Path: {' > '.join(merged['path'])}")
+
+    status = meta.get("source_metadata_status", "not_synced")
+    lines.append(f"Metadata status: {status}")
+
+    for field in ("schema", "database", "row_count"):
+        val = meta.get(field)
+        if val:
+            lines.append(f"{field}: {val}")
+
+    display_desc = meta.get("display_description", "")
+    if display_desc:
+        lines.append(f"\nDescription: {display_desc}")
+
+    src_desc = meta.get("source_description", "")
+    usr_desc = meta.get("user_description", "")
+    if src_desc and usr_desc and src_desc != usr_desc:
+        lines.append(f"Source description: {src_desc}")
+        lines.append(f"User annotation: {usr_desc}")
+
+    notes = meta.get("notes", "")
+    if notes:
+        lines.append(f"Notes: {notes}")
+
+    tags = meta.get("tags")
+    if tags:
+        lines.append(f"Tags: {', '.join(tags)}")
+
+    columns = meta.get("columns", [])
+    if columns:
+        lines.append(f"\nColumns ({len(columns)}):")
+        for col in columns[:50]:
+            cname = col.get("name", "?")
+            ctype = col.get("type", "")
+            cdesc = col.get("display_description", col.get("description", ""))
+            line = f"  - {cname}"
+            if ctype:
+                line += f" ({ctype})"
+            if cdesc:
+                line += f": {cdesc}"
+            lines.append(line)
+        if len(columns) > 50:
+            lines.append(f"  ... and {len(columns) - 50} more columns")
+
+    text = "\n".join(lines)
+    return text[:4000] + "\n..." if len(text) > 4000 else text

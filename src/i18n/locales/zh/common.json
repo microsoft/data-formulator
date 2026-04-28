@@ -516,7 +516,8 @@
     "switchToReport": "切换到报告模式",
     "switchToExplore": "切换到探索模式",
     "modeExplore": "探索",
-    "modeReport": "报告"
+    "modeReport": "报告",
+    "autoContinueCountdown": "{{seconds}} 秒"
   },
   "auth": {
     "loginTitle": "登录 Data Formulator",
@@ -708,7 +709,12 @@
     "noMatchingRows": "没有符合当前筛选条件的数据",
     "knowledge": "知识库",
     "metadataPartial": "元数据不完整",
-    "metadataUnavailable": "元数据不可用"
+    "metadataUnavailable": "元数据不可用",
+    "editAnnotation": "编辑标注",
+    "editAnnotationTitle": "编辑表标注",
+    "annotationDescription": "描述",
+    "annotationNotes": "备注",
+    "saving": "保存中..."
   },
   "knowledge": {
     "title": "知识库",

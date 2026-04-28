@@ -54,6 +54,11 @@
       "successRefreshedWithDerived": "已成功刷新（{{table}}）的数据并更新派生表。",
       "errorRefreshingData": "刷新数据时出错：{{error}}"
     },
+    "catalog": {
+      "syncComplete": "目录同步完成",
+      "syncPartial": "目录同步部分完成 — {{synced}}/{{total}} 张表已同步，{{failed}} 张失败",
+      "annotationSaved": "标注已保存"
+    },
     "agent": {
       "clarifyExhausted": "我已经进行了大量探索，但尚未得出结论。\n\n已完成的步骤：\n{{steps}}\n\n您希望如何继续？",
       "clarifyOptionContinue": "继续探索",

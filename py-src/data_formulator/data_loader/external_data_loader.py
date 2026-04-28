@@ -294,6 +294,10 @@ SOURCE_METADATA_OK = "ok"
 SOURCE_METADATA_PARTIAL = "partial"
 SOURCE_METADATA_UNAVAILABLE = "unavailable"
 
+# Sync-aware status values (set explicitly by sync_catalog_metadata)
+SOURCE_METADATA_SYNCED = "synced"
+SOURCE_METADATA_NOT_SYNCED = "not_synced"
+
 
 def infer_source_metadata_status(metadata: dict[str, Any] | None) -> str:
     """Infer ``source_metadata_status`` from a catalog node's metadata dict.
@@ -897,6 +901,49 @@ class ExternalDataLoader(ABC):
             "tree": self._tables_to_catalog_tree(tables[:max_results]),
             "truncated": truncated,
         }
+
+    def sync_catalog_metadata(
+        self, table_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Full metadata sync for catalog cache.
+
+        Default implementation: returns ``list_tables()`` results as-is.
+        SQL-based loaders (PostgreSQL, MySQL, etc.) already include full
+        column info from ``information_schema`` in ``list_tables()``, so the
+        default is sufficient.
+
+        Override this method only when ``list_tables()`` is intentionally
+        lightweight and per-table detail requires additional API calls
+        (e.g. Superset).
+
+        Each returned table record **must** contain a ``table_key`` field —
+        see :meth:`ensure_table_keys` for the contract.
+        """
+        tables = self.list_tables(table_filter)
+        self.ensure_table_keys(tables)
+        for t in tables:
+            meta = t.get("metadata")
+            if meta and "source_metadata_status" not in meta:
+                meta["source_metadata_status"] = SOURCE_METADATA_SYNCED
+        return tables
+
+    @staticmethod
+    def ensure_table_keys(tables: list[dict[str, Any]]) -> None:
+        """Ensure every table record has a ``table_key`` field.
+
+        If a record lacks ``table_key``, falls back to
+        ``metadata["_source_name"]`` → ``name``.  Warns on records where
+        an explicit key is missing so loader authors notice and fix it.
+        """
+        for t in tables:
+            if t.get("table_key"):
+                continue
+            meta = t.get("metadata") or {}
+            fallback = meta.get("_source_name") or t.get("name", "")
+            if fallback:
+                t["table_key"] = fallback
+            else:
+                logger.warning("Table record missing table_key and name: %s", t)
 
     def test_connection(self) -> bool:
         """Validate the connection is alive.

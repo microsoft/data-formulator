@@ -1,0 +1,23 @@
+---
+description: Enforce step-by-step implementation with design-doc checks, tests, and i18n after each step
+globs:
+alwaysApply: true
+---
+
+# Incremental Development Cadence
+
+Multi-step tasks MUST be implemented **one step at a time**. After each logical unit (function, endpoint, component), complete all cross-cutting concerns before moving on.
+
+## After Each Step
+
+1. **Verify against design doc** — compare with `design-docs/` or issue spec; raise deviations before continuing
+2. **Add tests** — write/update tests for the just-implemented code, run and confirm green
+3. **Add i18n keys** — if user-visible text was introduced, add `en` + `zh` keys immediately
+4. **Update docs** — if a new cross-cutting convention was introduced, update dev-guide/Rule immediately
+
+## Banned Patterns
+
+- ❌ Implementing 3+ functions/endpoints before writing any tests
+- ❌ Sweeping all i18n keys in a final pass after all code is done
+- ❌ Checking design docs only after the entire implementation is complete
+- ❌ Mentioning "tests and i18n still needed" only in the final response

@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -288,7 +288,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
 
 /**
  * Remove a table from Redux state (tables, conceptShelf, charts, draftNodes, focus).
- * Does NOT send any server-side delete requests — the caller decides whether
+ * Does NOT send any server-side delete requests ??the caller decides whether
  * server cleanup is needed.
  */
 let removeTableStateRoutine = (state: DataFormulatorState, tableId: string) => {
@@ -494,7 +494,7 @@ export const fetchAvailableModels = createAsyncThunk(
         };
 
         // Backend checks run in parallel with max_tokens=3 + 10s timeout per
-        // model, so total wall-clock ≈ slowest single model (~10s worst case).
+        // model, so total wall-clock ??slowest single model (~10s worst case).
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 30000)
 
@@ -536,7 +536,7 @@ export const dataFormulatorSlice = createSlice({
             state.chartSynthesisInProgress = [];
             state.chartInsightInProgress = [];
 
-            // Preserve serverConfig — it reflects the actual server state, not user state
+            // Preserve serverConfig ??it reflects the actual server state, not user state
 
             state.dataCleanBlocks = [];
             state.cleanInProgress = false;
@@ -1154,7 +1154,7 @@ export const dataFormulatorSlice = createSlice({
             if (state.tables.some(t => t.id === action.payload.id)) return;
             state.tables = [...state.tables, action.payload];
         },
-        // ── Draft node reducers ──────────────────────────────────
+        // ?? Draft node reducers ??????????????????????????????????
         createDraftNode: (state, action: PayloadAction<{ id: string; displayId: string; parentTableId: string; source: string[]; interaction: InteractionEntry[]; chart?: Chart; actionId?: string }>) => {
             const { id, displayId, parentTableId, source, interaction, chart, actionId } = action.payload;
             const draft: DraftNode = {
@@ -1197,7 +1197,7 @@ export const dataFormulatorSlice = createSlice({
                 draft.derive.status = action.payload.status;
             }
         },
-        updateDraftClarification: (state, action: PayloadAction<{ draftId: string; pendingClarification: { trajectory: any[]; completedStepCount: number; lastCreatedTableId: string | null } | null }>) => {
+        updateDraftClarification: (state, action: PayloadAction<{ draftId: string; pendingClarification: PendingClarification | null }>) => {
             const draft = state.draftNodes.find(d => d.id === action.payload.draftId);
             if (draft?.derive) {
                 draft.derive.pendingClarification = action.payload.pendingClarification;
@@ -1584,7 +1584,7 @@ export const dataFormulatorSlice = createSlice({
     },
 })
 
-// ─── Memoized granular selectors ─────────────────────────────────────────────
+// ??? Memoized granular selectors ?????????????????????????????????????????????
 // These avoid re-renders in components that don't care about row data changes.
 
 /** Returns a stable array of table IDs. Only changes when tables are added/removed/reordered. */
@@ -1607,7 +1607,7 @@ export const selectTableIds = createSelector(
 /**
  * Returns a stable "refresh config" fingerprint for auto-refresh timer management.
  * Only changes when a table's autoRefresh/refreshIntervalSeconds/source.type changes,
- * or when tables are added/removed — NOT when rows are updated.
+ * or when tables are added/removed ??NOT when rows are updated.
  */
 export const selectRefreshConfigs = createSelector(
     [(state: DataFormulatorState) => state.tables],
@@ -1642,7 +1642,7 @@ export const selectRefreshConfigs = createSelector(
 /**
  * Extracts trigger charts from tables. Uses a stable serialization key so the
  * output array only changes when trigger charts are actually added/removed/modified
- * — not when table rows change.
+ * ??not when table rows change.
  */
 const selectTriggerCharts = createSelector(
     [(state: DataFormulatorState) => state.tables],

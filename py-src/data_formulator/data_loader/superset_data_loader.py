@@ -273,6 +273,62 @@ class SupersetLoader(ExternalDataLoader):
         except Exception:
             return False
 
+    # -- sync_catalog_metadata (full metadata sync) -------------------------
+
+    def sync_catalog_metadata(
+        self, table_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Enrich list_tables with per-dataset column details.
+
+        Uses ``/api/v1/dataset/{pk}/column`` (faster than full detail
+        endpoint).  UUID and description already come from ``list_datasets()``
+        default response.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        tables = self.list_tables(table_filter)
+        token = self._ensure_token()
+
+        for t in tables:
+            meta = t.get("metadata") or {}
+            ds_uuid = meta.get("uuid")
+            if ds_uuid:
+                t["table_key"] = ds_uuid
+            else:
+                t.setdefault("table_key", meta.get("_source_name") or t.get("name", ""))
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {}
+            for t in tables:
+                ds_id = (t.get("metadata") or {}).get("dataset_id")
+                if ds_id:
+                    futures[pool.submit(
+                        self._client.get_dataset_columns, token, ds_id,
+                    )] = t
+
+            for future in as_completed(futures, timeout=120):
+                table_entry = futures[future]
+                try:
+                    columns_raw = future.result()
+                    if columns_raw:
+                        columns = [
+                            self._build_column_entry(c) for c in columns_raw
+                        ]
+                        table_entry.setdefault("metadata", {})["columns"] = columns
+                        table_entry["metadata"]["source_metadata_status"] = "synced"
+                    else:
+                        table_entry.setdefault("metadata", {})["source_metadata_status"] = "unavailable"
+                except Exception:
+                    logger.warning(
+                        "Column fetch failed for dataset %s",
+                        (table_entry.get("metadata") or {}).get("dataset_id"),
+                        exc_info=True,
+                    )
+                    table_entry.setdefault("metadata", {})["source_metadata_status"] = "unavailable"
+
+        self.ensure_table_keys(tables)
+        return tables
+
     # -- list_tables (lightweight, for catalog tree building) ----------------
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
@@ -288,12 +344,18 @@ class SupersetLoader(ExternalDataLoader):
         ds_by_id: dict[int, dict] = {ds["id"]: ds for ds in all_datasets}
 
         def _make_lightweight_meta(ds: dict) -> dict:
-            return {
+            meta: dict[str, Any] = {
                 "dataset_id": ds["id"],
                 "row_count": ds.get("row_count"),
                 "schema": ds.get("schema", ""),
                 "database": (ds.get("database") or {}).get("database_name", ""),
             }
+            if ds.get("uuid"):
+                meta["uuid"] = ds["uuid"]
+            desc = (ds.get("description") or "").strip()
+            if desc:
+                meta["description"] = desc
+            return meta
 
         def _make_entry(ds: dict, folder: str, ds_name: str) -> dict:
             return {
@@ -591,21 +653,9 @@ class SupersetLoader(ExternalDataLoader):
         token = self._ensure_token()
         try:
             detail = self._client.get_dataset_detail(token, dataset_id)
-            columns = []
-            for c in (detail.get("columns") or []):
-                entry: dict[str, Any] = {
-                    "name": c.get("column_name", ""),
-                    "type": c.get("type", ""),
-                    "is_dttm": bool(c.get("is_dttm")),
-                }
-                col_desc = (
-                    c.get("verbose_name")
-                    or c.get("description")
-                    or ""
-                ).strip()
-                if col_desc:
-                    entry["description"] = col_desc
-                columns.append(entry)
+            columns = [
+                self._build_column_entry(c) for c in (detail.get("columns") or [])
+            ]
             result: dict[str, Any] = {
                 "dataset_id": dataset_id,
                 "row_count": detail.get("row_count"),
@@ -635,22 +685,9 @@ class SupersetLoader(ExternalDataLoader):
         token = self._ensure_token()
         try:
             detail = self._client.get_dataset_detail(token, dataset_id)
-            columns = []
-            for c in (detail.get("columns") or []):
-                col_type = self._normalize_column_type(c)
-                entry: dict[str, Any] = {
-                    "name": c.get("column_name", ""),
-                    "type": col_type,
-                    "is_dttm": bool(c.get("is_dttm")),
-                }
-                col_desc = (
-                    c.get("verbose_name")
-                    or c.get("description")
-                    or ""
-                ).strip()
-                if col_desc:
-                    entry["description"] = col_desc
-                columns.append(entry)
+            columns = [
+                self._build_column_entry(c) for c in (detail.get("columns") or [])
+            ]
             result: dict[str, Any] = {"columns": columns}
             dataset_desc = (detail.get("description") or "").strip()
             if dataset_desc:
@@ -659,6 +696,29 @@ class SupersetLoader(ExternalDataLoader):
         except Exception as e:
             logger.warning("get_column_types failed for dataset %s: %s", source_table, e)
             return {}
+
+    @classmethod
+    def _build_column_entry(cls, c: dict[str, Any]) -> dict[str, Any]:
+        """Build a standardised column metadata dict from a Superset column record.
+
+        Extracts ``verbose_name``, ``description``, and ``expression``
+        when available.  ``description`` falls back to ``verbose_name``
+        so consumers that only read ``description`` still get useful text.
+        """
+        entry: dict[str, Any] = {
+            "name": c.get("column_name", ""),
+            "type": cls._normalize_column_type(c),
+            "is_dttm": bool(c.get("is_dttm")),
+        }
+        verbose = (c.get("verbose_name") or "").strip()
+        desc = (c.get("description") or "").strip()
+        entry["description"] = verbose or desc or None
+        if verbose:
+            entry["verbose_name"] = verbose
+        expr = (c.get("expression") or "").strip()
+        if expr:
+            entry["expression"] = expr
+        return entry
 
     @staticmethod
     def _normalize_column_type(column: dict[str, Any] | None) -> str:

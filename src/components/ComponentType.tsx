@@ -53,6 +53,13 @@ export interface InteractionEntry {
 
 export type DeriveStatus = 'running' | 'clarifying' | 'completed' | 'error' | 'interrupted';
 
+export interface PendingClarification {
+    trajectory: any[];
+    completedStepCount: number;
+    lastCreatedTableId: string | null;
+    autoSelect?: boolean;
+}
+
 export interface DraftNode {
     kind: 'draft';
     id: string;
@@ -67,11 +74,7 @@ export interface DraftNode {
         codeSignature?: string;
         outputVariable?: string;
         dialog?: any[];
-        pendingClarification?: {
-            trajectory: any[];
-            completedStepCount: number;
-            lastCreatedTableId: string | null;
-        } | null;
+        pendingClarification?: PendingClarification | null;
     };
     actionId?: string;
 }

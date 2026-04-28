@@ -21,6 +21,7 @@ read the relevant documents in `dev-guides/`** to understand existing convention
 | `dev-guides/7-unified-error-handling.md` | Any work on API errors, frontend API calls, streaming error events, or error tests |
 | `dev-guides/8-path-safety.md` | Any work on backend file access, downloads, Workspace paths, Agent tools, DataLoaders, or sandbox config |
 | `dev-guides/10-agent-knowledge-reasoning-log.md` | Any work on Agent knowledge injection, KnowledgeStore, reasoning logs, or experience distillation |
+| `dev-guides/11-catalog-metadata-sync.md` | Any work on catalog sync, catalog_cache, catalog_annotations, metadata merge, Agent catalog tools, or frontend catalog browsing |
 | `.cursor/rules/i18n-no-hardcoded-strings.mdc` | Any work adding or changing user-visible strings in `src/` |
 
 Also check `.cursor/rules/` and `.cursor/skills/` for related coding conventions.

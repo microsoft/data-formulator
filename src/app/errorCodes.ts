@@ -41,6 +41,12 @@ export const ERROR_CODE_I18N_MAP: Record<string, string> = {
     DATA_LOAD_ERROR: 'errors.dataLoadError',
     CONNECTOR_ERROR: 'errors.connectorError',
 
+    // Catalog / annotations
+    CATALOG_SYNC_TIMEOUT: 'errors.catalogSyncTimeout',
+    CATALOG_NOT_FOUND: 'errors.catalogNotFound',
+    ANNOTATION_CONFLICT: 'errors.annotationConflict',
+    ANNOTATION_INVALID_PATCH: 'errors.annotationInvalidPatch',
+
     // Execution
     CODE_EXECUTION_ERROR: 'errors.codeExecutionError',
     AGENT_ERROR: 'errors.agentError',
