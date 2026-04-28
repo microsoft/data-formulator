@@ -76,6 +76,14 @@
 
    当前第二层搜索是 Python 读取 JSON 后做子串匹配。早期 DuckDB `read_json_auto()` / SQL 查询方案未落地，可作为未来性能优化，不再作为当前契约。
 
+6. Agent 远端数据读取与自动导入
+
+   当前 Agent 只能读取已导入 workspace 表的内容；未导入 connected 数据源只能通过 `catalog_cache` 搜索 metadata。后续需要设计受控的远端 preview/read 工具，让 Agent 或人工搜索结果可以读取小样例、schema 和统计信息，并在用户确认后 import 到 workspace。该能力必须包含权限校验、行数上限、超时、审计日志、source filters 和命名/去重策略。
+
+7. 高级搜索引擎
+
+   当前计划只应先实现 DuckDB Grep/Search 底座：统一 searchable fields、字段权重、token/子串匹配、annotation overlay 和结果解释字段。完整全文搜索、fuzzy match、query parser、embedding/semantic search、物化索引等能力应作为后续独立设计。
+
 ## 相关文档
 
 - [14.1-source-metadata-dev-plan.md](./14.1-source-metadata-dev-plan.md)
