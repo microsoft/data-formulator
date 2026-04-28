@@ -27,6 +27,8 @@ export interface ResizeHandleProps {
     onResizeEnd?: () => void;
     /** Total thickness of the hit-target area (default 6) */
     thickness?: number;
+    /** Minimum pixels of movement before resize begins (default 4, prevents accidental drags) */
+    deadZone?: number;
 }
 
 export const ResizeHandle: React.FC<ResizeHandleProps> = ({
@@ -34,28 +36,42 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = ({
     onResize,
     onResizeEnd,
     thickness = 6,
+    deadZone = 4,
 }) => {
     const lastPos = useRef(0);
+    const startPos = useRef(0);
+    const activated = useRef(false);
 
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
         e.preventDefault();
         e.stopPropagation();
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
-        lastPos.current = direction === 'horizontal' ? e.clientX : e.clientY;
+        const pos = direction === 'horizontal' ? e.clientX : e.clientY;
+        startPos.current = pos;
+        lastPos.current = pos;
+        activated.current = false;
     }, [direction]);
 
     const handlePointerMove = useCallback((e: React.PointerEvent) => {
         if (!e.buttons) return;
         const current = direction === 'horizontal' ? e.clientX : e.clientY;
+
+        if (!activated.current) {
+            if (Math.abs(current - startPos.current) < deadZone) return;
+            activated.current = true;
+            lastPos.current = current;
+        }
+
         const delta = current - lastPos.current;
         if (delta !== 0) {
             lastPos.current = current;
             onResize(delta);
         }
-    }, [direction, onResize]);
+    }, [direction, onResize, deadZone]);
 
     const handlePointerUp = useCallback(() => {
-        onResizeEnd?.();
+        if (activated.current) onResizeEnd?.();
+        activated.current = false;
     }, [onResizeEnd]);
 
     const isHorizontal = direction === 'horizontal';

@@ -510,7 +510,8 @@
     "switchToReport": "Switch to Report mode",
     "switchToExplore": "Switch to Explore mode",
     "modeExplore": "Explore",
-    "modeReport": "Report"
+    "modeReport": "Report",
+    "autoContinueCountdown": "{{seconds}}s"
   },
   "dataGrid": {
     "loading": "Loading ...",

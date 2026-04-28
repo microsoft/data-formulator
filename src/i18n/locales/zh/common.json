@@ -516,7 +516,8 @@
     "switchToReport": "切换到报告模式",
     "switchToExplore": "切换到探索模式",
     "modeExplore": "探索",
-    "modeReport": "报告"
+    "modeReport": "报告",
+    "autoContinueCountdown": "{{seconds}} 秒"
   },
   "auth": {
     "loginTitle": "登录 Data Formulator",
