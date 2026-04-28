@@ -76,8 +76,8 @@ export interface VirtualizedCatalogTreeProps {
     onDragStart?: (node: CatalogTreeNode, event: React.DragEvent) => void;
     renderTableActions?: (node: CatalogTreeNode) => React.ReactNode;
     selectedItemId?: string | null;
-    /** Max height when auto-sizing (default 600). */
-    maxHeight?: number;
+    /** Max height when auto-sizing (default 600). Pass "none" for unconstrained. */
+    maxHeight?: number | 'none';
     rowHeight?: number;
     sx?: Record<string, any>;
 }
@@ -252,10 +252,13 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
     onDragStart,
     renderTableActions,
     selectedItemId,
-    maxHeight = 600,
+    maxHeight: maxHeightProp = 600,
     rowHeight = ROW_HEIGHT,
     sx,
 }) => {
+    const unconstrained = maxHeightProp === 'none';
+    const maxHeightNum = unconstrained ? Infinity : maxHeightProp;
+
     const expandedSet = useMemo(() => new Set(expandedIds), [expandedIds]);
     const flatRows = useMemo(() => flattenTree(nodes, expandedSet), [nodes, expandedSet]);
 
@@ -286,12 +289,13 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
     }), [flatRows, loadedMap, handleToggle, onItemClick, onLoadMore, onDragStart, renderTableActions, selectedItemId]);
 
     const totalHeight = flatRows.length * rowHeight;
-    const effectiveHeight = Math.min(totalHeight, maxHeight);
+    const effectiveHeight = unconstrained ? totalHeight : Math.min(totalHeight, maxHeightNum);
 
     // For small trees, render without virtualization for simplicity
     if (flatRows.length < VIRTUALIZE_THRESHOLD) {
+        const boxMaxHeight = unconstrained ? undefined : maxHeightNum;
         return (
-            <Box sx={{ maxHeight, overflowY: totalHeight > maxHeight ? 'auto' : 'visible', ...sx }}>
+            <Box sx={{ maxHeight: boxMaxHeight, overflowY: totalHeight > maxHeightNum ? 'auto' : 'visible', ...sx }}>
                 {flatRows.map((row, index) => (
                     <CatalogRow
                         key={row.node.path.join('/')}

@@ -28,6 +28,10 @@ import {
     DialogActions,
     TextField,
     InputAdornment,
+    Menu,
+    MenuItem,
+    ListItemIcon,
+    ListItemText,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -77,11 +81,16 @@ import {
 } from '../components/CatalogTree';
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
+import { ResizeHandle } from '../components/ResizeHandle';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const RAIL_WIDTH = 40;
-const PANEL_WIDTH = 260;
+const DEFAULT_PANEL_WIDTH = 260;
+const MIN_PANEL_WIDTH = 200;
+const MAX_PANEL_WIDTH = 450;
+
+const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface CatalogCache {
@@ -119,11 +128,33 @@ export const DataSourceSidebar: React.FC<{
 
     const [initialTab, setInitialTab] = useState<'sources' | 'sessions' | 'knowledge'>('sources');
 
+    // Resizable panel width, persisted in localStorage
+    const [panelWidth, setPanelWidth] = useState<number>(() => {
+        const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+        return saved ? Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, Number(saved))) : DEFAULT_PANEL_WIDTH;
+    });
+
+    const handleResize = useCallback((delta: number) => {
+        setPanelWidth(prev => {
+            const next = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, prev + delta));
+            return next;
+        });
+    }, []);
+
+    const handleResizeEnd = useCallback(() => {
+        setPanelWidth(prev => {
+            localStorage.setItem(SIDEBAR_WIDTH_KEY, String(prev));
+            return prev;
+        });
+    }, []);
+
+    const totalWidth = isOpen ? RAIL_WIDTH + panelWidth : RAIL_WIDTH;
+
     return (
         <Box sx={{
-            width: isOpen ? PANEL_WIDTH : RAIL_WIDTH,
-            minWidth: isOpen ? PANEL_WIDTH : RAIL_WIDTH,
-            transition: 'width 0.2s ease, min-width 0.2s ease',
+            width: totalWidth,
+            minWidth: totalWidth,
+            transition: isOpen ? undefined : 'width 0.2s ease, min-width 0.2s ease',
             display: 'flex',
             flexDirection: 'row',
             borderRight: `1px solid ${borderColor.view}`,
@@ -170,7 +201,7 @@ export const DataSourceSidebar: React.FC<{
                 </Tooltip>
             </Box>
 
-            {/* Panel — rendered when open, slides in/out */}
+            {/* Panel — rendered when open */}
             {isOpen && (
                 <DataSourceSidebarPanel
                     onOpenUploadDialog={onOpenUploadDialog}
@@ -180,33 +211,13 @@ export const DataSourceSidebar: React.FC<{
                 />
             )}
 
-            {/* Edge collapse handle — sits on the border line */}
+            {/* Resize handle — draggable right edge */}
             {isOpen && (
-                <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="right">
-                    <Box
-                        onClick={toggle}
-                        sx={{
-                            position: 'absolute',
-                            right: -6,
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            width: 12,
-                            height: 28,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            borderRadius: 4,
-                            border: `1px solid ${borderColor.view}`,
-                            bgcolor: 'background.paper',
-                            zIndex: 1,
-                            color: 'text.disabled',
-                            '&:hover': { color: 'text.secondary' },
-                        }}
-                    >
-                        <ChevronLeftIcon sx={{ fontSize: 12 }} />
-                    </Box>
-                </Tooltip>
+                <ResizeHandle
+                    direction="horizontal"
+                    onResize={handleResize}
+                    onResizeEnd={handleResizeEnd}
+                />
             )}
         </Box>
     );
@@ -266,6 +277,9 @@ const DataSourceSidebarPanel: React.FC<{
     const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [disconnectingConnectorId, setDisconnectingConnectorId] = useState<string | null>(null);
+
+    // Add-connector menu anchor
+    const [addConnectorAnchor, setAddConnectorAnchor] = useState<HTMLElement | null>(null);
 
     // Catalog search: input changes are local; Enter/search button hits backend.
     const [catalogSearch, setCatalogSearch] = useState('');
@@ -1016,9 +1030,41 @@ const DataSourceSidebarPanel: React.FC<{
                 <Divider />
 
                 {/* ── Data Connectors section ── */}
-                <Typography sx={{ px: 1.5, pt: 1, pb: 0.25, fontSize: 10, color: 'text.secondary', letterSpacing: 0.3, textTransform: 'uppercase' }}>
-                    {t('sidebar.dataConnectors', { defaultValue: 'Data connectors' })}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pt: 1, pb: 0.25 }}>
+                    <Typography sx={{ flex: 1, fontSize: 10, color: 'text.secondary', letterSpacing: 0.3, textTransform: 'uppercase' }}>
+                        {t('sidebar.dataConnectors', { defaultValue: 'Data connectors' })}
+                    </Typography>
+                    <Tooltip title={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}>
+                        <IconButton
+                            size="small"
+                            onClick={(e) => setAddConnectorAnchor(e.currentTarget)}
+                            sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.primary' } }}
+                        >
+                            <AddIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                    <Menu
+                        anchorEl={addConnectorAnchor}
+                        open={Boolean(addConnectorAnchor)}
+                        onClose={() => setAddConnectorAnchor(null)}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                        slotProps={{ paper: { sx: { minWidth: 180 } } }}
+                    >
+                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.(); }} sx={{ fontSize: 12, py: 0.75 }}>
+                            <ListItemIcon><StorageIcon sx={{ fontSize: 16 }} /></ListItemIcon>
+                            <ListItemText primaryTypographyProps={{ fontSize: 12 }}>
+                                {t('sidebar.addConnector', { defaultValue: 'Add data connector' })}
+                            </ListItemText>
+                        </MenuItem>
+                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.('local-folder'); }} sx={{ fontSize: 12, py: 0.75 }}>
+                            <ListItemIcon><FolderOpenIcon sx={{ fontSize: 16 }} /></ListItemIcon>
+                            <ListItemText primaryTypographyProps={{ fontSize: 12 }}>
+                                {t('sidebar.linkLocalFolder', { defaultValue: 'Link local folder' })}
+                            </ListItemText>
+                        </MenuItem>
+                    </Menu>
+                </Box>
 
                 {/* Search box: typing filters local cache, Enter/button searches backend. */}
                 <Box sx={{ px: 1.5, pt: 0.5, pb: 0.5 }}>
@@ -1266,7 +1312,7 @@ const DataSourceSidebarPanel: React.FC<{
                                                     </>
                                                 );
                                             }}
-                                            maxHeight={320}
+                                            maxHeight="none"
                                             sx={{ px: 0.5 }}
                                         />
                                     )}
@@ -1282,45 +1328,6 @@ const DataSourceSidebarPanel: React.FC<{
                     );
                 })}
 
-                {/* Actions below connectors */}
-                <Box
-                    onClick={() => onOpenUploadDialog?.()}
-                    sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        px: 1.5,
-                        py: 0.75,
-                        cursor: 'pointer',
-                        color: 'text.secondary',
-                        '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-                        userSelect: 'none',
-                    }}
-                >
-                    <AddIcon sx={{ fontSize: 16, opacity: 0.7 }} />
-                    <Typography noWrap sx={{ fontSize: 12, fontWeight: 500 }}>
-                        {t('sidebar.addConnector', { defaultValue: 'Add data connector' })}
-                    </Typography>
-                </Box>
-                <Box
-                    onClick={() => onOpenUploadDialog?.('local-folder')}
-                    sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        px: 1.5,
-                        py: 0.75,
-                        cursor: 'pointer',
-                        color: 'text.secondary',
-                        '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-                        userSelect: 'none',
-                    }}
-                >
-                    <AddIcon sx={{ fontSize: 16, opacity: 0.7 }} />
-                    <Typography noWrap sx={{ fontSize: 12, fontWeight: 500 }}>
-                        {t('sidebar.linkLocalFolder', { defaultValue: 'Link local folder' })}
-                    </Typography>
-                </Box>
             </Box>
             </Box>
             )}

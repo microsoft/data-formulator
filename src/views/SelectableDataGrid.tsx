@@ -109,11 +109,9 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
     const { t } = useTranslation();
     const theme = useTheme();
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    
-    // Get semantic type from table metadata
-    const table = tables.find(t => t.id === tableId);
-    const semanticType = table?.metadata?.[columnDef.id]?.semanticType;
+    const semanticType = useSelector(
+        (state: DataFormulatorState) => state.tables.find(t => t.id === tableId)?.metadata?.[columnDef.id]?.semanticType,
+    );
     
     // Find the corresponding FieldItem for this column
     // Try to find by name first, then by constructing the ID for original fields
@@ -401,6 +399,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
             sx={{
                 width: '100%',
                 height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
                 position: 'relative',
                 "& .MuiTableCell-root": {
                     fontSize: 12, maxWidth: "120px", py: '2px', cursor: "default",
@@ -428,8 +428,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                     <Typography variant="body2" color="text.secondary">{t('dataGrid.loading')}</Typography>
                 </Box>
             )}
-            <Fade in={!isLoading} timeout={{appear: 300, enter: 300, exit: 2000}}>
-                <Box sx={{ flex: '1 1', display: 'flex', flexDirection: 'column' }}>
+            <Fade in={!isLoading} timeout={{appear: 300, enter: 300, exit: 2000}} style={{ flex: '1 1', minHeight: 0 }}>
+                <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                     <TableVirtuoso
                             style={{ flex: '1 1' }}
                             data={rowsToDisplay}
@@ -538,7 +538,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 </Box>
             </Fade>
             <Paper variant="outlined"
-                sx={{ display: 'flex', flexDirection: 'row',  position: 'absolute', bottom: 6, right: 25 }}>
+                sx={{ display: 'flex', flexDirection: 'row', flexShrink: 0, justifyContent: 'flex-end', mx: 1, mt: 0.5 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
                         {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }

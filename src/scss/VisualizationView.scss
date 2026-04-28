@@ -1,28 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-// Near-invisible scrollbar that appears on hover — reusable class
+// .vis-scroll — scrollbar styling now handled by the global thin scrollbar in App.scss
 .vis-scroll {
-    &::-webkit-scrollbar {
-        width: 6px;
-    }
-    &::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    &::-webkit-scrollbar-thumb {
-        background: transparent;
-        border-radius: 3px;
-    }
-    &:hover::-webkit-scrollbar-thumb {
-        background: rgba(0, 0, 0, 0.15);
-    }
-    &:hover::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 0, 0, 0.3);
-    }
-    scrollbar-color: transparent transparent;
-    &:hover {
-        scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
-    }
     transition: linear 0.1s;
 }
 
