@@ -37,6 +37,8 @@ import {
 } from '../core/semantic-types';
 import { toTypeString, snapToBoundHeuristic } from '../core/field-semantics';
 
+const DEFAULT_QUANTITATIVE_AXIS_FORMAT = ',.12~g';
+
 // ---------------------------------------------------------------------------
 // Public API: instantiateSpec
 // ---------------------------------------------------------------------------
@@ -125,6 +127,9 @@ export function vlApplyLayoutToSpec(
 
     // --- Apply field-context semantic decisions (format, domain, ticks, etc.) ---
     vlApplyFieldContext(vgObj, channelSemantics, collectEncodingTargets, context);
+
+    // --- Apply safe default formatting to quantitative axes ---
+    vlApplyDefaultQuantitativeAxisFormat(collectEncodingTargets);
 
     // --- Apply temporal formatting ---
     // For positional temporal axes (x/y), do NOT set axis.format — VL's
@@ -960,22 +965,28 @@ function vlApplyFieldContext(
     }
 }
 
+function vlApplyDefaultQuantitativeAxisFormat(
+    collectEncodingTargets: (ch: string) => any[],
+): void {
+    for (const ch of ['x', 'y'] as const) {
+        for (const enc of collectEncodingTargets(ch)) {
+            if (!enc || enc.type !== 'quantitative' || enc.bin || enc.axis === null) continue;
+            if (enc.axis?.format || enc.axis?.labelExpr) continue;
+
+            if (!enc.axis) enc.axis = {};
+            enc.axis.format = DEFAULT_QUANTITATIVE_AXIS_FORMAT;
+        }
+    }
+}
+
 /**
  * Apply tooltip configuration to a VL spec.
  *
- * Sets a global `numberFormat` with thousand-separator grouping so that
- * tooltips (and any axis/legend labels without an explicit format) display
- * numbers like "1,234,567" instead of "1234567".
- *
- * d3's `","` format uses ~12 significant digits with comma grouping,
- * which covers all practical numeric ranges without losing precision.
- * Fields that already have explicit `axis.format` / `legend.format`
- * (set by vlApplyFieldContext) are unaffected.
+ * Keep tooltip activation separate from axis/legend number formatting. Global
+ * numberFormat also affects axes and can force small tick values into scientific
+ * notation, so axis defaults are applied explicitly in vlApplyLayoutToSpec.
  */
 export function vlApplyTooltips(vgObj: any): void {
     if (!vgObj.config) vgObj.config = {};
     vgObj.config.mark = { ...vgObj.config.mark, tooltip: true };
-    if (!vgObj.config.numberFormat) {
-        vgObj.config.numberFormat = ',';
-    }
 }

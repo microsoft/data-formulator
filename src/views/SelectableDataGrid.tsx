@@ -264,7 +264,23 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
     );
 };
 
-export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ 
+// Stable TableVirtuoso sub-components — defined once outside the render cycle
+// so react-virtuoso never sees new component references on re-render.
+const VirtuosoScroller = React.forwardRef<HTMLDivElement>((props, ref) => (
+    <TableContainer {...props} ref={ref} />
+));
+const VirtuosoTableHead = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>((props, ref) => (
+    <TableHead {...props} ref={ref} className='table-header-container' style={{ ...props.style, display: 'table-header-group' }} />
+));
+const VirtuosoTableRow = (props: any) => {
+    const index = props['data-index'];
+    return <TableRow {...props} style={{...props.style, backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
+};
+const VirtuosoTableBody = React.forwardRef<HTMLTableSectionElement>((props, ref) => (
+    <TableBody {...props} ref={ref} />
+));
+
+export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(({ 
     tableId, rows, tableName, columnDefs, rowCount, virtual }) => {
 
     const { t } = useTranslation();
@@ -292,11 +308,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
         }
     }, [rows, order, orderBy])
 
-    const TableComponents = {
-        Scroller: React.forwardRef<HTMLDivElement>((props, ref) => (
-            <TableContainer {...props} ref={ref} />
-        )),
-        Table: ({ children, style, ...rest }: any) => (
+    // Only the Table component depends on columnDefs (for colgroup); memoize it
+    // so react-virtuoso keeps a stable reference when columns haven't changed.
+    const columnIds = columnDefs.map(c => c.id).join(',');
+    const VirtuosoTable = React.useMemo(() => {
+        const Comp = ({ children, style, ...rest }: any) => (
             <Table {...rest} style={style} sx={{ tableLayout: 'fixed', width: '100%' }}>
                 <colgroup>
                     {columnDefs.map(col => (
@@ -305,18 +321,17 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 </colgroup>
                 {children}
             </Table>
-        ),
-        TableHead: React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>((props, ref) => (
-            <TableHead {...props} ref={ref} className='table-header-container' style={{ ...props.style, display: 'table-header-group' }} />
-        )),
-        TableRow: (props: any) => {
-            const index = props['data-index'];
-            return <TableRow {...props} style={{...props.style, backgroundColor: index % 2 == 0 ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.02)"}}/>
-        },
-        TableBody: React.forwardRef<HTMLTableSectionElement>((props, ref) => (
-            <TableBody {...props} ref={ref} />
-        )),
-    }
+        );
+        return Comp;
+    }, [columnIds]);
+
+    const tableComponents = React.useMemo(() => ({
+        Scroller: VirtuosoScroller,
+        Table: VirtuosoTable,
+        TableHead: VirtuosoTableHead,
+        TableRow: VirtuosoTableRow,
+        TableBody: VirtuosoTableBody,
+    }), [VirtuosoTable]);
 
     const handleDownload = async (format: 'csv' | 'tsv') => {
         if (isDownloading) return;
@@ -399,8 +414,6 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
             sx={{
                 width: '100%',
                 height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
                 position: 'relative',
                 "& .MuiTableCell-root": {
                     fontSize: 12, maxWidth: "120px", py: '2px', cursor: "default",
@@ -428,12 +441,12 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                     <Typography variant="body2" color="text.secondary">{t('dataGrid.loading')}</Typography>
                 </Box>
             )}
-            <Fade in={!isLoading} timeout={{appear: 300, enter: 300, exit: 2000}} style={{ flex: '1 1', minHeight: 0 }}>
-                <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Fade in={!isLoading} timeout={{appear: 300, enter: 300, exit: 2000}}>
+                <Box sx={{ flex: '1 1', display: 'flex', flexDirection: 'column' }}>
                     <TableVirtuoso
-                            style={{ flex: '1 1' }}
+                            style={{ flex: '1 1', paddingBottom: 32 }}
                             data={rowsToDisplay}
-                            components={TableComponents}
+                            components={tableComponents}
                             fixedHeaderContent={() => {
                         return (
                             <TableRow key='header-fixed' style={{ paddingRight: 0, marginRight: '17px', height: '24px'}}>
@@ -538,7 +551,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                 </Box>
             </Fade>
             <Paper variant="outlined"
-                sx={{ display: 'flex', flexDirection: 'row', flexShrink: 0, justifyContent: 'flex-end', mx: 1, mt: 0.5 }}>
+                sx={{ display: 'flex', flexDirection: 'row', position: 'absolute', bottom: 4, right: 20, zIndex: 5 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
                         {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }
@@ -582,4 +595,4 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
             </Paper>
         </Box >
     );
-}
+});

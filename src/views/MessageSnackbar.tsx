@@ -12,7 +12,6 @@ import InfoIcon from '@mui/icons-material/Info';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import WarningIcon from '@mui/icons-material/Warning';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useTranslation } from 'react-i18next';
 
@@ -205,7 +204,7 @@ export const MessageSnackbar = React.memo(function MessageSnackbar() {
                     onClick={() => setOpenMessages(true)}
                 >
                     {buttonSeverity === "error" ? <ErrorOutlineIcon sx={{fontSize: 20}}/> :
-                     buttonSeverity === "warning" ? <WarningIcon sx={{fontSize: 20}}/> :
+                     buttonSeverity === "warning" ? <ErrorOutlineIcon sx={{fontSize: 20}}/> :
                      buttonSeverity === "success" ? <CheckCircleIcon sx={{fontSize: 20}}/> :
                      <InfoIcon sx={{fontSize: 20}}/>}
                 </IconButton>
