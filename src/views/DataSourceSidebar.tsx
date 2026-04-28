@@ -61,7 +61,7 @@ import { KnowledgePanel } from './KnowledgePanel';
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
+import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
@@ -437,6 +437,13 @@ const DataSourceSidebarPanel: React.FC<{
                     [connectorId]: { tree: data.tree as CatalogTreeNode[], fetchedAt: Date.now() },
                 }));
                 setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
+                if (data.message_code === 'catalog.syncPartial') {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'data-source-sidebar',
+                        value: translateBackend(data.message, data.message_code, data.message_params),
+                    }));
+                }
             } else if (data.status === 'error') {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'warning',
@@ -840,7 +847,7 @@ const DataSourceSidebarPanel: React.FC<{
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'success',
                     component: 'data-source-sidebar',
-                    value: t('dataLoading.annotationSaved'),
+                    value: translateBackend(data.message ?? t('dataLoading.annotationSaved'), data.message_code),
                 }));
                 setAnnotationEdit(null);
             } else if (data.error?.code === 'ANNOTATION_CONFLICT') {

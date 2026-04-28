@@ -136,6 +136,109 @@ class TestSyncCatalogMetadataEndpoint:
         finally:
             DATA_CONNECTORS.pop("test_pg", None)
 
+    def test_partial_sync_returns_message_code(self, app, tmp_path):
+        """sync_summary with failures → message_code = catalog.syncPartial."""
+        connector = DataConnector.from_loader(
+            _StubLoader, source_id="test_pg2", display_name="Test PG2",
+        )
+        DATA_CONNECTORS["test_pg2"] = connector
+        user_home = tmp_path / "users" / "test_user"
+
+        try:
+            with patch.object(DataConnector, "_get_identity", return_value="test_user"), \
+                 patch.object(DataConnector, "_get_vault", return_value=None), \
+                 patch("data_formulator.datalake.workspace.get_user_home", return_value=user_home):
+                client = app.test_client()
+                client.post("/api/connectors/connect", json={
+                    "connector_id": "test_pg2",
+                    "params": {"host": "localhost"},
+                    "persist": False,
+                })
+                resp = client.post("/api/connectors/sync-catalog-metadata", json={
+                    "connector_id": "test_pg2",
+                })
+
+            data = resp.get_json()
+            assert data["status"] == "ok"
+            assert data["message_code"] == "catalog.syncPartial"
+            assert "message" in data
+            assert data["message_params"]["failed"] == 1
+            assert data["message_params"]["total"] == 2
+        finally:
+            DATA_CONNECTORS.pop("test_pg2", None)
+
+    def test_full_sync_returns_complete_message_code(self, app, tmp_path):
+        """All tables synced → message_code = catalog.syncComplete."""
+
+        class _AllSyncedLoader(_StubLoader):
+            def sync_catalog_metadata(self, table_filter=None):
+                return [
+                    {
+                        "name": "t1", "table_key": "k1",
+                        "metadata": {"source_metadata_status": "synced"},
+                    },
+                ]
+
+        connector = DataConnector.from_loader(
+            _AllSyncedLoader, source_id="test_full", display_name="Full",
+        )
+        DATA_CONNECTORS["test_full"] = connector
+        user_home = tmp_path / "users" / "test_user"
+
+        try:
+            with patch.object(DataConnector, "_get_identity", return_value="test_user"), \
+                 patch.object(DataConnector, "_get_vault", return_value=None), \
+                 patch("data_formulator.datalake.workspace.get_user_home", return_value=user_home):
+                client = app.test_client()
+                client.post("/api/connectors/connect", json={
+                    "connector_id": "test_full",
+                    "params": {"host": "localhost"},
+                    "persist": False,
+                })
+                resp = client.post("/api/connectors/sync-catalog-metadata", json={
+                    "connector_id": "test_full",
+                })
+
+            data = resp.get_json()
+            assert data["status"] == "ok"
+            assert data["message_code"] == "catalog.syncComplete"
+        finally:
+            DATA_CONNECTORS.pop("test_full", None)
+
+    def test_timeout_returns_catalog_sync_timeout(self, app, tmp_path):
+        """TimeoutError during sync → CATALOG_SYNC_TIMEOUT error."""
+
+        class _TimeoutLoader(_StubLoader):
+            def sync_catalog_metadata(self, table_filter=None):
+                raise TimeoutError("sync timed out")
+
+        connector = DataConnector.from_loader(
+            _TimeoutLoader, source_id="test_to", display_name="Timeout",
+        )
+        DATA_CONNECTORS["test_to"] = connector
+        user_home = tmp_path / "users" / "test_user"
+
+        try:
+            with patch.object(DataConnector, "_get_identity", return_value="test_user"), \
+                 patch.object(DataConnector, "_get_vault", return_value=None), \
+                 patch("data_formulator.datalake.workspace.get_user_home", return_value=user_home):
+                client = app.test_client()
+                client.post("/api/connectors/connect", json={
+                    "connector_id": "test_to",
+                    "params": {"host": "localhost"},
+                    "persist": False,
+                })
+                resp = client.post("/api/connectors/sync-catalog-metadata", json={
+                    "connector_id": "test_to",
+                })
+
+            data = resp.get_json()
+            assert resp.status_code == 200
+            assert data["status"] == "error"
+            assert data["error"]["code"] == "CATALOG_SYNC_TIMEOUT"
+        finally:
+            DATA_CONNECTORS.pop("test_to", None)
+
     def test_missing_connector_returns_error(self, app):
         client = app.test_client()
         resp = client.post("/api/connectors/sync-catalog-metadata", json={

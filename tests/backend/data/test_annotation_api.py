@@ -96,6 +96,8 @@ class TestPatchAnnotations:
         data = resp.get_json()
         assert data["status"] == "ok"
         assert data["version"] == 1
+        assert data["message_code"] == "catalog.annotationSaved"
+        assert "message" in data
 
     def test_version_conflict(self, connected_app):
         client, _ = connected_app

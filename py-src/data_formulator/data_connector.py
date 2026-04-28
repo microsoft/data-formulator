@@ -1373,7 +1373,15 @@ def connector_sync_catalog_metadata():
         loader = source._require_loader()
         name_filter = data.get("filter")
 
-        flat_tables = loader.sync_catalog_metadata(table_filter=name_filter)
+        try:
+            flat_tables = loader.sync_catalog_metadata(table_filter=name_filter)
+        except TimeoutError:
+            raise AppError(
+                ErrorCode.CATALOG_SYNC_TIMEOUT,
+                "Catalog metadata sync timed out",
+                retry=True,
+            )
+
         tree = loader._tables_to_catalog_tree(flat_tables)
 
         # Compute sync summary from per-table source_metadata_status
@@ -1401,13 +1409,30 @@ def connector_sync_catalog_metadata():
                 exc_info=True,
             )
 
+        is_partial = summary["failed"] > 0 or summary["partial"] > 0
+        if is_partial:
+            msg = "Catalog sync partially completed — some metadata may be missing"
+            msg_code = "catalog.syncPartial"
+        else:
+            msg = "Catalog sync complete"
+            msg_code = "catalog.syncComplete"
+
         return jsonify({
             "status": "ok",
+            "message": msg,
+            "message_code": msg_code,
+            "message_params": {
+                "synced": summary["synced"],
+                "failed": summary["failed"],
+                "total": summary["total"],
+            },
             "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
             "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
             "tree": tree,
             "sync_summary": summary,
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1475,7 +1500,12 @@ def connector_patch_annotations():
             user_home, source._source_id, table_key,
             patch_fields, expected_version=expected_version,
         )
-        return jsonify({"status": "ok", "version": result["version"]})
+        return jsonify({
+            "status": "ok",
+            "version": result["version"],
+            "message": "Annotation saved",
+            "message_code": "catalog.annotationSaved",
+        })
     except AnnotationConflict as e:
         raise AppError(
             ErrorCode.ANNOTATION_CONFLICT,
