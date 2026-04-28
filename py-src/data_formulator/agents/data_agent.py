@@ -40,6 +40,7 @@ from data_formulator.agents.context import (
     build_lightweight_table_context,
     build_peripheral_thread_context,
     handle_inspect_source_data,
+    handle_read_catalog_metadata,
     handle_search_data_tables,
 )
 from data_formulator.agents.client_utils import Client
@@ -158,6 +159,32 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "read_catalog_metadata",
+            "description": (
+                "Read detailed metadata for a specific table from a connected "
+                "data source's cached catalog. Shows columns, types, descriptions "
+                "(both source and user-annotated), schema, row count, and metadata "
+                "status. Use after search_data_tables finds a not-imported candidate."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_id": {
+                        "type": "string",
+                        "description": "The data source / connector ID (from search results).",
+                    },
+                    "table_key": {
+                        "type": "string",
+                        "description": "The table's unique key (UUID or _source_name, from search results).",
+                    },
+                },
+                "required": ["source_id", "table_key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "search_knowledge",
             "description": (
                 "Search the user's knowledge base (rules, skills, experiences) "
@@ -235,7 +262,11 @@ You have tools you can call to gather data and share reasoning:
   for source tables (cheaper than explore for basic inspection).
 - **search_data_tables(query, scope)** — search for tables by keyword across
   workspace and connected data sources.  Returns Level 0 summaries (name +
-  description + matched columns).  Use inspect_source_data to drill down.
+  description + matched columns).  Use read_catalog_metadata to see full
+  metadata for not-imported candidates, or inspect_source_data for imported tables.
+- **read_catalog_metadata(source_id, table_key)** — read full cached metadata
+  for a specific table from a connected source (columns, types, descriptions,
+  schema, row count).  Use after search_data_tables finds a not-imported match.
 - **search_knowledge(query, categories?)** — search the user's knowledge base
   (rules, skills, experiences) for relevant entries.
 - **read_knowledge(category, path)** — read the full content of a knowledge entry.
@@ -1398,6 +1429,25 @@ class DataAgent:
                             query=tool_args.get("query", ""),
                             scope=tool_args.get("scope", "all"),
                             workspace=self.workspace,
+                            user_home=user_home,
+                        )
+                        yield {
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "status": "ok",
+                            "stdout": tool_content,
+                        }
+                    elif tool_name == "read_catalog_metadata":
+                        user_home = None
+                        try:
+                            from data_formulator.auth.identity import get_identity_id
+                            from data_formulator.datalake.workspace import get_user_home
+                            user_home = str(get_user_home(get_identity_id()))
+                        except Exception:
+                            pass
+                        tool_content = handle_read_catalog_metadata(
+                            source_id=tool_args.get("source_id", ""),
+                            table_key=tool_args.get("table_key", ""),
                             user_home=user_home,
                         )
                         yield {

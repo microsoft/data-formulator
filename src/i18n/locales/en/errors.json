@@ -27,6 +27,11 @@
     "codeExecutionError": "An error occurred during code execution",
     "agentError": "Agent encountered an error",
 
+    "catalogSyncTimeout": "Catalog sync timed out — please try again",
+    "catalogNotFound": "Connector not found or not connected",
+    "annotationConflict": "Annotation was modified — please reload and try again",
+    "annotationInvalidPatch": "Invalid annotation data",
+
     "internalError": "An unexpected error occurred",
     "serviceUnavailable": "Service temporarily unavailable"
   }

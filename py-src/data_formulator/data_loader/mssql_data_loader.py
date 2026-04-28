@@ -364,6 +364,150 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
 
         return results
 
+    # -- Cross-database sync -----------------------------------------------
+
+    def _list_tables_for_db(
+        self, db: str, table_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List tables in a specific database using three-part naming.
+
+        Like ``list_tables`` but queries *[db].INFORMATION_SCHEMA* and
+        returns three-part ``database.schema.table`` identifiers.
+        """
+        tables_query = f"""
+            SELECT TABLE_SCHEMA, TABLE_NAME
+            FROM [{db}].INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_TYPE = 'BASE TABLE'
+              AND TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+            ORDER BY TABLE_SCHEMA, TABLE_NAME
+        """
+        tables_df = self._execute_query(tables_query).to_pandas()
+        if tables_df.empty:
+            return []
+
+        columns_query = f"""
+            SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE
+            FROM [{db}].INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+            ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
+        """
+        cols_df = self._execute_query(columns_query).to_pandas()
+
+        col_map: dict[str, list[dict]] = {}
+        for _, cr in cols_df.iterrows():
+            key = f"{cr['TABLE_SCHEMA']}.{cr['TABLE_NAME']}"
+            col_map.setdefault(key, []).append({
+                "name": cr["COLUMN_NAME"],
+                "type": cr["DATA_TYPE"],
+            })
+
+        table_desc_map: dict[str, str] = {}
+        col_desc_map: dict[str, str] = {}
+        try:
+            table_desc_query = f"""
+                SELECT s.name AS schema_name, t.name AS table_name,
+                       CAST(ep.value AS NVARCHAR(4000)) AS description
+                FROM [{db}].sys.tables t
+                JOIN [{db}].sys.schemas s ON t.schema_id = s.schema_id
+                JOIN [{db}].sys.extended_properties ep
+                  ON ep.major_id = t.object_id AND ep.minor_id = 0
+                     AND ep.name = 'MS_Description'
+            """
+            td_df = self._execute_query(table_desc_query).to_pandas()
+            for _, r in td_df.iterrows():
+                desc = str(r["description"]).strip() if r["description"] else ""
+                if desc:
+                    table_desc_map[f"{r['schema_name']}.{r['table_name']}"] = desc
+        except Exception:
+            pass
+
+        try:
+            col_desc_query = f"""
+                SELECT s.name AS schema_name, t.name AS table_name,
+                       c.name AS column_name,
+                       CAST(ep.value AS NVARCHAR(4000)) AS description
+                FROM [{db}].sys.columns c
+                JOIN [{db}].sys.tables t ON c.object_id = t.object_id
+                JOIN [{db}].sys.schemas s ON t.schema_id = s.schema_id
+                JOIN [{db}].sys.extended_properties ep
+                  ON ep.major_id = c.object_id AND ep.minor_id = c.column_id
+                     AND ep.name = 'MS_Description'
+            """
+            cd_df = self._execute_query(col_desc_query).to_pandas()
+            for _, r in cd_df.iterrows():
+                desc = str(r["description"]).strip() if r["description"] else ""
+                if desc:
+                    col_desc_map[f"{r['schema_name']}.{r['table_name']}.{r['column_name']}"] = desc
+        except Exception:
+            pass
+
+        results: list[dict[str, Any]] = []
+        for _, row in tables_df.iterrows():
+            schema = row["TABLE_SCHEMA"]
+            table_name = row["TABLE_NAME"]
+            schema_table = f"{schema}.{table_name}"
+            full_source = f"{db}.{schema}.{table_name}"
+
+            if table_filter and table_filter.lower() not in full_source.lower():
+                continue
+
+            columns = col_map.get(schema_table, [])
+            for col_entry in columns:
+                cd_key = f"{schema_table}.{col_entry['name']}"
+                if cd_key in col_desc_map:
+                    col_entry["description"] = col_desc_map[cd_key]
+
+            metadata: dict[str, Any] = {
+                "_source_name": full_source,
+                "columns": columns,
+            }
+            if schema_table in table_desc_map:
+                metadata["description"] = table_desc_map[schema_table]
+
+            results.append({
+                "name": full_source,
+                "path": [db, schema, table_name],
+                "metadata": metadata,
+            })
+
+        return results
+
+    def sync_catalog_metadata(
+        self, table_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Full metadata sync across all accessible databases.
+
+        When ``database`` is specified in connection params, behaves like
+        the base class (delegates to ``list_tables``).  When ``database``
+        is empty, iterates every online user database on the server.
+        """
+        if self.database:
+            tables = self.list_tables(table_filter)
+            self.ensure_table_keys(tables)
+            return tables
+
+        db_rows = self._execute_query("""
+            SELECT name FROM sys.databases
+            WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')
+              AND state_desc = 'ONLINE'
+            ORDER BY name
+        """).to_pandas()
+
+        all_tables: list[dict[str, Any]] = []
+        for _, r in db_rows.iterrows():
+            db = r["name"]
+            try:
+                all_tables.extend(self._list_tables_for_db(db, table_filter))
+            except Exception:
+                log.debug(
+                    "sync_catalog_metadata skipped database %s", db,
+                    exc_info=True,
+                )
+
+        log.info("sync_catalog_metadata found %d tables across all databases", len(all_tables))
+        self.ensure_table_keys(all_tables)
+        return all_tables
+
     # -- Catalog tree API --------------------------------------------------
 
     @staticmethod

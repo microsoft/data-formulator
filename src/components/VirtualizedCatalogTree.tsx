@@ -181,6 +181,8 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                         borderRadius: '6px',
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: theme.palette.action.hover },
+                        '& .catalog-hover-action': { visibility: 'hidden' },
+                        '&:hover .catalog-hover-action': { visibility: 'visible' },
                         ...(isSelected ? { backgroundColor: theme.palette.action.selected, fontWeight: 500 } : {}),
                     }}
                 >
@@ -208,7 +210,7 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                     {/* Loaded check */}
                     {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: 13, color: 'success.main', flexShrink: 0 }} />}
                     {/* Metadata status hint */}
-                    {isTable && metaStatus && metaStatus !== 'ok' && (
+                    {isTable && metaStatus && metaStatus !== 'ok' && metaStatus !== 'synced' && (
                         <Tooltip title={metaStatus === 'partial' ? t('sidebar.metadataPartial') : t('sidebar.metadataUnavailable')} placement="top">
                             <InfoOutlinedIcon sx={{ fontSize: 12, color: metaStatus === 'partial' ? 'warning.main' : 'text.disabled', flexShrink: 0, opacity: 0.6 }} />
                         </Tooltip>

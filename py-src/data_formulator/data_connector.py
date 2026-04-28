@@ -1158,13 +1158,9 @@ def connector_disconnect():
         except Exception as exc:
             logger.debug("TokenStore disconnect cleanup failed for %s: %s",
                          source._source_id, type(exc).__name__)
-        try:
-            from data_formulator.datalake.catalog_cache import delete_catalog
-            from data_formulator.datalake.workspace import get_user_home
-            user_home = get_user_home(identity)
-            delete_catalog(user_home, source._source_id)
-        except Exception:
-            logger.debug("Failed to delete catalog cache for '%s'", source._source_id, exc_info=True)
+        # catalog_cache and catalog_annotations are intentionally preserved
+        # on disconnect so that Agent search can still use cached metadata
+        # for offline discovery.  Only delete-connector deletes the cache.
         return jsonify({"status": "disconnected"})
     except Exception as e:
         classify_and_raise_connector_error(e)
@@ -1295,6 +1291,243 @@ def connector_get_catalog_tree():
             "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
             "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
             "tree": tree,
+        })
+    except Exception as e:
+        classify_and_raise_connector_error(e)
+
+
+@connectors_bp.route("/api/connectors/get-cached-catalog-tree", methods=["POST"])
+def connector_get_cached_catalog_tree():
+    """Return the catalog tree from the **disk cache** without querying the source.
+
+    Used by the frontend when expanding a connector after page reload.
+    Falls back to ``status: "miss"`` when no cache exists so the frontend
+    can decide whether to trigger a live sync.
+
+    Response (hit)::
+
+        {"status": "ok", "tree": [...], "hierarchy": [...],
+         "effective_hierarchy": [...], "synced_at": "..."}
+
+    Response (miss)::
+
+        {"status": "miss"}
+    """
+    from data_formulator.datalake.catalog_cache import _load_catalog_raw
+
+    data = request.get_json() or {}
+    source = _resolve_connector(data)
+
+    try:
+        from data_formulator.auth.identity import get_identity_id
+        from data_formulator.datalake.workspace import get_user_home
+
+        identity = get_identity_id()
+        user_home = get_user_home(identity)
+        raw = _load_catalog_raw(user_home, source._source_id)
+
+        if raw is None:
+            return jsonify({"status": "miss"})
+
+        flat_tables = raw.get("tables", [])
+        if not flat_tables:
+            return jsonify({"status": "miss"})
+
+        loader = source._require_loader()
+        tree = loader._tables_to_catalog_tree(flat_tables)
+
+        return jsonify({
+            "status": "ok",
+            "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
+            "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
+            "tree": tree,
+            "synced_at": raw.get("synced_at"),
+        })
+    except Exception as e:
+        logger.debug("get-cached-catalog-tree failed for '%s'", source._source_id, exc_info=True)
+        return jsonify({"status": "miss"})
+
+
+@connectors_bp.route("/api/connectors/sync-catalog-metadata", methods=["POST"])
+def connector_sync_catalog_metadata():
+    """Full metadata sync — enriched catalog for agent search and tree display.
+
+    Calls ``loader.sync_catalog_metadata()`` which returns all tables with
+    as-complete-as-possible column info, writes the result to
+    ``catalog_cache``, and returns the full tree for the frontend to render.
+
+    Response::
+
+        {
+            "status": "ok",
+            "tree": [...],
+            "sync_summary": {"synced": N, "partial": N, "failed": N, "total": N}
+        }
+    """
+    from data_formulator.errors import AppError, ErrorCode
+
+    data = request.get_json() or {}
+    source = _resolve_connector(data)
+
+    try:
+        loader = source._require_loader()
+        name_filter = data.get("filter")
+
+        flat_tables = loader.sync_catalog_metadata(table_filter=name_filter)
+        tree = loader._tables_to_catalog_tree(flat_tables)
+
+        # Compute sync summary from per-table source_metadata_status
+        summary = {"synced": 0, "partial": 0, "failed": 0, "total": len(flat_tables)}
+        for t in flat_tables:
+            status = (t.get("metadata") or {}).get("source_metadata_status", "")
+            if status == "synced":
+                summary["synced"] += 1
+            elif status == "partial":
+                summary["partial"] += 1
+            elif status == "unavailable":
+                summary["failed"] += 1
+
+        # Persist to catalog_cache for agent search
+        try:
+            from data_formulator.datalake.catalog_cache import save_catalog
+            from data_formulator.auth.identity import get_identity_id
+            from data_formulator.datalake.workspace import get_user_home
+            identity = get_identity_id()
+            user_home = get_user_home(identity)
+            save_catalog(user_home, source._source_id, flat_tables)
+        except Exception:
+            logger.debug(
+                "Failed to save catalog cache for '%s'", source._source_id,
+                exc_info=True,
+            )
+
+        return jsonify({
+            "status": "ok",
+            "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
+            "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
+            "tree": tree,
+            "sync_summary": summary,
+        })
+    except Exception as e:
+        classify_and_raise_connector_error(e)
+
+
+@connectors_bp.route("/api/connectors/catalog-annotations", methods=["PATCH"])
+def connector_patch_annotations():
+    """Single-table annotation patch with optimistic concurrency.
+
+    Request body::
+
+        {
+            "connector_id": "superset_prod",
+            "table_key": "uuid-...",
+            "expected_version": 1,
+            "description": "...",
+            "notes": "...",
+            "tags": ["..."],
+            "columns": { "<col>": {"description": "..."} }
+        }
+
+    Success: ``{"status": "ok", "version": N}``
+    Conflict: 409 with ``ANNOTATION_CONFLICT`` error code.
+    """
+    from data_formulator.errors import AppError, ErrorCode
+    from data_formulator.datalake.catalog_annotations import (
+        AnnotationConflict, patch_annotation,
+    )
+
+    data = request.get_json() or {}
+    source = _resolve_connector(data)
+
+    table_key = data.get("table_key")
+    if not table_key:
+        raise AppError(
+            ErrorCode.ANNOTATION_INVALID_PATCH,
+            "table_key is required",
+            status_code=400,
+        )
+
+    patch_fields = {}
+    for field in ("description", "notes", "tags", "columns"):
+        if field in data:
+            patch_fields[field] = data[field]
+    if not patch_fields:
+        raise AppError(
+            ErrorCode.ANNOTATION_INVALID_PATCH,
+            "No annotation fields provided",
+            status_code=400,
+        )
+
+    expected_version = data.get("expected_version")
+    if expected_version is not None:
+        try:
+            expected_version = int(expected_version)
+        except (TypeError, ValueError):
+            expected_version = None
+
+    try:
+        from data_formulator.auth.identity import get_identity_id
+        from data_formulator.datalake.workspace import get_user_home
+        identity = get_identity_id()
+        user_home = get_user_home(identity)
+
+        result = patch_annotation(
+            user_home, source._source_id, table_key,
+            patch_fields, expected_version=expected_version,
+        )
+        return jsonify({"status": "ok", "version": result["version"]})
+    except AnnotationConflict as e:
+        raise AppError(
+            ErrorCode.ANNOTATION_CONFLICT,
+            str(e),
+            status_code=409,
+            detail={"current_version": e.current_version},
+        ) from e
+    except Exception as e:
+        classify_and_raise_connector_error(e)
+
+
+@connectors_bp.route("/api/connectors/catalog-annotations", methods=["GET"])
+def connector_get_annotations():
+    """Read all annotations for a data source.
+
+    Query params: ``?connector_id=...``
+
+    Returns::
+
+        {
+            "status": "ok",
+            "source_id": "...",
+            "version": N,
+            "tables": { "<table_key>": { ... } }
+        }
+    """
+    connector_id = request.args.get("connector_id", "")
+    data = {"connector_id": connector_id}
+    source = _resolve_connector(data)
+
+    try:
+        from data_formulator.auth.identity import get_identity_id
+        from data_formulator.datalake.workspace import get_user_home
+        from data_formulator.datalake.catalog_annotations import load_annotations
+
+        identity = get_identity_id()
+        user_home = get_user_home(identity)
+        ann = load_annotations(user_home, source._source_id)
+
+        if ann is None:
+            return jsonify({
+                "status": "ok",
+                "source_id": source._source_id,
+                "version": 0,
+                "tables": {},
+            })
+
+        return jsonify({
+            "status": "ok",
+            "source_id": ann.get("source_id", source._source_id),
+            "version": ann.get("version", 0),
+            "tables": ann.get("tables", {}),
         })
     except Exception as e:
         classify_and_raise_connector_error(e)

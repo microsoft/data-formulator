@@ -58,6 +58,28 @@ class SupersetClient:
         resp.raise_for_status()
         return resp.json().get("result", {})
 
+    def get_dataset_columns(
+        self, access_token: str, dataset_id: int,
+    ) -> list[dict]:
+        """Fetch column metadata for a dataset.
+
+        Tries the lightweight ``/api/v1/dataset/{pk}/column`` first (Superset
+        4.1+).  Falls back to the full ``/api/v1/dataset/{pk}`` detail
+        endpoint and extracts ``columns`` from the response if the dedicated
+        endpoint is not available.
+        """
+        try:
+            resp = requests.get(
+                f"{self.base_url}/api/v1/dataset/{dataset_id}/column",
+                headers=self._headers(access_token),
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            return resp.json().get("result", [])
+        except requests.HTTPError:
+            detail = self.get_dataset_detail(access_token, dataset_id)
+            return detail.get("columns", [])
+
     def get_dataset_distinct_values(self, access_token: str, column_name: str) -> dict:
         resp = requests.get(
             f"{self.base_url}/api/v1/dataset/distinct/{quote(column_name, safe='')}",

@@ -351,3 +351,46 @@ class TestConnectorConnectCatalogSave:
             assert len(cached["tables"]) == 1
         finally:
             DATA_CONNECTORS.pop("test_pg", None)
+
+
+# ==================================================================
+# Tests: synced_at and table_key in cache
+# ==================================================================
+
+class TestCatalogCacheSyncedAt:
+
+    def test_save_writes_synced_at(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "src1", [{"name": "t1"}])
+        cache_file = tmp_path / "catalog_cache" / "src1.json"
+        with open(cache_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        assert "synced_at" in data
+        assert data["synced_at"].endswith("Z") or "+" in data["synced_at"]
+
+    def test_load_catalog_ignores_synced_at(self, tmp_path: Path) -> None:
+        save_catalog(tmp_path, "src2", [{"name": "t2"}])
+        loaded = load_catalog(tmp_path, "src2")
+        assert loaded is not None
+        assert loaded[0]["name"] == "t2"
+
+
+class TestSearchReturnsTableKey:
+
+    def test_python_search_includes_table_key(self, tmp_path: Path) -> None:
+        tables = [{
+            "name": "orders",
+            "table_key": "uuid-123",
+            "metadata": {"description": "Order table", "source_metadata_status": "synced"},
+        }]
+        save_catalog(tmp_path, "src1", tables)
+        results = _search_python(tmp_path, "order", ["src1"], set(), 20)
+        assert len(results) == 1
+        assert results[0]["table_key"] == "uuid-123"
+        assert results[0]["metadata_status"] == "synced"
+
+    def test_python_search_empty_table_key(self, tmp_path: Path) -> None:
+        tables = [{"name": "users", "metadata": {"description": "User table"}}]
+        save_catalog(tmp_path, "src1", tables)
+        results = _search_python(tmp_path, "user", ["src1"], set(), 20)
+        assert len(results) == 1
+        assert results[0]["table_key"] == ""

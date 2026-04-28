@@ -107,6 +107,8 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                               'polygon', 'bit', 'bit varying', 'xml', 'tsvector', 'tsquery'}
     _UNSUPPORTED_TYPES = _SPATIAL_TYPES | _OTHER_UNSUPPORTED
 
+    _CONNECT_TIMEOUT = 10  # seconds — prevents hangs on unreachable databases
+
     def _connection_kwargs(self, dbname: str) -> dict[str, Any]:
         # Use 127.0.0.1 when host is localhost to force IPv4 TCP and avoid IPv6 ::1 connection issues.
         host_for_conn = "127.0.0.1" if (self.host or "").strip().lower() == "localhost" else self.host
@@ -118,6 +120,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             "dbname": dbname,
             "client_encoding": _PG_CLIENT_ENCODING,
             "options": f"-c client_encoding={_PG_CLIENT_ENCODING}",
+            "connect_timeout": self._CONNECT_TIMEOUT,
         }
 
     def _resolve_source_table(self, source_table: str) -> tuple[str | None, str, str]:
@@ -240,8 +243,17 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         return arrow_table
 
     def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List available tables from PostgreSQL."""
-        return self._list_tables(table_filter)
+        """List available tables from PostgreSQL.
+
+        When ``database`` is specified, queries only that database.
+        When ``database`` is empty, iterates every accessible database
+        so the result includes tables from all databases — consistent
+        with :meth:`sync_catalog_metadata`.
+        """
+        if self.database:
+            return self._list_tables(table_filter)
+
+        return self._cross_db_list_tables(table_filter)
 
     def _list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
         """List tables from PostgreSQL.
@@ -348,6 +360,169 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             logger.error(f"Error listing tables: {e}")
             return []
 
+    # -- Cross-database sync -----------------------------------------------
+
+    _SCHEMA_FILTER_SQL = """
+        table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+        AND table_schema !~ '^pg_temp_[0-9]+$'
+        AND table_schema !~ '^pg_toast_temp_[0-9]+$'
+        AND table_schema NOT LIKE '%_intern%'
+        AND table_schema NOT LIKE '%timescaledb%'
+    """
+
+    def _cross_db_list_tables(
+        self, table_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Iterate all accessible databases and collect tables.
+
+        Shared by :meth:`list_tables` and :meth:`sync_catalog_metadata`
+        when no database is pinned.  Logs per-database counts so the user
+        can see which databases were scanned and whether any were empty.
+
+        Side effect: stores the list of scanned database names in
+        ``self._scanned_databases`` so that :meth:`_tables_to_catalog_tree`
+        can include empty databases as namespace nodes.
+        """
+        db_rows = self._read_sql("""
+            SELECT datname FROM pg_database
+            WHERE datistemplate = false AND datallowconn = true
+            ORDER BY datname
+        """).to_pandas()
+
+        db_names = [r["datname"] for _, r in db_rows.iterrows()]
+        self._scanned_databases = list(db_names)
+        logger.info("PostgreSQL server has %d databases: %s", len(db_names), db_names)
+
+        all_tables: list[dict[str, Any]] = []
+        for db in db_names:
+            try:
+                tables = self._list_tables_for_db(db, table_filter)
+                logger.info(
+                    "Database '%s': found %d user tables", db, len(tables),
+                )
+                all_tables.extend(tables)
+            except Exception:
+                logger.warning(
+                    "Skipped database '%s' (connection or query failed)",
+                    db, exc_info=True,
+                )
+
+        logger.info(
+            "Cross-database scan complete: %d tables across %d databases",
+            len(all_tables), len(db_names),
+        )
+        return all_tables
+
+    def _list_tables_for_db(
+        self, db: str, table_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List tables in a specific database with full column and comment info.
+
+        Like ``_list_tables`` but queries *db* via a fresh connection and
+        returns three-part ``database.schema.table`` identifiers.
+        """
+        sf = self._SCHEMA_FILTER_SQL
+        tables_query = f"""
+            SELECT table_schema AS schemaname, table_name AS tablename
+            FROM information_schema.tables
+            WHERE {sf}
+              AND table_name NOT LIKE '%%/%%'
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_schema, table_name
+        """
+        tables_df = self._read_sql_on(tables_query, db).to_pandas()
+        if tables_df.empty:
+            return []
+
+        columns_query = f"""
+            SELECT c.table_schema, c.table_name, c.column_name, c.data_type,
+                   pgd.description AS column_comment
+            FROM information_schema.columns c
+            LEFT JOIN pg_catalog.pg_statio_all_tables st
+              ON st.schemaname = c.table_schema AND st.relname = c.table_name
+            LEFT JOIN pg_catalog.pg_description pgd
+              ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
+            WHERE {sf}
+            ORDER BY c.table_schema, c.table_name, c.ordinal_position
+        """
+        cols_df = self._read_sql_on(columns_query, db).to_pandas()
+
+        col_map: dict[str, list[dict]] = {}
+        for _, cr in cols_df.iterrows():
+            key = f"{cr['table_schema']}.{cr['table_name']}"
+            entry: dict[str, Any] = {
+                "name": cr["column_name"],
+                "type": cr["data_type"],
+            }
+            comment = cr.get("column_comment")
+            if comment and str(comment).strip():
+                entry["description"] = str(comment).strip()
+            col_map.setdefault(key, []).append(entry)
+
+        table_comments_query = """
+            SELECT n.nspname AS schemaname,
+                   c.relname AS tablename,
+                   obj_description(c.oid) AS table_comment
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'r'
+              AND obj_description(c.oid) IS NOT NULL
+        """
+        try:
+            tc_df = self._read_sql_on(table_comments_query, db).to_pandas()
+            table_comment_map: dict[str, str] = {
+                f"{r['schemaname']}.{r['tablename']}": str(r['table_comment']).strip()
+                for _, r in tc_df.iterrows()
+                if r['table_comment'] and str(r['table_comment']).strip()
+            }
+        except Exception:
+            table_comment_map = {}
+
+        results: list[dict[str, Any]] = []
+        for _, row in tables_df.iterrows():
+            schema = row["schemaname"]
+            table_name = row["tablename"]
+            schema_table = f"{schema}.{table_name}"
+            full_source = f"{db}.{schema}.{table_name}"
+
+            if table_filter and table_filter.lower() not in full_source.lower():
+                continue
+
+            columns = col_map.get(schema_table, [])
+            metadata: dict[str, Any] = {
+                "_source_name": full_source,
+                "columns": columns,
+            }
+            table_desc = table_comment_map.get(schema_table)
+            if table_desc:
+                metadata["description"] = table_desc
+            results.append({
+                "name": full_source,
+                "path": [db, schema, table_name],
+                "metadata": metadata,
+            })
+
+        return results
+
+    def sync_catalog_metadata(
+        self, table_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Full metadata sync across all accessible databases.
+
+        When ``database`` is specified in connection params, behaves like
+        the base class (delegates to ``list_tables``).  When ``database``
+        is empty, iterates every accessible database on the server and
+        collects tables with full column info and comments.
+        """
+        if self.database:
+            tables = self.list_tables(table_filter)
+            self.ensure_table_keys(tables)
+            return tables
+
+        all_tables = self._cross_db_list_tables(table_filter)
+        self.ensure_table_keys(all_tables)
+        return all_tables
+
     def search_catalog(self, query: str, limit: int = 100) -> dict:
         """Search database/schema/table names without fetching table metadata."""
         text = (query or "").strip()
@@ -424,6 +599,29 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             {"key": "schema", "label": "Schema"},
             {"key": "table", "label": "Table"},
         ]
+
+    def _tables_to_catalog_tree(self, tables: list[dict[str, Any]]) -> list[dict]:
+        """Build tree, then append empty databases as namespace nodes.
+
+        In cross-database mode (no pinned database), ensures all scanned
+        databases appear in the tree — even those with zero user tables.
+        """
+        tree = super()._tables_to_catalog_tree(tables)
+
+        if self.database or not getattr(self, "_scanned_databases", None):
+            return tree
+
+        existing_dbs = {node["name"] for node in tree if node.get("node_type") == "namespace"}
+        for db in self._scanned_databases:
+            if db not in existing_dbs:
+                tree.append({
+                    "name": db,
+                    "node_type": "namespace",
+                    "path": [db],
+                    "metadata": None,
+                    "children": [],
+                })
+        return tree
 
     def _connect_to_db(self, dbname: str):
         """Open a new connection to a specific database on the same server."""

@@ -342,6 +342,11 @@ class OIDCProvider(AuthProvider):
             raise AuthenticationError(
                 "OIDC token missing 'sub' claim", provider=self.name,
             )
+        if not isinstance(user_id, str):
+            raise AuthenticationError(
+                "Invalid OIDC token: 'sub' claim must be a string",
+                provider=self.name,
+            )
 
         return AuthResult(
             user_id=str(user_id),
