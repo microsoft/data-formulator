@@ -35,6 +35,92 @@
 | `data-loading-chat` | `"text_delta"`, `"tool_call"`, `"tool_result"`, `"done"` | 数据加载对话 |
 | `clean-data-stream` | 各种 agent 事件 | 数据清洗流 |
 
+`data-agent-streaming` 的 `result.type === "clarify"` 使用结构化多问题格式。后端和前端都以
+`questions[]` 为唯一澄清问题结构，不再新增顶层 `message/options/option_codes` 协议。
+
+```json
+{
+  "type": "clarify",
+  "questions": [
+    {
+      "id": "metric",
+      "text": "Which metric should I use?",
+      "responseType": "single_choice",
+      "required": true,
+      "options": [
+        {"id": "revenue", "label": "Revenue"}
+      ]
+    }
+  ],
+  "trajectory": [],
+  "completed_step_count": 2
+}
+```
+
+字段约定：
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `questions` | array | 是 | 本轮所有需要用户澄清的问题，最多 3 个 |
+| `questions[].id` | string | 是 | 问题 ID，用于绑定回答 |
+| `questions[].text` | string | 是 | 英文 fallback 或 LLM 生成的问题文本 |
+| `questions[].text_code` | string | 否 | 固定后端问题文案的 i18n key，例如 `agent.clarifyExhausted` |
+| `questions[].text_params` | object | 否 | `text_code` 的插值参数 |
+| `questions[].responseType` | `"single_choice"` / `"free_text"` | 否 | 默认由前端按是否有 options 推断；后端建议显式发送 |
+| `questions[].required` | boolean | 否 | 默认 `true` |
+| `questions[].options` | array | 否 | 单选选项；每个问题的选项只属于该问题 |
+| `questions[].options[].id` | string | 否 | 选项 ID；缺失时前端可生成，但后端建议提供 |
+| `questions[].options[].label` | string | 是 | 英文 fallback 或 LLM 生成的选项文本 |
+| `questions[].options[].label_code` | string | 否 | 固定后端选项文案的 i18n key |
+| `auto_select` | object | 否 | 单题自动选择配置，用于工具轮数耗尽后的倒计时继续 |
+
+工具轮数耗尽的继续提示必须保持为单题澄清，并额外带：
+
+```json
+{
+  "auto_select": {
+    "question_id": "continue_after_tool_rounds",
+    "option_id": "continue",
+    "timeout_ms": 60000
+  }
+}
+```
+
+前端据此显示倒计时并自动选择继续选项。多问题澄清不得自动提交。
+
+恢复请求发送结构化回答：
+
+```json
+{
+  "trajectory": [],
+  "clarification_responses": [
+    {
+      "question_id": "metric",
+      "answer": "Revenue",
+      "option_id": "revenue",
+      "source": "option"
+    },
+    {
+      "question_id": "__freeform__",
+      "answer": "Use revenue for the last 12 months.",
+      "source": "freeform"
+    }
+  ],
+  "completed_step_count": 2
+}
+```
+
+`source` 可为：
+
+| source | 说明 |
+|--------|------|
+| `option` | 用户选择了某个问题下的选项 |
+| `free_text` | 用户填写了某个 `responseType: "free_text"` 问题 |
+| `freeform` | 用户跳过选项，在澄清面板底部直接用自然语言说明；此时 `question_id` 使用 `__freeform__` |
+
+Route 层负责把 `clarification_responses[]` 格式化成 LLM 可读的 `[USER CLARIFICATION]`
+文本并追加到 trajectory。前端不发送旧的 `clarification_response` 字符串字段。
+
 ### 2.2 错误事件（统一格式）
 
 当流中发生致命错误时，后端 yield 一个 error 事件并终止流。
@@ -193,3 +279,4 @@ if (parsed.text) { ... }
 - [ ] Agent yield 的是 dict（Route 层负责 `json.dumps`）
 - [ ] 前端消费代码处理 `type: "error"` 和 `type: "warning"`
 - [ ] 不在响应体中使用 `str(e)` / `str(exc)`
+- [ ] 如返回 Data Agent `clarify`，使用结构化 `questions[]`，resume 使用 `clarification_responses[]`

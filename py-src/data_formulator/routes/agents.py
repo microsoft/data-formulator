@@ -59,6 +59,34 @@ def get_language_instruction(*, mode: str = "full") -> str:
     return build_language_instruction(_get_ui_lang(), mode=mode)
 
 
+def _format_clarification_responses(raw_responses) -> str:
+    """Format structured clarification answers into text the LLM can read."""
+    if not isinstance(raw_responses, list):
+        return ""
+
+    lines: list[str] = []
+    for raw in raw_responses:
+        if not isinstance(raw, dict):
+            continue
+
+        question_id = str(raw.get("question_id", "")).strip()
+        answer = str(raw.get("answer", "")).strip()
+        option_id = str(raw.get("option_id", "")).strip()
+        source = str(raw.get("source", "")).strip()
+        if not answer:
+            continue
+
+        if question_id == "__freeform__" or source == "freeform":
+            lines.append(f"- Freeform clarification: {answer}")
+            continue
+
+        suffix = f" (option: {option_id})" if option_id else ""
+        label = question_id or "clarification"
+        lines.append(f"- {label}: {answer}{suffix}")
+
+    return "\n".join(lines)
+
+
 def _get_knowledge_store(identity_id: str) -> KnowledgeStore | None:
     """Create a KnowledgeStore for the given user, or None on failure."""
     try:
@@ -515,7 +543,7 @@ def data_agent_streaming():
 
     To resume after a clarification, the client sends:
         - trajectory: the trajectory list returned in the clarify event
-        - clarification_response: the user's answer (string)
+        - clarification_responses: structured user answers
     """
     from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
     from data_formulator.errors import ErrorCode
@@ -552,8 +580,15 @@ def data_agent_streaming():
     primary_tables = content.get("primary_tables", None)
     attached_images = content.get("attached_images", None)
     resume_trajectory = content.get("trajectory", None)
-    clarification_response = content.get("clarification_response", None)
+    clarification_responses = content.get("clarification_responses", None)
     completed_step_count = content.get("completed_step_count", 0)
+
+    if resume_trajectory is not None and not _format_clarification_responses(clarification_responses):
+        return jsonify({"status": "error", "error": {
+            "code": ErrorCode.INVALID_REQUEST,
+            "message": "clarification_responses is required to resume after clarification",
+            "retry": False,
+        }})
 
     logger.setLevel(logging.INFO)
     logger.info("# data-agent-streaming request")
@@ -584,13 +619,14 @@ def data_agent_streaming():
             )
 
             trajectory = None
-            if resume_trajectory and clarification_response:
+            formatted_clarification = _format_clarification_responses(clarification_responses)
+            if resume_trajectory and formatted_clarification:
                 trajectory = list(resume_trajectory)
                 trajectory.append({
                     "role": "user",
-                    "content": f"[USER CLARIFICATION]\n\n{clarification_response}",
+                    "content": f"[USER CLARIFICATION]\n\n{formatted_clarification}",
                 })
-                logger.debug(f"== resuming with clarification ===> {clarification_response}")
+                logger.debug("== resuming with structured clarification ===>")
 
             for event in agent.run(
                 input_tables=input_tables,
