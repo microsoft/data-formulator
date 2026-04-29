@@ -304,10 +304,25 @@ are shown to the user and end the current turn.
 ```json
 {{
     "action": "clarify",
-    "message": "<a polite, concise question>",
-    "options": ["<option 1>", "<option 2>", "<option 3>"]
+    "questions": [
+        {{
+            "id": "<short_snake_case_id>",
+            "text": "<a polite, concise question>",
+            "responseType": "single_choice",
+            "required": true,
+            "options": [
+                {{"id": "<option_id>", "label": "<option label>"}}
+            ]
+        }}
+    ]
 }}
 ```
+
+For clarification, always output `questions[]`. If there is one ambiguity,
+include one question. If there are multiple independent ambiguities, include
+multiple questions. Each question must own its own options; never put options
+for different questions into one shared array. Use `"responseType": "free_text"`
+only when the user needs to type a custom answer. Ask at most 3 questions.
 
 ### `present`
 ```json
@@ -484,24 +499,43 @@ class DataAgent:
                             "type": "clarify",
                             "iteration": iteration,
                             "thought": "",
-                            "message": (
-                                "I've been exploring extensively but haven't reached "
-                                "a conclusion yet.\n\nCompleted steps so far:\n"
-                                f"{steps_desc}\n\n"
-                                "How would you like to proceed?"
-                            ),
-                            "message_code": "agent.clarifyExhausted",
-                            "message_params": {"steps": steps_desc},
-                            "options": [
-                                "Continue exploring",
-                                "Simplify the task",
-                                "Present what you have so far",
+                            "questions": [
+                                {
+                                    "id": "continue_after_tool_rounds",
+                                    "text": (
+                                        "I've been exploring extensively but haven't reached "
+                                        "a conclusion yet.\n\nCompleted steps so far:\n"
+                                        f"{steps_desc}\n\n"
+                                        "How would you like to proceed?"
+                                    ),
+                                    "text_code": "agent.clarifyExhausted",
+                                    "text_params": {"steps": steps_desc},
+                                    "responseType": "single_choice",
+                                    "required": True,
+                                    "options": [
+                                        {
+                                            "id": "continue",
+                                            "label": "Continue exploring",
+                                            "label_code": "agent.clarifyOptionContinue",
+                                        },
+                                        {
+                                            "id": "simplify",
+                                            "label": "Simplify the task",
+                                            "label_code": "agent.clarifyOptionSimplify",
+                                        },
+                                        {
+                                            "id": "present",
+                                            "label": "Present what you have so far",
+                                            "label_code": "agent.clarifyOptionPresent",
+                                        },
+                                    ],
+                                }
                             ],
-                            "option_codes": [
-                                "agent.clarifyOptionContinue",
-                                "agent.clarifyOptionSimplify",
-                                "agent.clarifyOptionPresent",
-                            ],
+                            "auto_select": {
+                                "question_id": "continue_after_tool_rounds",
+                                "option_id": "continue",
+                                "timeout_ms": 60000,
+                            },
                             "trajectory": self._strip_images(trajectory),
                             "completed_step_count": len(completed_steps),
                         }
@@ -555,12 +589,22 @@ class DataAgent:
                     rlog.log("action_execution", action="clarify", status="ok",
                              iteration=iteration)
                     final_status = "clarify"
+                    try:
+                        clarify_payload = self._normalize_clarify_action(action)
+                    except ValueError:
+                        final_status = "parse_failed"
+                        yield self._error_event(
+                            iteration,
+                            "Clarify action requires non-empty questions.",
+                            message_code="agent.parseActionFailed",
+                        )
+                        self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                        return
                     yield {
                         "type": "clarify",
                         "iteration": iteration,
                         "thought": action.get("thought", ""),
-                        "message": action.get("message", ""),
-                        "options": action.get("options", []),
+                        **clarify_payload,
                         "trajectory": self._strip_images(trajectory),
                         "completed_step_count": len(completed_steps),
                     }
@@ -682,6 +726,93 @@ class DataAgent:
                 }
         finally:
             rlog.close()
+
+    @staticmethod
+    def _make_clarification_id(prefix: str, value: Any, index: int) -> str:
+        """Build a small stable id from LLM-provided clarification text."""
+        raw = str(value or "").strip().lower()
+        candidate = "".join(ch if ch.isalnum() else "_" for ch in raw).strip("_")
+        candidate = "_".join(part for part in candidate.split("_") if part)
+        return (candidate[:48] or f"{prefix}_{index + 1}")
+
+    @classmethod
+    def _sanitize_clarification_options(cls, raw_options: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_options, list):
+            return []
+
+        options: list[dict[str, Any]] = []
+        for index, raw_option in enumerate(raw_options[:6]):
+            if isinstance(raw_option, str):
+                label = raw_option.strip()
+                label_code = ""
+                option_id = cls._make_clarification_id("option", label, index)
+            elif isinstance(raw_option, dict):
+                label = str(raw_option.get("label", "")).strip()
+                label_code = str(raw_option.get("label_code", "")).strip()
+                option_id = str(raw_option.get("id", "")).strip() or cls._make_clarification_id(
+                    "option", label or label_code, index
+                )
+            else:
+                continue
+
+            if not label and not label_code:
+                continue
+
+            option: dict[str, Any] = {"id": option_id}
+            if label:
+                option["label"] = label
+            if label_code:
+                option["label_code"] = label_code
+            options.append(option)
+
+        return options
+
+    @classmethod
+    def _sanitize_clarification_questions(cls, raw_questions: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_questions, list):
+            return []
+
+        questions: list[dict[str, Any]] = []
+        for index, raw_question in enumerate(raw_questions[:3]):
+            if not isinstance(raw_question, dict):
+                continue
+
+            text = str(raw_question.get("text", "")).strip()
+            text_code = str(raw_question.get("text_code", "")).strip()
+            if not text and not text_code:
+                continue
+
+            options = cls._sanitize_clarification_options(raw_question.get("options"))
+            response_type = raw_question.get("responseType") or raw_question.get("response_type")
+            if response_type not in ("single_choice", "free_text"):
+                response_type = "single_choice" if options else "free_text"
+
+            question_id = str(raw_question.get("id", "")).strip() or cls._make_clarification_id(
+                "question", text or text_code, index
+            )
+            question: dict[str, Any] = {
+                "id": question_id,
+                "responseType": response_type,
+                "required": bool(raw_question.get("required", True)),
+            }
+            if text:
+                question["text"] = text
+            if text_code:
+                question["text_code"] = text_code
+            if isinstance(raw_question.get("text_params"), dict):
+                question["text_params"] = raw_question["text_params"]
+            if options:
+                question["options"] = options
+            questions.append(question)
+
+        return questions
+
+    @classmethod
+    def _normalize_clarify_action(cls, action: dict[str, Any]) -> dict[str, Any]:
+        questions = cls._sanitize_clarification_questions(action.get("questions"))
+        if not questions:
+            raise ValueError("clarify action requires non-empty questions[]")
+        return {"questions": questions}
 
     # ------------------------------------------------------------------
     # Visualize execution (with repair)
@@ -1285,7 +1416,7 @@ class DataAgent:
               ``"llm_error"``, ``"tool_rounds_exhausted"``.
               ``llm_calls`` is the number of LLM calls made in this cycle.
         """
-        max_tool_rounds = 8
+        max_tool_rounds = 12
         max_json_retries = 1
         json_retries = 0
         messages = trajectory

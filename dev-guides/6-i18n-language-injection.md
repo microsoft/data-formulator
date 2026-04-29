@@ -165,16 +165,30 @@ result = {
 }
 ```
 
-### 3.3 选项列表
+### 3.3 结构化澄清问题
 
 ```python
 event = {
     "type": "clarify",
-    "options": ["Continue exploring", "Simplify the task"],
-    "option_codes": [
-        "agent.clarifyOptionContinue",
-        "agent.clarifyOptionSimplify",
-    ],
+    "questions": [{
+        "id": "continue_after_tool_rounds",
+        "text": "How would you like to proceed?",
+        "text_code": "agent.clarifyExhausted",
+        "text_params": {"steps": steps_desc},
+        "responseType": "single_choice",
+        "options": [
+            {
+                "id": "continue",
+                "label": "Continue exploring",
+                "label_code": "agent.clarifyOptionContinue",
+            },
+            {
+                "id": "simplify",
+                "label": "Simplify the task",
+                "label_code": "agent.clarifyOptionSimplify",
+            },
+        ],
+    }],
 }
 ```
 
@@ -182,7 +196,10 @@ event = {
 
 - Agent 相关 key 放在 `messages.agent.*`。
 - 后端字段中只写 `agent.emptyDataframe`，前端会拼成 `messages.agent.emptyDataframe`。
-- 有参数时使用 `message_params`、`content_params`，例如 `{"missing": "...", "available": "..."}`。
+- 有参数时使用 `message_params`、`content_params`、`text_params`，例如 `{"missing": "...", "available": "..."}`。
+- `clarify` 事件使用 `questions[].text_code` 和 `questions[].options[].label_code`，不要再新增顶层 `message/options/option_codes` 协议。
+- LLM 根据当前 UI 语言生成的问题和选项通常只需要 `text` / `label`；固定后端文案才需要同时提供 fallback 文本和 code。
+- `questions[].options[]` 的翻译只作用于当前问题的选项，不要把多个问题的选项合并到同一个数组。
 - 不要新增 Python 侧翻译表或 `agent_messages.py`；早期设计中的该方案已由前端 `message_code` 翻译模式取代。
 
 ### 3.4 已迁移的 Agent 消息 key
@@ -215,10 +232,11 @@ event = {
 
 ## 4. 前端消费后端消息
 
-前端使用 `translateBackend()` 或 `translateBackendOptions()`：
+前端使用 `translateBackend()`。普通后端消息直接翻译；结构化澄清问题逐题翻译 `text_code`
+和 `label_code`：
 
 ```tsx
-import { translateBackend, translateBackendOptions } from '../app/utils';
+import { translateBackend } from '../app/utils';
 
 const message = translateBackend(
     event.message,
@@ -226,10 +244,19 @@ const message = translateBackend(
     event.message_params,
 );
 
-const options = translateBackendOptions(event.options, event.option_codes);
+const questionText = translateBackend(
+    question.text,
+    question.text_code,
+    question.text_params,
+);
+
+const optionLabel = translateBackend(option.label, option.label_code);
 ```
 
 如果没有 code 或没有翻译，函数会回退到后端英文 fallback。
+
+澄清面板自己的固定 UI 文案，例如标题、按钮、占位符和“直接说明”标签，放在
+`src/i18n/locales/{en,zh}/common.json` 的 `chartRec` 下；不要从后端事件里下发这些前端壳层文案。
 
 ---
 

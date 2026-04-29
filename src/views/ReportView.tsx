@@ -101,7 +101,6 @@ export const ReportView: FC = () => {
     const sanitizeFileName = (name: string): string => {
         const sanitized = name
             .replace(/[\\/:*?"<>|]/g, ' ')
-            .replace(/[\u0000-\u001f]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim()
             .replace(/[. ]+$/g, '')
@@ -150,7 +149,25 @@ export const ReportView: FC = () => {
         return new Promise(resolve => canvas.toBlob(resolve, 'image/png', 0.95));
     };
 
+    const getClipboardUnavailableMessage = (): string => {
+        if (!window.isSecureContext) {
+            return t('report.clipboardRequiresSecureContext');
+        }
+        return t('report.clipboardNotSupported');
+    };
+
+    const canWriteToClipboard = (): boolean => {
+        return window.isSecureContext
+            && !!navigator.clipboard?.write
+            && typeof ClipboardItem !== 'undefined';
+    };
+
     const copyReportContent = async () => {
+        if (!canWriteToClipboard()) {
+            showMessage(getClipboardUnavailableMessage(), 'error');
+            return;
+        }
+
         const exportClone = createReportExportClone();
         if (!exportClone) return;
 
@@ -207,8 +224,8 @@ export const ReportView: FC = () => {
     };
 
     const copyReportAsImage = async () => {
-        if (!navigator.clipboard || !navigator.clipboard.write) {
-            showMessage(t('report.clipboardNotSupported'), 'error');
+        if (!canWriteToClipboard()) {
+            showMessage(getClipboardUnavailableMessage(), 'error');
             return;
         }
 

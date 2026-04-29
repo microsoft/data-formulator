@@ -39,6 +39,35 @@ export interface Trigger {
 
 export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-agent';
 
+export interface ClarificationOption {
+    id?: string;
+    label: string;
+    label_code?: string;
+}
+
+export interface ClarificationQuestion {
+    id: string;
+    text: string;
+    text_code?: string;
+    text_params?: Record<string, string>;
+    responseType?: 'single_choice' | 'free_text';
+    required?: boolean;
+    options?: ClarificationOption[];
+}
+
+export interface ClarificationResponse {
+    question_id: string;
+    answer: string;
+    option_id?: string;
+    source: 'option' | 'free_text' | 'freeform';
+}
+
+export interface ClarificationAutoSelect {
+    question_id: string;
+    option_id: string;
+    timeout_ms?: number;
+}
+
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
@@ -47,7 +76,7 @@ export interface InteractionEntry {
     content: string;
     displayContent?: string;
     inputTableNames?: string[]; // table names actually used for this derivation step
-    options?: string[]; // for clarification questions, the list of options presented to the user
+    clarificationQuestions?: ClarificationQuestion[];
     timestamp?: number;
 }
 
@@ -58,6 +87,9 @@ export interface PendingClarification {
     completedStepCount: number;
     lastCreatedTableId: string | null;
     autoSelect?: boolean;
+    autoSelectQuestionId?: string;
+    autoSelectOptionId?: string;
+    autoSelectTimeoutMs?: number;
 }
 
 export interface DraftNode {

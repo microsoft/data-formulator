@@ -24,8 +24,9 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers, translateBackend, translateBackendOptions } from '../app/utils';
-import { Chart, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
+import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers, translateBackend } from '../app/utils';
+import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
+import { formatClarificationResponsesForDisplay, normalizeClarifyEvent } from '../app/clarification';
 
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
@@ -33,9 +34,7 @@ import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ClearIcon from '@mui/icons-material/Clear';
@@ -47,11 +46,11 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
-import { renderFieldHighlights } from './InteractionEntryCard';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
-import { shouldAutoFocusGeneratedChart, shouldAutoSelectClarification } from '../app/agentInteractionPolicy';
+import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
+import { ClarificationPanel } from './ClarificationPanel';
 
 const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void }> = ({ message, elapsed, theme, onCancel }) => {
     const { t } = useTranslation();
@@ -321,70 +320,14 @@ export const SimpleChartRecBox: FC = function () {
         return null;
     }, [draftNodes, threadTableIds]);
 
-    // Extract the clarification question text and options from DraftNode interaction log
-    const clarificationQuestion = React.useMemo(() => {
+    // Extract the active structured clarification from DraftNode interaction log.
+    const clarificationQuestions = React.useMemo(() => {
         if (!pendingClarification?.draftId) return null;
         const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
         const clarifyEntries = draft?.derive?.trigger?.interaction?.filter(e => e.role === 'clarify');
-        return clarifyEntries && clarifyEntries.length > 0 ? clarifyEntries[clarifyEntries.length - 1].content : null;
-    }, [pendingClarification, draftNodes]);
-
-    const clarificationOptions = React.useMemo(() => {
-        if (!pendingClarification?.draftId) return [];
-        const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
-        const clarifyEntries = draft?.derive?.trigger?.interaction?.filter(e => e.role === 'clarify');
         const lastEntry = clarifyEntries && clarifyEntries.length > 0 ? clarifyEntries[clarifyEntries.length - 1] : null;
-        return lastEntry?.options || [];
+        return lastEntry?.clarificationQuestions || null;
     }, [pendingClarification, draftNodes]);
-
-    // Auto-select is only for bounded "continue exploring" prompts.
-    const CLARIFY_AUTO_SELECT_TIMEOUT_MS = 60_000;
-    const [clarifyDeadline, setClarifyDeadline] = useState<number | null>(null);
-    const [clarifyProgress, setClarifyProgress] = useState(1); // 1 → 0
-    const [clarifySecondsRemaining, setClarifySecondsRemaining] = useState<number | null>(null);
-    const clarifyTimerRef = useRef<number | null>(null);
-    const shouldAutoResolveClarification = pendingClarification?.autoSelect === true;
-
-    // Start / reset deadline whenever a new clarification appears
-    useEffect(() => {
-        if (shouldAutoResolveClarification && clarificationOptions.length > 0 && !isChatFormulating) {
-            setClarifyDeadline(Date.now() + CLARIFY_AUTO_SELECT_TIMEOUT_MS);
-            setClarifyProgress(1);
-            setClarifySecondsRemaining(CLARIFY_AUTO_SELECT_TIMEOUT_MS / 1000);
-        } else {
-            setClarifyDeadline(null);
-            setClarifyProgress(1);
-            setClarifySecondsRemaining(null);
-        }
-    }, [shouldAutoResolveClarification, pendingClarification?.draftId, clarificationOptions.length, isChatFormulating]);
-
-    // Animate the countdown bar & auto-select on expiry
-    useEffect(() => {
-        if (clarifyDeadline == null) {
-            if (clarifyTimerRef.current) cancelAnimationFrame(clarifyTimerRef.current);
-            return;
-        }
-        const tick = () => {
-            const remaining = clarifyDeadline - Date.now();
-            if (remaining <= 0) {
-                setClarifyProgress(0);
-                setClarifyDeadline(null);
-                setClarifySecondsRemaining(null);
-                // Auto-select first option
-                if (clarificationOptions.length > 0 && pendingClarification) {
-                    const first = clarificationOptions[0];
-                    setChatPrompt(first);
-                    exploreFromChat(first, pendingClarification);
-                }
-                return;
-            }
-            setClarifyProgress(remaining / CLARIFY_AUTO_SELECT_TIMEOUT_MS);
-            setClarifySecondsRemaining(Math.ceil(remaining / 1000));
-            clarifyTimerRef.current = requestAnimationFrame(tick);
-        };
-        clarifyTimerRef.current = requestAnimationFrame(tick);
-        return () => { if (clarifyTimerRef.current) cancelAnimationFrame(clarifyTimerRef.current); };
-    }, [clarifyDeadline, clarificationOptions, pendingClarification]);
 
     const getIdeasFromAgent = useCallback(async () => {
         if (!currentTable || isLoadingIdeas) return;
@@ -539,8 +482,8 @@ export const SimpleChartRecBox: FC = function () {
         completedStepCount: number;
         actionId: string;
         lastCreatedTableId: string | null;
-    }) => {
-        if (!focusedTableId || prompt.trim() === "") return;
+    }, clarificationResponses?: ClarificationResponse[]) => {
+        if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
 
         const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
         const currentTable = tables.find(t => t.id === focusedTableId);
@@ -698,9 +641,11 @@ export const SimpleChartRecBox: FC = function () {
         };
 
         if (isResume) {
-            // Stateless resume: send back trajectory + user answer
+            // Stateless resume: send back trajectory + structured user answers.
             requestBody.trajectory = clarificationContext!.trajectory;
-            requestBody.clarification_response = prompt;
+            requestBody.clarification_responses = clarificationResponses && clarificationResponses.length > 0
+                ? clarificationResponses
+                : [{ question_id: '__freeform__', answer: prompt, source: 'freeform' }];
             requestBody.completed_step_count = clarificationContext!.completedStepCount;
         } else {
             requestBody.user_question = prompt;
@@ -999,9 +944,24 @@ export const SimpleChartRecBox: FC = function () {
 
             // ── clarify: pause and let user respond ──
             if (result.type === "clarify") {
-                const clarifyMsg = translateBackend(result.message, result.message_code, result.message_params) || t('chartRec.couldYouClarify');
-                const rawOptions: string[] = Array.isArray(result.options) ? result.options : [];
-                const clarifyOptions = translateBackendOptions(rawOptions, result.option_codes);
+                let normalizedClarification;
+                try {
+                    normalizedClarification = normalizeClarifyEvent(result);
+                } catch {
+                    const errMsg = t('chartRec.invalidClarification');
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'error',
+                        component: 'data-agent', value: errMsg,
+                    }));
+                    if (currentDraftId) {
+                        dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                    }
+                    setIsChatFormulating(false);
+                    agentAbortRef.current = null;
+                    clearTimeout(timeoutId);
+                    isCompleted = true;
+                    return;
+                }
                 if (currentDraftId) {
                     // Snapshot thinking steps into the clarify entry so they render
                     // inline (as 二级) between the user prompt and the clarify question.
@@ -1013,8 +973,8 @@ export const SimpleChartRecBox: FC = function () {
                     const clarifyEntry: InteractionEntry = {
                         from: 'data-agent', to: 'user', role: 'clarify',
                         plan: priorSteps || result.thought || undefined,
-                        content: clarifyMsg,
-                        options: clarifyOptions.length > 0 ? clarifyOptions : undefined,
+                        content: normalizedClarification.summary,
+                        clarificationQuestions: normalizedClarification.questions,
                         timestamp: Date.now(),
                     };
                     dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: clarifyEntry }));
@@ -1024,7 +984,10 @@ export const SimpleChartRecBox: FC = function () {
                         trajectory: result.trajectory || [],
                         completedStepCount: result.completed_step_count || 0,
                         lastCreatedTableId,
-                        autoSelect: shouldAutoSelectClarification(result.message_code),
+                        autoSelect: !!normalizedClarification.autoSelect,
+                        autoSelectQuestionId: normalizedClarification.autoSelect?.question_id,
+                        autoSelectOptionId: normalizedClarification.autoSelect?.option_id,
+                        autoSelectTimeoutMs: normalizedClarification.autoSelect?.timeout_ms,
                     }}));
                     if (currentDraftParentTableId) {
                         dispatch(dfActions.setFocused({ type: 'table', tableId: currentDraftParentTableId }));
@@ -1355,11 +1318,21 @@ export const SimpleChartRecBox: FC = function () {
         if (selectedAgent === 'report') {
             reportFromChat(prompt);
         } else if (clarificationCtx) {
-            exploreFromChat(prompt, clarificationCtx);
+            exploreFromChat(prompt, clarificationCtx, [{
+                question_id: '__freeform__',
+                answer: prompt,
+                source: 'freeform',
+            }]);
         } else {
             exploreFromChat(prompt);
         }
     }, [reportFromChat, exploreFromChat, selectedAgent]);
+
+    const resumeFromClarification = useCallback((responses: ClarificationResponse[]) => {
+        if (!pendingClarification) return;
+        const prompt = formatClarificationResponsesForDisplay(responses, clarificationQuestions || []);
+        exploreFromChat(prompt, pendingClarification, responses);
+    }, [clarificationQuestions, exploreFromChat, pendingClarification]);
 
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
@@ -1421,70 +1394,15 @@ export const SimpleChartRecBox: FC = function () {
             },
         }}
         >
-            {/* Show clarification question above input when agent is asking */}
-            {clarificationQuestion && pendingClarification && !isChatFormulating && (
-                <Box sx={{
-                    display: 'flex', flexDirection: 'column', gap: '6px',
-                    px: 0.5, py: '6px',
-                    borderBottom: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
-                    backgroundColor: alpha(theme.palette.warning.main, 0.05),
-                    borderRadius: '8px 8px 0 0',
-                    mx: '-8px', mt: '-4px', mb: '4px', pt: '8px', pb: '6px',
-                }}>
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                        <SmartToyOutlinedIcon sx={{ fontSize: 14, color: theme.palette.warning.main, mt: '1px', flexShrink: 0 }} />
-                        <Typography component="div" sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            {renderFieldHighlights(clarificationQuestion, alpha(theme.palette.warning.main, 0.12))}
-                        </Typography>
-                    </Box>
-                    {clarificationOptions.length > 0 && (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '3px', pl: '20px' }}>
-                            {clarificationOptions.map((option, idx) => (
-                                <Box key={idx} sx={{ position: 'relative', width: 'fit-content', overflow: 'hidden', borderRadius: '6px' }}>
-                                    {idx === 0 && shouldAutoResolveClarification && clarifyDeadline != null && (
-                                        <Box sx={{
-                                            position: 'absolute',
-                                            left: 0,
-                                            right: 0,
-                                            bottom: 0,
-                                            height: 3,
-                                            transformOrigin: 'left center',
-                                            transform: `scaleX(${clarifyProgress})`,
-                                            background: `linear-gradient(90deg, ${theme.palette.primary.dark}, ${theme.palette.primary.main})`,
-                                            borderRadius: '0 0 6px 6px',
-                                            pointerEvents: 'none',
-                                            zIndex: 2,
-                                        }} />
-                                    )}
-                                    <Typography component="div" variant="body2" onClick={() => { setClarifyDeadline(null); setClarifySecondsRemaining(null); setChatPrompt(option); exploreFromChat(option, pendingClarification); }} sx={{
-                                        position: 'relative', zIndex: 1,
-                                        px: '8px', py: '4px', pb: idx === 0 && shouldAutoResolveClarification ? '6px' : '4px',
-                                        borderRadius: '6px',
-                                        border: `1px solid ${idx === 0 ? alpha(theme.palette.primary.main, 0.25) : alpha(theme.palette.text.primary, 0.12)}`,
-                                        backgroundColor: 'white',
-                                        cursor: 'pointer',
-                                        fontSize: 11,
-                                        width: 'fit-content',
-                                        lineHeight: 1.4,
-                                        color: theme.palette.text.primary,
-                                        transition: 'all 0.1s linear',
-                                        '&:hover': {
-                                            backgroundColor: alpha(theme.palette.primary.main, 0.06),
-                                            borderColor: alpha(theme.palette.primary.main, 0.3),
-                                        },
-                                    }}>
-                                        {renderFieldHighlights(option, alpha(theme.palette.primary.main, 0.08))}
-                                        {idx === 0 && shouldAutoResolveClarification && clarifySecondsRemaining != null && (
-                                            <Typography component="span" sx={{ ml: 0.75, fontSize: 10, color: theme.palette.primary.dark, fontWeight: 600 }}>
-                                                {t('chartRec.autoContinueCountdown', { seconds: clarifySecondsRemaining })}
-                                            </Typography>
-                                        )}
-                                    </Typography>
-                                </Box>
-                            ))}
-                        </Box>
-                    )}
-                </Box>
+            {clarificationQuestions && pendingClarification && !isChatFormulating && (
+                <ClarificationPanel
+                    questions={clarificationQuestions}
+                    autoSelectQuestionId={pendingClarification.autoSelectQuestionId}
+                    autoSelectOptionId={pendingClarification.autoSelectOptionId}
+                    autoSelectTimeoutMs={pendingClarification.autoSelectTimeoutMs}
+                    onSubmit={resumeFromClarification}
+                    onCancel={cancelAgent}
+                />
             )}
             {/* Idea chips inline */}
             {ideas.length > 0 && !isChatFormulating && (
@@ -1492,8 +1410,8 @@ export const SimpleChartRecBox: FC = function () {
                     display: 'flex', flexDirection: 'column', gap: '4px',
                     borderBottom: `1px solid ${alpha(theme.palette.secondary.main, 0.15)}`,
                     backgroundColor: alpha(theme.palette.secondary.main, 0.03),
-                    borderRadius: clarificationQuestion ? 0 : '8px 8px 0 0',
-                    mx: '-8px', mt: clarificationQuestion ? 0 : '-4px', mb: '4px', px: '10px', pt: '6px', pb: '6px',
+                    borderRadius: clarificationQuestions ? 0 : '8px 8px 0 0',
+                    mx: '-8px', mt: clarificationQuestions ? 0 : '-4px', mb: '4px', px: '10px', pt: '6px', pb: '6px',
                 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', mb: '2px' }}>
                         <TipsAndUpdatesIcon sx={{ fontSize: 12, color: theme.palette.secondary.main }} />
@@ -1613,6 +1531,7 @@ export const SimpleChartRecBox: FC = function () {
                     </MenuList>
                 </Paper>
             </Popper>
+            {!pendingClarification && (
             <TextField
                 variant="standard"
                 sx={{
@@ -1730,6 +1649,7 @@ export const SimpleChartRecBox: FC = function () {
                 minRows={2}
                 maxRows={4}
             />
+            )}
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
                 {/* Action buttons */}
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.5, overflow: 'hidden', flex: 1 }}>
@@ -1809,7 +1729,8 @@ export const SimpleChartRecBox: FC = function () {
                                 </IconButton>
                             </Tooltip>
                         )}
-                        <Tooltip title={pendingClarification ? t('chartRec.sendReply') : t('chartRec.explore')}>
+                        {!pendingClarification && (
+                        <Tooltip title={t('chartRec.explore')}>
                             <span>
                                 <IconButton
                                     size="small"
@@ -1828,6 +1749,7 @@ export const SimpleChartRecBox: FC = function () {
                                 </IconButton>
                             </span>
                         </Tooltip>
+                        )}
                     </>
                 )}
                 </Box>
