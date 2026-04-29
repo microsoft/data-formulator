@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## File Location & Naming
 
-- Place tests under `tests/backend/unit/`, `tests/backend/integration/`, or `tests/backend/contract/`.
+- Place tests under `tests/backend/unit/`, `tests/backend/integration/`, `tests/backend/contract/`, or by domain: `tests/backend/routes/`, `tests/backend/errors/`, `tests/backend/agents/`, `tests/backend/data/`, `tests/backend/security/`, `tests/backend/auth/`, `tests/backend/knowledge/`.
 - Name files `test_<feature_or_module>.py` with descriptive snake_case names.
 - Shared test data goes in `tests/backend/fixtures/`.
 

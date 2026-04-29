@@ -936,9 +936,7 @@ export const SimpleChartRecBox: FC = function () {
 
                 if (createdCharts.length > 0) {
                     const lastChart = createdCharts[createdCharts.length - 1];
-                    setTimeout(() => {
-                        dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
-                    }, 1500);
+                    dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
                 }
             }
 

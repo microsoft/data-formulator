@@ -637,10 +637,7 @@ export function useFormulateData() {
             const focusedChartId = createChart({ candidateTable, refinedGoal, currentConcepts });
 
             if (focusedChartId) {
-                const chartIdForInsight = focusedChartId;
-                setTimeout(() => {
-                    dispatch(fetchChartInsight({ chartId: chartIdForInsight, tableId: candidateTable.id }) as any);
-                }, 1500);
+                dispatch(fetchChartInsight({ chartId: focusedChartId, tableId: candidateTable.id }) as any);
             }
 
             onSuccess?.({ displayInstruction, candidateTable, focusedChartId });

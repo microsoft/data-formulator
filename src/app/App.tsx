@@ -766,7 +766,6 @@ const AppShell: FC = () => {
     // Auto-name workspace after first table + model are available
     useWorkspaceAutoName();
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
-    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
 
     const isAboutPage = location.pathname === '/about';
     const isGalleryPage = location.pathname === '/gallery';
@@ -839,9 +838,8 @@ const AppShell: FC = () => {
                         {isAppPage && (
                             <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                                 <LanguageSwitcher />
-                                {focusedId !== undefined && <React.Fragment>
                                 <ConfigDialog />
-                                <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
+                                <Divider orientation="vertical" variant="middle" flexItem />
                                 <ModelSelectionButton />
                             </Box>
                         )}

@@ -788,40 +788,67 @@ def request_code_expl():
 
 @agent_bp.route('/chart-insight', methods=['GET', 'POST'])
 def request_chart_insight():
-    if request.is_json:
-        logger.info("# chart insight request")
-        content = request.get_json()
-        client = get_client(content['model'])
+    from data_formulator.error_handler import classify_and_wrap_llm_error
+    from data_formulator.errors import AppError, ErrorCode
 
-        chart_image = content.get("chart_image", "")
-        chart_type = content.get("chart_type", "")
-        field_names = content.get("field_names", [])
-        input_tables = content.get("input_tables", [])
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
-        # Get workspace
-        identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
+    logger.info("# chart insight request")
+    content = request.get_json()
 
-        try:
-            knowledge_store = _get_knowledge_store(identity_id)
-            agent = ChartInsightAgent(client=client, workspace=workspace,
-                                      language_instruction=get_language_instruction(),
-                                      knowledge_store=knowledge_store)
-            candidates = agent.run(chart_image, chart_type, field_names, input_tables)
+    chart_image = content.get("chart_image", "")
+    chart_type = content.get("chart_type", "")
+    field_names = content.get("field_names", [])
+    input_tables = content.get("input_tables", [])
 
-            if candidates and len(candidates) > 0:
-                result = candidates[0]
-                if result['status'] == 'ok':
-                    return jsonify(result)
-                else:
-                    return jsonify(result)
-            else:
-                return jsonify({'error': 'No insight generated'})
-        except Exception as e:
-            logger.error("Error in chart-insight", exc_info=e)
-            return jsonify({'error': classify_llm_error(e)})
-    else:
-        return jsonify({'error': 'Invalid request format'})
+    if not chart_image:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "Chart image not available. Please retry.")
+
+    model_config = content.get("model")
+    if not model_config:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Model configuration is required")
+
+    if not model_supports_vision(model_config):
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            "The selected model does not support image input. Please switch to a vision-capable model.",
+        )
+
+    client = get_client(model_config)
+    identity_id = get_identity_id()
+    workspace = get_workspace(identity_id)
+
+    try:
+        knowledge_store = _get_knowledge_store(identity_id)
+        agent = ChartInsightAgent(client=client, workspace=workspace,
+                                  language_instruction=get_language_instruction(),
+                                  knowledge_store=knowledge_store)
+        candidates = agent.run(chart_image, chart_type, field_names, input_tables)
+
+        if not candidates or len(candidates) == 0:
+            logger.warning("[chart-insight] failed request_id=%s reason=no_candidates",
+                           getattr(flask.g, 'request_id', ''))
+            raise AppError(ErrorCode.AGENT_ERROR, "Unable to generate chart insight")
+
+        result = candidates[0]
+        if result.get('status') != 'ok':
+            reason = result.get('content', result.get('status', 'unknown'))
+            logger.warning("[chart-insight] failed request_id=%s reason=candidate_error detail=%s",
+                           getattr(flask.g, 'request_id', ''), reason)
+            raise AppError(ErrorCode.AGENT_ERROR, "Unable to generate chart insight")
+
+        logger.info("[chart-insight] done request_id=%s takeaway_count=%d",
+                    getattr(flask.g, 'request_id', ''),
+                    len(result.get('takeaways', [])))
+        return jsonify({"status": "ok", "title": result.get("title", ""),
+                        "takeaways": result.get("takeaways", [])})
+
+    except AppError:
+        raise
+    except Exception as e:
+        logger.error("Error in chart-insight", exc_info=e)
+        raise classify_and_wrap_llm_error(e) from e
 
 @agent_bp.route('/get-recommendation-questions', methods=['GET', 'POST'])
 def get_recommendation_questions():

@@ -186,8 +186,12 @@ All streaming endpoints are now on the unified protocol:
 | `/data-loading-chat` | NDJSON, `classify_llm_error()` for safe messages | `str(e)` removed |
 | `/clean-data-stream` | NDJSON + `stream_error_event()` | Was `\n{json}\n` format |
 
-Non-streaming endpoints (`derive-data`, `refine-data`, `sort-data`, `process-data-on-load`, `test-model`)
-all include `error_message` in error responses for frontend consumption.
+Non-streaming endpoints:
+
+| Endpoint | Error Format | Notes |
+|----------|-------------|-------|
+| `/chart-insight` | `AppError` → unified `{status:"error", error:{code,message,retry}}` | **Fully migrated** (Phase 1). Removed `token`. Frontend uses `fetchChartInsight` rejected reducer with `TimeoutError`/`AbortError`/business error discrimination. Tests: `test_chart_insight_route.py` |
+| `/derive-data`, `/refine-data`, `/sort-data`, `/process-data-on-load`, `/test-model` | Legacy `{status:"error", error_message:"..."}` | Pending migration to `AppError` (Phase 2) |
 
 ## Empty Catch Policy
 
@@ -195,7 +199,7 @@ Not all `.catch(() => {})` are bugs. Use this decision tree:
 
 1. **User-initiated action** (delete, refresh, submit) → **Must notify**: dispatch `addMessages` with error
 2. **Background/best-effort fetch** (connector list on mount, session list) → **OK to swallow**, but add a comment: `.catch(() => { /* connector list is best-effort */ })`
-3. **RTK thunks** → **Always add `.rejected` handler** with `addMessages` (use `type: 'warning'` for non-critical, `type: 'error'` for critical)
+3. **RTK thunks** → **Always add `.rejected` handler** with `addMessages`. Discriminate by `action.error?.name`: `AbortError` (silent), `TimeoutError` (timeout message with config seconds), other (generic warning). See `fetchChartInsight` in `dfSlice.tsx` for reference.
 4. **AbortError** → Always filter out: `if (action.error?.name !== 'AbortError')`
 
 ## Frontend Stream Parsing Pattern

@@ -1,7 +1,7 @@
 # 统一错误处理开发规范
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-26
+> **最后更新**: 2026-04-30
 > **适用范围**: 后端 API route、流式端点、前端 API 调用、错误码/i18n、错误相关测试
 
 ## 1. 核心契约
@@ -58,6 +58,19 @@ def my_endpoint():
 ```
 
 HTTP 状态码仍为 `200`。
+
+### 已迁移示例：`/api/agent/chart-insight`
+
+`chart-insight` 是第一个完整迁移到 `AppError` 体系的非流式 Agent endpoint。变更要点：
+
+- 输入校验（missing image、non-vision model）使用 `raise AppError(ErrorCode.VALIDATION_ERROR, ...)`
+- LLM 异常使用 `raise classify_and_wrap_llm_error(e) from e`
+- 移除了 request/response 中的 `token` 字段
+- 成功响应统一为 `{"status": "ok", "title": "...", "takeaways": [...]}`
+- 前端 `fetchChartInsight` rejected reducer 区分 `TimeoutError`、`AbortError`、`ChartImageNotReady` 和业务错误
+- 测试见 `tests/backend/routes/test_chart_insight_route.py`
+
+后续普通 JSON endpoint 迁移可参考此模式。
 
 ### 2.2 旧 route 最小迁移格式
 
@@ -181,7 +194,7 @@ if (body.status === 'error') {
 |------|------|
 | 用户主动操作失败 | 必须通知用户，例如 `addMessages` 或 `handleApiError()` |
 | 后台 best-effort 加载 | 可以静默，但要加注释说明为何可忽略 |
-| RTK thunk rejected | 必须有 `.rejected` handler，过滤 `AbortError` |
+| RTK thunk rejected | 必须有 `.rejected` handler，按 `error.name` 区分 `AbortError`（静默）、`TimeoutError`（超时提示）和业务错误（通用提示），参见 `fetchChartInsight` |
 | `AbortError` | 可直接忽略 |
 
 ### 4.4 特例边界
