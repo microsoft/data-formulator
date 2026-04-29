@@ -29,6 +29,9 @@
     "error": "错误",
     "success": "成功"
   },
+  "common": {
+    "save": "保存"
+  },
   "appBar": {
     "session": "会话",
     "explore": "探索",
@@ -187,6 +190,7 @@
   },
   "report": {
     "deleteReport": "删除报告",
+    "backToEditor": "返回编辑器",
     "createChartifactReport": "创建 Chartifact 报告",
     "shareReportAsImage": "以图片分享报告",
     "couldNotFindContent": "无法找到要截取的报告内容",
@@ -227,6 +231,14 @@
     "createChartifact": "创建 Chartifact",
     "copied": "已复制！",
     "copyContent": "复制内容",
+    "imageActions": "图片",
+    "copyImage": "复制图片到剪贴板",
+    "downloadPng": "下载 PNG",
+    "exportPdf": "导出 PDF",
+    "pngDownloaded": "PNG 已下载",
+    "failedToDownloadPng": "下载 PNG 失败，请重试。",
+    "pdfPrintOpened": "已打开打印对话框，请选择保存为 PDF。",
+    "failedToExportPdf": "导出 PDF 失败，请重试。",
     "shareImage": "分享图片",
     "createdWithAI": "由 AI 生成，使用",
     "chartAlt": "图表",
@@ -378,6 +390,7 @@
     "createNewChart": "新建图表",
     "deleteTable": "删除表",
     "deleteChart": "删除图表",
+    "deleteReport": "删除报告",
     "attachMetadata": "附加元数据",
     "editMetadata": "编辑元数据",
     "refreshData": "刷新数据",
@@ -432,6 +445,9 @@
     "assistant": "助手",
     "agentLog": "Agent 日志"
   },
+  "dataView": {
+    "breadcrumb": "面包屑"
+  },
   "dataLoading": {
     "extractingData": "正在提取数据...",
     "examples": "示例",
@@ -461,6 +477,14 @@
     "removeTable": "移除表",
     "rowsColumns": "{{rows}} 行 × {{columns}} 列",
     "noTablesToPreview": "没有可预览的表。"
+  },
+  "conceptShelf": {
+    "cleanUnusedFields": "清理未使用字段",
+    "showAllFields": "... 显示全部 {{count}} 个{{group}}字段 ▾",
+    "dataFields": "数据字段",
+    "fieldOperators": "字段运算符",
+    "openPanel": "打开概念面板",
+    "hidePanel": "隐藏概念面板"
   },
   "chartRec": {
     "generateFromDescription": "根据描述生成图表",

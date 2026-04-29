@@ -29,6 +29,9 @@
     "error": "Error",
     "success": "Success"
   },
+  "common": {
+    "save": "Save"
+  },
   "appBar": {
     "session": "Session",
     "explore": "Explore",
@@ -187,6 +190,7 @@
   },
   "report": {
     "deleteReport": "Delete report",
+    "backToEditor": "Back to editor",
     "createChartifactReport": "Create Chartifact report",
     "shareReportAsImage": "Share report as image",
     "couldNotFindContent": "Could not find report content to capture",
@@ -227,6 +231,14 @@
     "createChartifact": "Create Chartifact",
     "copied": "Copied!",
     "copyContent": "Copy content",
+    "imageActions": "Image",
+    "copyImage": "Copy image to clipboard",
+    "downloadPng": "Download PNG",
+    "exportPdf": "Export PDF",
+    "pngDownloaded": "PNG downloaded",
+    "failedToDownloadPng": "Failed to download PNG. Please try again.",
+    "pdfPrintOpened": "Print dialog opened. Choose Save as PDF.",
+    "failedToExportPdf": "Failed to export PDF. Please try again.",
     "shareImage": "Share Image",
     "createdWithAI": "created with AI using",
     "chartAlt": "Chart",
@@ -378,6 +390,7 @@
     "createNewChart": "create a new chart",
     "deleteTable": "delete table",
     "deleteChart": "delete chart",
+    "deleteReport": "delete report",
     "attachMetadata": "Attach metadata",
     "editMetadata": "Edit metadata",
     "refreshData": "Refresh data",

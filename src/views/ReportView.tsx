@@ -6,15 +6,12 @@ import {
     Box,
     Typography,
     IconButton,
-    CircularProgress,
     Link,
     Tooltip,
     useTheme,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteIcon from '@mui/icons-material/Delete';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import html2canvas from 'html2canvas';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, GeneratedReport } from '../app/dfSlice';
@@ -49,8 +46,8 @@ export const ReportView: FC = () => {
     const isGenerating = currentReport?.status === 'generating';
 
     const [cachedReportImages, setCachedReportImages] = useState<Record<string, { url: string; width: number; height: number }>>({});
-    const [shareButtonSuccess, setShareButtonSuccess] = useState(false);
     const [copyButtonSuccess, setCopyButtonSuccess] = useState(false);
+    const [imageCopyButtonSuccess, setImageCopyButtonSuccess] = useState(false);
 
     const updateCachedReportImages = (chartId: string, blobUrl: string, width: number, height: number) => {
         setCachedReportImages(prev => ({
@@ -70,60 +67,312 @@ export const ReportView: FC = () => {
         dispatch(dfActions.addMessages(msg));
     };
 
-    // Function to capture and share report as image
-    const shareReportAsImage = async () => {
-        if (!currentReportId) return;
+    const getReportElement = (): HTMLElement | null => {
+        return document.querySelector('[data-report-content]') as HTMLElement | null;
+    };
+
+    const createReportExportClone = (): { reportElement: HTMLElement; clone: HTMLElement } | null => {
+        const reportElement = getReportElement();
+        if (!reportElement) {
+            showMessage(t('report.couldNotFindContent'), 'error');
+            return null;
+        }
+
+        const clone = reportElement.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('[data-report-toolbar]').forEach(el => el.remove());
+        clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+        return { reportElement, clone };
+    };
+
+    const getReportTitle = (root?: ParentNode | null): string => {
+        const source = root || getReportElement();
+        const titleText = source?.querySelector('h1, h2, h3')?.textContent
+            || source?.querySelector('p')?.textContent
+            || currentReport?.content?.split('\n').find(line => line.trim().length > 0)
+            || t('report.untitled');
+
+        return titleText
+            .replace(/```markdown|```/g, '')
+            .replace(/^#+\s*/, '')
+            .trim()
+            || t('report.untitled');
+    };
+
+    const sanitizeFileName = (name: string): string => {
+        const sanitized = name
+            .replace(/[\\/:*?"<>|]/g, ' ')
+            .replace(/[\u0000-\u001f]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/[. ]+$/g, '')
+            .slice(0, 80);
+
+        return sanitized || t('report.untitled');
+    };
+
+    const getReportFileName = (extension: string): string => {
+        const date = new Date().toISOString().slice(0, 10);
+        return `${sanitizeFileName(getReportTitle())}-${date}.${extension}`;
+    };
+
+    const renderReportToCanvas = async (): Promise<HTMLCanvasElement | null> => {
+        const exportClone = createReportExportClone();
+        if (!exportClone) return null;
+
+        const { reportElement, clone } = exportClone;
+        clone.style.position = 'fixed';
+        clone.style.left = '-10000px';
+        clone.style.top = '0';
+        clone.style.width = `${reportElement.scrollWidth}px`;
+        clone.style.maxWidth = `${reportElement.scrollWidth}px`;
+        clone.style.backgroundColor = '#ffffff';
+        clone.style.pointerEvents = 'none';
+        document.body.appendChild(clone);
 
         try {
-            // Find the report content element
-            const reportElement = document.querySelector('[data-report-content]') as HTMLElement;
-            if (!reportElement) {
-                showMessage(t('report.couldNotFindContent'), 'error');
-                return;
-            }
-
-            // Capture the report as canvas with extra padding for borders
-            const canvas = await html2canvas(reportElement, {
+            return await html2canvas(clone, {
                 backgroundColor: '#ffffff',
-                scale: 2, // Higher quality
+                scale: 2,
                 useCORS: true,
                 allowTaint: true,
                 scrollX: 0,
                 scrollY: 0,
-                // Add extra padding to ensure borders are captured
-                width: reportElement.scrollWidth + 4,
-                height: reportElement.scrollHeight + 4,
-                logging: false // Disable console logs
+                width: clone.scrollWidth + 4,
+                height: clone.scrollHeight + 4,
+                logging: false
+            });
+        } finally {
+            clone.remove();
+        }
+    };
+
+    const canvasToBlob = (canvas: HTMLCanvasElement): Promise<Blob | null> => {
+        return new Promise(resolve => canvas.toBlob(resolve, 'image/png', 0.95));
+    };
+
+    const copyReportContent = async () => {
+        const exportClone = createReportExportClone();
+        if (!exportClone) return;
+
+        const { reportElement, clone } = exportClone;
+        try {
+            // Inline chart images so they survive paste into Word, Google Docs, etc.
+            const imgs = clone.querySelectorAll('img');
+            await Promise.all(Array.from(imgs).map(async (img) => {
+                try {
+                    const src = (reportElement.querySelector(`img[src="${CSS.escape(img.getAttribute('src') || '')}"]`) as HTMLImageElement)
+                        || (reportElement.querySelector(`img[data-chart-id="${CSS.escape(img.getAttribute('data-chart-id') || '')}"]`) as HTMLImageElement);
+                    if (!src || !src.complete || src.naturalWidth === 0) return;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = src.naturalWidth;
+                    canvas.height = src.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return;
+                    ctx.drawImage(src, 0, 0);
+                    img.setAttribute('src', canvas.toDataURL('image/png'));
+                } catch {
+                    // Cross-origin or tainted canvas: keep original src.
+                }
+            }));
+
+            // Strip editor-only attributes/classes that external apps may misinterpret.
+            clone.querySelectorAll('*').forEach(el => {
+                el.removeAttribute('contenteditable');
+                el.removeAttribute('draggable');
+                el.removeAttribute('data-node-type');
+                el.removeAttribute('data-type');
+                el.removeAttribute('data-chart-id');
+                Array.from(el.attributes).forEach(attr => {
+                    if (attr.name.startsWith('data-')) {
+                        el.removeAttribute(attr.name);
+                    }
+                });
+                if (el.getAttribute('class')?.match(/ProseMirror|tiptap|node-/)) {
+                    el.removeAttribute('class');
+                }
             });
 
-            // Convert canvas to blob
-            canvas.toBlob((blob: Blob | null) => {
-                if (!blob) {
-                    showMessage(t('report.failedToGenerateImage'), 'error');
-                    return;
-                }
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    'text/html': new Blob([clone.innerHTML], { type: 'text/html' }),
+                    'text/plain': new Blob([clone.innerText], { type: 'text/plain' }),
+                }),
+            ]);
+            setCopyButtonSuccess(true);
+            setTimeout(() => setCopyButtonSuccess(false), 2000);
+        } catch (e) {
+            console.warn('Failed to copy report content:', e);
+            showMessage(t('report.failedToCopyClipboard'), 'error');
+        }
+    };
 
-                // Copy to clipboard
-                if (navigator.clipboard && navigator.clipboard.write) {
-                    navigator.clipboard.write([
-                        new ClipboardItem({
-                            'image/png': blob
-                        })
-                    ]).then(() => {
-                        showMessage(t('report.imageCopied'));
-                        setShareButtonSuccess(true);
-                        setTimeout(() => setShareButtonSuccess(false), 2000);
-                    }).catch(() => {
-                        showMessage(t('report.failedToCopyClipboard'), 'error');
-                    });
-                } else {
-                    showMessage(t('report.clipboardNotSupported'), 'error');
-                }
-            }, 'image/png', 0.95);
+    const copyReportAsImage = async () => {
+        if (!navigator.clipboard || !navigator.clipboard.write) {
+            showMessage(t('report.clipboardNotSupported'), 'error');
+            return;
+        }
 
+        try {
+            const canvas = await renderReportToCanvas();
+            if (!canvas) return;
+            const blob = await canvasToBlob(canvas);
+            if (!blob) {
+                showMessage(t('report.failedToGenerateImage'), 'error');
+                return;
+            }
+
+            await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': blob })
+            ]);
+            showMessage(t('report.imageCopied'));
+            setImageCopyButtonSuccess(true);
+            setTimeout(() => setImageCopyButtonSuccess(false), 2000);
         } catch (error) {
             console.error('Error generating report image:', error);
             showMessage(t('report.failedToGenerateReportImage'), 'error');
+        }
+    };
+
+    const downloadReportAsPng = async () => {
+        try {
+            const canvas = await renderReportToCanvas();
+            if (!canvas) return;
+            const blob = await canvasToBlob(canvas);
+            if (!blob) {
+                showMessage(t('report.failedToGenerateImage'), 'error');
+                return;
+            }
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = getReportFileName('png');
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 0);
+            showMessage(t('report.pngDownloaded'));
+        } catch (error) {
+            console.error('Error downloading report image:', error);
+            showMessage(t('report.failedToDownloadPng'), 'error');
+        }
+    };
+
+    const waitForImages = async (root: ParentNode) => {
+        const imgs = Array.from(root.querySelectorAll('img')) as HTMLImageElement[];
+        await Promise.all(imgs.map(img => {
+            if (img.complete && img.naturalWidth !== 0) return Promise.resolve();
+            return new Promise<void>(resolve => {
+                img.onload = () => resolve();
+                img.onerror = () => resolve();
+            });
+        }));
+    };
+
+    const exportReportAsPdf = async () => {
+        const exportClone = createReportExportClone();
+        if (!exportClone) return;
+
+        const printFrame = document.createElement('iframe');
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '0';
+        printFrame.style.bottom = '0';
+        printFrame.style.width = '0';
+        printFrame.style.height = '0';
+        printFrame.style.border = '0';
+        document.body.appendChild(printFrame);
+
+        try {
+            const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+                .map(node => node.outerHTML)
+                .join('\n');
+            const printTitle = sanitizeFileName(getReportTitle(exportClone.clone));
+            const originalDocumentTitle = document.title;
+            const doc = printFrame.contentDocument;
+            const win = printFrame.contentWindow;
+            if (!doc || !win) {
+                showMessage(t('report.failedToExportPdf'), 'error');
+                printFrame.remove();
+                return;
+            }
+
+            doc.open();
+            doc.write(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${printTitle}</title>
+${styles}
+<style>
+    @page { margin: 18mm; }
+    html, body {
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+        color: rgb(55, 53, 47);
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .print-root {
+        width: 100%;
+        max-width: 816px;
+        margin: 0 auto;
+        background: #ffffff;
+    }
+    [data-report-toolbar] {
+        display: none !important;
+    }
+    [data-report-content], [data-report-content] * {
+        overflow: visible !important;
+        max-height: none !important;
+    }
+    .tiptap {
+        outline: none !important;
+    }
+    img {
+        max-width: 100%;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    h1, h2, h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+    }
+    p, li, blockquote {
+        orphans: 3;
+        widows: 3;
+    }
+</style>
+</head>
+<body>
+    <div class="print-root">
+        ${exportClone.clone.outerHTML}
+    </div>
+</body>
+</html>`);
+            doc.close();
+
+            await waitForImages(doc);
+            document.title = printTitle;
+            win.focus();
+            let cleanupTimer: number | undefined;
+            const cleanupPrintFrame = () => {
+                if (cleanupTimer) {
+                    window.clearTimeout(cleanupTimer);
+                }
+                document.title = originalDocumentTitle;
+                if (document.body.contains(printFrame)) {
+                    printFrame.remove();
+                }
+            };
+            win.addEventListener('afterprint', cleanupPrintFrame, { once: true });
+            cleanupTimer = window.setTimeout(cleanupPrintFrame, 5 * 60 * 1000);
+            win.print();
+            showMessage(t('report.pdfPrintOpened'), 'info');
+        } catch (error) {
+            console.error('Error exporting report PDF:', error);
+            printFrame.remove();
+            showMessage(t('report.failedToExportPdf'), 'error');
         }
     };
 
@@ -352,96 +601,20 @@ export const ReportView: FC = () => {
                             </IconButton>
                         </Tooltip>
                         {currentReportId && (
-                            <>
-                                <Tooltip title={copyButtonSuccess ? t('report.copied') : t('report.copyContent')} placement="right">
-                                    <IconButton
-                                        size="small"
-                                        color={copyButtonSuccess ? 'success' : 'default'}
-                                        onClick={async () => {
-                                            const reportEl = document.querySelector('[data-report-content]') as HTMLElement;
-                                            if (!reportEl) return;
-                                            try {
-                                                // Clone the report and sanitize for external paste targets
-                                                const clone = reportEl.cloneNode(true) as HTMLElement;
-
-                                                // Inline all images as base64 data URLs so they survive
-                                                // clipboard paste into Word, Google Docs, etc.
-                                                const imgs = clone.querySelectorAll('img');
-                                                await Promise.all(Array.from(imgs).map(async (img) => {
-                                                    try {
-                                                        const src = (reportEl.querySelector(`img[src="${CSS.escape(img.getAttribute('src') || '')}"]`) as HTMLImageElement)
-                                                            || (reportEl.querySelector(`img[data-chart-id="${CSS.escape(img.getAttribute('data-chart-id') || '')}"]`) as HTMLImageElement);
-                                                        if (!src || !src.complete || src.naturalWidth === 0) return;
-                                                        const canvas = document.createElement('canvas');
-                                                        canvas.width = src.naturalWidth;
-                                                        canvas.height = src.naturalHeight;
-                                                        const ctx = canvas.getContext('2d');
-                                                        if (!ctx) return;
-                                                        ctx.drawImage(src, 0, 0);
-                                                        img.setAttribute('src', canvas.toDataURL('image/png'));
-                                                    } catch {
-                                                        // Cross-origin or tainted canvas — keep original src
-                                                    }
-                                                }));
-
-                                                // Strip Tiptap/ProseMirror attributes that external apps
-                                                // (Google Docs, Word) may misinterpret as links or styles
-                                                clone.querySelectorAll('*').forEach(el => {
-                                                    el.removeAttribute('contenteditable');
-                                                    el.removeAttribute('draggable');
-                                                    el.removeAttribute('data-node-type');
-                                                    el.removeAttribute('data-type');
-                                                    el.removeAttribute('data-chart-id');
-                                                    // Remove all data- attributes
-                                                    Array.from(el.attributes).forEach(attr => {
-                                                        if (attr.name.startsWith('data-')) {
-                                                            el.removeAttribute(attr.name);
-                                                        }
-                                                    });
-                                                    // Remove Tiptap/ProseMirror classes
-                                                    if (el.getAttribute('class')?.match(/ProseMirror|tiptap|node-/)) {
-                                                        el.removeAttribute('class');
-                                                    }
-                                                });
-
-                                                const html = clone.innerHTML;
-                                                const text = reportEl.innerText;
-                                                await navigator.clipboard.write([
-                                                    new ClipboardItem({
-                                                        'text/html': new Blob([html], { type: 'text/html' }),
-                                                        'text/plain': new Blob([text], { type: 'text/plain' }),
-                                                    }),
-                                                ]);
-                                                setCopyButtonSuccess(true);
-                                                setTimeout(() => setCopyButtonSuccess(false), 2000);
-                                            } catch (e) {
-                                                console.warn('Failed to copy report content:', e);
-                                            }
-                                        }}
-                                        sx={{
-                                            backgroundColor: 'background.paper',
-                                            boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
-                                            '&:hover': { backgroundColor: 'action.hover' },
-                                        }}
-                                    >
-                                        {copyButtonSuccess ? <CheckCircleIcon sx={{ fontSize: 18 }} /> : <ContentCopyIcon sx={{ fontSize: 18 }} />}
-                                    </IconButton>
-                                </Tooltip>
-                                <Tooltip title={t('report.deleteReport')} placement="right">
-                                    <IconButton
-                                        size="small"
-                                        onClick={(e) => deleteReport(currentReportId, e)}
-                                        sx={{
-                                            backgroundColor: 'background.paper',
-                                            boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
-                                            color: 'error.main',
-                                            '&:hover': { backgroundColor: 'error.50' },
-                                        }}
-                                    >
-                                        <DeleteIcon sx={{ fontSize: 18 }} />
-                                    </IconButton>
-                                </Tooltip>
-                            </>
+                            <Tooltip title={t('report.deleteReport')} placement="right">
+                                <IconButton
+                                    size="small"
+                                    onClick={(e) => deleteReport(currentReportId, e)}
+                                    sx={{
+                                        backgroundColor: 'background.paper',
+                                        boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                                        color: 'error.main',
+                                        '&:hover': { backgroundColor: 'error.50' },
+                                    }}
+                                >
+                                    <DeleteIcon sx={{ fontSize: 18 }} />
+                                </IconButton>
+                            </Tooltip>
                         )}
                     </Box>
                     {/* Continuous canvas — content flows cleanly */}
@@ -464,6 +637,12 @@ export const ReportView: FC = () => {
                                 content={displayedReport}
                                 editable={!isGenerating}
                                 reportId={currentReportId}
+                                onCopyContent={currentReportId ? copyReportContent : undefined}
+                                onCopyImage={currentReportId ? copyReportAsImage : undefined}
+                                onDownloadPng={currentReportId ? downloadReportAsPng : undefined}
+                                onExportPdf={currentReportId ? exportReportAsPdf : undefined}
+                                copyContentSuccess={copyButtonSuccess}
+                                copyImageSuccess={imageCopyButtonSuccess}
                                 onUpdate={(html) => {
                                     if (currentReportId) {
                                         setGeneratedReport(html);
