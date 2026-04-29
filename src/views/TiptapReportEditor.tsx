@@ -7,7 +7,7 @@ import { useEditor, EditorContent, NodeViewWrapper, NodeViewProps, ReactNodeView
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import { Markdown } from 'tiptap-markdown';
-import { Box, IconButton, Tooltip, Divider, useTheme, Typography } from '@mui/material';
+import { Box, Button, IconButton, Menu, MenuItem, Tooltip, Divider, useTheme, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { WritingPencil, ShimmerText, WritingIndicator } from '../components/FunComponents';
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
@@ -16,12 +16,23 @@ import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
 import FormatListNumberedIcon from '@mui/icons-material/FormatListNumbered';
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import TitleIcon from '@mui/icons-material/Title';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import ImageIcon from '@mui/icons-material/Image';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import DownloadIcon from '@mui/icons-material/Download';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
 export interface TiptapReportEditorProps {
     content: string;           // HTML content (from processReport)
     editable?: boolean;
     reportId?: string;         // triggers re-focus when switching reports
     onUpdate?: (html: string) => void;
+    onCopyContent?: () => void | Promise<void>;
+    onCopyImage?: () => void | Promise<void>;
+    onDownloadPng?: () => void | Promise<void>;
+    onExportPdf?: () => void | Promise<void>;
+    copyContentSuccess?: boolean;
+    copyImageSuccess?: boolean;
 }
 
 /** Resizable image node view — drag bottom-right corner to resize */
@@ -158,10 +169,22 @@ const ToolbarButton: FC<{
     );
 };
 
-export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, editable = true, reportId, onUpdate }) => {
+export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({
+    content,
+    editable = true,
+    reportId,
+    onUpdate,
+    onCopyContent,
+    onCopyImage,
+    onDownloadPng,
+    onExportPdf,
+    copyContentSuccess = false,
+    copyImageSuccess = false,
+}) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const isFocused = useRef(false);
+    const [imageMenuAnchor, setImageMenuAnchor] = useStateReact<null | HTMLElement>(null);
 
     const editor = useEditor({
         extensions: [
@@ -244,6 +267,45 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
     if (!editor) return null;
 
     const iconSx = { fontSize: 16 };
+    const exportIconSx = { fontSize: 15 };
+    const exportButtonSx = {
+        minWidth: 0,
+        height: 26,
+        px: 0.75,
+        py: 0,
+        borderRadius: '4px',
+        textTransform: 'none',
+        fontSize: 12,
+        fontWeight: 400,
+        lineHeight: 1,
+        color: 'text.secondary',
+        borderColor: 'transparent',
+        backgroundColor: 'transparent',
+        '& .MuiButton-startIcon': {
+            mr: 0.5,
+            ml: 0,
+            color: 'inherit',
+        },
+        '&:hover': {
+            color: 'primary.main',
+            borderColor: alpha(theme.palette.primary.main, 0.08),
+            backgroundColor: alpha(theme.palette.primary.main, 0.08),
+        },
+    };
+    const exportMenuItemSx = {
+        minHeight: 30,
+        px: 1.25,
+        py: 0.5,
+        fontSize: 12,
+        color: 'text.secondary',
+        '& .MuiSvgIcon-root': {
+            fontSize: 15,
+            mr: 0.75,
+            color: 'text.disabled',
+        },
+    };
+    const hasExportActions = !!(onCopyContent || onCopyImage || onDownloadPng || onExportPdf);
+    const imageMenuOpen = Boolean(imageMenuAnchor);
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
@@ -261,8 +323,15 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
                 zIndex: 5,
                 backgroundColor: 'background.paper',
                 opacity: editable ? 1 : 0.5,
-                pointerEvents: editable ? 'auto' : 'none',
-            }}>
+            }}
+                data-report-toolbar
+            >
+                <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '2px',
+                    pointerEvents: editable ? 'auto' : 'none',
+                }}>
                     <ToolbarButton
                         onClick={() => editor.chain().focus().toggleBold().run()}
                         isActive={editor.isActive('bold')}
@@ -314,6 +383,108 @@ export const TiptapReportEditor: FC<TiptapReportEditorProps> = ({ content, edita
                     >
                         <FormatQuoteIcon sx={iconSx} />
                     </ToolbarButton>
+                </Box>
+                {hasExportActions && editable && (
+                    <Box sx={{
+                        ml: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.75,
+                        pointerEvents: editable ? 'auto' : 'none',
+                    }}>
+                        {onCopyContent && (
+                            <Button
+                                size="small"
+                                variant="text"
+                                startIcon={copyContentSuccess ? <CheckCircleIcon sx={exportIconSx} /> : <ContentCopyIcon sx={exportIconSx} />}
+                                onClick={onCopyContent}
+                                color={copyContentSuccess ? 'success' : 'primary'}
+                                sx={{
+                                    ...exportButtonSx,
+                                    ...(copyContentSuccess ? {
+                                        color: 'success.main',
+                                        backgroundColor: alpha(theme.palette.success.main, 0.08),
+                                    } : {}),
+                                }}
+                            >
+                                {copyContentSuccess ? t('report.copied') : t('report.copyContent')}
+                            </Button>
+                        )}
+                        {(onCopyImage || onDownloadPng) && (
+                            <>
+                                <Button
+                                    size="small"
+                                    variant="text"
+                                    startIcon={copyImageSuccess ? <CheckCircleIcon sx={exportIconSx} /> : <ImageIcon sx={exportIconSx} />}
+                                    onClick={(event) => setImageMenuAnchor(event.currentTarget)}
+                                    color={copyImageSuccess ? 'success' : 'primary'}
+                                    sx={{
+                                        ...exportButtonSx,
+                                        ...(copyImageSuccess ? {
+                                            color: 'success.main',
+                                            backgroundColor: alpha(theme.palette.success.main, 0.08),
+                                        } : {}),
+                                    }}
+                                >
+                                    {copyImageSuccess ? t('report.copied') : t('report.imageActions')}
+                                </Button>
+                                <Menu
+                                    anchorEl={imageMenuAnchor}
+                                    open={imageMenuOpen}
+                                    onClose={() => setImageMenuAnchor(null)}
+                                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                                    slotProps={{
+                                        paper: {
+                                            sx: {
+                                                mt: 0.5,
+                                                borderRadius: '6px',
+                                                boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                                                border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                                            }
+                                        }
+                                    }}
+                                >
+                                    {onCopyImage && (
+                                        <MenuItem
+                                            onClick={() => {
+                                                setImageMenuAnchor(null);
+                                                void onCopyImage();
+                                            }}
+                                            sx={exportMenuItemSx}
+                                        >
+                                            <ContentCopyIcon />
+                                            {t('report.copyImage')}
+                                        </MenuItem>
+                                    )}
+                                    {onDownloadPng && (
+                                        <MenuItem
+                                            onClick={() => {
+                                                setImageMenuAnchor(null);
+                                                void onDownloadPng();
+                                            }}
+                                            sx={exportMenuItemSx}
+                                        >
+                                            <DownloadIcon />
+                                            {t('report.downloadPng')}
+                                        </MenuItem>
+                                    )}
+                                </Menu>
+                            </>
+                        )}
+                        {onExportPdf && (
+                            <Button
+                                size="small"
+                                variant="text"
+                                startIcon={<PictureAsPdfIcon sx={exportIconSx} />}
+                                onClick={onExportPdf}
+                                sx={exportButtonSx}
+                            >
+                                {t('report.exportPdf')}
+                            </Button>
+                        )}
+                    </Box>
+                )}
                     {!editable && (
                         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.75, pointerEvents: 'none' }}>
                             <Box sx={{
