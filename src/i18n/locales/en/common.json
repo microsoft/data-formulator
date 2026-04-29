@@ -29,6 +29,9 @@
     "error": "Error",
     "success": "Success"
   },
+  "common": {
+    "save": "Save"
+  },
   "appBar": {
     "session": "Session",
     "explore": "Explore",
@@ -187,6 +190,7 @@
   },
   "report": {
     "deleteReport": "Delete report",
+    "backToEditor": "Back to editor",
     "createChartifactReport": "Create Chartifact report",
     "shareReportAsImage": "Share report as image",
     "couldNotFindContent": "Could not find report content to capture",
@@ -378,6 +382,7 @@
     "createNewChart": "create a new chart",
     "deleteTable": "delete table",
     "deleteChart": "delete chart",
+    "deleteReport": "delete report",
     "attachMetadata": "Attach metadata",
     "editMetadata": "Edit metadata",
     "refreshData": "Refresh data",

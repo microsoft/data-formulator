@@ -66,6 +66,7 @@
     "useLoadFromUrl": "请使用「从 URL 加载」来加载远程数据。",
     "selectFileToPreview": "选择文件以预览。",
     "loadTable": "加载表",
+    "loadingTable": "加载中...",
     "loadAllTables": "加载所有表",
     "preview": "预览",
     "urlFormatHint": "URL 必须指向 CSV、JSON 或 JSONL 格式的数据",

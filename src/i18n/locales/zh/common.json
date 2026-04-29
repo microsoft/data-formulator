@@ -29,6 +29,9 @@
     "error": "错误",
     "success": "成功"
   },
+  "common": {
+    "save": "保存"
+  },
   "appBar": {
     "session": "会话",
     "explore": "探索",
@@ -187,6 +190,7 @@
   },
   "report": {
     "deleteReport": "删除报告",
+    "backToEditor": "返回编辑器",
     "createChartifactReport": "创建 Chartifact 报告",
     "shareReportAsImage": "以图片分享报告",
     "couldNotFindContent": "无法找到要截取的报告内容",
@@ -378,6 +382,7 @@
     "createNewChart": "新建图表",
     "deleteTable": "删除表",
     "deleteChart": "删除图表",
+    "deleteReport": "删除报告",
     "attachMetadata": "附加元数据",
     "editMetadata": "编辑元数据",
     "refreshData": "刷新数据",
@@ -432,6 +437,9 @@
     "assistant": "助手",
     "agentLog": "Agent 日志"
   },
+  "dataView": {
+    "breadcrumb": "面包屑"
+  },
   "dataLoading": {
     "extractingData": "正在提取数据...",
     "examples": "示例",
@@ -461,6 +469,14 @@
     "removeTable": "移除表",
     "rowsColumns": "{{rows}} 行 × {{columns}} 列",
     "noTablesToPreview": "没有可预览的表。"
+  },
+  "conceptShelf": {
+    "cleanUnusedFields": "清理未使用字段",
+    "showAllFields": "... 显示全部 {{count}} 个{{group}}字段 ▾",
+    "dataFields": "数据字段",
+    "fieldOperators": "字段运算符",
+    "openPanel": "打开概念面板",
+    "hidePanel": "隐藏概念面板"
   },
   "chartRec": {
     "generateFromDescription": "根据描述生成图表",
