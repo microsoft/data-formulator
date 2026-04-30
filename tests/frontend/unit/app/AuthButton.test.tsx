@@ -72,7 +72,7 @@ beforeEach(() => {
     mocks.getUserManager.mockResolvedValue(null);
 
     globalThis.fetch = vi.fn(async () => new Response(
-        JSON.stringify({ status: "ok" }),
+        JSON.stringify({ status: "success", data: {} }),
         { status: 200, headers: { "Content-Type": "application/json" } },
     ));
 
@@ -97,10 +97,10 @@ describe("AuthButton backend logout", () => {
         fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
         await waitFor(() => {
-            expect(globalThis.fetch).toHaveBeenCalledWith(
-                "/api/auth/oidc/logout",
-                { method: "POST" },
-            );
+            const [url, options] = (globalThis.fetch as any).mock.calls[0];
+            expect(url).toBe("/api/auth/oidc/logout");
+            expect(options.method).toBe("POST");
+            expect(options.headers).toBeInstanceOf(Headers);
         });
         expect(mocks.dispatch).toHaveBeenCalledWith(
             dfActions.setIdentity({ type: "browser", id: "browser-123" }),

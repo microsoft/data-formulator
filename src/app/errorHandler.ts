@@ -49,7 +49,10 @@ export function handleApiError(
 
     if (error instanceof ApiRequestError) {
         message = getErrorMessage(error.apiError);
-        detail = error.apiError.detail;
+        detail = [error.apiError.detail, error.apiError.request_id ? `Request ID: ${error.apiError.request_id}` : undefined]
+            .filter(Boolean)
+            .join('\n');
+        if (!detail) detail = undefined;
         diagnostics = error.apiError;
 
         if (error.isAuthError && options?.onAuth) {

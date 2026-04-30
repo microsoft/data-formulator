@@ -251,13 +251,13 @@ try {
 
 ### 4.3 `parseApiResponse()` 兼容性
 
-`parseApiResponse()` 同时接受：
+`parseApiResponse()` 只接受当前统一格式：
 
 - `status: "success"` + `data`（Phase 2+）
-- `status: "ok"` + `data` / `result`（Phase 1 / 旧代码）
-- `status: "error"` + `error` / `error_message` / `message`（所有版本）
+- `status: "error"` + `error: { code, message, retry, request_id? }`
 
-在迁移期间，不需要修改前端消费者来适配新的 `"success"` 状态值。
+旧的 `status: "ok"`、`error_message`、裸 `message` 会被视为 malformed response。
+未迁移 route 必须在调用点自行兼容，不能要求 `apiRequest()` 放宽协议。
 
 ### 4.4 空 catch 策略
 
@@ -307,9 +307,34 @@ try {
 | `py-src/data_formulator/error_handler.py` | `classify_and_wrap_llm_error()` | LLM/外部 API 异常安全分类 |
 | `py-src/data_formulator/error_handler.py` | `stream_error_event()` | NDJSON error 事件 |
 | `py-src/data_formulator/routes/tables.py` | `classify_and_raise_db_error()` | 表/工作区错误分类 |
-| `py-src/data_formulator/data_connector.py` | `classify_and_raise_connector_error()` | 连接器错误分类 |
+| `py-src/data_formulator/data_loader/connector_errors.py` | `classify_connector_error()` | DataLoader/connector 简单错误分类 |
+| `py-src/data_formulator/data_connector.py` | `classify_and_raise_connector_error()` | 连接器路由兼容入口 |
 
 `sanitize_db_error_message()`、`_sanitize_error()`、`safe_error_response()` 等 legacy wrapper 仅为兼容保留，新代码不要调用。
+
+### 6.1 全局兜底与 request_id
+
+所有 `AppError`、`404`、`413`、未捕获 `500` 的 JSON 错误体都必须包含
+`error.request_id`，同时响应头带 `X-Request-Id`。前端可把这个 ID 展示给用户，
+用于定位后端日志。生产环境不要把未捕获异常的原始文本、traceback 或连接串返回给前端。
+
+### 6.2 DataLoader/connector 分类
+
+DataLoader/connector 只做简单实用分类，不为每个 SDK 维护专门错误树：
+
+| 类别 | ErrorCode |
+|------|-----------|
+| 参数/请求问题 | `INVALID_REQUEST` |
+| 数据源鉴权失败 | `CONNECTOR_AUTH_FAILED` |
+| 登录过期 | `AUTH_EXPIRED` |
+| 权限不足 | `ACCESS_DENIED` |
+| 连接失败/超时 | `DB_CONNECTION_FAILED` |
+| 查询语法或执行失败 | `DB_QUERY_ERROR` |
+| 文件/资源/解析/导入失败 | `DATA_LOAD_ERROR` |
+| 其他连接器异常 | `CONNECTOR_ERROR` |
+
+顶层 connector 操作失败应抛 `AppError`；批量导入或自动连接这类局部失败可以保留
+`status: "success"`，但局部项必须带结构化 `error: { code, message, retry }`。
 
 ## 7. 测试要求
 
@@ -318,13 +343,14 @@ try {
 - 非认证/授权 `AppError` 路径断言 HTTP 200 + body `status == "error"` + `error.code` 匹配
 - 认证错误（AUTH_REQUIRED / AUTH_EXPIRED / ACCESS_DENIED）断言 HTTP 401/403
 - `404`（无路由）、`413`（body 超限）、未捕获 `500` 保持相应非 200 状态码
+- JSON 错误响应断言 `error.request_id` 与响应头 `X-Request-Id` 对齐
 - 流式端点运行中错误断言 NDJSON `type: "error"`
 - 错误响应不得包含原始 secret、token、连接串或内部异常文本
 
 前端测试：
 
-- `parseApiResponse()` 覆盖 `status: "success"` 和 `status: "ok"` 两种格式
-- `parseApiResponse()` 覆盖结构化错误和 legacy `message` / `error_message`
+- `parseApiResponse()` 覆盖 `status: "success"`、结构化错误、`request_id`
+- `parseApiResponse()` 断言 legacy `status: "ok"` / `error_message` 被拒绝
 - `apiRequest()` 覆盖 HTTP 401/403、HTTP 200 body 错误、非 JSON 响应
 - `streamRequest()` 覆盖 `200 application/json` 预检错误和 NDJSON error 事件
 - `handleApiError()` 覆盖 `AbortError`、auth 回调、retry 回调、silent 模式

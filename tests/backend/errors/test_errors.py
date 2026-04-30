@@ -32,8 +32,8 @@ class TestErrorCode:
         "LLM_MODEL_NOT_FOUND", "LLM_TIMEOUT", "LLM_SERVICE_ERROR",
         "LLM_CONTENT_FILTERED", "LLM_UNKNOWN_ERROR",
         # Data / connector
-        "DB_CONNECTION_FAILED", "DB_QUERY_ERROR", "DATA_LOAD_ERROR",
-        "CONNECTOR_ERROR",
+        "CONNECTOR_AUTH_FAILED", "DB_CONNECTION_FAILED", "DB_QUERY_ERROR",
+        "DATA_LOAD_ERROR", "CONNECTOR_ERROR",
         # Execution
         "CODE_EXECUTION_ERROR", "AGENT_ERROR",
         # System

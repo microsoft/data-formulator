@@ -54,11 +54,10 @@ describe('handleApiError', () => {
             handleApiError(err, 'test-component');
 
             expect(dfActions.addMessages).toHaveBeenCalledOnce();
-            const msgs = vi.mocked(dfActions.addMessages).mock.calls[0][0];
-            expect(msgs).toHaveLength(1);
-            expect(msgs[0].type).toBe('error');
-            expect(msgs[0].component).toBe('test-component');
-            expect(msgs[0].value).toBe('Table not found');
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.type).toBe('error');
+            expect(msg.component).toBe('test-component');
+            expect(msg.value).toBe('Table not found');
         });
 
         it('should include detail in the dispatched message', () => {
@@ -67,8 +66,24 @@ describe('handleApiError', () => {
 
             handleApiError(err, 'ctx');
 
-            const msgs = vi.mocked(dfActions.addMessages).mock.calls[0][0];
-            expect(msgs[0].detail).toBe('stack...');
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.detail).toBe('stack...');
+        });
+
+        it('should include request_id in the dispatched message detail', () => {
+            const apiError: ApiError = {
+                code: 'INTERNAL_ERROR',
+                message: 'Oops',
+                retry: false,
+                request_id: 'req-123',
+            };
+            const err = new ApiRequestError(apiError, 500);
+
+            handleApiError(err, 'ctx');
+
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.detail).toBe('Request ID: req-123');
+            expect(msg.diagnostics).toEqual(apiError);
         });
 
         it('should include diagnostics with the full apiError', () => {
@@ -77,8 +92,8 @@ describe('handleApiError', () => {
 
             handleApiError(err, 'ctx');
 
-            const msgs = vi.mocked(dfActions.addMessages).mock.calls[0][0];
-            expect(msgs[0].diagnostics).toEqual(apiError);
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.diagnostics).toEqual(apiError);
         });
     });
 
@@ -101,16 +116,16 @@ describe('handleApiError', () => {
             handleApiError(err, 'network');
 
             expect(dfActions.addMessages).toHaveBeenCalledOnce();
-            const msgs = vi.mocked(dfActions.addMessages).mock.calls[0][0];
-            expect(msgs[0].value).toBe('Network failure');
-            expect(msgs[0].component).toBe('network');
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.value).toBe('Network failure');
+            expect(msg.component).toBe('network');
         });
 
         it('should handle non-Error values', () => {
             handleApiError('string error', 'ctx');
 
-            const msgs = vi.mocked(dfActions.addMessages).mock.calls[0][0];
-            expect(msgs[0].value).toBe('string error');
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.value).toBe('string error');
         });
     });
 

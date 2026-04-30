@@ -19,7 +19,8 @@
     "llmContentFiltered": "请求被内容安全过滤器拦截",
     "llmUnknownError": "模型请求失败",
 
-    "dbConnectionFailed": "数据库连接失败",
+    "connectorAuthFailed": "数据源认证失败，请检查连接凭据",
+    "dbConnectionFailed": "数据源连接失败",
     "dbQueryError": "数据库查询错误",
     "dataLoadError": "数据加载失败",
     "connectorError": "数据连接器错误",

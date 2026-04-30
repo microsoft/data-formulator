@@ -24,7 +24,8 @@ import ClearIcon from '@mui/icons-material/Clear';
 
 
 import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity, SourceTableRef } from '../app/utils';
-import { apiRequest } from '../app/apiClient';
+import { apiRequest, type ApiError } from '../app/apiClient';
+import { getErrorMessage } from '../app/errorCodes';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
 import { DataFrameTable } from './DataFrameTable';
@@ -56,8 +57,11 @@ const CATALOG_PAGE_SIZE = 200;
 
 /** Extract a user-visible error message from a connector data payload. */
 function extractConnectError(body: any, fallback: string): string {
+    if (body.connection_error && typeof body.connection_error === 'object' && body.connection_error.code) {
+        return getErrorMessage(body.connection_error as ApiError);
+    }
     if (body.error && typeof body.error === 'object' && body.error.message) {
-        return body.error.message;
+        return getErrorMessage(body.error as ApiError);
     }
     return body.message ?? fallback;
 }
@@ -498,7 +502,10 @@ const GroupLoadPanel: React.FC<{
 
             onLoaded('loaded');
             if (failed.length > 0) {
-                onFinish("error", `Loaded ${succeeded.length} tables, ${failed.length} failed`);
+                const firstError = failed[0]?.error?.code
+                    ? getErrorMessage(failed[0].error as ApiError)
+                    : failed[0]?.message;
+                onFinish("error", `Loaded ${succeeded.length} tables, ${failed.length} failed${firstError ? `: ${firstError}` : ''}`);
             } else {
                 onFinish("success", `Loaded ${succeeded.length} tables from "${groupName}"`,
                     succeeded.map(r => r.table_name));

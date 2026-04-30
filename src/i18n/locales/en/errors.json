@@ -19,7 +19,8 @@
     "llmContentFiltered": "The request was blocked by the content safety filter",
     "llmUnknownError": "Model request failed",
 
-    "dbConnectionFailed": "Database connection failed",
+    "connectorAuthFailed": "Data source authentication failed",
+    "dbConnectionFailed": "Data source connection failed",
     "dbQueryError": "Database query error",
     "dataLoadError": "Failed to load data",
     "connectorError": "Data connector error",

@@ -12,6 +12,7 @@ vi.mock('../../../../src/i18n', () => ({
                 'errors.llmRateLimit': '请求过于频繁，请稍后再试',
                 'errors.tableNotFound': '未找到数据表',
                 'errors.internalError': '服务器内部错误',
+                'errors.connectorAuthFailed': '数据源认证失败，请检查连接凭据',
                 'errors.storageFull': '工作区存储空间已满，请释放磁盘空间后重试。',
             };
             return translations[key] ?? key;
@@ -30,6 +31,8 @@ describe('ERROR_CODE_I18N_MAP', () => {
             'TABLE_NOT_FOUND', 'INVALID_REQUEST', 'FILE_TOO_LARGE',
             'LLM_AUTH_FAILED', 'LLM_RATE_LIMIT', 'LLM_TIMEOUT',
             'LLM_SERVICE_ERROR', 'LLM_CONTENT_FILTERED',
+            'CONNECTOR_AUTH_FAILED', 'DB_CONNECTION_FAILED', 'DB_QUERY_ERROR',
+            'DATA_LOAD_ERROR', 'CONNECTOR_ERROR',
             'INTERNAL_ERROR', 'SERVICE_UNAVAILABLE', 'STORAGE_FULL',
         ];
         for (const code of requiredCodes) {
@@ -76,5 +79,10 @@ describe('getErrorMessage', () => {
     it('should use STORAGE_FULL translation', () => {
         const err: ApiError = { code: 'STORAGE_FULL', message: 'Workspace storage is full', retry: true };
         expect(getErrorMessage(err)).toBe('工作区存储空间已满，请释放磁盘空间后重试。');
+    });
+
+    it('should use CONNECTOR_AUTH_FAILED translation', () => {
+        const err: ApiError = { code: 'CONNECTOR_AUTH_FAILED', message: 'Auth failed', retry: false };
+        expect(getErrorMessage(err)).toBe('数据源认证失败，请检查连接凭据');
     });
 });

@@ -251,15 +251,32 @@ def register_error_handlers(app: flask.Flask) -> None:
             response.headers["X-Request-Id"] = rid
         return response
 
+    def _current_request_id() -> str:
+        rid = getattr(g, "request_id", None)
+        if not rid:
+            rid = str(uuid4())
+            g.request_id = rid
+        return rid
+
+    def _with_request_id(error_body: dict) -> dict:
+        return {**error_body, "request_id": _current_request_id()}
+
     # -- AppError ------------------------------------------------------------
 
     @app.errorhandler(AppError)
     def _handle_app_error(e: AppError):
         http_status = e.get_http_status()
-        logger.warning("AppError [%s] HTTP %s: %s", e.code, http_status, e.message)
+        request_id = _current_request_id()
+        logger.warning(
+            "AppError [%s] HTTP %s request_id=%s: %s",
+            e.code,
+            http_status,
+            request_id,
+            e.message,
+        )
         body = {
             "status": "error",
-            "error": e.to_dict(include_detail=app.debug),
+            "error": _with_request_id(e.to_dict(include_detail=app.debug)),
         }
         return jsonify(body), http_status
 
@@ -269,11 +286,11 @@ def register_error_handlers(app: flask.Flask) -> None:
     def _handle_413(e):
         return jsonify({
             "status": "error",
-            "error": {
+            "error": _with_request_id({
                 "code": ErrorCode.FILE_TOO_LARGE,
                 "message": "File too large",
                 "retry": False,
-            },
+            }),
         }), 413
 
     # -- 404 -----------------------------------------------------------------
@@ -283,11 +300,11 @@ def register_error_handlers(app: flask.Flask) -> None:
         if request.path.startswith("/api/"):
             return jsonify({
                 "status": "error",
-                "error": {
+                "error": _with_request_id({
                     "code": "NOT_FOUND",
                     "message": "Resource not found",
                     "retry": False,
-                },
+                }),
             }), 404
         # SPA fallback
         return app.send_static_file("index.html")
@@ -296,11 +313,13 @@ def register_error_handlers(app: flask.Flask) -> None:
 
     @app.errorhandler(Exception)
     def _handle_unexpected(e):
-        logger.error("Unhandled exception", exc_info=e)
+        request_id = _current_request_id()
+        logger.error("Unhandled exception request_id=%s", request_id, exc_info=e)
         error_body: dict = {
             "code": ErrorCode.INTERNAL_ERROR,
             "message": "An unexpected error occurred",
             "retry": False,
+            "request_id": request_id,
         }
         if app.debug:
             error_body["detail"] = traceback.format_exc()

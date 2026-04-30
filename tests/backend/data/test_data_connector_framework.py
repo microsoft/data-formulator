@@ -40,6 +40,7 @@ from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
 )
+from data_formulator.errors import ErrorCode
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
 
@@ -159,6 +160,13 @@ class FailingTestConnectionLoader(MockLoader):
 
     def test_connection(self) -> bool:
         return False
+
+
+class RaisingTestConnectionLoader(MockLoader):
+    """Loader whose test_connection raises a connection error."""
+
+    def test_connection(self) -> bool:
+        raise ConnectionError("Lost connection to server")
 
 
 class AuthTierLoader(MockLoader):
@@ -404,6 +412,8 @@ class TestAuthRoutes:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "error"
+        assert data["error"]["code"] == ErrorCode.DB_CONNECTION_FAILED
+        assert "request_id" in data["error"]
 
     def test_connect_fails_when_test_connection_fails(self, app):
         source = DataConnector.from_loader(
@@ -418,6 +428,20 @@ class TestAuthRoutes:
             })
         assert resp.status_code == 200
         assert resp.get_json()["status"] == "error"
+
+    def test_get_status_returns_structured_connection_error(self, connected_client, source):
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
+            loader = source._get_loader("test-user")
+            with patch.object(loader, "test_connection", side_effect=ConnectionError("Lost connection to server")):
+                resp = connected_client.post("/api/connectors/get-status", json={
+                    "connector_id": "mock_db",
+                })
+
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["status"] == "success"
+        assert data["data"]["connected"] is False
+        assert data["data"]["connection_error"]["code"] == ErrorCode.DB_CONNECTION_FAILED
 
     def test_delete_connector_clears_status(self, connected_client):
         """After DELETE, the connector is gone."""
@@ -732,7 +756,7 @@ class TestErrorHandling:
     def test_sanitize_error_connection_refused(self):
         msg, code = _sanitize_error(ConnectionError("Connection refused"))
         assert code == 200
-        assert "Connection failed" in msg
+        assert "connection failed" in msg.lower()
 
     def test_sanitize_error_permission(self):
         msg, code = _sanitize_error(PermissionError("access denied for user"))
@@ -746,7 +770,7 @@ class TestErrorHandling:
         msg, code = _sanitize_error(RuntimeError("something weird happened"))
         assert code == 200
         # Should not leak the original message
-        assert "unexpected" in msg.lower()
+        assert "connector error" in msg.lower()
 
     def test_error_does_not_leak_internal_details(self, client):
         """Errors from loader should not expose connection strings or stack traces."""

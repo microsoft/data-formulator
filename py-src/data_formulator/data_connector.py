@@ -33,12 +33,11 @@ from data_formulator.errors import AppError, ErrorCode
 
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
-    ConnectorParamError,
     ExternalDataLoader,
     SENSITIVE_PARAMS,
 )
+from data_formulator.data_loader.connector_errors import classify_connector_error
 from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
-from data_formulator.security.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -53,45 +52,16 @@ _USER_CONNECTOR_PREFIX = "user::"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def classify_and_raise_connector_error(error: Exception) -> None:
+def classify_and_raise_connector_error(error: Exception, *, operation: str = "") -> None:
     """Classify a connector error and raise ``AppError``.
 
-    Preserves actionable detail for known error categories while keeping
-    sanitized internals in ``detail`` (only exposed in debug mode).
+    Preserves the historical entry point while delegating classification to the
+    shared DataLoader/connector classifier.
     """
-    from data_formulator.errors import AppError, ErrorCode
+    from data_formulator.data_loader.connector_errors import raise_connector_error
 
-    logger.error("DataConnector error", exc_info=error)
-    raw = str(error)
-    msg = raw.lower()
-    safe_detail = sanitize_error_message(raw)
-
-    # Structured param validation errors — pass through descriptive message
-    if isinstance(error, ConnectorParamError):
-        raise AppError(
-            ErrorCode.INVALID_REQUEST,
-            safe_detail or "Invalid parameters",
-            detail=safe_detail,
-        ) from error
-
-    if any(kw in msg for kw in ("authenticat", "login", "credential",
-                                 "unauthorized", "401", "forbidden", "403")):
-        raise AppError(ErrorCode.LLM_AUTH_FAILED, "Authentication failed", detail=safe_detail) from error
-    if any(kw in msg for kw in ("expired", "token")):
-        raise AppError(ErrorCode.AUTH_EXPIRED, "Token expired or invalid", detail=safe_detail) from error
-    if any(kw in msg for kw in ("permission", "access denied", "denied")):
-        raise AppError(ErrorCode.ACCESS_DENIED, "Access denied", detail=safe_detail) from error
-
-    if any(kw in msg for kw in ("connect", "refused", "unreachable",
-                                 "resolve", "dns", "network", "socket")):
-        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection failed", detail=safe_detail, retry=True) from error
-    if "timeout" in msg or "timed out" in msg:
-        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection timed out", detail=safe_detail, retry=True) from error
-
-    if "required" in msg or "invalid" in msg or "missing" in msg:
-        raise AppError(ErrorCode.INVALID_REQUEST, safe_detail or "Invalid parameters", detail=safe_detail) from error
-
-    raise AppError(ErrorCode.CONNECTOR_ERROR, "An unexpected connector error occurred", detail=safe_detail) from error
+    logger.error("DataConnector error operation=%s", operation or "unknown", exc_info=error)
+    raise_connector_error(error, operation=operation)
 
 
 def _sanitize_error(error: Exception) -> tuple[str, int]:
@@ -941,6 +911,11 @@ def create_connector():
                 connector._loaders.pop(identity_c, None)
                 result_data["connected"] = False
                 result_data["connect_error"] = "Connection test failed"
+                result_data["connection_error"] = {
+                    "code": ErrorCode.DB_CONNECTION_FAILED,
+                    "message": "Data source connection failed",
+                    "retry": True,
+                }
         except Exception as e:
             try:
                 identity_c = connector._get_identity()
@@ -948,8 +923,9 @@ def create_connector():
             except Exception:
                 pass
             result_data["connected"] = False
-            safe_msg, _ = _sanitize_error(e)
-            result_data["connect_error"] = safe_msg
+            error_info = classify_connector_error(e, operation="connect")
+            result_data["connect_error"] = error_info.message
+            result_data["connection_error"] = error_info.to_error_dict()
 
     if persist_warning:
         result_data["persist_warning"] = persist_warning
@@ -1137,7 +1113,7 @@ def connector_connect():
             source._loaders.pop(identity, None)
         except Exception:
             pass
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="connect")
 
 
 @connectors_bp.route("/api/connectors/disconnect", methods=["POST"])
@@ -1167,7 +1143,7 @@ def connector_disconnect():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="disconnect")
 
 
 @connectors_bp.route("/api/connectors/get-status", methods=["POST"])
@@ -1200,16 +1176,21 @@ def connector_get_status():
         })
     try:
         alive = loader.test_connection()
+        error_info = None
     except Exception as e:
         logger.warning("Connection test failed for connector", exc_info=e)
         alive = False
+        error_info = classify_connector_error(e, operation="status")
     if not alive:
         source._loaders.pop(identity, None)
-        return json_ok({
+        result = {
             "connected": False,
             "has_stored_credentials": source.has_stored_credentials(identity),
             "params_form": source.get_frontend_config()["params_form"],
-        })
+        }
+        if error_info is not None:
+            result["connection_error"] = error_info.to_error_dict()
+        return json_ok(result)
     return json_ok({
         "connected": True,
         "persisted": source._get_vault() is not None,
@@ -1265,7 +1246,7 @@ def connector_get_catalog():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="catalog")
 
 
 @connectors_bp.route("/api/connectors/get-catalog-tree", methods=["POST"])
@@ -1301,7 +1282,7 @@ def connector_get_catalog_tree():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="catalog")
 
 
 @connectors_bp.route("/api/connectors/get-cached-catalog-tree", methods=["POST"])
@@ -1355,7 +1336,10 @@ def connector_get_cached_catalog_tree():
         raise
     except Exception as e:
         logger.debug("get-cached-catalog-tree failed for '%s'", source._source_id, exc_info=True)
-        return json_ok({"cache_hit": False})
+        return json_ok({
+            "cache_hit": False,
+            "warning": classify_connector_error(e, operation="cache").to_error_dict(),
+        })
 
 
 @connectors_bp.route("/api/connectors/sync-catalog-metadata", methods=["POST"])
@@ -1443,7 +1427,7 @@ def connector_sync_catalog_metadata():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="catalog")
 
 
 @connectors_bp.route("/api/connectors/catalog-annotations", methods=["PATCH"])
@@ -1521,7 +1505,7 @@ def connector_patch_annotations():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="catalog")
 
 
 @connectors_bp.route("/api/connectors/catalog-annotations", methods=["GET"])
@@ -1569,7 +1553,7 @@ def connector_get_annotations():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="catalog")
 
 
 @connectors_bp.route("/api/connectors/search-catalog", methods=["POST"])
@@ -1597,7 +1581,7 @@ def connector_search_catalog():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="catalog")
 
 
 @connectors_bp.route("/api/connectors/import-data", methods=["POST"])
@@ -1638,7 +1622,7 @@ def connector_import_data():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="import")
 
 
 @connectors_bp.route("/api/connectors/refresh-data", methods=["POST"])
@@ -1684,7 +1668,7 @@ def connector_refresh_data():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="refresh")
 
 
 @connectors_bp.route("/api/connectors/preview-data", methods=["POST"])
@@ -1752,7 +1736,7 @@ def connector_preview_data():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="preview")
 
 
 @connectors_bp.route("/api/connectors/column-values", methods=["POST"])
@@ -1787,7 +1771,7 @@ def connector_column_values():
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="column_values")
 
 
 @connectors_bp.route("/api/connectors/import-group", methods=["POST"])
@@ -1849,19 +1833,21 @@ def connector_import_group():
                     "row_count": meta.row_count,
                 })
             except Exception as e:
-                logger.warning("import-group: failed to load dataset %s: %s", ds_id, e)
+                logger.warning("import-group: failed to load dataset %s: %s", ds_id, type(e).__name__)
+                error_info = classify_connector_error(e, operation="import")
                 results.append({
                     "status": "error",
                     "dataset_id": ds_id,
                     "table_name": ds_name,
-                    "message": sanitize_error_message(str(e)),
+                    "message": error_info.message,
+                    "error": error_info.to_error_dict(),
                 })
 
         return json_ok({"results": results})
     except AppError:
         raise
     except Exception as e:
-        classify_and_raise_connector_error(e)
+        classify_and_raise_connector_error(e, operation="import")
 
 
 

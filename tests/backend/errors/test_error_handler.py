@@ -209,6 +209,7 @@ class TestRegisterErrorHandlers:
         assert data["error"]["code"] == "TABLE_NOT_FOUND"
         assert data["error"]["message"] == "Table not found"
         assert data["error"]["retry"] is False
+        assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
     def test_app_error_retryable(self, client) -> None:
         resp = client.get("/raise-app-error-retryable")
@@ -231,6 +232,7 @@ class TestRegisterErrorHandlers:
         assert data["status"] == "error"
         assert data["error"]["code"] == ErrorCode.INTERNAL_ERROR
         assert "broke" not in data["error"]["message"]
+        assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
     def test_unexpected_error_debug_includes_traceback(self, app) -> None:
         app.debug = True
@@ -254,6 +256,7 @@ class TestRegisterErrorHandlers:
             data = resp.get_json()
             assert data["status"] == "error"
             assert data["error"]["code"] == ErrorCode.FILE_TOO_LARGE
+            assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
     def test_api_404_returns_json(self, client) -> None:
         resp = client.get("/api/nonexistent-route")
@@ -261,6 +264,7 @@ class TestRegisterErrorHandlers:
         data = resp.get_json()
         assert data["status"] == "error"
         assert data["error"]["code"] == "NOT_FOUND"
+        assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
     def test_response_has_json_content_type(self, client) -> None:
         resp = client.get("/raise-app-error")
@@ -281,6 +285,7 @@ class TestRequestIdMiddleware:
     def test_client_provided_request_id_is_echoed(self, client) -> None:
         resp = client.get("/raise-app-error", headers={"X-Request-Id": "my-trace-123"})
         assert resp.headers["X-Request-Id"] == "my-trace-123"
+        assert resp.get_json()["error"]["request_id"] == "my-trace-123"
 
     def test_request_id_is_uuid_when_not_provided(self, client) -> None:
         resp = client.get("/raise-app-error")

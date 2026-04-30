@@ -101,12 +101,19 @@ describe('parseApiResponse', () => {
         it('should include detail when present', () => {
             const body = {
                 status: 'error',
-                error: { code: 'INTERNAL_ERROR', message: 'Oops', retry: false, detail: 'stack trace...' },
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: 'Oops',
+                    retry: false,
+                    detail: 'stack trace...',
+                    request_id: 'req-1',
+                },
             };
             try {
                 parseApiResponse(body, 500);
             } catch (e: any) {
                 expect(e.apiError.detail).toBe('stack trace...');
+                expect(e.apiError.request_id).toBe('req-1');
             }
         });
     });

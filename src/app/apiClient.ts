@@ -26,6 +26,7 @@ export interface ApiError {
     message: string;
     detail?: string;
     retry?: boolean;
+    request_id?: string;
 }
 
 /** A single event from a streaming (NDJSON) endpoint. */

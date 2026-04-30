@@ -37,7 +37,7 @@ Use this contract for all new or reworked DF APIs:
 | Scenario | HTTP | Shape |
 |----------|------|-------|
 | Non-streaming success | `200` | `{"status": "success", "data": ...}` |
-| Non-streaming business/validation error | `200` | `{"status": "error", "error": {"code", "message", "retry"}}` |
+| Non-streaming business/validation error | `200` | `{"status": "error", "error": {"code", "message", "retry", "request_id"}}` |
 | Non-streaming auth/authorization error | `401` / `403` | same structured error body |
 | Streaming preflight error | `200` | `application/json` + `{"status": "error", "error": ...}` |
 | Streaming in-flight fatal error | `200` | NDJSON line: `{"type": "error", "error": ...}` |
@@ -285,10 +285,19 @@ For connector endpoints, use:
 from data_formulator.data_connector import classify_and_raise_connector_error
 
 except Exception as e:
-    classify_and_raise_connector_error(e)
+    classify_and_raise_connector_error(e, operation="preview")
 ```
 
-Maps auth/connection/validation errors to `AppError` with safe messages.
+Connector/DataLoader classification is intentionally simple and lives in
+`data_formulator.data_loader.connector_errors`. It maps common failures to a
+small stable set: `INVALID_REQUEST`, `CONNECTOR_AUTH_FAILED`, `AUTH_EXPIRED`,
+`ACCESS_DENIED`, `DB_CONNECTION_FAILED`, `DB_QUERY_ERROR`, `DATA_LOAD_ERROR`,
+or `CONNECTOR_ERROR`. Do not add endpoint-local string matching unless the
+classifier cannot reasonably cover the category.
+
+All JSON errors include `error.request_id` and an `X-Request-Id` response
+header. Show/copy this ID for users when reporting backend failures; do not
+show raw exception text in production.
 
 ## Debugging Error Propagation
 
