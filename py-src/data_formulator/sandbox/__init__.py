@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from .local_sandbox import LocalSandbox
+from .local_sandbox import LocalSandbox, SandboxSession
 from .docker_sandbox import DockerSandbox
 
 # Valid values for the --sandbox CLI option / SANDBOX env var.
