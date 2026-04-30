@@ -32,7 +32,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 import { getUrls, fetchWithIdentity } from '../app/utils';
-import { apiRequest } from '../app/apiClient';
+import { apiRequest, assertDownloadResponseOk } from '../app/apiClient';
 import { useDrag } from 'react-dnd';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
@@ -348,14 +348,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ table_name: tableId, delimiter }),
                 });
-                const contentType = response.headers.get('content-type') || '';
-                if (contentType.includes('application/json')) {
-                    const body = await response.json();
-                    if (body.status === 'error') {
-                        throw new Error(body.error?.message || 'Export failed');
-                    }
-                }
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                await assertDownloadResponseOk(response, 'Export failed');
                 const blob = await response.blob();
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);

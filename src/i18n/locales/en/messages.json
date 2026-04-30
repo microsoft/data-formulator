@@ -84,6 +84,8 @@
     },
     "chartInsightTimedOut": "Chart insight timed out after {{seconds}} seconds. You can retry or increase \"Formulate timeout\" in Settings.",
     "chartInsightImageNotReady": "Chart image was not ready in time. Please wait for the chart to finish rendering and try again.",
-    "chartInsightFailed": "Failed to generate chart insight. Please check your model configuration."
+    "chartInsightFailed": "Failed to generate chart insight. Please check your model configuration.",
+    "globalModelListFailed": "Failed to load server-configured models.",
+    "availableModelsFailed": "Failed to check server-configured model connectivity."
   }
 }

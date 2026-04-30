@@ -1505,6 +1505,15 @@ export const dataFormulatorSlice = createSlice({
                 state.selectedModelId = models[0].id;
             }
         })
+        .addCase(fetchGlobalModelList.rejected, (state, action) => {
+            if (action.error?.name !== 'AbortError') {
+                state.messages.push({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'model list',
+                    value: i18n.t('messages.globalModelListFailed'),
+                });
+            }
+        })
         .addCase(fetchAvailableModels.fulfilled, (state, action) => {
             // Phase 2 (after connectivity checks): update statuses for each model.
             const serverModels: (ModelConfig & { status: string; error: string | null })[] = action.payload;
@@ -1530,6 +1539,22 @@ export const dataFormulatorSlice = createSlice({
                     state.selectedModelId = firstConnected.id;
                 }
             }
+        })
+        .addCase(fetchAvailableModels.rejected, (state, action) => {
+            if (action.error?.name === 'AbortError') {
+                return;
+            }
+
+            state.testedModels = state.testedModels.map(model =>
+                model.status === 'testing'
+                    ? { ...model, status: 'configured' as const, message: '' }
+                    : model
+            );
+            state.messages.push({
+                timestamp: Date.now(), type: 'warning',
+                component: 'model list',
+                value: i18n.t('messages.availableModelsFailed'),
+            });
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
             let codeExplResponse = action.payload;

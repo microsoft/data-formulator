@@ -25,6 +25,7 @@ vi.mock('../../../../src/app/store', () => ({
 import {
     ApiRequestError,
     apiRequest,
+    assertDownloadResponseOk,
     parseApiResponse,
     parseStreamLine,
     streamRequest,
@@ -381,6 +382,48 @@ describe('apiRequest', () => {
         const signal = new AbortController().signal;
         await apiRequest('/api/test', { method: 'POST', signal });
         expect(mockFetch).toHaveBeenCalledWith('/api/test', { method: 'POST', signal });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// assertDownloadResponseOk — blob download error envelopes
+// ---------------------------------------------------------------------------
+
+describe('assertDownloadResponseOk', () => {
+    function mockDownloadResponse(body: any, status = 200, contentType = 'application/json'): Response {
+        return {
+            ok: status >= 200 && status < 300,
+            status,
+            json: () => Promise.resolve(body),
+            headers: new Headers({ 'content-type': contentType }),
+        } as unknown as Response;
+    }
+
+    it('throws ApiRequestError for structured JSON error bodies', async () => {
+        const response = mockDownloadResponse({
+            status: 'error',
+            error: { code: 'INVALID_REQUEST', message: 'Bad export', retry: false },
+        });
+
+        await expect(assertDownloadResponseOk(response, 'Export failed')).rejects.toMatchObject({
+            apiError: { code: 'INVALID_REQUEST', message: 'Bad export' },
+            httpStatus: 200,
+        });
+    });
+
+    it('throws HTTP_ERROR for non-JSON transport failures', async () => {
+        const response = mockDownloadResponse('', 500, 'text/plain');
+
+        await expect(assertDownloadResponseOk(response, 'Export failed')).rejects.toMatchObject({
+            apiError: { code: 'HTTP_ERROR', message: 'HTTP 500' },
+            httpStatus: 500,
+        });
+    });
+
+    it('allows successful non-JSON download responses', async () => {
+        const response = mockDownloadResponse('', 200, 'application/zip');
+
+        await expect(assertDownloadResponseOk(response, 'Export failed')).resolves.toBeUndefined();
     });
 });
 

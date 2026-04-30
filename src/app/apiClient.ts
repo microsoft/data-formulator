@@ -165,6 +165,60 @@ export async function apiRequest<T = any>(
 }
 
 /**
+ * Validate a file/blob download response without assuming JSON success bodies.
+ *
+ * Download endpoints return blobs on success, but may return the standard JSON
+ * error envelope on failure.  Call this before reading `response.blob()`.
+ */
+export async function assertDownloadResponseOk(
+    response: Response,
+    fallbackMessage = 'Download failed',
+): Promise<void> {
+    const contentType = response.headers.get('content-type') ?? '';
+
+    if (contentType.includes('application/json')) {
+        let body: any;
+        try {
+            body = await response.json();
+        } catch {
+            throw new ApiRequestError(
+                { code: 'PARSE_ERROR', message: fallbackMessage, retry: false },
+                response.status,
+            );
+        }
+
+        if (body.status === 'error') {
+            if (body.error && typeof body.error === 'object' && body.error.code) {
+                throw new ApiRequestError(body.error as ApiError, response.status);
+            }
+            throw new ApiRequestError(
+                { code: 'MALFORMED_ERROR', message: fallbackMessage, retry: false },
+                response.status,
+            );
+        }
+
+        if (!response.ok) {
+            throw new ApiRequestError(
+                { code: 'HTTP_ERROR', message: `HTTP ${response.status}`, retry: false },
+                response.status,
+            );
+        }
+
+        throw new ApiRequestError(
+            { code: 'MALFORMED_DOWNLOAD_RESPONSE', message: fallbackMessage, retry: false },
+            response.status,
+        );
+    }
+
+    if (!response.ok) {
+        throw new ApiRequestError(
+            { code: 'HTTP_ERROR', message: `HTTP ${response.status}`, retry: false },
+            response.status,
+        );
+    }
+}
+
+/**
  * Streaming (NDJSON) API request.
  *
  * Returns an async generator that yields {@link StreamEvent} objects.

@@ -24,7 +24,7 @@ import ClearIcon from '@mui/icons-material/Clear';
 
 
 import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity, SourceTableRef } from '../app/utils';
-import { apiRequest, type ApiError } from '../app/apiClient';
+import { apiRequest, assertDownloadResponseOk, type ApiError } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
@@ -81,18 +81,7 @@ export const handleDBDownload = async (identityId: string) => {
         getUrls().DOWNLOAD_DB_FILE,
         { method: 'GET' }
     );
-    
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-        const errorData = await response.json();
-        if (errorData.status === 'error') {
-            throw new Error(errorData.error?.message || 'Failed to download database file');
-        }
-    }
-
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-    }
+    await assertDownloadResponseOk(response, 'Failed to download database file');
 
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);

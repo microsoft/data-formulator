@@ -26,6 +26,7 @@ import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldS
 import { AppDispatch } from '../app/store';
 import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
 import { streamRequest } from '../app/apiClient';
+import { getErrorMessage } from '../app/errorCodes';
 import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
 import { formatClarificationResponsesForDisplay, normalizeClarifyEvent } from '../app/clarification';
 
@@ -377,7 +378,7 @@ export const SimpleChartRecBox: FC = function () {
                 body: messageBody,
             }, controller.signal)) {
                 if (event.type === 'error') {
-                    const msg = event.error?.message ?? 'Unknown error';
+                    const msg = event.error ? getErrorMessage(event.error) : t('messages.error');
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(), type: 'error',
                         component: 'exploration', value: msg,
@@ -998,7 +999,7 @@ export const SimpleChartRecBox: FC = function () {
                     body: messageBody,
                 }, controller.signal)) {
                     if (data.type === "error") {
-                        const errMsg = data.error?.message || t('chartRec.errorDuringExploration');
+                        const errMsg = data.error ? getErrorMessage(data.error) : t('chartRec.errorDuringExploration');
                         setIsChatFormulating(false);
                         clearTimeout(timeoutId);
                         dispatch(dfActions.addMessages({
@@ -1147,7 +1148,7 @@ export const SimpleChartRecBox: FC = function () {
                 if (event.type === 'text_delta') {
                     accumulatedMarkdown += (event as any).content;
                 } else if (event.type === 'error') {
-                    const errMsg = event.error?.message || 'Unknown error';
+                    const errMsg = event.error ? getErrorMessage(event.error) : t('messages.error');
                     accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(), type: 'error',

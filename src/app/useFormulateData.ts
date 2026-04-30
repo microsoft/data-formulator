@@ -8,6 +8,7 @@ import { AppDispatch } from './store';
 import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../components/ComponentType';
 import { getUrls, getTriggers, translateBackend } from './utils';
 import { apiRequest, streamRequest } from './apiClient';
+import { getErrorMessage } from './errorCodes';
 
 export type IdeaItem = {
     text: string;
@@ -240,7 +241,7 @@ export function useFormulateData() {
                 body: messageBody,
             }, controller.signal)) {
                 if (event.type === 'error') {
-                    throw new Error(event.error?.message ?? 'Unknown error');
+                    throw new Error(event.error ? getErrorMessage(event.error) : t('messages.error'));
                 }
                 if (event.type === 'warning') {
                     dispatch(dfActions.addMessages({

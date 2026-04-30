@@ -13,7 +13,7 @@
  */
 
 import { fetchWithIdentity, getUrls } from './utils';
-import { apiRequest } from './apiClient';
+import { apiRequest, assertDownloadResponseOk } from './apiClient';
 import {
     workspaceDB,
     tableDataDB,
@@ -188,7 +188,7 @@ export async function exportWorkspace(id: string): Promise<Blob> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ state: data.state }),
     });
-    if (!exportRes.ok) throw new Error('Export failed');
+    await assertDownloadResponseOk(exportRes, 'Export failed');
     return exportRes.blob();
 }
 

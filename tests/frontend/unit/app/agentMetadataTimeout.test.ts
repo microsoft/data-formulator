@@ -46,8 +46,10 @@ vi.mock('../../../../src/i18n', () => ({
 
 import {
     dataFormulatorSlice,
+    fetchAvailableModels,
     fetchCodeExpl,
     fetchFieldSemanticType,
+    fetchGlobalModelList,
 } from '../../../../src/app/dfSlice';
 
 describe('agent metadata thunks', () => {
@@ -106,5 +108,53 @@ describe('agent metadata thunks', () => {
         const [, options] = mocks.apiRequest.mock.calls[0];
         expect(options.signal).toBeUndefined();
         expect(setTimeoutSpy).not.toHaveBeenCalled();
+    });
+
+    it('shows a warning when global model list loading fails', () => {
+        const state = dataFormulatorSlice.reducer(
+            dataFormulatorSlice.getInitialState(),
+            { type: fetchGlobalModelList.rejected.type, error: { name: 'Error', message: 'boom' } },
+        );
+
+        expect(state.messages.at(-1)?.value).toBe('messages.globalModelListFailed');
+    });
+
+    it('ignores aborted global model list requests', () => {
+        const state = dataFormulatorSlice.reducer(
+            dataFormulatorSlice.getInitialState(),
+            { type: fetchGlobalModelList.rejected.type, error: { name: 'AbortError' } },
+        );
+
+        expect(state.messages).toHaveLength(0);
+    });
+
+    it('clears testing model status when connectivity check fails', () => {
+        const initial = {
+            ...dataFormulatorSlice.getInitialState(),
+            testedModels: [{ id: 'global-1', status: 'testing' as const, message: 'checking' }],
+        };
+
+        const state = dataFormulatorSlice.reducer(
+            initial,
+            { type: fetchAvailableModels.rejected.type, error: { name: 'Error', message: 'boom' } },
+        );
+
+        expect(state.testedModels[0]).toEqual({ id: 'global-1', status: 'configured', message: '' });
+        expect(state.messages.at(-1)?.value).toBe('messages.availableModelsFailed');
+    });
+
+    it('ignores aborted connectivity checks', () => {
+        const initial = {
+            ...dataFormulatorSlice.getInitialState(),
+            testedModels: [{ id: 'global-1', status: 'testing' as const, message: 'checking' }],
+        };
+
+        const state = dataFormulatorSlice.reducer(
+            initial,
+            { type: fetchAvailableModels.rejected.type, error: { name: 'AbortError' } },
+        );
+
+        expect(state.testedModels[0].status).toBe('testing');
+        expect(state.messages).toHaveLength(0);
     });
 });
