@@ -223,7 +223,7 @@ class SSOBridgeView(BaseView):
         return True
 
     @staticmethod
-    def _normalise_origin(raw: str | None) -> str:
+    def _normalise_origin(raw):
         """规范化浏览器 origin；非法或非 origin 输入返回空字符串。"""
         raw = (raw or "").strip()
         parsed = urlparse(raw)
@@ -236,7 +236,7 @@ class SSOBridgeView(BaseView):
         return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
     @classmethod
-    def _allowed_origins(cls) -> set[str]:
+    def _allowed_origins(cls):
         origins = {cls._normalise_origin(o) for o in cls.allowed_df_origins}
         for raw in os.environ.get("DF_ALLOWED_ORIGINS", "").split(","):
             origin = cls._normalise_origin(raw)
@@ -246,7 +246,7 @@ class SSOBridgeView(BaseView):
         return origins
 
     @classmethod
-    def _validate_origin(cls, raw: str | None) -> str:
+    def _validate_origin(cls, raw):
         origin = cls._normalise_origin(raw)
         return origin if origin in cls._allowed_origins() else ""
 

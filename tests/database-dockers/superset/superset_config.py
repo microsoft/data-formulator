@@ -40,7 +40,7 @@ _SSO_BRIDGE_TEMPLATE = """<!DOCTYPE html>
 </body></html>"""
 
 
-def _normalise_origin(raw_origin: str | None) -> str:
+def _normalise_origin(raw_origin):
     """Return a canonical browser origin, or empty string when invalid."""
     raw = (raw_origin or "").strip()
     parsed = urlparse(raw)
@@ -53,7 +53,7 @@ def _normalise_origin(raw_origin: str | None) -> str:
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
 
-def _allowed_df_origins() -> set[str]:
+def _allowed_df_origins():
     origins = set(_DEFAULT_DF_ALLOWED_ORIGINS)
     for raw in os.environ.get("DF_ALLOWED_ORIGINS", "").split(","):
         origin = _normalise_origin(raw)
@@ -62,7 +62,7 @@ def _allowed_df_origins() -> set[str]:
     return origins
 
 
-def _validate_df_origin(raw_origin: str | None) -> str:
+def _validate_df_origin(raw_origin):
     origin = _normalise_origin(raw_origin)
     return origin if origin in _allowed_df_origins() else ""
 
