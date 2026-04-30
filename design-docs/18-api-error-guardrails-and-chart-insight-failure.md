@@ -25,10 +25,10 @@
 
 | 项目 | 当前状态 | 后续落点 |
 |------|----------|----------|
-| `fetchCodeExpl` / `fetchFieldSemanticType` timeout 配置化 | 仍为 20s 硬编码 timeout；已在 `dev-guides/7` 标记为待清理 | 前端 follow-up |
-| `scripts/check_api_error_guardrails.py` | 未实现 | 静态扫描 / CI |
-| CI 接入 API error guardrail 扫描 | 未实现 | CI / pre-commit |
-| ESLint 禁止业务代码直接 `fetchWithIdentity().json()` | 未实现 | 前端 lint |
+| `fetchCodeExpl` / `fetchFieldSemanticType` timeout 配置化 | 已移除前端 20s 硬编码 timeout；后端未要求 timeout 参数时使用后端默认 | 已完成 |
+| `scripts/check_api_error_guardrails.py` | 暂不实现 | 如误用反复出现再做窄扫描 |
+| CI 接入 API error guardrail 扫描 | 暂不实现 | 等本地规则稳定、误报低后再评估 |
+| ESLint 禁止业务代码直接 `fetchWithIdentity().json()` | 已通过轻量 `no-restricted-syntax` 护栏限制直接链式调用 | 前端 lint |
 | Structured-first Insight | 未启动 | `design-docs/18.2-insight-architecture-redesign.md` |
 | 多模型路由 / `ModelResolver` / per-agent `reasoning_effort` | 未启动 | `design-docs/19-multi-model-routing.md` |
 
@@ -37,8 +37,8 @@
 这些不是错误契约迁移的阻塞项，但仍影响后续 Insight 体验设计：
 
 1. 自动洞察失败长期使用 snackbar，还是改为洞察面板内 inline error？
-2. 自动洞察是否继续默认生成，还是在用户第一次打开洞察面板时 lazy generate？
-3. `fetchFieldSemanticType` 是否完全跟随 `formulateTimeoutSeconds`，还是新增独立 metadata timeout？
+2. 自动洞察是否继续默认生成，还是在用户第一次打开洞察面板时 lazy generate？ 确定：自动洞察是否继续默认生成
+3. 后台 metadata / explanation 请求是否需要独立后端 timeout 配置？当前前端不再设置短 timeout。
 4. 哪些图表类型必须保留 vision fallback？
 
 ## 4. 移除的历史内容

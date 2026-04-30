@@ -343,23 +343,15 @@ export const fetchFieldSemanticType = createAsyncThunk(
 
         let state = getState() as DataFormulatorState;
 
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 20000)
-
-        try {
-            const { data } = await apiRequest(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    input_data: {name: table.id, rows: table.rows, virtual: table.virtual ? true : false},
-                    model: dfSelectors.getActiveModel(state)
-                }),
-                signal: controller.signal,
-            });
-            return data;
-        } finally {
-            clearTimeout(timeoutId);
-        }
+        const { data } = await apiRequest(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                input_data: {name: table.id, rows: table.rows, virtual: table.virtual ? true : false},
+                model: dfSelectors.getActiveModel(state)
+            }),
+        });
+        return data;
     }
 );
 
@@ -370,30 +362,22 @@ export const fetchCodeExpl = createAsyncThunk(
 
         let state = getState() as DataFormulatorState;
 
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 20000)
-
-        try {
-            const { data } = await apiRequest(getUrls().CODE_EXPL_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    input_tables: derivedTable.derive?.source
-                                    .map(tId => state.tables.find(t => t.id == tId) as DictTable)
-                                    .map(t => ({ 
-                                        name: t.id, 
-                                        rows: t.rows, 
-                                        attached_metadata: t.attachedMetadata
-                                    })),
-                    code: derivedTable.derive?.code,
-                    model: dfSelectors.getActiveModel(state)
-                }),
-                signal: controller.signal,
-            });
-            return data;
-        } finally {
-            clearTimeout(timeoutId);
-        }
+        const { data } = await apiRequest(getUrls().CODE_EXPL_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                input_tables: derivedTable.derive?.source
+                                .map(tId => state.tables.find(t => t.id == tId) as DictTable)
+                                .map(t => ({ 
+                                    name: t.id, 
+                                    rows: t.rows, 
+                                    attached_metadata: t.attachedMetadata
+                                })),
+                code: derivedTable.derive?.code,
+                model: dfSelectors.getActiveModel(state)
+            }),
+        });
+        return data;
     }
 );
 

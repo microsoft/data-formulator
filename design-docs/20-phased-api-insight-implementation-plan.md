@@ -38,21 +38,20 @@
 
 | 项目 | 状态 | 备注 |
 |------|------|------|
-| `fetchCodeExpl` / `fetchFieldSemanticType` timeout 配置化 | 未完成 | 当前仍为 20s 硬编码；不要复制该模式 |
+| `fetchCodeExpl` / `fetchFieldSemanticType` timeout 配置化 | 已完成 | 前端不再设置 20s 硬编码 timeout；后端无 timeout 参数时使用后端默认 |
 | 前端全量 vitest / 回归验证 | 未确认 | 本文不再把它标记为完成 |
-| API error guardrail 静态扫描脚本 | 未完成 | `scripts/check_api_error_guardrails.py` 不存在 |
-| 静态扫描接入 CI / pre-commit | 未完成 | 需在脚本实现后再接入 |
-| ESLint 自定义规则限制业务代码直接 `fetchWithIdentity()` | 未完成 | 可作为长期护栏 |
+| API error guardrail 静态扫描脚本 | 暂不实现 | 只有在误用反复出现时再考虑窄扫描 |
+| 静态扫描接入 CI / pre-commit | 暂不实现 | 等本地规则稳定、误报低后再评估 |
+| ESLint 自定义规则限制业务代码直接 `fetchWithIdentity().json()` | 已完成 | 轻量限制直接链式 JSON 调用，复杂例外继续人工评审 |
 | Structured-first Insight | 未启动 | 见 `design-docs/18.2-insight-architecture-redesign.md` |
 | 多模型路由 / `ModelResolver` | 未启动 | 见 `design-docs/19-multi-model-routing.md` |
 | per-agent `reasoning_effort` 参数化 | 未完成 | `client_utils.py` 仍硬编码 `"low"` |
 
 ## 4. 后续建议顺序
 
-1. 先清理 `fetchCodeExpl` / `fetchFieldSemanticType` 的硬编码 timeout，并补 focused tests。
-2. 实现 API error guardrail 静态扫描脚本，先 report-only，再接入 CI。
-3. 启动 `18.2` 的 structured-first Insight，新增 `py-src/data_formulator/insights/` 和 profiler 单元测试。
-4. 启动 `19` 的 `ModelResolver`、任务级 env override、agent capabilities 和 per-agent `reasoning_effort`。
+1. 启动 `18.2` 的 structured-first Insight，新增 `py-src/data_formulator/insights/` 和 profiler 单元测试。
+2. 启动 `19` 的 `ModelResolver`、任务级 env override、agent capabilities 和 per-agent `reasoning_effort`。
+3. 只有在 API error 误用反复出现时，再实现窄范围静态扫描脚本并评估 CI 接入。
 
 ## 5. 移除的历史内容
 

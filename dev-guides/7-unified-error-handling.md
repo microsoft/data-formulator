@@ -331,12 +331,13 @@ UI 渲染必须基于 `state.status`：
 
 ### 4.7 LLM / Agent 前端 timeout 策略
 
-用户可见的 LLM / Agent 请求不要硬编码短 timeout。timeout 来源必须可解释：
+LLM / Agent 请求不要硬编码短 timeout。timeout 来源必须可解释：
 
 | 请求类型 | timeout 来源 |
 |----------|--------------|
-| 用户可见 LLM / Agent 请求 | `state.config.formulateTimeoutSeconds` |
+| 用户主动等待的 LLM / Agent 请求 | `state.config.formulateTimeoutSeconds` |
 | 长链路 Agent + 多工具循环 | `formulateTimeoutSeconds * N`，必须在代码旁说明原因 |
+| 后台 metadata / explanation 请求 | 不设置短前端 timeout；如果后端 API 已支持 timeout 参数，可选透传，否则使用后端默认 |
 | 模型连通性检查 | 独立健康检查 timeout，可以短于推理 timeout |
 | 数据库 / connector connect | 独立连接 timeout，并显示连接超时文案 |
 | best-effort preview / debounce | 可短超时或无提示，但必须注释说明 |
@@ -351,8 +352,8 @@ UI 渲染必须基于 `state.status`：
 | `AbortError` | 用户取消或组件卸载 | 可静默 |
 | 其他错误 | API / 业务错误 | 使用 `getErrorMessage()` 或本地 i18n 文案提示 |
 
-当前已知待清理项：`fetchCodeExpl` 和 `fetchFieldSemanticType` 仍使用 20s
-硬编码 timeout。新增同类代码不要复制该模式。
+`fetchCodeExpl` 和 `fetchFieldSemanticType` 不设置前端硬编码 timeout；新增同类后台
+metadata 请求不要复制短客户端 abort 模式。
 
 ## 5. 错误码和 i18n
 
@@ -429,13 +430,13 @@ DataLoader/connector 只做简单实用分类，不为每个 SDK 维护专门错
 
 ### 7.1 自动化护栏现状
 
-当前已有后端协议合约测试和前端 `apiClient` 测试。尚未落地的自动化护栏不要在
-设计文档或评审中标记为已完成：
+当前已有后端协议合约测试、前端 `apiClient` 测试和轻量 ESLint 护栏。其他尚未
+落地的自动化护栏不要在设计文档或评审中标记为已完成：
 
-- `scripts/check_api_error_guardrails.py` 静态扫描脚本尚未实现。
-- CI 尚未强制扫描裸 `jsonify({"error": ...})`、扁平 `status:"ok"`、业务代码直接
-  `fetchWithIdentity().json()`、未说明的 LLM 硬编码 timeout。
-- ESLint 自定义规则尚未强制禁止业务代码直接调用 `fetchWithIdentity()`。
+- `scripts/check_api_error_guardrails.py` 静态扫描脚本暂不实现；只有在误用反复出现时再考虑。
+- CI 暂不强制接入 API error guardrail 扫描，避免维护复杂扫描器和误报。
+- ESLint 已禁止业务代码新增直接 `fetchWithIdentity().json()` / `(await fetchWithIdentity()).json()`；
+  更复杂的 `fetchWithIdentity` 用法仍按人工评审和统一 API 规范判断。
 
 ## 8. 新 endpoint checklist
 
