@@ -442,6 +442,47 @@ const DataSourceSidebarPanel: React.FC<{
     // Guard against concurrent fetches for the same connector
     const fetchingRef = useRef<Set<string>>(new Set());
 
+    /** Fetch the full catalog tree for a connector in one call.
+     *  Uses GET_CATALOG_TREE which returns the complete nested tree
+     *  (all levels including children) via list_tables(). */
+    const fetchCatalogTree = useCallback(async (connectorId: string) => {
+        const fetchKey = `catalog:${connectorId}`;
+        if (fetchingRef.current.has(fetchKey)) return;
+        fetchingRef.current.add(fetchKey);
+        setCatalogByConnector(prev => ({
+            ...prev,
+            [connectorId]: loadingLoadable(prev[connectorId]),
+        }));
+        try {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorId }),
+            });
+            const tree: CatalogTreeNode[] = data.tree || [];
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: successLoadable(
+                    { tree, fetchedAt: Date.now() },
+                    cache => cache.tree.length === 0,
+                ),
+            }));
+            setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
+        } catch (e: any) {
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: errorLoadable(e, prev[connectorId]?.data ?? { tree: [], fetchedAt: Date.now() }),
+            }));
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'warning',
+                component: 'data-source-sidebar',
+                value: e?.apiError?.message || t('dataLoading.syncPartial'),
+            }));
+        } finally {
+            fetchingRef.current.delete(fetchKey);
+        }
+    }, [dispatch, t]);
+
     const syncCatalogMetadata = useCallback(async (connectorId: string) => {
         const syncKey = `sync:${connectorId}`;
         if (fetchingRef.current.has(syncKey)) return;
@@ -456,15 +497,6 @@ const DataSourceSidebarPanel: React.FC<{
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connectorId }),
             });
-            const tree = (data.tree || []) as CatalogTreeNode[];
-            setCatalogByConnector(prev => ({
-                ...prev,
-                [connectorId]: successLoadable(
-                    { tree, fetchedAt: Date.now() },
-                    cache => cache.tree.length === 0,
-                ),
-            }));
-            setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
             if (data.message_code === 'catalog.syncPartial') {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'warning',
@@ -485,42 +517,8 @@ const DataSourceSidebarPanel: React.FC<{
         } finally {
             fetchingRef.current.delete(syncKey);
         }
-    }, [dispatch, t]);
-
-    /** Load catalog from backend disk cache (fast). Falls back to live sync on miss. */
-    const loadCachedCatalog = useCallback(async (connectorId: string) => {
-        const cacheKey = `cache:${connectorId}`;
-        if (fetchingRef.current.has(cacheKey)) return;
-        fetchingRef.current.add(cacheKey);
-        setCatalogByConnector(prev => ({
-            ...prev,
-            [connectorId]: loadingLoadable(prev[connectorId]),
-        }));
-        try {
-            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CACHED_CATALOG_TREE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connectorId }),
-            });
-            if (data.tree) {
-                const tree = data.tree as CatalogTreeNode[];
-                setCatalogByConnector(prev => ({
-                    ...prev,
-                    [connectorId]: successLoadable(
-                        { tree, fetchedAt: Date.now() },
-                        cache => cache.tree.length === 0,
-                    ),
-                }));
-                fetchingRef.current.delete(cacheKey);
-                return;
-            }
-        } catch {
-            // cache read failed — fall through to live sync
-        }
-        fetchingRef.current.delete(cacheKey);
-        // Cache miss — fall back to live sync
-        syncCatalogMetadata(connectorId);
-    }, [syncCatalogMetadata]);
+        fetchCatalogTree(connectorId);
+    }, [dispatch, t, fetchCatalogTree]);
 
     const clearCatalogSearch = useCallback(() => {
         setCatalogSearch('');
@@ -641,6 +639,18 @@ const DataSourceSidebarPanel: React.FC<{
         return filtered;
     }, [catalogCache, catalogSearch, filterTree]);
 
+    // Auto-expand all namespaces in filtered results so search matches are visible
+    useEffect(() => {
+        if (!catalogSearch.trim()) return;
+        setTreeExpanded(prev => {
+            const next = { ...prev };
+            for (const [connId, cache] of Object.entries(filteredCatalogCache)) {
+                next[connId] = collectNamespaceIds(cache.tree);
+            }
+            return next;
+        });
+    }, [filteredCatalogCache, catalogSearch]);
+
     // ── Toggle expand source ─────────────────────────────────────────────────
 
     const catalogCacheRef = useRef(catalogCache);
@@ -654,12 +664,12 @@ const DataSourceSidebarPanel: React.FC<{
             } else {
                 next.add(connectorId);
                 if (!catalogCacheRef.current[connectorId]) {
-                    loadCachedCatalog(connectorId);
+                    fetchCatalogTree(connectorId);
                 }
             }
             return next;
         });
-    }, [loadCachedCatalog]);
+    }, [fetchCatalogTree]);
 
     // ── Preview a table on click ──────────────────────────────────────────
 
@@ -1129,9 +1139,7 @@ const DataSourceSidebarPanel: React.FC<{
                     const catalogError = !serverSearchActive && catalogState?.status === 'error'
                         ? catalogState.error
                         : undefined;
-                    const expanded = activeSearchMode
-                        ? collectNamespaceIds(displayCache?.tree || [])
-                        : (treeExpanded[connector.id] || []);
+                    const expanded = treeExpanded[connector.id] || [];
 
                     return (
                         <Box key={connector.id}>
@@ -1241,10 +1249,9 @@ const DataSourceSidebarPanel: React.FC<{
                                             loadedMap={loadedTablesMap}
                                             expandedIds={expanded}
                                             onExpandedChange={(newIds) => {
-                                                if (!activeSearchMode) {
-                                                    setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
-                                                }
+                                                setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
                                             }}
+                                            onLazyExpand={undefined}
                                             onItemClick={(node, e) => {
                                                 if (node.node_type === 'table') {
                                                     handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);

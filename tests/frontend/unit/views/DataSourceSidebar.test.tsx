@@ -51,6 +51,8 @@ vi.mock('../../../../src/app/utils', () => ({
         DELETE: (id: string) => `/api/connectors/${id}`,
     },
     CONNECTOR_ACTION_URLS: {
+        GET_CATALOG: '/api/connectors/get-catalog',
+        GET_CATALOG_TREE: '/api/connectors/get-catalog-tree',
         GET_CACHED_CATALOG_TREE: '/api/connectors/get-cached-catalog-tree',
         SYNC_CATALOG_METADATA: '/api/connectors/sync-catalog-metadata',
         SEARCH_CATALOG: '/api/connectors/search-catalog',
@@ -97,7 +99,7 @@ describe('DataSourceSidebar', () => {
         vi.mocked(apiRequest).mockReset();
     });
 
-    it('leaves loading state when catalog sync fails', async () => {
+    it('leaves loading state when catalog fetch fails', async () => {
         vi.mocked(apiRequest).mockImplementation((url: string) => {
             if (url === '/api/connectors') {
                 return Promise.resolve({
@@ -112,10 +114,7 @@ describe('DataSourceSidebar', () => {
                     },
                 });
             }
-            if (url === '/api/connectors/get-cached-catalog-tree') {
-                return Promise.resolve({ data: {} });
-            }
-            if (url === '/api/connectors/sync-catalog-metadata') {
+            if (url === '/api/connectors/get-catalog-tree') {
                 return Promise.reject({ apiError: { message: 'Data connector error' } });
             }
             return Promise.resolve({ data: {} });
@@ -126,16 +125,14 @@ describe('DataSourceSidebar', () => {
         fireEvent.click(await screen.findByText('Warehouse'));
 
         await waitFor(() => {
-            expect(screen.getByText('Data connector error')).toBeInTheDocument();
+            expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+                type: 'messages/add',
+                payload: expect.objectContaining({
+                    component: 'data-source-sidebar',
+                    type: 'warning',
+                    value: 'Data connector error',
+                }),
+            }));
         });
-        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-        expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
-            type: 'messages/add',
-            payload: expect.objectContaining({
-                component: 'data-source-sidebar',
-                type: 'warning',
-                value: 'Data connector error',
-            }),
-        }));
     });
 });

@@ -263,18 +263,117 @@ def sync_catalog_metadata(self, table_filter=None):
 
 ## 前端浏览模型
 
-**核心变化：节点展开为纯本地操作。** 完整目录树通过 `POST /sync-catalog-metadata`
-一次性获取并存入 React state。
+### 设计原则
 
-| 触发条件 | 行为 |
-|---------|------|
-| 首次展开连接器 | 若无缓存树数据，调用 `syncCatalogMetadata(connectorId)` |
-| 用户点击刷新 | 调用 `syncCatalogMetadata(connectorId)` → 覆盖 state |
-| 用户展开节点 | 从 React state 读取子节点 — 零网络请求 |
-| 浏览器刷新 | state 丢失；下次展开时重新调用 sync API |
+1. **一次全量取轻量树** — 展开连接器时通过 `GET_CATALOG_TREE` 一次获取完整嵌套树（所有层级），不做逐级懒加载
+2. **虚拟化渲染** — 使用 `react-window` 的 `FixedSizeList`，即使 6000+ 节点也只渲染可视区域
+3. **本地过滤** — 用户输入时在内存中的轻量树上做客户端过滤，零网络请求
+4. **后端搜索** — 回车/按钮触发 `SEARCH_CATALOG` 服务端全文检索，结果替换显示树
+5. **节点展开/收起完全由 React state 控制** — 搜索模式下也允许用户自由操作
 
-旧的 `get-catalog`（`ls()`）懒加载路径不再作为主浏览流程使用，
-仅保留用于服务端搜索和 fallback。
+### 前后端交互流程
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│                         用户操作 → API 调用                           │
+├───────────────────────────────────────────────────────────────────────┤
+│ 首次展开连接器    → POST /api/connectors/get-catalog-tree             │
+│                    返回: { tree: [...nested...], hierarchy: [...] }   │
+│                    前端: 完整树存入 catalogByConnector state           │
+│                                                                       │
+│ 点击刷新按钮      → POST /api/connectors/sync-catalog-metadata        │
+│                    (全量拉取远端 metadata，更新磁盘缓存)               │
+│                    完成后 → POST /api/connectors/get-catalog-tree      │
+│                    前端: 重新加载轻量树到 state                        │
+│                                                                       │
+│ 展开/收起文件夹   → 纯前端操作，更新 treeExpanded state，零网络请求    │
+│                                                                       │
+│ 搜索框输入        → 本地 filterTree() 在内存树上过滤                  │
+│                    命中结果自动展开所有 namespace 节点                 │
+│                    用户仍可手动收起/展开                               │
+│                                                                       │
+│ 搜索框回车/按钮   → POST /api/connectors/search-catalog               │
+│                    返回: { tree: [...] }                               │
+│                    前端: 结果存入 searchCatalogCache，自动全展开       │
+│                                                                       │
+│ 清空搜索          → 回到原始 catalogByConnector 树，恢复之前展开状态   │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+### 关键 API 端点（浏览相关）
+
+| 端点 | 用途 | 返回数据量 |
+|------|------|-----------|
+| `GET_CATALOG_TREE` | 获取完整嵌套轻量树 | 轻量（name/path/基础metadata，含 children 嵌套） |
+| `SYNC_CATALOG_METADATA` | 全量 metadata 同步（含列信息） | 重量（完整 columns/row_count 等） |
+| `SEARCH_CATALOG` | 服务端全文搜索 | 轻量（匹配结果的嵌套树） |
+| `GET_CATALOG` | 单级 ls()（保留用于特殊场景） | 轻量（单级扁平节点） |
+
+### 数据结构
+
+`GET_CATALOG_TREE` 返回的树节点（`CatalogTreeNode`）：
+
+```typescript
+{
+    name: string;           // 显示名
+    node_type: 'namespace' | 'table' | 'table_group';
+    path: string[];         // 从根到当前节点的路径
+    metadata: {             // 轻量 metadata
+        _source_name?: string;
+        dataset_id?: number;
+        row_count?: number;
+        description?: string;
+        source_metadata_status?: string;
+        // 注意：不含 columns（轻量版）
+    } | null;
+    children?: CatalogTreeNode[];  // namespace 节点含子节点（递归嵌套）
+}
+```
+
+### 虚拟化渲染（`VirtualizedCatalogTree.tsx`）
+
+- 使用 `react-window` 的 `FixedSizeList`
+- 将嵌套树 flatten 为一维行列表，根据展开状态动态计算
+- 当 `maxHeight="none"` 时，高度上限取 `window.innerHeight - 200`（确保虚拟化生效）
+- 少于 100 行时不启用虚拟化，直接 DOM 渲染
+- 每行高度固定 28px
+
+### 展开/收起 state 管理
+
+```typescript
+// treeExpanded: Record<connectorId, expandedNodeIds[]>
+// expandedNodeIds 是 node.path.join('/') 组成的字符串数组
+
+// 搜索触发时：自动设置所有 namespace 为展开
+setTreeExpanded(prev => ({
+    ...prev,
+    [connId]: collectNamespaceIds(filteredTree),
+}));
+
+// 用户手动操作：直接更新（搜索模式下也允许）
+onExpandedChange={(newIds) => {
+    setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
+}}
+```
+
+### 性能保证（禁止回退的设计决策）
+
+| 决策 | 原因 | 禁止的做法 |
+|------|------|-----------|
+| 一次取全树 | 避免逐级拉取的竞态、badge 闪烁、多级嵌套支持 | ❌ 用 `GET_CATALOG` 逐级 fetch + mergeChildrenAtPath |
+| 轻量树用于浏览 | `GET_CATALOG_TREE` 调 `list_tables()` 不含列信息，数据量小 | ❌ 把 `SYNC_CATALOG_METADATA` 的重数据存入浏览 state |
+| FixedSizeList 有界高度 | 确保 react-window 只渲染可视行 | ❌ height=totalHeight 导致所有行都被渲染 |
+| 搜索不锁定展开状态 | 用户需要收起不关心的文件夹 | ❌ 搜索时强制 expanded=collectNamespaceIds() 覆盖用户操作 |
+
+### 回归风险清单
+
+如果修改以下逻辑，必须验证：
+
+- [ ] 展开有 6000+ 表的 namespace → 不卡顿（虚拟化生效）
+- [ ] 展开后 namespace 右侧的数量 badge 立即显示正确数字
+- [ ] 搜索时可以收起文件夹
+- [ ] 清空搜索后恢复原始树和展开状态
+- [ ] 刷新按钮触发远端同步后树正确刷新
 
 ## Agent 工具链
 
