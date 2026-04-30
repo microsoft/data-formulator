@@ -13,6 +13,8 @@ from typing import Any, Optional
 from flask import jsonify
 from requests.exceptions import HTTPError
 
+from data_formulator.errors import ErrorCode
+
 logger = logging.getLogger(__name__)
 
 _GENERIC_5XX = "An unexpected error occurred"
@@ -27,6 +29,17 @@ _HTTP_CLIENT_MESSAGES: dict[int, str] = {
     409: "Conflict",
     429: "Too many requests",
 }
+
+
+def _structured_error_response(code: str, message: str, status_code: int):
+    return jsonify({
+        "status": "error",
+        "error": {
+            "code": code,
+            "message": message,
+            "retry": False,
+        },
+    }), status_code
 
 
 def safe_error_response(
@@ -58,23 +71,25 @@ def safe_error_response(
         logger.log(log_level, "%s", exc)
 
     if status_code >= 500 and status_code != 502:
-        return jsonify({"status": "error", "message": _GENERIC_5XX}), status_code
+        return _structured_error_response(ErrorCode.INTERNAL_ERROR, _GENERIC_5XX, status_code)
 
     if status_code == 502:
-        return jsonify({"status": "error", "message": _GENERIC_502}), 502
+        return _structured_error_response(ErrorCode.SERVICE_UNAVAILABLE, _GENERIC_502, 502)
 
     # 4xx — caller-supplied safe message takes priority
     if client_message:
-        return jsonify({"status": "error", "message": client_message}), status_code
+        code = ErrorCode.ACCESS_DENIED if status_code == 403 else ErrorCode.INVALID_REQUEST
+        return _structured_error_response(code, client_message, status_code)
 
     # HTTPError with known upstream status → canned message
     if isinstance(exc, HTTPError) and exc.response is not None:
         upstream_code = exc.response.status_code
         canned = _HTTP_CLIENT_MESSAGES.get(upstream_code)
         if canned:
-            return jsonify({"status": "error", "message": canned}), status_code
+            code = ErrorCode.ACCESS_DENIED if upstream_code == 403 else ErrorCode.INVALID_REQUEST
+            return _structured_error_response(code, canned, status_code)
 
-    return jsonify({"status": "error", "message": _GENERIC_4XX}), status_code
+    return _structured_error_response(ErrorCode.INVALID_REQUEST, _GENERIC_4XX, status_code)
 
 
 _LLM_ERROR_GENERIC = "Model request failed"

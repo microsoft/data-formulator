@@ -66,6 +66,8 @@ import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
+import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
@@ -257,9 +259,18 @@ const DataSourceSidebarPanel: React.FC<{
     const [connectors, setConnectors] = useState<ConnectorInstance[]>([]);
     const [loadingConnectors, setLoadingConnectors] = useState(false);
 
-    // Catalog tree cache per connector ID
-    const [catalogCache, setCatalogCache] = useState<Record<string, CatalogCache>>({});
-    const [loadingCatalog, setLoadingCatalog] = useState<Record<string, boolean>>({});
+    // Catalog tree state per connector ID. Keep loading/error explicit instead
+    // of inferring it from whether a cache object exists.
+    const [catalogByConnector, setCatalogByConnector] = useState<Record<string, LoadableState<CatalogCache>>>({});
+    const catalogCache = useMemo(() => {
+        const cache: Record<string, CatalogCache> = {};
+        for (const [connectorId, state] of Object.entries(catalogByConnector)) {
+            if (state.data && state.status !== 'error') {
+                cache[connectorId] = state.data;
+            }
+        }
+        return cache;
+    }, [catalogByConnector]);
 
     // Which source sections are expanded (by connector ID)
     const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
@@ -397,9 +408,8 @@ const DataSourceSidebarPanel: React.FC<{
 
     const fetchConnectors = useCallback(() => {
         setLoadingConnectors(true);
-        fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
-            .then(r => r.json())
-            .then(data => {
+        apiRequest(CONNECTOR_URLS.LIST, { method: 'GET' })
+            .then(({ data }) => {
                 const list: ConnectorInstance[] = data.connectors || [];
                 setConnectors(list);
             })
@@ -410,11 +420,10 @@ const DataSourceSidebarPanel: React.FC<{
     // Fetch on mount and whenever identity changes.
     useEffect(() => {
         setConnectors([]);
-        setCatalogCache({});
+        setCatalogByConnector({});
         setSearchCatalogCache({});
         setServerSearchActive(false);
         setSearchingCatalog({});
-        setLoadingCatalog({});
         setExpandedSources(new Set());
         setTreeExpanded({});
         setPreview(null);
@@ -433,79 +442,83 @@ const DataSourceSidebarPanel: React.FC<{
     // Guard against concurrent fetches for the same connector
     const fetchingRef = useRef<Set<string>>(new Set());
 
+    /** Fetch the full catalog tree for a connector in one call.
+     *  Uses GET_CATALOG_TREE which returns the complete nested tree
+     *  (all levels including children) via list_tables(). */
+    const fetchCatalogTree = useCallback(async (connectorId: string) => {
+        const fetchKey = `catalog:${connectorId}`;
+        if (fetchingRef.current.has(fetchKey)) return;
+        fetchingRef.current.add(fetchKey);
+        setCatalogByConnector(prev => ({
+            ...prev,
+            [connectorId]: loadingLoadable(prev[connectorId]),
+        }));
+        try {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorId }),
+            });
+            const tree: CatalogTreeNode[] = data.tree || [];
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: successLoadable(
+                    { tree, fetchedAt: Date.now() },
+                    cache => cache.tree.length === 0,
+                ),
+            }));
+            setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
+        } catch (e: any) {
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: errorLoadable(e, prev[connectorId]?.data ?? { tree: [], fetchedAt: Date.now() }),
+            }));
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'warning',
+                component: 'data-source-sidebar',
+                value: e?.apiError?.message || t('dataLoading.syncPartial'),
+            }));
+        } finally {
+            fetchingRef.current.delete(fetchKey);
+        }
+    }, [dispatch, t]);
+
     const syncCatalogMetadata = useCallback(async (connectorId: string) => {
         const syncKey = `sync:${connectorId}`;
         if (fetchingRef.current.has(syncKey)) return;
         fetchingRef.current.add(syncKey);
-        setLoadingCatalog(prev => ({ ...prev, [connectorId]: true }));
+        setCatalogByConnector(prev => ({
+            ...prev,
+            [connectorId]: loadingLoadable(prev[connectorId]),
+        }));
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA, {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connectorId }),
             });
-            const data = await resp.json();
-            if (data.status === 'ok' && data.tree) {
-                setCatalogCache(prev => ({
-                    ...prev,
-                    [connectorId]: { tree: data.tree as CatalogTreeNode[], fetchedAt: Date.now() },
-                }));
-                setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
-                if (data.message_code === 'catalog.syncPartial') {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(), type: 'warning',
-                        component: 'data-source-sidebar',
-                        value: translateBackend(data.message, data.message_code, data.message_params),
-                    }));
-                }
-            } else if (data.status === 'error') {
+            if (data.message_code === 'catalog.syncPartial') {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'warning',
                     component: 'data-source-sidebar',
-                    value: data.error?.message || t('dataLoading.syncPartial'),
+                    value: translateBackend(data.message, data.message_code, data.message_params),
                 }));
             }
-        } catch {
+        } catch (e: any) {
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: errorLoadable(e, { tree: [], fetchedAt: Date.now() }),
+            }));
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'warning',
                 component: 'data-source-sidebar',
-                value: t('dataLoading.syncPartial'),
+                value: e?.apiError?.message || t('dataLoading.syncPartial'),
             }));
+        } finally {
+            fetchingRef.current.delete(syncKey);
         }
-        setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
-        fetchingRef.current.delete(syncKey);
-    }, [dispatch, t]);
-
-    /** Load catalog from backend disk cache (fast). Falls back to live sync on miss. */
-    const loadCachedCatalog = useCallback(async (connectorId: string) => {
-        const cacheKey = `cache:${connectorId}`;
-        if (fetchingRef.current.has(cacheKey)) return;
-        fetchingRef.current.add(cacheKey);
-        setLoadingCatalog(prev => ({ ...prev, [connectorId]: true }));
-        try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CACHED_CATALOG_TREE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connectorId }),
-            });
-            const data = await resp.json();
-            if (data.status === 'ok' && data.tree) {
-                setCatalogCache(prev => ({
-                    ...prev,
-                    [connectorId]: { tree: data.tree as CatalogTreeNode[], fetchedAt: Date.now() },
-                }));
-                setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
-                fetchingRef.current.delete(cacheKey);
-                return;
-            }
-        } catch {
-            // cache read failed — fall through to live sync
-        }
-        setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
-        fetchingRef.current.delete(cacheKey);
-        // Cache miss — fall back to live sync
-        syncCatalogMetadata(connectorId);
-    }, [syncCatalogMetadata]);
+        fetchCatalogTree(connectorId);
+    }, [dispatch, t, fetchCatalogTree]);
 
     const clearCatalogSearch = useCallback(() => {
         setCatalogSearch('');
@@ -524,15 +537,11 @@ const DataSourceSidebarPanel: React.FC<{
     const searchConnectorCatalog = useCallback(async (connector: ConnectorInstance, query: string) => {
         setSearchingCatalog(prev => ({ ...prev, [connector.id]: true }));
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connector.id, query, limit: 100 }),
             });
-            const data = await resp.json();
-            if (data.status === 'error') {
-                throw new Error(data.error?.message || data.error_message || 'Catalog search failed');
-            }
             const tree = (data.tree || []) as CatalogTreeNode[];
             setSearchCatalogCache(prev => ({
                 ...prev,
@@ -630,6 +639,18 @@ const DataSourceSidebarPanel: React.FC<{
         return filtered;
     }, [catalogCache, catalogSearch, filterTree]);
 
+    // Auto-expand all namespaces in filtered results so search matches are visible
+    useEffect(() => {
+        if (!catalogSearch.trim()) return;
+        setTreeExpanded(prev => {
+            const next = { ...prev };
+            for (const [connId, cache] of Object.entries(filteredCatalogCache)) {
+                next[connId] = collectNamespaceIds(cache.tree);
+            }
+            return next;
+        });
+    }, [filteredCatalogCache, catalogSearch]);
+
     // ── Toggle expand source ─────────────────────────────────────────────────
 
     const catalogCacheRef = useRef(catalogCache);
@@ -643,12 +664,12 @@ const DataSourceSidebarPanel: React.FC<{
             } else {
                 next.add(connectorId);
                 if (!catalogCacheRef.current[connectorId]) {
-                    loadCachedCatalog(connectorId);
+                    fetchCatalogTree(connectorId);
                 }
             }
             return next;
         });
-    }, [loadCachedCatalog]);
+    }, [fetchCatalogTree]);
 
     // ── Preview a table on click ──────────────────────────────────────────
 
@@ -673,7 +694,7 @@ const DataSourceSidebarPanel: React.FC<{
         });
         setPreviewAnchor(anchorEl);
 
-        fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+        apiRequest(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -682,8 +703,7 @@ const DataSourceSidebarPanel: React.FC<{
                 limit: 10,
             }),
         })
-            .then(r => r.json())
-            .then(data => {
+            .then(({ data }) => {
                 if (data.columns) {
                     setPreview(prev => {
                         if (!prev) return null;
@@ -781,7 +801,7 @@ const DataSourceSidebarPanel: React.FC<{
 
         const ref = buildSourceTableRef(node);
 
-        fetchWithIdentity(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
+        apiRequest(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -790,16 +810,13 @@ const DataSourceSidebarPanel: React.FC<{
                 source_table: ref,
             }),
         })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(),
-                        type: 'success',
-                        component: 'data source sidebar',
-                        value: t('sidebar.refreshedTable', { name: ref.name }),
-                    }));
-                }
+            .then(() => {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'success',
+                    component: 'data source sidebar',
+                    value: t('sidebar.refreshedTable', { name: ref.name }),
+                }));
             })
             .catch(() => {
                 dispatch(dfActions.addMessages({
@@ -813,12 +830,11 @@ const DataSourceSidebarPanel: React.FC<{
 
     const handleOpenAnnotation = useCallback((connectorId: string, node: CatalogTreeNode) => {
         const tableKey = node.metadata?.table_key || node.metadata?._source_name || node.name;
-        fetchWithIdentity(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS + `?connector_id=${encodeURIComponent(connectorId)}`, {
+        apiRequest(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS + `?connector_id=${encodeURIComponent(connectorId)}`, {
             method: 'GET',
         })
-            .then(r => r.json())
-            .then(data => {
-                const tables = data.annotations?.tables || {};
+            .then(({ data }) => {
+                const tables = data.tables || {};
                 const existing = tables[tableKey] || {};
                 setAnnotationEdit({
                     connectorId,
@@ -826,7 +842,7 @@ const DataSourceSidebarPanel: React.FC<{
                     tableName: node.name,
                     description: existing.description || '',
                     notes: existing.notes || '',
-                    version: data.annotations?.version ?? null,
+                    version: data.version ?? null,
                 });
             })
             .catch(() => {
@@ -845,7 +861,7 @@ const DataSourceSidebarPanel: React.FC<{
         if (!annotationEdit) return;
         setAnnotationSaving(true);
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS, {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -856,24 +872,16 @@ const DataSourceSidebarPanel: React.FC<{
                     notes: annotationEdit.notes,
                 }),
             });
-            const data = await resp.json();
-            if (data.status === 'ok') {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'success',
-                    component: 'data-source-sidebar',
-                    value: translateBackend(data.message ?? t('dataLoading.annotationSaved'), data.message_code),
-                }));
-                setAnnotationEdit(null);
-            } else if (data.error?.code === 'ANNOTATION_CONFLICT') {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'data-source-sidebar',
-                    value: t('dataLoading.annotationConflict'),
-                }));
-            }
-        } catch {
             dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error',
+                timestamp: Date.now(), type: 'success',
+                component: 'data-source-sidebar',
+                value: translateBackend(data.message ?? t('dataLoading.annotationSaved'), data.message_code),
+            }));
+            setAnnotationEdit(null);
+        } catch (e: any) {
+            const isConflict = e?.apiError?.code === 'ANNOTATION_CONFLICT';
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: isConflict ? 'warning' : 'error',
                 component: 'data-source-sidebar',
                 value: t('dataLoading.annotationConflict'),
             }));
@@ -883,7 +891,7 @@ const DataSourceSidebarPanel: React.FC<{
     }, [annotationEdit, dispatch, t]);
 
     const clearConnectorUiState = useCallback((connectorId: string) => {
-        setCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        setCatalogByConnector(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setSearchCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setSearchingCatalog(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setExpandedSources(prev => { const next = new Set(prev); next.delete(connectorId); return next; });
@@ -899,31 +907,21 @@ const DataSourceSidebarPanel: React.FC<{
         if (!deleteTarget) return;
         setDeleting(true);
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_URLS.DELETE(deleteTarget.id), { method: 'DELETE' });
-            const data = await resp.json();
-            if (resp.ok || data.status === 'success') {
-                setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
-                clearConnectorUiState(deleteTarget.id);
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'success',
-                    component: 'data source sidebar',
-                    value: t('sidebar.connectorDeleted', { name: deleteTarget.display_name }),
-                }));
-            } else {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'error',
-                    component: 'data source sidebar',
-                    value: data.message || t('sidebar.failedDeleteConnector'),
-                }));
-            }
-        } catch {
+            await apiRequest(CONNECTOR_URLS.DELETE(deleteTarget.id), { method: 'DELETE' });
+            setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
+            clearConnectorUiState(deleteTarget.id);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorDeleted', { name: deleteTarget.display_name }),
+            }));
+        } catch (e: any) {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
                 component: 'data source sidebar',
-                value: t('sidebar.failedDeleteConnector'),
+                value: e?.apiError?.message || t('sidebar.failedDeleteConnector'),
             }));
         } finally {
             setDeleting(false);
@@ -938,39 +936,29 @@ const DataSourceSidebarPanel: React.FC<{
         e.stopPropagation();
         setDisconnectingConnectorId(connector.id);
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.DISCONNECT, {
+            await apiRequest(CONNECTOR_ACTION_URLS.DISCONNECT, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connector.id }),
             });
-            const data = await resp.json();
-            if (resp.ok && data.status === 'disconnected') {
-                setConnectors(prev => prev.map(c => (
-                    c.id === connector.id
-                        ? { ...c, connected: false, sso_auto_connect: false }
-                        : c
-                )));
-                clearConnectorUiState(connector.id);
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'success',
-                    component: 'data source sidebar',
-                    value: t('sidebar.connectorDisconnected', { name: connector.display_name }),
-                }));
-            } else {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'error',
-                    component: 'data source sidebar',
-                    value: data.message || t('sidebar.failedDisconnectConnector'),
-                }));
-            }
-        } catch {
+            setConnectors(prev => prev.map(c => (
+                c.id === connector.id
+                    ? { ...c, connected: false, sso_auto_connect: false }
+                    : c
+            )));
+            clearConnectorUiState(connector.id);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorDisconnected', { name: connector.display_name }),
+            }));
+        } catch (err: any) {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
                 component: 'data source sidebar',
-                value: t('sidebar.failedDisconnectConnector'),
+                value: err?.apiError?.message || t('sidebar.failedDisconnectConnector'),
             }));
         } finally {
             setDisconnectingConnectorId(null);
@@ -1141,15 +1129,17 @@ const DataSourceSidebarPanel: React.FC<{
                     const displayCache = serverSearchActive
                         ? searchCatalogCache[connector.id]
                         : (localSearchActive ? filteredCatalogCache[connector.id] : catalogCache[connector.id]);
+                    const catalogState = catalogByConnector[connector.id];
                     const isExpanded = activeSearchMode
                         ? (!!displayCache && displayCache.tree.length > 0)
                         : expandedSources.has(connector.id);
                     const isLoading = serverSearchActive
                         ? (searchingCatalog[connector.id] ?? false)
-                        : (loadingCatalog[connector.id] ?? false);
-                    const expanded = activeSearchMode
-                        ? collectNamespaceIds(displayCache?.tree || [])
-                        : (treeExpanded[connector.id] || []);
+                        : catalogState?.status === 'loading';
+                    const catalogError = !serverSearchActive && catalogState?.status === 'error'
+                        ? catalogState.error
+                        : undefined;
+                    const expanded = treeExpanded[connector.id] || [];
 
                     return (
                         <Box key={connector.id}>
@@ -1248,7 +1238,7 @@ const DataSourceSidebarPanel: React.FC<{
                             {connector.connected && (
                             <Collapse in={isExpanded}>
                                 <Box sx={{ pl: 1, pr: 0.5, pb: 1 }}>
-                                    {!displayCache && (
+                                    {!displayCache && isLoading && (
                                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
                                             <CircularProgress size={16} />
                                         </Box>
@@ -1259,10 +1249,9 @@ const DataSourceSidebarPanel: React.FC<{
                                             loadedMap={loadedTablesMap}
                                             expandedIds={expanded}
                                             onExpandedChange={(newIds) => {
-                                                if (!activeSearchMode) {
-                                                    setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
-                                                }
+                                                setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
                                             }}
+                                            onLazyExpand={undefined}
                                             onItemClick={(node, e) => {
                                                 if (node.node_type === 'table') {
                                                     handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
@@ -1319,6 +1308,11 @@ const DataSourceSidebarPanel: React.FC<{
                                     {displayCache && displayCache.tree.length === 0 && !isLoading && (
                                         <Typography sx={{ fontSize: 11, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>
                                             {t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
+                                        </Typography>
+                                    )}
+                                    {!displayCache && !isLoading && (
+                                        <Typography sx={{ fontSize: 11, color: catalogError ? 'error.main' : 'text.disabled', pl: 1, fontStyle: 'italic' }}>
+                                            {catalogError || t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
                                         </Typography>
                                     )}
                                 </Box>

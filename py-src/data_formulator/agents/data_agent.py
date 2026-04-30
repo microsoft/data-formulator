@@ -406,6 +406,14 @@ class DataAgent:
                 logger.warning("Failed to initialise KnowledgeStore", exc_info=True)
 
     # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _explore_ns_dir(self) -> Path:
+        """Directory for cross-turn namespace serialisation."""
+        return self.workspace.confined_scratch.root / "_explore_ns"
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -452,6 +460,11 @@ class DataAgent:
             )
 
             if trajectory is None:
+                ns_dir = self._explore_ns_dir()
+                if ns_dir.exists():
+                    import shutil
+                    shutil.rmtree(ns_dir, ignore_errors=True)
+
                 trajectory = self._build_initial_messages(
                     input_tables, user_question, focused_thread, other_threads,
                     primary_tables=primary_tables,
@@ -978,22 +991,11 @@ class DataAgent:
     ) -> dict[str, Any]:
         """Run explore code in sandbox, capturing stdout.
 
-        Uses the same execution approach as the data loading chat agent:
-        bypasses ``run_python_code`` (which requires a DataFrame output)
-        and calls ``_run_in_warm_subprocess`` directly with a wrapper that
-        captures stdout into ``_pack``.
+        When called inside ``_get_next_action``, uses the shared
+        ``SandboxSession`` so that variables persist across calls.
+        Falls back to a one-shot subprocess otherwise.
         """
-        from data_formulator.sandbox import create_sandbox
-
-        try:
-            from flask import current_app
-            sandbox_mode = current_app.config.get('CLI_ARGS', {}).get('sandbox', 'local')
-        except (ImportError, RuntimeError):
-            sandbox_mode = 'local'
-
-        sandbox = create_sandbox(sandbox_mode)
-
-        # Wrap code: capture stdout + collect DataFrames (same as data loading chat)
+        # Wrap code: capture stdout
         capture_code = (
             "import io as _io, sys as _sys, pandas as _pd\n"
             "_old_stdout = _sys.stdout\n"
@@ -1012,16 +1014,27 @@ class DataAgent:
                 import os as _os
                 workspace_path = _os.path.abspath(str(local_path))
                 allowed_objects = {"_pack": None}
-                raw = sandbox._run_in_warm_subprocess(
-                    capture_code, allowed_objects, workspace_path
-                )
+
+                session = getattr(self, "_explore_session", None)
+                if session is not None:
+                    raw = session.execute(capture_code, allowed_objects, workspace_path)
+                else:
+                    from data_formulator.sandbox import create_sandbox
+                    try:
+                        from flask import current_app
+                        sandbox_mode = current_app.config.get('CLI_ARGS', {}).get('sandbox', 'local')
+                    except (ImportError, RuntimeError):
+                        sandbox_mode = 'local'
+                    sandbox = create_sandbox(sandbox_mode)
+                    raw = sandbox._run_in_warm_subprocess(
+                        capture_code, allowed_objects, workspace_path
+                    )
 
             if raw["status"] == "ok":
                 pack = raw["allowed_objects"].get("_pack", {})
                 stdout = pack.get("stdout", "") if isinstance(pack, dict) else ""
                 if not isinstance(stdout, str):
                     stdout = str(stdout)
-                # Truncate for safety
                 if len(stdout) > 8000:
                     stdout = stdout[:8000] + "\n... (truncated)"
                 return {"status": "ok", "stdout": stdout}
@@ -1424,6 +1437,40 @@ class DataAgent:
 
         rlog = self._reasoning_log
 
+        from data_formulator.sandbox.local_sandbox import SandboxSession
+        ns_dir = self._explore_ns_dir()
+        ws_path = str(self.workspace.confined_scratch.root.parent)
+
+        with SandboxSession() as explore_session:
+            self._explore_session = explore_session
+
+            if ns_dir.exists():
+                ok = SandboxSession.restore_namespace(explore_session, ns_dir, ws_path)
+                if ok:
+                    logger.info("[DataAgent] Restored explore namespace from %s", ns_dir)
+                import shutil
+                shutil.rmtree(ns_dir, ignore_errors=True)
+
+            self._tool_loop_exit_reason = None
+            yield from self._tool_loop(
+                messages, max_tool_rounds, max_json_retries, json_retries,
+                llm_calls_in_cycle, rlog, input_tables, outer_iteration,
+            )
+
+            if self._tool_loop_exit_reason == "tool_rounds_exhausted":
+                saved = explore_session.save_namespace(ns_dir, ws_path)
+                if saved:
+                    logger.info("[DataAgent] Saved explore namespace to %s", ns_dir)
+
+            self._explore_session = None
+
+    def _tool_loop(
+        self,
+        messages, max_tool_rounds, max_json_retries, json_retries,
+        llm_calls_in_cycle, rlog, input_tables, outer_iteration,
+    ):
+        """Inner tool-calling loop, extracted so _get_next_action can wrap
+        it in a SandboxSession context manager."""
         for round_idx in range(max_tool_rounds):
             llm_calls_in_cycle += 1
             rlog.log("llm_request", iteration=outer_iteration,
@@ -1659,6 +1706,7 @@ class DataAgent:
 
         # --- tool rounds exhausted ---
         logger.warning("[DataAgent] Exceeded %d tool rounds without producing an action", max_tool_rounds)
+        self._tool_loop_exit_reason = "tool_rounds_exhausted"
         yield {"type": "agent_action", "action_data": None, "reason": "tool_rounds_exhausted",
                "llm_calls": llm_calls_in_cycle}
         return

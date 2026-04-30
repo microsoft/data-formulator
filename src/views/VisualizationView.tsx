@@ -46,6 +46,7 @@ import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchChartInsight } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
 import { DictTable } from "../components/ComponentType";
@@ -520,7 +521,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             currentRequestRef.current = requestId;
             
             let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
-            fetchWithIdentity(getUrls().SAMPLE_TABLE, {
+            apiRequest<any>(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -533,23 +534,14 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     aggregate_fields_and_functions: aggregateFields,
                 }),
             })
-            .then(response => response.json())
-            .then(data => {
+            .then(({ data }) => {
                 // Only update if this is still the current request (not stale)
                 if (currentRequestRef.current === requestId) {
                     const versionId = computeVersionId();
-                    if (data.status == "success") {
-                        setVisTableRows(data.rows);
-                        setVisTableTotalRowCount(data.total_row_count);
-                        setDataVersion(versionId);
-                        // Cache for instant reuse on chart revisit
-                        displayRowsCache.set(versionId, { rows: data.rows, totalCount: data.total_row_count });
-                    } else {
-                        setVisTableRows([]);
-                        setVisTableTotalRowCount(0);
-                        setDataVersion(versionId);
-                        setSystemMessage(data.message, "error");
-                    }
+                    setVisTableRows(data.rows);
+                    setVisTableTotalRowCount(data.total_row_count);
+                    setDataVersion(versionId);
+                    displayRowsCache.set(versionId, { rows: data.rows, totalCount: data.total_row_count });
                 }
                 // Else: this response is stale, ignore it
             })

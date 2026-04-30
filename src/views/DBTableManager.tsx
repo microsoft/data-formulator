@@ -24,6 +24,8 @@ import ClearIcon from '@mui/icons-material/Clear';
 
 
 import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity, SourceTableRef } from '../app/utils';
+import { apiRequest, assertDownloadResponseOk, type ApiError } from '../app/apiClient';
+import { getErrorMessage } from '../app/errorCodes';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
 import { DataFrameTable } from './DataFrameTable';
@@ -53,13 +55,15 @@ import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 
 const CATALOG_PAGE_SIZE = 200;
 
-/** Extract a user-visible error message from a connect response body,
- *  compatible with both the unified `{error:{message}}` and legacy `{message}` formats. */
+/** Extract a user-visible error message from a connector data payload. */
 function extractConnectError(body: any, fallback: string): string {
-    if (body.error && typeof body.error === 'object' && body.error.message) {
-        return body.error.message;
+    if (body.connection_error && typeof body.connection_error === 'object' && body.connection_error.code) {
+        return getErrorMessage(body.connection_error as ApiError);
     }
-    return body.error_message ?? body.message ?? fallback;
+    if (body.error && typeof body.error === 'object' && body.error.message) {
+        return getErrorMessage(body.error as ApiError);
+    }
+    return body.message ?? fallback;
 }
 
 function makeLoadMoreNode(parentPath: string[], nextOffset: number): CatalogTreeNode {
@@ -77,11 +81,7 @@ export const handleDBDownload = async (identityId: string) => {
         getUrls().DOWNLOAD_DB_FILE,
         { method: 'GET' }
     );
-    
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || errorData.message || 'Failed to download database file');
-    }
+    await assertDownloadResponseOk(response, 'Failed to download database file');
 
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
@@ -188,12 +188,9 @@ export const DBManagerPane: React.FC<{
             return localTables;
         }
         try {
-            const response = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
-            const data = await response.json();
-            if (data.status === 'success') {
-                setDbTables(data.tables);
-                return data.tables;
-            }
+            const { data } = await apiRequest<{ tables: DBTable[] }>(getUrls().LIST_TABLES, { method: 'GET' });
+            setDbTables(data.tables);
+            return data.tables;
         } catch (error) {
             setSystemMessage(t('db.failedFetchTables'), "error");
         }
@@ -460,7 +457,7 @@ const GroupLoadPanel: React.FC<{
         setIsLoading(true);
         onImport();
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.IMPORT_GROUP, {
+            const { data } = await apiRequest<{ results: any[] }>(CONNECTOR_ACTION_URLS.IMPORT_GROUP, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -470,42 +467,37 @@ const GroupLoadPanel: React.FC<{
                     group_name: groupName,
                 }),
             });
-            const data = await resp.json();
 
-            if (data.status === 'success') {
-                const results: any[] = data.results || [];
-                const succeeded = results.filter(r => r.status === 'success');
-                const failed = results.filter(r => r.status === 'error');
+            const results: any[] = data.results || [];
+            const succeeded = results.filter(r => r.status === 'success');
+            const failed = results.filter(r => r.status === 'error');
 
-                const listResp = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
-                const listData = await listResp.json();
-                if (listData.status === 'success') {
-                    for (const r of succeeded) {
-                        const wsTable = (listData.tables || []).find((t: any) => t.name === r.table_name);
-                        if (wsTable) {
-                            const source = {
-                                type: 'database' as const,
-                                databaseTable: r.table_name,
-                                canRefresh: true,
-                                lastRefreshed: Date.now(),
-                                connectorId,
-                            };
-                            const tableObj = buildDictTableFromWorkspace(wsTable, source);
-                            dispatch(dfActions.addTableToStore(tableObj));
-                            dispatch(fetchFieldSemanticType(tableObj));
-                        }
-                    }
+            const { data: listData } = await apiRequest<{ tables: any[] }>(getUrls().LIST_TABLES, { method: 'GET' });
+            for (const r of succeeded) {
+                const wsTable = (listData.tables || []).find((t: any) => t.name === r.table_name);
+                if (wsTable) {
+                    const source = {
+                        type: 'database' as const,
+                        databaseTable: r.table_name,
+                        canRefresh: true,
+                        lastRefreshed: Date.now(),
+                        connectorId,
+                    };
+                    const tableObj = buildDictTableFromWorkspace(wsTable, source);
+                    dispatch(dfActions.addTableToStore(tableObj));
+                    dispatch(fetchFieldSemanticType(tableObj));
                 }
+            }
 
-                onLoaded('loaded');
-                if (failed.length > 0) {
-                    onFinish("error", `Loaded ${succeeded.length} tables, ${failed.length} failed`);
-                } else {
-                    onFinish("success", `Loaded ${succeeded.length} tables from "${groupName}"`,
-                        succeeded.map(r => r.table_name));
-                }
+            onLoaded('loaded');
+            if (failed.length > 0) {
+                const firstError = failed[0]?.error?.code
+                    ? getErrorMessage(failed[0].error as ApiError)
+                    : failed[0]?.message;
+                onFinish("error", `Loaded ${succeeded.length} tables, ${failed.length} failed${firstError ? `: ${firstError}` : ''}`);
             } else {
-                throw new Error(data.message || 'Failed to load group');
+                onFinish("success", `Loaded ${succeeded.length} tables from "${groupName}"`,
+                    succeeded.map(r => r.table_name));
             }
         } catch (err: any) {
             onFinish("error", err.message || 'Failed to load dashboard');
@@ -738,7 +730,7 @@ export const DataLoaderForm: React.FC<{
     const fetchCatalogNodes = useCallback(
     async (path: string[] = [], filter?: string, options: { append?: boolean; offset?: number } = {}) => {
         const offset = options.offset ?? 0;
-        const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CATALOG, {
+        const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_CATALOG, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -749,7 +741,6 @@ export const DataLoaderForm: React.FC<{
                 offset,
             }),
         });
-        const data = await resp.json();
         if (data.nodes) {
             const nodes: CatalogTreeNode[] = (data.nodes as CatalogTreeNode[]).map(n => ({
                 ...n,
@@ -774,8 +765,6 @@ export const DataLoaderForm: React.FC<{
                 setTableMetadata(prev => ({ ...prev, ...flatMeta }));
             }
             return data;
-        } else if (data.status === 'error') {
-            throw new Error(data.message || 'Failed to load catalog');
         }
         return data;
     },
@@ -793,14 +782,13 @@ export const DataLoaderForm: React.FC<{
             if (onBeforeConnect) {
                 connectorIdRef.current = await onBeforeConnect(connectParams);
             }
-            const connectResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.CONNECT, {
+            const { data: connectData } = await apiRequest<any>(CONNECTOR_ACTION_URLS.CONNECT, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connectorIdRef.current, params: connectParams, persist: persistCredentials }),
                 signal: controller.signal,
             });
             clearTimeout(timeoutId);
-            const connectData = await connectResp.json();
             if (connectData.status !== 'connected') {
                 throw new Error(extractConnectError(connectData, 'Connection failed'));
             }
@@ -875,7 +863,7 @@ export const DataLoaderForm: React.FC<{
             if (access_token) {
                 try {
                     // Persist token in TokenStore for Agent and future requests
-                    await fetchWithIdentity('/api/auth/tokens/save', {
+                    await apiRequest('/api/auth/tokens/save', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -887,7 +875,7 @@ export const DataLoaderForm: React.FC<{
                     }).catch(() => {});
 
                     // Send tokens to backend token-connect endpoint
-                    const connectResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.CONNECT, {
+                    const { data: connectData } = await apiRequest<any>(CONNECTOR_ACTION_URLS.CONNECT, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -900,7 +888,6 @@ export const DataLoaderForm: React.FC<{
                             persist: persistCredentials,
                         }),
                     });
-                    const connectData = await connectResp.json();
                     if (connectData.status !== 'connected') {
                         throw new Error(extractConnectError(connectData, 'Token connection failed'));
                     }
@@ -934,23 +921,21 @@ export const DataLoaderForm: React.FC<{
         (async () => {
             setIsConnecting(true);
             try {
-                const statusResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_STATUS, {
+                const { data: statusData } = await apiRequest<any>(CONNECTOR_ACTION_URLS.GET_STATUS, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ connector_id: connectorIdRef.current }),
                 });
-                const statusData = await statusResp.json();
                 if (statusData.connected) {
                     await fetchCatalogNodes();
                 } else if (statusData.has_stored_credentials || statusData.sso_available) {
                     // Vault creds or SSO token available — attempt auto-connect.
                     // Backend _inject_sso_token handles SSO token passthrough transparently.
-                    const connectResp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.CONNECT, {
+                    const { data: connectData } = await apiRequest<any>(CONNECTOR_ACTION_URLS.CONNECT, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ connector_id: connectorIdRef.current, params: {}, persist: !statusData.sso_available }),
                     });
-                    const connectData = await connectResp.json();
                     if (connectData.status === 'connected') {
                         await fetchCatalogNodes();
                         onConnected?.();
@@ -992,7 +977,7 @@ export const DataLoaderForm: React.FC<{
         const controller = new AbortController();
         const timerId = setTimeout(() => {
             const ref = getSourceTableRef(selectedPreviewTable);
-            fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+            apiRequest<any>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1002,8 +987,7 @@ export const DataLoaderForm: React.FC<{
                 }),
                 signal: controller.signal,
             })
-                .then(r => r.json())
-                .then(data => {
+                .then(({ data }) => {
                     if (data.rows && data.columns) {
                         setTableMetadata(prev => ({
                             ...prev,
@@ -1140,15 +1124,11 @@ export const DataLoaderForm: React.FC<{
         setSelectedPreviewTable(null);
         setSelectedTreeNode(null);
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
+            const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connectorIdRef.current, query, limit: 100 }),
             });
-            const data = await resp.json();
-            if (data.status === 'error') {
-                throw new Error(data.error?.message || data.error_message || 'Failed to search catalog');
-            }
             const tree = (data.tree || []) as CatalogTreeNode[];
             setSearchCatalogTree(tree);
             setTableMetadata(prev => ({ ...prev, ...collectTreeMetadata(tree) }));
@@ -1163,7 +1143,7 @@ export const DataLoaderForm: React.FC<{
     const handleDisconnect = useCallback(async () => {
         const cid = connectorIdRef.current;
         if (cid) {
-            await fetchWithIdentity(CONNECTOR_ACTION_URLS.DISCONNECT, {
+            await apiRequest(CONNECTOR_ACTION_URLS.DISCONNECT, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: cid }),

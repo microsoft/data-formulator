@@ -36,6 +36,7 @@ export const ERROR_CODE_I18N_MAP: Record<string, string> = {
     LLM_UNKNOWN_ERROR: 'errors.llmUnknownError',
 
     // Data / connector
+    CONNECTOR_AUTH_FAILED: 'errors.connectorAuthFailed',
     DB_CONNECTION_FAILED: 'errors.dbConnectionFailed',
     DB_QUERY_ERROR: 'errors.dbQueryError',
     DATA_LOAD_ERROR: 'errors.dataLoadError',
@@ -54,6 +55,7 @@ export const ERROR_CODE_I18N_MAP: Record<string, string> = {
     // System
     INTERNAL_ERROR: 'errors.internalError',
     SERVICE_UNAVAILABLE: 'errors.serviceUnavailable',
+    STORAGE_FULL: 'errors.storageFull',
 };
 
 /**

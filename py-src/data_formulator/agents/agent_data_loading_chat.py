@@ -253,6 +253,23 @@ class DataLoadingAgent:
         actions = []
         max_iterations = 10  # safety limit for agentic loop
 
+        from data_formulator.sandbox.local_sandbox import SandboxSession
+        with SandboxSession() as sandbox_session:
+            self._sandbox_session = sandbox_session
+            yield from self._agentic_loop(
+                llm_messages, collected_text, actions, max_iterations,
+            )
+            self._sandbox_session = None
+
+        # Emit structured actions (if any)
+        if actions:
+            yield {"type": "actions", "actions": actions}
+
+        # Emit done event
+        yield {"type": "done", "full_text": "".join(collected_text)}
+
+    def _agentic_loop(self, llm_messages, collected_text, actions, max_iterations):
+        """Inner loop extracted so stream_chat can wrap it in a SandboxSession."""
         for _iteration in range(max_iterations):
             # Call LLM with tool definitions
             try:
@@ -371,13 +388,6 @@ class DataLoadingAgent:
                 })
 
             # Loop back for LLM to generate follow-up text
-
-        # Emit structured actions (if any)
-        if actions:
-            yield {"type": "actions", "actions": actions}
-
-        # Emit done event
-        yield {"type": "done", "full_text": "".join(collected_text)}
 
     # ------------------------------------------------------------------
     # LLM call with tool support
@@ -503,9 +513,6 @@ class DataLoadingAgent:
             return {"error": "No code provided"}
 
         try:
-            from data_formulator.sandbox import create_sandbox
-            sandbox = create_sandbox("local")
-
             # Wrap code: capture stdout, collect ALL DataFrame variables
             capture_code = (
                 "import io as _io, sys as _sys, pandas as _pd\n"
@@ -528,9 +535,16 @@ class DataLoadingAgent:
                 import os as _os
                 workspace_path = _os.path.abspath(str(local_path))
                 allowed_objects = {"_pack": None}
-                raw = sandbox._run_in_warm_subprocess(
-                    capture_code, allowed_objects, workspace_path
-                )
+
+                session = getattr(self, "_sandbox_session", None)
+                if session is not None:
+                    raw = session.execute(capture_code, allowed_objects, workspace_path)
+                else:
+                    from data_formulator.sandbox import create_sandbox
+                    sandbox = create_sandbox("local")
+                    raw = sandbox._run_in_warm_subprocess(
+                        capture_code, allowed_objects, workspace_path
+                    )
 
             if raw["status"] == "ok":
                 pack = raw["allowed_objects"].get("_pack", {})

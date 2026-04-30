@@ -49,6 +49,7 @@ class ErrorCode:
     LLM_UNKNOWN_ERROR = "LLM_UNKNOWN_ERROR"
 
     # --- Data / connector ---
+    CONNECTOR_AUTH_FAILED = "CONNECTOR_AUTH_FAILED"
     DB_CONNECTION_FAILED = "DB_CONNECTION_FAILED"
     DB_QUERY_ERROR = "DB_QUERY_ERROR"
     DATA_LOAD_ERROR = "DATA_LOAD_ERROR"
@@ -67,6 +68,26 @@ class ErrorCode:
     # --- System ---
     INTERNAL_ERROR = "INTERNAL_ERROR"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+    STORAGE_FULL = "STORAGE_FULL"
+
+
+# HTTP status code mapping for application errors.
+#
+# Design principle: application-level (deliberate) errors return HTTP 200 with
+# {"status": "error", ...} in the body.  This unifies behavior with streaming
+# APIs (which always start at HTTP 200) and avoids proxies/monitoring
+# misinterpreting business-logic errors as infrastructure failures.
+#
+# Only *authentication/authorization* errors use non-200 so that browsers,
+# proxies, and middleware can react to them at the transport layer.
+# Truly uncontrolled errors (no matching route, body too large, unhandled crash)
+# use 404/413/500 via Flask's built-in handlers—not this mapping.
+ERROR_CODE_HTTP_STATUS: dict[str, int] = {
+    # Auth — non-200 so transport layer can intercept
+    ErrorCode.AUTH_REQUIRED: 401,
+    ErrorCode.AUTH_EXPIRED: 401,
+    ErrorCode.ACCESS_DENIED: 403,
+}
 
 
 class AppError(Exception):
@@ -95,7 +116,7 @@ class AppError(Exception):
         code: str,
         message: str,
         *,
-        status_code: int = 500,
+        status_code: int = 200,
         detail: str | None = None,
         retry: bool = False,
     ) -> None:
@@ -105,6 +126,16 @@ class AppError(Exception):
         self.status_code = status_code
         self.detail = detail
         self.retry = retry
+
+    def get_http_status(self) -> int:
+        """Return the HTTP status code for this error.
+
+        Only auth-related codes (AUTH_REQUIRED, AUTH_EXPIRED, ACCESS_DENIED)
+        return non-200.  All other application errors return HTTP 200 so that
+        the protocol is consistent with streaming APIs and proxies/monitoring
+        do not misinterpret business errors as infrastructure failures.
+        """
+        return ERROR_CODE_HTTP_STATUS.get(self.code, 200)
 
     def to_dict(self, include_detail: bool = False) -> dict:
         """Serialise to the ``error`` object in the JSON response envelope."""

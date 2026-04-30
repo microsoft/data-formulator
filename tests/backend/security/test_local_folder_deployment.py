@@ -46,14 +46,16 @@ class TestLocalFolderDeploymentRestriction:
             _reload_registry("local")
 
     def test_create_connector_rejects_disabled_type(self):
-        """When local_folder is disabled, create_connector returns 400."""
+        """When local_folder is disabled, create_connector returns a structured error."""
         loaders, disabled = _reload_registry("azure_blob")
         try:
             from flask import Flask
             from data_formulator.data_connector import connectors_bp
+            from data_formulator.error_handler import register_error_handlers
             app = Flask(__name__)
             app.config["TESTING"] = True
             app.register_blueprint(connectors_bp)
+            register_error_handlers(app)
 
             with patch("data_formulator.auth.identity.get_identity_id", return_value="test-user"):
                 with app.test_client() as c:
@@ -63,6 +65,9 @@ class TestLocalFolderDeploymentRestriction:
                         "params": {"root_dir": "/etc"},
                     })
                     assert resp.status_code == 200
-                    assert "Unknown" in resp.get_json().get("message", "")
+                    body = resp.get_json()
+                    assert body["status"] == "error"
+                    assert body["error"]["code"] == "INVALID_REQUEST"
+                    assert "Unknown" in body["error"]["message"]
         finally:
             _reload_registry("local")

@@ -34,9 +34,12 @@ def tmp_workspace(tmp_path):
 
 @pytest.fixture()
 def client(tmp_workspace):
+    from data_formulator.error_handler import register_error_handlers
+
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.register_blueprint(tables_bp)
+    register_error_handlers(app)
     with patch("data_formulator.routes.tables._get_workspace", return_value=tmp_workspace):
         with app.test_client() as c:
             yield c
@@ -306,9 +309,9 @@ class TestMetadataIntegrity:
         with open(xlsx_path, "rb") as f:
             resp = _upload(client, f.read(), "产品利润分析.xlsx",
                            "产品利润分析.xlsx-销售数据")
-        data = resp.get_json()
-        assert data["status"] == "success"
-        table_name = data["table_name"]
+        body = resp.get_json()
+        assert body["status"] == "success"
+        table_name = body["data"]["table_name"]
 
         meta = tmp_workspace.get_table_metadata(table_name)
         assert meta is not None

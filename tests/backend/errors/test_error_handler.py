@@ -173,13 +173,7 @@ class TestStreamErrorEvent:
             assert parsed["error"]["message"] == "slow down"
             assert parsed["error"]["retry"] is True
 
-    def test_token_included_when_provided(self) -> None:
-        with self.app.app_context():
-            err = AppError(ErrorCode.INTERNAL_ERROR, "oops")
-            parsed = json.loads(self.stream_error_event(err, token="abc-123"))
-            assert parsed["token"] == "abc-123"
-
-    def test_token_absent_when_empty(self) -> None:
+    def test_token_absent_from_error_event(self) -> None:
         with self.app.app_context():
             err = AppError(ErrorCode.INTERNAL_ERROR, "oops")
             parsed = json.loads(self.stream_error_event(err))
@@ -207,7 +201,7 @@ class TestStreamErrorEvent:
 
 class TestRegisterErrorHandlers:
 
-    def test_app_error_returns_json(self, client) -> None:
+    def test_app_error_returns_200_with_error_body(self, client) -> None:
         resp = client.get("/raise-app-error")
         assert resp.status_code == 200
         data = resp.get_json()
@@ -215,6 +209,7 @@ class TestRegisterErrorHandlers:
         assert data["error"]["code"] == "TABLE_NOT_FOUND"
         assert data["error"]["message"] == "Table not found"
         assert data["error"]["retry"] is False
+        assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
     def test_app_error_retryable(self, client) -> None:
         resp = client.get("/raise-app-error-retryable")
@@ -237,6 +232,7 @@ class TestRegisterErrorHandlers:
         assert data["status"] == "error"
         assert data["error"]["code"] == ErrorCode.INTERNAL_ERROR
         assert "broke" not in data["error"]["message"]
+        assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
     def test_unexpected_error_debug_includes_traceback(self, app) -> None:
         app.debug = True
@@ -260,6 +256,7 @@ class TestRegisterErrorHandlers:
             data = resp.get_json()
             assert data["status"] == "error"
             assert data["error"]["code"] == ErrorCode.FILE_TOO_LARGE
+            assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
     def test_api_404_returns_json(self, client) -> None:
         resp = client.get("/api/nonexistent-route")
@@ -267,6 +264,7 @@ class TestRegisterErrorHandlers:
         data = resp.get_json()
         assert data["status"] == "error"
         assert data["error"]["code"] == "NOT_FOUND"
+        assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
     def test_response_has_json_content_type(self, client) -> None:
         resp = client.get("/raise-app-error")
@@ -287,6 +285,7 @@ class TestRequestIdMiddleware:
     def test_client_provided_request_id_is_echoed(self, client) -> None:
         resp = client.get("/raise-app-error", headers={"X-Request-Id": "my-trace-123"})
         assert resp.headers["X-Request-Id"] == "my-trace-123"
+        assert resp.get_json()["error"]["request_id"] == "my-trace-123"
 
     def test_request_id_is_uuid_when_not_provided(self, client) -> None:
         resp = client.get("/raise-app-error")
@@ -377,3 +376,127 @@ class TestCollectAndFlushStreamWarnings:
     def test_outside_request_context_is_noop(self) -> None:
         self.collect("should not crash")
         assert self.flush() == []
+
+
+# ---------------------------------------------------------------------------
+# json_ok — success response helper
+# ---------------------------------------------------------------------------
+
+class TestJsonOk:
+
+    @pytest.fixture(autouse=True)
+    def _import(self, app):
+        from data_formulator.error_handler import json_ok
+        self.json_ok = json_ok
+        self.app = app
+
+    def test_basic_success(self) -> None:
+        with self.app.test_request_context("/"):
+            resp, status = self.json_ok({"tables": ["a", "b"]})
+            body = resp.get_json()
+            assert status == 200
+            assert body["status"] == "success"
+            assert body["data"] == {"tables": ["a", "b"]}
+
+    def test_none_data(self) -> None:
+        with self.app.test_request_context("/"):
+            resp, status = self.json_ok()
+            body = resp.get_json()
+            assert status == 200
+            assert body["data"] is None
+
+    def test_custom_status_code(self) -> None:
+        with self.app.test_request_context("/"):
+            resp, status = self.json_ok({"id": 1}, status_code=201)
+            assert status == 201
+
+    def test_top_level_body_is_strict(self) -> None:
+        with self.app.test_request_context("/"):
+            resp, status = self.json_ok({"x": 1})
+            body = resp.get_json()
+            assert set(body.keys()) == {"status", "data"}
+            assert body["data"] == {"x": 1}
+
+    def test_status_field_is_success_not_ok(self) -> None:
+        with self.app.test_request_context("/"):
+            resp, _ = self.json_ok({})
+            body = resp.get_json()
+            assert body["status"] == "success"
+            assert body["status"] != "ok"
+
+
+# ---------------------------------------------------------------------------
+# stream_preflight_error — streaming pre-check helper
+# ---------------------------------------------------------------------------
+
+class TestStreamPreflightError:
+
+    @pytest.fixture(autouse=True)
+    def _import(self, app):
+        from data_formulator.error_handler import stream_preflight_error
+        self.stream_preflight_error = stream_preflight_error
+        self.app = app
+
+    def test_always_returns_http_200(self) -> None:
+        with self.app.test_request_context("/"):
+            err = AppError(ErrorCode.INVALID_REQUEST, "Bad input")
+            resp, status = self.stream_preflight_error(err)
+            assert status == 200
+
+    def test_error_envelope_structure(self) -> None:
+        with self.app.test_request_context("/"):
+            err = AppError(ErrorCode.VALIDATION_ERROR, "Missing field")
+            resp, _ = self.stream_preflight_error(err)
+            body = resp.get_json()
+            assert body["status"] == "error"
+            assert body["error"]["code"] == "VALIDATION_ERROR"
+            assert body["error"]["message"] == "Missing field"
+            assert body["error"]["retry"] is False
+
+    def test_content_type_is_json_not_ndjson(self) -> None:
+        with self.app.test_request_context("/"):
+            err = AppError(ErrorCode.INVALID_REQUEST, "oops")
+            resp, _ = self.stream_preflight_error(err)
+            assert "application/json" in resp.content_type
+
+    def test_debug_mode_includes_detail(self) -> None:
+        self.app.debug = True
+        with self.app.test_request_context("/"):
+            err = AppError(ErrorCode.INTERNAL_ERROR, "Oops", detail="stack trace")
+            resp, _ = self.stream_preflight_error(err)
+            body = resp.get_json()
+            assert body["error"]["detail"] == "stack trace"
+        self.app.debug = False
+
+
+# ---------------------------------------------------------------------------
+# ERROR_CODE_HTTP_STATUS mapping completeness
+# ---------------------------------------------------------------------------
+
+class TestErrorCodeHttpStatusMapping:
+
+    def test_auth_codes_have_non_200_http_status(self) -> None:
+        from data_formulator.errors import ERROR_CODE_HTTP_STATUS
+        assert ErrorCode.AUTH_REQUIRED in ERROR_CODE_HTTP_STATUS
+        assert ErrorCode.AUTH_EXPIRED in ERROR_CODE_HTTP_STATUS
+        assert ErrorCode.ACCESS_DENIED in ERROR_CODE_HTTP_STATUS
+
+    def test_auth_http_statuses_are_valid(self) -> None:
+        from data_formulator.errors import ERROR_CODE_HTTP_STATUS
+        for code, status in ERROR_CODE_HTTP_STATUS.items():
+            assert status in (401, 403), (
+                f"{code} has unexpected HTTP status {status}; "
+                "only auth codes should be non-200"
+            )
+
+    def test_non_auth_app_error_returns_200(self) -> None:
+        err = AppError(ErrorCode.TABLE_NOT_FOUND, "not found")
+        assert err.get_http_status() == 200
+
+    def test_auth_app_error_returns_non_200(self) -> None:
+        err = AppError(ErrorCode.ACCESS_DENIED, "forbidden")
+        assert err.get_http_status() == 403
+
+    def test_unknown_code_defaults_to_200(self) -> None:
+        err = AppError("CUSTOM_CODE", "custom", status_code=418)
+        assert err.get_http_status() == 200

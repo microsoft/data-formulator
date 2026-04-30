@@ -19,7 +19,8 @@
     "llmContentFiltered": "请求被内容安全过滤器拦截",
     "llmUnknownError": "模型请求失败",
 
-    "dbConnectionFailed": "数据库连接失败",
+    "connectorAuthFailed": "数据源认证失败，请检查连接凭据",
+    "dbConnectionFailed": "数据源连接失败",
     "dbQueryError": "数据库查询错误",
     "dataLoadError": "数据加载失败",
     "connectorError": "数据连接器错误",
@@ -33,6 +34,7 @@
     "annotationInvalidPatch": "标注数据格式无效",
 
     "internalError": "服务器内部错误",
-    "serviceUnavailable": "服务暂时不可用"
+    "serviceUnavailable": "服务暂时不可用",
+    "storageFull": "工作区存储空间已满，请释放磁盘空间后重试。"
   }
 }

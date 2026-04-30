@@ -31,9 +31,12 @@ def tmp_workspace(tmp_path):
 
 @pytest.fixture()
 def client(tmp_workspace):
+    from data_formulator.error_handler import register_error_handlers
+
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.register_blueprint(tables_bp)
+    register_error_handlers(app)
     with patch("data_formulator.routes.tables._get_workspace", return_value=tmp_workspace):
         with app.test_client() as c:
             yield c
@@ -110,9 +113,9 @@ class TestParseFileEndpoint:
             content_type="multipart/form-data",
         )
         assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["status"] == "success"
-        sheet = data["sheets"][0]
+        body = resp.get_json()
+        assert body["status"] == "success"
+        sheet = body["data"]["sheets"][0]
         assert sheet["columns"] == ["姓名", "年龄", "部门"]
 
     def test_gbk_csv_parse_returns_correct_rows(self, client) -> None:
@@ -122,7 +125,7 @@ class TestParseFileEndpoint:
             data={"file": (io.BytesIO(gbk_bytes), "report.csv")},
             content_type="multipart/form-data",
         )
-        rows = resp.get_json()["sheets"][0]["data"]
+        rows = resp.get_json()["data"]["sheets"][0]["data"]
         assert rows[0]["姓名"] == "张三"
         assert rows[1]["部门"] == "市场部"
         assert rows[2]["年龄"] == 28
@@ -143,9 +146,9 @@ class TestCreateAndGetTable:
         body = get_resp.get_json()
         assert body["status"] == "success"
 
-        columns = body["columns"]
+        columns = body["data"]["columns"]
         assert "姓名" in columns
         assert "部门" in columns
 
-        rows = body["rows"]
+        rows = body["data"]["rows"]
         assert any(row.get("姓名") == "张三" for row in rows)

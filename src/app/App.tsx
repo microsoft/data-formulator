@@ -14,7 +14,6 @@ import {
     DEFAULT_ROW_LIMIT_EPHEMERAL,
 } from './dfSlice'
 import { getBrowserId, generateUUID } from './identity';
-import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
 import type { AuthInfo } from './oidcConfig';
 import { OidcCallback } from './OidcCallback';
 import { AuthButton } from './AuthButton';
@@ -94,7 +93,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { getUrls, fetchWithIdentity } from './utils';
+import { getUrls } from './utils';
+import { apiRequest } from './apiClient';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState, onWorkspaceListChanged } from './workspaceService';
 import { getSerializableState } from './useAutoSave';
 import store, { persistor } from './store';
@@ -766,7 +766,6 @@ const AppShell: FC = () => {
     // Auto-name workspace after first table + model are available
     useWorkspaceAutoName();
     const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
-    const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
 
     const isAboutPage = location.pathname === '/about';
     const isGalleryPage = location.pathname === '/gallery';
@@ -839,9 +838,8 @@ const AppShell: FC = () => {
                         {isAppPage && (
                             <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
                                 <LanguageSwitcher />
-                                {focusedId !== undefined && <React.Fragment>
                                 <ConfigDialog />
-                                <Divider orientation="vertical" variant="middle" flexItem /></React.Fragment>}
+                                <Divider orientation="vertical" variant="middle" flexItem />
                                 <ModelSelectionButton />
                             </Box>
                         )}
@@ -982,9 +980,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const [configLoaded, setConfigLoaded] = useState(false);
 
     useEffect(() => {
-        fetchWithIdentity(getUrls().APP_CONFIG)
-            .then(response => response.json())
-            .then(data => {
+        apiRequest(getUrls().APP_CONFIG)
+            .then(({ data }) => {
                 dispatch(dfActions.setServerConfig(data));
                 setConfigLoaded(true);
             });
@@ -1030,13 +1027,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
             if (!resolvedIdentity) {
                 try {
+                    const { getAuthInfo, getOidcUser } = await import('./oidcConfig');
                     const info: AuthInfo | null = await getAuthInfo();
 
                     if (info?.action === 'backend') {
                         // Backend OIDC — identity from server session
                         try {
-                            const resp = await fetch(info.status_url || '/api/auth/oidc/status');
-                            const status = await resp.json();
+                            const { data: status } = await apiRequest(info.status_url || '/api/auth/oidc/status');
                             if (status.authenticated && status.user) {
                                 resolvedIdentity = {
                                     type: 'user',
@@ -1087,8 +1084,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             dispatch(dfActions.setIdentity(resolvedIdentity));
 
             try {
-                const configResp = await fetchWithIdentity(getUrls().APP_CONFIG);
-                const refreshedConfig = await configResp.json();
+                const { data: refreshedConfig } = await apiRequest(getUrls().APP_CONFIG);
                 dispatch(dfActions.setServerConfig(refreshedConfig));
             } catch {
                 // App config was already loaded; connector status refresh is best-effort.

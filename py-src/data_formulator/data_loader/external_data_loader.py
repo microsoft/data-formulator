@@ -797,6 +797,10 @@ class ExternalDataLoader(ABC):
         for t in tables:
             orig_name: str = t["name"]
             meta = t.get("metadata")
+            # Propagate table_key into metadata so the frontend can use it
+            table_key = t.get("table_key")
+            if table_key:
+                meta = {**(meta or {}), "table_key": table_key}
             if "path" in t and isinstance(t["path"], list) and t["path"]:
                 segments = list(t["path"])
                 # Strip leading segments if path is longer than effective hierarchy

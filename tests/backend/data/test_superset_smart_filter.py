@@ -429,4 +429,5 @@ class TestClassifyConnectorError:
         err = ValueError("database name is required")
         with pytest.raises(AppError) as exc_info:
             classify_and_raise_connector_error(err)
-        assert exc_info.value.status_code == 400
+        assert exc_info.value.status_code == 200
+        assert exc_info.value.get_http_status() == 200

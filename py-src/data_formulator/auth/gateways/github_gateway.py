@@ -16,11 +16,17 @@ import os
 import urllib.parse
 
 import requests as http_requests
-from flask import Blueprint, jsonify, redirect, request, session
+from flask import Blueprint, redirect, request, session
+
+from data_formulator.error_handler import json_ok
 
 logger = logging.getLogger(__name__)
 
 github_bp = Blueprint("github_auth", __name__, url_prefix="/api/auth/github")
+
+
+def _error_redirect(code: str):
+    return redirect(f"/?auth_error={urllib.parse.quote(code)}")
 
 
 @github_bp.route("/login")
@@ -42,7 +48,7 @@ def github_callback():
     """Handle the OAuth callback — exchange code for token, fetch user."""
     code = request.args.get("code")
     if not code:
-        return jsonify({"error": "Missing authorization code"})
+        return _error_redirect("missing_authorization_code")
 
     client_id = os.environ.get("GITHUB_CLIENT_ID", "")
     client_secret = os.environ.get("GITHUB_CLIENT_SECRET", "")
@@ -60,11 +66,11 @@ def github_callback():
         timeout=10,
     )
     if not token_resp.ok:
-        return jsonify({"error": "Failed to exchange code for token"})
+        return _error_redirect("token_exchange_failed")
 
     access_token = token_resp.json().get("access_token")
     if not access_token:
-        return jsonify({"error": "No access_token in response"})
+        return _error_redirect("missing_access_token")
 
     user_resp = http_requests.get(
         "https://api.github.com/user",
@@ -75,7 +81,7 @@ def github_callback():
         timeout=10,
     )
     if not user_resp.ok:
-        return jsonify({"error": "Failed to fetch GitHub user info"})
+        return _error_redirect("userinfo_failed")
 
     user_info = user_resp.json()
     user_id = str(user_info.get("id", ""))
@@ -98,4 +104,4 @@ def github_callback():
 def github_logout():
     """Clear the GitHub session data."""
     session.pop("df_user", None)
-    return jsonify({"status": "ok"})
+    return json_ok({"logged_out": True})

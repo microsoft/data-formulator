@@ -1,7 +1,7 @@
 # 前后端流式通信协议
 
 > **维护者**: DF 核心团队  
-> **最后更新**: 2026-04-24  
+> **最后更新**: 2026-04-30  
 > **适用范围**: 所有 `/api/agent/*` 流式端点
 
 ## 1. 协议总览
@@ -11,7 +11,8 @@
 - **Content-Type**: `application/x-ndjson`
 - **每行**: 一个完整的 JSON 对象，以 `\n` 结尾
 - **编码**: UTF-8，`ensure_ascii=False`
-- **HTTP 状态码**: 流式端点始终返回 `200`（错误通过流内事件传递）
+- **HTTP 状态码**: 流式端点始终返回 `200`。预检失败返回 `200 application/json`
+  的统一错误 envelope；流建立后的错误通过流内事件传递。
 
 ```
 {"type": "question", "text": "...", "goal": "...", "tag": "..."}\n
@@ -29,11 +30,12 @@
 
 | 端点 | 事件 type | 说明 |
 |------|-----------|------|
-| `data-agent-streaming` | 包裹在 `{token, status, result}` 中 | Legacy 格式，result 内含 `type` |
+| `data-agent-streaming` | `"text_delta"`, `"completion"`, `"clarify"` 等 | 顶层 `type` 事件 |
 | `get-recommendation-questions` | `"question"` | 探索建议问题 |
 | `generate-report-chat` | `"text_delta"`, `"embed_chart"`, `"embed_table"` | 报告生成流 |
 | `data-loading-chat` | `"text_delta"`, `"tool_call"`, `"tool_result"`, `"done"` | 数据加载对话 |
 | `clean-data-stream` | 各种 agent 事件 | 数据清洗流 |
+| （跨端点通用） | `"thinking_text"` | Agent 推理/思考过程文本（参见 2.4） |
 
 `data-agent-streaming` 的 `result.type === "clarify"` 使用结构化多问题格式。后端和前端都以
 `questions[]` 为唯一澄清问题结构，不再新增顶层 `message/options/option_codes` 协议。
@@ -132,8 +134,7 @@ Route 层负责把 `clarification_responses[]` 格式化成 LLM 可读的 `[USER
     "code": "LLM_RATE_LIMIT",
     "message": "请求过于频繁，请稍后重试",
     "retry": true
-  },
-  "token": "abc-123"
+  }
 }
 ```
 
@@ -144,7 +145,8 @@ Route 层负责把 `clarification_responses[]` 格式化成 LLM 可读的 `[USER
 | `error.message` | string | 是 | 安全的用户可读消息 |
 | `error.retry` | boolean | 是 | 前端是否应显示重试按钮 |
 | `error.detail` | string | 否 | 仅 DEBUG 模式，服务端调试信息 |
-| `token` | string | 否 | 请求 token，用于前端匹配 |
+
+流式事件不得携带通用业务 `token` 字段；请求追踪使用 `X-Request-Id` header。
 
 **后端生成**:
 
@@ -152,7 +154,7 @@ Route 层负责把 `clarification_responses[]` 格式化成 LLM 可读的 `[USER
 from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
 
 # LLM 异常 → 安全分类 → error 事件
-yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+yield stream_error_event(classify_and_wrap_llm_error(e))
 
 # 已知业务异常
 from data_formulator.errors import AppError, ErrorCode
@@ -195,6 +197,52 @@ collect_stream_warning("Table unavailable", message_code="TABLE_READ_FAILED")
 ```
 
 **前端处理**: 收到 warning 事件后 dispatch `dfActions.addMessages` 显示为黄色 Snackbar，不中断当前流处理。
+
+### 2.4 思考过程事件（`thinking_text`）
+
+Agent 在执行过程中产生的推理/思考文本。前端应实时展示为可折叠的 thinking block，帮助用户理解 Agent 的决策过程。
+
+```json
+{
+  "type": "thinking_text",
+  "content": "Let me analyze the data structure to determine the best chart type..."
+}
+```
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `type` | `"thinking_text"` | 是 | 固定值 |
+| `content` | string | 是 | Agent 的推理/思考文本片段（可增量追加） |
+
+**事件来源**：
+
+1. **Agent 层面的 think tool**：`DataAgent` 使用 `think` 工具时，将 tool message 以 `thinking_text` 事件输出。
+2. **LLM 伴随内容**：当 LLM 在 tool_calls 旁返回文本 content 时，Route 层将其作为 `thinking_text` 事件输出。
+3. **（Phase 2/3）模型原生推理**：Anthropic extended thinking 或 OpenAI reasoning tokens（`reasoning_content` 字段），由 `client_utils.py` 解析后输出为 `thinking_text` 事件。
+
+**后端生成**：
+
+```python
+# Agent 的 think tool 输出
+yield {"type": "thinking_text", "content": thought_msg}
+
+# LLM 响应中的伴随文本（非 tool_calls 结果）
+if content.strip():
+    yield {"type": "thinking_text", "content": content.strip()}
+```
+
+**前端处理**：
+
+- 累积 `thinking_text` 事件到 `thinkingSteps` 数组
+- 在 UI 中显示为可折叠的思考过程面板（类似 ChatGPT thinking block）
+- 当后续出现 `tool_start` 等行动事件时，将累积的 thinking 作为一个完整步骤展示
+- thinking 内容不应触发 snackbar 或错误提示
+
+**与其他事件的关系**：
+
+- `thinking_text` 是非致命、非阻塞事件，不影响流的继续
+- 可以与 `tool_start`、`tool_result`、`text_delta` 交替出现
+- 如果流中只有 `thinking_text` 没有后续行动，前端应显示为"正在思考..."状态
 
 ## 3. Route 层职责
 
@@ -261,12 +309,13 @@ if (parsed.text) { ... }
 
 | 端点 | MIME | 序列化方式 | error 格式 | warning 支持 |
 |------|------|------------|------------|-------------|
-| `/data-agent-streaming` | `x-ndjson` | route `json.dumps({token,status,result})` | `stream_error_event` | ✅ `_with_warnings` |
-| `/refine-data` | `x-ndjson` | route `json.dumps({token,status,result})` | `stream_error_event` | ✅ `_with_warnings` |
+| `/data-agent-streaming` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
 | `/get-recommendation-questions` | `x-ndjson` | route 累积碎片 → `_try_parse_explore_line` | `stream_error_event` | ✅ `_with_warnings` |
 | `/generate-report-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
 | `/data-loading-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
 | `/clean-data-stream` | `x-ndjson` | agent 直接 yield | `stream_error_event` | ✅ `_with_warnings` |
+
+> **注意**: `/refine-data` 曾出现在此表中，但实际实现为普通 JSON endpoint（`jsonify` 返回），不使用 NDJSON 流。已于 2026-04-30 Phase 0 盘点中确认并移除。详见 `design-docs/20` 附录 A.10。
 
 ## 6. 新增端点 Checklist
 

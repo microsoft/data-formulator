@@ -20,7 +20,6 @@ import {
     useTheme,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { getUserManager } from "./oidcConfig";
 import dfLogo from "../assets/df-logo.png";
 
 export function OidcCallback() {
@@ -32,6 +31,7 @@ export function OidcCallback() {
     useEffect(() => {
         (async () => {
             try {
+                const { getUserManager } = await import("./oidcConfig");
                 const mgr = await getUserManager();
                 if (!mgr) return;
 

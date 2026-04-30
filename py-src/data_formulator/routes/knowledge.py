@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
+
+from data_formulator.error_handler import json_ok
 
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import get_user_home
@@ -65,7 +67,7 @@ def _require_context_list(context: dict, field: str) -> list:
 @knowledge_bp.route("/limits", methods=["POST"])
 def knowledge_limits():
     """Return body-length and description limits so the frontend stays in sync."""
-    return jsonify({"status": "ok", "limits": KNOWLEDGE_LIMITS})
+    return json_ok({"limits": KNOWLEDGE_LIMITS})
 
 
 # ── list ──────────────────────────────────────────────────────────────────
@@ -84,7 +86,7 @@ def knowledge_list():
 
     store = _get_store()
     items = store.list_all(category)
-    return jsonify({"status": "ok", "items": items})
+    return json_ok({"items": items})
 
 
 # ── read ──────────────────────────────────────────────────────────────────
@@ -104,7 +106,7 @@ def knowledge_read():
     except FileNotFoundError:
         raise AppError(ErrorCode.TABLE_NOT_FOUND, "Knowledge file not found")
 
-    return jsonify({"status": "ok", "content": content, "category": category, "path": path})
+    return json_ok({"content": content, "category": category, "path": path})
 
 
 # ── write ─────────────────────────────────────────────────────────────────
@@ -125,7 +127,7 @@ def knowledge_write():
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
 
-    return jsonify({"status": "ok", "category": category, "path": path})
+    return json_ok({"category": category, "path": path})
 
 
 # ── delete ────────────────────────────────────────────────────────────────
@@ -145,7 +147,7 @@ def knowledge_delete():
     except FileNotFoundError:
         raise AppError(ErrorCode.TABLE_NOT_FOUND, "Knowledge file not found")
 
-    return jsonify({"status": "ok"})
+    return json_ok(None)
 
 
 # ── search ────────────────────────────────────────────────────────────────
@@ -169,7 +171,7 @@ def knowledge_search():
 
     store = _get_store()
     results = store.search(query, categories=categories)
-    return jsonify({"status": "ok", "results": results})
+    return json_ok({"results": results})
 
 
 # ── distill experience ────────────────────────────────────────────────────
@@ -238,11 +240,7 @@ def distill_experience():
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
 
-    return jsonify({
-        "status": "ok",
-        "path": rel_path,
-        "category": "experiences",
-    })
+    return json_ok({"path": rel_path, "category": "experiences"})
 
 
 def _experience_filename(session_id: str, md_content: str) -> str:

@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## File Location & Naming
 
-- Place tests under `tests/backend/unit/`, `tests/backend/integration/`, or `tests/backend/contract/`.
+- Place tests under `tests/backend/unit/`, `tests/backend/integration/`, `tests/backend/contract/`, or by domain: `tests/backend/routes/`, `tests/backend/errors/`, `tests/backend/agents/`, `tests/backend/data/`, `tests/backend/security/`, `tests/backend/auth/`, `tests/backend/knowledge/`.
 - Name files `test_<feature_or_module>.py` with descriptive snake_case names.
 - Shared test data goes in `tests/backend/fixtures/`.
 
@@ -46,8 +46,9 @@ pytestmark = [pytest.mark.backend]
 
 ## Error Handling Test Requirements
 
-All application errors return **HTTP 200** with `status: "error"` in the body.
-Only uncontrolled transport failures (no route, body limit, unhandled crash) use non-200.
+Application errors return **HTTP 200** with `status: "error"` in the body.
+Only auth errors (`AUTH_REQUIRED`/`AUTH_EXPIRED` → 401, `ACCESS_DENIED` → 403) and
+uncontrolled transport failures (404/413/500) use non-200.
 
 When adding a new route or modifying error handling, include tests for:
 
@@ -56,23 +57,30 @@ When adding a new route or modifying error handling, include tests for:
    def test_missing_table_returns_error():
        with app.test_client() as client:
            resp = client.get('/api/tables/nonexistent')
-           assert resp.status_code == 200
+           assert resp.status_code == 200  # application error → always 200
            data = resp.get_json()
            assert data["status"] == "error"
            assert data["error"]["code"] == "TABLE_NOT_FOUND"
    ```
 
-2. **Unexpected exceptions** — verify the global handler catches them (unhandled = 500):
+2. **Auth errors** — verify non-200 for authentication/authorization failures:
+   ```python
+   def test_access_denied_returns_403():
+       resp = client.get('/api/protected-resource')
+       assert resp.status_code == 403
+       assert resp.get_json()["error"]["code"] == "ACCESS_DENIED"
+   ```
+
+3. **Unexpected exceptions** — verify the global handler catches them (unhandled = 500):
    ```python
    def test_unexpected_error_returns_500():
-       # Mock internal function to raise
        with patch('module.function', side_effect=RuntimeError("boom")):
            resp = client.get('/api/endpoint')
            assert resp.status_code == 500
            assert resp.get_json()["error"]["code"] == "INTERNAL_ERROR"
    ```
 
-3. **Streaming endpoints** — verify error events in the NDJSON stream:
+4. **Streaming endpoints** — verify error events in the NDJSON stream:
    ```python
    def test_stream_error_yields_ndjson_event():
        resp = client.post('/api/my-stream', ...)
@@ -82,7 +90,7 @@ When adding a new route or modifying error handling, include tests for:
        assert error_lines[0]['error']['code'] == 'LLM_TIMEOUT'
    ```
 
-4. **Test fixture** — ensure `register_error_handlers(app)` is called in the test app fixture:
+5. **Test fixture** — ensure `register_error_handlers(app)` is called in the test app fixture:
    ```python
    @pytest.fixture
    def app():

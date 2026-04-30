@@ -94,10 +94,10 @@ class TestPatchAnnotations:
             "description": "My orders table",
         })
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["version"] == 1
-        assert data["message_code"] == "catalog.annotationSaved"
-        assert "message" in data
+        assert data["status"] == "success"
+        assert data["data"]["version"] == 1
+        assert data["data"]["message_code"] == "catalog.annotationSaved"
+        assert "message" in data["data"]
 
     def test_version_conflict(self, connected_app):
         client, _ = connected_app
@@ -144,9 +144,9 @@ class TestGetAnnotations:
         client, _ = connected_app
         resp = client.get("/api/connectors/catalog-annotations?connector_id=test_pg")
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["version"] == 0
-        assert data["tables"] == {}
+        assert data["status"] == "success"
+        assert data["data"]["version"] == 0
+        assert data["data"]["tables"] == {}
 
     def test_after_patch(self, connected_app):
         client, _ = connected_app
@@ -159,8 +159,8 @@ class TestGetAnnotations:
         })
         resp = client.get("/api/connectors/catalog-annotations?connector_id=test_pg")
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["version"] == 1
-        assert "uuid-1" in data["tables"]
-        assert data["tables"]["uuid-1"]["description"] == "Order table"
-        assert data["tables"]["uuid-1"]["columns"]["order_id"]["description"] == "PK"
+        assert data["status"] == "success"
+        assert data["data"]["version"] == 1
+        assert "uuid-1" in data["data"]["tables"]
+        assert data["data"]["tables"]["uuid-1"]["description"] == "Order table"
+        assert data["data"]["tables"]["uuid-1"]["columns"]["order_id"]["description"] == "PK"

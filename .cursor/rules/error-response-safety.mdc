@@ -15,9 +15,10 @@ See `dev-guides/7-unified-error-handling.md` for the full error handling contrac
 ## Unified Error System
 
 New error paths should use the `AppError` / `error_handler` infrastructure from
-`errors.py` and `error_handler.py`. Existing routes may keep legacy-compatible
-`message` / `error_message` bodies while they are migrated incrementally.
-All application-controlled responses return **HTTP 200**. Errors are conveyed via `body.status === "error"`.
+`errors.py` and `error_handler.py`. Legacy `message` / `error_message` bodies are
+historical formats; do not add compatibility branches for them in new code.
+All application-controlled errors return **HTTP 200** with `status: "error"` in the body.
+Only auth errors (401/403) and uncontrolled transport errors (404/413/500) use non-200.
 
 ### Non-streaming routes
 
@@ -43,34 +44,37 @@ Use `stream_error_event()` to yield a unified NDJSON error line.
 Validation before the stream starts returns `200 application/json` (not NDJSON):
 
 ```python
-from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+from data_formulator.errors import AppError, ErrorCode
+from data_formulator.error_handler import (
+    classify_and_wrap_llm_error,
+    stream_error_event,
+    stream_preflight_error,
+)
 
 except AppError as e:
-    yield stream_error_event(e, token=token)
+    yield stream_error_event(e)
 except Exception as e:
-    yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+    yield stream_error_event(classify_and_wrap_llm_error(e))
 ```
 
 ### Real examples from migrated endpoints
 
 ```python
-# /data-agent-streaming — streaming with token
+# /data-agent-streaming — standard NDJSON error event
 except Exception as e:
     logger.error("Error in data-agent-streaming", exc_info=e)
     from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-    yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+    yield stream_error_event(classify_and_wrap_llm_error(e))
 
-# /generate-report-chat — streaming without token
+# /generate-report-chat — same pattern
 except Exception as e:
     logger.exception("generate-report-chat failed")
     from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
     yield stream_error_event(classify_and_wrap_llm_error(e))
 
-# Validation failure before stream starts — return 200 JSON, not NDJSON
+# Validation failure before stream starts — use 200 JSON, not NDJSON
 if not request.is_json:
-    return jsonify({"status": "error", "error": {
-        "code": ErrorCode.INVALID_REQUEST, "message": "Invalid request", "retry": False,
-    }})
+    return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request"))
 ```
 
 ### Database / workspace errors (tables.py)
@@ -105,12 +109,13 @@ These functions still exist as wrappers but should NOT be used in new code:
 
 ## Rules
 
-1. **Application errors** — always HTTP 200 + `status: "error"`; prefer `error: {...}` for new code and never expose exception details.
-2. **Transport errors** (uncontrolled) — only `404` (no route), `413` (body limit), `500` (unhandled crash) may be non-200.
-3. **Streaming errors** — always use `stream_error_event()` for NDJSON error lines.
-4. **Logging** — always log the full exception server-side (`logger.warning` / `logger.error`
+1. **Application errors** — HTTP 200 + `status: "error"`; prefer `error: {...}` for new code and never expose exception details.
+2. **Auth errors** — `AUTH_REQUIRED`/`AUTH_EXPIRED` → 401, `ACCESS_DENIED` → 403 (transport layer interception).
+3. **Transport errors** (uncontrolled) — only `404` (no route), `413` (body limit), `500` (unhandled crash) may be non-200.
+4. **Streaming errors** — always use `stream_error_event()` for NDJSON error lines.
+5. **Logging** — always log the full exception server-side (`logger.warning` / `logger.error`
    with `exc_info=True` when needed). The client never needs the stack trace.
-5. **Debug detail** — `AppError.detail` is only included in responses when `app.debug is True`.
+6. **Debug detail** — `AppError.detail` is only included in responses when `app.debug is True`.
 
 ## Bare except Policy
 

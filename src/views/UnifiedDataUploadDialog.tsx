@@ -45,6 +45,7 @@ import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrappe
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
 import { getUrls, fetchWithIdentity, CONNECTOR_URLS } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
 import { DataLoaderForm } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
@@ -205,7 +206,7 @@ const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated 
         setLoading(true);
         try {
             const folderName = folderPath.split('/').pop() || folderPath.split('\\').pop() || t('upload.localFolderDefaultName', { defaultValue: 'Local Folder' });
-            const createResp = await fetchWithIdentity(CONNECTOR_URLS.CREATE, {
+            const { data: createData } = await apiRequest<any>(CONNECTOR_URLS.CREATE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -217,14 +218,8 @@ const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated 
                     },
                 }),
             });
-            const createData = await createResp.json();
-            if (!createResp.ok) {
-                setError(createData.message || t('upload.errors.failedToCreateConnector', { defaultValue: 'Failed to create connector' }));
-                return;
-            }
 
-            const listResp = await fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' });
-            const listData = await listResp.json();
+            const { data: listData } = await apiRequest<any>(CONNECTOR_URLS.LIST, { method: 'GET' });
             const newConn = (listData.connectors || []).find((c: ConnectorInstance) => c.id === createData.id);
             if (newConn) {
                 onConnectorCreated(newConn);
@@ -240,14 +235,17 @@ const LocalFolderPanel: React.FC<LocalFolderPanelProps> = ({ onConnectorCreated 
         setError(null);
         setLoading(true);
         try {
-            const pickResp = await fetchWithIdentity('/api/local/pick-directory', { method: 'POST' });
-            const pickData = await pickResp.json();
-
-            // If the picker isn't available, show manual text input
-            if (!pickResp.ok && pickData.fallback === 'text_input') {
-                setShowManualInput(true);
-                setLoading(false);
-                return;
+            let pickData: any;
+            try {
+                const result = await apiRequest<any>('/api/local/pick-directory', { method: 'POST' });
+                pickData = result.data;
+            } catch (err: any) {
+                if (err?.apiError?.code === 'FALLBACK_TEXT_INPUT' || err?.httpStatus === 501) {
+                    setShowManualInput(true);
+                    setLoading(false);
+                    return;
+                }
+                throw err;
             }
             if (!pickData.path) {
                 setLoading(false);
@@ -708,9 +706,8 @@ const AddConnectionPanel: React.FC<{
 
     // Fetch available loader types
     useEffect(() => {
-        fetchWithIdentity(CONNECTOR_URLS.DATA_LOADERS, { method: 'GET' })
-            .then(r => r.json())
-            .then(data => {
+        apiRequest<any>(CONNECTOR_URLS.DATA_LOADERS, { method: 'GET' })
+            .then(({ data }) => {
                 setLoaderTypes(data.loaders || []);
                 setDisabledLoaders(data.disabled || {});
                 if (data.loaders?.length > 0) {
@@ -734,7 +731,7 @@ const AddConnectionPanel: React.FC<{
         // If already created (e.g. retry after failed connect), reuse the ID
         if (createdIdRef.current) return createdIdRef.current;
 
-        const resp = await fetchWithIdentity(CONNECTOR_URLS.CREATE, {
+        const { data } = await apiRequest<any>(CONNECTOR_URLS.CREATE, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -745,10 +742,6 @@ const AddConnectionPanel: React.FC<{
                 persist: true,
             }),
         });
-        const data = await resp.json();
-        if (data.status === 'error') {
-            throw new Error(data.message || t('upload.errors.failedToCreateConnector', { defaultValue: 'Failed to create connector' }));
-        }
         createdIdRef.current = data.id;
         return data.id;
     }, [selectedType, displayName, selectedLoader]);
@@ -758,8 +751,7 @@ const AddConnectionPanel: React.FC<{
         const cid = createdIdRef.current;
         if (!cid) return;
         try {
-            const listResp = await fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' });
-            const listData = await listResp.json();
+            const { data: listData } = await apiRequest<any>(CONNECTOR_URLS.LIST, { method: 'GET' });
             const created = (listData.connectors || []).find((c: ConnectorInstance) => c.id === cid);
             if (created) {
                 onCreated({ ...created, connected: true });
@@ -934,9 +926,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
     // Fetch connector list when dialog opens
     const refreshConnectors = useCallback(() => {
-        fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
-            .then(r => r.json())
-            .then(data => setConnectorInstances(data.connectors || []))
+        apiRequest<any>(CONNECTOR_URLS.LIST, { method: 'GET' })
+            .then(({ data }) => setConnectorInstances(data.connectors || []))
             .catch(() => { /* connector list is best-effort */ });
     }, []);
 
@@ -1001,9 +992,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     // Load sample datasets
     useEffect(() => {
         if (open && activeTab === 'explore') {
-            fetchWithIdentity(`${getUrls().EXAMPLE_DATASETS}`)
-            .then((response) => response.json())
-            .then((result) => {
+            apiRequest<any>(`${getUrls().EXAMPLE_DATASETS}`)
+            .then(({ data: result }) => {
                 let datasets: DatasetMetadata[] = result.map((info: any) => {
                     let tables = info["tables"].map((table: any) => {
                         if (table["format"] == "json") {
@@ -1058,9 +1048,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 setDatasetPreviews(datasets);
             });
         } else if (open && activeTab === 'url') {
-            fetchWithIdentity(`${window.location.origin}/api/demo-stream/info`)
-            .then(res => res.json())
-            .then(data => {
+            apiRequest<any>(`${window.location.origin}/api/demo-stream/info`)
+            .then(({ data }) => {
                 const demoExamples = data.demo_examples
                     .map((ex: any) => ({
                         label: ex.name,
@@ -1073,8 +1062,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             })
             .catch((err) => {
                 console.error('Failed to load examples:', err);
-            })
-            .finally(() => { });
+            });
         }
     }, [open, activeTab]);
 
@@ -1144,12 +1132,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         try {
                             const formData = new FormData();
                             formData.append('file', file);
-                            const resp = await fetchWithIdentity(getUrls().PARSE_FILE, {
+                            const { data: result } = await apiRequest<any>(getUrls().PARSE_FILE, {
                                 method: 'POST',
                                 body: formData,
                             });
-                            const result = await resp.json();
-                            if (result.status === 'success' && result.sheets?.length > 0) {
+                            if (result.sheets?.length > 0) {
                                 for (const sheet of result.sheets) {
                                     const sheetTitle = result.sheets.length > 1
                                         ? `${uniqueName}-${sheet.sheet_name}`
@@ -1900,7 +1887,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                                         variant="caption"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                            fetchWithIdentity(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
+                                            apiRequest(`${window.location.origin}${example.resetUrl}`, { method: 'POST' })
                                                 .then(() => {
                                                     dispatch(dfActions.addMessages({
                                                         timestamp: Date.now(), type: 'success',
@@ -2109,22 +2096,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 }}
                                 onDelete={conn.deletable ? async (cid) => {
                                     try {
-                                        const resp = await fetchWithIdentity(CONNECTOR_URLS.DELETE(cid), { method: 'DELETE' });
-                                        const data = await resp.json();
-                                        if (data.status === 'deleted') {
-                                            setConnectorInstances(prev => prev.filter(c => c.id !== cid));
-                                            setActiveTab('menu');
-                                            onConnectorsChanged?.();
-                                            dispatch(dfActions.addMessages({
-                                                timestamp: Date.now(), component: 'connector', type: 'success',
-                                                value: t('upload.messages.deletedConnector', { name: conn.display_name, defaultValue: 'Deleted connector "{{name}}"' }),
-                                            }));
-                                        } else {
-                                            dispatch(dfActions.addMessages({
-                                                timestamp: Date.now(), component: 'connector', type: 'error',
-                                                value: data.message || t('upload.errors.failedToDeleteConnector', { defaultValue: 'Failed to delete connector' }),
-                                            }));
-                                        }
+                                        await apiRequest(CONNECTOR_URLS.DELETE(cid), { method: 'DELETE' });
+                                        setConnectorInstances(prev => prev.filter(c => c.id !== cid));
+                                        setActiveTab('menu');
+                                        onConnectorsChanged?.();
+                                        dispatch(dfActions.addMessages({
+                                            timestamp: Date.now(), component: 'connector', type: 'success',
+                                            value: t('upload.messages.deletedConnector', { name: conn.display_name, defaultValue: 'Deleted connector "{{name}}"' }),
+                                        }));
                                     } catch (err: any) {
                                         dispatch(dfActions.addMessages({
                                             timestamp: Date.now(), component: 'connector', type: 'error',

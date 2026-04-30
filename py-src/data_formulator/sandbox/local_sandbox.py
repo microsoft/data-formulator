@@ -31,10 +31,12 @@ def _warm_worker_loop(conn):
     waits for code to execute.
 
     Protocol (over *conn*):
-        Host -> worker:  (code: str, allowed_objects: dict, workspace_path: str)
+        Host -> worker:  (code, allowed_objects, workspace_path)           — fresh namespace
+                     or  (code, allowed_objects, workspace_path, True)     — persistent namespace
+                     or  "__clear_ns__"                                    — reset persistent namespace
+                     or  None                                              — terminate
         Worker -> host:   {"status": "ok", "allowed_objects": {...}}
                       or {"status": "error", "error_message": "..."}
-        Host -> worker:  None   -> terminate
     """
     warnings.filterwarnings("ignore")
 
@@ -144,6 +146,9 @@ def _warm_worker_loop(conn):
     addaudithook(block_mischief)
     del block_mischief
 
+    # Persistent namespace for SandboxSession (None when not active).
+    _persistent_ns = None
+
     while True:
         try:
             msg = conn.recv()
@@ -153,7 +158,18 @@ def _warm_worker_loop(conn):
         if msg is None:
             break
 
-        code, allowed_objects, workspace_path = msg
+        # "__clear_ns__" resets the persistent namespace.
+        if msg == "__clear_ns__":
+            _persistent_ns = None
+            conn.send({"status": "ok"})
+            continue
+
+        # Unpack: 3-tuple (legacy) or 4-tuple (with persist flag).
+        if len(msg) == 4:
+            code, allowed_objects, workspace_path, persist = msg
+        else:
+            code, allowed_objects, workspace_path = msg
+            persist = False
 
         # Resolve the workspace path once so the audit hook can compare
         # against a canonical absolute prefix (with trailing separator).
@@ -171,7 +187,17 @@ def _warm_worker_loop(conn):
         if workspace_path:
             os.chdir(workspace_path)
 
-        namespace = {**allowed_objects}
+        # Build or reuse namespace.
+        if persist and _persistent_ns is not None:
+            # Merge output-variable placeholders into the existing namespace
+            # so the capture wrapper can write to them.
+            _persistent_ns.update(allowed_objects)
+            namespace = _persistent_ns
+        else:
+            namespace = {**allowed_objects}
+            if persist:
+                _persistent_ns = namespace
+
         try:
             # Security: code is HMAC-SHA256 signed by the server when first generated
             # by AI agents (see code_signing.py). The /refresh-derived-data endpoint
@@ -279,6 +305,164 @@ class _WarmWorkerPool:
 
 # Module-level pool -- shared by all LocalSandbox instances using subprocess mode.
 _worker_pool = _WarmWorkerPool(size=2)
+
+
+class SandboxSession:
+    """A session that keeps the Python namespace alive across multiple executions.
+
+    Use as a context manager inside an agent turn so that consecutive
+    ``explore()`` / ``execute_python()`` calls share variables (like a
+    Jupyter kernel).  The namespace is cleared and the worker returned to
+    the pool on ``close()`` / ``__exit__``.
+    """
+
+    EXECUTION_TIMEOUT = int(os.environ.get("DF_SANDBOX_TIMEOUT", "120"))
+
+    def __init__(self):
+        self._proc, self._conn = _worker_pool.acquire()
+        self._closed = False
+
+    # -- public API --------------------------------------------------------
+
+    def execute(self, code: str, allowed_objects: dict, workspace_path: str | None = None) -> dict:
+        """Run *code* with namespace persisted between calls.
+
+        Returns the same dict contract as ``_warm_worker_loop``:
+        ``{"status": "ok", "allowed_objects": {...}}`` or
+        ``{"status": "error", "error_message": "..."}``.
+        """
+        if self._closed:
+            return {"status": "error", "error_message": "Session is closed"}
+        try:
+            self._conn.send((code, {**allowed_objects}, workspace_path, True))
+            if self._conn.poll(timeout=self.EXECUTION_TIMEOUT):
+                return self._conn.recv()
+            # Timed out — kill and discard the worker
+            _worker_pool.discard(self._proc, self._conn)
+            self._closed = True
+            return {
+                "status": "error",
+                "error_message": f"Code execution timed out after {self.EXECUTION_TIMEOUT}s",
+            }
+        except Exception as e:
+            _worker_pool.discard(self._proc, self._conn)
+            self._closed = True
+            return {"status": "error", "error_message": f"Worker communication failed: {e}"}
+
+    def close(self):
+        """Clear the persistent namespace and return the worker to the pool."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._conn.send("__clear_ns__")
+            if self._conn.poll(timeout=5):
+                self._conn.recv()
+            _worker_pool.release(self._proc, self._conn)
+        except Exception:
+            _worker_pool.discard(self._proc, self._conn)
+
+    # -- cross-turn namespace save/restore ---------------------------------
+
+    def save_namespace(self, save_dir, workspace_path: str | None = None):
+        """Serialize user DataFrames and scalars from the persistent namespace
+        to *save_dir* so they can be restored in a future session.
+
+        DataFrames are saved as parquet files (by the **host** process, since
+        the worker's audit hooks forbid file writes).  Scalars are stored in
+        a JSON manifest alongside the list of saved DataFrame names.
+        """
+        import json as _json
+        from pathlib import Path
+        save_dir = Path(save_dir)
+
+        collect_code = (
+            "import pandas as _pd\n"
+            "_user_dfs = {}\n"
+            "_user_scalars = {}\n"
+            "for _k, _v in dict(globals()).items():\n"
+            "    if _k.startswith('_') or _k == '__builtins__':\n"
+            "        continue\n"
+            "    if isinstance(_v, _pd.DataFrame):\n"
+            "        _user_dfs[_k] = _v\n"
+            "    elif isinstance(_v, (int, float, str, bool)):\n"
+            "        _user_scalars[_k] = _v\n"
+            "_pack = {'dataframes': _user_dfs, 'scalars': _user_scalars}\n"
+        )
+        result = self.execute(collect_code, {"_pack": None}, workspace_path)
+        if result.get("status") != "ok":
+            logger.warning("save_namespace: collect failed: %s", result.get("error_message"))
+            return False
+
+        pack = result["allowed_objects"].get("_pack")
+        if not pack or not isinstance(pack, dict):
+            return False
+
+        dfs = pack.get("dataframes", {})
+        scalars = pack.get("scalars", {})
+        if not dfs and not scalars:
+            return False
+
+        save_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {"dataframes": [], "scalars": scalars}
+        for name, df in dfs.items():
+            if isinstance(df, pd.DataFrame):
+                df.to_parquet(save_dir / f"{name}.parquet", index=False)
+                manifest["dataframes"].append(name)
+
+        (save_dir / "_manifest.json").write_text(
+            _json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+        )
+        logger.info("[SandboxSession] Saved namespace: %d DataFrames, %d scalars to %s",
+                     len(manifest["dataframes"]), len(scalars), save_dir)
+        return True
+
+    @staticmethod
+    def restore_namespace(session, save_dir, workspace_path: str | None = None):
+        """Restore previously saved DataFrames and scalars into *session*.
+
+        Returns True if restoration succeeded, False if nothing to restore.
+        This is a static helper so it can be called right after creating a
+        new session (the save_dir comes from the previous turn's save).
+        """
+        import json as _json
+        from pathlib import Path
+        save_dir = Path(save_dir)
+        manifest_path = save_dir / "_manifest.json"
+        if not manifest_path.exists():
+            return False
+
+        manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
+        df_names = manifest.get("dataframes", [])
+        scalars = manifest.get("scalars", {})
+        if not df_names and not scalars:
+            return False
+
+        lines = ["import pandas as pd"]
+        for name in df_names:
+            parquet_path = (save_dir / f"{name}.parquet").resolve().as_posix()
+            lines.append(f'{name} = pd.read_parquet(r"{parquet_path}")')
+        for name, value in scalars.items():
+            lines.append(f"{name} = {repr(value)}")
+        lines.append("_pack = None")
+
+        restore_code = "\n".join(lines)
+        result = session.execute(restore_code, {"_pack": None}, workspace_path)
+        if result.get("status") != "ok":
+            logger.warning("restore_namespace failed: %s", result.get("error_message"))
+            return False
+
+        logger.info("[SandboxSession] Restored namespace: %d DataFrames, %d scalars from %s",
+                     len(df_names), len(scalars), save_dir)
+        return True
+
+    # -- context manager ---------------------------------------------------
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
 
 
 class LocalSandbox(Sandbox):

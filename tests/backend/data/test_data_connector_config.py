@@ -480,7 +480,9 @@ class TestLoadConnectors:
 
     def test_create_connector_persists_only_non_auth_params(self, app, tmp_path):
         """User/password are credentials, not connector metadata."""
+        from data_formulator.error_handler import register_error_handlers
         app.register_blueprint(connectors_bp)
+        register_error_handlers(app)
         user_dir = tmp_path / "users" / "alice"
         mock_loaders = {"stub": _CredentialStubLoader}
 
@@ -501,7 +503,7 @@ class TestLoadConnectors:
             })
 
         assert resp.status_code == 201
-        connector_id = resp.get_json()["id"]
+        connector_id = resp.get_json()["data"]["id"]
         assert _user_connector_key("user:alice", connector_id) in DATA_CONNECTORS
 
         # Connector spec is persisted as individual JSON in connectors/ dir

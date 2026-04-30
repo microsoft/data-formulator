@@ -24,10 +24,12 @@ import secrets
 import urllib.parse
 
 import requests as http
-from flask import Blueprint, Response, redirect, request, session, jsonify
+from flask import Blueprint, Response, redirect, request, session
 
 from data_formulator.auth.providers.oidc import is_backend_oidc_mode
 from data_formulator.auth.token_store import TokenStore
+from data_formulator.error_handler import json_ok
+from data_formulator.errors import AppError, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +74,17 @@ def _fetch_userinfo(access_token: str, userinfo_url: str) -> dict | None:
 def oidc_login():
     """Redirect user to SSO authorization page."""
     if not is_backend_oidc_mode():
-        return jsonify({"error": "backend OIDC not enabled"}), 400
+        raise AppError(ErrorCode.INVALID_REQUEST, "backend OIDC not enabled")
 
     cfg = _get_oidc_config()
     authorize_url = cfg.get("authorize_url", "")
     client_id = cfg.get("client_id", "")
 
     if not authorize_url:
-        return jsonify({"error": "OIDC authorize endpoint not available (discovery failed and OIDC_AUTHORIZE_URL not set)"}), 500
+        raise AppError(
+            ErrorCode.SERVICE_UNAVAILABLE,
+            "OIDC authorize endpoint not available",
+        )
 
     state = secrets.token_urlsafe(32)
     session["_oauth_state"] = state
@@ -108,7 +113,7 @@ def _error_redirect(code: str) -> Response:
 def oidc_callback():
     """Exchange authorization code for tokens (backend confidential flow)."""
     if not is_backend_oidc_mode():
-        return jsonify({"error": "backend OIDC not enabled"}), 400
+        return _error_redirect("backend_oidc_not_enabled")
 
     code = request.args.get("code")
     state = request.args.get("state")
@@ -165,17 +170,17 @@ def oidc_callback():
 def oidc_status():
     """Check SSO login status."""
     if not is_backend_oidc_mode():
-        return jsonify({"authenticated": False, "mode": "frontend"})
+        return json_ok({"authenticated": False, "mode": "frontend"})
 
     token_store = TokenStore()
     sso_token = token_store.get_sso_token()
     sso_data = session.get("sso", {})
     if sso_token:
-        return jsonify({
+        return json_ok({
             "authenticated": True,
             "user": sso_data.get("user"),
         })
-    return jsonify({"authenticated": False})
+    return json_ok({"authenticated": False})
 
 
 @oidc_bp.route("/logout", methods=["POST"])
@@ -184,7 +189,7 @@ def oidc_logout():
     token_store = TokenStore()
     token_store.clear_session_tokens()
     session.pop("_oauth_state", None)
-    return jsonify({"status": "ok"})
+    return json_ok({"logged_out": True})
 
 
 # ── Token management routes (work in all AUTH_MODE settings) ──────
@@ -205,7 +210,7 @@ def save_delegated_token():
     system_id = data.get("system_id")
     access_token = data.get("access_token")
     if not system_id or not access_token:
-        return jsonify({"error": "system_id and access_token required"}), 400
+        raise AppError(ErrorCode.INVALID_REQUEST, "system_id and access_token required")
 
     token_store = TokenStore()
     token_store.store_service_token(
@@ -222,7 +227,7 @@ def save_delegated_token():
             "refresh_token": data.get("refresh_token"),
         })
 
-    return jsonify({"status": "ok"})
+    return json_ok({"saved": True})
 
 
 @auth_tokens_bp.route("/tokens/<system_id>", methods=["DELETE"])
@@ -230,7 +235,7 @@ def clear_service_token(system_id: str):
     """Disconnect from a specific service (clear its cached token)."""
     token_store = TokenStore()
     token_store.clear_service_token(system_id)
-    return jsonify({"status": "ok"})
+    return json_ok({"cleared": True})
 
 
 @auth_tokens_bp.route("/service-status", methods=["GET"])
@@ -241,4 +246,4 @@ def auth_service_status():
     Frontend calls this to show connection indicators.
     """
     token_store = TokenStore()
-    return jsonify(token_store.get_auth_status())
+    return json_ok(token_store.get_auth_status())

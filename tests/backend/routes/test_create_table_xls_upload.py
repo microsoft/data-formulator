@@ -31,9 +31,12 @@ def tmp_workspace(tmp_path):
 
 @pytest.fixture()
 def client(tmp_workspace):
+    from data_formulator.error_handler import register_error_handlers
+
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.register_blueprint(tables_bp)
+    register_error_handlers(app)
 
     with patch("data_formulator.routes.tables._get_workspace", return_value=tmp_workspace):
         with app.test_client() as c:
@@ -57,8 +60,9 @@ def test_upload_xls_creates_table_and_returns_columns(client, tmp_workspace):
         )
 
     assert resp.status_code == 200, resp.get_json()
-    data = resp.get_json()
-    assert data["status"] == "success"
+    body = resp.get_json()
+    assert body["status"] == "success"
+    data = body["data"]
     assert data["row_count"] > 0
     assert len(data["columns"]) > 0
     assert data["table_name"]
@@ -83,8 +87,9 @@ def test_upload_xls_preserves_chinese_column_names(client, tmp_workspace):
             content_type="multipart/form-data",
         )
 
-    data = resp.get_json()
-    assert data["status"] == "success"
+    body = resp.get_json()
+    assert body["status"] == "success"
+    data = body["data"]
 
     original_df = pd.read_excel(xls_path)
     original_columns = set(original_df.columns)
@@ -110,8 +115,9 @@ def test_upload_xls_table_name_sanitized_for_unicode(client, tmp_workspace):
             content_type="multipart/form-data",
         )
 
-    data = resp.get_json()
-    assert data["status"] == "success"
+    body = resp.get_json()
+    assert body["status"] == "success"
+    data = body["data"]
     assert len(data["table_name"]) > 0
     assert "订单" in data["table_name"] or "table" not in data["table_name"]
 
@@ -130,7 +136,9 @@ def test_upload_xls_rejects_missing_table_name(client):
         )
 
     assert resp.status_code == 200
-    assert resp.get_json()["status"] == "error"
+    data = resp.get_json()
+    assert data["status"] == "error"
+    assert data["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_list_tables_returns_sample_rows_for_xls(client, tmp_workspace):
@@ -148,16 +156,17 @@ def test_list_tables_returns_sample_rows_for_xls(client, tmp_workspace):
             },
             content_type="multipart/form-data",
         )
-    create_data = create_resp.get_json()
-    assert create_data["status"] == "success"
+    create_body = create_resp.get_json()
+    assert create_body["status"] == "success"
+    create_data = create_body["data"]
 
     list_resp = client.get("/api/tables/list-tables")
     assert list_resp.status_code == 200
-    list_data = list_resp.get_json()
-    assert list_data["status"] == "success"
+    list_body = list_resp.get_json()
+    assert list_body["status"] == "success"
 
     table_entry = next(
-        (t for t in list_data["tables"] if t["name"] == create_data["table_name"]),
+        (t for t in list_body["data"]["tables"] if t["name"] == create_data["table_name"]),
         None,
     )
     assert table_entry is not None, f"Table {create_data['table_name']} not found in list-tables"

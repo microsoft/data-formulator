@@ -75,7 +75,11 @@ let _userManager: UserManager | null = null;
 export async function getAuthInfo(): Promise<AuthInfo | null> {
     if (!_authInfoPromise) {
         _authInfoPromise = fetch("/api/auth/info")
-            .then(r => (r.ok ? r.json() : null))
+            .then(async r => {
+                if (!r.ok) return null;
+                const body = await r.json();
+                return body?.status === "success" ? body.data : body;
+            })
             .catch(() => null);
     }
     return _authInfoPromise;

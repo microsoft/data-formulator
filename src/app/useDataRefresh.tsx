@@ -8,6 +8,7 @@ import { AppDispatch } from './store';
 import { DictTable } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash } from './utils';
+import { apiRequest } from './apiClient';
 
 /** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
 async function compressBlob(data: string): Promise<Blob> {
@@ -123,22 +124,11 @@ export function useDataRefresh() {
         try {
             console.log(`[DataRefresh] Requesting connector '${connectorId}' to refresh "${tableName}"...`);
             
-            const refreshResponse = await fetchWithIdentity(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
+            const { data: refreshData } = await apiRequest<any>(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connectorId, table_name: tableName })
             });
-
-            const refreshData = await refreshResponse.json();
-            
-            if (refreshData.status !== 'success') {
-                console.log(`[DataRefresh] Cannot refresh "${tableName}": ${refreshData.message}`);
-                return {
-                    tableId: table.id,
-                    success: false,
-                    message: refreshData.message || 'Refresh failed. You may need to reconnect to the data source.'
-                };
-            }
             
             console.log(`[DataRefresh] Backend refreshed "${tableName}" (${refreshData.row_count} rows, data_changed=${refreshData.data_changed})`);
 
@@ -153,7 +143,7 @@ export function useDataRefresh() {
             }
 
             // Data changed - get a fresh sample for the frontend
-            const sampleResponse = await fetchWithIdentity(getUrls().SAMPLE_TABLE, {
+            const { data: sampleData } = await apiRequest<{ rows: any[] }>(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -162,22 +152,13 @@ export function useDataRefresh() {
                 })
             });
 
-            const sampleData = await sampleResponse.json();
-            if (sampleData.status === 'success') {
-                return {
-                    tableId: table.id,
-                    success: true,
-                    message: `Refreshed from source (${refreshData.row_count} rows)`,
-                    newRows: sampleData.rows,
-                    contentHash: refreshData.content_hash
-                };
-            } else {
-                return {
-                    tableId: table.id,
-                    success: false,
-                    message: sampleData.error || 'Failed to sample refreshed table'
-                };
-            }
+            return {
+                tableId: table.id,
+                success: true,
+                message: `Refreshed from source (${refreshData.row_count} rows)`,
+                newRows: sampleData.rows,
+                contentHash: refreshData.content_hash
+            };
         } catch (error) {
             return {
                 tableId: table.id,
@@ -243,7 +224,7 @@ export function useDataRefresh() {
                                     table_name: table.virtual.tableId,
                                     rows: result.newRows
                                 }));
-                                await fetchWithIdentity(getUrls().SYNC_TABLE_DATA, {
+                                await apiRequest(getUrls().SYNC_TABLE_DATA, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip' },
                                     body: compressedBody
@@ -471,7 +452,7 @@ export function useDerivedTableRefresh() {
         console.log(`[DerivedRefresh] Re-sampling SQL view "${tableName}" (DuckDB auto-updated)...`);
 
         try {
-            const response = await fetchWithIdentity(getUrls().SAMPLE_TABLE, {
+            const { data } = await apiRequest<{ rows: any[] }>(getUrls().SAMPLE_TABLE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -480,8 +461,7 @@ export function useDerivedTableRefresh() {
                 })
             });
 
-            const data = await response.json();
-            if (data.status === 'success' && data.rows) {
+            if (data.rows) {
                 console.log(`[DerivedRefresh] Successfully re-sampled SQL view "${tableName}" (${data.rows.length} rows)`);
                 return { tableId: derivedTable.id, rows: data.rows };
             }
@@ -552,15 +532,13 @@ export function useDerivedTableRefresh() {
                 output_table_name: derivedTable.virtual?.tableId
             };
             
-            const response = await fetchWithIdentity(getUrls().REFRESH_DERIVED_DATA, {
+            const { data } = await apiRequest<{ rows?: any[]; message?: string }>(getUrls().REFRESH_DERIVED_DATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
 
-            const data = await response.json();
-            
-            if (data.status === 'ok' && data.rows) {
+            if (data.rows) {
                 console.log(`[DerivedRefresh] Successfully refreshed "${derivedTable.id}" with ${data.rows.length} rows`);
                 return { tableId: derivedTable.id, rows: data.rows };
             } else {

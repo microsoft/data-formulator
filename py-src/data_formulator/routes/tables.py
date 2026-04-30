@@ -10,7 +10,9 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 import json
 import gzip
-from flask import request, jsonify, Blueprint, Response, stream_with_context
+from flask import request, Blueprint, Response, stream_with_context
+from data_formulator.error_handler import json_ok
+from data_formulator.errors import AppError, ErrorCode
 import pandas as pd
 from pathlib import Path
 from data_formulator.auth.identity import get_identity_id
@@ -163,7 +165,7 @@ def open_workspace():
     import subprocess, platform
 
     if current_app.config.get('CLI_ARGS', {}).get('workspace_backend', 'local') != 'local':
-        return jsonify(status="error", message="Workspace folder access is only available for local backend")
+        raise AppError(ErrorCode.INVALID_REQUEST, "Workspace folder access is only available for local backend")
 
     try:
         home_path = str(get_data_formulator_home())
@@ -176,10 +178,10 @@ def open_workspace():
             subprocess.Popen(["explorer", home_path])
         else:
             subprocess.Popen(["xdg-open", home_path])
-        return jsonify(status="ok", path=home_path)
+        return json_ok({"path": home_path})
     except Exception as e:
         logger.error(f"Failed to open workspace: {e}")
-        return jsonify(status="error", message="Failed to open workspace")
+        raise AppError(ErrorCode.INTERNAL_ERROR, "Failed to open workspace")
 
 
 @tables_bp.route('/list-tables', methods=['GET'])
@@ -256,7 +258,7 @@ def list_tables():
             except Exception as e:
                 logger.error(f"Error getting table metadata for {table_name}: {str(e)}")
                 continue
-        return jsonify({"status": "success", "tables": result})
+        return json_ok({"tables": result})
     except Exception as e:
         classify_and_raise_db_error(e)
         
@@ -363,8 +365,7 @@ def sample_table():
             )
         result_df = _dedup_dataframe_columns(result_df)
         rows_json = json.loads(result_df.to_json(orient='records', date_format='iso'))
-        return jsonify({
-            "status": "success",
+        return json_ok({
             "rows": rows_json,
             "total_row_count": total_row_count,
         })
@@ -381,7 +382,7 @@ def get_table_data():
         offset = (page - 1) * page_size
 
         if not table_name:
-            return jsonify({"status": "error", "message": "Table name is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "Table name is required")
 
         workspace = _get_workspace()
         if _should_use_duckdb(workspace, table_name):
@@ -402,8 +403,7 @@ def get_table_data():
             page_df = df.iloc[offset : offset + page_size]
             rows = json.loads(page_df.to_json(orient='records', date_format='iso'))
 
-        return jsonify({
-            "status": "success",
+        return json_ok({
             "table_name": table_name,
             "columns": columns,
             "rows": rows,
@@ -411,6 +411,8 @@ def get_table_data():
             "page": page,
             "page_size": page_size,
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_db_error(e)
 
@@ -498,11 +500,11 @@ def create_table():
         has_file = 'file' in request.files
         has_raw_data = 'raw_data' in request.files or 'raw_data' in request.form
         if not has_file and not has_raw_data:
-            return jsonify({"status": "error", "message": "No file or raw data provided"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "No file or raw data provided")
 
         table_name = request.form.get('table_name')
         if not table_name:
-            return jsonify({"status": "error", "message": "No table name provided"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "No table name provided")
 
         workspace = _get_workspace()
         sanitized_table_name = parquet_sanitize_table_name(table_name)
@@ -511,11 +513,11 @@ def create_table():
         if has_file:
             file = request.files['file']
             if not file.filename or not is_supported_file(file.filename):
-                return jsonify({"status": "error", "message": "Unsupported file format"})
+                raise AppError(ErrorCode.INVALID_REQUEST, "Unsupported file format")
             try:
                 safe_name = safe_data_filename(file.filename)
             except ValueError:
-                return jsonify({"status": "error", "message": "Invalid filename"})
+                raise AppError(ErrorCode.INVALID_REQUEST, "Invalid filename")
 
             if replace_source:
                 workspace.delete_tables_by_source_file(safe_name)
@@ -555,7 +557,7 @@ def create_table():
                 df = pd.DataFrame(json.loads(raw_data))
             except Exception as e:
                 logger.warning("Invalid JSON in raw_data", exc_info=True)
-                return jsonify({"status": "error", "message": "Invalid JSON data — it must be a JSON array of objects"})
+                raise AppError(ErrorCode.VALIDATION_ERROR, "Invalid JSON data — it must be a JSON array of objects")
             workspace.write_parquet(df, sanitized_table_name)
             row_count = len(df)
             columns = list(df.columns)
@@ -565,12 +567,13 @@ def create_table():
             meta.original_name = table_name
             workspace.add_table_metadata(meta)
 
-        return jsonify({
-            "status": "success",
+        return json_ok({
             "table_name": sanitized_table_name,
             "row_count": row_count,
             "columns": columns,
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_db_error(e)
 
@@ -584,12 +587,12 @@ def parse_file():
     """
     try:
         if 'file' not in request.files:
-            return jsonify({"status": "error", "message": "No file provided"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "No file provided")
 
         file = request.files['file']
         filename = file.filename or ''
         if not filename or not is_supported_file(filename):
-            return jsonify({"status": "error", "message": "Unsupported file format"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "Unsupported file format")
 
         ext = os.path.splitext(filename)[1].lower()
 
@@ -607,14 +610,13 @@ def parse_file():
                     "row_count": len(records),
                     "data": records,
                 })
-            return jsonify({"status": "success", "sheets": sheets})
+            return json_ok({"sheets": sheets})
         elif ext == '.csv':
             raw = normalize_text_encoding(file.stream.read(), 'csv')
             df = pd.read_csv(io.BytesIO(raw))
             df = df.where(df.notna(), None)
             records = df.to_dict(orient='records')
-            return jsonify({
-                "status": "success",
+            return json_ok({
                 "sheets": [{
                     "sheet_name": "Sheet1",
                     "columns": list(df.columns),
@@ -623,11 +625,13 @@ def parse_file():
                 }],
             })
         else:
-            return jsonify({"status": "error", "message": f"Server-side parsing not supported for {ext}"})
+            raise AppError(ErrorCode.INVALID_REQUEST, f"Server-side parsing not supported for {ext}")
 
+    except AppError:
+        raise
     except Exception as e:
         logger.error("Error parsing file", exc_info=True)
-        return jsonify({"status": "error", "message": "Failed to parse the uploaded file"})
+        raise AppError(ErrorCode.FILE_PARSE_ERROR, "Failed to parse the uploaded file")
 
 
 @tables_bp.route('/sync-table-data', methods=['POST'])
@@ -648,23 +652,24 @@ def sync_table_data():
         rows = data.get('rows')
 
         if not table_name:
-            return jsonify({"status": "error", "message": "table_name is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "table_name is required")
         if rows is None:
-            return jsonify({"status": "error", "message": "rows is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "rows is required")
 
         workspace = _get_workspace()
 
         if table_name not in workspace.list_tables():
-            return jsonify({"status": "error", "message": f"Table '{table_name}' not found in workspace"})
+            raise AppError(ErrorCode.TABLE_NOT_FOUND, f"Table '{table_name}' not found in workspace")
 
         df = pd.DataFrame(rows) if rows else pd.DataFrame()
         workspace.write_parquet(df, table_name)
 
-        return jsonify({
-            "status": "success",
+        return json_ok({
             "table_name": table_name,
             "row_count": len(df),
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_db_error(e)
 
@@ -676,12 +681,14 @@ def drop_table():
         data = request.get_json()
         table_name = data.get('table_name')
         if not table_name:
-            return jsonify({"status": "error", "message": "No table name provided"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "No table name provided")
 
         workspace = _get_workspace()
         if not workspace.delete_table(table_name):
-            return jsonify({"status": "error", "message": f"Table '{table_name}' does not exist"})
-        return jsonify({"status": "success", "message": f"Table {table_name} dropped"})
+            raise AppError(ErrorCode.TABLE_NOT_FOUND, f"Table '{table_name}' does not exist")
+        return json_ok({"message": f"Table {table_name} dropped"})
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_db_error(e)
 
@@ -689,19 +696,16 @@ def drop_table():
 @tables_bp.route('/upload-db-file', methods=['POST'])
 def upload_db_file():
     """No longer used: storage is workspace/datalake, not DuckDB. Kept for API compatibility."""
-    return jsonify({
-        "status": "error",
-        "message": "Database file upload is no longer supported. Data is stored in the workspace; use create-table with a file or data loaders to add data.",
-    })
+    raise AppError(ErrorCode.INVALID_REQUEST, "Database file upload is no longer supported. Data is stored in the workspace; use create-table with a file or data loaders to add data.")
 
 
 @tables_bp.route('/download-db-file', methods=['GET'])
 def download_db_file():
     """No longer used: storage is workspace/datalake. Kept for API compatibility."""
-    return jsonify({
-        "status": "error",
-        "message": "Database file download is no longer supported. Data lives in the workspace.",
-    })
+    raise AppError(
+        ErrorCode.INVALID_REQUEST,
+        "Database file download is no longer supported. Data lives in the workspace.",
+    )
 
 
 _CSV_STREAM_CHUNK_ROWS = 10_000
@@ -772,10 +776,10 @@ def export_table_csv():
         delimiter = data.get('delimiter', ',')
 
         if not table_name:
-            return jsonify({"status": "error", "message": "table_name is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "table_name is required")
 
         if delimiter not in (',', '\t'):
-            return jsonify({"status": "error", "message": "delimiter must be ',' or '\\t'"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "delimiter must be ',' or '\\t'")
 
         workspace = _get_workspace()
         ext = 'tsv' if delimiter == '\t' else 'csv'
@@ -803,6 +807,8 @@ def export_table_csv():
             mimetype=mime,
             headers={'Content-Disposition': disposition},
         )
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_db_error(e)
 
@@ -813,7 +819,7 @@ def reset_db_file():
     try:
         workspace = _get_workspace()
         workspace.cleanup()
-        return jsonify({"status": "success", "message": "Workspace reset successfully"})
+        return json_ok({"message": "Workspace reset successfully"})
     except Exception as e:
         classify_and_raise_db_error(e)
 
@@ -832,7 +838,7 @@ def analyze_table():
         data = request.get_json()
         table_name = data.get('table_name')
         if not table_name:
-            return jsonify({"status": "error", "message": "No table name provided"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "No table name provided")
 
         workspace = _get_workspace()
         if _should_use_duckdb(workspace, table_name):
@@ -890,7 +896,9 @@ def analyze_table():
                     stats_dict["avg"] = float(s.mean()) if s.notna().any() else None
                 stats.append({"column": col_name, "type": col_type, "statistics": stats_dict})
 
-        return jsonify({"status": "success", "table_name": table_name, "statistics": stats})
+        return json_ok({"table_name": table_name, "statistics": stats})
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_db_error(e)
 
@@ -912,24 +920,24 @@ def classify_and_raise_db_error(error: Exception) -> None:
 
     error_msg = str(error)
 
-    _SAFE_PATTERNS: list[tuple[str, str, str, int]] = [
-        # (regex, ErrorCode, safe client message, HTTP status)
-        (r"Table.*does not exist",   ErrorCode.TABLE_NOT_FOUND,   "The requested table does not exist",            404),
-        (r"Table.*already exists",   ErrorCode.INVALID_REQUEST,   "A table with that name already exists",         409),
-        (r"syntax error",            ErrorCode.INVALID_REQUEST,   "Query syntax error",                            400),
-        (r"Catalog Error",           ErrorCode.TABLE_NOT_FOUND,   "The requested catalog object was not found",    404),
-        (r"Binder Error",            ErrorCode.INVALID_REQUEST,   "Invalid query reference",                       400),
-        (r"Invalid input syntax",    ErrorCode.INVALID_REQUEST,   "Invalid input syntax",                          400),
-        (r"No such file",            ErrorCode.TABLE_NOT_FOUND,   "The requested resource was not found",          404),
-        (r"Permission denied",       ErrorCode.ACCESS_DENIED,     "Access denied",                                 403),
-        (r"identity",                ErrorCode.AUTH_REQUIRED,     "Identity not found, please refresh the page",   500),
+    _SAFE_PATTERNS: list[tuple[str, str, str]] = [
+        # (regex, ErrorCode, safe client message)
+        (r"Table.*does not exist",   ErrorCode.TABLE_NOT_FOUND,   "The requested table does not exist"),
+        (r"Table.*already exists",   ErrorCode.INVALID_REQUEST,   "A table with that name already exists"),
+        (r"syntax error",            ErrorCode.INVALID_REQUEST,   "Query syntax error"),
+        (r"Catalog Error",           ErrorCode.TABLE_NOT_FOUND,   "The requested catalog object was not found"),
+        (r"Binder Error",            ErrorCode.INVALID_REQUEST,   "Invalid query reference"),
+        (r"Invalid input syntax",    ErrorCode.INVALID_REQUEST,   "Invalid input syntax"),
+        (r"No such file",            ErrorCode.TABLE_NOT_FOUND,   "The requested resource was not found"),
+        (r"Permission denied",       ErrorCode.ACCESS_DENIED,     "Access denied"),
+        (r"identity",                ErrorCode.AUTH_REQUIRED,     "Identity not found, please refresh the page"),
     ]
 
-    for pattern, code, safe_msg, status_code in _SAFE_PATTERNS:
+    for pattern, code, safe_msg in _SAFE_PATTERNS:
         if re.search(pattern, error_msg, re.IGNORECASE):
-            raise AppError(code, safe_msg, status_code=status_code, detail=error_msg) from error
+            raise AppError(code, safe_msg, detail=error_msg) from error
 
-    raise AppError(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred", status_code=500, detail=error_msg) from error
+    raise AppError(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred", detail=error_msg) from error
 
 
 def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
@@ -938,5 +946,5 @@ def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
     try:
         classify_and_raise_db_error(error)
     except AppError as ae:
-        return ae.message, ae.status_code
-    return jsonify({"status": "error", "message": "An unexpected error occurred"})
+        return ae.message, ae.get_http_status()
+    return "An unexpected error occurred", 500

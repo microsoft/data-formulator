@@ -224,11 +224,13 @@ class TestScratchRoutesConfinedMigration:
     @pytest.fixture()
     def client(self, tmp_workspace):
         from flask import Flask
+        from data_formulator.error_handler import register_error_handlers
         from data_formulator.routes.agents import agent_bp
 
         app = Flask(__name__)
         app.config["TESTING"] = True
         app.register_blueprint(agent_bp)
+        register_error_handlers(app)
         with (
             patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
             patch("data_formulator.routes.agents.get_workspace", return_value=tmp_workspace),
@@ -243,13 +245,17 @@ class TestScratchRoutesConfinedMigration:
 
     def test_scratch_serve_traversal_rejected(self, client):
         resp = client.get("/api/agent/workspace/scratch/../../../etc/passwd")
-        assert resp.status_code == 200
-        assert resp.get_json()["status"] == "error"
+        assert resp.status_code == 403
+        body = resp.get_json()
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "ACCESS_DENIED"
 
     def test_scratch_serve_nonexistent(self, client):
         resp = client.get("/api/agent/workspace/scratch/no_such.csv")
         assert resp.status_code == 200
-        assert resp.get_json()["status"] == "error"
+        body = resp.get_json()
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "TABLE_NOT_FOUND"
 
     def test_scratch_upload_normal(self, client, tmp_workspace):
         import io
@@ -261,8 +267,8 @@ class TestScratchRoutesConfinedMigration:
         )
         assert resp.status_code == 200
         body = resp.get_json()
-        assert body["status"] == "ok"
-        assert body["path"].startswith("scratch/")
+        assert body["status"] == "success"
+        assert body["data"]["path"].startswith("scratch/")
 
     def test_scratch_upload_traversal_sanitized(self, client, tmp_workspace):
         import io
@@ -274,13 +280,13 @@ class TestScratchRoutesConfinedMigration:
         )
         assert resp.status_code == 200
         body = resp.get_json()
-        if body["status"] == "ok":
-            written = tmp_workspace._path / body["path"]
-            assert written.parent == tmp_workspace._path / "scratch"
-        else:
-            assert body["status"] == "error"
+        assert body["status"] == "success"
+        written = tmp_workspace._path / body["data"]["path"]
+        assert written.parent == tmp_workspace._path / "scratch"
 
     def test_scratch_upload_no_file_returns_error(self, client):
         resp = client.post("/api/agent/workspace/scratch/upload")
         assert resp.status_code == 200
-        assert resp.get_json()["status"] == "error"
+        body = resp.get_json()
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "INVALID_REQUEST"

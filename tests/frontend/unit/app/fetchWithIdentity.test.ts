@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 vi.mock('../../../../src/app/oidcConfig', () => ({
     getAccessToken: vi.fn(async () => null),
     getUserManager: vi.fn(async () => null),
+    isBackendAuth: vi.fn(async () => false),
 }));
 
 vi.mock('../../../../src/app/store', () => ({

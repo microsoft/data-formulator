@@ -31,9 +31,12 @@ def tmp_workspace(tmp_path):
 
 @pytest.fixture()
 def client(tmp_workspace):
+    from data_formulator.error_handler import register_error_handlers
+
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.register_blueprint(tables_bp)
+    register_error_handlers(app)
     with patch("data_formulator.routes.tables._get_workspace", return_value=tmp_workspace):
         with app.test_client() as c:
             yield c
@@ -76,7 +79,7 @@ def test_overwrite_same_table_name(client, tmp_workspace) -> None:
 
     resp2 = _upload(client, csv_v2, "data.csv", "my_table")
     assert resp2.get_json()["status"] == "success"
-    assert resp2.get_json()["table_name"] == "my_table"
+    assert resp2.get_json()["data"]["table_name"] == "my_table"
 
     tables = tmp_workspace.list_tables()
     assert "my_table" in tables

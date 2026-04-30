@@ -9,9 +9,11 @@ import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
 import { getDataTable } from '../views/ChartUtils';
-import { getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
+import { getTriggers, getUrls, computeContentHash } from './utils';
+import { apiRequest } from './apiClient';
 import { deleteTablesFromWorkspace } from './workspaceService';
 import { getChartPngDataUrl } from './chartCache';
+import i18n from '../i18n';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
 import { Identity, IdentityType, getBrowserId } from './identity';
@@ -341,23 +343,15 @@ export const fetchFieldSemanticType = createAsyncThunk(
 
         let state = getState() as DataFormulatorState;
 
-        let message = {
+        const { data } = await apiRequest(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                token: Date.now(),
                 input_data: {name: table.id, rows: table.rows, virtual: table.virtual ? true : false},
                 model: dfSelectors.getActiveModel(state)
             }),
-        };
-
-        // timeout the request after 20 seconds
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 20000)
-
-        let response = await fetchWithIdentity(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {...message, signal: controller.signal })
-
-        return response.json();
+        });
+        return data;
     }
 );
 
@@ -368,11 +362,10 @@ export const fetchCodeExpl = createAsyncThunk(
 
         let state = getState() as DataFormulatorState;
 
-        let message = {
+        const { data } = await apiRequest(getUrls().CODE_EXPL_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                token: Date.now(),
                 input_tables: derivedTable.derive?.source
                                 .map(tId => state.tables.find(t => t.id == tId) as DictTable)
                                 .map(t => ({ 
@@ -383,15 +376,8 @@ export const fetchCodeExpl = createAsyncThunk(
                 code: derivedTable.derive?.code,
                 model: dfSelectors.getActiveModel(state)
             }),
-        };
-
-        // timeout the request after 20 seconds
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 20000)
-
-        let response = await fetchWithIdentity(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
-
-        return response.json();
+        });
+        return data;
     }
 );
 
@@ -400,74 +386,92 @@ export const fetchChartInsight = createAsyncThunk(
     async (args: { chartId: string; tableId: string }, { getState }) => {
         console.log(">>> call agent to generate chart insight <<<");
 
-        // Wrap entire thunk body in a race with a timeout to prevent indefinite stalls
-        const INSIGHT_TIMEOUT_MS = 60_000;
-        const result = await Promise.race([
-            (async () => {
-                let state = getState() as DataFormulatorState;
-                let chart = dfSelectors.getAllCharts(state).find(c => c.id === args.chartId);
-                if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
+        const state = getState() as DataFormulatorState;
+        const chart = dfSelectors.getAllCharts(state).find(c => c.id === args.chartId);
+        if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
 
-                // Get high-res PNG from the rendered chart
-                let chartImage = await getChartPngDataUrl(args.chartId);
-                if (!chartImage) throw new Error(`No rendered chart image for: ${args.chartId}`);
+        // Wait for chart image to be available in cache (replaces fixed 1.5s delay at call site)
+        const chartImage = await waitForChartImage(args.chartId);
+        if (!chartImage) {
+            throw new DOMException('Chart image not ready after waiting', 'ChartImageNotReady');
+        }
 
-                // Strip the data:image/png;base64, prefix for the backend
-                const base64Prefix = 'data:image/png;base64,';
-                if (chartImage.startsWith(base64Prefix)) {
-                    chartImage = chartImage.substring(base64Prefix.length);
-                }
+        // Strip the data:image/png;base64, prefix for the backend
+        const base64Prefix = 'data:image/png;base64,';
+        const imagePayload = chartImage.startsWith(base64Prefix)
+            ? chartImage.substring(base64Prefix.length)
+            : chartImage;
 
-                // Collect field names from the encoding map
-                let fieldNames = Object.values(chart.encodingMap)
-                    .map(enc => enc.fieldID)
-                    .filter((id): id is string => !!id)
-                    .map(id => {
-                        let field = state.conceptShelfItems.find(f => f.id === id);
-                        return field?.name || id;
-                    });
+        // Collect field names from the encoding map
+        const fieldNames = Object.values(chart.encodingMap)
+            .map(enc => enc.fieldID)
+            .filter((id): id is string => !!id)
+            .map(id => {
+                const field = state.conceptShelfItems.find(f => f.id === id);
+                return field?.name || id;
+            });
 
-                // Collect input table info (include source tables for derived tables)
-                let table = state.tables.find(t => t.id === args.tableId);
-                let tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
-                let inputTables = [...new Set(tableIds)]
-                    .map(tId => state.tables.find(t => t.id === tId))
-                    .filter((t): t is DictTable => !!t)
-                    .map(t => ({
-                        name: t.id,
-                        rows: t.rows,
-                        attached_metadata: t.attachedMetadata,
-                    }));
+        // Collect input table info (include source tables for derived tables)
+        const table = state.tables.find(t => t.id === args.tableId);
+        const tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
+        const inputTables = [...new Set(tableIds)]
+            .map(tId => state.tables.find(t => t.id === tId))
+            .filter((t): t is DictTable => !!t)
+            .map(t => ({
+                name: t.id,
+                rows: t.rows,
+                attached_metadata: t.attachedMetadata,
+            }));
 
-                let message = {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        token: Date.now(),
-                        chart_image: chartImage,
-                        chart_type: chart.chartType,
-                        field_names: fieldNames,
-                        input_tables: inputTables,
-                        model: dfSelectors.getActiveModel(state),
-                    }),
-                };
+        // Use unified timeout from user config
+        const timeoutSeconds = state.config.formulateTimeoutSeconds;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort(new DOMException(
+                `Chart insight timed out after ${timeoutSeconds}s`,
+                'TimeoutError',
+            ));
+        }, timeoutSeconds * 1000);
 
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30000);
+        try {
+            const { data } = await apiRequest(getUrls().CHART_INSIGHT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chart_image: imagePayload,
+                    chart_type: chart.chartType,
+                    field_names: fieldNames,
+                    input_tables: inputTables,
+                    model: dfSelectors.getActiveModel(state),
+                }),
+                signal: controller.signal,
+            });
 
-                let response = await fetchWithIdentity(getUrls().CHART_INSIGHT_URL, { ...message, signal: controller.signal });
-                clearTimeout(timeoutId);
-
-                let result = await response.json();
-                return { ...result, chartId: args.chartId, insightKey: computeInsightKey(chart) };
-            })(),
-            new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('Chart insight timed out')), INSIGHT_TIMEOUT_MS)
-            ),
-        ]);
-        return result;
+            return { title: data.title, takeaways: data.takeaways,
+                     chartId: args.chartId, insightKey: computeInsightKey(chart) };
+        } finally {
+            clearTimeout(timeoutId);
+        }
     }
 );
+
+/**
+ * Wait for a chart image to appear in chartCache.
+ * Polls at short intervals up to a maximum timeout.
+ */
+async function waitForChartImage(
+    chartId: string,
+    timeoutMs: number = 8000,
+    intervalMs: number = 250,
+): Promise<string | undefined> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        const image = await getChartPngDataUrl(chartId);
+        if (image) return image;
+        await new Promise(r => setTimeout(r, intervalMs));
+    }
+    return undefined;
+}
 
 /** Fast fetch: returns the list of server-configured models instantly (no
  *  connectivity check).  The UI renders them immediately with a "testing"
@@ -475,8 +479,8 @@ export const fetchChartInsight = createAsyncThunk(
 export const fetchGlobalModelList = createAsyncThunk(
     "dataFormulatorSlice/fetchGlobalModelList",
     async () => {
-        const response = await fetchWithIdentity(getUrls().LIST_GLOBAL_MODELS);
-        return response.json();
+        const { data } = await apiRequest(getUrls().LIST_GLOBAL_MODELS);
+        return data;
     }
 );
 
@@ -485,22 +489,20 @@ export const fetchGlobalModelList = createAsyncThunk(
 export const fetchAvailableModels = createAsyncThunk(
     "dataFormulatorSlice/fetchAvailableModels",
     async () => {
-        let message = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', },
-            body: JSON.stringify({
-                token: Date.now(),
-            }),
-        };
-
-        // Backend checks run in parallel with max_tokens=3 + 10s timeout per
-        // model, so total wall-clock ??slowest single model (~10s worst case).
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 30000)
 
-        let response = await fetchWithIdentity(getUrls().CHECK_AVAILABLE_MODELS, {...message, signal: controller.signal })
-
-        return response.json();
+        try {
+            const { data } = await apiRequest(getUrls().CHECK_AVAILABLE_MODELS, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+                signal: controller.signal,
+            });
+            return data;
+        } finally {
+            clearTimeout(timeoutId);
+        }
     }
 );
 
@@ -1445,7 +1447,7 @@ export const dataFormulatorSlice = createSlice({
             let tableId = action.meta.arg.id;
             let table = state.tables.find(t => t.id == tableId) as DictTable;
 
-            if (data["status"] == "ok" && data["result"].length > 0) {
+            if (data["result"]?.length > 0) {
                 let typeMap = data['result'][0]['fields'];
 
                 for (let name of table.names) {
@@ -1503,6 +1505,15 @@ export const dataFormulatorSlice = createSlice({
                 state.selectedModelId = models[0].id;
             }
         })
+        .addCase(fetchGlobalModelList.rejected, (state, action) => {
+            if (action.error?.name !== 'AbortError') {
+                state.messages.push({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'model list',
+                    value: i18n.t('messages.globalModelListFailed'),
+                });
+            }
+        })
         .addCase(fetchAvailableModels.fulfilled, (state, action) => {
             // Phase 2 (after connectivity checks): update statuses for each model.
             const serverModels: (ModelConfig & { status: string; error: string | null })[] = action.payload;
@@ -1528,6 +1539,22 @@ export const dataFormulatorSlice = createSlice({
                     state.selectedModelId = firstConnected.id;
                 }
             }
+        })
+        .addCase(fetchAvailableModels.rejected, (state, action) => {
+            if (action.error?.name === 'AbortError') {
+                return;
+            }
+
+            state.testedModels = state.testedModels.map(model =>
+                model.status === 'testing'
+                    ? { ...model, status: 'configured' as const, message: '' }
+                    : model
+            );
+            state.messages.push({
+                timestamp: Date.now(), type: 'warning',
+                component: 'model list',
+                value: i18n.t('messages.availableModelsFailed'),
+            });
         })
         .addCase(fetchCodeExpl.fulfilled, (state, action) => {
             let codeExplResponse = action.payload;
@@ -1571,15 +1598,41 @@ export const dataFormulatorSlice = createSlice({
             console.log("fetched chart insight", action.payload);
         })
         .addCase(fetchChartInsight.rejected, (state, action) => {
-            let chartId = action.meta.arg.chartId;
+            const chartId = action.meta.arg.chartId;
             state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
-            if (action.error?.name !== 'AbortError') {
+
+            const errorName = action.error?.name;
+
+            if (errorName === 'AbortError') {
+                // User cancelled — no feedback needed
+                return;
+            }
+
+            if (errorName === 'TimeoutError') {
                 state.messages.push({
                     timestamp: Date.now(), type: 'warning',
                     component: 'chart insight',
-                    value: 'Failed to generate chart insight',
+                    value: i18n.t('messages.chartInsightTimedOut', {
+                        seconds: state.config.formulateTimeoutSeconds,
+                    }),
                 });
+                return;
             }
+
+            if (errorName === 'ChartImageNotReady') {
+                state.messages.push({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'chart insight',
+                    value: i18n.t('messages.chartInsightImageNotReady'),
+                });
+                return;
+            }
+
+            state.messages.push({
+                timestamp: Date.now(), type: 'warning',
+                component: 'chart insight',
+                value: action.error?.message || i18n.t('messages.chartInsightFailed'),
+            });
         })
     },
 })

@@ -50,6 +50,7 @@ import '../scss/EncodingShelf.scss';
 import AnimateHeight from 'react-animate-height';
 import { getIconFromDtype, getIconFromType, groupConceptItems } from './ViewUtils';
 import { getUrls, fetchWithIdentity } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
 import { Type } from '../data/types';
 
 
@@ -321,42 +322,26 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     let autoSortEnabled = field && fieldMetadata?.type == Type.String && domainItems.length < 200;
 
     let autoSortFunction = () => {
-        let token = domainItems.map(x => String(x)).join("--");
         setAutoSortInferRunning(true);
         let message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
-                token: token,
                 items: domainItems,
                 field: field?.name,
                 model: activeModel
             }),
         };
 
-        fetchWithIdentity(getUrls().SORT_DATA_URL, message)
-            .then((response) => response.json())
-            .then((data) => {
+        apiRequest<any>(getUrls().SORT_DATA_URL, message)
+            .then(({ data }) => {
                 setAutoSortInferRunning(false);
 
-                if (data["status"] == "ok") {
-                    if (data["token"] == token) {
-                        let candidate = data["result"][0];
-                        
-                        if (candidate['status'] == 'ok') {
-                            let sortRes = {values: candidate['content']['sorted_values'], reason: candidate['content']['reason']}
-                            setAutoSortResult(sortRes.values);
-                        }
-                    }
-                } else {
-                    // TODO: add warnings to show the user
-                    dispatch(dfActions.addMessages({
-                        "timestamp": Date.now(),
-                        "component": "EncodingBox",
-                        "type": "error",
-                        "value": t('encoding.autoSortFailed')
-                    }));
-                    setAutoSortResult(undefined);
+                let candidate = data.result?.[0] ?? data[0];
+
+                if (candidate?.['status'] == 'ok') {
+                    let sortRes = {values: candidate['content']['sorted_values'], reason: candidate['content']['reason']}
+                    setAutoSortResult(sortRes.values);
                 }
             }).catch((error) => {
                 setAutoSortInferRunning(false);

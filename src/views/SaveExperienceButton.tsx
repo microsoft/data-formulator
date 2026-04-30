@@ -22,9 +22,11 @@ import {
     Typography,
 } from '@mui/material';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 
 import { DataFormulatorState, dfActions, type ModelConfig } from '../app/dfSlice';
-import { AppDispatch } from '../app/store';
+import type { AppDispatch } from '../app/store';
+import { handleApiError } from '../app/errorHandler';
 import { distillExperience, type ExperienceContext } from '../api/knowledgeApi';
 import type { DictTable } from '../components/ComponentType';
 
@@ -128,6 +130,8 @@ export function buildDistillModelConfig(selectedModel: ModelConfig): Record<stri
     };
 }
 
+type DistillStatus = 'idle' | 'running' | 'failed';
+
 export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
     table,
     tables,
@@ -141,30 +145,33 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [categoryHint, setCategoryHint] = useState('');
-    const [distilling, setDistilling] = useState(false);
-    const abortRef = useRef<AbortController | null>(null);
+    const [distillStatus, setDistillStatus] = useState<DistillStatus>('idle');
+    const distillingRef = useRef(false);
 
     const selectedModel = allModels.find(m => m.id === selectedModelId);
 
     const handleCancel = useCallback(() => {
-        if (abortRef.current) {
-            abortRef.current.abort();
-            abortRef.current = null;
-        }
-        setDistilling(false);
         setDialogOpen(false);
     }, []);
 
     const handleDistill = useCallback(async () => {
+        if (distillingRef.current) return;
         const experienceContext = buildExperienceContext(table, tables);
         if (!experienceContext || !selectedModel) return;
 
-        const controller = new AbortController();
-        abortRef.current = controller;
-        setDistilling(true);
+        distillingRef.current = true;
+        setDistillStatus('running');
+        setDialogOpen(false);
+        dispatch(dfActions.addMessages({
+            timestamp: Date.now(),
+            type: 'info',
+            component: 'knowledge',
+            value: t('knowledge.distillStarted'),
+        }));
+
         try {
             const modelConfig = buildDistillModelConfig(selectedModel);
-            await distillExperience(experienceContext, modelConfig, categoryHint.trim() || undefined, controller.signal);
+            await distillExperience(experienceContext, modelConfig, categoryHint.trim() || undefined);
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'success',
@@ -172,39 +179,47 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
                 value: t('knowledge.distilled'),
             }));
             window.dispatchEvent(new CustomEvent('knowledge-changed', { detail: { category: 'experiences' } }));
-            setDialogOpen(false);
+            setDistillStatus('idle');
         } catch (e: unknown) {
-            if (e instanceof DOMException && e.name === 'AbortError') return;
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: 'knowledge',
-                value: t('knowledge.failedToDistill'),
-            }));
+            setDistillStatus('failed');
+            handleApiError(e, 'knowledge');
         } finally {
-            abortRef.current = null;
-            setDistilling(false);
+            distillingRef.current = false;
         }
     }, [table, tables, selectedModel, categoryHint, dispatch, t]);
 
     if (!buildExperienceContext(table, tables)) return null;
 
+    const distilling = distillStatus === 'running';
+    const failed = distillStatus === 'failed';
+    const buttonStartIcon = distilling
+        ? <CircularProgress size={14} color="inherit" />
+        : failed
+            ? <ErrorOutlineIcon sx={{ fontSize: 14 }} />
+            : <AutoFixHighIcon sx={{ fontSize: 14 }} />;
+    const buttonLabel = distilling
+        ? t('knowledge.distilling')
+        : failed
+            ? t('knowledge.distillFailedRetry')
+            : t('knowledge.saveAsExperience');
+
     return (
         <>
             <Button
                 size="small"
-                startIcon={<AutoFixHighIcon sx={{ fontSize: 14 }} />}
+                startIcon={buttonStartIcon}
                 onClick={() => setDialogOpen(true)}
+                disabled={distilling}
                 sx={{
                     textTransform: 'none',
                     fontSize: 10,
                     py: 0.25,
                     px: 0.75,
-                    color: 'text.secondary',
-                    '&:hover': { color: 'primary.main' },
+                    color: failed ? 'error.main' : 'text.secondary',
+                    '&:hover': { color: failed ? 'error.dark' : 'primary.main' },
                 }}
             >
-                {t('knowledge.saveAsExperience')}
+                {buttonLabel}
             </Button>
 
             <Dialog

@@ -3,6 +3,7 @@
 
 import React, { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import Markdown from 'react-markdown';
 import { Box, Collapse, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
@@ -104,6 +105,53 @@ export const PlanStepsView: React.FC<{
         </Box>
     );
 };
+
+/** Compact Markdown for summary entries — inherits parent font-size (10px). */
+const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ content, color }) => (
+    <Box sx={{
+        wordBreak: 'break-word',
+        '& > :first-child': { mt: 0 },
+        '& > :last-child': { mb: 0 },
+    }}>
+        <Markdown
+            components={{
+                p: ({ children }) => (
+                    <Typography component="p" sx={{ fontSize: 'inherit', color, lineHeight: 1.6, my: 0.25 }}>
+                        {children}
+                    </Typography>
+                ),
+                strong: ({ children }) => (
+                    <Box component="span" sx={{ fontWeight: 600 }}>{children}</Box>
+                ),
+                em: ({ children }) => (
+                    <Box component="span" sx={{ fontStyle: 'italic' }}>{children}</Box>
+                ),
+                ul: ({ children }) => (
+                    <Box component="ul" sx={{ m: 0, my: 0.25, pl: 2 }}>{children}</Box>
+                ),
+                ol: ({ children }) => (
+                    <Box component="ol" sx={{ m: 0, my: 0.25, pl: 2 }}>{children}</Box>
+                ),
+                li: ({ children }) => (
+                    <Typography component="li" sx={{ fontSize: 'inherit', color, lineHeight: 1.6 }}>
+                        {children}
+                    </Typography>
+                ),
+                code: ({ children }) => (
+                    <Box component="code" sx={{
+                        fontSize: 'inherit', fontFamily: 'inherit',
+                        bgcolor: 'rgba(0,0,0,0.04)', px: 0.4, py: 0.1, borderRadius: '3px',
+                    }}>
+                        {children}
+                    </Box>
+                ),
+                pre: ({ children }) => <>{children}</>,
+            }}
+        >
+            {content}
+        </Markdown>
+    </Box>
+);
 
 /** Render text with **field** markers as styled spans with subtle background. */
 export function renderFieldHighlights(text: string, bgColor: string): React.ReactNode {
@@ -277,6 +325,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                             {collapsedLabel}
                         </Typography>
                     )
+                ) : entry.role === 'summary' ? (
+                    <Box sx={{ fontSize: '10px', py: '1px' }}>
+                        <CompactMarkdown content={displayText} color={color} />
+                    </Box>
                 ) : (
                     <Typography component="div" sx={{
                         fontSize: '10px',

@@ -289,7 +289,12 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
     }), [flatRows, loadedMap, handleToggle, onItemClick, onLoadMore, onDragStart, renderTableActions, selectedItemId]);
 
     const totalHeight = flatRows.length * rowHeight;
-    const effectiveHeight = unconstrained ? totalHeight : Math.min(totalHeight, maxHeightNum);
+    // When unconstrained, cap at a viewport-relative height so react-window
+    // still virtualizes (only renders visible rows). Without a cap, FixedSizeList
+    // would set height = totalHeight → all rows "visible" → no virtualization.
+    const maxVirtualHeight = unconstrained
+        ? Math.min(totalHeight, Math.max(400, (typeof window !== 'undefined' ? window.innerHeight : 800) - 200))
+        : Math.min(totalHeight, maxHeightNum);
 
     // For small trees, render without virtualization for simplicity
     if (flatRows.length < VIRTUALIZE_THRESHOLD) {
@@ -312,7 +317,7 @@ export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({
         <Box sx={sx}>
             {/* @ts-expect-error react-window v1 class component vs React 19 JSX type */}
             <FixedSizeList
-                height={effectiveHeight}
+                height={maxVirtualHeight}
                 width="100%"
                 itemCount={flatRows.length}
                 itemSize={rowHeight}

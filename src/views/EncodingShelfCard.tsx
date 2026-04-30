@@ -84,6 +84,7 @@ import '../scss/EncodingShelf.scss';
 import { DictTable } from "../components/ComponentType";
 
 import { resolveChartFields, assembleVegaChart, resolveRecommendedChart } from '../app/utils';
+import { downscaleImageForAgent } from '../app/chartCache';
 import { EncodingBox } from './EncodingBox';
 
 import { channelGroups, CHART_TEMPLATES, getChartChannels, getChartTemplate } from '../components/ChartTemplates';
@@ -468,7 +469,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             chart.chartType, chart.encodingMap, activeFields, currentTable.rows,
             currentTable.metadata, 100, 80, false, chart.config)) : undefined;
         if (currentChartPng) {
-            const { downscaleImageForAgent } = await import('../app/chartCache');
             currentChartPng = await downscaleImageForAgent(currentChartPng);
         }
 
@@ -539,7 +539,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 currentTable.metadata, 100, 80, false, chart.config
             ));
             if (currentChartImage) {
-                const { downscaleImageForAgent } = await import('../app/chartCache');
                 currentChartImage = await downscaleImageForAgent(currentChartImage);
             }
         }

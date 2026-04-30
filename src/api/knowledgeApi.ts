@@ -10,7 +10,7 @@
  */
 
 import { fetchWithIdentity } from '../app/utils';
-import { parseApiResponse } from '../app/apiClient';
+import { apiRequest } from '../app/apiClient';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -76,47 +76,35 @@ export interface ExperienceContext {
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
 export async function fetchKnowledgeLimits(): Promise<KnowledgeLimits> {
-    const resp = await fetchWithIdentity('/api/knowledge/limits', {
+    const { data } = await apiRequest<{ limits: KnowledgeLimits }>('/api/knowledge/limits', {
         method: 'POST',
         headers: JSON_HEADERS,
         body: '{}',
     });
-    const body = await resp.json();
-    if (body.status === 'error') {
-        parseApiResponse(body, resp.status);
-    }
-    return body.limits;
+    return data.limits;
 }
 
 export async function listKnowledge(
     category: KnowledgeCategory,
 ): Promise<KnowledgeItem[]> {
-    const resp = await fetchWithIdentity('/api/knowledge/list', {
+    const { data } = await apiRequest<{ items?: KnowledgeItem[] }>('/api/knowledge/list', {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ category }),
     });
-    const body = await resp.json();
-    if (body.status === 'error') {
-        parseApiResponse(body, resp.status);
-    }
-    return body.items ?? [];
+    return data.items ?? [];
 }
 
 export async function readKnowledge(
     category: KnowledgeCategory,
     path: string,
 ): Promise<string> {
-    const resp = await fetchWithIdentity('/api/knowledge/read', {
+    const { data } = await apiRequest<{ content?: string }>('/api/knowledge/read', {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ category, path }),
     });
-    const body = await resp.json();
-    if (body.status === 'error') {
-        parseApiResponse(body, resp.status);
-    }
-    return body.content ?? '';
+    return data.content ?? '';
 }
 
 export async function writeKnowledge(
@@ -124,42 +112,34 @@ export async function writeKnowledge(
     path: string,
     content: string,
 ): Promise<void> {
-    const resp = await fetchWithIdentity('/api/knowledge/write', {
+    await apiRequest('/api/knowledge/write', {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ category, path, content }),
     });
-    const body = await resp.json();
-    parseApiResponse(body, resp.status);
 }
 
 export async function deleteKnowledge(
     category: KnowledgeCategory,
     path: string,
 ): Promise<void> {
-    const resp = await fetchWithIdentity('/api/knowledge/delete', {
+    await apiRequest('/api/knowledge/delete', {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ category, path }),
     });
-    const body = await resp.json();
-    parseApiResponse(body, resp.status);
 }
 
 export async function searchKnowledge(
     query: string,
     categories?: KnowledgeCategory[],
 ): Promise<KnowledgeSearchResult[]> {
-    const resp = await fetchWithIdentity('/api/knowledge/search', {
+    const { data } = await apiRequest<{ results?: KnowledgeSearchResult[] }>('/api/knowledge/search', {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ query, categories }),
     });
-    const body = await resp.json();
-    if (body.status === 'error') {
-        parseApiResponse(body, resp.status);
-    }
-    return body.results ?? [];
+    return data.results ?? [];
 }
 
 export interface DistillExperienceResult {
@@ -173,7 +153,7 @@ export async function distillExperience(
     categoryHint?: string,
     signal?: AbortSignal,
 ): Promise<DistillExperienceResult> {
-    const resp = await fetchWithIdentity('/api/knowledge/distill-experience', {
+    const { data } = await apiRequest<{ path: string; category: string }>('/api/knowledge/distill-experience', {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({
@@ -183,9 +163,5 @@ export async function distillExperience(
         }),
         signal,
     });
-    const body = await resp.json();
-    if (body.status === 'error') {
-        parseApiResponse(body, resp.status);
-    }
-    return { path: body.path, category: body.category };
+    return { path: data.path, category: data.category };
 }

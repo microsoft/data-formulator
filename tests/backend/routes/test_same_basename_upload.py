@@ -43,9 +43,12 @@ def tmp_workspace(tmp_path):
 
 @pytest.fixture()
 def client(tmp_workspace):
+    from data_formulator.error_handler import register_error_handlers
+
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.register_blueprint(tables_bp)
+    register_error_handlers(app)
     with patch("data_formulator.routes.tables._get_workspace", return_value=tmp_workspace):
         with app.test_client() as c:
             yield c
@@ -124,7 +127,7 @@ class TestPreviewIdVsWorkspaceIdMismatch:
 
         # -- first upload --
         resp = _upload(client, csv_bytes, "数据.csv", "数据.csv")
-        ws_name = resp.get_json()["table_name"]
+        ws_name = resp.get_json()["data"]["table_name"]
         assert ws_name == "数据_csv"
 
         # -- simulate the frontend orphan-cleanup check --
@@ -156,12 +159,12 @@ class TestSameBasenameDifferentExtension:
 
         resp1 = _upload(client, csv_bytes, "数据.csv", "数据.csv")
         assert resp1.get_json()["status"] == "success"
-        name1 = resp1.get_json()["table_name"]
+        name1 = resp1.get_json()["data"]["table_name"]
 
         # Simulate the Excel sheet upload: different table_name, different file
         resp2 = _upload(client, csv2_bytes, "数据_sheet1.csv", "数据.xlsx-Sheet1")
         assert resp2.get_json()["status"] == "success"
-        name2 = resp2.get_json()["table_name"]
+        name2 = resp2.get_json()["data"]["table_name"]
 
         assert name1 != name2, (
             f"Table names must differ: got {name1} and {name2}"
@@ -178,10 +181,10 @@ class TestSameBasenameDifferentExtension:
         csv2_bytes = "姓名,年龄\n王五,28\n".encode("utf-8")
 
         resp1 = _upload(client, csv_bytes, "数据.csv", "数据.csv")
-        name1 = resp1.get_json()["table_name"]
+        name1 = resp1.get_json()["data"]["table_name"]
 
         resp2 = _upload(client, csv2_bytes, "数据_sheet1.csv", "数据.xlsx-Sheet1")
-        name2 = resp2.get_json()["table_name"]
+        name2 = resp2.get_json()["data"]["table_name"]
 
         df1 = tmp_workspace.read_data_as_df(name1)
         df2 = tmp_workspace.read_data_as_df(name2)
@@ -206,7 +209,7 @@ class TestSameBasenameDifferentExtension:
         assert resp.get_json()["status"] == "success"
 
         tables = tmp_workspace.list_tables()
-        csv_name = resp.get_json()["table_name"]
+        csv_name = resp.get_json()["data"]["table_name"]
         assert csv_name in tables
         assert "数据_xlsx_sheet1" in tables, (
             "Other table must survive the first file's re-upload"

@@ -32,6 +32,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 import { getUrls, fetchWithIdentity } from '../app/utils';
+import { apiRequest, assertDownloadResponseOk } from '../app/apiClient';
 import { useDrag } from 'react-dnd';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
@@ -347,7 +348,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ table_name: tableId, delimiter }),
                 });
-                if (!response.ok) throw new Error('Export failed');
+                await assertDownloadResponseOk(response, 'Export failed');
                 const blob = await response.blob();
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);
@@ -387,24 +388,19 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         }
         
         // Use the SAMPLE_TABLE endpoint with appropriate ordering
-        fetchWithIdentity(getUrls().SAMPLE_TABLE, {
+        apiRequest<any>(getUrls().SAMPLE_TABLE, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(message),
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                setRowsToDisplay(data.rows || []);
-            }
-            // Set loading to false when done
+        .then(({ data }) => {
+            setRowsToDisplay(data.rows || []);
             setIsLoading(false);
         })
         .catch(error => {
             console.error('Error fetching sorted table data:', error);
-            // Ensure loading is set to false even on error
             setIsLoading(false);
         });
     };

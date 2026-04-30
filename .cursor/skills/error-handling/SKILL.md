@@ -30,17 +30,39 @@ errorHandler.ts
 MessageSnackbar ← dfSlice.messages
 ```
 
+## Protocol Snapshot
+
+Use this contract for all new or reworked DF APIs:
+
+| Scenario | HTTP | Shape |
+|----------|------|-------|
+| Non-streaming success | `200` | `{"status": "success", "data": ...}` |
+| Non-streaming business/validation error | `200` | `{"status": "error", "error": {"code", "message", "retry", "request_id"}}` |
+| Non-streaming auth/authorization error | `401` / `403` | same structured error body |
+| Streaming preflight error | `200` | `application/json` + `{"status": "error", "error": ...}` |
+| Streaming in-flight fatal error | `200` | NDJSON line: `{"type": "error", "error": ...}` |
+| No Flask route / too large / unhandled crash | `404` / `413` / `500` | transport-level error |
+
+Do not use HTTP `400`/`422` for application validation errors in new code.
+Do not convert in-flight NDJSON errors to `status: "error"`; once the stream has
+started, event `type` is the protocol discriminator.
+
 ## Backend: Adding a New API Endpoint
 
 ### HTTP Status Code Policy
 
-**All application-controlled responses return HTTP 200.** Errors are in the body (`status: "error"`).
-Only uncontrolled transport errors use non-200: `404` (no route), `413` (WSGI body limit), `500` (unhandled crash).
+**Application-controlled business and validation errors return HTTP 200** with
+`status: "error"` in the body. Only these use non-200:
+- `401`/`403` — auth errors (`AUTH_REQUIRED`, `AUTH_EXPIRED`, `ACCESS_DENIED`)
+- `404` — no matching Flask route
+- `413` — WSGI body limit exceeded
+- `500` — unhandled exception (program bug)
 
 ### Non-streaming endpoint
 
 ```python
 from data_formulator.errors import AppError, ErrorCode
+from data_formulator.error_handler import json_ok
 
 @bp.route('/my-endpoint', methods=['POST'])
 def my_endpoint():
@@ -56,12 +78,15 @@ def my_endpoint():
         from data_formulator.error_handler import classify_and_wrap_llm_error
         raise classify_and_wrap_llm_error(e) from e
 
-    return jsonify({"status": "ok", "data": result})
+    return json_ok(result)
 # Global handler returns: HTTP 200 + {"status": "error", "error": {code, message, retry}}
+# Auth errors (AUTH_REQUIRED/AUTH_EXPIRED/ACCESS_DENIED) return 401/403
 ```
 
-Existing routes may still return legacy-compatible `{"status": "error", "message": "..."}`
-or `error_message` bodies. Do not add new HTTP 4xx/5xx status tuples to those responses.
+Legacy `{"status": "error", "message": "..."}`, `error_message`, bare `{error}`,
+and `status: "ok"` responses are historical formats. Do not add new compatibility
+branches for them; migrate the route to `json_ok()` / `AppError` before using
+`apiRequest()`.
 
 ### Streaming endpoint
 
@@ -69,15 +94,18 @@ Validation MUST be outside the generator. Failures return 200 JSON (not NDJSON).
 
 ```python
 from data_formulator.errors import AppError, ErrorCode
-from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+from data_formulator.error_handler import (
+    classify_and_wrap_llm_error,
+    stream_error_event,
+    stream_preflight_error,
+)
 
 @bp.route('/my-stream', methods=['POST'])
 def my_stream():
-    # Validation outside generator — failures return 200 JSON
     if not request.is_json:
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.INVALID_REQUEST, "message": "Invalid request", "retry": False,
-        }})
+        return stream_preflight_error(
+            AppError(ErrorCode.INVALID_REQUEST, "Invalid request")
+        )
 
     content = request.get_json()
     client = get_client(content['model'])
@@ -87,10 +115,14 @@ def my_stream():
             for event in agent.run(...):
                 yield json.dumps(event, ensure_ascii=False) + "\n"
         except Exception as e:
-            yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+            yield stream_error_event(classify_and_wrap_llm_error(e))
 
     return Response(stream_with_context(generate()), mimetype='application/x-ndjson')
 ```
+
+Streaming runtime errors intentionally use `{"type": "error", "error": ...}`.
+They cannot use a top-level `status` envelope because the HTTP response and NDJSON
+event stream have already started.
 
 ## Frontend: Consuming an API
 
@@ -106,11 +138,15 @@ try {
         body: JSON.stringify(payload),
         headers: { 'Content-Type': 'application/json' },
     });
-    // use data
 } catch (e) {
     handleApiError(e, 'MyComponent');
 }
 ```
+
+For UI loading state, model the request lifecycle explicitly with
+`LoadableState` from `src/app/loadableState.ts`. Do not infer loading from
+missing data (`!data`), because failed requests may legitimately leave data
+empty while loading has ended.
 
 ### Streaming
 
@@ -122,10 +158,9 @@ try {
     for await (const event of streamRequest(url, options, abortController.signal)) {
         switch (event.type) {
             case 'text_delta':
-                // process text
                 break;
             case 'error':
-                // error arrived mid-stream — show inline in component
+                // Error arrived mid-stream — show inline in component.
                 break;
             case 'done':
                 break;
@@ -148,10 +183,10 @@ handleApiError(e, 'MyComponent', {
 
 ### Migration and special cases
 
-New or reworked DF API consumers should use `apiRequest()` / `streamRequest()`
-and `handleApiError()`. Existing `fetchWithIdentity()` calls can remain during
-incremental migration, but they must inspect `body.status === "error"` for
-application failures instead of relying only on `!response.ok`.
+DF API consumers should use `apiRequest()` / `streamRequest()` and
+`handleApiError()`. Direct `fetchWithIdentity()` is for lower-level client helpers
+and explicit protocol exceptions such as file downloads, blob/CSV responses,
+OIDC redirects, SPA fallback, or third-party URLs.
 
 Do not apply the normal JSON API protocol mechanically to file downloads / CSV
 streaming, SPA fallback, OIDC redirect flows, frontend fetches to third-party
@@ -164,6 +199,7 @@ protocol first, then preserve safe error bodies and avoid `str(exc)` exposure.
    ```python
    MY_NEW_ERROR = "MY_NEW_ERROR"
    ```
+   No HTTP mapping needed — defaults to HTTP 200. Only add to `ERROR_CODE_HTTP_STATUS` if it's an auth code.
 
 2. **Frontend mapping** — Add to `src/app/errorCodes.ts` `ERROR_CODE_I18N_MAP`:
    ```typescript
@@ -180,38 +216,38 @@ All streaming endpoints are now on the unified protocol:
 
 | Endpoint | Format | Notes |
 |----------|--------|-------|
-| `/data-agent-streaming` | NDJSON + `stream_error_event()` | Wraps events in `{token, status, result}` for OK; `{type:"error", error:{...}}` for errors |
+| `/data-agent-streaming` | NDJSON + `stream_error_event()` | Emits top-level `type` events; errors use `{type:"error", error:{...}}` |
 | `/get-recommendation-questions` | NDJSON + `stream_error_event()` | Was `error: {json}` prefix |
-| `/generate-report-chat` | Pure NDJSON + `stream_error_event()` | Was SSE `data: {json}` prefix. Frontend parser has backward-compat `data: ` fallback |
-| `/data-loading-chat` | NDJSON, `classify_llm_error()` for safe messages | `str(e)` removed |
+| `/generate-report-chat` | Pure NDJSON + `stream_error_event()` | Was SSE `data: {json}` prefix |
+| `/data-loading-chat` | NDJSON + `stream_error_event()` | `str(e)` removed |
 | `/clean-data-stream` | NDJSON + `stream_error_event()` | Was `\n{json}\n` format |
 
-Non-streaming endpoints (`derive-data`, `refine-data`, `sort-data`, `process-data-on-load`, `test-model`)
-all include `error_message` in error responses for frontend consumption.
+Non-streaming endpoints:
+
+| Endpoint | Error Format | Notes |
+|----------|-------------|-------|
+| `/chart-insight` | `AppError` → HTTP 200 + `{status:"error", error:{code,message,retry}}` | Fully migrated. Frontend uses `fetchChartInsight` rejected reducer. |
+| All migrated endpoints | `AppError` → HTTP 200 + unified error body | credentials, knowledge, sessions, tables, agents |
+| `/derive-data`, `/refine-data`, `/sort-data`, `/process-data-on-load`, `/test-model` | `json_ok()` / `AppError` | Migrated to new format |
 
 ## Empty Catch Policy
 
 Not all `.catch(() => {})` are bugs. Use this decision tree:
 
-1. **User-initiated action** (delete, refresh, submit) → **Must notify**: dispatch `addMessages` with error
-2. **Background/best-effort fetch** (connector list on mount, session list) → **OK to swallow**, but add a comment: `.catch(() => { /* connector list is best-effort */ })`
-3. **RTK thunks** → **Always add `.rejected` handler** with `addMessages` (use `type: 'warning'` for non-critical, `type: 'error'` for critical)
-4. **AbortError** → Always filter out: `if (action.error?.name !== 'AbortError')`
+1. **User-initiated action** (delete, refresh, submit) → must notify with `addMessages` or `handleApiError()`
+2. **Background/best-effort fetch** (connector list on mount, session list) → OK to swallow, but add a comment
+3. **RTK thunks** → always add `.rejected` handler with `addMessages`
+4. **AbortError** → filter out with `if (action.error?.name !== 'AbortError')`
 
 ## Frontend Stream Parsing Pattern
 
-When consuming a migrated streaming endpoint, check for **both** new and legacy formats:
+When consuming a migrated streaming endpoint, handle the current NDJSON event
+format directly:
 
 ```typescript
 const data = JSON.parse(line);
-// New unified format (from stream_error_event)
 if (data.type === 'error') {
-    const errMsg = data.error?.message || data.error_message || 'Unknown error';
-    // show to user...
-}
-// Legacy format (backward compat during migration)
-if (data.status === 'error') {
-    const errMsg = data.error_message || 'Unknown error';
+    const errMsg = data.error?.message || 'Unknown error';
     // show to user...
 }
 ```
@@ -233,11 +269,11 @@ def my_table_op():
 ```
 
 `classify_and_raise_db_error` maps common DB errors to appropriate `AppError` codes
-(all returned as HTTP 200 by the global handler):
-- "Table does not exist" → `TABLE_NOT_FOUND`
-- "Table already exists" → `INVALID_REQUEST`
-- "Permission denied" → `ACCESS_DENIED`
-- etc.
+(returned as HTTP 200 by the global handler, except ACCESS_DENIED → 403):
+- "Table does not exist" → `TABLE_NOT_FOUND` (HTTP 200)
+- "Table already exists" → `INVALID_REQUEST` (HTTP 200)
+- "Permission denied" → `ACCESS_DENIED` (HTTP 403)
+- Other → `CONNECTOR_ERROR` (HTTP 200)
 
 ## Backend: Connector Errors (data_connector.py)
 
@@ -247,23 +283,34 @@ For connector endpoints, use:
 from data_formulator.data_connector import classify_and_raise_connector_error
 
 except Exception as e:
-    classify_and_raise_connector_error(e)
+    classify_and_raise_connector_error(e, operation="preview")
 ```
 
-Maps auth/connection/validation errors to `AppError` with safe messages.
+Connector/DataLoader classification is intentionally simple and lives in
+`data_formulator.data_loader.connector_errors`. It maps common failures to a
+small stable set: `INVALID_REQUEST`, `CONNECTOR_AUTH_FAILED`, `AUTH_EXPIRED`,
+`ACCESS_DENIED`, `DB_CONNECTION_FAILED`, `DB_QUERY_ERROR`, `DATA_LOAD_ERROR`,
+or `CONNECTOR_ERROR`. Do not add endpoint-local string matching unless the
+classifier cannot reasonably cover the category.
+
+All JSON errors include `error.request_id` and an `X-Request-Id` response
+header. Show/copy this ID for users when reporting backend failures; do not
+show raw exception text in production.
 
 ## Debugging Error Propagation
 
 When an error isn't reaching the frontend:
 
-1. **Check backend logs** — Is the error logged? If not, there's a silent `except: pass` somewhere
-2. **Check response format** — Use browser DevTools Network tab to inspect the raw response:
-   - Non-streaming: Should include `{"status": "error", ...}`. New structured paths use `error: {"code": ..., "message": ...}`; legacy-compatible paths may use `message` / `error_message`.
-   - Streaming: Look for a line `{"type": "error", "error": {"code": ..., "message": ...}}`
-3. **Check Content-Type** — Streaming must be `application/x-ndjson`, not `application/json` or `text/event-stream`
-4. **Check frontend parser** — Is the consumer looking for `data.type === 'error'`? Or is it only checking `data.status === 'error'`?
-5. **Check global handler** — Verify `register_error_handlers(app)` is called in `app.py`
-6. **Check blueprint handlers** — Blueprint-level `errorhandler(Exception)` takes priority over global handlers. The `agent_bp.errorhandler(Exception)` has been removed; verify no new blueprint handlers have been added.
+1. **Check backend logs** — is the error logged?
+2. **Check response format**:
+   - Non-streaming: `{"status": "error", "error": {"code": ..., "message": ...}}`
+   - Streaming: one line `{"type": "error", "error": {"code": ..., "message": ...}}`
+3. **Check Content-Type** — streaming must be `application/x-ndjson`, not `application/json` or `text/event-stream`
+4. **Check frontend parser** — is the consumer looking for `data.type === 'error'`?
+5. **Check global handler** — verify `register_error_handlers(app)` is called in `app.py`
+6. **Check blueprint handlers** — blueprint-level `errorhandler(Exception)` takes priority over global handlers
+
+Legacy `message` / `error_message` bodies are protocol violations on migrated API paths.
 
 ## Log Sanitization (Sensitive Data in Server Logs)
 

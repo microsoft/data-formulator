@@ -34,6 +34,17 @@ export default [
       "no-useless-escape": "off",
       "prefer-const": "off",
       "react/no-unescaped-entities": "off",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='json'][callee.object.type='CallExpression'][callee.object.callee.name='fetchWithIdentity']",
+          message: "Use apiRequest() for JSON API calls instead of fetchWithIdentity().json().",
+        },
+        {
+          selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='json'][callee.object.type='AwaitExpression'][callee.object.argument.callee.name='fetchWithIdentity']",
+          message: "Use apiRequest() for JSON API calls instead of (await fetchWithIdentity()).json().",
+        },
+      ],
     }
   }
 ];

@@ -60,7 +60,8 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 
-import { getUrls, fetchWithIdentity } from '../app/utils';
+import { getUrls } from '../app/utils';
+import { apiRequest, ApiRequestError } from '../app/apiClient';
 import { useTranslation } from 'react-i18next';
 
 
@@ -150,24 +151,21 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
     let testModel = (model: ModelConfig) => {
         updateModelStatus(model, 'testing', "");
-        let message = {
+        apiRequest(getUrls().TEST_MODEL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', },
-            body: JSON.stringify({
-                model: model,
-            }),
-        };
-        fetchWithIdentity(getUrls().TEST_MODEL, {...message })
-            .then((response) => response.json())
-            .then((data) => {
-                let status = data["status"] || 'error';
-                updateModelStatus(model, status, data["message"] || "");
-                // Auto-select the first good model if none is currently selected
-                if (status === 'ok' && !tempSelectedModelId) {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model }),
+        })
+            .then(({ data }) => {
+                updateModelStatus(model, 'ok', data.message || "");
+                if (!tempSelectedModelId) {
                     setTempSelectedModelId(model.id);
                 }
             }).catch((error) => {
-                updateModelStatus(model, 'error', error.message)
+                const msg = error instanceof ApiRequestError
+                    ? error.apiError.message
+                    : error.message;
+                updateModelStatus(model, 'error', msg);
             });
     }
 
@@ -288,21 +286,19 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
 
                             const testAndAssignModel = (model: ModelConfig) => {
                                 updateModelStatus(model, 'testing', "");
-                                let message = {
+                                apiRequest(getUrls().TEST_MODEL, {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', },
-                                    body: JSON.stringify({ model: model }),
-                                };
-                                fetchWithIdentity(getUrls().TEST_MODEL, {...message })
-                                    .then((response) => response.json())
-                                    .then((data) => {
-                                        let status = data["status"] || 'error';
-                                        updateModelStatus(model, status, data["message"] || "");
-                                        if (status === 'ok') {
-                                            setTempSelectedModelId(id);
-                                        }
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ model }),
+                                })
+                                    .then(({ data }) => {
+                                        updateModelStatus(model, 'ok', data.message || "");
+                                        setTempSelectedModelId(id);
                                     }).catch((error) => {
-                                        updateModelStatus(model, 'error', error.message)
+                                        const msg = error instanceof ApiRequestError
+                                            ? error.apiError.message
+                                            : error.message;
+                                        updateModelStatus(model, 'error', msg);
                                     });
                             };
 

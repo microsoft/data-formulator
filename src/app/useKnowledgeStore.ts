@@ -13,6 +13,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { dfActions } from './dfSlice';
+import { handleApiError } from './errorHandler';
 import type { AppDispatch } from './store';
 import {
     listKnowledge,
@@ -201,13 +202,8 @@ export function useKnowledgeStore() {
             }));
             await fetchList('experiences');
             return true;
-        } catch {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: 'knowledge',
-                value: t('knowledge.failedToDistill'),
-            }));
+        } catch (error) {
+            handleApiError(error, 'knowledge');
             return false;
         }
     }, [dispatch, t, fetchList]);

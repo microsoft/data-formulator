@@ -81,6 +81,11 @@
       "requestTimedOut": "请求已超过 {{seconds}} 秒，模型仍未返回完整结果，前端已自动停止等待。可稍后重试，或在设置中调大「生成超时」后再试。",
       "suggestionsTimedOut": "AI 建议生成已超过 {{seconds}} 秒，模型仍未返回结果，前端已自动停止等待。可稍后重试，或在设置中调大「生成超时」后再试。",
       "formulationTimedOut": "数据生成已超过 {{seconds}} 秒，前端已自动停止等待。可尝试简化任务、更换模型，或在设置中调大「生成超时」后重试。"
-    }
+    },
+    "chartInsightTimedOut": "图表洞察已超过 {{seconds}} 秒，前端已自动停止等待。可稍后重试，或在设置中调大「生成超时」后再试。",
+    "chartInsightImageNotReady": "图表图像尚未渲染完成，请等待图表渲染后重试。",
+    "chartInsightFailed": "生成图表洞察失败，请检查模型配置。",
+    "globalModelListFailed": "加载服务器配置的模型失败。",
+    "availableModelsFailed": "检查服务器配置模型的连接状态失败。"
   }
 }
