@@ -94,7 +94,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import SaveIcon from '@mui/icons-material/Save';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { getUrls, fetchWithIdentity } from './utils';
+import { getUrls } from './utils';
+import { apiRequest } from './apiClient';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, saveWorkspaceState, onWorkspaceListChanged } from './workspaceService';
 import { getSerializableState } from './useAutoSave';
 import store, { persistor } from './store';
@@ -980,9 +981,8 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
     const [configLoaded, setConfigLoaded] = useState(false);
 
     useEffect(() => {
-        fetchWithIdentity(getUrls().APP_CONFIG)
-            .then(response => response.json())
-            .then(data => {
+        apiRequest(getUrls().APP_CONFIG)
+            .then(({ data }) => {
                 dispatch(dfActions.setServerConfig(data));
                 setConfigLoaded(true);
             });
@@ -1085,8 +1085,7 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
             dispatch(dfActions.setIdentity(resolvedIdentity));
 
             try {
-                const configResp = await fetchWithIdentity(getUrls().APP_CONFIG);
-                const refreshedConfig = await configResp.json();
+                const { data: refreshedConfig } = await apiRequest(getUrls().APP_CONFIG);
                 dispatch(dfActions.setServerConfig(refreshedConfig));
             } catch {
                 // App config was already loaded; connector status refresh is best-effort.

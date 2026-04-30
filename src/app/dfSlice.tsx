@@ -9,7 +9,8 @@ import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
 import { getDataTable } from '../views/ChartUtils';
-import { getTriggers, getUrls, computeContentHash, fetchWithIdentity } from './utils';
+import { getTriggers, getUrls, computeContentHash } from './utils';
+import { apiRequest } from './apiClient';
 import { deleteTablesFromWorkspace } from './workspaceService';
 import { getChartPngDataUrl } from './chartCache';
 import i18n from '../i18n';
@@ -342,23 +343,23 @@ export const fetchFieldSemanticType = createAsyncThunk(
 
         let state = getState() as DataFormulatorState;
 
-        let message = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', },
-            body: JSON.stringify({
-                token: Date.now(),
-                input_data: {name: table.id, rows: table.rows, virtual: table.virtual ? true : false},
-                model: dfSelectors.getActiveModel(state)
-            }),
-        };
-
-        // timeout the request after 20 seconds
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-        let response = await fetchWithIdentity(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {...message, signal: controller.signal })
-
-        return response.json();
+        try {
+            const { data } = await apiRequest(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    input_data: {name: table.id, rows: table.rows, virtual: table.virtual ? true : false},
+                    model: dfSelectors.getActiveModel(state)
+                }),
+                signal: controller.signal,
+            });
+            return data;
+        } finally {
+            clearTimeout(timeoutId);
+        }
     }
 );
 
@@ -369,30 +370,30 @@ export const fetchCodeExpl = createAsyncThunk(
 
         let state = getState() as DataFormulatorState;
 
-        let message = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', },
-            body: JSON.stringify({
-                token: Date.now(),
-                input_tables: derivedTable.derive?.source
-                                .map(tId => state.tables.find(t => t.id == tId) as DictTable)
-                                .map(t => ({ 
-                                    name: t.id, 
-                                    rows: t.rows, 
-                                    attached_metadata: t.attachedMetadata
-                                })),
-                code: derivedTable.derive?.code,
-                model: dfSelectors.getActiveModel(state)
-            }),
-        };
-
-        // timeout the request after 20 seconds
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-        let response = await fetchWithIdentity(getUrls().CODE_EXPL_URL, {...message, signal: controller.signal })
-
-        return response.json();
+        try {
+            const { data } = await apiRequest(getUrls().CODE_EXPL_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    input_tables: derivedTable.derive?.source
+                                    .map(tId => state.tables.find(t => t.id == tId) as DictTable)
+                                    .map(t => ({ 
+                                        name: t.id, 
+                                        rows: t.rows, 
+                                        attached_metadata: t.attachedMetadata
+                                    })),
+                    code: derivedTable.derive?.code,
+                    model: dfSelectors.getActiveModel(state)
+                }),
+                signal: controller.signal,
+            });
+            return data;
+        } finally {
+            clearTimeout(timeoutId);
+        }
     }
 );
 
@@ -449,7 +450,7 @@ export const fetchChartInsight = createAsyncThunk(
         }, timeoutSeconds * 1000);
 
         try {
-            const response = await fetchWithIdentity(getUrls().CHART_INSIGHT_URL, {
+            const { data } = await apiRequest(getUrls().CHART_INSIGHT_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -462,15 +463,7 @@ export const fetchChartInsight = createAsyncThunk(
                 signal: controller.signal,
             });
 
-            const result = await response.json();
-
-            // Backend now returns structured errors via AppError (status:"error")
-            if (result.status === 'error') {
-                const msg = result.error?.message ?? result.error_message ?? result.message ?? 'Chart insight failed';
-                throw new Error(msg);
-            }
-
-            return { title: result.title, takeaways: result.takeaways,
+            return { title: data.title, takeaways: data.takeaways,
                      chartId: args.chartId, insightKey: computeInsightKey(chart) };
         } finally {
             clearTimeout(timeoutId);
@@ -502,8 +495,8 @@ async function waitForChartImage(
 export const fetchGlobalModelList = createAsyncThunk(
     "dataFormulatorSlice/fetchGlobalModelList",
     async () => {
-        const response = await fetchWithIdentity(getUrls().LIST_GLOBAL_MODELS);
-        return response.json();
+        const { data } = await apiRequest(getUrls().LIST_GLOBAL_MODELS);
+        return data;
     }
 );
 
@@ -512,22 +505,20 @@ export const fetchGlobalModelList = createAsyncThunk(
 export const fetchAvailableModels = createAsyncThunk(
     "dataFormulatorSlice/fetchAvailableModels",
     async () => {
-        let message = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', },
-            body: JSON.stringify({
-                token: Date.now(),
-            }),
-        };
-
-        // Backend checks run in parallel with max_tokens=3 + 10s timeout per
-        // model, so total wall-clock ??slowest single model (~10s worst case).
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 30000)
 
-        let response = await fetchWithIdentity(getUrls().CHECK_AVAILABLE_MODELS, {...message, signal: controller.signal })
-
-        return response.json();
+        try {
+            const { data } = await apiRequest(getUrls().CHECK_AVAILABLE_MODELS, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+                signal: controller.signal,
+            });
+            return data;
+        } finally {
+            clearTimeout(timeoutId);
+        }
     }
 );
 
@@ -1472,7 +1463,7 @@ export const dataFormulatorSlice = createSlice({
             let tableId = action.meta.arg.id;
             let table = state.tables.find(t => t.id == tableId) as DictTable;
 
-            if (data["status"] == "ok" && data["result"].length > 0) {
+            if (data["result"]?.length > 0) {
                 let typeMap = data['result'][0]['fields'];
 
                 for (let name of table.names) {

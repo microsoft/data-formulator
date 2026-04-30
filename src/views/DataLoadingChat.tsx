@@ -32,6 +32,7 @@ import type { ModelConfig } from '../app/dfSlice';
 import { borderColor, transition, radius, shadow } from '../app/tokens';
 import exampleImageTable from '../assets/example-image-table.png';
 import { getUrls, fetchWithIdentity } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
 import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { createTableFromFromObjectArray } from '../data/utils';
@@ -675,12 +676,10 @@ export const DataLoadingChat: React.FC = () => {
         } else {
             const formData = new FormData();
             formData.append('file', file);
-            fetchWithIdentity(getUrls().SCRATCH_UPLOAD_URL, {
+            apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
                 method: 'POST', body: formData,
-            }).then(res => res.json()).then(data => {
-                if (data.status === 'ok') {
-                    setPrompt(prev => prev + (prev ? '\n' : '') + t('dataLoading.uploaded', { name: file.name }));
-                }
+            }).then(() => {
+                setPrompt(prev => prev + (prev ? '\n' : '') + t('dataLoading.uploaded', { name: file.name }));
             }).catch(err => console.error('Upload failed:', err));
         }
         if (fileInputRef.current) fileInputRef.current.value = '';

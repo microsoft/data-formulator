@@ -16,7 +16,8 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type, mapApiTypeToAppType } from '../data/types';
 import { inferTypeFromValueArray } from '../data/utils';
-import { fetchWithIdentity, getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
+import { getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
+import { apiRequest } from './apiClient';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
 import { tableDataDB } from './workspaceDB';
 import i18n from '../i18n';
@@ -142,37 +143,28 @@ export const loadTable = createAsyncThunk<
                         table_name: sourceTableRef.name,
                         import_options: importOptions || {},
                     };
-                    const response = await fetchWithIdentity(ingestUrl, {
+                    const { data } = await apiRequest(ingestUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(ingestBody),
                     });
-                    const data = await response.json();
-                    if (data.status === 'success') {
-                        // Now fetch the table info from workspace to get sample rows
-                        const listResp = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
-                        const listData = await listResp.json();
-                        if (listData.status === 'success') {
-                            const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
-                            if (wsTable) {
-                                finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
-                            }
-                        }
-                        const selectedRowLimit = Number(importOptions?.size);
-                        const loadedRowCount = Number(data.row_count);
-                        if (
-                            Number.isFinite(selectedRowLimit) && selectedRowLimit > 0 &&
-                            Number.isFinite(loadedRowCount) && loadedRowCount >= selectedRowLimit
-                        ) {
-                            dispatch(dfActions.addMessages({
-                                timestamp: Date.now(),
-                                type: 'warning',
-                                component: 'data loader',
-                                value: i18n.t('messages.rowLimitReached', { count: loadedRowCount.toLocaleString() }),
-                            }));
-                        }
-                    } else {
-                        throw new Error(data.message || 'Failed to ingest data');
+                    const { data: listData } = await apiRequest(getUrls().LIST_TABLES, { method: 'GET' });
+                    const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
+                    if (wsTable) {
+                        finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
+                    }
+                    const selectedRowLimit = Number(importOptions?.size);
+                    const loadedRowCount = Number(data.row_count);
+                    if (
+                        Number.isFinite(selectedRowLimit) && selectedRowLimit > 0 &&
+                        Number.isFinite(loadedRowCount) && loadedRowCount >= selectedRowLimit
+                    ) {
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(),
+                            type: 'warning',
+                            component: 'data loader',
+                            value: i18n.t('messages.rowLimitReached', { count: loadedRowCount.toLocaleString() }),
+                        }));
                     }
                 } catch (err) {
                     console.error('Failed to ingest database table to workspace:', err);
@@ -194,23 +186,14 @@ export const loadTable = createAsyncThunk<
                         formData.append('sheet_name', table.id.slice(srcName.length + 1));
                     }
                     
-                    const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {
+                    const { data } = await apiRequest(getUrls().CREATE_TABLE, {
                         method: 'POST',
                         body: formData,
                     });
-                    const data = await response.json();
-                    if (data.status === 'success') {
-                        // Fetch back from workspace to get proper virtual info
-                        const listResp = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
-                        const listData = await listResp.json();
-                        if (listData.status === 'success') {
-                            const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
-                            if (wsTable) {
-                                finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
-                            }
-                        }
-                    } else {
-                        throw new Error(data.message || 'Failed to upload file');
+                    const { data: listData } = await apiRequest(getUrls().LIST_TABLES, { method: 'GET' });
+                    const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
+                    if (wsTable) {
+                        finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
                     }
                 } catch (err) {
                     console.error('Failed to upload file to workspace:', err);
@@ -224,26 +207,20 @@ export const loadTable = createAsyncThunk<
                     formData.append('raw_data', compressedBlob, 'data.json.gz');
                     formData.append('table_name', table.id);
                     
-                    const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {
+                    const { data } = await apiRequest(getUrls().CREATE_TABLE, {
                         method: 'POST',
                         body: formData,
                     });
-                    const data = await response.json();
-                    if (data.status === 'success') {
-                        // Set virtual info from the response — virtual indicates server storage
-                        finalTable = {
-                            ...table,
-                            source: enrichedSource || table.source,
-                            virtual: {
-                                tableId: data.table_name,
-                                rowCount: data.row_count,
-                            },
-                            id: data.table_name, // use the sanitized name from server
-                            displayId: table.displayId || data.table_name,
-                        };
-                    } else {
-                        throw new Error(data.message || 'Failed to save data to workspace');
-                    }
+                    finalTable = {
+                        ...table,
+                        source: enrichedSource || table.source,
+                        virtual: {
+                            tableId: data.table_name,
+                            rowCount: data.row_count,
+                        },
+                        id: data.table_name,
+                        displayId: table.displayId || data.table_name,
+                    };
                 } catch (err) {
                     console.error('Failed to save data to workspace:', err);
                     throw err;
@@ -254,7 +231,7 @@ export const loadTable = createAsyncThunk<
             if (sourceType === 'database' && connectorId && sourceTableRef) {
                 // Database source: fetch data via data connector preview (no workspace save)
                 try {
-                    const response = await fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+                    const { data } = await apiRequest(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -268,34 +245,29 @@ export const loadTable = createAsyncThunk<
                             },
                         }),
                     });
-                    const data = await response.json();
-                    if (data.status === 'success') {
-                        const rows = data.rows;
-                        const names = rows.length > 0 ? Object.keys(rows[0]) : [];
-                        const totalCount: number = data.total_row_count ?? table.virtual?.rowCount ?? rows.length;
-                        originalRowCount = totalCount;
-                        truncated = rows.length < totalCount;
-                        
-                        finalTable = {
-                            ...table,
-                            source: enrichedSource || table.source,
-                            id: table.id,
-                            displayId: table.displayId || table.id,
-                            names,
-                            rows,
-                            metadata: names.reduce((acc: Record<string, any>, name: string) => ({
-                                ...acc,
-                                [name]: {
-                                    type: inferTypeFromValueArray(rows.map((r: any) => r[name])),
-                                    semanticType: "",
-                                    levels: []
-                                }
-                            }), {}),
-                            anchored: true,
-                        };
-                    } else {
-                        throw new Error(data.message || 'Failed to fetch data from external source');
-                    }
+                    const rows = data.rows;
+                    const names = rows.length > 0 ? Object.keys(rows[0]) : [];
+                    const totalCount: number = data.total_row_count ?? table.virtual?.rowCount ?? rows.length;
+                    originalRowCount = totalCount;
+                    truncated = rows.length < totalCount;
+                    
+                    finalTable = {
+                        ...table,
+                        source: enrichedSource || table.source,
+                        id: table.id,
+                        displayId: table.displayId || table.id,
+                        names,
+                        rows,
+                        metadata: names.reduce((acc: Record<string, any>, name: string) => ({
+                            ...acc,
+                            [name]: {
+                                type: inferTypeFromValueArray(rows.map((r: any) => r[name])),
+                                semanticType: "",
+                                levels: []
+                            }
+                        }), {}),
+                        anchored: true,
+                    };
                 } catch (err) {
                     console.error('Failed to fetch data from external source:', err);
                     throw err;

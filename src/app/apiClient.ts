@@ -68,10 +68,11 @@ export class ApiRequestError extends Error {
 /**
  * Parse a JSON response body into `{data, token}` or throw {@link ApiRequestError}.
  *
- * Handles both the new unified format and legacy variants:
- * - New:    `{status: "error", error: {code, message, ...}}`
- * - Legacy: `{status: "error", error_message: "..."}` or `{status: "error", message: "..."}`
- * - Data:   `{status: "ok", data: ...}` or `{status: "ok", result: ...}`
+ * Handles all format generations:
+ * - Phase 2+: `{status: "success", data: ...}`
+ * - Phase 1:  `{status: "ok", data: ...}` or `{status: "ok", result: ...}`
+ * - Error:    `{status: "error", error: {code, message, ...}}`
+ * - Legacy:   `{status: "error", error_message: "..."}` or `{status: "error", message: "..."}`
  */
 export function parseApiResponse<T = any>(
     body: any,
@@ -147,15 +148,42 @@ export function parseStreamLine<T = any>(line: string): StreamEvent<T> | null {
 /**
  * Non-streaming API request with unified error handling.
  *
- * Automatically parses the JSON response and throws {@link ApiRequestError}
- * on error status.
+ * Error detection uses a two-layer approach:
+ * 1. HTTP status — `!response.ok` catches auth errors (401/403) and
+ *    infrastructure failures (500).
+ * 2. Body status — `body.status === "error"` catches all application-level
+ *    errors (returned as HTTP 200 by the backend).
+ *
+ * On success, returns `{data, token}`.  On failure, throws
+ * {@link ApiRequestError} with the structured error payload.
+ *
+ * **Streaming endpoints should use {@link streamRequest} instead.**
  */
 export async function apiRequest<T = any>(
     url: string,
     options?: RequestInit,
 ): Promise<{ data: T; token?: string }> {
     const response = await fetchWithIdentity(url, options);
-    const body = await response.json();
+
+    let body: any;
+    try {
+        body = await response.json();
+    } catch {
+        if (!response.ok) {
+            throw new ApiRequestError(
+                { code: 'HTTP_ERROR', message: `HTTP ${response.status}`, retry: false },
+                response.status,
+            );
+        }
+        throw new ApiRequestError(
+            { code: 'PARSE_ERROR', message: 'Invalid JSON response', retry: false },
+            response.status,
+        );
+    }
+
+    // parseApiResponse handles both HTTP-level and body-level errors:
+    // - If body.status === 'error', it throws ApiRequestError regardless of HTTP status
+    // - If body.status is 'success' or 'ok', it extracts data
     return parseApiResponse<T>(body, response.status);
 }
 

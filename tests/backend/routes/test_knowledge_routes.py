@@ -60,8 +60,8 @@ class TestKnowledgeList:
                            json={"category": "rules"})
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["items"] == []
+        assert data["status"] == "success"
+        assert data["data"]["items"] == []
 
     def test_list_with_entries(self, client, tmp_path):
         rules_dir = tmp_path / "knowledge" / "rules"
@@ -71,9 +71,9 @@ class TestKnowledgeList:
         resp = client.post("/api/knowledge/list",
                            json={"category": "rules"})
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert len(data["items"]) == 1
-        assert data["items"][0]["title"] == "ROI Rule"
+        assert data["status"] == "success"
+        assert len(data["data"]["items"]) == 1
+        assert data["data"]["items"][0]["title"] == "ROI Rule"
 
     def test_list_invalid_category(self, client):
         resp = client.post("/api/knowledge/list",
@@ -96,8 +96,8 @@ class TestKnowledgeRead:
         resp = client.post("/api/knowledge/read",
                            json={"category": "rules", "path": "roi.md"})
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert "ROI = (revenue - cost) / cost" in data["content"]
+        assert data["status"] == "success"
+        assert "ROI = (revenue - cost) / cost" in data["data"]["content"]
 
     def test_read_nonexistent(self, client):
         resp = client.post("/api/knowledge/read",
@@ -118,7 +118,7 @@ class TestKnowledgeWrite:
                            json={"category": "rules", "path": "new.md",
                                  "content": SAMPLE_MD})
         data = resp.get_json()
-        assert data["status"] == "ok"
+        assert data["status"] == "success"
         assert (tmp_path / "knowledge" / "rules" / "new.md").exists()
 
     def test_write_updates_file(self, client, tmp_path):
@@ -155,7 +155,7 @@ class TestKnowledgeDelete:
         resp = client.post("/api/knowledge/delete",
                            json={"category": "rules", "path": "del.md"})
         data = resp.get_json()
-        assert data["status"] == "ok"
+        assert data["status"] == "success"
         assert not (rules_dir / "del.md").exists()
 
     def test_delete_nonexistent(self, client):
@@ -174,15 +174,15 @@ class TestKnowledgeSearch:
         resp = client.post("/api/knowledge/search",
                            json={"query": "ROI"})
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert len(data["results"]) >= 1
+        assert data["status"] == "success"
+        assert len(data["data"]["results"]) >= 1
 
     def test_search_empty_query(self, client):
         resp = client.post("/api/knowledge/search",
                            json={"query": ""})
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["results"] == []
+        assert data["status"] == "success"
+        assert data["data"]["results"] == []
 
     def test_search_invalid_category(self, client):
         resp = client.post("/api/knowledge/search",
@@ -198,8 +198,8 @@ class TestKnowledgeSearch:
         resp = client.post("/api/knowledge/search",
                            json={"query": "ROI", "categories": ["skills"]})
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert len(data["results"]) == 0
+        assert data["status"] == "success"
+        assert len(data["data"]["results"]) == 0
 
 
 EXPERIENCE_CONTEXT = {
@@ -238,9 +238,9 @@ class TestDistillExperience:
             })
 
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["category"] == "experiences"
-        assert (tmp_path / "knowledge" / "experiences" / data["path"]).exists()
+        assert data["status"] == "success"
+        assert data["data"]["category"] == "experiences"
+        assert (tmp_path / "knowledge" / "experiences" / data["data"]["path"]).exists()
         assert not (tmp_path / "agent-logs").exists()
         run_from_context.assert_called_once()
 

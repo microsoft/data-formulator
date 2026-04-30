@@ -34,8 +34,12 @@ MessageSnackbar ← dfSlice.messages
 
 ### HTTP Status Code Policy
 
-**All application-controlled responses return HTTP 200.** Errors are in the body (`status: "error"`).
-Only uncontrolled transport errors use non-200: `404` (no route), `413` (WSGI body limit), `500` (unhandled crash).
+**All application-controlled errors return HTTP 200** with `status: "error"` in the body.
+Only these use non-200:
+- `401`/`403` — auth errors (`AUTH_REQUIRED`, `AUTH_EXPIRED`, `ACCESS_DENIED`)
+- `404` — no matching Flask route
+- `413` — WSGI body limit exceeded
+- `500` — unhandled exception (program bug)
 
 ### Non-streaming endpoint
 
@@ -56,8 +60,9 @@ def my_endpoint():
         from data_formulator.error_handler import classify_and_wrap_llm_error
         raise classify_and_wrap_llm_error(e) from e
 
-    return jsonify({"status": "ok", "data": result})
+    return json_ok(result)
 # Global handler returns: HTTP 200 + {"status": "error", "error": {code, message, retry}}
+# Auth errors (AUTH_REQUIRED/AUTH_EXPIRED/ACCESS_DENIED) return 401/403
 ```
 
 Existing routes may still return legacy-compatible `{"status": "error", "message": "..."}`
@@ -164,6 +169,7 @@ protocol first, then preserve safe error bodies and avoid `str(exc)` exposure.
    ```python
    MY_NEW_ERROR = "MY_NEW_ERROR"
    ```
+   No HTTP mapping needed — defaults to HTTP 200. Only add to `ERROR_CODE_HTTP_STATUS` if it's an auth code.
 
 2. **Frontend mapping** — Add to `src/app/errorCodes.ts` `ERROR_CODE_I18N_MAP`:
    ```typescript
@@ -190,8 +196,9 @@ Non-streaming endpoints:
 
 | Endpoint | Error Format | Notes |
 |----------|-------------|-------|
-| `/chart-insight` | `AppError` → unified `{status:"error", error:{code,message,retry}}` | **Fully migrated** (Phase 1). Removed `token`. Frontend uses `fetchChartInsight` rejected reducer with `TimeoutError`/`AbortError`/business error discrimination. Tests: `test_chart_insight_route.py` |
-| `/derive-data`, `/refine-data`, `/sort-data`, `/process-data-on-load`, `/test-model` | Legacy `{status:"error", error_message:"..."}` | Pending migration to `AppError` (Phase 2) |
+| `/chart-insight` | `AppError` → HTTP 200 + `{status:"error", error:{code,message,retry}}` | **Fully migrated**. Frontend uses `fetchChartInsight` rejected reducer. |
+| All migrated endpoints | `AppError` → HTTP 200 + unified error body | credentials, knowledge, sessions, tables, agents |
+| `/derive-data`, `/refine-data`, `/sort-data`, `/process-data-on-load`, `/test-model` | `json_ok()` / `AppError` | Migrated to new format |
 
 ## Empty Catch Policy
 
@@ -237,11 +244,11 @@ def my_table_op():
 ```
 
 `classify_and_raise_db_error` maps common DB errors to appropriate `AppError` codes
-(all returned as HTTP 200 by the global handler):
-- "Table does not exist" → `TABLE_NOT_FOUND`
-- "Table already exists" → `INVALID_REQUEST`
-- "Permission denied" → `ACCESS_DENIED`
-- etc.
+(returned as HTTP 200 by the global handler, except ACCESS_DENIED → 403):
+- "Table does not exist" → `TABLE_NOT_FOUND` (HTTP 200)
+- "Table already exists" → `INVALID_REQUEST` (HTTP 200)
+- "Permission denied" → `ACCESS_DENIED` (HTTP 403)
+- Other → `CONNECTOR_ERROR` (HTTP 200)
 
 ## Backend: Connector Errors (data_connector.py)
 

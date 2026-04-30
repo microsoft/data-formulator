@@ -63,10 +63,13 @@ def _mock_workspace():
 
 
 def _build_app():
+    from data_formulator.error_handler import register_error_handlers
+
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.config["CLI_ARGS"] = {"max_display_rows": 100}
     app.register_blueprint(agent_bp)
+    register_error_handlers(app)
     return app
 
 
@@ -130,8 +133,8 @@ class TestDeriveDataRepairLoop:
                     resp = self._post_derive(client, _derive_data_payload())
 
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["results"][0]["status"] == "ok"
+        assert data["status"] == "success"
+        assert data["data"]["results"][0]["status"] == "ok"
         mock_agent.followup.assert_called_once()
 
     def test_repair_loop_skips_when_status_is_ok(self) -> None:
@@ -154,7 +157,7 @@ class TestDeriveDataRepairLoop:
                     resp = self._post_derive(client, _derive_data_payload())
 
         data = resp.get_json()
-        assert data["results"][0]["status"] == "ok"
+        assert data["data"]["results"][0]["status"] == "ok"
         mock_agent.followup.assert_not_called()
 
     def test_empty_results_does_not_crash(self) -> None:
@@ -177,8 +180,8 @@ class TestDeriveDataRepairLoop:
                     resp = self._post_derive(client, _derive_data_payload())
 
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["results"] == []
+        assert data["status"] == "success"
+        assert data["data"]["results"] == []
 
     def test_followup_exception_is_caught(self) -> None:
         """If agent.followup() raises, the error should be caught and a safe
@@ -202,8 +205,8 @@ class TestDeriveDataRepairLoop:
                     resp = self._post_derive(client, _derive_data_payload())
 
         data = resp.get_json()
-        assert data["status"] == "ok"
-        result = data["results"][0]
+        assert data["status"] == "success"
+        result = data["data"]["results"][0]
         assert result["status"] == "error"
         # classify_llm_error maps "timeout" → safe timeout message
         assert "timed out" in result["content"].lower() or "timeout" in result["content"].lower()
@@ -246,7 +249,7 @@ class TestRefineDataRepairLoop:
                     resp = self._post_refine(client, _refine_data_payload())
 
         data = resp.get_json()
-        assert data["results"][0]["status"] == "ok"
+        assert data["data"]["results"][0]["status"] == "ok"
         assert mock_agent.followup.call_count == 2
 
     def test_empty_results_does_not_crash(self) -> None:
@@ -268,8 +271,8 @@ class TestRefineDataRepairLoop:
                     resp = self._post_refine(client, _refine_data_payload())
 
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["results"] == []
+        assert data["status"] == "success"
+        assert data["data"]["results"] == []
 
     def test_followup_exception_in_repair_is_caught(self) -> None:
         """Followup exception returns a safe classified message, not raw exception text."""
@@ -294,7 +297,7 @@ class TestRefineDataRepairLoop:
                     resp = self._post_refine(client, _refine_data_payload())
 
         data = resp.get_json()
-        result = data["results"][0]
+        result = data["data"]["results"][0]
         assert result["status"] == "error"
         # Raw exception text must not appear
         assert "API key expired" not in result["content"]

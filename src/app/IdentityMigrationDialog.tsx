@@ -27,7 +27,8 @@ import {
     Box,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { fetchWithIdentity, getUrls } from "./utils";
+import { getUrls } from "./utils";
+import { apiRequest } from "./apiClient";
 import { persistor } from "./store";
 
 export interface MigrationDialogProps {
@@ -51,11 +52,10 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetchWithIdentity(
+                const { data } = await apiRequest<{ sessions?: any[] }>(
                     `${getUrls().SESSION_LIST}?source_identity=${encodeURIComponent(sourceIdentity)}`,
                 );
-                const data = await res.json();
-                const count = data.status === "ok" ? (data.sessions?.length ?? 0) : 0;
+                const count = data.sessions?.length ?? 0;
                 setWorkspaceCount(count);
                 if (count === 0) {
                     onDone();
@@ -69,18 +69,11 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
     }, []);
 
     const cleanupAnonymous = useCallback(async () => {
-        const resp = await fetchWithIdentity("/api/sessions/cleanup-anonymous", {
+        await apiRequest("/api/sessions/cleanup-anonymous", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ source_identity: sourceIdentity }),
         });
-        if (!resp.ok) {
-            throw new Error(`cleanup-anonymous failed: HTTP ${resp.status}`);
-        }
-        const payload = await resp.json();
-        if (payload?.status !== "ok") {
-            throw new Error(payload?.message || "cleanup-anonymous failed");
-        }
     }, [sourceIdentity]);
 
     const finishMigration = useCallback(async () => {
@@ -93,22 +86,16 @@ export const IdentityMigrationDialog: FC<MigrationDialogProps> = ({
         setMigrating(true);
         setError(null);
         try {
-            const res = await fetchWithIdentity("/api/sessions/migrate", {
+            const { data } = await apiRequest<{ moved?: any[] }>("/api/sessions/migrate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ source_identity: sourceIdentity }),
             });
-            const data = await res.json();
-            if (data.status === "ok") {
-                const count = data.moved?.length ?? 0;
-                setSuccess(t("auth.migration.success", { count }));
-                // Cleanup is best-effort; migrate already moved/deleted data
-                try { await cleanupAnonymous(); } catch { /* ignore */ }
-                setTimeout(finishMigration, 1200);
-            } else {
-                setError(data.message || "Unknown error");
-                setMigrating(false);
-            }
+            const count = data.moved?.length ?? 0;
+            setSuccess(t("auth.migration.success", { count }));
+            // Cleanup is best-effort; migrate already moved/deleted data
+            try { await cleanupAnonymous(); } catch { /* ignore */ }
+            setTimeout(finishMigration, 1200);
         } catch (err: any) {
             setError(err?.message || "Network error");
             setMigrating(false);

@@ -15,9 +15,12 @@ pytestmark = [pytest.mark.backend]
 
 @pytest.fixture
 def app():
+    from data_formulator.error_handler import register_error_handlers
+
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.register_blueprint(session_bp)
+    register_error_handlers(_app)
     return _app
 
 
@@ -49,8 +52,8 @@ class TestMigrateRoute:
 
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["moved"] == ["ws_a", "ws_b"]
+        assert data["status"] == "success"
+        assert data["data"]["moved"] == ["ws_a", "ws_b"]
         target_mgr.move_workspaces_from.assert_called_once_with(source_mgr.root)
         source_mgr.delete_all_workspaces.assert_called_once()
 
@@ -61,7 +64,7 @@ class TestMigrateRoute:
                 json={"source_identity": "browser:xyz"},
             )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 403
         assert resp.get_json()["status"] == "error"
 
 
@@ -81,8 +84,8 @@ class TestCleanupAnonymousRoute:
 
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["deleted"] == 3
+        assert data["status"] == "success"
+        assert data["data"]["deleted"] == 3
         source_mgr.delete_all_workspaces.assert_called_once()
 
     def test_cleanup_rejects_non_user(self, client):
@@ -92,5 +95,5 @@ class TestCleanupAnonymousRoute:
                 json={"source_identity": "browser:xyz"},
             )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 403
         assert resp.get_json()["status"] == "error"

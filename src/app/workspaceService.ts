@@ -13,6 +13,7 @@
  */
 
 import { fetchWithIdentity, getUrls } from './utils';
+import { apiRequest } from './apiClient';
 import {
     workspaceDB,
     tableDataDB,
@@ -64,9 +65,8 @@ export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
             saved_at: e.updatedAt,
         }));
     }
-    const res = await fetchWithIdentity(getUrls().SESSION_LIST);
-    const data = await res.json();
-    return data.status === 'ok' ? data.sessions : [];
+    const { data } = await apiRequest(getUrls().SESSION_LIST);
+    return data.sessions ?? [];
 }
 
 /** Load a workspace's saved state. Returns null if not found. */
@@ -77,13 +77,12 @@ export async function loadWorkspace(id: string): Promise<{ state: Record<string,
         if (!entry?.state) return null;
         return { state: entry.state as Record<string, any>, displayName: entry.displayName };
     }
-    const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
+    const { data } = await apiRequest(getUrls().SESSION_LOAD, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
     });
-    const data = await res.json();
-    if (data.status !== 'ok' || !data.state) return null;
+    if (!data.state) return null;
     const savedWs = data.state.activeWorkspace;
     return { state: data.state, displayName: savedWs?.displayName || id };
 }
@@ -96,7 +95,7 @@ export async function deleteWorkspace(id: string): Promise<void> {
         _notifyListChanged();
         return;
     }
-    await fetchWithIdentity(getUrls().SESSION_DELETE, {
+    await apiRequest(getUrls().SESSION_DELETE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
@@ -112,7 +111,7 @@ export async function updateWorkspaceMeta(id: string, displayName: string): Prom
         _notifyListChanged();
         return;
     }
-    await fetchWithIdentity(getUrls().SESSION_UPDATE_META, {
+    await apiRequest(getUrls().SESSION_UPDATE_META, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, display_name: displayName }),
@@ -143,7 +142,7 @@ export async function saveWorkspaceState(state: Record<string, unknown>): Promis
         _notifyListChanged();
         return;
     }
-    await fetchWithIdentity(getUrls().SESSION_SAVE, {
+    await apiRequest(getUrls().SESSION_SAVE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: ws.id, state }),
@@ -176,13 +175,12 @@ export async function exportWorkspace(id: string): Promise<Blob> {
         return exportWorkspaceToZip(id);
     }
     // Server: load state, then export via server endpoint
-    const res = await fetchWithIdentity(getUrls().SESSION_LOAD, {
+    const { data } = await apiRequest<{ state: any }>(getUrls().SESSION_LOAD, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
     });
-    const data = await res.json();
-    if (data.status !== 'ok' || !data.state) {
+    if (!data.state) {
         throw new Error('Failed to load workspace for export');
     }
     const exportRes = await fetchWithIdentity(getUrls().SESSION_EXPORT, {
@@ -208,12 +206,10 @@ export async function importWorkspace(
     // Server: upload zip
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetchWithIdentity(getUrls().SESSION_IMPORT, {
+    const { data } = await apiRequest<{ state: any }>(getUrls().SESSION_IMPORT, {
         method: 'POST',
         body: formData,
     });
-    const data = await res.json();
-    if (data.status !== 'ok') throw new Error(data.message || 'Import failed');
     return data.state;
 }
 
@@ -230,7 +226,7 @@ export async function deleteTableFromWorkspace(tableId: string): Promise<void> {
         }
         return;
     }
-    await fetchWithIdentity(getUrls().DELETE_TABLE, {
+    await apiRequest(getUrls().DELETE_TABLE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ table_name: tableId }),

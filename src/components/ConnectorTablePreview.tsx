@@ -36,6 +36,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import { DataFrameTable } from '../views/DataFrameTable';
 import { RowLimitUnderlineSelect } from './RowLimitUnderlineSelect';
 import { fetchWithIdentity, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -234,7 +235,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
         const cacheKey = `${connectorId}:${sourceTable.id}:${columnName}`;
         setFilterOptionsLoading(cacheKey);
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.COLUMN_VALUES, {
+            const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.COLUMN_VALUES, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -245,11 +246,8 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     limit: 50,
                 }),
             });
-            const data = await resp.json();
-            if (data.status === 'ok') {
-                setFilterOptionsMap(prev => ({ ...prev, [cacheKey]: data.options || [] }));
-                setFilterOptionsMore(prev => ({ ...prev, [cacheKey]: !!data.has_more }));
-            }
+            setFilterOptionsMap(prev => ({ ...prev, [cacheKey]: data.options || [] }));
+            setFilterOptionsMore(prev => ({ ...prev, [cacheKey]: !!data.has_more }));
         } catch { /* best-effort */ } finally {
             setFilterOptionsLoading(cur => cur === cacheKey ? null : cur);
         }
@@ -260,7 +258,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     const handleRefreshPreview = useCallback(() => {
         const validFilters = coerceFilters(filters, columns);
         setRefreshing(true);
-        fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+        apiRequest<any>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -272,8 +270,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                 },
             }),
         })
-            .then(r => r.json())
-            .then(data => {
+            .then(({ data }) => {
                 if (data.columns && data.rows) {
                     onRefreshPreview?.(data.rows, data.columns, data.total_row_count ?? null);
                 }

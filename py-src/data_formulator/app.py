@@ -241,7 +241,8 @@ _safety_checks()
 @app.route('/api/example-datasets')
 def get_sample_datasets():
     from data_formulator.example_datasets_config import EXAMPLE_DATASETS
-    return flask.jsonify(EXAMPLE_DATASETS)
+    from data_formulator.error_handler import json_ok
+    return json_ok(EXAMPLE_DATASETS)
 
 
 @app.route("/", defaults={"path": ""})
@@ -257,10 +258,11 @@ def get_auth_info():
     active provider (OIDC PKCE, GitHub redirect, transparent, or none).
     """
     from data_formulator.auth.identity import get_active_provider
+    from data_formulator.error_handler import json_ok
     provider = get_active_provider()
     if provider:
-        return flask.jsonify(provider.get_auth_info())
-    return flask.jsonify({"action": "none"})
+        return json_ok(provider.get_auth_info())
+    return json_ok({"action": "none"})
 
 
 @app.route('/api/app-config', methods=['GET'])
@@ -338,7 +340,8 @@ def get_app_config():
             for name, hint in DISABLED_LOADERS.items()
         }
 
-    return flask.jsonify(config)
+    from data_formulator.error_handler import json_ok
+    return json_ok(config)
 
 
 def parse_args() -> argparse.Namespace:

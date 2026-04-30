@@ -4,7 +4,8 @@
 import { useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from './dfSlice';
-import { fetchWithIdentity, getUrls } from './utils';
+import { getUrls } from './utils';
+import { apiRequest } from './apiClient';
 import { updateWorkspaceMeta } from './workspaceService';
 import { AppDispatch } from './store';
 
@@ -60,7 +61,7 @@ export function useWorkspaceAutoName() {
 
         (async () => {
             try {
-                const res = await fetchWithIdentity(getUrls().WORKSPACE_SUMMARY, {
+                const { data } = await apiRequest<{ summary: string }>(getUrls().WORKSPACE_SUMMARY, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -71,8 +72,7 @@ export function useWorkspaceAutoName() {
                         },
                     }),
                 });
-                const data = await res.json();
-                if (data.status === 'ok' && data.summary) {
+                if (data.summary) {
                     dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: data.summary }));
                     updateWorkspaceMeta(wsId, data.summary).catch(() => {});
                 }

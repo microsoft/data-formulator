@@ -261,8 +261,8 @@ class TestScratchRoutesConfinedMigration:
         )
         assert resp.status_code == 200
         body = resp.get_json()
-        assert body["status"] == "ok"
-        assert body["path"].startswith("scratch/")
+        assert body["status"] == "success"
+        assert body["data"]["path"].startswith("scratch/")
 
     def test_scratch_upload_traversal_sanitized(self, client, tmp_workspace):
         import io

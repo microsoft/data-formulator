@@ -7,6 +7,7 @@ import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartI
 import { AppDispatch } from './store';
 import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../components/ComponentType';
 import { getUrls, getTriggers, fetchWithIdentity, translateBackend } from './utils';
+import { apiRequest } from './apiClient';
 
 export type IdeaItem = {
     text: string;
@@ -443,40 +444,13 @@ export function useFormulateData() {
         let timedOut = false;
         const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
-        fetchWithIdentity(engine, {
+        apiRequest(engine, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(messageBody),
             signal: controller.signal,
         })
-        .then((response: Response) => {
-            if (!response.ok) {
-                return response.text().then(text => {
-                    try {
-                        const errorData = JSON.parse(text);
-                        throw new Error(errorData.error_message || errorData.error || `Server error (${response.status})`);
-                    } catch (parseError) {
-                        if (parseError instanceof SyntaxError) {
-                            throw new Error(`Server error (${response.status}): The server returned an unexpected response.`);
-                        }
-                        throw parseError;
-                    }
-                });
-            }
-            return response.json();
-        })
-        .then((data) => {
-            if (data.status === "error" && data.error_message) {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": `Data formulation failed: ${data.error_message}`,
-                }));
-                onError?.(new Error(data.error_message));
-                return;
-            }
-
+        .then(({ data, token: responseToken }) => {
             if (!data.results || data.results.length === 0) {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -488,7 +462,7 @@ export function useFormulateData() {
                 return;
             }
 
-            if (data["token"] !== token) {
+            if (responseToken !== token) {
                 onError?.(new Error("Token mismatch"));
                 return;
             }

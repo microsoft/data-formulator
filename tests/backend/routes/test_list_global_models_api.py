@@ -45,7 +45,9 @@ class TestListGlobalModelsEndpoint:
         with patch("data_formulator.routes.agents.model_registry", registry):
             resp = flask_client.get("/api/agent/list-global-models")
             assert resp.status_code == 200
-            data = json.loads(resp.data)
+            body = json.loads(resp.data)
+            assert body["status"] == "success"
+            data = body["data"]
             assert len(data) == 3  # gpt-4o, gpt-4o-mini, claude-sonnet-4-20250514
 
     @patch.dict(os.environ, SAMPLE_ENV, clear=True)
@@ -54,7 +56,8 @@ class TestListGlobalModelsEndpoint:
         required = {"id", "endpoint", "model", "api_base", "api_version", "is_global"}
         with patch("data_formulator.routes.agents.model_registry", registry):
             resp = flask_client.get("/api/agent/list-global-models")
-            data = json.loads(resp.data)
+            body = json.loads(resp.data)
+            data = body["data"]
             for item in data:
                 assert required.issubset(item.keys())
 
@@ -73,7 +76,8 @@ class TestListGlobalModelsEndpoint:
         registry = ModelRegistry()
         with patch("data_formulator.routes.agents.model_registry", registry):
             resp = flask_client.get("/api/agent/list-global-models")
-            data = json.loads(resp.data)
+            body = json.loads(resp.data)
+            data = body["data"]
             assert all(m["is_global"] is True for m in data)
 
     @patch.dict(os.environ, {}, clear=True)
@@ -81,5 +85,6 @@ class TestListGlobalModelsEndpoint:
         registry = ModelRegistry()
         with patch("data_formulator.routes.agents.model_registry", registry):
             resp = flask_client.get("/api/agent/list-global-models")
-            data = json.loads(resp.data)
-            assert data == []
+            body = json.loads(resp.data)
+            assert body["status"] == "success"
+            assert body["data"] == []

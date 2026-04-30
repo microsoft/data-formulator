@@ -66,6 +66,7 @@ import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
@@ -397,9 +398,8 @@ const DataSourceSidebarPanel: React.FC<{
 
     const fetchConnectors = useCallback(() => {
         setLoadingConnectors(true);
-        fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
-            .then(r => r.json())
-            .then(data => {
+        apiRequest(CONNECTOR_URLS.LIST, { method: 'GET' })
+            .then(({ data }) => {
                 const list: ConnectorInstance[] = data.connectors || [];
                 setConnectors(list);
             })
@@ -439,13 +439,12 @@ const DataSourceSidebarPanel: React.FC<{
         fetchingRef.current.add(syncKey);
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: true }));
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA, {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connectorId }),
             });
-            const data = await resp.json();
-            if (data.status === 'ok' && data.tree) {
+            if (data.tree) {
                 setCatalogCache(prev => ({
                     ...prev,
                     [connectorId]: { tree: data.tree as CatalogTreeNode[], fetchedAt: Date.now() },
@@ -458,18 +457,12 @@ const DataSourceSidebarPanel: React.FC<{
                         value: translateBackend(data.message, data.message_code, data.message_params),
                     }));
                 }
-            } else if (data.status === 'error') {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'data-source-sidebar',
-                    value: data.error?.message || t('dataLoading.syncPartial'),
-                }));
             }
-        } catch {
+        } catch (e: any) {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'warning',
                 component: 'data-source-sidebar',
-                value: t('dataLoading.syncPartial'),
+                value: e?.apiError?.message || t('dataLoading.syncPartial'),
             }));
         }
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
@@ -483,13 +476,12 @@ const DataSourceSidebarPanel: React.FC<{
         fetchingRef.current.add(cacheKey);
         setLoadingCatalog(prev => ({ ...prev, [connectorId]: true }));
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.GET_CACHED_CATALOG_TREE, {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CACHED_CATALOG_TREE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connectorId }),
             });
-            const data = await resp.json();
-            if (data.status === 'ok' && data.tree) {
+            if (data.tree) {
                 setCatalogCache(prev => ({
                     ...prev,
                     [connectorId]: { tree: data.tree as CatalogTreeNode[], fetchedAt: Date.now() },
@@ -524,15 +516,11 @@ const DataSourceSidebarPanel: React.FC<{
     const searchConnectorCatalog = useCallback(async (connector: ConnectorInstance, query: string) => {
         setSearchingCatalog(prev => ({ ...prev, [connector.id]: true }));
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connector.id, query, limit: 100 }),
             });
-            const data = await resp.json();
-            if (data.status === 'error') {
-                throw new Error(data.error?.message || data.error_message || 'Catalog search failed');
-            }
             const tree = (data.tree || []) as CatalogTreeNode[];
             setSearchCatalogCache(prev => ({
                 ...prev,
@@ -673,7 +661,7 @@ const DataSourceSidebarPanel: React.FC<{
         });
         setPreviewAnchor(anchorEl);
 
-        fetchWithIdentity(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+        apiRequest(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -682,8 +670,7 @@ const DataSourceSidebarPanel: React.FC<{
                 limit: 10,
             }),
         })
-            .then(r => r.json())
-            .then(data => {
+            .then(({ data }) => {
                 if (data.columns) {
                     setPreview(prev => {
                         if (!prev) return null;
@@ -781,7 +768,7 @@ const DataSourceSidebarPanel: React.FC<{
 
         const ref = buildSourceTableRef(node);
 
-        fetchWithIdentity(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
+        apiRequest(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -790,16 +777,13 @@ const DataSourceSidebarPanel: React.FC<{
                 source_table: ref,
             }),
         })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(),
-                        type: 'success',
-                        component: 'data source sidebar',
-                        value: t('sidebar.refreshedTable', { name: ref.name }),
-                    }));
-                }
+            .then(() => {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'success',
+                    component: 'data source sidebar',
+                    value: t('sidebar.refreshedTable', { name: ref.name }),
+                }));
             })
             .catch(() => {
                 dispatch(dfActions.addMessages({
@@ -813,11 +797,10 @@ const DataSourceSidebarPanel: React.FC<{
 
     const handleOpenAnnotation = useCallback((connectorId: string, node: CatalogTreeNode) => {
         const tableKey = node.metadata?.table_key || node.metadata?._source_name || node.name;
-        fetchWithIdentity(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS + `?connector_id=${encodeURIComponent(connectorId)}`, {
+        apiRequest(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS + `?connector_id=${encodeURIComponent(connectorId)}`, {
             method: 'GET',
         })
-            .then(r => r.json())
-            .then(data => {
+            .then(({ data }) => {
                 const tables = data.annotations?.tables || {};
                 const existing = tables[tableKey] || {};
                 setAnnotationEdit({
@@ -845,7 +828,7 @@ const DataSourceSidebarPanel: React.FC<{
         if (!annotationEdit) return;
         setAnnotationSaving(true);
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS, {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -856,24 +839,16 @@ const DataSourceSidebarPanel: React.FC<{
                     notes: annotationEdit.notes,
                 }),
             });
-            const data = await resp.json();
-            if (data.status === 'ok') {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'success',
-                    component: 'data-source-sidebar',
-                    value: translateBackend(data.message ?? t('dataLoading.annotationSaved'), data.message_code),
-                }));
-                setAnnotationEdit(null);
-            } else if (data.error?.code === 'ANNOTATION_CONFLICT') {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'data-source-sidebar',
-                    value: t('dataLoading.annotationConflict'),
-                }));
-            }
-        } catch {
             dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'error',
+                timestamp: Date.now(), type: 'success',
+                component: 'data-source-sidebar',
+                value: translateBackend(data.message ?? t('dataLoading.annotationSaved'), data.message_code),
+            }));
+            setAnnotationEdit(null);
+        } catch (e: any) {
+            const isConflict = e?.apiError?.code === 'ANNOTATION_CONFLICT';
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: isConflict ? 'warning' : 'error',
                 component: 'data-source-sidebar',
                 value: t('dataLoading.annotationConflict'),
             }));
@@ -899,31 +874,21 @@ const DataSourceSidebarPanel: React.FC<{
         if (!deleteTarget) return;
         setDeleting(true);
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_URLS.DELETE(deleteTarget.id), { method: 'DELETE' });
-            const data = await resp.json();
-            if (resp.ok || data.status === 'success') {
-                setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
-                clearConnectorUiState(deleteTarget.id);
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'success',
-                    component: 'data source sidebar',
-                    value: t('sidebar.connectorDeleted', { name: deleteTarget.display_name }),
-                }));
-            } else {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'error',
-                    component: 'data source sidebar',
-                    value: data.message || t('sidebar.failedDeleteConnector'),
-                }));
-            }
-        } catch {
+            await apiRequest(CONNECTOR_URLS.DELETE(deleteTarget.id), { method: 'DELETE' });
+            setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
+            clearConnectorUiState(deleteTarget.id);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorDeleted', { name: deleteTarget.display_name }),
+            }));
+        } catch (e: any) {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
                 component: 'data source sidebar',
-                value: t('sidebar.failedDeleteConnector'),
+                value: e?.apiError?.message || t('sidebar.failedDeleteConnector'),
             }));
         } finally {
             setDeleting(false);

@@ -17,7 +17,8 @@ See `dev-guides/7-unified-error-handling.md` for the full error handling contrac
 New error paths should use the `AppError` / `error_handler` infrastructure from
 `errors.py` and `error_handler.py`. Existing routes may keep legacy-compatible
 `message` / `error_message` bodies while they are migrated incrementally.
-All application-controlled responses return **HTTP 200**. Errors are conveyed via `body.status === "error"`.
+All application-controlled errors return **HTTP 200** with `status: "error"` in the body.
+Only auth errors (401/403) and uncontrolled transport errors (404/413/500) use non-200.
 
 ### Non-streaming routes
 
@@ -105,12 +106,13 @@ These functions still exist as wrappers but should NOT be used in new code:
 
 ## Rules
 
-1. **Application errors** — always HTTP 200 + `status: "error"`; prefer `error: {...}` for new code and never expose exception details.
-2. **Transport errors** (uncontrolled) — only `404` (no route), `413` (body limit), `500` (unhandled crash) may be non-200.
-3. **Streaming errors** — always use `stream_error_event()` for NDJSON error lines.
-4. **Logging** — always log the full exception server-side (`logger.warning` / `logger.error`
+1. **Application errors** — HTTP 200 + `status: "error"`; prefer `error: {...}` for new code and never expose exception details.
+2. **Auth errors** — `AUTH_REQUIRED`/`AUTH_EXPIRED` → 401, `ACCESS_DENIED` → 403 (transport layer interception).
+3. **Transport errors** (uncontrolled) — only `404` (no route), `413` (body limit), `500` (unhandled crash) may be non-200.
+4. **Streaming errors** — always use `stream_error_event()` for NDJSON error lines.
+5. **Logging** — always log the full exception server-side (`logger.warning` / `logger.error`
    with `exc_info=True` when needed). The client never needs the stack trace.
-5. **Debug detail** — `AppError.detail` is only included in responses when `app.debug is True`.
+6. **Debug detail** — `AppError.detail` is only included in responses when `app.debug is True`.
 
 ## Bare except Policy
 

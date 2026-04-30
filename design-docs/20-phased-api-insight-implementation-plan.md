@@ -1,9 +1,15 @@
 # 20 - API 错误契约与 Insight 稳定性分期实施计划
 
-> 状态：Phase 0 + Phase 1 已完成，Phase 2 待启动  
+> 状态：Phase 2 已完成（2c/2d 全量迁移 + HTTP 200 策略修订）  
 > 创建日期：2026-04-30  
 > Phase 0 完成日期：2026-04-30  
 > Phase 1 完成日期：2026-04-30  
+> Phase 2a/2b 完成日期：2026-04-30  
+> Phase 2c/2d 完成日期：2026-04-30  
+> Phase 2c 进度：credentials ✅ | knowledge ✅ | sessions ✅ | tables ✅ | agents ✅ | data_connector ✅ | app ✅  
+> Phase 2d 进度：前端 thunk 全部迁移到 apiRequest() ✅  
+> HTTP 状态码修订：应用错误 HTTP 200，仅 auth 401/403 ✅  
+> 待办：移除 parseApiResponse legacy 兼容 | 前端 vitest 验证 | 静态扫描 CI  
 > 前置文档：`design-docs/18-api-error-guardrails-and-chart-insight-failure.md`、`design-docs/18.2-insight-architecture-redesign.md`、`design-docs/19-multi-model-routing.md`  
 > 相关规范：`dev-guides/1-streaming-protocol.md`、`dev-guides/7-unified-error-handling.md`
 
@@ -21,7 +27,7 @@
 
 - 先修用户可见故障，再做全量协议重构。
 - 先盘点边界，再迁移 endpoint，避免普通 JSON、NDJSON、下载、redirect 混在一起改。
-- 普通 JSON API 和 NDJSON streaming 分开处理：普通 JSON 使用 HTTP 语义化状态码；已建立的 NDJSON 流仍通过流内 `type: "error"` 事件表达运行中错误。
+- 普通 JSON API 和 NDJSON streaming 统一：所有应用可控错误返回 HTTP 200 + `status: "error"`（仅 auth 错误使用 401/403）；已建立的 NDJSON 流通过流内 `type: "error"` 事件表达运行中错误。
 - 第一阶段不抢跑 structured-first Insight，也不在前端做 vision capability 判断，为后续 `ModelResolver` 留出空间。
 - 每个阶段都要有 focused tests，不把测试留到最后。
 
@@ -32,7 +38,7 @@ Phase 0: API / timeout / streaming 盘点          ✅ 已完成 2026-04-30
     ↓
 Phase 1: Chart Insight 可见故障修复               ✅ 已完成 2026-04-30
     ↓
-Phase 2: 普通 JSON API 契约全量迁移              ⬜ 待启动
+Phase 2: 普通 JSON API 契约全量迁移              ✅ 已完成 2026-04-30（含 HTTP 200 策略修订）
     ↓
 Phase 3: Structured-first Insight + 多模型路由    ⬜ 待启动
 ```
@@ -213,7 +219,7 @@ return title and takeaways
 
 ### 6.1 目标
 
-将普通 `/api/` JSON endpoint 统一迁移到 HTTP 语义化状态码和统一 response envelope，避免未来 endpoint 再出现裸 `{error: ...}` 或扁平 `status: "ok"` 格式。
+将普通 `/api/` JSON endpoint 统一迁移到统一 response envelope（成功 `json_ok()`、错误 `raise AppError()`），所有应用错误返回 HTTP 200 + `status: "error"`（仅 auth 使用 401/403），避免未来 endpoint 再出现裸 `{error: ...}` 或扁平 `status: "ok"` 格式。
 
 ### 6.2 后端改动
 
@@ -225,12 +231,13 @@ return title and takeaways
 
 迁移范围：
 
-- `routes/agents.py` 中所有非流式 JSON endpoint。
-- `routes/tables.py` 表 CRUD endpoint。
-- `data_connector.py` connector endpoint。
-- `routes/sessions.py` session endpoint。
-- `routes/knowledge.py` knowledge endpoint。
-- `routes/credentials.py` credential endpoint。
+- `routes/credentials.py` credential endpoint。 ✅ 已完成 2026-04-30
+- `routes/knowledge.py` knowledge endpoint。 ✅ 已完成 2026-04-30
+- `routes/sessions.py` session endpoint。 ✅ 已完成 2026-04-30
+- `routes/tables.py` 表 CRUD endpoint。 ✅ 已完成 2026-04-30（4 处豁免：文件下载端点）
+- `routes/agents.py` 中所有非流式 JSON endpoint。 ✅ 已完成 2026-04-30
+- `data_connector.py` connector endpoint。 ✅ 已完成 2026-04-30
+- `app.py` 顶层路由（`/api/auth/info`、`/api/app-config`）。 ✅ 已完成 2026-04-30
 
 `token` 处理：
 
@@ -256,29 +263,30 @@ return title and takeaways
 
 ### 6.4 Streaming 边界
 
-NDJSON endpoint 不和普通 JSON endpoint 使用同一种运行中错误协议：
+> **决策变更 2026-04-30**：原计划最终将流预检失败从 HTTP 200 切到 4xx，现已取消——统一所有应用错误为 HTTP 200，流式和非流式行为一致。
+
+NDJSON endpoint 与普通 JSON endpoint **统一**使用 HTTP 200：
 
 - 流建立后：HTTP 200 + `application/x-ndjson`，运行中错误通过 `{type: "error"}`。
-- 流建立前：当前实现可以继续返回 `200 application/json + status:"error"`；迁移完成后的目标是返回 HTTP 4xx + 普通 JSON error envelope。
+- 流建立前：返回 `200 application/json + status:"error"`（使用 `stream_preflight_error()`）。
 - 流式事件中的 `token` 后续移除，但必须等前端消费者不再依赖 `data.token === token` 之后再改后端。
 
-Streaming 的安全迁移顺序：
+Streaming 剩余待办：
 
-1. 先新增后端小 helper，统一表达“预检失败”和“NDJSON Response”两个边界，但第一步保持现有 `200 application/json` 行为。
-2. 再把前端手写 reader 逐步迁到 `streamRequest()`，或者至少复用同一套 pre-stream JSON error 处理逻辑。
-3. 确认前端不再依赖流事件中的 `token` 后，后端再停止发送 stream `token`。
-4. 最后把流建立前校验失败从 `200 application/json` 切到 HTTP 4xx + JSON error envelope，并更新 `dev-guides/1-streaming-protocol.md`。
+1. ~~先新增后端小 helper。~~ ✅ stream_preflight_error() 已实现。
+2. 前端手写 reader 逐步迁到 streamRequest()。（部分完成）
+3. 确认前端不再依赖流事件中的 	oken 后，后端停止发送 stream 	oken。
+4. ~~把流建立前校验失败从 200 切到 4xx。~~ ❌ **已取消**（统一 HTTP 200 策略）
 
 伪代码：
 
-```text
+`	ext
 if preflight validation failed:
-    return stream_preflight_error(error)
+    return stream_preflight_error(error)  # HTTP 200 + application/json
 
-return ndjson_response(generate)
-```
+return ndjson_response(generate)  # HTTP 200 + application/x-ndjson
+`
 
-这两个 helper 的目的不是引入新协议，而是把协议边界集中到一个地方。未来从 `200 JSON` 切到 `4xx JSON` 时，应优先修改 helper，而不是逐个 route 手改。
 
 ### 6.5 测试与护栏
 
@@ -303,9 +311,9 @@ return ndjson_response(generate)
 
 ### 6.6 文档更新
 
-- 重写 `dev-guides/7-unified-error-handling.md`。
-- 更新 `dev-guides/1-streaming-protocol.md`：流建立后 200，流建立前校验失败可 4xx JSON。
-- 更新错误处理 skill 和相关 rule。
+- ~~重写 `dev-guides/7-unified-error-handling.md`。~~ ✅ 已完成
+- ~~更新 `dev-guides/1-streaming-protocol.md`：流建立后 200，流建立前校验失败可 4xx JSON。~~ ⚠️ 4xx 切换已取消（统一 200），`dev-guides/1` 中相关描述待同步清理
+- ~~更新错误处理 skill 和相关 rule。~~ ✅ 已完成（`unified-error-protocol.mdc`、`error-response-safety.mdc`、`backend-test-conventions.mdc`）
 - 将新增 endpoint checklist 改为要求 contract test。
 
 ### 6.7 验收标准
@@ -374,20 +382,20 @@ Agent 拆分：
 
 ## 8. 建议实施顺序
 
-1. 完成 Phase 0 endpoint matrix。
-2. 在 matrix 中把 NDJSON streaming 标成“只统计，不做 Phase 1 行为迁移”。
-3. 实施 Phase 1 的 Chart Insight 修复，并先跑相关前后端测试。
-4. 再启动 Phase 2 普通 JSON API 迁移，按 route 分批开发，但最终同步上线。
-5. Phase 2 中后段再做 streaming helper、前端 `streamRequest()` 收敛、stream `token` 移除和 pre-stream 4xx 切换。
+1. ~~完成 Phase 0 endpoint matrix。~~ ✅
+2. ~~在 matrix 中把 NDJSON streaming 标成“只统计，不做 Phase 1 行为迁移”。~~ ✅
+3. ~~实施 Phase 1 的 Chart Insight 修复，并先跑相关前后端测试。~~ ✅
+4. ~~再启动 Phase 2 普通 JSON API 迁移，按 route 分批开发，但最终同步上线。~~ ✅ 已完成（7/7 route 全量迁移 + 前端 thunk 适配 + HTTP 200 策略修订）
+5. Phase 2 收尾：移除 legacy 格式兼容、前端 vitest 验证、静态扫描 CI、stream `token` 移除。
 6. Phase 2 稳定后再进入 Phase 3 的 structured-first Insight 和 ModelResolver。
 
 ## 9. 当前不建议做的事
 
 - 不建议第一期直接实现 `InsightProfiler`，因为失败反馈和 API 契约尚未稳定。
-- 不建议第一期直接全量迁移所有 `/api/` JSON endpoint，除非同时安排完整前端适配和 contract tests。
+- ~~不建议第一期直接全量迁移所有 `/api/` JSON endpoint，除非同时安排完整前端适配和 contract tests。~~ ✅ 已全量迁移
 - 不建议把 NDJSON streaming 运行中错误改成 HTTP 4xx/5xx，因为流建立后 HTTP status 已经无法改变。
 - 不建议第一期移除 streaming `token` 或改 `data-agent-streaming` 的 legacy `{token, status, result}` 事件格式，因为当前前端仍有消费者依赖它。
-- 不建议第一期把 streaming 预检失败从 `200 application/json` 改为 `4xx application/json`，除非所有手写 reader 消费者已先统一 pre-stream JSON error 处理。
+- ~~不建议第一期把 streaming 预检失败从 `200 application/json` 改为 `4xx application/json`。~~ ❌ 已永久取消（统一 HTTP 200 策略）
 - 不建议前端通过 `model.supports_vision` 决定是否调用 Insight API，这会阻碍后续后端多模型路由。
 
 ## 10. 开放问题

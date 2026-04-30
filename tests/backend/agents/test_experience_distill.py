@@ -367,9 +367,9 @@ class TestDistillEndpoint:
                                    "model": {"endpoint": "openai", "model": "gpt-4o", "api_key": "test"},
                                })
             data = resp.get_json()
-            assert data["status"] == "ok"
-            assert data["category"] == "experiences"
-            assert data["path"].endswith(".md")
+            assert data["status"] == "success"
+            assert data["data"]["category"] == "experiences"
+            assert data["data"]["path"].endswith(".md")
 
             # Verify file was written
             exp_dir = tmp_path / "knowledge" / "experiences"
@@ -391,5 +391,5 @@ class TestDistillEndpoint:
                                    "category_hint": "sales",
                                })
             data = resp.get_json()
-            assert data["status"] == "ok"
-            assert "sales/" in data["path"]
+            assert data["status"] == "success"
+            assert "sales/" in data["data"]["path"]

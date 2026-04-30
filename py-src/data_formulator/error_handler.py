@@ -1,9 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Unified error handling for the Data Formulator Flask application.
+"""Unified error handling and response helpers for the Data Formulator Flask application.
 
-Three public entry points:
+Public entry points:
 
 * ``register_error_handlers(app)`` — call once during app setup to install
   global error handlers and the request-id middleware.
@@ -11,6 +11,9 @@ Three public entry points:
   exception into a structured ``AppError``.
 * ``stream_error_event(error, *, token)`` — format an error as a single
   NDJSON line for streaming endpoints.
+* ``json_ok(data)`` — build a success JSON response with the unified envelope.
+* ``stream_preflight_error(error)`` — build an error response for streaming
+  endpoint pre-flight validation failures (always HTTP 200).
 """
 
 from __future__ import annotations
@@ -188,6 +191,50 @@ def flush_stream_warnings() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# JSON response helpers
+# ---------------------------------------------------------------------------
+
+def json_ok(data: object = None, *, status_code: int = 200, **extra) -> tuple:
+    """Build a unified success JSON response.
+
+    Returns ``(Response, status_code)`` for Flask.  The envelope uses
+    ``"status": "success"`` (not legacy ``"ok"``) and wraps the payload
+    in the ``"data"`` key::
+
+        {"status": "success", "data": {...}}
+
+    Extra keyword arguments are merged into the top-level body.  This is
+    useful for transitional fields like ``token`` that will be removed in
+    a later phase.
+    """
+    body: dict = {"status": "success", "data": data}
+    body.update(extra)
+    return jsonify(body), status_code
+
+
+def stream_preflight_error(error: AppError) -> tuple:
+    """Build an error response for streaming pre-flight validation failures.
+
+    Streaming endpoints call this (instead of ``raise AppError()``) when
+    validation fails *before* the NDJSON stream starts.  The frontend's
+    ``streamRequest()`` detects the ``application/json`` content-type (vs
+    expected ``application/x-ndjson``) and throws ``ApiRequestError``.
+
+    **Always returns HTTP 200** — consistent with non-streaming error policy.
+    """
+    include_detail = False
+    try:
+        include_detail = flask.current_app.debug
+    except RuntimeError:
+        pass
+    body = {
+        "status": "error",
+        "error": error.to_dict(include_detail=include_detail),
+    }
+    return jsonify(body), 200
+
+
+# ---------------------------------------------------------------------------
 # Global Flask error handlers + request-id middleware
 # ---------------------------------------------------------------------------
 
@@ -196,7 +243,8 @@ def register_error_handlers(app: flask.Flask) -> None:
 
     Call this once during application setup (in ``app.py``).  It installs:
 
-    * ``AppError`` handler — structured JSON with the appropriate HTTP status.
+    * ``AppError`` handler — structured JSON, HTTP 200 for business errors,
+      401/403 only for auth errors.
     * ``413`` handler — file too large.
     * ``404`` handler — JSON for ``/api/`` routes, SPA fallback otherwise.
     * Catch-all ``Exception`` handler — generic 500 JSON.
@@ -220,14 +268,13 @@ def register_error_handlers(app: flask.Flask) -> None:
 
     @app.errorhandler(AppError)
     def _handle_app_error(e: AppError):
-        logger.warning("AppError [%s] %s: %s", e.code, e.status_code, e.message)
+        http_status = e.get_http_status()
+        logger.warning("AppError [%s] HTTP %s: %s", e.code, http_status, e.message)
         body = {
             "status": "error",
             "error": e.to_dict(include_detail=app.debug),
         }
-        # Always return HTTP 200 — the error is an application-level result,
-        # not a transport-level failure. Clients inspect body.status instead.
-        return jsonify(body), 200
+        return jsonify(body), http_status
 
     # -- 413 -----------------------------------------------------------------
 

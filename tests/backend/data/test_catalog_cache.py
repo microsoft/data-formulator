@@ -339,7 +339,7 @@ class TestConnectorConnectCatalogSave:
                 })
 
             data = resp.get_json()
-            assert data["status"] == "connected"
+            assert data["status"] == "success"
 
             cache_file = user_home / "catalog_cache" / "test_pg.json"
             assert cache_file.is_file(), (

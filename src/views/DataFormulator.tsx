@@ -50,6 +50,7 @@ import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import type { DictTable } from '../components/ComponentType';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
 import { AppDispatch } from '../app/store';
 import { generateUUID } from '../app/identity';
@@ -98,9 +99,8 @@ export const DataFormulatorFC = ({ }) => {
     // ── Connector instances (for landing page menu) ─────────────
     const [pageConnectors, setPageConnectors] = useState<ConnectorInstance[]>([]);
     const refreshPageConnectors = useCallback(() => {
-        fetchWithIdentity(CONNECTOR_URLS.LIST, { method: 'GET' })
-            .then(r => r.json())
-            .then(data => setPageConnectors(data.connectors || []))
+        apiRequest<any>(CONNECTOR_URLS.LIST, { method: 'GET' })
+            .then(({ data }) => setPageConnectors(data.connectors || []))
             .catch(() => { /* connector list is optional on landing page */ });
     }, []);
     const [connectorRefreshKey, setConnectorRefreshKey] = useState(0);

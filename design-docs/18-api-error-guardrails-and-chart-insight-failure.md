@@ -1,9 +1,28 @@
 # 18 - API 错误护栏与图表洞察静默失败治理方案
 
-> 状态：设计草案  
+> 状态：实施中 — 核心基础设施已完成，HTTP 状态码策略已修订  
 > 创建日期：2026-04-29  
-> 相关规范：`dev-guides/7-unified-error-handling.md`、`dev-guides/1-streaming-protocol.md`、`design-docs/12-unified-error-handling.md`  
-> 与 dev-guides/7 的关系：本文档**替代** `dev-guides/7-unified-error-handling.md` 的核心契约。dev-guides/7 § 1 规定"应用层错误通过响应体表达，应用可控错误返回 HTTP 200"。本文档推翻这一原则，改为 **HTTP 语义化状态码**（2xx 成功、4xx 客户端错误、5xx 服务端错误），body 内 `status` 字段保留但不再是错误判定的唯一依据。具体变更：(1) 废弃 dev-guides/7 § 1 的 "HTTP 200-only" 原则，改用 HTTP 状态码 + body 双层信号；(2) 废弃 dev-guides/7 § 2.2 中允许的 legacy 兼容格式（`{"status":"error","message":"..."}`、`{"status":"error","error_message":"..."}`），要求所有错误统一为结构化 `error: {code, message, retry}`；(3) 废弃 dev-guides/7 § 2.1 中的 `"status": "ok"`，统一为 `"status": "success"`；(4) 要求所有成功响应包裹在 `data` 字段内（`{"status":"success","data":{...}}`）；(5) 新增合约测试、静态扫描和 ESLint CI 护栏。Phase 1c 完成后，`dev-guides/7` 将被**整体重写**以反映本文档的新契约，不再保留 HTTP 200-only 相关描述。
+> 相关规范：`dev-guides/7-unified-error-handling.md`（已重写）、`dev-guides/1-streaming-protocol.md`、`design-docs/12-unified-error-handling.md`  
+> 实施进度（对应 doc 20 Phase 2）：  
+> - ✅ `json_ok()` / `stream_preflight_error()` helper 已实现  
+> - ✅ `AppError` + `ERROR_CODE_HTTP_STATUS` 映射已实现（**已修订为仅 auth 使用非 200**）  
+> - ✅ 全局 Flask error handler 已更新（应用错误 HTTP 200，仅 auth → 401/403）  
+> - ✅ 前端 `apiRequest()` 双层错误检测已实现  
+> - ✅ `dev-guides/7` 已整体重写  
+> - ✅ 全部 route 已迁移（credentials / knowledge / sessions / tables / agents / data_connector / app）  
+> - ✅ 前端 thunk 全部迁移到 `apiRequest()`  
+> - ✅ HTTP 状态码策略修订完成（应用错误 200，auth 401/403）  
+> - ❌ legacy 格式兼容移除未开始（`parseApiResponse` 中的回退分支）  
+> - ❌ 静态扫描和 CI 护栏未开始  
+>  
+> **HTTP 状态码策略修订（2026-04-30）**：原设计采用 HTTP 语义化状态码（4xx/5xx 映射全部 ErrorCode），
+> 实施过程中修订为：**应用可控错误统一 HTTP 200**，仅认证/授权错误使用 401/403。
+> 理由：(1) 与流式 API 行为一致（流始终 200）；(2) 避免代理/WAF 误判业务错误为基础设施故障；
+> (3) 前端通过 body `status` 字段统一判断，简化逻辑。
+>  
+> 与 dev-guides/7 的关系：本文档定义了错误处理的核心设计。dev-guides/7 已重写以反映最新契约：
+> 应用错误 HTTP 200 + `status: "error"`，认证错误 401/403，结构化 `error: {code, message, retry}`，
+> 成功响应 `status: "success"` + `data` 包裹。
 
 ## 1. 背景
 
@@ -1044,15 +1063,15 @@ ChartInsightAgent.run(...)
 
 | 决策项 | 结论 |
 |--------|------|
-| HTTP 状态码 | 采用 HTTP 语义化：2xx 成功、4xx 客户端错误、5xx 服务端错误（参见 5.1 映射表） |
+| HTTP 状态码 | ~~原设计：HTTP 语义化 4xx/5xx~~ **修订为**：应用错误 HTTP 200，仅 auth 401/403（2026-04-30 修订） |
 | 成功响应格式 | HTTP 200 + `{"status": "success", "data": {...}}`，不允许扁平散布 |
-| 错误响应格式 | HTTP 4xx/5xx + `{"status": "error", "error": {"code", "message", "retry"}}`，废弃扁平 `message` / `error_message` |
+| 错误响应格式 | HTTP 200 + `{"status": "error", "error": {"code", "message", "retry"}}`（auth 错误 401/403），废弃扁平 `message` / `error_message` |
 | `status` 字段 | 保留。与 HTTP 状态码冗余但有独立价值：body 自描述、日志可搜、合约断言可用 |
 | `token` 字段 | 移除（含非流式和流式）。请求追踪改用 `X-Request-Id` HTTP Header（非流式参见 5.10，流式参见 5.10.1） |
 | Legacy 兼容 | 全量迁移完成后删除。前端 `parseApiResponse()` 不再保留 legacy 回退分支 |
 | `status` 值 | 成功响应统一为 `"success"`，废弃 `"ok"`。Phase 1a 后端全量改写，Phase 1b 前端同步适配 |
-| 与 dev-guides/7 关系 | **替代**。本文档推翻 dev-guides/7 § 1 "HTTP 200-only" 核心契约，改为 HTTP 语义化状态码。Phase 1c 完成后 dev-guides/7 整体重写 |
-| 与 dev-guides/1 关系 | 需同步修改。§ 1 "始终返回 200" 改为"流建立后 200，流建立前校验可返回 4xx"；error 事件移除 `token` 字段。Phase 1c 一并更新 |
+| 与 dev-guides/7 关系 | dev-guides/7 已重写，反映最终策略：应用错误 HTTP 200 + body error，auth 401/403 ✅ |
+| 与 dev-guides/1 关系 | dev-guides/1 已无冲突（"始终返回 200" 与新策略一致）。stream `token` 移除待后续 |
 | 迁移范围 | 本次全量迁移所有 `/api/` JSON endpoint，不分批 |
 | Phase 2 / 2.5 | 合并为 Phase 2（Insight 架构重构 + 自动触发稳定性） |
 | `InsightProfiler` 模块位置 | 放在新包 `py-src/data_formulator/insights/`，不放在 `agents/`；它是数据画像/结构化事实生成器，不是 LLM Agent |
@@ -1061,9 +1080,9 @@ ChartInsightAgent.run(...)
 
 ## 12. 推荐实施顺序
 
-1. **Phase 1a**：后端新增 `json_ok()` / `json_error()` helper + 全局 error handler（HTTP 状态码映射）+ `X-Request-Id` middleware + 移除响应中 `token` + vision 校验 + `reasoning_effort` 参数化 + 一次性迁移所有 `/api/` JSON endpoint + chart insight 错误分类和日志。
-2. **Phase 1b**：前端 `apiRequest()` 改用 `response.ok` 判断 + 移除请求中 `token` + 所有 LLM thunk 改用 `apiRequest()` + 统一 timeout + rejected reducer 用户反馈 + thinking block UI。
-3. **Phase 1c**：删除前端 legacy 兼容分支 + 后端清理 `token` 读取代码 + 更新 dev-guides/7 和 rules + 静态扫描脚本 + CI 接入。
+1. ~~**Phase 1a**：后端基础设施 + endpoint 迁移~~ **✅ 全部完成**（`json_ok`、`stream_preflight_error`、全局 handler、7/7 route 全量迁移、HTTP 200 策略修订）
+2. ~~**Phase 1b**：前端 `apiRequest()` + thunk 适配~~ **✅ 全部完成**（`apiRequest()` 双层检测、所有 thunk 迁移到 `apiRequest()`、请求 body 移除 `token`）
+3. **Phase 1c**（待做）：删除前端 legacy 兼容分支 + 后端清理 `token` 读取代码 + ~~更新 dev-guides/7 和 rules~~ **✅ 已完成** + 静态扫描脚本 + CI 接入。
 4. **Phase 2**（独立设计文档 `18.2-insight-architecture-redesign.md` + `19-multi-model-routing.md`）：InsightProfiler + TableInsightProfiler + ModelResolver + 多模型路由 + 自动触发稳定性 + vision fallback 降级 + `reasoning_content` 提取。
 5. **Phase 3**：ESLint rule + review checklist + per-agent reasoning config + 规范固化。
 

@@ -136,10 +136,12 @@ def source():
 
 @pytest.fixture
 def app(source):
+    from data_formulator.error_handler import register_error_handlers
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.secret_key = "test-secret"
     _app.register_blueprint(connectors_bp)
+    register_error_handlers(_app)
     return _app
 
 
@@ -233,8 +235,8 @@ class TestConnectStoresCredentials:
                 "params": {"password": "secret"},
             })
             data = resp.get_json()
-            assert data["status"] == "connected"
-            assert data["persisted"] is True
+            assert data["status"] == "success"
+            assert data["data"]["persisted"] is True
 
             stored = vault.retrieve(IDENTITY, "test_db")
             assert stored is not None
@@ -249,8 +251,8 @@ class TestConnectStoresCredentials:
                 "persist": False,
             })
             data = resp.get_json()
-            assert data["status"] == "connected"
-            assert data["persisted"] is False
+            assert data["status"] == "success"
+            assert data["data"]["persisted"] is False
 
             assert vault.retrieve(IDENTITY, "test_db") is None
 
@@ -264,7 +266,7 @@ class TestConnectStoresCredentials:
                 "params": {"password": "secret"},
                 "persist": True,
             })
-            assert resp.get_json()["persisted"] is True
+            assert resp.get_json()["data"]["persisted"] is True
             assert vault.retrieve(IDENTITY, "test_db") is not None
 
             # Reconnect with persist=false — old entry must be deleted
@@ -273,7 +275,7 @@ class TestConnectStoresCredentials:
                 "params": {"password": "secret"},
                 "persist": False,
             })
-            assert resp.get_json()["persisted"] is False
+            assert resp.get_json()["data"]["persisted"] is False
             assert vault.retrieve(IDENTITY, "test_db") is None
 
 
@@ -366,8 +368,8 @@ class TestAutoReconnect:
 
             resp = client.post("/api/connectors/get-status", json={"connector_id": "test_db"})
             data = resp.get_json()
-            assert data["connected"] is False
-            assert data["has_stored_credentials"] is True
+            assert data["data"]["connected"] is False
+            assert data["data"]["has_stored_credentials"] is True
 
     def test_auth_status_not_connected_no_vault(self, client, source):
         """POST /get-status with no loader and no vault = not connected."""
@@ -376,8 +378,8 @@ class TestAutoReconnect:
             source._loaders.clear()
             resp = client.post("/api/connectors/get-status", json={"connector_id": "test_db"})
             data = resp.get_json()
-            assert data["connected"] is False
-            assert data.get("has_stored_credentials") is False
+            assert data["data"]["connected"] is False
+            assert data["data"].get("has_stored_credentials") is False
 
 
 # ==================================================================
@@ -403,8 +405,8 @@ class TestNoVaultFallback:
                 "params": {"password": "secret"},
             })
             data = resp.get_json()
-            assert data["status"] == "connected"
-            assert data["persisted"] is False
+            assert data["status"] == "success"
+            assert data["data"]["persisted"] is False
 
     def test_require_loader_no_vault_raises(self, source):
         """Without vault and without in-memory loader, require_loader raises."""

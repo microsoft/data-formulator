@@ -28,12 +28,15 @@ def vault(tmp_path):
 @pytest.fixture
 def app_with_vault(vault):
     """Flask app with credential routes and a real Vault."""
+    from data_formulator.error_handler import register_error_handlers
+
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.secret_key = "test-secret"
 
     from data_formulator.routes.credentials import credential_bp
     _app.register_blueprint(credential_bp)
+    register_error_handlers(_app)
 
     with patch("data_formulator.routes.credentials.get_credential_vault", return_value=vault), \
          patch("data_formulator.routes.credentials.get_identity_id") as mock_id:
@@ -44,12 +47,15 @@ def app_with_vault(vault):
 @pytest.fixture
 def app_no_vault():
     """Flask app with credential routes but no Vault configured."""
+    from data_formulator.error_handler import register_error_handlers
+
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.secret_key = "test-secret"
 
     from data_formulator.routes.credentials import credential_bp
     _app.register_blueprint(credential_bp)
+    register_error_handlers(_app)
 
     with patch("data_formulator.routes.credentials.get_credential_vault", return_value=None), \
          patch("data_formulator.routes.credentials.get_identity_id", return_value="user:alice"):
@@ -67,15 +73,17 @@ class TestStoreEndpoint:
             })
             assert resp.status_code == 200
             data = resp.get_json()
-            assert data["status"] == "stored"
-            assert data["source_key"] == "superset"
+            assert data["status"] == "success"
+            assert data["data"]["source_key"] == "superset"
 
     def test_store_missing_fields(self, app_with_vault):
         app, _ = app_with_vault
         with app.test_client() as c:
             resp = c.post("/api/credentials/store", json={"source_key": "superset"})
             assert resp.status_code == 200
-            assert "error" in resp.get_json()
+            data = resp.get_json()
+            assert data["status"] == "error"
+            assert data["error"]["code"] == "INVALID_REQUEST"
 
     def test_store_no_vault_returns_error(self, app_no_vault):
         with app_no_vault.test_client() as c:
@@ -84,7 +92,9 @@ class TestStoreEndpoint:
                 "credentials": {"username": "alice", "password": "pw"},
             })
             assert resp.status_code == 200
-            assert "error" in resp.get_json()
+            data = resp.get_json()
+            assert data["status"] == "error"
+            assert data["error"]["code"] == "SERVICE_UNAVAILABLE"
 
 
 class TestListEndpoint:
@@ -94,7 +104,9 @@ class TestListEndpoint:
         with app.test_client() as c:
             resp = c.get("/api/credentials/list")
             assert resp.status_code == 200
-            assert resp.get_json()["sources"] == []
+            data = resp.get_json()
+            assert data["status"] == "success"
+            assert data["data"]["sources"] == []
 
     def test_list_after_store(self, app_with_vault, vault):
         app, _ = app_with_vault
@@ -102,14 +114,18 @@ class TestListEndpoint:
         vault.store("user:alice", "metabase", {"pw": "y"})
         with app.test_client() as c:
             resp = c.get("/api/credentials/list")
-            sources = resp.get_json()["sources"]
+            data = resp.get_json()
+            assert data["status"] == "success"
+            sources = data["data"]["sources"]
             assert set(sources) == {"superset", "metabase"}
 
     def test_list_no_vault_returns_empty(self, app_no_vault):
         with app_no_vault.test_client() as c:
             resp = c.get("/api/credentials/list")
             assert resp.status_code == 200
-            assert resp.get_json()["sources"] == []
+            data = resp.get_json()
+            assert data["status"] == "success"
+            assert data["data"]["sources"] == []
 
 
 class TestDeleteEndpoint:
@@ -120,7 +136,9 @@ class TestDeleteEndpoint:
         with app.test_client() as c:
             resp = c.post("/api/credentials/delete", json={"source_key": "superset"})
             assert resp.status_code == 200
-            assert resp.get_json()["status"] == "deleted"
+            data = resp.get_json()
+            assert data["status"] == "success"
+            assert data["data"]["source_key"] == "superset"
         assert vault.retrieve("user:alice", "superset") is None
 
     def test_delete_missing_key(self, app_with_vault):
@@ -128,13 +146,17 @@ class TestDeleteEndpoint:
         with app.test_client() as c:
             resp = c.post("/api/credentials/delete", json={})
             assert resp.status_code == 200
-            assert "error" in resp.get_json()
+            data = resp.get_json()
+            assert data["status"] == "error"
+            assert data["error"]["code"] == "INVALID_REQUEST"
 
     def test_delete_no_vault_returns_error(self, app_no_vault):
         with app_no_vault.test_client() as c:
             resp = c.post("/api/credentials/delete", json={"source_key": "superset"})
             assert resp.status_code == 200
-            assert "error" in resp.get_json()
+            data = resp.get_json()
+            assert data["status"] == "error"
+            assert data["error"]["code"] == "SERVICE_UNAVAILABLE"
 
 
 class TestUserIsolation:
@@ -148,12 +170,12 @@ class TestUserIsolation:
         with app.test_client() as c:
             mock_id.return_value = "user:alice"
             resp = c.get("/api/credentials/list")
-            assert "superset" in resp.get_json()["sources"]
+            assert "superset" in resp.get_json()["data"]["sources"]
 
         with app.test_client() as c:
             mock_id.return_value = "user:bob"
             resp = c.get("/api/credentials/list")
-            assert "superset" in resp.get_json()["sources"]
+            assert "superset" in resp.get_json()["data"]["sources"]
 
     def test_delete_only_affects_own(self, app_with_vault, vault):
         app, mock_id = app_with_vault

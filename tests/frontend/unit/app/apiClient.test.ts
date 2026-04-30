@@ -4,6 +4,7 @@
  * Covers:
  * - ApiRequestError construction and helpers
  * - parseApiResponse: success/error/legacy-format parsing
+ * - apiRequest: HTTP-level + body-level error handling
  * - parseStreamLine: NDJSON line parsing
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -23,11 +24,13 @@ vi.mock('../../../../src/app/store', () => ({
 
 import {
     ApiRequestError,
+    apiRequest,
     parseApiResponse,
     parseStreamLine,
     type ApiError,
     type StreamEvent,
 } from '../../../../src/app/apiClient';
+import { fetchWithIdentity } from '../../../../src/app/utils';
 
 // ---------------------------------------------------------------------------
 // ApiRequestError
@@ -109,6 +112,50 @@ describe('parseApiResponse', () => {
     });
 
     // --- Legacy format compatibility ---
+
+    describe('Phase 2 unified format', () => {
+
+        it('should parse status:"success" response', () => {
+            const body = { status: 'success', data: { tables: ['a', 'b'] } };
+            const result = parseApiResponse(body, 200);
+            expect(result).toEqual({ data: { tables: ['a', 'b'] }, token: undefined });
+        });
+
+        it('should parse status:"success" with token', () => {
+            const body = { status: 'success', data: { id: 1 }, token: 'tok-3' };
+            const result = parseApiResponse(body, 200);
+            expect(result).toEqual({ data: { id: 1 }, token: 'tok-3' });
+        });
+
+        it('should throw on error with HTTP 4xx status', () => {
+            const body = {
+                status: 'error',
+                error: { code: 'INVALID_REQUEST', message: 'Bad input', retry: false },
+            };
+            expect(() => parseApiResponse(body, 400)).toThrow(ApiRequestError);
+            try {
+                parseApiResponse(body, 400);
+            } catch (e: any) {
+                expect(e.apiError.code).toBe('INVALID_REQUEST');
+                expect(e.httpStatus).toBe(400);
+            }
+        });
+
+        it('should throw on error with HTTP 5xx status', () => {
+            const body = {
+                status: 'error',
+                error: { code: 'LLM_SERVICE_ERROR', message: 'Upstream fail', retry: true },
+            };
+            expect(() => parseApiResponse(body, 502)).toThrow(ApiRequestError);
+            try {
+                parseApiResponse(body, 502);
+            } catch (e: any) {
+                expect(e.apiError.code).toBe('LLM_SERVICE_ERROR');
+                expect(e.httpStatus).toBe(502);
+                expect(e.isRetryable).toBe(true);
+            }
+        });
+    });
 
     describe('legacy format compatibility', () => {
 
@@ -220,5 +267,133 @@ describe('parseStreamLine', () => {
         expect(event!.type).toBe('error');
         expect(event!.error!.message).toBe('Model failed');
         expect(event!.token).toBe('tok-2');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// apiRequest — non-streaming request with HTTP-level error handling
+// ---------------------------------------------------------------------------
+
+describe('apiRequest', () => {
+
+    const mockFetch = vi.mocked(fetchWithIdentity);
+
+    beforeEach(() => {
+        mockFetch.mockReset();
+    });
+
+    function mockResponse(body: any, status = 200): Response {
+        return {
+            ok: status >= 200 && status < 300,
+            status,
+            json: () => Promise.resolve(body),
+            headers: new Headers({ 'content-type': 'application/json' }),
+        } as unknown as Response;
+    }
+
+    it('should return data on 200 + status:"success"', async () => {
+        mockFetch.mockResolvedValue(
+            mockResponse({ status: 'success', data: { id: 1 } }, 200),
+        );
+        const result = await apiRequest('/api/test');
+        expect(result.data).toEqual({ id: 1 });
+    });
+
+    it('should return data on 200 + status:"ok" (legacy)', async () => {
+        mockFetch.mockResolvedValue(
+            mockResponse({ status: 'ok', data: { id: 2 }, token: 'tok' }, 200),
+        );
+        const result = await apiRequest('/api/test');
+        expect(result.data).toEqual({ id: 2 });
+        expect(result.token).toBe('tok');
+    });
+
+    it('should throw ApiRequestError on 400 + structured error', async () => {
+        mockFetch.mockResolvedValue(
+            mockResponse({
+                status: 'error',
+                error: { code: 'INVALID_REQUEST', message: 'Bad input', retry: false },
+            }, 400),
+        );
+        await expect(apiRequest('/api/test')).rejects.toThrow(ApiRequestError);
+        try {
+            await apiRequest('/api/test');
+        } catch (e: any) {
+            expect(e.apiError.code).toBe('INVALID_REQUEST');
+            expect(e.httpStatus).toBe(400);
+        }
+    });
+
+    it('should throw ApiRequestError on 502 + structured error', async () => {
+        mockFetch.mockResolvedValue(
+            mockResponse({
+                status: 'error',
+                error: { code: 'LLM_SERVICE_ERROR', message: 'Upstream fail', retry: true },
+            }, 502),
+        );
+        await expect(apiRequest('/api/test')).rejects.toThrow(ApiRequestError);
+        try {
+            await apiRequest('/api/test');
+        } catch (e: any) {
+            expect(e.isRetryable).toBe(true);
+            expect(e.httpStatus).toBe(502);
+        }
+    });
+
+    it('should throw ApiRequestError on 200 + status:"error" (legacy endpoint)', async () => {
+        mockFetch.mockResolvedValue(
+            mockResponse({
+                status: 'error',
+                error_message: 'Something went wrong',
+            }, 200),
+        );
+        await expect(apiRequest('/api/test')).rejects.toThrow(ApiRequestError);
+        try {
+            await apiRequest('/api/test');
+        } catch (e: any) {
+            expect(e.apiError.message).toBe('Something went wrong');
+            expect(e.apiError.code).toBe('UNKNOWN');
+        }
+    });
+
+    it('should throw HTTP_ERROR on non-JSON error response', async () => {
+        mockFetch.mockResolvedValue({
+            ok: false,
+            status: 500,
+            json: () => Promise.reject(new SyntaxError('Unexpected token')),
+            headers: new Headers(),
+        } as unknown as Response);
+        await expect(apiRequest('/api/test')).rejects.toThrow(ApiRequestError);
+        try {
+            await apiRequest('/api/test');
+        } catch (e: any) {
+            expect(e.apiError.code).toBe('HTTP_ERROR');
+            expect(e.httpStatus).toBe(500);
+        }
+    });
+
+    it('should throw PARSE_ERROR on 200 with non-JSON body', async () => {
+        mockFetch.mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: () => Promise.reject(new SyntaxError('Unexpected token')),
+            headers: new Headers(),
+        } as unknown as Response);
+        await expect(apiRequest('/api/test')).rejects.toThrow(ApiRequestError);
+        try {
+            await apiRequest('/api/test');
+        } catch (e: any) {
+            expect(e.apiError.code).toBe('PARSE_ERROR');
+        }
+    });
+
+    it('should pass options to fetchWithIdentity', async () => {
+        mockFetch.mockResolvedValue(
+            mockResponse({ status: 'success', data: null }, 200),
+        );
+        const signal = new AbortController().signal;
+        await apiRequest('/api/test', { method: 'POST', signal });
+        expect(mockFetch).toHaveBeenCalledWith('/api/test', { method: 'POST', signal });
     });
 });

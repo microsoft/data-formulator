@@ -62,7 +62,7 @@ class TestAppErrorConstruction:
         err = AppError(ErrorCode.TABLE_NOT_FOUND, "Table not found")
         assert err.code == "TABLE_NOT_FOUND"
         assert err.message == "Table not found"
-        assert err.status_code == 500
+        assert err.status_code == 200
         assert err.detail is None
         assert err.retry is False
 

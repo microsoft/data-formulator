@@ -26,7 +26,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, Flask, jsonify, request
+from flask import Blueprint, Flask, request
+
+from data_formulator.error_handler import json_ok
+from data_formulator.errors import AppError, ErrorCode
 
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
@@ -655,7 +658,7 @@ def list_data_loaders():
         for name, hint in DISABLED_LOADERS.items()
     }
 
-    return jsonify({"loaders": loaders, "disabled": disabled})
+    return json_ok({"loaders": loaders, "disabled": disabled})
 
 
 @connectors_bp.route("/api/local/pick-directory", methods=["POST"])
@@ -682,7 +685,7 @@ def pick_local_directory():
     from data_formulator.auth.identity import is_local_mode
 
     if not is_local_mode():
-        return jsonify({"error": "Not available in server mode"})
+        raise AppError(ErrorCode.ACCESS_DENIED, "Not available in server mode")
 
     folder: str | None = None
     system = platform.system()
@@ -749,24 +752,20 @@ def pick_local_directory():
                         title="Select data folder") or None
                     root.destroy()
                 except (ImportError, Exception):
-                    return jsonify({
-                        "error": "No dialog tool available. "
-                                 "Install zenity, kdialog, or python3-tk.",
-                        "path": None,
-                        "fallback": "text_input",
-                    })
+                    raise AppError(
+                        ErrorCode.CONNECTOR_ERROR,
+                        "No dialog tool available. Install zenity, kdialog, or python3-tk.",
+                    )
 
     except subprocess.TimeoutExpired:
-        return jsonify({"error": "Dialog timed out", "path": None})
+        raise AppError(ErrorCode.CONNECTOR_ERROR, "Dialog timed out")
     except Exception as exc:
         logger.warning("Failed to open directory picker: %s", exc)
-        return jsonify({
-            "error": "Failed to open directory picker", "path": None, "fallback": "text_input",
-        })
+        raise AppError(ErrorCode.CONNECTOR_ERROR, "Failed to open directory picker")
 
     if not folder:
-        return jsonify({"path": None})  # user cancelled
-    return jsonify({"path": folder})
+        return json_ok({"path": None})  # user cancelled
+    return json_ok({"path": folder})
 
 
 @connectors_bp.route("/api/connectors", methods=["GET"])
@@ -830,7 +829,7 @@ def list_connectors():
             "delegated_login": cfg.get("delegated_login"),
         })
 
-    return jsonify({"connectors": result})
+    return json_ok({"connectors": result})
 
 
 @connectors_bp.route("/api/connectors", methods=["POST"])
@@ -854,11 +853,11 @@ def create_connector():
     data = request.get_json() or {}
     loader_type = data.get("loader_type")
     if not loader_type:
-        return jsonify({"status": "error", "message": "loader_type is required"})
+        raise AppError(ErrorCode.INVALID_REQUEST, "loader_type is required")
 
     loader_class = DATA_LOADERS.get(loader_type)
     if not loader_class:
-        return jsonify({"status": "error", "message": f"Unknown loader type: {loader_type}"})
+        raise AppError(ErrorCode.INVALID_REQUEST, f"Unknown loader type: {loader_type}")
 
     display_name = data.get("display_name", loader_type.replace("_", " ").title())
     icon = data.get("icon", loader_type)
@@ -869,7 +868,7 @@ def create_connector():
         identity = DataConnector._get_identity()
     except Exception as e:
         logger.warning("Cannot create connector without identity: %s", type(e).__name__)
-        return jsonify({"status": "error", "message": "Identity is required"})
+        raise AppError(ErrorCode.INVALID_REQUEST, "Identity is required") from e
 
     # Generate instance ID: loader_type:slug
     import re
@@ -893,7 +892,7 @@ def create_connector():
                 display_name = f"{display_name} ({i})"
                 break
         else:
-            return jsonify({"status": "error", "message": "Too many connectors with this name"})
+            raise AppError(ErrorCode.VALIDATION_ERROR, "Too many connectors with this name")
 
     connector = DataConnector.from_loader(
         loader_class,
@@ -957,7 +956,7 @@ def create_connector():
         result_data["persist_warning"] = persist_warning
 
     logger.info("Created user connector '%s' (type=%s)", instance_id, loader_type)
-    return jsonify(result_data), 201
+    return json_ok(result_data, status_code=201)
 
 
 def _connectors_dir(identity: str) -> Path:
@@ -1015,12 +1014,14 @@ def delete_connector(connector_id: str):
     """
 
     if connector_id in _ADMIN_CONNECTOR_IDS:
-        return jsonify({"status": "error", "message": "Admin connectors cannot be deleted"})
+        raise AppError(ErrorCode.ACCESS_DENIED, "Admin connectors cannot be deleted")
 
     try:
         registry_key, connector = _resolve_connector_with_key({"connector_id": connector_id})
+    except AppError:
+        raise
     except Exception:
-        return jsonify({"status": "error", "message": f"Unknown connector: {connector_id}"})
+        raise AppError(ErrorCode.CONNECTOR_ERROR, f"Unknown connector: {connector_id}")
 
     # Full cleanup: in-memory loader + vault credentials
     try:
@@ -1047,7 +1048,7 @@ def delete_connector(connector_id: str):
     DATA_CONNECTORS.pop(registry_key, None)
 
     logger.info("Deleted user connector '%s'", connector_id)
-    return jsonify({"status": "deleted", "id": connector_id})
+    return json_ok({"id": connector_id})
 
 
 # ---------------------------------------------------------------------------
@@ -1079,7 +1080,7 @@ def connector_connect():
         if mode == "token":
             access_token = data.get("access_token")
             if not access_token:
-                return jsonify({"status": "error", "message": "Missing access_token"})
+                raise AppError(ErrorCode.INVALID_REQUEST, "Missing access_token")
             extra_params = data.get("params", {})
             user_params = {
                 **extra_params,
@@ -1094,7 +1095,7 @@ def connector_connect():
         if not loader.test_connection():
             identity = source._get_identity()
             source._loaders.pop(identity, None)
-            return jsonify({"status": "error", "message": "Connection test failed"})
+            raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection test failed")
 
         persisted = False
         if persist:
@@ -1128,7 +1129,9 @@ def connector_connect():
         }
         if mode == "token" and data.get("user"):
             result["user"] = data["user"]
-        return jsonify(result)
+        return json_ok(result)
+    except AppError:
+        raise
     except Exception as e:
         try:
             identity = source._get_identity()
@@ -1161,7 +1164,9 @@ def connector_disconnect():
         # catalog_cache and catalog_annotations are intentionally preserved
         # on disconnect so that Agent search can still use cached metadata
         # for offline discovery.  Only delete-connector deletes the cache.
-        return jsonify({"status": "disconnected"})
+        return json_ok(None)
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1188,7 +1193,7 @@ def connector_get_status():
             )
         except Exception as e:
             logger.debug("SSO availability check failed", exc_info=e)
-        return jsonify({
+        return json_ok({
             "connected": False,
             "has_stored_credentials": has_stored,
             "sso_available": sso_available,
@@ -1201,12 +1206,12 @@ def connector_get_status():
         alive = False
     if not alive:
         source._loaders.pop(identity, None)
-        return jsonify({
+        return json_ok({
             "connected": False,
             "has_stored_credentials": source.has_stored_credentials(identity),
             "params_form": source.get_frontend_config()["params_form"],
         })
-    return jsonify({
+    return json_ok({
         "connected": True,
         "persisted": source._get_vault() is not None,
         "params": loader.get_safe_params(),
@@ -1257,7 +1262,9 @@ def connector_get_catalog():
                 result["metadata"] = metadata
             except Exception as e:
                 logger.debug("Metadata fetch failed for path %s", path, exc_info=e)
-        return jsonify(result)
+        return json_ok(result)
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1287,11 +1294,13 @@ def connector_get_catalog_tree():
         except Exception:
             logger.debug("Failed to save catalog cache for '%s'", source._source_id, exc_info=True)
 
-        return jsonify({
+        return json_ok({
             "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
             "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
             "tree": tree,
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1327,25 +1336,27 @@ def connector_get_cached_catalog_tree():
         raw = _load_catalog_raw(user_home, source._source_id)
 
         if raw is None:
-            return jsonify({"status": "miss"})
+            return json_ok({"cache_hit": False})
 
         flat_tables = raw.get("tables", [])
         if not flat_tables:
-            return jsonify({"status": "miss"})
+            return json_ok({"cache_hit": False})
 
         loader = source._require_loader()
         tree = loader._tables_to_catalog_tree(flat_tables)
 
-        return jsonify({
-            "status": "ok",
+        return json_ok({
+            "cache_hit": True,
             "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
             "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
             "tree": tree,
             "synced_at": raw.get("synced_at"),
         })
+    except AppError:
+        raise
     except Exception as e:
         logger.debug("get-cached-catalog-tree failed for '%s'", source._source_id, exc_info=True)
-        return jsonify({"status": "miss"})
+        return json_ok({"cache_hit": False})
 
 
 @connectors_bp.route("/api/connectors/sync-catalog-metadata", methods=["POST"])
@@ -1417,8 +1428,7 @@ def connector_sync_catalog_metadata():
             msg = "Catalog sync complete"
             msg_code = "catalog.syncComplete"
 
-        return jsonify({
-            "status": "ok",
+        return json_ok({
             "message": msg,
             "message_code": msg_code,
             "message_params": {
@@ -1500,8 +1510,7 @@ def connector_patch_annotations():
             user_home, source._source_id, table_key,
             patch_fields, expected_version=expected_version,
         )
-        return jsonify({
-            "status": "ok",
+        return json_ok({
             "version": result["version"],
             "message": "Annotation saved",
             "message_code": "catalog.annotationSaved",
@@ -1513,6 +1522,8 @@ def connector_patch_annotations():
             status_code=409,
             detail={"current_version": e.current_version},
         ) from e
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1546,19 +1557,19 @@ def connector_get_annotations():
         ann = load_annotations(user_home, source._source_id)
 
         if ann is None:
-            return jsonify({
-                "status": "ok",
+            return json_ok({
                 "source_id": source._source_id,
                 "version": 0,
                 "tables": {},
             })
 
-        return jsonify({
-            "status": "ok",
+        return json_ok({
             "source_id": ann.get("source_id", source._source_id),
             "version": ann.get("version", 0),
             "tables": ann.get("tables", {}),
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1579,13 +1590,14 @@ def connector_search_catalog():
         limit = min(max(limit, 1), _MAX_CATALOG_PAGE_SIZE)
 
         result = loader.search_catalog(query=query, limit=limit)
-        return jsonify({
-            "status": "ok",
+        return json_ok({
             "connector_id": source._source_id,
             "query": query,
             "tree": result.get("tree", []),
             "truncated": bool(result.get("truncated", False)),
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1600,7 +1612,7 @@ def connector_import_data():
 
         raw_source = data.get("source_table")
         if not raw_source:
-            return jsonify({"status": "error", "message": "source_table is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "source_table is required")
 
         source_id, source_name = _parse_source_table(raw_source)
         table_name = data.get("table_name") or source_name
@@ -1620,12 +1632,13 @@ def connector_import_data():
             source_table=source_id,
             import_options=import_options or None,
         )
-        return jsonify({
-            "status": "success",
+        return json_ok({
             "table_name": meta.name,
             "row_count": meta.row_count,
             "refreshable": True,
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1639,7 +1652,7 @@ def connector_refresh_data():
         loader = source._require_loader()
         table_name = data.get("table_name")
         if not table_name:
-            return jsonify({"status": "error", "message": "table_name is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "table_name is required")
 
         from data_formulator.auth.identity import get_identity_id
         from data_formulator.workspace_factory import get_workspace
@@ -1647,7 +1660,7 @@ def connector_refresh_data():
         workspace = get_workspace(get_identity_id())
         meta = workspace.get_table_metadata(table_name)
         if meta is None or not meta.source_table:
-            return jsonify({"status": "error", "message": f"No refreshable source for '{table_name}'"})
+            raise AppError(ErrorCode.INVALID_REQUEST, f"No refreshable source for '{table_name}'")
 
         arrow_table = loader.fetch_data_as_arrow(
             source_table=meta.source_table,
@@ -1665,12 +1678,13 @@ def connector_refresh_data():
         except Exception:
             pass  # keep existing descriptions if refresh fails
 
-        return jsonify({
-            "status": "success",
+        return json_ok({
             "table_name": table_name,
             "row_count": new_meta.row_count,
             "data_changed": data_changed,
         })
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1684,7 +1698,7 @@ def connector_preview_data():
         loader = source._require_loader()
         raw_source = data.get("source_table")
         if not raw_source:
-            return jsonify({"status": "error", "message": "source_table is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "source_table is required")
 
         source_id, _source_name = _parse_source_table(raw_source)
 
@@ -1736,7 +1750,9 @@ def connector_preview_data():
         }
         if table_description:
             result["description"] = table_description
-        return jsonify(result)
+        return json_ok(result)
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1751,12 +1767,12 @@ def connector_column_values():
         loader = source._require_loader()
         raw_source = data.get("source_table")
         if not raw_source:
-            return jsonify({"status": "error", "message": "source_table is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "source_table is required")
         source_id, _source_name = _parse_source_table(raw_source)
 
         column_name = (data.get("column_name") or "").strip()
         if not column_name:
-            return jsonify({"status": "error", "message": "column_name is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "column_name is required")
 
         keyword = (data.get("keyword") or "").strip()
         limit = int(data.get("limit", 50))
@@ -1769,7 +1785,9 @@ def connector_column_values():
             limit=limit,
             offset=offset,
         )
-        return jsonify({"status": "ok", **result})
+        return json_ok(result)
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 
@@ -1785,7 +1803,7 @@ def connector_import_group():
 
         tables = data.get("tables")
         if not tables or not isinstance(tables, list):
-            return jsonify({"status": "error", "message": "tables list is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "tables list is required")
 
         row_limit = data.get("row_limit", -1)
         source_filters = data.get("source_filters", [])
@@ -1841,10 +1859,9 @@ def connector_import_group():
                     "message": sanitize_error_message(str(e)),
                 })
 
-        return jsonify({
-            "status": "success",
-            "results": results,
-        })
+        return json_ok({"results": results})
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_connector_error(e)
 

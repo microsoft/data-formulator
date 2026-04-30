@@ -11,7 +11,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 
 import flask
-from flask import request, jsonify, Blueprint, current_app, Response, stream_with_context
+from flask import request, Blueprint, current_app, Response, stream_with_context
 import logging
 
 import json
@@ -41,6 +41,8 @@ from data_formulator.knowledge.store import KnowledgeStore
 from data_formulator.agents.data_agent import DataAgent
 from data_formulator.agents.agent_language import build_language_instruction
 from data_formulator.security.sanitize import classify_llm_error, sanitize_error_message
+from data_formulator.error_handler import json_ok, stream_preflight_error, classify_and_wrap_llm_error
+from data_formulator.errors import AppError, ErrorCode
 
 # Get logger for this module (logging config done in app.py)
 logger = logging.getLogger(__name__)
@@ -200,7 +202,7 @@ def list_global_models():
     'checking' status), then calls /check-available-models to get real statuses.
     """
     public_models = model_registry.list_public()
-    return jsonify(public_models)
+    return json_ok(public_models)
 
 
 @agent_bp.route('/check-available-models', methods=['GET', 'POST'])
@@ -265,102 +267,77 @@ def check_available_models():
     logger.info(f"[check-available-models] Done: {connected}/{len(results)} connected, total {total_elapsed:.1f}s")
     logger.info("=" * 60)
 
-    return jsonify(results)
+    return json_ok(results)
 
 @agent_bp.route('/test-model', methods=['GET', 'POST'])
 def test_model():
-    if request.is_json:
-        logger.info("# test-model request")
-        content = request.get_json()
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
-        # contains endpoint, key, model, api_base, api_version
-        logger.debug("content------------------------------")
-        logger.debug(content)
+    logger.info("# test-model request")
+    content = request.get_json()
 
-        client = get_client(content['model'])
-        
-        try:
-            response = client.get_completion(
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": "Respond 'I can hear you.' if you can hear me. Do not say anything other than 'I can hear you.'"},
-                ]
-            )
+    logger.debug("content------------------------------")
+    logger.debug(content)
 
-            logger.debug(f"model: {content['model']}")
-            logger.debug(f"welcome message: {response.choices[0].message.content}")
+    client = get_client(content['model'])
 
-            if "I can hear you." in response.choices[0].message.content:
-                result = {
-                    "model": content['model'],
-                    "status": 'ok',
-                    "message": ""
-                }
-            else:
-                result = {
-                    "model": content['model'],
-                    "status": 'error',
-                    "message": "Model responded but did not pass connectivity check",
-                }
-        except Exception as e:
-            logger.exception(f"Error testing model {content['model'].get('id', '')}")
-            result = {
-                "model": content['model'],
-                "status": 'error',
-                "message": classify_llm_error(e),
-            }
-    else:
-        result = {'status': 'error', 'message': 'Invalid request format'}
-    
-    return jsonify(result)
+    try:
+        response = client.get_completion(
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Respond 'I can hear you.' if you can hear me. Do not say anything other than 'I can hear you.'"},
+            ]
+        )
+
+        logger.debug(f"model: {content['model']}")
+        logger.debug(f"welcome message: {response.choices[0].message.content}")
+
+        if "I can hear you." in response.choices[0].message.content:
+            return json_ok({"model": content['model'], "message": ""})
+        else:
+            raise AppError(ErrorCode.AGENT_ERROR, "Model responded but did not pass connectivity check")
+    except AppError:
+        raise
+    except Exception as e:
+        logger.exception(f"Error testing model {content['model'].get('id', '')}")
+        raise classify_and_wrap_llm_error(e) from e
 
 @agent_bp.route('/process-data-on-load', methods=['GET', 'POST'])
 def process_data_on_load_request():
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
-    if request.is_json:
-        logger.info("# process-data-on-load request")
-        content = request.get_json()
-        token = content["token"]
-        input_data = content["input_data"]
+    logger.info("# process-data-on-load request")
+    content = request.get_json()
+    token = content["token"]
+    input_data = content["input_data"]
 
-        client = get_client(content['model'])
+    client = get_client(content['model'])
 
-        logger.debug(f" model: {content['model']}")
+    logger.debug(f" model: {content['model']}")
 
-        try:
-            # Get workspace (needed for both virtual and in-memory tables)
-            identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
+    try:
+        identity_id = get_identity_id()
+        workspace = get_workspace(identity_id)
 
-            # Check if input table is in workspace, if not add as temp data
-            input_tables = [{"name": input_data.get("name"), "rows": input_data.get("rows", [])}]
-            
-            language_instruction = get_language_instruction(mode="compact")
-            agent = DataLoadAgent(client=client, workspace=workspace, language_instruction=language_instruction)
-            candidates = agent.run(content["input_data"])
-            candidates = [c['content'] for c in candidates if c['status'] == 'ok']
+        language_instruction = get_language_instruction(mode="compact")
+        agent = DataLoadAgent(client=client, workspace=workspace, language_instruction=language_instruction)
+        candidates = agent.run(content["input_data"])
+        candidates = [c['content'] for c in candidates if c['status'] == 'ok']
 
-            response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
-        except Exception as e:
-            logger.exception(e)
-            response = flask.jsonify({ "token": token, "status": "error", "result": [], "error_message": classify_llm_error(e) })
-    else:
-        response = flask.jsonify({ "token": -1, "status": "error", "result": [], "error_message": "Invalid request format" })
-
-    return response
+        return json_ok({"result": candidates}, token=token)
+    except Exception as e:
+        logger.exception(e)
+        raise classify_and_wrap_llm_error(e) from e
 
 
 @agent_bp.route('/clean-data-stream', methods=['GET', 'POST'])
 def clean_data_stream_request():
-    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-    from data_formulator.errors import AppError, ErrorCode
+    from data_formulator.error_handler import stream_error_event
 
     if not request.is_json:
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.INVALID_REQUEST,
-            "message": "Invalid request format",
-            "retry": False,
-        }})
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
 
     content = request.get_json()
     token = content["token"]
@@ -398,136 +375,128 @@ def clean_data_stream_request():
 
 @agent_bp.route('/sort-data', methods=['GET', 'POST'])
 def sort_data_request():
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
-    if request.is_json:
-        logger.info("# sort-data request")
-        content = request.get_json()
-        token = content["token"]
+    logger.info("# sort-data request")
+    content = request.get_json()
+    token = content["token"]
 
-        try:
-            client = get_client(content['model'])
+    try:
+        client = get_client(content['model'])
 
-            language_instruction = get_language_instruction(mode="compact")
-            agent = SortDataAgent(client=client, language_instruction=language_instruction)
-            candidates = agent.run(content['field'], content['items'])
+        language_instruction = get_language_instruction(mode="compact")
+        agent = SortDataAgent(client=client, language_instruction=language_instruction)
+        candidates = agent.run(content['field'], content['items'])
 
-            candidates = candidates if candidates != None else []
-            response = flask.jsonify({ "status": "ok", "token": token, "result": candidates })
-        except Exception as e:
-            logger.error("Error in sort-data", exc_info=e)
-            response = flask.jsonify({ "token": token, "status": "error", "result": [], "error_message": classify_llm_error(e) })
-    else:
-        response = flask.jsonify({ "token": -1, "status": "error", "result": [], "error_message": "Invalid request format" })
-
-    return response
+        candidates = candidates if candidates != None else []
+        return json_ok({"result": candidates}, token=token)
+    except Exception as e:
+        logger.error("Error in sort-data", exc_info=e)
+        raise classify_and_wrap_llm_error(e) from e
 
 @agent_bp.route('/derive-data', methods=['GET', 'POST'])
 def derive_data():
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
-    if request.is_json:
-        logger.info("# derive-data request")
-        content = request.get_json()        
-        token = content["token"]
+    logger.info("# derive-data request")
+    content = request.get_json()        
+    token = content["token"]
 
-        client = get_client(content['model'])
+    client = get_client(content['model'])
 
-        # each table is a dict with {"name": xxx, "rows": [...]}
-        input_tables = content["input_tables"]
+    input_tables = content["input_tables"]
 
-        instruction = content["extra_prompt"]
-        
-        max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
-        agent_coding_rules = content.get("agent_coding_rules", "")
-        current_visualization = content.get("current_visualization", None)
-        expected_visualization = content.get("expected_visualization", None)
+    instruction = content["extra_prompt"]
 
-        if "additional_messages" in content:
-            prev_messages = content["additional_messages"]
-        else:
-            prev_messages = []
+    max_repair_attempts = content["max_repair_attempts"] if "max_repair_attempts" in content else 1
+    agent_coding_rules = content.get("agent_coding_rules", "")
+    current_visualization = content.get("current_visualization", None)
+    expected_visualization = content.get("expected_visualization", None)
 
-        logger.debug("== input tables ===>")
-        for table in input_tables:
-            logger.debug(f"===> Table: {table['name']} (first 5 rows)")
-            logger.debug(table['rows'][:5])
-
-        logger.debug("== user spec ===")
-        logger.debug(instruction)
-
-        # If user provided chart encodings (via visualization context), use transform mode; otherwise recommendation
-        mode = "transform" if current_visualization or expected_visualization else "recommendation"
-        primary_tables = content.get("primary_tables", None)
-
-        try:
-            identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
-            max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
-
-            language_instruction = get_language_instruction(mode="compact")
-
-            model_info = {
-                "model": content['model'].get("model", ""),
-                "endpoint": content['model'].get("endpoint", ""),
-                "api_base": content['model'].get("api_base", ""),
-            }
-
-            knowledge_store = _get_knowledge_store(identity_id)
-
-            if mode == "recommendation":
-                agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
-                results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages, primary_tables=primary_tables)
-            else:
-                agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
-                results = agent.run(input_tables, instruction, prev_messages,
-                                    current_visualization=current_visualization, expected_visualization=expected_visualization)
-
-            repair_attempts = 0
-            while (
-                isinstance(results, list)
-                and len(results) > 0
-                and results[0].get('status') in ('error', 'other error')
-                and repair_attempts < max_repair_attempts
-            ):
-                error_message = results[0].get('content', 'Unknown error')
-                logger.warning(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
-                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-
-                prev_dialog = results[0].get('dialog', [])
-
-                try:
-                    if mode == "transform":
-                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                    if mode == "recommendation":
-                        results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                except Exception as followup_exc:
-                    logger.exception("derive_data followup failed")
-                    results = [{
-                        "status": "error",
-                        "content": classify_llm_error(followup_exc),
-                        "code": "",
-                        "dialog": [],
-                    }]
-                    break
-
-                repair_attempts += 1
-                logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
-
-            if repair_attempts > 0:
-                logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
-
-            for r in results:
-                if r.get("status") in ("error", "other error") and r.get("content"):
-                    r["content"] = sanitize_error_message(r["content"])
-                sign_result(r)
-
-            response = flask.jsonify({ "token": token, "status": "ok", "results": results })
-        except Exception as e:
-            logger.error("Error in derive-data", exc_info=e)
-            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": classify_llm_error(e) })
+    if "additional_messages" in content:
+        prev_messages = content["additional_messages"]
     else:
-        response = flask.jsonify({ "token": "", "status": "error", "results": [], "error_message": "Invalid request format" })
+        prev_messages = []
 
-    return response
+    logger.debug("== input tables ===>")
+    for table in input_tables:
+        logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+        logger.debug(table['rows'][:5])
+
+    logger.debug("== user spec ===")
+    logger.debug(instruction)
+
+    mode = "transform" if current_visualization or expected_visualization else "recommendation"
+    primary_tables = content.get("primary_tables", None)
+
+    try:
+        identity_id = get_identity_id()
+        workspace = get_workspace(identity_id)
+        max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
+
+        language_instruction = get_language_instruction(mode="compact")
+
+        model_info = {
+            "model": content['model'].get("model", ""),
+            "endpoint": content['model'].get("endpoint", ""),
+            "api_base": content['model'].get("api_base", ""),
+        }
+
+        knowledge_store = _get_knowledge_store(identity_id)
+
+        if mode == "recommendation":
+            agent = DataRecAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
+            results = agent.run(input_tables, instruction, n=1, prev_messages=prev_messages, primary_tables=primary_tables)
+        else:
+            agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
+            results = agent.run(input_tables, instruction, prev_messages,
+                                current_visualization=current_visualization, expected_visualization=expected_visualization)
+
+        repair_attempts = 0
+        while (
+            isinstance(results, list)
+            and len(results) > 0
+            and results[0].get('status') in ('error', 'other error')
+            and repair_attempts < max_repair_attempts
+        ):
+            error_message = results[0].get('content', 'Unknown error')
+            logger.warning(f"[derive-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}), mode={mode}. Error: {error_message}")
+            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+
+            prev_dialog = results[0].get('dialog', [])
+
+            try:
+                if mode == "transform":
+                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+                if mode == "recommendation":
+                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+            except Exception as followup_exc:
+                logger.exception("derive_data followup failed")
+                results = [{
+                    "status": "error",
+                    "content": classify_llm_error(followup_exc),
+                    "code": "",
+                    "dialog": [],
+                }]
+                break
+
+            repair_attempts += 1
+            logger.warning(f"[derive-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
+
+        if repair_attempts > 0:
+            logger.warning(f"[derive-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
+
+        for r in results:
+            if r.get("status") in ("error", "other error") and r.get("content"):
+                r["content"] = sanitize_error_message(r["content"])
+            sign_result(r)
+
+        return json_ok({"results": results}, token=token)
+    except Exception as e:
+        logger.error("Error in derive-data", exc_info=e)
+        raise classify_and_wrap_llm_error(e) from e
 
 @agent_bp.route('/data-agent-streaming', methods=['GET', 'POST'])
 def data_agent_streaming():
@@ -545,26 +514,17 @@ def data_agent_streaming():
         - trajectory: the trajectory list returned in the clarify event
         - clarification_responses: structured user answers
     """
-    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-    from data_formulator.errors import ErrorCode
+    from data_formulator.error_handler import stream_error_event
 
     if not request.is_json:
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.INVALID_REQUEST,
-            "message": "Invalid request format",
-            "retry": False,
-        }})
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
 
     content = request.get_json()
     token = content.get("token", "")
 
     identity_id = get_identity_id()
     if not identity_id:
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.AUTH_REQUIRED,
-            "message": "Identity ID required",
-            "retry": False,
-        }})
+        return stream_preflight_error(AppError(ErrorCode.AUTH_REQUIRED, "Identity ID required"))
 
     client = get_client(content['model'])
     workspace = get_workspace(identity_id)
@@ -584,11 +544,7 @@ def data_agent_streaming():
     completed_step_count = content.get("completed_step_count", 0)
 
     if resume_trajectory is not None and not _format_clarification_responses(clarification_responses):
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.INVALID_REQUEST,
-            "message": "clarification_responses is required to resume after clarification",
-            "retry": False,
-        }})
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "clarification_responses is required to resume after clarification"))
 
     logger.setLevel(logging.INFO)
     logger.info("# data-agent-streaming request")
@@ -661,130 +617,122 @@ def data_agent_streaming():
 
 @agent_bp.route('/refine-data', methods=['GET', 'POST'])
 def refine_data():
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
-    if request.is_json:
-        logger.info("# refine-data request")
-        content = request.get_json()        
-        token = content["token"]
+    logger.info("# refine-data request")
+    content = request.get_json()
+    token = content["token"]
 
+    client = get_client(content['model'])
 
-        client = get_client(content['model'])
+    input_tables = content["input_tables"]
+    dialog = content["dialog"]
 
-        # each table is a dict with {"name": xxx, "rows": [...]}
-        input_tables = content["input_tables"]
-        dialog = content["dialog"]
+    new_instruction = content["new_instruction"]
+    latest_data_sample = content["latest_data_sample"]
+    max_repair_attempts = content.get("max_repair_attempts", 1)
+    agent_coding_rules = content.get("agent_coding_rules", "")
+    current_visualization = content.get("current_visualization", None)
+    expected_visualization = content.get("expected_visualization", None)
 
-        new_instruction = content["new_instruction"]
-        latest_data_sample = content["latest_data_sample"]
-        max_repair_attempts = content.get("max_repair_attempts", 1)
-        agent_coding_rules = content.get("agent_coding_rules", "")
-        current_visualization = content.get("current_visualization", None)
-        expected_visualization = content.get("expected_visualization", None)
+    logger.debug("== input tables ===>")
+    for table in input_tables:
+        logger.debug(f"===> Table: {table['name']} (first 5 rows)")
+        logger.debug(table['rows'][:5])
 
-        logger.debug("== input tables ===>")
-        for table in input_tables:
-            logger.debug(f"===> Table: {table['name']} (first 5 rows)")
-            logger.debug(table['rows'][:5])
-        
-        logger.debug("== user spec ===>")
-        logger.debug(new_instruction)
+    logger.debug("== user spec ===>")
+    logger.debug(new_instruction)
 
-        try:
-            identity_id = get_identity_id()
-            workspace = get_workspace(identity_id)
-            max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
+    try:
+        identity_id = get_identity_id()
+        workspace = get_workspace(identity_id)
+        max_display_rows = current_app.config['CLI_ARGS']['max_display_rows']
 
-            language_instruction = get_language_instruction(mode="compact")
+        language_instruction = get_language_instruction(mode="compact")
 
-            model_info = {
-                "model": content['model'].get("model", ""),
-                "endpoint": content['model'].get("endpoint", ""),
-                "api_base": content['model'].get("api_base", ""),
-            }
+        model_info = {
+            "model": content['model'].get("model", ""),
+            "endpoint": content['model'].get("endpoint", ""),
+            "api_base": content['model'].get("api_base", ""),
+        }
 
-            knowledge_store = _get_knowledge_store(identity_id)
-            agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
-            results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
-                                    current_visualization=current_visualization, expected_visualization=expected_visualization)
+        knowledge_store = _get_knowledge_store(identity_id)
+        agent = DataTransformationAgent(client=client, workspace=workspace, agent_coding_rules=agent_coding_rules, language_instruction=language_instruction, max_display_rows=max_display_rows, model_info=model_info, knowledge_store=knowledge_store)
+        results = agent.followup(input_tables, dialog, latest_data_sample, new_instruction, n=1,
+                                current_visualization=current_visualization, expected_visualization=expected_visualization)
 
-            repair_attempts = 0
-            while (
-                isinstance(results, list)
-                and len(results) > 0
-                and results[0].get('status') in ('error', 'other error')
-                and repair_attempts < max_repair_attempts
-            ):
-                error_message = results[0].get('content', 'Unknown error')
-                logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
-                new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
-                prev_dialog = results[0].get('dialog', [])
+        repair_attempts = 0
+        while (
+            isinstance(results, list)
+            and len(results) > 0
+            and results[0].get('status') in ('error', 'other error')
+            and repair_attempts < max_repair_attempts
+        ):
+            error_message = results[0].get('content', 'Unknown error')
+            logger.info(f"[refine-data] Code generation failed (attempt {repair_attempts + 1}/{max_repair_attempts}). Error: {error_message}")
+            new_instruction = f"We run into the following problem executing the code, please fix it:\n\n{error_message}\n\nPlease think step by step, reflect why the error happens and fix the code so that no more errors would occur."
+            prev_dialog = results[0].get('dialog', [])
 
-                try:
-                    results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
-                except Exception as followup_exc:
-                    logger.exception("refine_data followup failed")
-                    results = [{
-                        "status": "error",
-                        "content": classify_llm_error(followup_exc),
-                        "code": "",
-                        "dialog": [],
-                    }]
-                    break
+            try:
+                results = agent.followup(input_tables, prev_dialog, [], new_instruction, n=1)
+            except Exception as followup_exc:
+                logger.exception("refine_data followup failed")
+                results = [{
+                    "status": "error",
+                    "content": classify_llm_error(followup_exc),
+                    "code": "",
+                    "dialog": [],
+                }]
+                break
 
-                repair_attempts += 1
-                logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
+            repair_attempts += 1
+            logger.info(f"[refine-data] Repair attempt {repair_attempts}/{max_repair_attempts} result: {results[0].get('status', 'unknown')}")
 
-            if repair_attempts > 0:
-                logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
+        if repair_attempts > 0:
+            logger.info(f"[refine-data] Finished repair loop after {repair_attempts} attempt(s). Final status: {results[0].get('status', 'unknown')}")
 
-            for r in results:
-                if r.get("status") in ("error", "other error") and r.get("content"):
-                    r["content"] = sanitize_error_message(r["content"])
-                sign_result(r)
+        for r in results:
+            if r.get("status") in ("error", "other error") and r.get("content"):
+                r["content"] = sanitize_error_message(r["content"])
+            sign_result(r)
 
-            response = flask.jsonify({ "token": token, "status": "ok", "results": results})
-        except Exception as e:
-            logger.error("Error in refine-data", exc_info=e)
-            response = flask.jsonify({ "token": token, "status": "error", "results": [], "error_message": classify_llm_error(e) })
-    else:
-        response = flask.jsonify({ "token": "", "status": "error", "results": [], "error_message": "Invalid request format"})
-
-    return response
+        return json_ok({"results": results}, token=token)
+    except Exception as e:
+        logger.error("Error in refine-data", exc_info=e)
+        raise classify_and_wrap_llm_error(e) from e
 
 @agent_bp.route('/code-expl', methods=['GET', 'POST'])
 def request_code_expl():
-    if request.is_json:
-        logger.info("# code-expl request")
-        content = request.get_json()
-        client = get_client(content['model'])
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
-        # each table is a dict with {"name": xxx, "rows": [...]}
-        input_tables = content["input_tables"]
-        code = content["code"]
+    logger.info("# code-expl request")
+    content = request.get_json()
+    client = get_client(content['model'])
 
-        # Get workspace and mount temp data
-        identity_id = get_identity_id()
-        workspace = get_workspace(identity_id)
+    input_tables = content["input_tables"]
+    code = content["code"]
 
-        language_instruction = get_language_instruction()
+    identity_id = get_identity_id()
+    workspace = get_workspace(identity_id)
 
-        try:
-            code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace, language_instruction=language_instruction)
-            candidates = code_expl_agent.run(input_tables, code)
+    language_instruction = get_language_instruction()
 
-            if candidates and len(candidates) > 0:
-                result = candidates[0]
-                if result['status'] == 'ok':
-                    return jsonify(result)
-                else:
-                    return jsonify(result)
-            else:
-                return jsonify({'error': 'No explanation generated'})
-        except Exception as e:
-            logger.error("Error in code-expl", exc_info=e)
-            return jsonify({'error': classify_llm_error(e)})
-    else:
-        return jsonify({'error': 'Invalid request format'})
+    try:
+        code_expl_agent = CodeExplanationAgent(client=client, workspace=workspace, language_instruction=language_instruction)
+        candidates = code_expl_agent.run(input_tables, code)
+
+        if candidates and len(candidates) > 0:
+            result = candidates[0]
+            return json_ok(result)
+        else:
+            raise AppError(ErrorCode.AGENT_ERROR, "No explanation generated")
+    except AppError:
+        raise
+    except Exception as e:
+        logger.error("Error in code-expl", exc_info=e)
+        raise classify_and_wrap_llm_error(e) from e
 
 @agent_bp.route('/chart-insight', methods=['GET', 'POST'])
 def request_chart_insight():
@@ -841,7 +789,7 @@ def request_chart_insight():
         logger.info("[chart-insight] done request_id=%s takeaway_count=%d",
                     getattr(flask.g, 'request_id', ''),
                     len(result.get('takeaways', [])))
-        return jsonify({"status": "ok", "title": result.get("title", ""),
+        return json_ok({"title": result.get("title", ""),
                         "takeaways": result.get("takeaways", [])})
 
     except AppError:
@@ -852,15 +800,10 @@ def request_chart_insight():
 
 @agent_bp.route('/get-recommendation-questions', methods=['GET', 'POST'])
 def get_recommendation_questions():
-    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-    from data_formulator.errors import ErrorCode
+    from data_formulator.error_handler import stream_error_event
 
     if not request.is_json:
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.INVALID_REQUEST,
-            "message": "Invalid request format",
-            "retry": False,
-        }})
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
 
     logger.info("# get recommendation questions request")
     content = request.get_json()
@@ -936,15 +879,10 @@ def generate_report_chat():
     charts/data on demand via tool calls and streams the report with
     embed_chart / embed_table events.
     """
-    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-    from data_formulator.errors import ErrorCode
+    from data_formulator.error_handler import stream_error_event
 
     if not request.is_json:
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.INVALID_REQUEST,
-            "message": "Invalid request format",
-            "retry": False,
-        }})
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
 
     logger.info("# generate report chat request")
     content = request.get_json()
@@ -1017,93 +955,56 @@ def refresh_derived_data():
     - virtual: {table_name: string, row_count: number} if output was saved to workspace
     - message: error message if failed
     """
+    from data_formulator.sandbox import create_sandbox
+    from flask import current_app
+
+    data = request.get_json()
+    input_tables = data.get('input_tables', [])
+    code = data.get('code', '')
+    code_signature = data.get('code_signature', '')
+    output_variable = data.get('output_variable')
+    output_table_name = data.get('output_table_name')
+    virtual = data.get('virtual', False)
+
+    if not input_tables:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "No input tables provided")
+
+    if not code:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "No transformation code provided")
+
+    if not code_signature:
+        logger.warning("[refresh-derived-data] Rejected request: missing code_signature")
+        raise AppError(ErrorCode.VALIDATION_ERROR, "Missing code_signature — code must be signed by the server")
+
+    if len(code) > MAX_CODE_SIZE:
+        logger.warning(f"[refresh-derived-data] Rejected request: code too large ({len(code)} bytes)")
+        raise AppError(ErrorCode.VALIDATION_ERROR, f"Code exceeds maximum allowed size ({MAX_CODE_SIZE} bytes)")
+
+    if not verify_code(code, code_signature):
+        logger.warning("[refresh-derived-data] Rejected request: invalid code_signature (code may have been tampered with)")
+        raise AppError(ErrorCode.VALIDATION_ERROR, "Invalid code_signature — code may have been tampered with")
+
+    if len(input_tables) > 50:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "Too many input tables (max 50)")
+
+    if not output_variable:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "No output_variable provided")
+
+    if not output_variable.isidentifier():
+        raise AppError(ErrorCode.VALIDATION_ERROR, "output_variable must be a valid Python identifier")
+
+    if virtual and not output_table_name:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "output_table_name is required when virtual=true")
+
     try:
-        from data_formulator.sandbox import create_sandbox
-        from flask import current_app
-        
-        data = request.get_json()
-        input_tables = data.get('input_tables', [])
-        code = data.get('code', '')
-        code_signature = data.get('code_signature', '')
-        output_variable = data.get('output_variable')
-        output_table_name = data.get('output_table_name')
-        virtual = data.get('virtual', False)
-        
-        if not input_tables:
-            return jsonify({
-                "status": "error",
-                "message": "No input tables provided"
-            })
-            
-        if not code:
-            return jsonify({
-                "status": "error", 
-                "message": "No transformation code provided"
-            })
-
-        # ---- Security: verify code signature --------------------------------
-        # The code must have been signed by the server when the agent first
-        # generated it.  Reject unsigned or tampered code.
-        if not code_signature:
-            logger.warning("[refresh-derived-data] Rejected request: missing code_signature")
-            return jsonify({
-                "status": "error",
-                "message": "Missing code_signature — code must be signed by the server"
-            })
-
-        if len(code) > MAX_CODE_SIZE:
-            logger.warning(f"[refresh-derived-data] Rejected request: code too large ({len(code)} bytes)")
-            return jsonify({
-                "status": "error",
-                "message": f"Code exceeds maximum allowed size ({MAX_CODE_SIZE} bytes)"
-            })
-
-        if not verify_code(code, code_signature):
-            logger.warning("[refresh-derived-data] Rejected request: invalid code_signature (code may have been tampered with)")
-            return jsonify({
-                "status": "error",
-                "message": "Invalid code_signature — code may have been tampered with"
-            })
-
-        # ---- Input validation -----------------------------------------------
-        if len(input_tables) > 50:
-            return jsonify({
-                "status": "error",
-                "message": "Too many input tables (max 50)"
-            })
-            
-        if not output_variable:
-            return jsonify({
-                "status": "error",
-                "message": "No output_variable provided"
-            })
-
-        # output_variable is interpolated into generated Python code and used
-        # to construct file paths inside the sandbox.  Restrict it to valid
-        # Python identifiers to prevent code-injection and path-traversal.
-        if not output_variable.isidentifier():
-            return jsonify({
-                "status": "error",
-                "message": "output_variable must be a valid Python identifier"
-            })
-            
-        if virtual and not output_table_name:
-            return jsonify({
-                "status": "error",
-                "message": "output_table_name is required when virtual=true"
-            })
-        
-        # Get workspace and mount temp data for tables not in workspace
         identity_id = get_identity_id()
         workspace = get_workspace(identity_id)
-        
-        # Get settings from app config
+
         cli_args = current_app.config.get('CLI_ARGS', {})
         max_display_rows = cli_args.get('max_display_rows', 5000)
-        
+
         sandbox = create_sandbox(cli_args.get('sandbox', 'local'))
-        
-        # Run the transformation code in the sandbox
+
         result = sandbox.run_python_code(
             code=code,
             workspace=workspace,
@@ -1115,47 +1016,40 @@ def refresh_derived_data():
             row_count = len(result_df)
 
             response_data = {
-                "status": "ok",
                 "message": "Successfully refreshed derived data",
-                "row_count": row_count
+                "row_count": row_count,
             }
 
             if virtual:
-                # Virtual table: update workspace and return limited rows for display
                 workspace.write_parquet(result_df, output_table_name)
                 response_data["virtual"] = {
                     "table_name": output_table_name,
                     "row_count": row_count
                 }
-                # Limit rows for response payload since full data is in workspace
                 if row_count > max_display_rows:
                     display_df = result_df.head(max_display_rows)
                 else:
                     display_df = result_df
-                # Remove duplicate columns to avoid orient='records' error
                 display_df = display_df.loc[:, ~display_df.columns.duplicated()]
                 response_data["rows"] = json.loads(display_df.to_json(orient='records', date_format='iso'))
             else:
-                # Temp table: return full data since there's no workspace storage
-                # Remove duplicate columns to avoid orient='records' error
                 result_df = result_df.loc[:, ~result_df.columns.duplicated()]
                 response_data["rows"] = json.loads(result_df.to_json(orient='records', date_format='iso'))
 
-            return jsonify(response_data)
+            return json_ok(response_data)
         else:
-            return jsonify({
-                "status": "error",
-                "message": sanitize_error_message(
+            raise AppError(
+                ErrorCode.CODE_EXECUTION_ERROR,
+                sanitize_error_message(
                     result.get('content', 'Unknown error during transformation')
-                )
-            })
+                ),
+            )
 
+    except AppError:
+        raise
     except Exception as e:
         logger.error("Error refreshing derived data", exc_info=e)
-        return jsonify({
-            "status": "error",
-            "message": classify_llm_error(e)
-        })
+        raise classify_and_wrap_llm_error(e) from e
 
 
 @agent_bp.route('/workspace-summary', methods=['POST'])
@@ -1164,10 +1058,10 @@ def workspace_summary():
 
     Called after the first agent interaction to auto-name the workspace.
     Expects: { model: <model_config>, context: { tables: [...], userQuery: "..." } }
-    Returns: { status: "ok", summary: "3-5 word name" }
+    Returns: { status: "success", data: { summary: "3-5 word name" } }
     """
     if not request.is_json:
-        return jsonify(status="error", summary="")
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
     content = request.get_json()
 
@@ -1181,11 +1075,11 @@ def workspace_summary():
             table_names=ctx.get('tables', []),
             user_query=ctx.get('userQuery', ''),
         )
-        return jsonify(status="ok", summary=summary)
+        return json_ok({"summary": summary})
 
     except Exception as e:
         logger.warning("Failed to generate workspace summary", exc_info=e)
-        return jsonify(status="error", summary="", error_message=classify_llm_error(e))
+        raise classify_and_wrap_llm_error(e) from e
 
 
 # ---------------------------------------------------------------------------
@@ -1202,7 +1096,7 @@ def nl_to_filter():
         instruction: str — the user's NL filter description
 
     Response:
-        {status, conditions, sort_columns?, sort_order?, limit?}
+        {status: "success", data: {conditions, sort_columns?, sort_order?, limit?}}
     """
     try:
         content = request.get_json() or {}
@@ -1211,23 +1105,24 @@ def nl_to_filter():
         model_config = content.get("model")
 
         if not instruction:
-            return jsonify(status="ok", conditions=[], sort_columns=[], sort_order=None, limit=None)
+            return json_ok({"conditions": [], "sort_columns": [], "sort_order": None, "limit": None})
 
         if not model_config:
-            return jsonify(status="error", message="No model configured")
+            raise AppError(ErrorCode.INVALID_REQUEST, "No model configured")
 
         client = get_client(model_config)
         agent = SimpleAgents(client=client)
         result = agent.nl_to_filter(columns=columns, instruction=instruction)
 
-        return jsonify(status="ok", **result)
+        return json_ok(result)
 
+    except AppError:
+        raise
     except json.JSONDecodeError:
-        return jsonify(status="error", message="Failed to parse LLM response as JSON")
+        raise AppError(ErrorCode.AGENT_ERROR, "Failed to parse LLM response as JSON")
     except Exception as e:
         logger.warning(f"NL-to-filter failed: {e}")
-        safe_msg = classify_llm_error(e)
-        return jsonify(status="error", message=safe_msg)
+        raise classify_and_wrap_llm_error(e) from e
 
 
 # ---------------------------------------------------------------------------
@@ -1239,17 +1134,17 @@ def scratch_upload():
     """Upload a file to the workspace scratch/ folder.
 
     Accepts multipart/form-data with a 'file' field.
-    Returns: { path: "scratch/<filename>", url: "/api/workspace/scratch/<filename>" }
+    Returns: { status: "success", data: { path, url } }
     """
     import hashlib
     from werkzeug.utils import secure_filename as _werkzeug_secure_filename
 
     if 'file' not in request.files:
-        return jsonify(status="error", message="No file in request")
+        raise AppError(ErrorCode.INVALID_REQUEST, "No file in request")
 
     file = request.files['file']
     if not file.filename:
-        return jsonify(status="error", message="No filename")
+        raise AppError(ErrorCode.INVALID_REQUEST, "No filename")
 
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
@@ -1264,14 +1159,13 @@ def scratch_upload():
     try:
         dest = scratch_jail.resolve(final_name)
     except ValueError:
-        return jsonify(status="error", message="Invalid filename")
+        raise AppError(ErrorCode.VALIDATION_ERROR, "Invalid filename")
     dest.write_bytes(raw)
 
-    return jsonify(
-        status="ok",
-        path=f"scratch/{final_name}",
-        url=f"/api/workspace/scratch/{final_name}",
-    )
+    return json_ok({
+        "path": f"scratch/{final_name}",
+        "url": f"/api/workspace/scratch/{final_name}",
+    })
 
 
 @agent_bp.route('/workspace/scratch/<path:filename>', methods=['GET'])
@@ -1286,10 +1180,10 @@ def scratch_serve(filename):
     try:
         target = scratch_jail.resolve(filename)
     except ValueError:
-        return jsonify(status="error", message="Access denied")
+        raise AppError(ErrorCode.ACCESS_DENIED, "Access denied")
 
     if not target.exists():
-        return jsonify(status="error", message="File not found")
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, "File not found")
 
     return send_file(target)
 
@@ -1304,26 +1198,17 @@ def data_loading_chat():
 
     Streams newline-delimited JSON events (SSE-style).
     """
-    from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
-    from data_formulator.errors import ErrorCode
+    from data_formulator.error_handler import stream_error_event
 
     if not request.is_json:
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.INVALID_REQUEST,
-            "message": "Invalid request format",
-            "retry": False,
-        }})
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
 
     content = request.get_json()
     logger.info("# data-loading-chat request")
 
     messages = content.get("messages", [])
     if _messages_include_image(messages) and not model_supports_vision(content.get("model")):
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.INVALID_REQUEST,
-            "message": "The selected model does not support image input. Please switch to a vision-capable model or remove the image.",
-            "retry": False,
-        }})
+        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "The selected model does not support image input. Please switch to a vision-capable model or remove the image."))
 
     client = get_client(content['model'])
     identity_id = get_identity_id()

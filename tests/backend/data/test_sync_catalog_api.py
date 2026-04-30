@@ -117,11 +117,11 @@ class TestSyncCatalogMetadataEndpoint:
                 })
 
             data = resp.get_json()
-            assert data["status"] == "ok"
-            assert isinstance(data["tree"], list)
-            assert len(data["tree"]) == 2
+            assert data["status"] == "success"
+            assert isinstance(data["data"]["tree"], list)
+            assert len(data["data"]["tree"]) == 2
 
-            summary = data["sync_summary"]
+            summary = data["data"]["sync_summary"]
             assert summary["total"] == 2
             assert summary["synced"] == 1
             assert summary["failed"] == 1
@@ -159,11 +159,11 @@ class TestSyncCatalogMetadataEndpoint:
                 })
 
             data = resp.get_json()
-            assert data["status"] == "ok"
-            assert data["message_code"] == "catalog.syncPartial"
-            assert "message" in data
-            assert data["message_params"]["failed"] == 1
-            assert data["message_params"]["total"] == 2
+            assert data["status"] == "success"
+            assert data["data"]["message_code"] == "catalog.syncPartial"
+            assert "message" in data["data"]
+            assert data["data"]["message_params"]["failed"] == 1
+            assert data["data"]["message_params"]["total"] == 2
         finally:
             DATA_CONNECTORS.pop("test_pg2", None)
 
@@ -200,8 +200,8 @@ class TestSyncCatalogMetadataEndpoint:
                 })
 
             data = resp.get_json()
-            assert data["status"] == "ok"
-            assert data["message_code"] == "catalog.syncComplete"
+            assert data["status"] == "success"
+            assert data["data"]["message_code"] == "catalog.syncComplete"
         finally:
             DATA_CONNECTORS.pop("test_full", None)
 

@@ -34,6 +34,7 @@ import { useTranslation } from 'react-i18next';
 import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
 import { Chart, DictTable, Trigger, InteractionEntry } from "../components/ComponentType";
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
@@ -1022,14 +1023,13 @@ let SingleThreadGroupView: FC<{
                         output_table_name: derivedTable.virtual?.tableId
                     };
                     
-                    const response = await fetchWithIdentity(getUrls().REFRESH_DERIVED_DATA, {
+                    const { data: result } = await apiRequest<any>(getUrls().REFRESH_DERIVED_DATA, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(requestBody)
                     });
 
-                    const result = await response.json();
-                    if (result.status === 'ok' && result.rows) {
+                    if (result.rows) {
                         return { tableId: derivedTable.id, rows: result.rows } as { tableId: string, rows: any[] };
                     } else {
                         console.error(`Failed to refresh derived table ${derivedTable.id}:`, result.message);

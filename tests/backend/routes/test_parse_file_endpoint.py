@@ -17,9 +17,12 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "excel"
 
 @pytest.fixture()
 def client():
+    from data_formulator.error_handler import register_error_handlers
+
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.register_blueprint(tables_bp)
+    register_error_handlers(app)
     with app.test_client() as c:
         yield c
 
@@ -37,8 +40,9 @@ def test_parse_xls_returns_sheet_data(client):
         )
 
     assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["status"] == "success"
+    body = resp.get_json()
+    assert body["status"] == "success"
+    data = body["data"]
     assert len(data["sheets"]) >= 1
 
     sheet = data["sheets"][0]
@@ -50,7 +54,9 @@ def test_parse_xls_returns_sheet_data(client):
 def test_parse_file_rejects_missing_file(client):
     resp = client.post("/api/tables/parse-file")
     assert resp.status_code == 200
-    assert resp.get_json()["status"] == "error"
+    data = resp.get_json()
+    assert data["status"] == "error"
+    assert data["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_parse_file_rejects_unsupported_format(client):
@@ -61,7 +67,9 @@ def test_parse_file_rejects_unsupported_format(client):
         content_type="multipart/form-data",
     )
     assert resp.status_code == 200
-    assert resp.get_json()["status"] == "error"
+    data = resp.get_json()
+    assert data["status"] == "error"
+    assert data["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_parse_csv_via_endpoint(client):
@@ -73,7 +81,8 @@ def test_parse_csv_via_endpoint(client):
         content_type="multipart/form-data",
     )
     assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["status"] == "success"
+    body = resp.get_json()
+    assert body["status"] == "success"
+    data = body["data"]
     assert data["sheets"][0]["row_count"] == 2
     assert "name" in data["sheets"][0]["columns"]

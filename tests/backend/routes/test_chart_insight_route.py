@@ -130,9 +130,9 @@ class TestChartInsightSuccess:
         resp = client.post("/api/agent/chart-insight", json=_valid_body())
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["status"] == "ok"
-        assert data["title"] == "Key Insights"
-        assert data["takeaways"] == ["Point A", "Point B"]
+        assert data["status"] == "success"
+        assert data["data"]["title"] == "Key Insights"
+        assert data["data"]["takeaways"] == ["Point A", "Point B"]
 
 
 # ---------------------------------------------------------------------------
