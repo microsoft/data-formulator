@@ -38,6 +38,7 @@ from data_formulator.data_loader.external_data_loader import (
 )
 from data_formulator.data_loader.connector_errors import classify_connector_error
 from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
+from data_formulator.security.path_safety import ConfinedDir
 
 logger = logging.getLogger(__name__)
 
@@ -940,6 +941,11 @@ def _connectors_dir(identity: str) -> Path:
     return get_user_home(identity) / "connectors"
 
 
+def _connectors_jail(identity: str, *, mkdir: bool = True) -> ConfinedDir:
+    """Return a confined view of the per-user connectors directory."""
+    return ConfinedDir(_connectors_dir(identity), mkdir=mkdir)
+
+
 def _safe_source_filename(source_id: str) -> str:
     """Sanitise a source_id into a safe, collision-resistant filename component.
 
@@ -952,9 +958,8 @@ def _safe_source_filename(source_id: str) -> str:
 
 def _persist_user_connector(identity: str, spec: "SourceSpec") -> None:
     """Write a single connector spec to ``connectors/<source_id>.json``."""
-    cdir = _connectors_dir(identity)
-    cdir.mkdir(parents=True, exist_ok=True)
-    path = cdir / f"{_safe_source_filename(spec.source_id)}.json"
+    jail = _connectors_jail(identity)
+    path = jail.resolve(f"{_safe_source_filename(spec.source_id)}.json")
     entry = {
         "source_id": spec.source_id,
         "loader_type": spec.loader_type,
@@ -972,10 +977,12 @@ def _persist_user_connector(identity: str, spec: "SourceSpec") -> None:
 
 def _remove_user_connector(identity: str, connector_id: str) -> None:
     """Remove a connector spec from ``connectors/<source_id>.json``."""
-    path = _connectors_dir(identity) / f"{_safe_source_filename(connector_id)}.json"
     try:
+        jail = _connectors_jail(identity, mkdir=False)
+        filename = f"{_safe_source_filename(connector_id)}.json"
+        path = jail.resolve(filename)
         if path.exists():
-            path.unlink()
+            jail.unlink(filename)
             logger.info("Removed connector spec '%s'", connector_id)
     except Exception as e:
         logger.warning("Failed to remove connector spec '%s': %s", connector_id, e)

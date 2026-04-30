@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from data_formulator.datalake.naming import safe_source_id
+from data_formulator.security.path_safety import ConfinedDir
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,21 @@ def _cache_dir(workspace_root: Path | str) -> Path:
     return Path(workspace_root) / CATALOG_CACHE_DIR
 
 
-def _cache_file(workspace_root: Path | str, source_id: str) -> Path:
-    return _cache_dir(workspace_root) / f"{safe_source_id(source_id)}.json"
+def _cache_jail(workspace_root: Path | str, *, mkdir: bool) -> ConfinedDir:
+    return ConfinedDir(_cache_dir(workspace_root), mkdir=mkdir)
+
+
+def _cache_filename(source_id: str) -> str:
+    return f"{safe_source_id(source_id)}.json"
+
+
+def _cache_file(
+    workspace_root: Path | str,
+    source_id: str,
+    *,
+    mkdir: bool = False,
+) -> Path:
+    return _cache_jail(workspace_root, mkdir=mkdir).resolve(_cache_filename(source_id))
 
 
 def save_catalog(
@@ -48,9 +62,7 @@ def save_catalog(
 ) -> None:
     """Persist catalog data to disk. Best-effort — errors are logged, not raised."""
     try:
-        cache_dir = _cache_dir(workspace_root)
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        path = _cache_file(workspace_root, source_id)
+        path = _cache_file(workspace_root, source_id, mkdir=True)
         payload = {
             "source_id": source_id,
             "synced_at": datetime.now(timezone.utc).isoformat(),
@@ -65,10 +77,11 @@ def save_catalog(
 
 def _load_catalog_raw(workspace_root: Path | str, source_id: str) -> dict[str, Any] | None:
     """Load raw catalog JSON (including original ``source_id`` key)."""
-    path = _cache_file(workspace_root, source_id)
-    if not path.exists():
-        return None
+    path: Path | None = None
     try:
+        path = _cache_file(workspace_root, source_id)
+        if not path.exists():
+            return None
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
@@ -86,13 +99,17 @@ def load_catalog(workspace_root: Path | str, source_id: str) -> list[dict[str, A
 
 def delete_catalog(workspace_root: Path | str, source_id: str) -> None:
     """Remove cached catalog file. Best-effort."""
-    path = _cache_file(workspace_root, source_id)
     try:
+        jail = _cache_jail(workspace_root, mkdir=False)
+        filename = _cache_filename(source_id)
+        path = jail.resolve(filename)
         if path.exists():
-            path.unlink()
+            jail.unlink(filename)
             logger.debug("Catalog cache deleted: %s", path)
     except Exception:
-        logger.debug("Failed to delete catalog cache %s", path, exc_info=True)
+        logger.debug(
+            "Failed to delete catalog cache for %s", source_id, exc_info=True,
+        )
 
 
 def list_cached_sources(workspace_root: Path | str) -> list[str]:

@@ -1,11 +1,11 @@
 # Custom Superset config for Data Formulator test instance.
 # Adds the SSO bridge endpoint so DF can test token-based login.
 
-import json
 import logging
+import os
 from urllib.parse import quote, urlparse
 
-from flask import Blueprint, Response, redirect, request, url_for
+from flask import Blueprint, Response, redirect, render_template_string, request
 from flask_login import current_user
 
 logger = logging.getLogger(__name__)
@@ -13,6 +13,58 @@ logger = logging.getLogger(__name__)
 # -- SSO bridge as a plain Flask Blueprint (registered via BLUEPRINTS) --------
 
 df_sso_bp = Blueprint("df_sso_bridge", __name__)
+
+_DEFAULT_DF_ALLOWED_ORIGINS = frozenset({
+    "http://localhost:5567",
+    "http://127.0.0.1:5567",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+})
+
+_SSO_BRIDGE_TEMPLATE = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>SSO Bridge</title></head>
+<body>
+<p>Completing login...</p>
+<script>
+(function() {
+    var payload = {{ payload | tojson }};
+    var targetOrigin = {{ target_origin | tojson }};
+    if (window.opener) {
+        window.opener.postMessage(payload, targetOrigin);
+        setTimeout(function() { window.close(); }, 500);
+    } else {
+        document.body.textContent = 'Login successful. You can close this window and return to Data Formulator.';
+    }
+})();
+</script>
+</body></html>"""
+
+
+def _normalise_origin(raw_origin):
+    """Return a canonical browser origin, or empty string when invalid."""
+    raw = (raw_origin or "").strip()
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    if parsed.username or parsed.password:
+        return ""
+    if parsed.path not in ("", "/") or parsed.params or parsed.query or parsed.fragment:
+        return ""
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+
+def _allowed_df_origins():
+    origins = set(_DEFAULT_DF_ALLOWED_ORIGINS)
+    for raw in os.environ.get("DF_ALLOWED_ORIGINS", "").split(","):
+        origin = _normalise_origin(raw)
+        if origin:
+            origins.add(origin)
+    return origins
+
+
+def _validate_df_origin(raw_origin):
+    origin = _normalise_origin(raw_origin)
+    return origin if origin in _allowed_df_origins() else ""
 
 
 @df_sso_bp.route("/df-sso-bridge/", methods=["GET"])
@@ -23,13 +75,9 @@ def df_sso_bridge():
     Query params:
         df_origin: The DF frontend origin (e.g. http://localhost:5567).
     """
-    raw_origin = request.args.get("df_origin", "*")
-    # Validate df_origin: must be a real http(s) origin, not an arbitrary string.
-    _parsed = urlparse(raw_origin) if raw_origin != "*" else None
-    if _parsed and _parsed.scheme in ("http", "https") and _parsed.netloc:
-        df_origin = f"{_parsed.scheme}://{_parsed.netloc}"
-    else:
-        df_origin = "*"
+    df_origin = _validate_df_origin(request.args.get("df_origin"))
+    if not df_origin:
+        return Response("Invalid df_origin", status=400, mimetype="text/plain")
 
     if not current_user.is_authenticated:
         # Only allow same-site relative redirects (prevent open redirect).
@@ -48,28 +96,18 @@ def df_sso_bridge():
         "last_name": getattr(current_user, "last_name", "") or "",
     }
 
-    html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>SSO Bridge</title></head>
-<body>
-<p>Completing login...</p>
-<script>
-(function() {{
-    var payload = {{
-        type: 'df-sso-auth',
-        access_token: {json.dumps(access_token)},
-        refresh_token: {json.dumps(refresh_token)},
-        user: {json.dumps(user_data)}
-    }};
-    var targetOrigin = {json.dumps(df_origin)};
-    if (window.opener) {{
-        window.opener.postMessage(payload, targetOrigin);
-        setTimeout(function() {{ window.close(); }}, 500);
-    }} else {{
-        document.body.innerHTML = '<p>Login successful. You can close this window and return to Data Formulator.</p>';
-    }}
-}})();
-</script>
-</body></html>"""
+    payload = {
+        "type": "df-sso-auth",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "user": user_data,
+    }
+
+    html = render_template_string(
+        _SSO_BRIDGE_TEMPLATE,
+        payload=payload,
+        target_origin=df_origin,
+    )
     return Response(html, mimetype="text/html")
 
 

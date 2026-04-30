@@ -125,6 +125,22 @@ class TestDeleteCatalog:
     def test_delete_nonexistent_is_silent(self, tmp_path: Path) -> None:
         delete_catalog(tmp_path, "nonexistent")
 
+    def test_delete_rejects_symlink_escape(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / "catalog_cache"
+        cache_dir.mkdir()
+        outside = tmp_path / "outside.json"
+        outside.write_text("do not delete", encoding="utf-8")
+        link = cache_dir / "pg_prod.json"
+        try:
+            link.symlink_to(outside)
+        except OSError:
+            pytest.skip("symlink creation is not available on this platform")
+
+        delete_catalog(tmp_path, "pg_prod")
+
+        assert outside.exists()
+        assert link.is_symlink()
+
 
 # ==================================================================
 # Tests: list_cached_sources

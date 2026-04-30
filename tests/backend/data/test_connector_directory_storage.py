@@ -186,6 +186,24 @@ class TestPersistAndRemove:
         with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
             _remove_user_connector("alice", "nonexistent")
 
+    def test_remove_rejects_symlink_escape(self, tmp_path: Path) -> None:
+        user_dir = tmp_path / "users" / "alice"
+        connectors_dir = user_dir / "connectors"
+        connectors_dir.mkdir(parents=True)
+        outside = tmp_path / "outside.json"
+        outside.write_text("do not delete", encoding="utf-8")
+        link = connectors_dir / "mysql--prod.json"
+        try:
+            link.symlink_to(outside)
+        except OSError:
+            pytest.skip("symlink creation is not available on this platform")
+
+        with patch("data_formulator.datalake.workspace.get_user_home", return_value=user_dir):
+            _remove_user_connector("alice", "mysql:prod")
+
+        assert outside.exists()
+        assert link.is_symlink()
+
 
 # ==================================================================
 # Tests: _load_user_specs from connectors/ directory
