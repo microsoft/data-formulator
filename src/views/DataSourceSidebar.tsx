@@ -834,7 +834,7 @@ const DataSourceSidebarPanel: React.FC<{
             method: 'GET',
         })
             .then(({ data }) => {
-                const tables = data.annotations?.tables || {};
+                const tables = data.tables || {};
                 const existing = tables[tableKey] || {};
                 setAnnotationEdit({
                     connectorId,
@@ -842,7 +842,7 @@ const DataSourceSidebarPanel: React.FC<{
                     tableName: node.name,
                     description: existing.description || '',
                     notes: existing.notes || '',
-                    version: data.annotations?.version ?? null,
+                    version: data.version ?? null,
                 });
             })
             .catch(() => {

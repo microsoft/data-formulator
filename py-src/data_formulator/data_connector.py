@@ -1261,6 +1261,7 @@ def connector_get_catalog_tree():
 
         # Call list_tables() once, reuse for both tree building and cache
         flat_tables = loader.list_tables(table_filter=name_filter)
+        loader.ensure_table_keys(flat_tables)
         tree = loader._tables_to_catalog_tree(flat_tables)
 
         # Best-effort: persist lightweight catalog to disk for agent search
