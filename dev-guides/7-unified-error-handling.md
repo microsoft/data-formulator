@@ -138,16 +138,20 @@ return json_ok({"tables": ["a", "b"]})
 return json_ok({"id": 1}, status_code=201)
 ```
 
-### 2.4 旧 route 最小迁移格式（过渡期）
+### 2.4 历史格式处理
 
-尚未迁移的 route 可保留旧格式，**但前端已能通过 `parseApiResponse()` 处理两种格式**：
+Phase 2 迁移后，`apiRequest()` / `parseApiResponse()` **不再兼容**旧响应格式。
+以下格式只允许作为历史背景出现在旧提交或归档设计文档中：
 
 ```python
-# 仍可工作（前端兼容），但新代码不要使用
 return jsonify({"status": "ok", "data": data})
 return jsonify({"status": "error", "message": "Table name is required"})
 return jsonify({"status": "error", "error_message": "Model request failed"})
+return jsonify({"error": "Something failed"})
 ```
+
+如果现有 route 仍返回这些格式，必须先迁移到 `json_ok()` / `AppError`，再让前端通过
+`apiRequest()` 消费。不要为了兼容历史 route 放宽 `parseApiResponse()`。
 
 ### 2.5 禁止事项
 
@@ -283,6 +287,31 @@ try {
 | 已建立的流式响应 | 流运行中出错只能通过 NDJSON `type: "error"` 事件传递，不能再修改 HTTP 状态码 |
 | 流预检错误 | `stream_preflight_error()` 始终返回 HTTP 200 + `application/json` |
 
+### 4.6 LLM / Agent 前端 timeout 策略
+
+用户可见的 LLM / Agent 请求不要硬编码短 timeout。timeout 来源必须可解释：
+
+| 请求类型 | timeout 来源 |
+|----------|--------------|
+| 用户可见 LLM / Agent 请求 | `state.config.formulateTimeoutSeconds` |
+| 长链路 Agent + 多工具循环 | `formulateTimeoutSeconds * N`，必须在代码旁说明原因 |
+| 模型连通性检查 | 独立健康检查 timeout，可以短于推理 timeout |
+| 数据库 / connector connect | 独立连接 timeout，并显示连接超时文案 |
+| best-effort preview / debounce | 可短超时或无提示，但必须注释说明 |
+
+系统 timeout 应与用户取消区分。推荐使用 `AbortController.abort(reason)` 传入
+`DOMException(..., "TimeoutError")`，rejected reducer 通过 `action.error.name`
+区分：
+
+| `action.error.name` | 含义 | 处理 |
+|---|---|---|
+| `TimeoutError` | 系统超时 | 显示 warning，文案包含配置秒数或任务名称 |
+| `AbortError` | 用户取消或组件卸载 | 可静默 |
+| 其他错误 | API / 业务错误 | 使用 `getErrorMessage()` 或本地 i18n 文案提示 |
+
+当前已知待清理项：`fetchCodeExpl` 和 `fetchFieldSemanticType` 仍使用 20s
+硬编码 timeout。新增同类代码不要复制该模式。
+
 ## 5. 错误码和 i18n
 
 新增结构化错误码时同步修改：
@@ -356,6 +385,16 @@ DataLoader/connector 只做简单实用分类，不为每个 SDK 维护专门错
 - `handleApiError()` 覆盖 `AbortError`、auth 回调、retry 回调、silent 模式
 - `errorCodes.ts` 覆盖已知 code 翻译和未知 code fallback
 
+### 7.1 自动化护栏现状
+
+当前已有后端协议合约测试和前端 `apiClient` 测试。尚未落地的自动化护栏不要在
+设计文档或评审中标记为已完成：
+
+- `scripts/check_api_error_guardrails.py` 静态扫描脚本尚未实现。
+- CI 尚未强制扫描裸 `jsonify({"error": ...})`、扁平 `status:"ok"`、业务代码直接
+  `fetchWithIdentity().json()`、未说明的 LLM 硬编码 timeout。
+- ESLint 自定义规则尚未强制禁止业务代码直接调用 `fetchWithIdentity()`。
+
 ## 8. 新 endpoint checklist
 
 ### 非流式 endpoint
@@ -366,6 +405,7 @@ DataLoader/connector 只做简单实用分类，不为每个 SDK 维护专门错
 - [ ] 不在响应体中暴露 `str(exc)`
 - [ ] 前端使用 `apiRequest()` 消费
 - [ ] 相关错误路径有 contract test
+- [ ] 如调用 LLM / Agent，前端 timeout 来自统一配置或有明确特例说明
 
 ### 流式 endpoint
 

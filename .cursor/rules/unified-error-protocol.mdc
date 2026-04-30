@@ -70,7 +70,7 @@ raise AppError(ErrorCode.TABLE_NOT_FOUND, "Table not found")
 return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Bad input"))
 
 # Streaming: in-stream error
-yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+yield stream_error_event(classify_and_wrap_llm_error(e))
 ```
 
 ## Frontend: How to Consume APIs
@@ -97,8 +97,9 @@ try {
 }
 ```
 
-New API consumers MUST use `apiRequest()` / `streamRequest()` plus `handleApiError()`.
-Existing `fetchWithIdentity()` paths are being migrated incrementally.
+API consumers MUST use `apiRequest()` / `streamRequest()` plus `handleApiError()`.
+Direct `fetchWithIdentity()` is reserved for lower-level clients and explicit protocol
+exceptions such as file downloads, blob/CSV responses, SPA/OIDC redirects, or third-party URLs.
 
 ## Prohibited Patterns
 
@@ -139,7 +140,7 @@ All streaming endpoints now use `application/x-ndjson` and `stream_error_event()
 | `/data-agent-streaming` | `{status:"error", error_message}` + `application/json` | `stream_error_event()` + `application/x-ndjson` | ✅ Done |
 | `/get-recommendation-questions` | `error: {json}` prefix + `application/json` | `stream_error_event()` + `application/x-ndjson` | ✅ Done |
 | `/generate-report-chat` | `data: {json}` SSE prefix + `text/event-stream` | Pure NDJSON + `application/x-ndjson` | ✅ Done |
-| `/data-loading-chat` | `str(e)` in error field | `classify_llm_error(e)` safe message | ✅ Done |
+| `/data-loading-chat` | `str(e)` in error field | `stream_error_event()` safe message | ✅ Done |
 | `/clean-data-stream` | `\n{json}\n` + `application/json` | `stream_error_event()` + `application/x-ndjson` | ✅ Done |
 
 ## Complete ErrorCode Reference

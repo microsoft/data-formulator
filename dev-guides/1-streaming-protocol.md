@@ -11,7 +11,8 @@
 - **Content-Type**: `application/x-ndjson`
 - **每行**: 一个完整的 JSON 对象，以 `\n` 结尾
 - **编码**: UTF-8，`ensure_ascii=False`
-- **HTTP 状态码**: 流式端点始终返回 `200`（错误通过流内事件传递）
+- **HTTP 状态码**: 流式端点始终返回 `200`。预检失败返回 `200 application/json`
+  的统一错误 envelope；流建立后的错误通过流内事件传递。
 
 ```
 {"type": "question", "text": "...", "goal": "...", "tag": "..."}\n
@@ -308,7 +309,7 @@ if (parsed.text) { ... }
 
 | 端点 | MIME | 序列化方式 | error 格式 | warning 支持 |
 |------|------|------------|------------|-------------|
-| `/data-agent-streaming` | `x-ndjson` | route `json.dumps({token,status,result})` | `stream_error_event` | ✅ `_with_warnings` |
+| `/data-agent-streaming` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
 | `/get-recommendation-questions` | `x-ndjson` | route 累积碎片 → `_try_parse_explore_line` | `stream_error_event` | ✅ `_with_warnings` |
 | `/generate-report-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
 | `/data-loading-chat` | `x-ndjson` | route `json.dumps(event)` | `stream_error_event` | ✅ `_with_warnings` |
