@@ -118,6 +118,8 @@ def _try_parse_explore_line(raw_line: str) -> str | None:
         return None
     try:
         obj = json.loads(line)
+        if "type" not in obj:
+            obj = {"type": "question", **obj}
         return json.dumps(obj, ensure_ascii=False) + "\n"
     except (json.JSONDecodeError, ValueError):
         return None
@@ -310,7 +312,6 @@ def process_data_on_load_request():
 
     logger.info("# process-data-on-load request")
     content = request.get_json()
-    token = content["token"]
     input_data = content["input_data"]
 
     client = get_client(content['model'])
@@ -326,7 +327,7 @@ def process_data_on_load_request():
         candidates = agent.run(content["input_data"])
         candidates = [c['content'] for c in candidates if c['status'] == 'ok']
 
-        return json_ok({"result": candidates}, token=token)
+        return json_ok({"result": candidates})
     except Exception as e:
         logger.exception(e)
         raise classify_and_wrap_llm_error(e) from e
@@ -340,7 +341,6 @@ def clean_data_stream_request():
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
 
     content = request.get_json()
-    token = content["token"]
     client = get_client(content['model'])
 
     logger.info("# clean-data-stream request")
@@ -355,17 +355,34 @@ def clean_data_stream_request():
         agent = DataCleanAgentStream(client=client, language_instruction=language_instruction)
         try:
             for chunk in agent.stream(prompt, artifacts, dialog):
-                yield chunk
+                stripped = chunk.strip()
+                if stripped.startswith("{"):
+                    try:
+                        result = json.loads(stripped)
+                    except (json.JSONDecodeError, ValueError):
+                        result = None
+                    if isinstance(result, dict):
+                        if result.get("status") == "ok":
+                            yield json.dumps({
+                                "type": "result",
+                                "data": result,
+                            }, ensure_ascii=False) + "\n"
+                        else:
+                            yield stream_error_event(AppError(
+                                ErrorCode.AGENT_ERROR,
+                                sanitize_error_message(result.get("content", "Unable to extract tables")),
+                            ))
+                        continue
+                yield json.dumps({"type": "text_delta", "text": chunk}, ensure_ascii=False) + "\n"
         except Exception as e:
             logger.error("clean-data-stream error", exc_info=e)
             if 'unable to download html from url' in str(e):
                 yield stream_error_event(AppError(
                     ErrorCode.DATA_LOAD_ERROR,
                     "This website doesn't allow us to download HTML from URL",
-                    status_code=400,
-                ), token=token)
+                ))
             else:
-                yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+                yield stream_error_event(classify_and_wrap_llm_error(e))
 
     return Response(
         stream_with_context(_with_warnings(generate())),
@@ -380,7 +397,6 @@ def sort_data_request():
 
     logger.info("# sort-data request")
     content = request.get_json()
-    token = content["token"]
 
     try:
         client = get_client(content['model'])
@@ -390,7 +406,7 @@ def sort_data_request():
         candidates = agent.run(content['field'], content['items'])
 
         candidates = candidates if candidates != None else []
-        return json_ok({"result": candidates}, token=token)
+        return json_ok({"result": candidates})
     except Exception as e:
         logger.error("Error in sort-data", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
@@ -402,7 +418,6 @@ def derive_data():
 
     logger.info("# derive-data request")
     content = request.get_json()        
-    token = content["token"]
 
     client = get_client(content['model'])
 
@@ -493,7 +508,7 @@ def derive_data():
                 r["content"] = sanitize_error_message(r["content"])
             sign_result(r)
 
-        return json_ok({"results": results}, token=token)
+        return json_ok({"results": results})
     except Exception as e:
         logger.error("Error in derive-data", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
@@ -520,7 +535,6 @@ def data_agent_streaming():
         return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "Invalid request format"))
 
     content = request.get_json()
-    token = content.get("token", "")
 
     identity_id = get_identity_id()
     if not identity_id:
@@ -594,18 +608,14 @@ def data_agent_streaming():
                 primary_tables=primary_tables,
                 attached_images=attached_images,
             ):
-                yield json.dumps({
-                    "token": token,
-                    "status": "ok",
-                    "result": event,
-                }, ensure_ascii=False) + '\n'
+                yield json.dumps(event, ensure_ascii=False) + '\n'
 
                 if event.get("type") in ("completion", "clarify"):
                     break
 
         except Exception as e:
             logger.error("Error in data-agent-streaming", exc_info=e)
-            yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+            yield stream_error_event(classify_and_wrap_llm_error(e))
 
         logger.setLevel(logging.WARNING)
 
@@ -622,7 +632,6 @@ def refine_data():
 
     logger.info("# refine-data request")
     content = request.get_json()
-    token = content["token"]
 
     client = get_client(content['model'])
 
@@ -697,7 +706,7 @@ def refine_data():
                 r["content"] = sanitize_error_message(r["content"])
             sign_result(r)
 
-        return json_ok({"results": results}, token=token)
+        return json_ok({"results": results})
     except Exception as e:
         logger.error("Error in refine-data", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
@@ -807,7 +816,6 @@ def get_recommendation_questions():
 
     logger.info("# get recommendation questions request")
     content = request.get_json()
-    token = content.get("token", "")
 
     client = get_client(content['model'])
     input_tables = content.get("input_tables", [])
@@ -849,6 +857,8 @@ def get_recommendation_questions():
                         ndjson_line = _try_parse_explore_line(line)
                         if ndjson_line:
                             yield ndjson_line
+                    if "type" not in chunk:
+                        chunk = {"type": "question", **chunk}
                     yield json.dumps(chunk, ensure_ascii=False) + "\n"
                     continue
                 text_buf += chunk
@@ -1241,7 +1251,6 @@ def data_loading_chat():
         except Exception as e:
             logger.exception("data-loading-chat error")
             yield stream_error_event(classify_and_wrap_llm_error(e))
-            yield json.dumps({"type": "done", "full_text": f"Error: {classify_llm_error(e)}"}, ensure_ascii=False) + "\n"
 
     return Response(
         stream_with_context(_with_warnings(generate())),

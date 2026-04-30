@@ -11,6 +11,7 @@ from __future__ import annotations
 import flask
 import pytest
 
+from data_formulator.auth.gateways.github_gateway import github_bp
 from data_formulator.auth.providers.github_oauth import GitHubOAuthProvider
 
 pytestmark = [pytest.mark.backend, pytest.mark.auth]
@@ -21,6 +22,9 @@ def app():
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.secret_key = "test-secret"
+    _app.register_blueprint(github_bp)
+    from data_formulator.error_handler import register_error_handlers
+    register_error_handlers(_app)
     return _app
 
 
@@ -100,3 +104,27 @@ class TestGitHubAuthenticate:
             flask.session["df_user"] = {"user_id": "some-id"}
             result = provider.authenticate(flask.request)
             assert result is None
+
+
+# ------------------------------------------------------------------
+# Gateway JSON/redirect protocol
+# ------------------------------------------------------------------
+
+class TestGitHubGateway:
+
+    def test_callback_missing_code_redirects(self, app):
+        resp = app.test_client().get("/api/auth/github/callback")
+        assert resp.status_code == 302
+        assert "auth_error=missing_authorization_code" in resp.headers["Location"]
+
+    def test_logout_returns_json_ok(self, app):
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess["df_user"] = {"user_id": "github:1", "provider": "github"}
+        resp = client.post("/api/auth/github/logout")
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["status"] == "success"
+        assert body["data"]["logged_out"] is True
+        with client.session_transaction() as sess:
+            assert "df_user" not in sess

@@ -903,39 +903,29 @@ const DataSourceSidebarPanel: React.FC<{
         e.stopPropagation();
         setDisconnectingConnectorId(connector.id);
         try {
-            const resp = await fetchWithIdentity(CONNECTOR_ACTION_URLS.DISCONNECT, {
+            await apiRequest(CONNECTOR_ACTION_URLS.DISCONNECT, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connector.id }),
             });
-            const data = await resp.json();
-            if (resp.ok && data.status === 'disconnected') {
-                setConnectors(prev => prev.map(c => (
-                    c.id === connector.id
-                        ? { ...c, connected: false, sso_auto_connect: false }
-                        : c
-                )));
-                clearConnectorUiState(connector.id);
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'success',
-                    component: 'data source sidebar',
-                    value: t('sidebar.connectorDisconnected', { name: connector.display_name }),
-                }));
-            } else {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'error',
-                    component: 'data source sidebar',
-                    value: data.message || t('sidebar.failedDisconnectConnector'),
-                }));
-            }
-        } catch {
+            setConnectors(prev => prev.map(c => (
+                c.id === connector.id
+                    ? { ...c, connected: false, sso_auto_connect: false }
+                    : c
+            )));
+            clearConnectorUiState(connector.id);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorDisconnected', { name: connector.display_name }),
+            }));
+        } catch (err: any) {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
                 component: 'data source sidebar',
-                value: t('sidebar.failedDisconnectConnector'),
+                value: err?.apiError?.message || t('sidebar.failedDisconnectConnector'),
             }));
         } finally {
             setDisconnectingConnectorId(null);

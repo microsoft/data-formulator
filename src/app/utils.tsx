@@ -10,6 +10,7 @@ import { Type } from "../data/types";
 import * as d3 from 'd3';
 
 import { assembleVegaLite, type ChartEncoding, type AssembleOptions } from "../lib/agents-chart";
+import { getBrowserId } from './identity';
 
 export function getUrls() {
     return {
@@ -136,7 +137,6 @@ async function getCurrentNamespacedIdentity(): Promise<string> {
         // Store not available
     }
     // Fall back to browser ID from localStorage
-    const { getBrowserId } = await import('./identity');
     return `browser:${getBrowserId()}`;
 }
 

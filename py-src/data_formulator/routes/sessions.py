@@ -27,9 +27,11 @@ Routes:
 Note: URL prefix kept as /api/sessions for frontend compatibility.
 """
 
+import errno
 import io
 import logging
 from datetime import datetime
+from typing import NoReturn
 
 from flask import Blueprint, request, send_file
 
@@ -50,6 +52,18 @@ session_bp = Blueprint("sessions", __name__, url_prefix="/api/sessions")
 
 def _is_ephemeral() -> bool:
     return _get_backend() == "ephemeral"
+
+
+def _raise_if_storage_full(exc: OSError) -> NoReturn:
+    """Convert disk-full writes into a user-facing API error."""
+    if exc.errno == errno.ENOSPC:
+        raise AppError(
+            ErrorCode.STORAGE_FULL,
+            "Workspace storage is full. Free disk space and try again.",
+            detail=f"{type(exc).__name__}: errno={exc.errno}",
+            retry=True,
+        ) from exc
+    raise exc
 
 
 # ---------------------------------------------------------------------------
@@ -78,11 +92,14 @@ def save_session():
 
     mgr = get_workspace_manager(identity_id)
 
-    # Lazy creation: frontend generates the ID, first save triggers creation
-    if not mgr.workspace_exists(ws_id):
-        mgr.create_workspace(ws_id)
+    try:
+        # Lazy creation: frontend generates the ID, first save triggers creation
+        if not mgr.workspace_exists(ws_id):
+            mgr.create_workspace(ws_id)
 
-    mgr.save_session_state(ws_id, state)
+        mgr.save_session_state(ws_id, state)
+    except OSError as exc:
+        _raise_if_storage_full(exc)
 
     return json_ok({"id": ws_id, "saved_at": datetime.utcnow().isoformat()})
 

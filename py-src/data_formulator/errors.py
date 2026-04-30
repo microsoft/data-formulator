@@ -67,6 +67,7 @@ class ErrorCode:
     # --- System ---
     INTERNAL_ERROR = "INTERNAL_ERROR"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+    STORAGE_FULL = "STORAGE_FULL"
 
 
 # HTTP status code mapping for application errors.

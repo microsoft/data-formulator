@@ -33,6 +33,7 @@
     "annotationInvalidPatch": "标注数据格式无效",
 
     "internalError": "服务器内部错误",
-    "serviceUnavailable": "服务暂时不可用"
+    "serviceUnavailable": "服务暂时不可用",
+    "storageFull": "工作区存储空间已满，请释放磁盘空间后重试。"
   }
 }

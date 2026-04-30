@@ -3,7 +3,7 @@
  *
  * Covers:
  * - ApiRequestError construction and helpers
- * - parseApiResponse: success/error/legacy-format parsing
+ * - parseApiResponse: strict success/error parsing
  * - apiRequest: HTTP-level + body-level error handling
  * - parseStreamLine: NDJSON line parsing
  */
@@ -27,8 +27,8 @@ import {
     apiRequest,
     parseApiResponse,
     parseStreamLine,
+    streamRequest,
     type ApiError,
-    type StreamEvent,
 } from '../../../../src/app/apiClient';
 import { fetchWithIdentity } from '../../../../src/app/utils';
 
@@ -79,9 +79,9 @@ describe('parseApiResponse', () => {
     describe('new unified format', () => {
 
         it('should parse success response', () => {
-            const body = { status: 'ok', data: { tables: ['a', 'b'] }, token: 'tok-1' };
+            const body = { status: 'success', data: { tables: ['a', 'b'] } };
             const result = parseApiResponse(body, 200);
-            expect(result).toEqual({ data: { tables: ['a', 'b'] }, token: 'tok-1' });
+            expect(result).toEqual({ data: { tables: ['a', 'b'] } });
         });
 
         it('should throw ApiRequestError on error response', () => {
@@ -111,20 +111,12 @@ describe('parseApiResponse', () => {
         });
     });
 
-    // --- Legacy format compatibility ---
-
     describe('Phase 2 unified format', () => {
 
         it('should parse status:"success" response', () => {
             const body = { status: 'success', data: { tables: ['a', 'b'] } };
             const result = parseApiResponse(body, 200);
-            expect(result).toEqual({ data: { tables: ['a', 'b'] }, token: undefined });
-        });
-
-        it('should parse status:"success" with token', () => {
-            const body = { status: 'success', data: { id: 1 }, token: 'tok-3' };
-            const result = parseApiResponse(body, 200);
-            expect(result).toEqual({ data: { id: 1 }, token: 'tok-3' });
+            expect(result).toEqual({ data: { tables: ['a', 'b'] } });
         });
 
         it('should throw on error with HTTP 4xx status', () => {
@@ -157,42 +149,39 @@ describe('parseApiResponse', () => {
         });
     });
 
-    describe('legacy format compatibility', () => {
+    describe('strict protocol validation', () => {
 
-        it('should handle legacy error_message field', () => {
+        it('should reject legacy error_message field', () => {
             const body = { status: 'error', error_message: 'Something went wrong', result: [] };
             expect(() => parseApiResponse(body, 500)).toThrow(ApiRequestError);
             try {
                 parseApiResponse(body, 500);
             } catch (e: any) {
-                expect(e.apiError.message).toBe('Something went wrong');
-                expect(e.apiError.code).toBe('UNKNOWN');
+                expect(e.apiError.code).toBe('MALFORMED_ERROR');
             }
         });
 
-        it('should handle legacy message field', () => {
+        it('should reject legacy message field', () => {
             const body = { status: 'error', message: 'Bad request' };
             try {
                 parseApiResponse(body, 400);
             } catch (e: any) {
-                expect(e.apiError.message).toBe('Bad request');
+                expect(e.apiError.code).toBe('MALFORMED_ERROR');
             }
         });
 
-        it('should handle legacy error with no message at all', () => {
-            const body = { status: 'error', result: [] };
+        it('should reject status:"ok" success body', () => {
+            const body = { status: 'ok', data: { id: 1 } };
             try {
-                parseApiResponse(body, 500);
+                parseApiResponse(body, 200);
             } catch (e: any) {
-                expect(e.apiError.message).toBe('Unknown error');
-                expect(e.apiError.code).toBe('UNKNOWN');
+                expect(e.apiError.code).toBe('MALFORMED_RESPONSE');
             }
         });
 
-        it('should extract data from legacy result field', () => {
+        it('should reject legacy result field', () => {
             const body = { status: 'ok', result: [1, 2, 3], token: 'tok-2' };
-            const result = parseApiResponse(body, 200);
-            expect(result.data).toEqual([1, 2, 3]);
+            expect(() => parseApiResponse(body, 200)).toThrow(ApiRequestError);
         });
     });
 });
@@ -243,30 +232,24 @@ describe('parseStreamLine', () => {
         expect(event!.data.text).toBe('数据分析');
     });
 
-    // Legacy format: {status: "ok"/"error", result: ...}
-    it('should handle legacy status-wrapped events', () => {
+    it('should reject legacy status-wrapped events', () => {
         const line = JSON.stringify({
             status: 'ok',
             token: 'tok-1',
             result: { type: 'text_delta', data: { text: 'hi' } },
         });
         const event = parseStreamLine(line);
-        expect(event).not.toBeNull();
-        expect(event!.type).toBe('text_delta');
-        expect(event!.token).toBe('tok-1');
+        expect(event).toBeNull();
     });
 
-    it('should handle legacy status error wrapper', () => {
+    it('should reject legacy status error wrapper', () => {
         const line = JSON.stringify({
             status: 'error',
             token: 'tok-2',
             error_message: 'Model failed',
         });
         const event = parseStreamLine(line);
-        expect(event).not.toBeNull();
-        expect(event!.type).toBe('error');
-        expect(event!.error!.message).toBe('Model failed');
-        expect(event!.token).toBe('tok-2');
+        expect(event).toBeNull();
     });
 });
 
@@ -300,13 +283,13 @@ describe('apiRequest', () => {
         expect(result.data).toEqual({ id: 1 });
     });
 
-    it('should return data on 200 + status:"ok" (legacy)', async () => {
+    it('should reject 200 + status:"ok" legacy body', async () => {
         mockFetch.mockResolvedValue(
             mockResponse({ status: 'ok', data: { id: 2 }, token: 'tok' }, 200),
         );
-        const result = await apiRequest('/api/test');
-        expect(result.data).toEqual({ id: 2 });
-        expect(result.token).toBe('tok');
+        await expect(apiRequest('/api/test')).rejects.toMatchObject({
+            apiError: { code: 'MALFORMED_RESPONSE' },
+        });
     });
 
     it('should throw ApiRequestError on 400 + structured error', async () => {
@@ -341,20 +324,16 @@ describe('apiRequest', () => {
         }
     });
 
-    it('should throw ApiRequestError on 200 + status:"error" (legacy endpoint)', async () => {
+    it('should reject malformed 200 + status:"error" body', async () => {
         mockFetch.mockResolvedValue(
             mockResponse({
                 status: 'error',
                 error_message: 'Something went wrong',
             }, 200),
         );
-        await expect(apiRequest('/api/test')).rejects.toThrow(ApiRequestError);
-        try {
-            await apiRequest('/api/test');
-        } catch (e: any) {
-            expect(e.apiError.message).toBe('Something went wrong');
-            expect(e.apiError.code).toBe('UNKNOWN');
-        }
+        await expect(apiRequest('/api/test')).rejects.toMatchObject({
+            apiError: { code: 'MALFORMED_ERROR' },
+        });
     });
 
     it('should throw HTTP_ERROR on non-JSON error response', async () => {
@@ -395,5 +374,82 @@ describe('apiRequest', () => {
         const signal = new AbortController().signal;
         await apiRequest('/api/test', { method: 'POST', signal });
         expect(mockFetch).toHaveBeenCalledWith('/api/test', { method: 'POST', signal });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// streamRequest — streaming request with preflight error handling
+// ---------------------------------------------------------------------------
+
+describe('streamRequest', () => {
+    const mockFetch = vi.mocked(fetchWithIdentity);
+
+    beforeEach(() => {
+        mockFetch.mockReset();
+    });
+
+    function streamResponse(text: string, status = 200, contentType = 'application/x-ndjson'): Response {
+        const body = new ReadableStream({
+            start(controller) {
+                controller.enqueue(new TextEncoder().encode(text));
+                controller.close();
+            },
+        });
+        return {
+            ok: status >= 200 && status < 300,
+            status,
+            body,
+            headers: new Headers({ 'content-type': contentType }),
+            json: () => Promise.reject(new SyntaxError('not json')),
+        } as unknown as Response;
+    }
+
+    it('yields top-level type events', async () => {
+        mockFetch.mockResolvedValue(
+            streamResponse('{"type":"text_delta","content":"hi"}\n{"type":"done"}\n'),
+        );
+        const events = [];
+        for await (const event of streamRequest('/api/stream', { method: 'POST' })) {
+            events.push(event);
+        }
+        expect(events.map(event => event.type)).toEqual(['text_delta', 'done']);
+    });
+
+    it('throws on 200 application/json preflight error', async () => {
+        mockFetch.mockResolvedValue({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: () => Promise.resolve({
+                status: 'error',
+                error: { code: 'INVALID_REQUEST', message: 'Bad input', retry: false },
+            }),
+        } as unknown as Response);
+
+        await expect(async () => {
+            for await (const _event of streamRequest('/api/stream', { method: 'POST' })) {
+                // consume generator
+            }
+        }).rejects.toMatchObject({
+            apiError: { code: 'INVALID_REQUEST' },
+            httpStatus: 200,
+        });
+    });
+
+    it('rejects 200 application/json success for stream endpoints', async () => {
+        mockFetch.mockResolvedValue({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: () => Promise.resolve({ status: 'success', data: {} }),
+        } as unknown as Response);
+
+        await expect(async () => {
+            for await (const _event of streamRequest('/api/stream', { method: 'POST' })) {
+                // consume generator
+            }
+        }).rejects.toMatchObject({
+            apiError: { code: 'MALFORMED_STREAM_RESPONSE' },
+        });
     });
 });

@@ -30,12 +30,29 @@ errorHandler.ts
 MessageSnackbar ← dfSlice.messages
 ```
 
+## Protocol Snapshot
+
+Use this contract for all new or reworked DF APIs:
+
+| Scenario | HTTP | Shape |
+|----------|------|-------|
+| Non-streaming success | `200` | `{"status": "success", "data": ...}` |
+| Non-streaming business/validation error | `200` | `{"status": "error", "error": {"code", "message", "retry"}}` |
+| Non-streaming auth/authorization error | `401` / `403` | same structured error body |
+| Streaming preflight error | `200` | `application/json` + `{"status": "error", "error": ...}` |
+| Streaming in-flight fatal error | `200` | NDJSON line: `{"type": "error", "error": ...}` |
+| No Flask route / too large / unhandled crash | `404` / `413` / `500` | transport-level error |
+
+Do not use HTTP `400`/`422` for application validation errors in new code.
+Do not convert in-flight NDJSON errors to `status: "error"`; once the stream has
+started, event `type` is the protocol discriminator.
+
 ## Backend: Adding a New API Endpoint
 
 ### HTTP Status Code Policy
 
-**All application-controlled errors return HTTP 200** with `status: "error"` in the body.
-Only these use non-200:
+**Application-controlled business and validation errors return HTTP 200** with
+`status: "error"` in the body. Only these use non-200:
 - `401`/`403` — auth errors (`AUTH_REQUIRED`, `AUTH_EXPIRED`, `ACCESS_DENIED`)
 - `404` — no matching Flask route
 - `413` — WSGI body limit exceeded
@@ -45,6 +62,7 @@ Only these use non-200:
 
 ```python
 from data_formulator.errors import AppError, ErrorCode
+from data_formulator.error_handler import json_ok
 
 @bp.route('/my-endpoint', methods=['POST'])
 def my_endpoint():
@@ -66,7 +84,8 @@ def my_endpoint():
 ```
 
 Existing routes may still return legacy-compatible `{"status": "error", "message": "..."}`
-or `error_message` bodies. Do not add new HTTP 4xx/5xx status tuples to those responses.
+or `error_message` bodies. Do not add new HTTP 4xx/5xx status tuples for business
+validation errors.
 
 ### Streaming endpoint
 
@@ -74,15 +93,19 @@ Validation MUST be outside the generator. Failures return 200 JSON (not NDJSON).
 
 ```python
 from data_formulator.errors import AppError, ErrorCode
-from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
+from data_formulator.error_handler import (
+    classify_and_wrap_llm_error,
+    stream_error_event,
+    stream_preflight_error,
+)
 
 @bp.route('/my-stream', methods=['POST'])
 def my_stream():
     # Validation outside generator — failures return 200 JSON
     if not request.is_json:
-        return jsonify({"status": "error", "error": {
-            "code": ErrorCode.INVALID_REQUEST, "message": "Invalid request", "retry": False,
-        }})
+        return stream_preflight_error(
+            AppError(ErrorCode.INVALID_REQUEST, "Invalid request")
+        )
 
     content = request.get_json()
     client = get_client(content['model'])
@@ -92,10 +115,14 @@ def my_stream():
             for event in agent.run(...):
                 yield json.dumps(event, ensure_ascii=False) + "\n"
         except Exception as e:
-            yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+            yield stream_error_event(classify_and_wrap_llm_error(e))
 
     return Response(stream_with_context(generate()), mimetype='application/x-ndjson')
 ```
+
+Streaming runtime errors intentionally use `{"type": "error", "error": ...}`.
+They cannot use a top-level `status` envelope because the HTTP response and NDJSON
+event stream have already started.
 
 ## Frontend: Consuming an API
 
@@ -186,7 +213,7 @@ All streaming endpoints are now on the unified protocol:
 
 | Endpoint | Format | Notes |
 |----------|--------|-------|
-| `/data-agent-streaming` | NDJSON + `stream_error_event()` | Wraps events in `{token, status, result}` for OK; `{type:"error", error:{...}}` for errors |
+| `/data-agent-streaming` | NDJSON + `stream_error_event()` | Emits top-level `type` events; errors use `{type:"error", error:{...}}` |
 | `/get-recommendation-questions` | NDJSON + `stream_error_event()` | Was `error: {json}` prefix |
 | `/generate-report-chat` | Pure NDJSON + `stream_error_event()` | Was SSE `data: {json}` prefix. Frontend parser has backward-compat `data: ` fallback |
 | `/data-loading-chat` | NDJSON, `classify_llm_error()` for safe messages | `str(e)` removed |

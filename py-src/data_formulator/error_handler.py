@@ -9,7 +9,7 @@ Public entry points:
   global error handlers and the request-id middleware.
 * ``classify_and_wrap_llm_error(exc)`` — convert a raw LLM / external-API
   exception into a structured ``AppError``.
-* ``stream_error_event(error, *, token)`` — format an error as a single
+* ``stream_error_event(error)`` — format an error as a single
   NDJSON line for streaming endpoints.
 * ``json_ok(data)`` — build a success JSON response with the unified envelope.
 * ``stream_preflight_error(error)`` — build an error response for streaming
@@ -80,7 +80,6 @@ def classify_and_wrap_llm_error(exc: Exception) -> AppError:
     return AppError(
         error_code,
         safe_message,
-        status_code=502,
         detail=str(exc),
         retry=retry,
     )
@@ -90,11 +89,7 @@ def classify_and_wrap_llm_error(exc: Exception) -> AppError:
 # Streaming error event
 # ---------------------------------------------------------------------------
 
-def stream_error_event(
-    error: AppError | Exception,
-    *,
-    token: str = "",
-) -> str:
+def stream_error_event(error: AppError | Exception) -> str:
     """Format an error as a single NDJSON line for streaming endpoints.
 
     Returns a string ending with ``\\n`` that can be directly yielded
@@ -115,11 +110,7 @@ def stream_error_event(
             "retry": False,
         }
 
-    payload: dict = {"type": "error", "error": err_dict}
-    if token:
-        payload["token"] = token
-
-    return json.dumps(payload, ensure_ascii=False) + "\n"
+    return json.dumps({"type": "error", "error": err_dict}, ensure_ascii=False) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +185,7 @@ def flush_stream_warnings() -> list[str]:
 # JSON response helpers
 # ---------------------------------------------------------------------------
 
-def json_ok(data: object = None, *, status_code: int = 200, **extra) -> tuple:
+def json_ok(data: object = None, *, status_code: int = 200) -> tuple:
     """Build a unified success JSON response.
 
     Returns ``(Response, status_code)`` for Flask.  The envelope uses
@@ -203,13 +194,9 @@ def json_ok(data: object = None, *, status_code: int = 200, **extra) -> tuple:
 
         {"status": "success", "data": {...}}
 
-    Extra keyword arguments are merged into the top-level body.  This is
-    useful for transitional fields like ``token`` that will be removed in
-    a later phase.
+    The response body must not include endpoint-specific top-level fields.
     """
-    body: dict = {"status": "success", "data": data}
-    body.update(extra)
-    return jsonify(body), status_code
+    return jsonify({"status": "success", "data": data}), status_code
 
 
 def stream_preflight_error(error: AppError) -> tuple:

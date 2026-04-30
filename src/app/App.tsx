@@ -14,7 +14,6 @@ import {
     DEFAULT_ROW_LIMIT_EPHEMERAL,
 } from './dfSlice'
 import { getBrowserId, generateUUID } from './identity';
-import { getAuthInfo, getOidcUser, getUserManager } from './oidcConfig';
 import type { AuthInfo } from './oidcConfig';
 import { OidcCallback } from './OidcCallback';
 import { AuthButton } from './AuthButton';
@@ -1028,13 +1027,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
             if (!resolvedIdentity) {
                 try {
+                    const { getAuthInfo, getOidcUser } = await import('./oidcConfig');
                     const info: AuthInfo | null = await getAuthInfo();
 
                     if (info?.action === 'backend') {
                         // Backend OIDC — identity from server session
                         try {
-                            const resp = await fetch(info.status_url || '/api/auth/oidc/status');
-                            const status = await resp.json();
+                            const { data: status } = await apiRequest(info.status_url || '/api/auth/oidc/status');
                             if (status.authenticated && status.user) {
                                 resolvedIdentity = {
                                     type: 'user',

@@ -348,7 +348,14 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ table_name: tableId, delimiter }),
                 });
-                if (!response.ok) throw new Error('Export failed');
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const body = await response.json();
+                    if (body.status === 'error') {
+                        throw new Error(body.error?.message || 'Export failed');
+                    }
+                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const blob = await response.blob();
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);

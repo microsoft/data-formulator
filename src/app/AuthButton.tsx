@@ -20,9 +20,10 @@ import { useTranslation } from "react-i18next";
 import type { UserManager } from "oidc-client-ts";
 import { dfActions, type DataFormulatorState } from "./dfSlice";
 import type { AppDispatch } from "./store";
-import { getAuthInfo, getUserManager, type AuthInfo } from "./oidcConfig";
+import type { AuthInfo } from "./oidcConfig";
 import { persistor } from "./store";
 import { getBrowserId } from "./identity";
+import { apiRequest } from "./apiClient";
 
 export const AuthButton: FC = () => {
     const { t } = useTranslation();
@@ -34,20 +35,34 @@ export const AuthButton: FC = () => {
     const [loginError, setLoginError] = useState<string | null>(null);
 
     useEffect(() => {
-        getAuthInfo().then(setAuthInfo).catch(() => {});
-        getUserManager()
-            .then(setMgr)
-            .catch((err) => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const { getAuthInfo, getUserManager } = await import("./oidcConfig");
+                const info = await getAuthInfo();
+                if (!cancelled) {
+                    setAuthInfo(info);
+                }
+                const manager = await getUserManager();
+                if (!cancelled) {
+                    setMgr(manager);
+                }
+            } catch (err) {
+                if (cancelled) return;
                 console.error("[AuthButton] Failed to initialise SSO:", err);
                 setInitError(err instanceof Error ? err.message : String(err));
-            });
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     const isBackend = authInfo?.action === "backend";
 
     const handleSignOut = useCallback(async () => {
         if (isBackend) {
-            await fetch(authInfo?.logout_url || "/api/auth/oidc/logout", { method: "POST" });
+            await apiRequest(authInfo?.logout_url || "/api/auth/oidc/logout", { method: "POST" });
             const browserId = getBrowserId();
             dispatch(dfActions.setIdentity({ type: "browser", id: browserId }));
             localStorage.setItem("df_identity_type", "browser");

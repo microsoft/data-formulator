@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from './dfSlice';
 import { saveWorkspaceState } from './workspaceService';
+import { handleApiError } from './errorHandler';
 
 /**
  * Fields excluded from auto-save (secrets / ephemeral / fetched-on-startup).
@@ -20,6 +21,7 @@ const EXCLUDED_FIELDS = new Set([
 
 /** Debounce interval in milliseconds. */
 const AUTO_SAVE_DEBOUNCE_MS = 3000;
+const AUTO_SAVE_ERROR_NOTIFY_MS = 60000;
 
 /**
  * Extract the serializable portion of the Redux state (strip sensitive/transient fields).
@@ -47,6 +49,7 @@ export function useAutoSave() {
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isSavingRef = useRef(false);
     const pendingRef = useRef(false);
+    const lastErrorNotifyRef = useRef(0);
 
     useEffect(() => {
         // Don't auto-save while a session is loading, no workspace active, or no tables loaded
@@ -71,8 +74,13 @@ export function useAutoSave() {
                 const serializable = getSerializableState(state);
                 await saveWorkspaceState(serializable);
             } catch (err) {
-                // Auto-save is best-effort; log but don't disrupt the user
-                console.warn('[auto-save] failed:', err);
+                const now = Date.now();
+                if (now - lastErrorNotifyRef.current >= AUTO_SAVE_ERROR_NOTIFY_MS) {
+                    lastErrorNotifyRef.current = now;
+                    handleApiError(err, 'Auto-save');
+                } else {
+                    console.warn('[auto-save] failed:', err);
+                }
             } finally {
                 isSavingRef.current = false;
                 // If state changed while we were saving, trigger another save

@@ -54,13 +54,12 @@ import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 
 const CATALOG_PAGE_SIZE = 200;
 
-/** Extract a user-visible error message from a connect response body,
- *  compatible with both the unified `{error:{message}}` and legacy `{message}` formats. */
+/** Extract a user-visible error message from a connector data payload. */
 function extractConnectError(body: any, fallback: string): string {
     if (body.error && typeof body.error === 'object' && body.error.message) {
         return body.error.message;
     }
-    return body.error_message ?? body.message ?? fallback;
+    return body.message ?? fallback;
 }
 
 function makeLoadMoreNode(parentPath: string[], nextOffset: number): CatalogTreeNode {
@@ -79,9 +78,16 @@ export const handleDBDownload = async (identityId: string) => {
         { method: 'GET' }
     );
     
-    if (!response.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
         const errorData = await response.json();
-        throw new Error(errorData.error || errorData.message || 'Failed to download database file');
+        if (errorData.status === 'error') {
+            throw new Error(errorData.error?.message || 'Failed to download database file');
+        }
+    }
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
     }
 
     const blob = await response.blob();

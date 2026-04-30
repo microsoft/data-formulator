@@ -11,9 +11,9 @@
  * - {@link apiRequest} — high-level non-streaming request
  * - {@link streamRequest} — high-level streaming (NDJSON) request generator
  *
- * All functions are backward-compatible with the legacy response formats
- * (`error_message`, `message`, `result` fields) so that they can be adopted
- * incrementally while backend endpoints are migrated.
+ * All functions enforce the current DF API protocol:
+ * `{status: "success", data: ...}` or `{status: "error", error: ...}` for
+ * JSON APIs, and top-level `type` events for NDJSON streams.
  */
 
 import { fetchWithIdentity } from './utils';
@@ -33,7 +33,6 @@ export interface StreamEvent<T = any> {
     type: string;
     data?: T;
     error?: ApiError;
-    token?: string;
 }
 
 // ====== ApiRequestError ====================================================
@@ -66,35 +65,35 @@ export class ApiRequestError extends Error {
 // ====== Response parsing ===================================================
 
 /**
- * Parse a JSON response body into `{data, token}` or throw {@link ApiRequestError}.
+ * Parse a JSON response body into `{data}` or throw {@link ApiRequestError}.
  *
- * Handles all format generations:
- * - Phase 2+: `{status: "success", data: ...}`
- * - Phase 1:  `{status: "ok", data: ...}` or `{status: "ok", result: ...}`
- * - Error:    `{status: "error", error: {code, message, ...}}`
- * - Legacy:   `{status: "error", error_message: "..."}` or `{status: "error", message: "..."}`
+ * Handles the current API format only:
+ * - Success: `{status: "success", data: ...}`
+ * - Error:   `{status: "error", error: {code, message, ...}}`
  */
 export function parseApiResponse<T = any>(
     body: any,
     httpStatus: number,
-): { data: T; token?: string } {
+): { data: T } {
     if (body.status === 'error') {
-        let apiError: ApiError;
         if (body.error && typeof body.error === 'object' && body.error.code) {
-            apiError = body.error as ApiError;
-        } else {
-            apiError = {
-                code: 'UNKNOWN',
-                message: body.error_message ?? body.message ?? 'Unknown error',
-                retry: false,
-            };
+            throw new ApiRequestError(body.error as ApiError, httpStatus);
         }
-        throw new ApiRequestError(apiError, httpStatus);
+        throw new ApiRequestError(
+            { code: 'MALFORMED_ERROR', message: 'Malformed error response', retry: false },
+            httpStatus,
+        );
+    }
+
+    if (body.status !== 'success') {
+        throw new ApiRequestError(
+            { code: 'MALFORMED_RESPONSE', message: 'Malformed success response', retry: false },
+            httpStatus,
+        );
     }
 
     return {
-        data: (body.data !== undefined ? body.data : body.result) as T,
-        token: body.token,
+        data: body.data as T,
     };
 }
 
@@ -102,9 +101,7 @@ export function parseApiResponse<T = any>(
  * Parse a single NDJSON line into a {@link StreamEvent}, or `null` if the line
  * is empty / unparseable.
  *
- * Handles both formats:
- * - New:    `{type: "...", data?: ..., error?: ...}`
- * - Legacy: `{status: "ok"|"error", result: {type, ...}, token, error_message}`
+ * Handles the current stream format: `{type: "...", data?: ..., error?: ...}`.
  */
 export function parseStreamLine<T = any>(line: string): StreamEvent<T> | null {
     const trimmed = line.trim();
@@ -117,27 +114,8 @@ export function parseStreamLine<T = any>(line: string): StreamEvent<T> | null {
         return null;
     }
 
-    // New format: already has `type` at top level
     if (parsed.type) {
         return parsed as StreamEvent<T>;
-    }
-
-    // Legacy format: {status, result, token, error_message}
-    if (parsed.status === 'ok' && parsed.result && typeof parsed.result === 'object') {
-        const event: StreamEvent<T> = { ...parsed.result };
-        if (parsed.token) event.token = parsed.token;
-        return event;
-    }
-
-    if (parsed.status === 'error') {
-        const error: ApiError = parsed.error ?? {
-            code: 'UNKNOWN',
-            message: parsed.error_message ?? parsed.message ?? 'Unknown error',
-            retry: false,
-        };
-        const event: StreamEvent<T> = { type: 'error', error };
-        if (parsed.token) event.token = parsed.token;
-        return event;
     }
 
     return null;
@@ -154,7 +132,7 @@ export function parseStreamLine<T = any>(line: string): StreamEvent<T> | null {
  * 2. Body status — `body.status === "error"` catches all application-level
  *    errors (returned as HTTP 200 by the backend).
  *
- * On success, returns `{data, token}`.  On failure, throws
+ * On success, returns `{data}`.  On failure, throws
  * {@link ApiRequestError} with the structured error payload.
  *
  * **Streaming endpoints should use {@link streamRequest} instead.**
@@ -162,7 +140,7 @@ export function parseStreamLine<T = any>(line: string): StreamEvent<T> | null {
 export async function apiRequest<T = any>(
     url: string,
     options?: RequestInit,
-): Promise<{ data: T; token?: string }> {
+): Promise<{ data: T }> {
     const response = await fetchWithIdentity(url, options);
 
     let body: any;
@@ -181,9 +159,7 @@ export async function apiRequest<T = any>(
         );
     }
 
-    // parseApiResponse handles both HTTP-level and body-level errors:
-    // - If body.status === 'error', it throws ApiRequestError regardless of HTTP status
-    // - If body.status is 'success' or 'ok', it extracts data
+    // parseApiResponse handles body-level success/error envelopes.
     return parseApiResponse<T>(body, response.status);
 }
 
@@ -211,7 +187,7 @@ export async function* streamRequest<T = any>(
             const body = await response.json();
             apiError = body.error ?? {
                 code: 'HTTP_ERROR',
-                message: body.error_message ?? body.message ?? `HTTP ${response.status}`,
+                message: `HTTP ${response.status}`,
                 retry: false,
             };
         } catch {
@@ -226,15 +202,25 @@ export async function* streamRequest<T = any>(
         const body = await response.json();
         if (body.status === 'error') {
             const apiError: ApiError = body.error ?? {
-                code: 'UNKNOWN',
-                message: body.error_message ?? body.message ?? 'Unknown error',
+                code: 'MALFORMED_ERROR',
+                message: 'Malformed error response',
                 retry: false,
             };
             throw new ApiRequestError(apiError, response.status);
         }
+        throw new ApiRequestError(
+            { code: 'MALFORMED_STREAM_RESPONSE', message: 'Expected NDJSON stream response', retry: false },
+            response.status,
+        );
     }
 
-    const reader = response.body!.getReader();
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new ApiRequestError(
+            { code: 'MALFORMED_STREAM_RESPONSE', message: 'Missing stream body', retry: false },
+            response.status,
+        );
+    }
     const decoder = new TextDecoder();
     let buffer = '';
 

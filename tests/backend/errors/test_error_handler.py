@@ -173,13 +173,7 @@ class TestStreamErrorEvent:
             assert parsed["error"]["message"] == "slow down"
             assert parsed["error"]["retry"] is True
 
-    def test_token_included_when_provided(self) -> None:
-        with self.app.app_context():
-            err = AppError(ErrorCode.INTERNAL_ERROR, "oops")
-            parsed = json.loads(self.stream_error_event(err, token="abc-123"))
-            assert parsed["token"] == "abc-123"
-
-    def test_token_absent_when_empty(self) -> None:
+    def test_token_absent_from_error_event(self) -> None:
         with self.app.app_context():
             err = AppError(ErrorCode.INTERNAL_ERROR, "oops")
             parsed = json.loads(self.stream_error_event(err))
@@ -411,11 +405,11 @@ class TestJsonOk:
             resp, status = self.json_ok({"id": 1}, status_code=201)
             assert status == 201
 
-    def test_extra_fields_merged(self) -> None:
+    def test_top_level_body_is_strict(self) -> None:
         with self.app.test_request_context("/"):
-            resp, status = self.json_ok({"x": 1}, token="tok-1")
+            resp, status = self.json_ok({"x": 1})
             body = resp.get_json()
-            assert body["token"] == "tok-1"
+            assert set(body.keys()) == {"status", "data"}
             assert body["data"] == {"x": 1}
 
     def test_status_field_is_success_not_ok(self) -> None:

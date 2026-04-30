@@ -731,7 +731,7 @@ class TestErrorHandling:
 
     def test_sanitize_error_connection_refused(self):
         msg, code = _sanitize_error(ConnectionError("Connection refused"))
-        assert code == 502
+        assert code == 200
         assert "Connection failed" in msg
 
     def test_sanitize_error_permission(self):
@@ -740,11 +740,11 @@ class TestErrorHandling:
 
     def test_sanitize_error_invalid_params(self):
         msg, code = _sanitize_error(ValueError("host is required"))
-        assert code == 400
+        assert code == 200
 
     def test_sanitize_error_unknown(self):
         msg, code = _sanitize_error(RuntimeError("something weird happened"))
-        assert code == 500
+        assert code == 200
         # Should not leak the original message
         assert "unexpected" in msg.lower()
 

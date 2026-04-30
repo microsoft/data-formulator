@@ -70,29 +70,28 @@ def classify_and_raise_connector_error(error: Exception) -> None:
     if isinstance(error, ConnectorParamError):
         raise AppError(
             ErrorCode.INVALID_REQUEST,
-            str(error),
-            status_code=400,
+            safe_detail or "Invalid parameters",
             detail=safe_detail,
         ) from error
 
     if any(kw in msg for kw in ("authenticat", "login", "credential",
                                  "unauthorized", "401", "forbidden", "403")):
-        raise AppError(ErrorCode.LLM_AUTH_FAILED, "Authentication failed", status_code=401, detail=safe_detail) from error
+        raise AppError(ErrorCode.LLM_AUTH_FAILED, "Authentication failed", detail=safe_detail) from error
     if any(kw in msg for kw in ("expired", "token")):
-        raise AppError(ErrorCode.AUTH_EXPIRED, "Token expired or invalid", status_code=401, detail=safe_detail) from error
+        raise AppError(ErrorCode.AUTH_EXPIRED, "Token expired or invalid", detail=safe_detail) from error
     if any(kw in msg for kw in ("permission", "access denied", "denied")):
-        raise AppError(ErrorCode.ACCESS_DENIED, "Access denied", status_code=403, detail=safe_detail) from error
+        raise AppError(ErrorCode.ACCESS_DENIED, "Access denied", detail=safe_detail) from error
 
     if any(kw in msg for kw in ("connect", "refused", "unreachable",
                                  "resolve", "dns", "network", "socket")):
-        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection failed", status_code=502, detail=safe_detail, retry=True) from error
+        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection failed", detail=safe_detail, retry=True) from error
     if "timeout" in msg or "timed out" in msg:
-        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection timed out", status_code=504, detail=safe_detail, retry=True) from error
+        raise AppError(ErrorCode.DB_CONNECTION_FAILED, "Connection timed out", detail=safe_detail, retry=True) from error
 
     if "required" in msg or "invalid" in msg or "missing" in msg:
-        raise AppError(ErrorCode.INVALID_REQUEST, safe_detail or "Invalid parameters", status_code=400, detail=safe_detail) from error
+        raise AppError(ErrorCode.INVALID_REQUEST, safe_detail or "Invalid parameters", detail=safe_detail) from error
 
-    raise AppError(ErrorCode.CONNECTOR_ERROR, "An unexpected connector error occurred", status_code=500, detail=safe_detail) from error
+    raise AppError(ErrorCode.CONNECTOR_ERROR, "An unexpected connector error occurred", detail=safe_detail) from error
 
 
 def _sanitize_error(error: Exception) -> tuple[str, int]:
@@ -101,7 +100,7 @@ def _sanitize_error(error: Exception) -> tuple[str, int]:
     try:
         classify_and_raise_connector_error(error)
     except AppError as ae:
-        return ae.message, ae.status_code
+        return ae.message, ae.get_http_status()
     return "An unexpected error occurred", 500
 
 
@@ -221,12 +220,12 @@ def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnect
 
     connector_id = data.get("connector_id")
     if not connector_id:
-        raise AppError(ErrorCode.INVALID_REQUEST, "connector_id is required", status_code=400)
+        raise AppError(ErrorCode.INVALID_REQUEST, "connector_id is required")
 
     try:
         identity = DataConnector._get_identity()
     except Exception as exc:
-        raise AppError(ErrorCode.INVALID_REQUEST, "Identity is required", status_code=400) from exc
+        raise AppError(ErrorCode.INVALID_REQUEST, "Identity is required") from exc
 
     # Admin/global connector IDs are public registry keys.
     if connector_id in _ADMIN_CONNECTOR_IDS and connector_id in DATA_CONNECTORS:
@@ -242,7 +241,7 @@ def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnect
     if legacy is not None and not _is_user_connector_key(connector_id):
         return connector_id, legacy
 
-    raise AppError(ErrorCode.CONNECTOR_ERROR, "Connector not found", status_code=404)
+    raise AppError(ErrorCode.CONNECTOR_ERROR, "Connector not found")
 
 
 # ---------------------------------------------------------------------------
@@ -1463,8 +1462,8 @@ def connector_patch_annotations():
             "columns": { "<col>": {"description": "..."} }
         }
 
-    Success: ``{"status": "ok", "version": N}``
-    Conflict: 409 with ``ANNOTATION_CONFLICT`` error code.
+    Success: ``{"status": "success", "data": {"version": N}}``
+    Conflict: ``ANNOTATION_CONFLICT`` in the structured error body.
     """
     from data_formulator.errors import AppError, ErrorCode
     from data_formulator.datalake.catalog_annotations import (
@@ -1479,7 +1478,6 @@ def connector_patch_annotations():
         raise AppError(
             ErrorCode.ANNOTATION_INVALID_PATCH,
             "table_key is required",
-            status_code=400,
         )
 
     patch_fields = {}
@@ -1490,7 +1488,6 @@ def connector_patch_annotations():
         raise AppError(
             ErrorCode.ANNOTATION_INVALID_PATCH,
             "No annotation fields provided",
-            status_code=400,
         )
 
     expected_version = data.get("expected_version")
@@ -1518,8 +1515,7 @@ def connector_patch_annotations():
     except AnnotationConflict as e:
         raise AppError(
             ErrorCode.ANNOTATION_CONFLICT,
-            str(e),
-            status_code=409,
+            "Annotation has changed; refresh and try again",
             detail={"current_version": e.current_version},
         ) from e
     except AppError:
@@ -1537,10 +1533,12 @@ def connector_get_annotations():
     Returns::
 
         {
-            "status": "ok",
-            "source_id": "...",
-            "version": N,
-            "tables": { "<table_key>": { ... } }
+            "status": "success",
+            "data": {
+                "source_id": "...",
+                "version": N,
+                "tables": { "<table_key>": { ... } }
+            }
         }
     """
     connector_id = request.args.get("connector_id", "")

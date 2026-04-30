@@ -47,6 +47,8 @@ def app(monkeypatch):
     _app.register_blueprint(oidc_bp)
     _app.register_blueprint(oidc_callback_bp)
     _app.register_blueprint(auth_tokens_bp)
+    from data_formulator.error_handler import register_error_handlers
+    register_error_handlers(_app)
     return _app
 
 
@@ -90,8 +92,11 @@ class TestOIDCLogin:
         monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
         c = app.test_client()
         resp = c.get("/api/auth/oidc/login")
-        assert resp.status_code == 400
-        assert "not enabled" in resp.get_json()["error"]
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "INVALID_REQUEST"
+        assert "not enabled" in body["error"]["message"]
 
     def test_login_fails_without_authorize_url(self, app):
         no_authz = {**_FAKE_OIDC_CONFIG, "authorize_url": ""}
@@ -101,8 +106,11 @@ class TestOIDCLogin:
         ):
             c = app.test_client()
             resp = c.get("/api/auth/oidc/login")
-        assert resp.status_code == 500
-        assert "not available" in resp.get_json()["error"]
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "SERVICE_UNAVAILABLE"
+        assert "not available" in body["error"]["message"]
 
     def test_login_redirect_uri_uses_auth_callback(self, client):
         resp = client.get("/api/auth/oidc/login")
@@ -182,7 +190,8 @@ class TestOIDCCallback:
         monkeypatch.delenv("OIDC_CLIENT_SECRET", raising=False)
         c = app.test_client()
         resp = c.get("/auth/callback?code=x&state=y")
-        assert resp.status_code == 400
+        assert resp.status_code == 302
+        assert "auth_error=backend_oidc_not_enabled" in resp.headers["Location"]
 
 
 # ==================================================================
@@ -202,11 +211,15 @@ class TestOIDCStatus:
             }
         resp = client.get("/api/auth/oidc/status")
         data = resp.get_json()
+        assert data["status"] == "success"
+        data = data["data"]
         assert data["authenticated"] is True
 
     def test_status_not_authenticated(self, client):
         resp = client.get("/api/auth/oidc/status")
         data = resp.get_json()
+        assert data["status"] == "success"
+        data = data["data"]
         assert data["authenticated"] is False
 
     def test_status_frontend_mode(self, app, monkeypatch):
@@ -214,6 +227,8 @@ class TestOIDCStatus:
         c = app.test_client()
         resp = c.get("/api/auth/oidc/status")
         data = resp.get_json()
+        assert data["status"] == "success"
+        data = data["data"]
         assert data["authenticated"] is False
         assert data["mode"] == "frontend"
 
@@ -231,7 +246,8 @@ class TestOIDCLogout:
             sess["sso_disconnected_services"] = {"superset": True}
             sess["_oauth_state"] = "state"
         resp = client.post("/api/auth/oidc/logout")
-        assert resp.get_json()["status"] == "ok"
+        assert resp.get_json()["status"] == "success"
+        assert resp.get_json()["data"]["logged_out"] is True
         with client.session_transaction() as sess:
             assert "sso" not in sess
             assert "service_tokens" not in sess
@@ -252,7 +268,8 @@ class TestOIDCLogout:
                 flask.session.pop("sso_disconnected_services", None),
             )
             resp = client.post("/api/auth/oidc/logout")
-        assert resp.get_json()["status"] == "ok"
+        assert resp.get_json()["status"] == "success"
+        assert resp.get_json()["data"]["logged_out"] is True
         instance.clear_session_tokens.assert_called_once_with()
         assert not instance.clear_service_token.called
 
@@ -301,7 +318,8 @@ class TestClearServiceToken:
                 "other": {"access_token": "tok-2"},
             }
         resp = client.delete("/api/auth/tokens/superset")
-        assert resp.get_json()["status"] == "ok"
+        assert resp.get_json()["status"] == "success"
+        assert resp.get_json()["data"]["cleared"] is True
         with client.session_transaction() as sess:
             tokens = sess.get("service_tokens", {})
             assert "superset" not in tokens
@@ -309,7 +327,8 @@ class TestClearServiceToken:
 
     def test_clear_nonexistent_token_is_ok(self, client):
         resp = client.delete("/api/auth/tokens/nonexistent")
-        assert resp.get_json()["status"] == "ok"
+        assert resp.get_json()["status"] == "success"
+        assert resp.get_json()["data"]["cleared"] is True
 
 
 # ==================================================================
@@ -326,7 +345,8 @@ class TestSaveDelegatedToken:
             "expires_in": 7200,
         })
         data = resp.get_json()
-        assert data["status"] == "ok"
+        assert data["status"] == "success"
+        assert data["data"]["saved"] is True
 
         with client.session_transaction() as sess:
             tokens = sess.get("service_tokens", {})
@@ -337,13 +357,19 @@ class TestSaveDelegatedToken:
         resp = client.post("/api/auth/tokens/save", json={
             "system_id": "superset",
         })
-        assert resp.status_code == 400
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "INVALID_REQUEST"
 
     def test_save_token_missing_system_id(self, client):
         resp = client.post("/api/auth/tokens/save", json={
             "access_token": "tok",
         })
-        assert resp.status_code == 400
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "INVALID_REQUEST"
 
 
 # ==================================================================
@@ -366,5 +392,7 @@ class TestAuthServiceStatus:
             }
             resp = client.get("/api/auth/service-status")
         data = resp.get_json()
+        assert data["status"] == "success"
+        data = data["data"]
         assert "superset" in data
         assert data["superset"]["display_name"] == "Superset"

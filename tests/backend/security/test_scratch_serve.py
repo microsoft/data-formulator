@@ -14,6 +14,7 @@ import pytest
 from flask import Flask
 
 from data_formulator.datalake.workspace import Workspace
+from data_formulator.error_handler import register_error_handlers
 from data_formulator.routes.agents import agent_bp
 
 pytestmark = [pytest.mark.backend]
@@ -34,6 +35,7 @@ def client(tmp_workspace):
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.register_blueprint(agent_bp)
+    register_error_handlers(app)
     with (
         patch("data_formulator.routes.agents.get_identity_id", return_value="test-user"),
         patch("data_formulator.routes.agents.get_workspace", return_value=tmp_workspace),
@@ -51,18 +53,24 @@ class TestScratchServePathSafety:
 
     def test_path_traversal_returns_error(self, client):
         resp = client.get("/api/agent/workspace/scratch/../../../etc/passwd")
-        assert resp.status_code == 200
-        assert resp.get_json()["status"] == "error"
+        assert resp.status_code == 403
+        body = resp.get_json()
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "ACCESS_DENIED"
 
     def test_dotdot_single_returns_error(self, client):
         resp = client.get("/api/agent/workspace/scratch/../secret.txt")
-        assert resp.status_code == 200
-        assert resp.get_json()["status"] == "error"
+        assert resp.status_code == 403
+        body = resp.get_json()
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "ACCESS_DENIED"
 
     def test_nonexistent_file_returns_error(self, client):
         resp = client.get("/api/agent/workspace/scratch/no_such_file.csv")
         assert resp.status_code == 200
-        assert resp.get_json()["status"] == "error"
+        body = resp.get_json()
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "TABLE_NOT_FOUND"
 
     def test_response_uses_send_file_not_send_from_directory(self, client):
         """After FINDING-1 fix, scratch_serve must use send_file (not send_from_directory)."""

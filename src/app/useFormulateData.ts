@@ -6,8 +6,8 @@ import { useTranslation } from 'react-i18next';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType } from './dfSlice';
 import { AppDispatch } from './store';
 import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../components/ComponentType';
-import { getUrls, getTriggers, fetchWithIdentity, translateBackend } from './utils';
-import { apiRequest } from './apiClient';
+import { getUrls, getTriggers, translateBackend } from './utils';
+import { apiRequest, streamRequest } from './apiClient';
 
 export type IdeaItem = {
     text: string;
@@ -202,13 +202,13 @@ export function useFormulateData() {
         onThinkingBuffer("");
         onIdeas([]);
 
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
         try {
             const focusedThread = buildFocusedThread(currentTable);
             const otherThreads = buildOtherThreads(currentTable);
             const actionTables = actionTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
             const messageBody = JSON.stringify({
-                token: String(Date.now()),
                 model: activeModel,
                 input_tables: actionTables.map(t => ({
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
@@ -231,111 +231,46 @@ export function useFormulateData() {
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
             const controller = new AbortController();
             let timedOut = false;
-            const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
+            timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
-            const response = await fetchWithIdentity(engine, {
+            const questions: IdeaItem[] = [];
+            for await (const event of streamRequest(engine, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: messageBody,
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const reader = response.body?.getReader();
-            if (!reader) {
-                throw new Error('No response body reader available');
-            }
-
-            const decoder = new TextDecoder();
-            let lines: string[] = [];
-            let buffer = '';
-
-            const updateState = (currentLines: string[]) => {
-                const dataBlocks = currentLines
-                    .map(line => { try { return JSON.parse(line.trim()); } catch (e) { return null; } })
-                    .filter(block => block != null);
-
-                const questions = dataBlocks
-                    .map((block: any) => ({
-                        text: block.text,
-                        goal: block.goal,
-                        tag: block.tag || 'deep-dive',
+            }, controller.signal)) {
+                if (event.type === 'error') {
+                    throw new Error(event.error?.message ?? 'Unknown error');
+                }
+                if (event.type === 'warning') {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'exploration',
+                        value: (event as any).warning?.message ?? 'Warning from server',
                     }));
-
-                onIdeas(questions);
-            };
-
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const ndjsonLines = buffer.split('\n');
-                    buffer = ndjsonLines.pop() || '';
-                    for (const rawLine of ndjsonLines) {
-                        const trimmed = rawLine.trim();
-                        if (!trimmed) continue;
-                        try {
-                            const parsed = JSON.parse(trimmed);
-                            if (parsed.type === 'error') {
-                                const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
-                                throw new Error(msg);
-                            }
-                            if (parsed.type === 'warning') {
-                                dispatch(dfActions.addMessages({
-                                    timestamp: Date.now(), type: 'warning',
-                                    component: 'exploration',
-                                    value: parsed.warning?.message ?? 'Warning from server',
-                                }));
-                                continue;
-                            }
-                            if (parsed.type === 'progress') {
-                                onProgress?.(parsed.phase);
-                                continue;
-                            }
-                            if (parsed.text) {
-                                lines.push(trimmed);
-                                updateState(lines);
-                            }
-                        } catch (e) {
-                            if (e instanceof Error && e.message !== trimmed) throw e;
-                            onThinkingBuffer(trimmed);
-                        }
-                    }
+                    continue;
                 }
-            } finally {
-                reader.releaseLock();
-            }
-
-            if (buffer.trim()) {
-                try {
-                    const parsed = JSON.parse(buffer.trim());
-                    if (parsed.type === 'error') {
-                        const msg = parsed.error?.message ?? 'Unknown error';
-                        throw new Error(msg);
-                    }
-                    if (parsed.type === 'warning') {
-                        dispatch(dfActions.addMessages({
-                            timestamp: Date.now(), type: 'warning',
-                            component: 'exploration',
-                            value: parsed.warning?.message ?? 'Warning from server',
-                        }));
-                    } else if (parsed.text) {
-                        lines.push(buffer.trim());
-                    }
-                } catch (e) {
-                    if (e instanceof Error && e.message !== buffer.trim()) throw e;
+                if (event.type === 'progress') {
+                    onProgress?.((event as any).phase);
+                    continue;
+                }
+                if (event.type === 'question' && (event as any).text) {
+                    questions.push({
+                        text: (event as any).text,
+                        goal: (event as any).goal,
+                        tag: (event as any).tag || 'deep-dive',
+                    });
+                    onIdeas([...questions]);
+                    continue;
+                }
+                if ((event as any).text) {
+                    onThinkingBuffer((event as any).text);
                 }
             }
-            updateState(lines);
+            clearTimeout(timeoutId);
+            timeoutId = undefined;
 
-            if (lines.length === 0) {
+            if (questions.length === 0) {
                 throw new Error('No valid results returned from agent');
             }
         } catch (error) {
@@ -357,6 +292,7 @@ export function useFormulateData() {
                 }));
             }
         } finally {
+            if (timeoutId) clearTimeout(timeoutId);
             onLoadingChange(false);
         }
     }
@@ -379,7 +315,6 @@ export function useFormulateData() {
         onStarted?.();
 
         const actionTables = actionTableIds.map(id => tables.find(t => t.id === id) as DictTable);
-        const token = String(Date.now());
 
         // Build input_tables payload (shared across all request variants)
         const inputTablesPayload = actionTables.map(t => ({
@@ -402,7 +337,6 @@ export function useFormulateData() {
 
         // Build base request body
         let messageBody: any = {
-            token,
             mode,
             input_tables: inputTablesPayload,
             primary_tables: primaryTableNames,
@@ -426,7 +360,6 @@ export function useFormulateData() {
             } else {
                 // Refine: continue existing dialog
                 messageBody = {
-                    token,
                     mode,
                     input_tables: inputTablesPayload,
                     dialog: currentTable.derive.dialog,
@@ -450,7 +383,7 @@ export function useFormulateData() {
             body: JSON.stringify(messageBody),
             signal: controller.signal,
         })
-        .then(({ data, token: responseToken }) => {
+        .then(({ data }) => {
             if (!data.results || data.results.length === 0) {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -459,11 +392,6 @@ export function useFormulateData() {
                     "value": "No result is returned from the data formulation agent. Please try again.",
                 }));
                 onError?.(new Error("No results returned"));
-                return;
-            }
-
-            if (responseToken !== token) {
-                onError?.(new Error("Token mismatch"));
                 return;
             }
 

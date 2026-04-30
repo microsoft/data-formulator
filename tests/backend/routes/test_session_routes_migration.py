@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -27,6 +28,29 @@ def app():
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+class TestSaveSessionRoute:
+    def test_save_session_reports_storage_full(self, client):
+        manager = MagicMock()
+        manager.workspace_exists.return_value = True
+        manager.save_session_state.side_effect = OSError(errno.ENOSPC, "No space left on device")
+
+        with (
+            patch("data_formulator.routes.sessions.get_identity_id", return_value="browser:abc"),
+            patch("data_formulator.routes.sessions.get_workspace_manager", return_value=manager),
+        ):
+            resp = client.post(
+                "/api/sessions/save",
+                json={"id": "ws-1", "state": {"tables": []}},
+            )
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["status"] == "error"
+        assert body["error"]["code"] == "STORAGE_FULL"
+        assert body["error"]["retry"] is True
+        assert "No space left on device" not in body["error"]["message"]
 
 
 class TestMigrateRoute:

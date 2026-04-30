@@ -12,6 +12,7 @@ vi.mock('../../../../src/i18n', () => ({
                 'errors.llmRateLimit': '请求过于频繁，请稍后再试',
                 'errors.tableNotFound': '未找到数据表',
                 'errors.internalError': '服务器内部错误',
+                'errors.storageFull': '工作区存储空间已满，请释放磁盘空间后重试。',
             };
             return translations[key] ?? key;
         }),
@@ -29,7 +30,7 @@ describe('ERROR_CODE_I18N_MAP', () => {
             'TABLE_NOT_FOUND', 'INVALID_REQUEST', 'FILE_TOO_LARGE',
             'LLM_AUTH_FAILED', 'LLM_RATE_LIMIT', 'LLM_TIMEOUT',
             'LLM_SERVICE_ERROR', 'LLM_CONTENT_FILTERED',
-            'INTERNAL_ERROR', 'SERVICE_UNAVAILABLE',
+            'INTERNAL_ERROR', 'SERVICE_UNAVAILABLE', 'STORAGE_FULL',
         ];
         for (const code of requiredCodes) {
             expect(ERROR_CODE_I18N_MAP).toHaveProperty(code);
@@ -70,5 +71,10 @@ describe('getErrorMessage', () => {
     it('should use TABLE_NOT_FOUND translation', () => {
         const err: ApiError = { code: 'TABLE_NOT_FOUND', message: 'Table not found', retry: false };
         expect(getErrorMessage(err)).toBe('未找到数据表');
+    });
+
+    it('should use STORAGE_FULL translation', () => {
+        const err: ApiError = { code: 'STORAGE_FULL', message: 'Workspace storage is full', retry: true };
+        expect(getErrorMessage(err)).toBe('工作区存储空间已满，请释放磁盘空间后重试。');
     });
 });

@@ -32,7 +32,7 @@ import type { ModelConfig } from '../app/dfSlice';
 import { borderColor, transition, radius, shadow } from '../app/tokens';
 import exampleImageTable from '../assets/example-image-table.png';
 import { getUrls, fetchWithIdentity } from '../app/utils';
-import { apiRequest } from '../app/apiClient';
+import { apiRequest, streamRequest } from '../app/apiClient';
 import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { createTableFromFromObjectArray } from '../data/utils';
@@ -727,36 +727,14 @@ export const DataLoadingChat: React.FC = () => {
         const controller = new AbortController();
         abortControllerRef.current = controller;
 
-        fetchWithIdentity(getUrls().DATA_LOADING_CHAT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: activeModel,
-                messages: allMessages,
-                workspace_tables: existingTables.map(tbl => tbl.id),
-            }),
-            signal: controller.signal,
-        })
-        .then(async (response) => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const contentType = response.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) {
-                const body = await response.json();
-                if (body.status === 'error') {
-                    throw new Error(body.error?.message || body.message || t('dataLoading.error'));
-                }
-            }
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No reader');
-
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let fullText = '';
-            const codeBlocks: CodeExecution[] = [];
-            const tables: InlineTablePreview[] = [];
-            const pendingLoads: PendingTableLoad[] = [];
-            const rawEvents: any[] = [];
-            let streamingToolStepsRef: ToolStep[] = [];
+        (async () => {
+            try {
+                let fullText = '';
+                const codeBlocks: CodeExecution[] = [];
+                const tables: InlineTablePreview[] = [];
+                const pendingLoads: PendingTableLoad[] = [];
+                const rawEvents: any[] = [];
+                let streamingToolStepsRef: ToolStep[] = [];
 
             // Helper: process action objects (used in both tool_result and actions events)
             const processActions = (actionList: any[]) => {
@@ -802,94 +780,70 @@ export const DataLoadingChat: React.FC = () => {
                 }
             };
 
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-
-                    for (const line of lines) {
-                        if (!line.trim()) continue;
-                        try {
-                            const event = JSON.parse(line);
-                            // Log all events for debug panel
-                            if (event.type !== 'text_delta') {
-                                rawEvents.push(event);
-                                setDebugEvents([...rawEvents]);
-                            }
-                            switch (event.type) {
-                                case 'text_delta':
-                                    fullText += event.content;
-                                    setStreamingContent(fullText);
-                                    break;
-                                case 'tool_start': {
-                                    const label = TOOL_LABEL_KEYS[event.tool] ? t(TOOL_LABEL_KEYS[event.tool]) : event.tool;
-                                    const newSteps = [...streamingToolStepsRef];
-                                    newSteps.push({ tool: event.tool, status: 'running', label });
-                                    streamingToolStepsRef = newSteps;
-                                    setStreamingToolSteps(newSteps);
-                                    if (event.tool === 'execute_python' && event.code) {
-                                        codeBlocks.push({ code: event.code });
-                                    }
-                                    break;
-                                }
-                                case 'tool_result': {
-                                    // Mark the tool as done
-                                    const updatedSteps = streamingToolStepsRef.map(s =>
-                                        s.tool === event.tool && s.status === 'running'
-                                            ? { ...s, status: 'done' as const } : s
-                                    );
-                                    streamingToolStepsRef = updatedSteps;
-                                    setStreamingToolSteps(updatedSteps);
-                                    if (event.tool === 'execute_python' && codeBlocks.length > 0) {
-                                        const last = codeBlocks[codeBlocks.length - 1];
-                                        last.stdout = event.stdout || '';
-                                        last.error = event.error || undefined;
-                                        if (event.table) last.resultTable = event.table;
-                                    }
-                                    // Also capture actions from tool_result (e.g. show_user_data_preview)
-                                    if (event.actions) {
-                                        console.log('[DataLoadingChat] actions from tool_result:', event.tool, event.actions.length);
-                                        processActions(event.actions);
-                                    }
-                                    break;
-                                }
-                                case 'actions':
-                                    // Only process if we haven't already captured from tool_result
-                                    if (pendingLoads.length === 0) {
-                                        console.log('[DataLoadingChat] actions event:', (event.actions || []).length, 'actions');
-                                        processActions(event.actions || []);
-                                    }
-                                    break;
-                                case 'done':
-                                    fullText = event.full_text || fullText;
-                                    break;
-                                case 'error':
-                                    fullText += `\n\n**${t('dataLoading.error')}:** ${event.error?.message || event.error || t('dataLoading.error')}`;
-                                    break;
-                            }
-                        } catch { /* skip unparseable */ }
-                    }
+            for await (const event of streamRequest(getUrls().DATA_LOADING_CHAT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: activeModel,
+                    messages: allMessages,
+                    workspace_tables: existingTables.map(tbl => tbl.id),
+                }),
+            }, controller.signal)) {
+                // Log all events for debug panel
+                if (event.type !== 'text_delta') {
+                    rawEvents.push(event);
+                    setDebugEvents([...rawEvents]);
                 }
-            } finally { reader.releaseLock(); }
-
-            // Process any remaining data in the buffer after stream ends
-            if (buffer.trim()) {
-                for (const line of buffer.split('\n')) {
-                    if (!line.trim()) continue;
-                    try {
-                        const event = JSON.parse(line);
-                        if (event.type !== 'text_delta') {
-                            rawEvents.push(event);
-                            setDebugEvents([...rawEvents]);
+                switch (event.type) {
+                    case 'text_delta':
+                        fullText += (event as any).content;
+                        setStreamingContent(fullText);
+                        break;
+                    case 'tool_start': {
+                        const label = TOOL_LABEL_KEYS[(event as any).tool] ? t(TOOL_LABEL_KEYS[(event as any).tool]) : (event as any).tool;
+                        const newSteps = [...streamingToolStepsRef];
+                        newSteps.push({ tool: (event as any).tool, status: 'running', label });
+                        streamingToolStepsRef = newSteps;
+                        setStreamingToolSteps(newSteps);
+                        if ((event as any).tool === 'execute_python' && (event as any).code) {
+                            codeBlocks.push({ code: (event as any).code });
                         }
-                        if (event.type === 'actions' && pendingLoads.length === 0) processActions(event.actions || []);
-                        if (event.type === 'tool_result' && event.actions) processActions(event.actions);
-                        if (event.type === 'done') fullText = event.full_text || fullText;
-                        if (event.type === 'text_delta') fullText += event.content;
-                    } catch { /* skip */ }
+                        break;
+                    }
+                    case 'tool_result': {
+                        // Mark the tool as done
+                        const updatedSteps = streamingToolStepsRef.map(s =>
+                            s.tool === (event as any).tool && s.status === 'running'
+                                ? { ...s, status: 'done' as const } : s
+                        );
+                        streamingToolStepsRef = updatedSteps;
+                        setStreamingToolSteps(updatedSteps);
+                        if ((event as any).tool === 'execute_python' && codeBlocks.length > 0) {
+                            const last = codeBlocks[codeBlocks.length - 1];
+                            last.stdout = (event as any).stdout || '';
+                            last.error = (event as any).error || undefined;
+                            if ((event as any).table) last.resultTable = (event as any).table;
+                        }
+                        // Also capture actions from tool_result (e.g. show_user_data_preview)
+                        if ((event as any).actions) {
+                            console.log('[DataLoadingChat] actions from tool_result:', (event as any).tool, (event as any).actions.length);
+                            processActions((event as any).actions);
+                        }
+                        break;
+                    }
+                    case 'actions':
+                        // Only process if we haven't already captured from tool_result
+                        if (pendingLoads.length === 0) {
+                            console.log('[DataLoadingChat] actions event:', ((event as any).actions || []).length, 'actions');
+                            processActions((event as any).actions || []);
+                        }
+                        break;
+                    case 'done':
+                        fullText = (event as any).full_text || fullText;
+                        break;
+                    case 'error':
+                        fullText += `\n\n**${t('dataLoading.error')}:** ${event.error?.message || t('dataLoading.error')}`;
+                        break;
                 }
             }
 
@@ -904,33 +858,32 @@ export const DataLoadingChat: React.FC = () => {
             dispatch(dfActions.addChatMessage(assistantMsg));
             setStreamingContent('');
             setStreamingToolSteps([]);
-        })
-        .catch((error) => {
-            const partialContent = streamingContent;
-            if (error.name === 'AbortError') {
-                if (partialContent) {
+            } catch (error: any) {
+                const partialContent = streamingContent;
+                if (error.name === 'AbortError') {
+                    if (partialContent) {
+                        dispatch(dfActions.addChatMessage({
+                            id: `msg-${Date.now()}-assistant`, role: 'assistant',
+                            content: partialContent + `\n\n*${t('dataLoading.stopped')}*`,
+                            timestamp: Date.now(),
+                        }));
+                    }
+                } else {
                     dispatch(dfActions.addChatMessage({
                         id: `msg-${Date.now()}-assistant`, role: 'assistant',
-                        content: partialContent + `\n\n*${t('dataLoading.stopped')}*`,
+                        content: partialContent
+                            ? partialContent + `\n\n**${t('dataLoading.error')}:** ${error.message}`
+                            : `**${t('dataLoading.error')}:** ${error.message}`,
                         timestamp: Date.now(),
                     }));
                 }
-            } else {
-                dispatch(dfActions.addChatMessage({
-                    id: `msg-${Date.now()}-assistant`, role: 'assistant',
-                    content: partialContent
-                        ? partialContent + `\n\n**${t('dataLoading.error')}:** ${error.message}`
-                        : `**${t('dataLoading.error')}:** ${error.message}`,
-                    timestamp: Date.now(),
-                }));
+                setStreamingContent('');
+                setStreamingToolSteps([]);
+            } finally {
+                dispatch(dfActions.setDataLoadingChatInProgress(false));
+                abortControllerRef.current = null;
             }
-            setStreamingContent('');
-            setStreamingToolSteps([]);
-        })
-        .finally(() => {
-            dispatch(dfActions.setDataLoadingChatInProgress(false));
-            abortControllerRef.current = null;
-        });
+        })();
     }, [prompt, userImages, chatInProgress, chatMessages, activeModel, existingTables, dispatch, streamingContent, t]);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {

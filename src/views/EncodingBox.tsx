@@ -322,13 +322,11 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
     let autoSortEnabled = field && fieldMetadata?.type == Type.String && domainItems.length < 200;
 
     let autoSortFunction = () => {
-        let token = domainItems.map(x => String(x)).join("--");
         setAutoSortInferRunning(true);
         let message = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
-                token: token,
                 items: domainItems,
                 field: field?.name,
                 model: activeModel
@@ -336,16 +334,14 @@ export const EncodingBox: FC<EncodingBoxProps> = function EncodingBox({ channel,
         };
 
         apiRequest<any>(getUrls().SORT_DATA_URL, message)
-            .then(({ data, token: respToken }) => {
+            .then(({ data }) => {
                 setAutoSortInferRunning(false);
 
-                if (respToken == token) {
-                    let candidate = data[0];
+                let candidate = data.result?.[0] ?? data[0];
 
-                    if (candidate['status'] == 'ok') {
-                        let sortRes = {values: candidate['content']['sorted_values'], reason: candidate['content']['reason']}
-                        setAutoSortResult(sortRes.values);
-                    }
+                if (candidate?.['status'] == 'ok') {
+                    let sortRes = {values: candidate['content']['sorted_values'], reason: candidate['content']['reason']}
+                    setAutoSortResult(sortRes.values);
                 }
             }).catch((error) => {
                 setAutoSortInferRunning(false);

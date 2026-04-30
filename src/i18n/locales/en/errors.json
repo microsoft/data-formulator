@@ -33,6 +33,7 @@
     "annotationInvalidPatch": "Invalid annotation data",
 
     "internalError": "An unexpected error occurred",
-    "serviceUnavailable": "Service temporarily unavailable"
+    "serviceUnavailable": "Service temporarily unavailable",
+    "storageFull": "Workspace storage is full. Free disk space and try again."
   }
 }

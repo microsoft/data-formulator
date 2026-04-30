@@ -54,6 +54,7 @@ export const ERROR_CODE_I18N_MAP: Record<string, string> = {
     // System
     INTERNAL_ERROR: 'errors.internalError',
     SERVICE_UNAVAILABLE: 'errors.serviceUnavailable',
+    STORAGE_FULL: 'errors.storageFull',
 };
 
 /**

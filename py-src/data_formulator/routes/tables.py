@@ -10,7 +10,7 @@ mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
 import json
 import gzip
-from flask import request, jsonify, Blueprint, Response, stream_with_context
+from flask import request, Blueprint, Response, stream_with_context
 from data_formulator.error_handler import json_ok
 from data_formulator.errors import AppError, ErrorCode
 import pandas as pd
@@ -702,10 +702,10 @@ def upload_db_file():
 @tables_bp.route('/download-db-file', methods=['GET'])
 def download_db_file():
     """No longer used: storage is workspace/datalake. Kept for API compatibility."""
-    return jsonify({
-        "status": "error",
-        "message": "Database file download is no longer supported. Data lives in the workspace.",
-    })
+    raise AppError(
+        ErrorCode.INVALID_REQUEST,
+        "Database file download is no longer supported. Data lives in the workspace.",
+    )
 
 
 _CSV_STREAM_CHUNK_ROWS = 10_000
@@ -776,10 +776,10 @@ def export_table_csv():
         delimiter = data.get('delimiter', ',')
 
         if not table_name:
-            return jsonify({"status": "error", "message": "table_name is required"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "table_name is required")
 
         if delimiter not in (',', '\t'):
-            return jsonify({"status": "error", "message": "delimiter must be ',' or '\\t'"})
+            raise AppError(ErrorCode.INVALID_REQUEST, "delimiter must be ',' or '\\t'")
 
         workspace = _get_workspace()
         ext = 'tsv' if delimiter == '\t' else 'csv'
@@ -807,6 +807,8 @@ def export_table_csv():
             mimetype=mime,
             headers={'Content-Disposition': disposition},
         )
+    except AppError:
+        raise
     except Exception as e:
         classify_and_raise_db_error(e)
 
@@ -918,24 +920,24 @@ def classify_and_raise_db_error(error: Exception) -> None:
 
     error_msg = str(error)
 
-    _SAFE_PATTERNS: list[tuple[str, str, str, int]] = [
-        # (regex, ErrorCode, safe client message, HTTP status)
-        (r"Table.*does not exist",   ErrorCode.TABLE_NOT_FOUND,   "The requested table does not exist",            404),
-        (r"Table.*already exists",   ErrorCode.INVALID_REQUEST,   "A table with that name already exists",         409),
-        (r"syntax error",            ErrorCode.INVALID_REQUEST,   "Query syntax error",                            400),
-        (r"Catalog Error",           ErrorCode.TABLE_NOT_FOUND,   "The requested catalog object was not found",    404),
-        (r"Binder Error",            ErrorCode.INVALID_REQUEST,   "Invalid query reference",                       400),
-        (r"Invalid input syntax",    ErrorCode.INVALID_REQUEST,   "Invalid input syntax",                          400),
-        (r"No such file",            ErrorCode.TABLE_NOT_FOUND,   "The requested resource was not found",          404),
-        (r"Permission denied",       ErrorCode.ACCESS_DENIED,     "Access denied",                                 403),
-        (r"identity",                ErrorCode.AUTH_REQUIRED,     "Identity not found, please refresh the page",   500),
+    _SAFE_PATTERNS: list[tuple[str, str, str]] = [
+        # (regex, ErrorCode, safe client message)
+        (r"Table.*does not exist",   ErrorCode.TABLE_NOT_FOUND,   "The requested table does not exist"),
+        (r"Table.*already exists",   ErrorCode.INVALID_REQUEST,   "A table with that name already exists"),
+        (r"syntax error",            ErrorCode.INVALID_REQUEST,   "Query syntax error"),
+        (r"Catalog Error",           ErrorCode.TABLE_NOT_FOUND,   "The requested catalog object was not found"),
+        (r"Binder Error",            ErrorCode.INVALID_REQUEST,   "Invalid query reference"),
+        (r"Invalid input syntax",    ErrorCode.INVALID_REQUEST,   "Invalid input syntax"),
+        (r"No such file",            ErrorCode.TABLE_NOT_FOUND,   "The requested resource was not found"),
+        (r"Permission denied",       ErrorCode.ACCESS_DENIED,     "Access denied"),
+        (r"identity",                ErrorCode.AUTH_REQUIRED,     "Identity not found, please refresh the page"),
     ]
 
-    for pattern, code, safe_msg, status_code in _SAFE_PATTERNS:
+    for pattern, code, safe_msg in _SAFE_PATTERNS:
         if re.search(pattern, error_msg, re.IGNORECASE):
-            raise AppError(code, safe_msg, status_code=status_code, detail=error_msg) from error
+            raise AppError(code, safe_msg, detail=error_msg) from error
 
-    raise AppError(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred", status_code=500, detail=error_msg) from error
+    raise AppError(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred", detail=error_msg) from error
 
 
 def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
@@ -944,5 +946,5 @@ def sanitize_db_error_message(error: Exception) -> tuple[str, int]:
     try:
         classify_and_raise_db_error(error)
     except AppError as ae:
-        return ae.message, ae.status_code
+        return ae.message, ae.get_http_status()
     return "An unexpected error occurred", 500

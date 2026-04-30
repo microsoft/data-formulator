@@ -24,7 +24,8 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers, translateBackend } from '../app/utils';
+import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
+import { streamRequest } from '../app/apiClient';
 import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
 import { formatClarificationResponsesForDisplay, normalizeClarifyEvent } from '../app/clarification';
 
@@ -356,7 +357,6 @@ export const SimpleChartRecBox: FC = function () {
             }
 
             const messageBody = JSON.stringify({
-                token: String(Date.now()),
                 model: activeModel,
                 input_tables: sourceTables.map(t => ({
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
@@ -370,88 +370,41 @@ export const SimpleChartRecBox: FC = function () {
             ideasAbortRef.current = controller;
             const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
-            const response = await fetchWithIdentity(getUrls().GET_RECOMMENDATION_QUESTIONS, {
+            let lines: { text: string; goal: string; tag?: string }[] = [];
+            for await (const event of streamRequest(getUrls().GET_RECOMMENDATION_QUESTIONS, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: messageBody,
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error(t('chartRec.noResponseReader'));
-
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let lines: { text: string; goal: string; tag?: string }[] = [];
-
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const ndjsonLines = buffer.split('\n');
-                    buffer = ndjsonLines.pop() || '';
-                    for (const rawLine of ndjsonLines) {
-                        const trimmed = rawLine.trim();
-                        if (!trimmed) continue;
-                        try {
-                            const parsed = JSON.parse(trimmed);
-                            if (parsed.type === 'error') {
-                                const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
-                                dispatch(dfActions.addMessages({
-                                    timestamp: Date.now(), type: 'error',
-                                    component: 'exploration', value: msg,
-                                    diagnostics: parsed.error,
-                                }));
-                                continue;
-                            }
-                            if (parsed.type === 'warning') {
-                                dispatch(dfActions.addMessages({
-                                    timestamp: Date.now(), type: 'warning',
-                                    component: 'exploration',
-                                    value: parsed.warning?.message ?? 'Warning from server',
-                                }));
-                                continue;
-                            }
-                            if (parsed.type === 'progress') {
-                                setIdeaPhase(parsed.phase);
-                                continue;
-                            }
-                            if (parsed.text) {
-                                lines.push(parsed);
-                                setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
-                            }
-                        } catch {
-                            setThinkingBuffer(trimmed);
-                        }
-                    }
+            }, controller.signal)) {
+                if (event.type === 'error') {
+                    const msg = event.error?.message ?? 'Unknown error';
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'error',
+                        component: 'exploration', value: msg,
+                        diagnostics: event.error,
+                    }));
+                    continue;
                 }
-            } finally {
-                reader.releaseLock();
+                if (event.type === 'warning') {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'exploration',
+                        value: (event as any).warning?.message ?? 'Warning from server',
+                    }));
+                    continue;
+                }
+                if (event.type === 'progress') {
+                    setIdeaPhase((event as any).phase);
+                    continue;
+                }
+                if (event.type === 'question' && (event as any).text) {
+                    lines.push(event as any);
+                    setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
+                    continue;
+                }
+                if ((event as any).text) setThinkingBuffer((event as any).text);
             }
-            if (buffer.trim()) {
-                try {
-                    const parsed = JSON.parse(buffer.trim());
-                    if (parsed.type === 'error') {
-                        const msg = parsed.error?.message ?? parsed.content ?? 'Unknown error';
-                        dispatch(dfActions.addMessages({
-                            timestamp: Date.now(), type: 'error',
-                            component: 'exploration', value: msg,
-                            diagnostics: parsed.error,
-                        }));
-                    } else if (parsed.type === 'warning') {
-                        dispatch(dfActions.addMessages({
-                            timestamp: Date.now(), type: 'warning',
-                            component: 'exploration',
-                            value: parsed.warning?.message ?? 'Warning from server',
-                        }));
-                    } else if (parsed.text) {
-                        lines.push(parsed);
-                    }
-                } catch { /* partial non-JSON remainder, ignore */ }
-            }
+            clearTimeout(timeoutId);
             setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
@@ -622,14 +575,12 @@ export const SimpleChartRecBox: FC = function () {
             if (peripheralThreads.length > 0) otherThreads = peripheralThreads;
         }
 
-        const token = String(Date.now());
         // Resolve primary table names from primaryTableIds (includes defaults + @-mentioned)
         const primaryTableNames = primaryTableIds.map(id => {
             const t = tables.find(tbl => tbl.id === id);
             return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
         });
         const requestBody: any = {
-            token,
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
                 attached_metadata: t.attachedMetadata
@@ -1039,127 +990,81 @@ export const SimpleChartRecBox: FC = function () {
             }
         };
 
-        fetchWithIdentity(getUrls().DATA_AGENT_STREAMING, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: messageBody,
-            signal: controller.signal
-        })
-        .then(async (response) => {
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error(t('chartRec.noResponseReader'));
-
-            const decoder = new TextDecoder();
-            let buffer = '';
-
+        (async () => {
             try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) { handleCompletion(); break; }
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-
-                    for (let line of lines) {
-                        if (line.trim() !== "") {
-                            try {
-                                const data = JSON.parse(line);
-
-                                // Unified error event: {type: "error", error: {message, ...}}
-                                if (data.type === "error") {
-                                    const errMsg = data.error?.message || data.error_message || t('chartRec.errorDuringExploration');
-                                    setIsChatFormulating(false);
-                                    clearTimeout(timeoutId);
-                                    dispatch(dfActions.addMessages({
-                                        timestamp: Date.now(), type: 'error',
-                                        component: 'data-agent', value: errMsg,
-                                    }));
-                                    if (currentDraftId) {
-                                        dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
-                                            from: 'data-agent', to: 'user', role: 'error',
-                                            content: errMsg, timestamp: Date.now(),
-                                        }}));
-                                        dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
-                                        currentDraftId = null;
-                                    }
-                                    return;
-                                }
-
-                                if (data.type === "warning") {
-                                    dispatch(dfActions.addMessages({
-                                        timestamp: Date.now(), type: 'warning',
-                                        component: 'data-agent',
-                                        value: data.warning?.message ?? 'Warning from server',
-                                    }));
-                                    continue;
-                                }
-
-                                if (data.token === token) {
-                                    if (data.status === "ok" && data.result) {
-                                        allResults.push(data.result);
-                                        processStreamingResult(data.result);
-                                        if (data.result.type === "completion" || data.result.type === "clarify") { handleCompletion(); return; }
-                                    } else if (data.status === "error") {
-                                        const errMsg = data.error_message || t('chartRec.errorDuringExploration');
-                                        setIsChatFormulating(false);
-                                        clearTimeout(timeoutId);
-                                        dispatch(dfActions.addMessages({
-                                            timestamp: Date.now(), type: 'error',
-                                            component: 'data-agent', value: errMsg,
-                                        }));
-                                        if (currentDraftId) {
-                                            dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
-                                                from: 'data-agent', to: 'user', role: 'error',
-                                                content: errMsg, timestamp: Date.now(),
-                                            }}));
-                                            dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
-                                            currentDraftId = null;
-                                        }
-                                        return;
-                                    }
-                                }
-                            } catch (parseError) {
-                                console.warn('Failed to parse streaming response:', parseError);
-                            }
+                for await (const data of streamRequest(getUrls().DATA_AGENT_STREAMING, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: messageBody,
+                }, controller.signal)) {
+                    if (data.type === "error") {
+                        const errMsg = data.error?.message || t('chartRec.errorDuringExploration');
+                        setIsChatFormulating(false);
+                        clearTimeout(timeoutId);
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(), type: 'error',
+                            component: 'data-agent', value: errMsg,
+                        }));
+                        if (currentDraftId) {
+                            dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
+                                from: 'data-agent', to: 'user', role: 'error',
+                                content: errMsg, timestamp: Date.now(),
+                            }}));
+                            dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                            currentDraftId = null;
                         }
+                        return;
+                    }
+
+                    if (data.type === "warning") {
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(), type: 'warning',
+                            component: 'data-agent',
+                            value: (data as any).warning?.message ?? 'Warning from server',
+                        }));
+                        continue;
+                    }
+
+                    allResults.push(data);
+                    processStreamingResult(data);
+                    if (data.type === "completion" || data.type === "clarify") {
+                        handleCompletion();
+                        return;
                     }
                 }
-            } finally {
-                reader.releaseLock();
-            }
-        })
-        .catch((error) => {
-            setIsChatFormulating(false);
-            agentAbortRef.current = null;
-            clearTimeout(timeoutId);
-            const isAbort = error.name === 'AbortError';
-            const isCancelled = isAbort && !isCompleted && !timedOut;
-            const isTimeout = isAbort && timedOut;
-            const errorMessage = isCancelled
-                ? t('chartRec.explorationCancelled')
-                : isTimeout
-                    ? t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 })
-                    : t('chartRec.explorationFailed', { message: error.message });
-            if (isTimeout) {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'data-agent',
-                    value: t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 }),
-                }));
-            }
-            if (currentDraftId) {
-                if (isCancelled) {
-                    dispatch(dfActions.removeDraftNode(currentDraftId));
-                } else {
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
-                        from: 'data-agent', to: 'user', role: 'error', content: errorMessage, timestamp: Date.now(),
-                    }}));
-                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                handleCompletion();
+            } catch (error: any) {
+                setIsChatFormulating(false);
+                agentAbortRef.current = null;
+                clearTimeout(timeoutId);
+                const isAbort = error.name === 'AbortError';
+                const isCancelled = isAbort && !isCompleted && !timedOut;
+                const isTimeout = isAbort && timedOut;
+                const errorMessage = isCancelled
+                    ? t('chartRec.explorationCancelled')
+                    : isTimeout
+                        ? t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 })
+                        : t('chartRec.explorationFailed', { message: error.message });
+                if (isTimeout) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'data-agent',
+                        value: t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 }),
+                    }));
                 }
-                currentDraftId = null;
+                if (currentDraftId) {
+                    if (isCancelled) {
+                        dispatch(dfActions.removeDraftNode(currentDraftId));
+                    } else {
+                        dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
+                            from: 'data-agent', to: 'user', role: 'error', content: errorMessage, timestamp: Date.now(),
+                        }}));
+                        dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                    }
+                    currentDraftId = null;
+                }
             }
-        });
+        })();
     }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, dispatch, t]);
 
     // ── Report generation via report agent ──────────────────────────
@@ -1234,60 +1139,34 @@ export const SimpleChartRecBox: FC = function () {
         let accumulatedMarkdown = '';
 
         try {
-            const response = await fetchWithIdentity(getUrls().GENERATE_REPORT_CHAT, {
+            for await (const event of streamRequest(getUrls().GENERATE_REPORT_CHAT, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body,
-                signal: controller.signal,
-            });
-
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No reader');
-
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed) continue;
-                    try {
-                        const event = JSON.parse(trimmed);
-                        if (event.type === 'text_delta') {
-                            accumulatedMarkdown += event.content;
-                        } else if (event.type === 'error') {
-                            const errMsg = event.error?.message || event.content || 'Unknown error';
-                            accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
-                            dispatch(dfActions.addMessages({
-                                timestamp: Date.now(), type: 'error',
-                                component: 'report-agent', value: errMsg,
-                            }));
-                        } else if (event.type === 'warning') {
-                            dispatch(dfActions.addMessages({
-                                timestamp: Date.now(), type: 'warning',
-                                component: 'report-agent',
-                                value: event.warning?.message ?? 'Warning from server',
-                            }));
-                        }
-                        const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
-                        dispatch(dfActions.updateGeneratedReportContent({
-                            id: reportId,
-                            content: accumulatedMarkdown,
-                            title: titleMatch ? titleMatch[1].trim() : undefined,
-                        }));
-                    } catch { /* skip malformed lines */ }
+            }, controller.signal)) {
+                if (event.type === 'text_delta') {
+                    accumulatedMarkdown += (event as any).content;
+                } else if (event.type === 'error') {
+                    const errMsg = event.error?.message || 'Unknown error';
+                    accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'error',
+                        component: 'report-agent', value: errMsg,
+                    }));
+                } else if (event.type === 'warning') {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'report-agent',
+                        value: (event as any).warning?.message ?? 'Warning from server',
+                    }));
                 }
+                const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
+                dispatch(dfActions.updateGeneratedReportContent({
+                    id: reportId,
+                    content: accumulatedMarkdown,
+                    title: titleMatch ? titleMatch[1].trim() : undefined,
+                }));
             }
-            reader.releaseLock();
 
             // Final update with completed status
             const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);

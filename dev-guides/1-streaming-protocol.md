@@ -29,7 +29,7 @@
 
 | 端点 | 事件 type | 说明 |
 |------|-----------|------|
-| `data-agent-streaming` | 包裹在 `{token, status, result}` 中 | Legacy 格式，result 内含 `type` |
+| `data-agent-streaming` | `"text_delta"`, `"completion"`, `"clarify"` 等 | 顶层 `type` 事件 |
 | `get-recommendation-questions` | `"question"` | 探索建议问题 |
 | `generate-report-chat` | `"text_delta"`, `"embed_chart"`, `"embed_table"` | 报告生成流 |
 | `data-loading-chat` | `"text_delta"`, `"tool_call"`, `"tool_result"`, `"done"` | 数据加载对话 |
@@ -133,8 +133,7 @@ Route 层负责把 `clarification_responses[]` 格式化成 LLM 可读的 `[USER
     "code": "LLM_RATE_LIMIT",
     "message": "请求过于频繁，请稍后重试",
     "retry": true
-  },
-  "token": "abc-123"
+  }
 }
 ```
 
@@ -145,7 +144,8 @@ Route 层负责把 `clarification_responses[]` 格式化成 LLM 可读的 `[USER
 | `error.message` | string | 是 | 安全的用户可读消息 |
 | `error.retry` | boolean | 是 | 前端是否应显示重试按钮 |
 | `error.detail` | string | 否 | 仅 DEBUG 模式，服务端调试信息 |
-| `token` | string | 否 | 请求 token，用于前端匹配 |
+
+流式事件不得携带通用业务 `token` 字段；请求追踪使用 `X-Request-Id` header。
 
 **后端生成**:
 
@@ -153,7 +153,7 @@ Route 层负责把 `clarification_responses[]` 格式化成 LLM 可读的 `[USER
 from data_formulator.error_handler import stream_error_event, classify_and_wrap_llm_error
 
 # LLM 异常 → 安全分类 → error 事件
-yield stream_error_event(classify_and_wrap_llm_error(e), token=token)
+yield stream_error_event(classify_and_wrap_llm_error(e))
 
 # 已知业务异常
 from data_formulator.errors import AppError, ErrorCode
