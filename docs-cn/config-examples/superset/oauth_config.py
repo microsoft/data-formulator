@@ -15,14 +15,14 @@ Superset OAuth + Data Formulator 桥接配置
 """
 
 import logging
-import json
+import os
 import secrets
 import requests
 from urllib.parse import quote, urlparse
 
 from flask_appbuilder.security.manager import AUTH_OAUTH
 from flask_appbuilder import BaseView, expose
-from flask import g, request, Response, redirect, session
+from flask import g, request, Response, redirect, render_template_string, session
 from flask_login import current_user
 from superset.security import SupersetSecurityManager
 from superset import db
@@ -170,8 +170,37 @@ class CustomSsoSecurityManager(SupersetSecurityManager):
 #   - /api/auth/tokens/save   (持久化到 TokenStore，供 Agent 使用)
 # =============================================================================
 
+_SSO_BRIDGE_TEMPLATE = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>SSO Bridge</title></head>
+<body>
+<p>正在同步登录状态...</p>
+<script nonce="{{ csp_nonce }}">
+(function() {
+    var payload = {{ payload | tojson }};
+    var targetOrigin = {{ target_origin | tojson }};
+    if (window.opener) {
+        window.opener.postMessage(payload, targetOrigin);
+        setTimeout(function() { window.close(); }, 500);
+    } else {
+        document.body.textContent = '登录成功，请关闭此窗口并返回 Data Formulator。';
+    }
+})();
+</script>
+</body></html>"""
+
+
 class SSOBridgeView(BaseView):
     route_base = "/df-sso-bridge"
+
+    # 只允许这些 DF 前端 origin 接收 Superset JWT。生产部署必须添加自己的 HTTPS origin，
+    # 也可以通过环境变量 DF_ALLOWED_ORIGINS 追加多个逗号分隔的 origin。
+    allowed_df_origins = {
+        "http://localhost:5567",
+        "http://127.0.0.1:5567",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        # "https://data-formulator.example.com",
+    }
 
     @staticmethod
     def _is_real_logged_in_user():
@@ -194,14 +223,32 @@ class SSOBridgeView(BaseView):
         return True
 
     @staticmethod
-    def _validate_origin(raw: str) -> str:
-        """只允许 http(s) scheme，防止 javascript: 等注入。"""
-        if raw == "*":
-            return "*"
+    def _normalise_origin(raw: str | None) -> str:
+        """规范化浏览器 origin；非法或非 origin 输入返回空字符串。"""
+        raw = (raw or "").strip()
         parsed = urlparse(raw)
-        if parsed.scheme in ("http", "https") and parsed.netloc:
-            return f"{parsed.scheme}://{parsed.netloc}"
-        return "*"
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return ""
+        if parsed.username or parsed.password:
+            return ""
+        if parsed.path not in ("", "/") or parsed.params or parsed.query or parsed.fragment:
+            return ""
+        return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+    @classmethod
+    def _allowed_origins(cls) -> set[str]:
+        origins = {cls._normalise_origin(o) for o in cls.allowed_df_origins}
+        for raw in os.environ.get("DF_ALLOWED_ORIGINS", "").split(","):
+            origin = cls._normalise_origin(raw)
+            if origin:
+                origins.add(origin)
+        origins.discard("")
+        return origins
+
+    @classmethod
+    def _validate_origin(cls, raw: str | None) -> str:
+        origin = cls._normalise_origin(raw)
+        return origin if origin in cls._allowed_origins() else ""
 
     @expose("/", methods=["GET"])
     def df_sso_bridge(self):
@@ -210,6 +257,10 @@ class SSOBridgeView(BaseView):
             if not next_url.startswith("/"):
                 next_url = "/"
             return redirect(f"/login/?next={quote(next_url)}")
+
+        df_origin = self._validate_origin(request.args.get("df_origin"))
+        if not df_origin:
+            return Response("Invalid df_origin", status=400, mimetype="text/plain")
 
         from flask_jwt_extended import create_access_token, create_refresh_token
 
@@ -230,32 +281,22 @@ class SSOBridgeView(BaseView):
             identity=user_id_str, additional_claims=additional_claims,
         )
 
-        df_origin = self._validate_origin(request.args.get("df_origin", "*"))
         user_data = additional_claims["user"]
         csp_nonce = getattr(g, "csp_nonce", "") or secrets.token_urlsafe(16)
 
-        html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>SSO Bridge</title></head>
-<body>
-<p>正在同步登录状态...</p>
-<script nonce="{csp_nonce}">
-(function() {{
-    var payload = {{
-        type: 'df-sso-auth',
-        access_token: {json.dumps(access_token)},
-        refresh_token: {json.dumps(refresh_token)},
-        user: {json.dumps(user_data)}
-    }};
-    var targetOrigin = {json.dumps(df_origin)};
-    if (window.opener) {{
-        window.opener.postMessage(payload, targetOrigin);
-        setTimeout(function() {{ window.close(); }}, 500);
-    }} else {{
-        document.body.innerHTML = '<p>登录成功，请关闭此窗口并返回 Data Formulator。</p>';
-    }}
-}})();
-</script>
-</body></html>"""
+        payload = {
+            "type": "df-sso-auth",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user": user_data,
+        }
+
+        html = render_template_string(
+            _SSO_BRIDGE_TEMPLATE,
+            payload=payload,
+            target_origin=df_origin,
+            csp_nonce=csp_nonce,
+        )
         return Response(html, mimetype="text/html")
 
 
