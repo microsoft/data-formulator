@@ -67,6 +67,7 @@ import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
@@ -258,9 +259,18 @@ const DataSourceSidebarPanel: React.FC<{
     const [connectors, setConnectors] = useState<ConnectorInstance[]>([]);
     const [loadingConnectors, setLoadingConnectors] = useState(false);
 
-    // Catalog tree cache per connector ID
-    const [catalogCache, setCatalogCache] = useState<Record<string, CatalogCache>>({});
-    const [loadingCatalog, setLoadingCatalog] = useState<Record<string, boolean>>({});
+    // Catalog tree state per connector ID. Keep loading/error explicit instead
+    // of inferring it from whether a cache object exists.
+    const [catalogByConnector, setCatalogByConnector] = useState<Record<string, LoadableState<CatalogCache>>>({});
+    const catalogCache = useMemo(() => {
+        const cache: Record<string, CatalogCache> = {};
+        for (const [connectorId, state] of Object.entries(catalogByConnector)) {
+            if (state.data && state.status !== 'error') {
+                cache[connectorId] = state.data;
+            }
+        }
+        return cache;
+    }, [catalogByConnector]);
 
     // Which source sections are expanded (by connector ID)
     const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
@@ -410,11 +420,10 @@ const DataSourceSidebarPanel: React.FC<{
     // Fetch on mount and whenever identity changes.
     useEffect(() => {
         setConnectors([]);
-        setCatalogCache({});
+        setCatalogByConnector({});
         setSearchCatalogCache({});
         setServerSearchActive(false);
         setSearchingCatalog({});
-        setLoadingCatalog({});
         setExpandedSources(new Set());
         setTreeExpanded({});
         setPreview(null);
@@ -437,36 +446,45 @@ const DataSourceSidebarPanel: React.FC<{
         const syncKey = `sync:${connectorId}`;
         if (fetchingRef.current.has(syncKey)) return;
         fetchingRef.current.add(syncKey);
-        setLoadingCatalog(prev => ({ ...prev, [connectorId]: true }));
+        setCatalogByConnector(prev => ({
+            ...prev,
+            [connectorId]: loadingLoadable(prev[connectorId]),
+        }));
         try {
             const { data } = await apiRequest(CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connectorId }),
             });
-            if (data.tree) {
-                setCatalogCache(prev => ({
-                    ...prev,
-                    [connectorId]: { tree: data.tree as CatalogTreeNode[], fetchedAt: Date.now() },
+            const tree = (data.tree || []) as CatalogTreeNode[];
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: successLoadable(
+                    { tree, fetchedAt: Date.now() },
+                    cache => cache.tree.length === 0,
+                ),
+            }));
+            setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
+            if (data.message_code === 'catalog.syncPartial') {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'data-source-sidebar',
+                    value: translateBackend(data.message, data.message_code, data.message_params),
                 }));
-                setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
-                if (data.message_code === 'catalog.syncPartial') {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(), type: 'warning',
-                        component: 'data-source-sidebar',
-                        value: translateBackend(data.message, data.message_code, data.message_params),
-                    }));
-                }
             }
         } catch (e: any) {
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: errorLoadable(e, { tree: [], fetchedAt: Date.now() }),
+            }));
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'warning',
                 component: 'data-source-sidebar',
                 value: e?.apiError?.message || t('dataLoading.syncPartial'),
             }));
+        } finally {
+            fetchingRef.current.delete(syncKey);
         }
-        setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
-        fetchingRef.current.delete(syncKey);
     }, [dispatch, t]);
 
     /** Load catalog from backend disk cache (fast). Falls back to live sync on miss. */
@@ -474,7 +492,10 @@ const DataSourceSidebarPanel: React.FC<{
         const cacheKey = `cache:${connectorId}`;
         if (fetchingRef.current.has(cacheKey)) return;
         fetchingRef.current.add(cacheKey);
-        setLoadingCatalog(prev => ({ ...prev, [connectorId]: true }));
+        setCatalogByConnector(prev => ({
+            ...prev,
+            [connectorId]: loadingLoadable(prev[connectorId]),
+        }));
         try {
             const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CACHED_CATALOG_TREE, {
                 method: 'POST',
@@ -482,18 +503,20 @@ const DataSourceSidebarPanel: React.FC<{
                 body: JSON.stringify({ connector_id: connectorId }),
             });
             if (data.tree) {
-                setCatalogCache(prev => ({
+                const tree = data.tree as CatalogTreeNode[];
+                setCatalogByConnector(prev => ({
                     ...prev,
-                    [connectorId]: { tree: data.tree as CatalogTreeNode[], fetchedAt: Date.now() },
+                    [connectorId]: successLoadable(
+                        { tree, fetchedAt: Date.now() },
+                        cache => cache.tree.length === 0,
+                    ),
                 }));
-                setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
                 fetchingRef.current.delete(cacheKey);
                 return;
             }
         } catch {
             // cache read failed — fall through to live sync
         }
-        setLoadingCatalog(prev => ({ ...prev, [connectorId]: false }));
         fetchingRef.current.delete(cacheKey);
         // Cache miss — fall back to live sync
         syncCatalogMetadata(connectorId);
@@ -858,7 +881,7 @@ const DataSourceSidebarPanel: React.FC<{
     }, [annotationEdit, dispatch, t]);
 
     const clearConnectorUiState = useCallback((connectorId: string) => {
-        setCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        setCatalogByConnector(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setSearchCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setSearchingCatalog(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setExpandedSources(prev => { const next = new Set(prev); next.delete(connectorId); return next; });
@@ -1096,12 +1119,16 @@ const DataSourceSidebarPanel: React.FC<{
                     const displayCache = serverSearchActive
                         ? searchCatalogCache[connector.id]
                         : (localSearchActive ? filteredCatalogCache[connector.id] : catalogCache[connector.id]);
+                    const catalogState = catalogByConnector[connector.id];
                     const isExpanded = activeSearchMode
                         ? (!!displayCache && displayCache.tree.length > 0)
                         : expandedSources.has(connector.id);
                     const isLoading = serverSearchActive
                         ? (searchingCatalog[connector.id] ?? false)
-                        : (loadingCatalog[connector.id] ?? false);
+                        : catalogState?.status === 'loading';
+                    const catalogError = !serverSearchActive && catalogState?.status === 'error'
+                        ? catalogState.error
+                        : undefined;
                     const expanded = activeSearchMode
                         ? collectNamespaceIds(displayCache?.tree || [])
                         : (treeExpanded[connector.id] || []);
@@ -1203,7 +1230,7 @@ const DataSourceSidebarPanel: React.FC<{
                             {connector.connected && (
                             <Collapse in={isExpanded}>
                                 <Box sx={{ pl: 1, pr: 0.5, pb: 1 }}>
-                                    {!displayCache && (
+                                    {!displayCache && isLoading && (
                                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
                                             <CircularProgress size={16} />
                                         </Box>
@@ -1274,6 +1301,11 @@ const DataSourceSidebarPanel: React.FC<{
                                     {displayCache && displayCache.tree.length === 0 && !isLoading && (
                                         <Typography sx={{ fontSize: 11, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>
                                             {t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
+                                        </Typography>
+                                    )}
+                                    {!displayCache && !isLoading && (
+                                        <Typography sx={{ fontSize: 11, color: catalogError ? 'error.main' : 'text.disabled', pl: 1, fontStyle: 'italic' }}>
+                                            {catalogError || t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
                                         </Typography>
                                     )}
                                 </Box>

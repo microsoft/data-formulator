@@ -274,7 +274,49 @@ try {
 | RTK thunk rejected | 必须有 `.rejected` handler，按 `error.name` 区分 `AbortError`（静默）、`TimeoutError`（超时提示）和业务错误（通用提示），参见 `fetchChartInsight` |
 | `AbortError` | 可直接忽略 |
 
-### 4.5 特例边界
+### 4.5 API 加载状态必须显式建模
+
+新增或重构前端 API 调用时，不要用 `!data` / `data == null` 推断 loading。
+请求状态必须显式区分 `idle`、`loading`、`success`、`empty`、`error`，避免失败后
+UI 因为没有 data 而继续显示 spinner。
+
+对于组件内局部状态，优先使用 `src/app/loadableState.ts`：
+
+```typescript
+import { handleApiError } from '../app/errorHandler';
+import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
+
+const [catalogByConnector, setCatalogByConnector] =
+    useState<Record<string, LoadableState<CatalogCache>>>({});
+
+setCatalogByConnector(prev => ({
+    ...prev,
+    [connectorId]: loadingLoadable(prev[connectorId]),
+}));
+
+try {
+    const { data } = await apiRequest(...);
+    setCatalogByConnector(prev => ({
+        ...prev,
+        [connectorId]: successLoadable(data, value => value.items.length === 0),
+    }));
+} catch (error) {
+    setCatalogByConnector(prev => ({
+        ...prev,
+        [connectorId]: errorLoadable(error, { items: [] }),
+    }));
+    handleApiError(error, 'my-component');
+}
+```
+
+UI 渲染必须基于 `state.status`：
+
+- `loading` → spinner / disabled control
+- `error` → 错误或空状态，不继续显示 spinner
+- `empty` → 空状态文案
+- `success` → 正常数据
+
+### 4.6 特例边界
 
 以下路径不能简单套普通 JSON API 规范，评审时先确认具体协议：
 
@@ -287,7 +329,7 @@ try {
 | 已建立的流式响应 | 流运行中出错只能通过 NDJSON `type: "error"` 事件传递，不能再修改 HTTP 状态码 |
 | 流预检错误 | `stream_preflight_error()` 始终返回 HTTP 200 + `application/json` |
 
-### 4.6 LLM / Agent 前端 timeout 策略
+### 4.7 LLM / Agent 前端 timeout 策略
 
 用户可见的 LLM / Agent 请求不要硬编码短 timeout。timeout 来源必须可解释：
 

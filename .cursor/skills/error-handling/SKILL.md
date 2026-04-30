@@ -143,6 +143,11 @@ try {
 }
 ```
 
+For UI loading state, model the request lifecycle explicitly with
+`LoadableState` from `src/app/loadableState.ts`. Do not infer loading from
+missing data (`!data`), because failed requests may legitimately leave data
+empty while loading has ended.
+
 ### Streaming
 
 ```typescript
