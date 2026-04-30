@@ -55,10 +55,12 @@ Rules:
 - If the instruction is empty or unclear, return {"conditions": []}.
 - Return ONLY the JSON object, no markdown fences or explanation."""
 
-_WORKSPACE_SUMMARY_SYSTEM_PROMPT = (
-    "You are a helpful assistant. Generate a very short name (3-5 words) "
-    "for a data analysis workspace based on the context below. "
-    "Return ONLY the name, no quotes, no explanation."
+_WORKSPACE_NAME_SYSTEM_PROMPT = (
+    "You name data analysis workspaces for display in the product UI. "
+    "Generate a very short workspace/session display name based on the context below. "
+    "The name is user-visible, so it must follow the user's interface language. "
+    "Keep it concise: 3-5 words for English, or a similarly short phrase for other languages. "
+    "Return ONLY the name, no quotes, no explanation, no trailing punctuation."
 )
 
 
@@ -128,12 +130,12 @@ class SimpleAgents:
         logger.info(f"[SimpleAgents.nl_to_filter] done | {len(valid_conditions)} conditions")
         return out
 
-    # -- Workspace summary / auto-name --------------------------------------
+    # -- Workspace display name / auto-name ---------------------------------
 
-    def workspace_summary(self, table_names: list[str], user_query: str = "") -> str:
-        """Generate a short 3-5 word name for a workspace.
+    def workspace_name(self, table_names: list[str], user_query: str = "") -> str:
+        """Generate a short display name for a workspace.
 
-        Returns the summary string (already truncated to 60 chars).
+        Returns the display name string (already truncated to 60 chars).
         """
         prompt_parts = []
         if table_names:
@@ -144,7 +146,7 @@ class SimpleAgents:
         context_str = ". ".join(prompt_parts) if prompt_parts else "A data analysis session"
 
         system_prompt = inject_language_instruction(
-            _WORKSPACE_SUMMARY_SYSTEM_PROMPT, self.language_instruction,
+            _WORKSPACE_NAME_SYSTEM_PROMPT, self.language_instruction,
         )
 
         messages = [
@@ -152,11 +154,11 @@ class SimpleAgents:
             {"role": "user", "content": context_str},
         ]
 
-        logger.info("[SimpleAgents.workspace_summary] run start")
+        logger.info("[SimpleAgents.workspace_name] run start")
         response = self.client.get_completion(messages=messages)
-        summary = response.choices[0].message.content.strip().strip("\"'")
-        if len(summary) > 60:
-            summary = summary[:57] + "..."
+        display_name = response.choices[0].message.content.strip().strip("\"'")
+        if len(display_name) > 60:
+            display_name = display_name[:57] + "..."
 
-        logger.info(f"[SimpleAgents.workspace_summary] done | \"{summary}\"")
-        return summary
+        logger.info(f"[SimpleAgents.workspace_name] done | \"{display_name}\"")
+        return display_name

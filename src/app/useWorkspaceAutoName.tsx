@@ -9,11 +9,15 @@ import { apiRequest } from './apiClient';
 import { updateWorkspaceMeta } from './workspaceService';
 import { AppDispatch } from './store';
 
+export function isUntitledWorkspaceName(displayName: string | undefined): boolean {
+    return displayName === 'Untitled Session';
+}
+
 /**
  * Auto-names a workspace after the first table is loaded,
  * if the workspace still has its auto-generated timestamp name.
  *
- * Calls the LLM to generate a short 3-5 word summary based on
+ * Calls the LLM to generate a short display name based on
  * table names and the first user query (if any).
  */
 export function useWorkspaceAutoName() {
@@ -42,7 +46,7 @@ export function useWorkspaceAutoName() {
         if (!selectedModelId) return;
 
         // Only auto-name if the display name is still the placeholder
-        if (activeWorkspace.displayName !== 'Untitled Session') return;
+        if (!isUntitledWorkspaceName(activeWorkspace.displayName)) return;
 
         const model = models.find(m => m.id === selectedModelId);
         if (!model) return;
@@ -61,7 +65,7 @@ export function useWorkspaceAutoName() {
 
         (async () => {
             try {
-                const { data } = await apiRequest<{ summary: string }>(getUrls().WORKSPACE_SUMMARY, {
+                const { data } = await apiRequest<{ display_name: string }>(getUrls().WORKSPACE_NAME, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -72,9 +76,9 @@ export function useWorkspaceAutoName() {
                         },
                     }),
                 });
-                if (data.summary) {
-                    dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: data.summary }));
-                    updateWorkspaceMeta(wsId, data.summary).catch(() => {});
+                if (data.display_name) {
+                    dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: data.display_name }));
+                    updateWorkspaceMeta(wsId, data.display_name).catch(() => {});
                 }
             } catch (e) {
                 // Best-effort: keep the timestamp name if auto-naming fails

@@ -56,8 +56,8 @@ export function getUrls() {
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
         GENERATE_REPORT_CHAT: `/api/agent/generate-report-chat`,
 
-        // Workspace summary (auto-naming)
-        WORKSPACE_SUMMARY: `/api/agent/workspace-summary`,
+        // Workspace display name (auto-naming)
+        WORKSPACE_NAME: `/api/agent/workspace-name`,
 
         // NL-to-filter
         NL_TO_FILTER: `/api/agent/nl-to-filter`,

@@ -40,7 +40,7 @@ frontend i18n.language
 | 项目 | 当前状态 | 说明 |
 |------|----------|------|
 | `SortDataAgent` | 已接入 | 构造函数接收 `language_instruction`，route 使用 `compact` 模式 |
-| `workspace-summary` | 已接入 | `SimpleAgents` 接收 `language_instruction`，生成短名称使用 `compact` |
+| `workspace-name` | 已接入 | `SimpleAgents` 接收 `language_instruction`，生成 session/workspace 展示名使用 `full` |
 | `nl-to-filter` | 暂不注入 | 当前返回结构化 JSON；未来若返回用户可见自然语言再接入 |
 | `test-model` | 明确豁免 | 健康检查需要固定返回，不应被语言指令影响 |
 | `rec_language_instruction` | 已清理 | 当前 `routes/agents.py` 未再保留该误导性参数 |
@@ -96,7 +96,8 @@ agent = SortDataAgent(client=client, language_instruction=language_instruction)
 |------|------|
 | `DataAgent`、`ChartInsightAgent`、`InteractiveExploreAgent`、`ReportGenAgent` | `full` |
 | `DataRecAgent`、`DataTransformationAgent`、`DataLoadAgent` | `compact` |
-| `SortDataAgent`、`workspace-summary` | `compact` |
+| `SortDataAgent` | `compact` |
+| `workspace-name` | `full` |
 | `test-model`、模型列表、纯状态检查 | 不注入 |
 
 ### 2.2 Agent 层

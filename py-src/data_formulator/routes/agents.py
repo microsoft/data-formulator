@@ -1062,33 +1062,38 @@ def refresh_derived_data():
         raise classify_and_wrap_llm_error(e) from e
 
 
-@agent_bp.route('/workspace-summary', methods=['POST'])
-def workspace_summary():
-    """Generate a short name/summary for the current workspace.
+@agent_bp.route('/workspace-name', methods=['POST'])
+def workspace_name():
+    """Generate a short display name for the current workspace.
 
     Called after the first agent interaction to auto-name the workspace.
     Expects: { model: <model_config>, context: { tables: [...], userQuery: "..." } }
-    Returns: { status: "success", data: { summary: "3-5 word name" } }
+    Returns: { status: "success", data: { display_name: "short name" } }
     """
     if not request.is_json:
         raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
 
-    content = request.get_json()
+    content = request.get_json() or {}
+    model_config = content.get('model')
+    if not model_config:
+        raise AppError(ErrorCode.INVALID_REQUEST, "No model configured")
 
     try:
-        client = get_client(content['model'])
+        client = get_client(model_config)
         ctx = content.get('context', {})
 
-        language_instruction = get_language_instruction(mode="compact")
+        language_instruction = get_language_instruction(mode="full")
         agent = SimpleAgents(client=client, language_instruction=language_instruction)
-        summary = agent.workspace_summary(
+        display_name = agent.workspace_name(
             table_names=ctx.get('tables', []),
             user_query=ctx.get('userQuery', ''),
         )
-        return json_ok({"summary": summary})
+        return json_ok({"display_name": display_name})
 
+    except AppError:
+        raise
     except Exception as e:
-        logger.warning("Failed to generate workspace summary", exc_info=e)
+        logger.warning("Failed to generate workspace name", exc_info=e)
         raise classify_and_wrap_llm_error(e) from e
 
 

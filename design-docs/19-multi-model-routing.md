@@ -1,9 +1,15 @@
 # 19 - 多模型路由：后端按任务类型自动选择模型
 
-> 状态：方向已定，Phase 2/3 实施  
+> 状态：方向已定；前置 API 错误契约已完成；`ModelResolver` 实施待启动  
 > 创建日期：2026-04-30  
-> 前置依赖：`design-docs/18-api-error-guardrails-and-chart-insight-failure.md` Phase 1 完成  
+> 前置依赖：`design-docs/18-api-error-guardrails-and-chart-insight-failure.md` Phase 1/2 已完成  
 > 相关文档：`design-docs/18.2-insight-architecture-redesign.md`
+> 最近两次提交核对（2026-04-30）：  
+> - ✅ 多模型路由的前置错误契约、统一 API client、streaming error 事件清理已完成  
+> - ❌ `ModelResolver` 类尚未实现  
+> - ❌ `AGENT_CAPABILITIES` / task type 声明尚未实现  
+> - ❌ `DF_INSIGHT_MODEL` / `DF_CHEAP_MODEL` 等任务级 env override 尚未实现  
+> - ❌ `get_completion()` 仍在 `client_utils.py` 内硬编码 `reasoning_effort = "low"`，尚未参数化  
 
 ## 1. 动机
 
@@ -187,9 +193,10 @@ Phase 2 的 `InsightProfiler`（`18.2` 文档）与 `ModelResolver` 协同：
 
 ## 10. 实施顺序
 
-1. **Phase 1（已规划）**：`reasoning_effort` 参数化，`get_completion()` 接受参数
-2. **Phase 2**：新增 `ModelResolver` 类 + `.env` 配置 + `AGENT_CAPABILITIES` 声明
-3. **Phase 3**：前端可选 UI（显示实际使用的模型、高级配置面板）
+1. ✅ **前置已完成**：错误契约、`apiRequest()` / `streamRequest()` 和应用错误 HTTP 200 策略已稳定。
+2. ❌ **Phase 3a**：`reasoning_effort` 参数化，`get_completion()` 接受调用方传入的 effort（当前仍硬编码 `"low"`）。
+3. ❌ **Phase 3b**：新增 `ModelResolver` 类 + `.env` 配置 + `AGENT_CAPABILITIES` 声明。
+4. ❌ **Phase 3c**：前端可选 UI（显示实际使用的模型、高级配置面板）。
 
 ## 11. Open Questions
 

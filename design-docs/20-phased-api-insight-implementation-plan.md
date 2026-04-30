@@ -1,6 +1,6 @@
 # 20 - API 错误契约与 Insight 稳定性分期实施计划
 
-> 状态：Phase 2 已完成（2c/2d 全量迁移 + HTTP 200 策略修订）  
+> 状态：Phase 2 已完成（2c/2d 全量迁移 + HTTP 200 策略修订 + legacy 解析清理）；静态扫描/CI 与 Phase 3 待启动  
 > 创建日期：2026-04-30  
 > Phase 0 完成日期：2026-04-30  
 > Phase 1 完成日期：2026-04-30  
@@ -9,9 +9,13 @@
 > Phase 2c 进度：credentials ✅ | knowledge ✅ | sessions ✅ | tables ✅ | agents ✅ | data_connector ✅ | app ✅  
 > Phase 2d 进度：前端 thunk 全部迁移到 apiRequest() ✅  
 > HTTP 状态码修订：应用错误 HTTP 200，仅 auth 401/403 ✅  
-> 待办：移除 parseApiResponse legacy 兼容 | 前端 vitest 验证 | 静态扫描 CI  
+> 待办：`fetchCodeExpl` / `fetchFieldSemanticType` 20s 硬编码 timeout 清理 | 前端全量 vitest/回归验证 | 静态扫描脚本与 CI 接入 | Phase 3 Structured-first Insight + ModelResolver  
 > 前置文档：`design-docs/18-api-error-guardrails-and-chart-insight-failure.md`、`design-docs/18.2-insight-architecture-redesign.md`、`design-docs/19-multi-model-routing.md`  
 > 相关规范：`dev-guides/1-streaming-protocol.md`、`dev-guides/7-unified-error-handling.md`
+> 最近两次提交核对（2026-04-30）：  
+> - `4455d3d`：完成 Phase 2 大批普通 JSON API 迁移、前端 `apiRequest()` 适配、credentials/knowledge 合约测试和文档归档。  
+> - `59d09e1`：统一应用错误 HTTP 200 策略、补齐 streaming / auth / storage-full 等错误处理、移除 legacy response 解析和 stream error token、补充后端协议合约与前端 API client 测试。  
+> - 未完成：`fetchCodeExpl` / `fetchFieldSemanticType` timeout 配置化、静态扫描脚本/CI、structured-first Insight、`ModelResolver`、per-agent `reasoning_effort` 参数化。
 
 ## 1. 背景
 
@@ -226,8 +230,9 @@ return title and takeaways
 新增统一 response helper：
 
 - `json_ok(data)`：成功响应统一为 `{"status": "success", "data": {...}}`。
-- `json_error(error)`：错误响应统一为 `{"status": "error", "error": {"code", "message", "retry"}}`。
-- `AppError` 根据 `ErrorCode` 映射 HTTP status。
+- `raise AppError(...)`：应用错误响应统一为 `{"status": "error", "error": {"code", "message", "retry"}}`。
+- `stream_preflight_error(error)`：流建立前应用错误返回 HTTP 200 + JSON error envelope。
+- `AppError` 根据 `ErrorCode` 映射 HTTP status：应用错误 200，auth 401/403。
 
 迁移范围：
 
@@ -241,17 +246,17 @@ return title and takeaways
 
 `token` 处理：
 
-- 响应 body 不再回传 `token`。
-- 请求 body 中的 `token` 可先兼容忽略。
-- 后续清理时再删除读取逻辑。
+- ✅ 响应 body 不再回传通用 `token`。
+- ✅ 前端业务 thunk 不再发送通用 `token`。
+- ✅ 后端 route 不再依赖通用请求 `token` 读取逻辑。
 
 ### 6.3 前端改动
 
 `apiRequest()` 成为普通 JSON API 的标准入口：
 
-- 先检查 `response.ok`。
+- 先防御性检查 `response.ok`，捕获 auth / transport 错误。
 - 成功时只返回 `body.data`。
-- 失败时抛出 `ApiRequestError`。
+- body `status:"error"` 时抛出 `ApiRequestError`（应用错误通常是 HTTP 200）。
 - 不再兼容裸 `{error: ...}`、`error_message`、`message`、`body.result`。
 
 业务 thunk 改造：
@@ -269,62 +274,64 @@ NDJSON endpoint 与普通 JSON endpoint **统一**使用 HTTP 200：
 
 - 流建立后：HTTP 200 + `application/x-ndjson`，运行中错误通过 `{type: "error"}`。
 - 流建立前：返回 `200 application/json + status:"error"`（使用 `stream_preflight_error()`）。
-- 流式事件中的 `token` 后续移除，但必须等前端消费者不再依赖 `data.token === token` 之后再改后端。
+- 流式错误事件中的通用 `token` 已移除；请求追踪使用 `X-Request-Id` header。
 
 Streaming 剩余待办：
 
 1. ~~先新增后端小 helper。~~ ✅ stream_preflight_error() 已实现。
-2. 前端手写 reader 逐步迁到 streamRequest()。（部分完成）
-3. 确认前端不再依赖流事件中的 	oken 后，后端停止发送 stream 	oken。
+2. ~~前端主要手写 reader 逐步迁到 streamRequest()。~~ ✅ 已完成主要 Agent/streaming 消费者迁移。
+3. ~~确认前端不再依赖流事件中的 token 后，后端停止发送 stream token。~~ ✅ 已完成；`stream_error_event()` 不再携带通用 `token`。
 4. ~~把流建立前校验失败从 200 切到 4xx。~~ ❌ **已取消**（统一 HTTP 200 策略）
 
 伪代码：
 
-`	ext
+```text
 if preflight validation failed:
     return stream_preflight_error(error)  # HTTP 200 + application/json
 
 return ndjson_response(generate)  # HTTP 200 + application/x-ndjson
-`
+```
 
 
 ### 6.5 测试与护栏
 
 后端：
 
-- contract tests 覆盖普通 JSON endpoint 成功和失败 shape。
-- `X-Request-Id` header 测试。
-- Chart Insight、code explanation、model list 等高风险 endpoint 单独覆盖。
+- ✅ contract tests 覆盖普通 JSON endpoint 成功和失败 shape。
+- ✅ `X-Request-Id` header 测试。
+- ✅ Chart Insight、code explanation、model list 等高风险 endpoint 单独覆盖。
 
 前端：
 
-- `apiRequest()` 对 2xx / 4xx / 5xx 的解析测试。
-- legacy 格式触发 `PROTOCOL_VIOLATION`。
-- 业务 thunk 不发送 `token`。
+- ✅ `apiRequest()` 对 2xx / 4xx / 5xx 和 HTTP 200 应用错误的解析测试已补充。
+- ✅ legacy 格式不再静默兼容，触发 malformed/protocol 类错误。
+- ✅ 业务 thunk 不再发送通用 `token`。
 
 静态扫描：
 
-- 检查裸 `jsonify({"error": ...})`。
-- 检查扁平 `status: "ok"`。
-- 检查业务代码直接 `fetchWithIdentity().json()`。
-- 检查未说明的 LLM 硬编码 timeout。
+- ❌ 检查裸 `jsonify({"error": ...})`。
+- ❌ 检查扁平 `status: "ok"`。
+- ❌ 检查业务代码直接 `fetchWithIdentity().json()`。
+- ❌ 检查未说明的 LLM 硬编码 timeout。
 
 ### 6.6 文档更新
 
 - ~~重写 `dev-guides/7-unified-error-handling.md`。~~ ✅ 已完成
-- ~~更新 `dev-guides/1-streaming-protocol.md`：流建立后 200，流建立前校验失败可 4xx JSON。~~ ⚠️ 4xx 切换已取消（统一 200），`dev-guides/1` 中相关描述待同步清理
+- ~~更新 `dev-guides/1-streaming-protocol.md`：流建立后 200，流建立前校验失败可 4xx JSON。~~ ✅ 已按统一 HTTP 200 策略同步清理，早期 4xx 切换方案已取消
 - ~~更新错误处理 skill 和相关 rule。~~ ✅ 已完成（`unified-error-protocol.mdc`、`error-response-safety.mdc`、`backend-test-conventions.mdc`）
 - 将新增 endpoint checklist 改为要求 contract test。
 
 ### 6.7 验收标准
 
-- 普通 JSON API 成功响应全部为 `status: "success"` + `data`。
-- 普通 JSON API 失败响应全部为 `status: "error"` + `error.code/message/retry`。
-- 前端业务代码不再直接消费未解析的 `response.json()`。
-- legacy response shape 不再被静默兼容。
-- 静态扫描能发现新增违规。
+- ✅ 普通 JSON API 成功响应全部为 `status: "success"` + `data`。
+- ✅ 普通 JSON API 失败响应全部为 `status: "error"` + `error.code/message/retry`。
+- ✅ 前端业务代码不再直接消费未解析的 `response.json()`（文件下载、blob、auth 特例除外）。
+- ✅ legacy response shape 不再被静默兼容。
+- ❌ 静态扫描能发现新增违规。
 
 ## 7. Phase 3：Structured-first Insight 与多模型路由
+
+> 状态：❌ 待启动。最近两次提交没有新增 `insights/` 包、`ModelResolver` 或 per-agent capabilities。
 
 ### 7.1 目标
 
@@ -386,15 +393,15 @@ Agent 拆分：
 2. ~~在 matrix 中把 NDJSON streaming 标成“只统计，不做 Phase 1 行为迁移”。~~ ✅
 3. ~~实施 Phase 1 的 Chart Insight 修复，并先跑相关前后端测试。~~ ✅
 4. ~~再启动 Phase 2 普通 JSON API 迁移，按 route 分批开发，但最终同步上线。~~ ✅ 已完成（7/7 route 全量迁移 + 前端 thunk 适配 + HTTP 200 策略修订）
-5. Phase 2 收尾：移除 legacy 格式兼容、前端 vitest 验证、静态扫描 CI、stream `token` 移除。
-6. Phase 2 稳定后再进入 Phase 3 的 structured-first Insight 和 ModelResolver。
+5. Phase 2 收尾：~~移除 legacy 格式兼容、stream `token` 移除~~ ✅；前端全量 vitest/回归验证、静态扫描 CI ❌。
+6. Phase 2 稳定后再进入 Phase 3 的 structured-first Insight 和 ModelResolver（尚未启动）。
 
 ## 9. 当前不建议做的事
 
-- 不建议第一期直接实现 `InsightProfiler`，因为失败反馈和 API 契约尚未稳定。
+- ~~不建议第一期直接实现 `InsightProfiler`，因为失败反馈和 API 契约尚未稳定。~~ ✅ 前置契约已稳定；`InsightProfiler` 可作为 Phase 3 启动项。
 - ~~不建议第一期直接全量迁移所有 `/api/` JSON endpoint，除非同时安排完整前端适配和 contract tests。~~ ✅ 已全量迁移
 - 不建议把 NDJSON streaming 运行中错误改成 HTTP 4xx/5xx，因为流建立后 HTTP status 已经无法改变。
-- 不建议第一期移除 streaming `token` 或改 `data-agent-streaming` 的 legacy `{token, status, result}` 事件格式，因为当前前端仍有消费者依赖它。
+- ~~不建议第一期移除 streaming `token` 或改 `data-agent-streaming` 的 legacy `{token, status, result}` 事件格式，因为当前前端仍有消费者依赖它。~~ ✅ 已在最近提交中完成主要 reader 迁移并移除通用 stream error `token`。
 - ~~不建议第一期把 streaming 预检失败从 `200 application/json` 改为 `4xx application/json`。~~ ❌ 已永久取消（统一 HTTP 200 策略）
 - 不建议前端通过 `model.supports_vision` 决定是否调用 Insight API，这会阻碍后续后端多模型路由。
 
@@ -411,6 +418,7 @@ Agent 拆分：
 
 > 下表是对当前所有 `/api/` 路由的盘点结果。列说明见表头。  
 > **Phase 1 只改了 `/api/agent/chart-insight`**，其余 endpoint 留待 Phase 2 迁移。
+> **状态说明（2026-04-30）**：该 matrix 保留为 Phase 0 历史盘点快照；最近两次提交已经完成 Phase 2 全量迁移，表内大量 “当前响应格式 / 消费方式” 不再代表 HEAD 现状。
 
 ### A.1 Agent 路由（`routes/agents.py`，前缀 `/api/agent/`）
 
@@ -552,12 +560,13 @@ Agent 拆分：
 | `DataLoadingChat` (data-loading-chat) | `setTimeout` → `controller.abort()` | 硬编码 120s | ⚠️ Phase 2 应改为统一配置 |
 | `fetchGlobalModelList` / `fetchAvailableModels` | 无 | 无 | 低优先级 |
 | `testModel` | 无 | 无 | 低优先级 |
-| `fetchFieldSemanticType` | 无 | 无 | ⚠️ Phase 2 应补上 |
+| `fetchFieldSemanticType` | `AbortController` | 硬编码 20s | ❌ 待改为统一配置或独立 metadata timeout |
+| `fetchCodeExpl` | `AbortController` | 硬编码 20s | ❌ 待改为 `formulateTimeoutSeconds` 或明确短超时策略 |
 
 ### A.10 文档不一致标记
 
 | 项目 | 现状 | 文档说法 | 建议 |
 |---|---|---|---|
-| `/refine-data` | 普通 JSON endpoint（`jsonify` 返回） | `dev-guides/1-streaming-protocol.md` 列为 NDJSON streaming | 从 streaming 表中移除 |
-| streaming pre-stream error | 全部返回 `200 application/json` | `design-docs/18` 建议改为 `4xx` | Phase 2 后段处理 |
-| `token` 字段 | Agent 相关 endpoint 仍在使用 | `design-docs/18` 建议移除 | Phase 2 后段处理 |
+| `/refine-data` | 普通 JSON endpoint（`json_ok` envelope） | 旧版 `dev-guides/1-streaming-protocol.md` 曾列为 NDJSON streaming | ✅ 已从规范中按当前实现校正 |
+| streaming pre-stream error | 全部返回 `200 application/json` | 早期 `design-docs/18` 建议改为 `4xx` | ✅ 4xx 方案已取消，统一 HTTP 200 |
+| `token` 字段 | 通用 API/stream error token 已移除 | `design-docs/18` 建议移除 | ✅ 已完成主要清理；鉴权/连接器私有 token 不在此范围 |
