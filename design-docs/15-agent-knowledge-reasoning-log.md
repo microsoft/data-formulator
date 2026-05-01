@@ -32,23 +32,25 @@ python -m pytest \
 
 ## 最终架构
 
-| 能力 | 实现位置 | 状态 |
-|---|---|---|
-| `ConfinedDir` 扩展 API | `py-src/data_formulator/security/path_safety.py` | 已实现 |
-| 推理日志 | `py-src/data_formulator/agents/reasoning_log.py` | 已实现 |
-| DataAgent 推理日志埋点 | `py-src/data_formulator/agents/data_agent.py` | 已实现 |
-| 知识存储 | `py-src/data_formulator/knowledge/store.py` | 已实现 |
-| 知识 API | `py-src/data_formulator/routes/knowledge.py` | 已实现 |
-| 知识 API 注册 | `py-src/data_formulator/app.py` | 已实现 |
-| DataAgent 知识注入和工具 | `py-src/data_formulator/agents/data_agent.py` | 已实现 |
-| 其他 Agent 知识集成 | `py-src/data_formulator/agents/agent_*.py` | 已实现 |
-| 经验提炼 Agent | `py-src/data_formulator/agents/agent_experience_distill.py` | 已实现 |
-| 前端 API client | `src/api/knowledgeApi.ts` | 已实现 |
-| 前端知识状态管理 | `src/app/useKnowledgeStore.ts` | 已实现 |
-| 知识面板 | `src/views/KnowledgePanel.tsx` | 已实现 |
-| Rules 快捷编辑器迁移 | `src/views/AgentRulesDialog.tsx` | 已实现 |
-| 保存为经验入口 | `src/views/SaveExperienceButton.tsx`、`src/views/DataThreadCards.tsx` | 已实现 |
-| 侧栏知识入口 | `src/views/DataSourceSidebar.tsx` | 已实现 |
+
+| 能力                   | 实现位置                                                                 | 状态  |
+| -------------------- | -------------------------------------------------------------------- | --- |
+| `ConfinedDir` 扩展 API | `py-src/data_formulator/security/path_safety.py`                     | 已实现 |
+| 推理日志                 | `py-src/data_formulator/agents/reasoning_log.py`                     | 已实现 |
+| DataAgent 推理日志埋点     | `py-src/data_formulator/agents/data_agent.py`                        | 已实现 |
+| 知识存储                 | `py-src/data_formulator/knowledge/store.py`                          | 已实现 |
+| 知识 API               | `py-src/data_formulator/routes/knowledge.py`                         | 已实现 |
+| 知识 API 注册            | `py-src/data_formulator/app.py`                                      | 已实现 |
+| DataAgent 知识注入和工具    | `py-src/data_formulator/agents/data_agent.py`                        | 已实现 |
+| 其他 Agent 知识集成        | `py-src/data_formulator/agents/agent_*.py`                           | 已实现 |
+| 经验提炼 Agent           | `py-src/data_formulator/agents/agent_experience_distill.py`          | 已实现 |
+| 前端 API client        | `src/api/knowledgeApi.ts`                                            | 已实现 |
+| 前端知识状态管理             | `src/app/useKnowledgeStore.ts`                                       | 已实现 |
+| 知识面板                 | `src/views/KnowledgePanel.tsx`                                       | 已实现 |
+| Rules 快捷编辑器迁移        | `src/views/AgentRulesDialog.tsx`                                     | 已实现 |
+| 保存为经验入口              | `src/views/SaveExperienceButton.tsx`、`src/views/DataThreadCards.tsx` | 已实现 |
+| 侧栏知识入口               | `src/views/DataSourceSidebar.tsx`                                    | 已实现 |
+
 
 ## 已落地的关键行为
 
@@ -66,11 +68,13 @@ DATA_FORMULATOR_HOME/
 
 `DF_AGENT_LOG` 支持：
 
-| 值 | 行为 |
-|---|---|
-| `off`（默认） | 不写日志 |
-| `on` | 写结构化摘要 |
+
+| 值         | 行为                     |
+| --------- | ---------------------- |
+| `off`（默认） | 不写日志                   |
+| `on`      | 写结构化摘要                 |
 | `verbose` | 写调用方传入的更完整 kwargs，并做脱敏 |
+
 
 DataAgent 已记录 `session_start`、`context_built`、`knowledge_search`、`llm_request`、`llm_response`、`tool_execution`、`action_execution`、`repair_attempt`、`session_end` 等事件。
 
@@ -149,8 +153,9 @@ POST /api/knowledge/distill-experience
 - 已迁移到开发规范：`dev-guides/10-agent-knowledge-reasoning-log.md`
 - 已完成开发计划：`design-docs/15.1-agent-knowledge-reasoning-log-dev-plan.md`
 - 仍需保留的 follow-up：`design-docs/15.2-knowledge-system-followup-improvements.md`
+- 仍需保留的 follow-up：`design-docs/15.3-agent-knowledge-injection-and-search-plan.md`
 
-如果后续完成 `15.2` 的未完成项，可以把对应最终规范补进 `dev-guides/10`，然后删除 `15.2`。
+如果后续完成 `15.2` `15.3` 的未完成项，可以把对应最终规范补进 `dev-guides/10`，然后删除 。
 
 ## 关联文档
 
@@ -161,3 +166,4 @@ POST /api/knowledge/distill-experience
 - `dev-guides/2-log-sanitization.md`
 - `dev-guides/7-unified-error-handling.md`
 - `dev-guides/6-i18n-language-injection.md`
+
