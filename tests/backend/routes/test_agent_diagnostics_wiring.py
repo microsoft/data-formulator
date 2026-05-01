@@ -122,6 +122,39 @@ class TestDataRecAgentWiring:
         assert diag["agent"] == "DataRecAgent"
         assert diag["error"] == "rate limit"
 
+    @patch("data_formulator.agents.agent_data_rec.supplement_missing_block")
+    @patch("data_formulator.sandbox.create_sandbox")
+    def test_execution_exception_diagnostics_are_sanitized(self, mock_sandbox_factory, mock_supplement) -> None:
+        mock_supplement.return_value = (
+            {"chart_type": "Bar Chart", "output_variable": "result_df"},
+            ["result_df = pd.DataFrame({'x':[1]})"],
+            None,
+            0.0,
+        )
+        import pandas as pd
+        mock_sandbox = MagicMock()
+        mock_sandbox.run_python_code.return_value = {
+            "status": "ok",
+            "content": pd.DataFrame({"x": [1]}),
+        }
+        mock_sandbox_factory.return_value = mock_sandbox
+
+        agent = self._make_agent()
+        agent.workspace.write_parquet.side_effect = RuntimeError(
+            r"boom C:\Users\dev\secret.txt token=secret-token"
+        )
+        response = _make_llm_response(LLM_CONTENT_WITH_JSON_AND_CODE)
+        messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "q"}]
+
+        candidate = agent.process_gpt_response([], messages, response)[0]
+
+        assert candidate["content"] == "Unexpected error during code execution."
+        exec_error = candidate["diagnostics"]["execution"]["error_message"]
+        assert "RuntimeError" in exec_error
+        assert "Traceback" not in exec_error
+        assert r"C:\Users\dev" not in exec_error
+        assert "secret-token" not in exec_error
+
 
 # ---------------------------------------------------------------------------
 # DataTransformationAgent
@@ -181,6 +214,39 @@ class TestDataTransformAgentWiring:
         assert diag.keys() == ERROR_KEYS
         assert diag["agent"] == "DataTransformationAgent"
         assert diag["error"] == "server error"
+
+    @patch("data_formulator.agents.agent_data_transform.supplement_missing_block")
+    @patch("data_formulator.sandbox.create_sandbox")
+    def test_execution_exception_diagnostics_are_sanitized(self, mock_sandbox_factory, mock_supplement) -> None:
+        mock_supplement.return_value = (
+            {"chart_type": "Bar Chart", "output_variable": "result_df"},
+            ["result_df = pd.DataFrame({'x':[1]})"],
+            None,
+            0.0,
+        )
+        import pandas as pd
+        mock_sandbox = MagicMock()
+        mock_sandbox.run_python_code.return_value = {
+            "status": "ok",
+            "content": pd.DataFrame({"x": [1]}),
+        }
+        mock_sandbox_factory.return_value = mock_sandbox
+
+        agent = self._make_agent()
+        agent.workspace.write_parquet.side_effect = RuntimeError(
+            r"boom /tmp/workspace/secret.txt token=secret-token"
+        )
+        response = _make_llm_response(LLM_CONTENT_WITH_JSON_AND_CODE)
+        messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "q"}]
+
+        candidate = agent.process_gpt_response(response, messages)[0]
+
+        assert candidate["content"] == "An error occurred during code execution."
+        exec_error = candidate["diagnostics"]["execution"]["error_message"]
+        assert "RuntimeError" in exec_error
+        assert "Traceback" not in exec_error
+        assert "/tmp/workspace" not in exec_error
+        assert "secret-token" not in exec_error
 
 
 # ---------------------------------------------------------------------------

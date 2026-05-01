@@ -28,7 +28,7 @@ import flask
 from flask import g, jsonify, request
 
 from data_formulator.errors import AppError, ErrorCode
-from data_formulator.security.sanitize import classify_llm_error
+from data_formulator.security.sanitize import classify_llm_error, sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,8 @@ def stream_error_event(error: AppError | Exception) -> str:
         except RuntimeError:
             pass
         err_dict = error.to_dict(include_detail=include_detail)
+        if include_detail and "detail" in err_dict:
+            err_dict["detail"] = sanitize_error_message(err_dict["detail"])
     else:
         logger.error("Unexpected error in stream", exc_info=error)
         err_dict = {
@@ -214,9 +216,12 @@ def stream_preflight_error(error: AppError) -> tuple:
         include_detail = flask.current_app.debug
     except RuntimeError:
         pass
+    err_dict = error.to_dict(include_detail=include_detail)
+    if include_detail and "detail" in err_dict:
+        err_dict["detail"] = sanitize_error_message(err_dict["detail"])
     body = {
         "status": "error",
-        "error": error.to_dict(include_detail=include_detail),
+        "error": err_dict,
     }
     return jsonify(body), 200
 
@@ -274,9 +279,12 @@ def register_error_handlers(app: flask.Flask) -> None:
             request_id,
             e.message,
         )
+        err_dict = e.to_dict(include_detail=app.debug)
+        if app.debug and "detail" in err_dict:
+            err_dict["detail"] = sanitize_error_message(err_dict["detail"])
         body = {
             "status": "error",
-            "error": _with_request_id(e.to_dict(include_detail=app.debug)),
+            "error": _with_request_id(err_dict),
         }
         return jsonify(body), http_status
 
@@ -322,5 +330,5 @@ def register_error_handlers(app: flask.Flask) -> None:
             "request_id": request_id,
         }
         if app.debug:
-            error_body["detail"] = traceback.format_exc()
+            error_body["detail"] = sanitize_error_message(traceback.format_exc())
         return jsonify({"status": "error", "error": error_body}), 500

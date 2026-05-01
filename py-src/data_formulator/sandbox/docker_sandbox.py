@@ -21,6 +21,7 @@ import textwrap
 import pandas as pd
 
 from data_formulator.datalake.parquet_utils import safe_data_filename
+from data_formulator.security.sanitize import sanitize_error_message
 from .base import Sandbox
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,15 @@ DEFAULT_DOCKER_IMAGE = os.environ.get(
     "DOCKER_SANDBOX_IMAGE", "data-formulator-sandbox"
 )
 DEFAULT_TIMEOUT = int(os.environ.get("DOCKER_SANDBOX_TIMEOUT", "120"))
+
+
+def _safe_error_response(content, detail=None):
+    response = {"status": "error", "content": content}
+    if detail:
+        safe_detail = sanitize_error_message(detail)
+        if safe_detail:
+            response["diagnostics"] = {"safe_detail": safe_detail}
+    return response
 
 
 class DockerSandbox(Sandbox):
@@ -179,11 +189,12 @@ class DockerSandbox(Sandbox):
                     ),
                 }
             except Exception as exc:
+                logger.exception("Failed to start Docker container")
                 self._cleanup(tmpdir)
-                return {
-                    "status": "error",
-                    "content": f"Failed to start Docker container: {exc}",
-                }
+                return _safe_error_response(
+                    "Failed to start Docker container.",
+                    f"{type(exc).__name__}: {exc}",
+                )
 
             stdout = proc.stdout or ""
             stderr = proc.stderr or ""
@@ -191,10 +202,12 @@ class DockerSandbox(Sandbox):
             if proc.returncode != 0 or "__DOCKER_SANDBOX_OK__" not in stdout:
                 self._cleanup(tmpdir)
                 err_detail = stderr.strip() or stdout.strip() or "Unknown error"
-                return {
-                    "status": "error",
-                    "content": f"Docker sandbox execution failed:\n{err_detail}",
-                }
+                logger.error("Docker sandbox execution failed: %s", err_detail)
+                safe_detail = sanitize_error_message(err_detail)
+                return _safe_error_response(
+                    safe_detail or "Docker sandbox execution failed.",
+                    safe_detail,
+                )
 
             # ---- read back output ---------------------------------------------
             # Defensive: ensure the filename stays inside output_dir even if
@@ -226,11 +239,12 @@ class DockerSandbox(Sandbox):
             try:
                 output_df = pd.read_parquet(parquet_out)
             except Exception as exc:
+                logger.exception("Failed to read output parquet")
                 self._cleanup(tmpdir)
-                return {
-                    "status": "error",
-                    "content": f"Failed to read output parquet: {exc}",
-                }
+                return _safe_error_response(
+                    "Failed to read output parquet.",
+                    f"{type(exc).__name__}: {exc}",
+                )
 
             self._cleanup(tmpdir)
             return {"status": "ok", "content": output_df}

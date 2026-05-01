@@ -1,7 +1,7 @@
 # 统一错误处理开发规范
 
 > **维护者**: DF 核心团队
-> **最后更新**: 2026-04-30
+> **最后更新**: 2026-05-01
 > **适用范围**: 后端 API route、流式端点、前端 API 调用、错误码/i18n、错误相关测试
 > **核心原则**: 业务/校验错误一律 HTTP 200，仅认证/授权和不可控传输错误使用非 200
 
@@ -17,6 +17,7 @@
 | 流式预检成功 | `200` | `application/x-ndjson` 事件流 | 进入 generator 前完成校验 |
 | 流式预检错误 | `200` | `application/json` + `{"status": "error", "error": ...}` | 使用 `stream_preflight_error(AppError(...))` |
 | 流式运行中错误 | `200` | NDJSON 行：`{"type": "error", "error": ...}` | 使用 `stream_error_event(...)`；流已建立后不能再改 HTTP 状态或返回整体 JSON body |
+| 流式运行中警告 | `200` | NDJSON 行：`{"type": "warning", "warning": ...}` | 使用 `stream_warning_event(...)` 或 `collect_stream_warning()`；非致命，流继续 |
 | 无匹配 Flask route | `404` | `/api/` 返回 JSON error；非 API 可能走 SPA fallback | 由 Flask/global handler 处理 |
 | 请求体过大 | `413` | JSON error | 由 WSGI/Flask handler 处理 |
 | 未捕获异常 | `500` | JSON error | 表示程序 bug 或意外服务端异常 |
@@ -26,6 +27,24 @@
 - 新代码不要用 HTTP `400`/`422` 表达业务校验错误；使用 HTTP `200` + `status: "error"`。
 - 不要把已建立的 NDJSON 流中错误改成 `{"status": "error", ...}`；流事件必须靠 `type` 区分。
 - 不要在响应体中暴露 `str(exc)`、secret、token、连接串、文件系统敏感路径或堆栈。
+
+### 响应工具速查（"我该用哪个？"）
+
+> 开发新 route 或修改错误处理时，对照此表选择工具。所有工具定义在
+> `py-src/data_formulator/error_handler.py`。
+
+| 你想做什么 | 用这个 | 一句话说明 |
+|-----------|--------|-----------|
+| 返回成功 JSON | `json_ok(data)` | 统一成功信封 `{"status":"success","data":...}`，HTTP 200 |
+| 抛出业务/校验错误 | `raise AppError(ErrorCode.XXX, "msg")` | 全局 handler 自动捕获，HTTP 200（认证错误 401/403） |
+| 流建立前校验失败 | `stream_preflight_error(AppError(...))` | 返回 `application/json` error body，HTTP 200 |
+| 流运行中 fatal error | `yield stream_error_event(error)` | 输出一行 NDJSON `{"type":"error","error":{...}}`，流终止 |
+| 流运行中非致命警告（generator 内） | `yield stream_warning_event("msg")` | 输出一行 NDJSON `{"type":"warning","warning":{...}}`，流继续 |
+| 流运行中非致命警告（helper/深层函数内） | `collect_stream_warning("msg")` | 攒到 `flask.g`，generator 用 `flush_stream_warnings()` 统一输出 |
+| LLM / 外部 API 异常分类 | `classify_and_wrap_llm_error(exc)` | 把原始异常转成安全的 `AppError`，用于上面两个 stream helper |
+
+**安全规则**：所有返回给客户端的 `detail` 字段（debug 模式才出现）都会经过
+`sanitize_error_message()` 清洗，绝不暴露原始 traceback、文件路径或凭据。
 
 ## 1. 核心契约
 
@@ -215,6 +234,47 @@ def generate():
         yield stream_error_event(classify_and_wrap_llm_error(exc))
 ```
 
+### 3.3 流运行中警告（非致命）
+
+警告用于"可继续但需要通知用户"的场景（如某张表不可用、降级到缓存等）。
+前端以 toast / snackbar 展示，不中断流。
+
+**在 generator 内直接 yield：**
+
+```python
+from data_formulator.error_handler import stream_warning_event
+
+def generate():
+    if fallback_used:
+        yield stream_warning_event(
+            "Table X unavailable, using cached version",
+            message_code="agent.tableFallback",
+        )
+    # ... 继续正常事件 ...
+```
+
+**在不能 yield 的 helper / 深层函数内积累：**
+
+```python
+from data_formulator.error_handler import collect_stream_warning, flush_stream_warnings
+
+# helper 函数——无法 yield，只能攒
+def resolve_context(tables):
+    for t in tables:
+        if not available(t):
+            collect_stream_warning(f"Table {t} skipped", message_code="agent.tableSkipped")
+
+# generator 侧定期 flush
+def generate():
+    resolve_context(tables)
+    for line in flush_stream_warnings():
+        yield line
+    # ... 继续正常事件 ...
+```
+
+`collect_stream_warning()` 把警告存在 `flask.g`，`flush_stream_warnings()`
+一次性取出并清空，返回已格式化的 NDJSON 行列表。
+
 ## 4. 前端消费规范
 
 ### 4.1 新代码必须使用统一客户端
@@ -377,7 +437,9 @@ metadata 请求不要复制短客户端 abort 模式。
 | `py-src/data_formulator/error_handler.py` | `json_ok()` | 统一成功响应 helper |
 | `py-src/data_formulator/error_handler.py` | `stream_preflight_error()` | 流预检错误 helper（HTTP 200） |
 | `py-src/data_formulator/error_handler.py` | `classify_and_wrap_llm_error()` | LLM/外部 API 异常安全分类 |
-| `py-src/data_formulator/error_handler.py` | `stream_error_event()` | NDJSON error 事件 |
+| `py-src/data_formulator/error_handler.py` | `stream_error_event()` | NDJSON error 事件（fatal，流终止） |
+| `py-src/data_formulator/error_handler.py` | `stream_warning_event()` | NDJSON warning 事件（非致命，流继续） |
+| `py-src/data_formulator/error_handler.py` | `collect_stream_warning()` / `flush_stream_warnings()` | 跨函数积累 warning，generator 统一 flush |
 | `py-src/data_formulator/routes/tables.py` | `classify_and_raise_db_error()` | 表/工作区错误分类 |
 | `py-src/data_formulator/data_loader/connector_errors.py` | `classify_connector_error()` | DataLoader/connector 简单错误分类 |
 | `py-src/data_formulator/data_connector.py` | `classify_and_raise_connector_error()` | 连接器路由兼容入口 |
@@ -389,6 +451,11 @@ metadata 请求不要复制短客户端 abort 模式。
 所有 `AppError`、`404`、`413`、未捕获 `500` 的 JSON 错误体都必须包含
 `error.request_id`，同时响应头带 `X-Request-Id`。前端可把这个 ID 展示给用户，
 用于定位后端日志。生产环境不要把未捕获异常的原始文本、traceback 或连接串返回给前端。
+
+即使在 **debug 模式**下，`AppError.detail` 和 `traceback.format_exc()` 返回到客户端
+之前也会经过 `sanitize_error_message()` 清洗——剥离文件路径、凭据和完整堆栈帧，
+只保留可操作的错误摘要（如 `ValueError: invalid literal`）。完整日志始终通过
+`logger.exception()` 写入服务端日志。
 
 ### 6.2 DataLoader/connector 分类
 

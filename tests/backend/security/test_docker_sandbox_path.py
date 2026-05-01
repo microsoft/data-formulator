@@ -95,3 +95,52 @@ class TestOutputPathValidation:
         malicious = f"foo{os.sep}bar"
         result = self._run_with_fake_docker(sandbox, workspace, malicious)
         assert result["status"] == "error"
+
+    def test_docker_stderr_returns_sanitized_diagnostics(self, sandbox, workspace):
+        import subprocess as sp
+
+        fake_result = MagicMock()
+        fake_result.returncode = 1
+        fake_result.stdout = ""
+        fake_result.stderr = (
+            "Traceback (most recent call last):\n"
+            '  File "/sandbox/run.py", line 12, in <module>\n'
+            "NameError: name 'missing_df' is not defined token=secret-token"
+        )
+
+        with patch.object(sp, "run", return_value=fake_result):
+            result = sandbox.run_python_code(
+                "missing_df = missing_df",
+                workspace,
+                "output_df",
+            )
+
+        assert result["status"] == "error"
+        assert "NameError" in result["content"]
+        safe_detail = result["diagnostics"]["safe_detail"]
+        assert "NameError" in safe_detail
+        assert "missing_df" in safe_detail
+        assert "Traceback" not in safe_detail
+        assert "/sandbox/run.py" not in safe_detail
+        assert "secret-token" not in safe_detail
+
+    def test_start_exception_returns_generic_content(self, sandbox, workspace):
+        import subprocess as sp
+
+        with patch.object(
+            sp,
+            "run",
+            side_effect=RuntimeError(r"boom C:\Users\dev\secret.txt token=secret-token"),
+        ):
+            result = sandbox.run_python_code(
+                "import pandas as pd; output_df = pd.DataFrame({'x': [1]})",
+                workspace,
+                "output_df",
+            )
+
+        assert result["status"] == "error"
+        assert result["content"] == "Failed to start Docker container."
+        safe_detail = result["diagnostics"]["safe_detail"]
+        assert "RuntimeError" in safe_detail
+        assert "secret-token" not in safe_detail
+        assert r"C:\Users\dev" not in safe_detail

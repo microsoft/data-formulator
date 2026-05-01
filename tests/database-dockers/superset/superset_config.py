@@ -67,6 +67,20 @@ def _validate_df_origin(raw_origin):
     return origin if origin in _allowed_df_origins() else ""
 
 
+def _safe_next_path(raw_path):
+    """Only allow same-site relative paths in the login next parameter."""
+    next_path = (raw_path or "/").rstrip("?").replace("\\", "/")
+    parsed = urlparse(next_path)
+    if (
+        not next_path.startswith("/")
+        or next_path.startswith("//")
+        or parsed.scheme
+        or parsed.netloc
+    ):
+        return "/"
+    return next_path
+
+
 @df_sso_bp.route("/df-sso-bridge/", methods=["GET"])
 def df_sso_bridge():
     """Issue JWT tokens to an authenticated Superset user and post them
@@ -81,7 +95,7 @@ def df_sso_bridge():
 
     if not current_user.is_authenticated:
         # Only allow same-site relative redirects (prevent open redirect).
-        next_path = request.full_path.rstrip("?")
+        next_path = _safe_next_path(request.full_path)
         return redirect(f"/login/?next={quote(next_path)}")
 
     from flask_jwt_extended import create_access_token, create_refresh_token

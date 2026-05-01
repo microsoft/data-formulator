@@ -27,6 +27,18 @@ class TestApiKeyRedaction:
         result = sanitize_error_message(msg)
         assert "tok_secret_abc123" not in result
 
+    def test_generic_token_equals(self):
+        msg = "RuntimeError: request failed token=tok_secret_abc123"
+        result = sanitize_error_message(msg)
+        assert "tok_secret_abc123" not in result
+        assert "token=<redacted>" in result
+
+    def test_password_equals(self):
+        msg = "Connection failed password=super-secret"
+        result = sanitize_error_message(msg)
+        assert "super-secret" not in result
+        assert "password=<redacted>" in result
+
     def test_no_false_positive_on_normal_text(self):
         msg = "The model returned an empty response"
         result = sanitize_error_message(msg)
@@ -69,6 +81,7 @@ class TestStackTraceStripping:
         result = sanitize_error_message(msg)
         assert "Traceback" not in result
         assert "line 42" not in result
+        assert "ValueError: invalid literal" in result
 
     def test_file_line_references_stripped(self):
         msg = 'File "/app/src/handler.py", line 99, in handle\n    raise RuntimeError("fail")'

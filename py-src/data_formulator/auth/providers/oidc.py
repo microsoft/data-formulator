@@ -167,6 +167,9 @@ class OIDCProvider(AuthProvider):
             discovery = self._try_discovery(f"{self._issuer}{fallback_path}")
 
         if discovery:
+            discovered_issuer = discovery.get("issuer")
+            if isinstance(discovered_issuer, str) and discovered_issuer.strip():
+                self._issuer = discovered_issuer.strip()
             if not self._authorize_url:
                 self._authorize_url = discovery.get("authorization_endpoint", "")
             if not self._token_url:
