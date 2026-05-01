@@ -295,7 +295,9 @@ classifier cannot reasonably cover the category.
 
 All JSON errors include `error.request_id` and an `X-Request-Id` response
 header. Show/copy this ID for users when reporting backend failures; do not
-show raw exception text in production.
+show raw exception text in production. Unhandled 500 responses must never
+include raw tracebacks, even in debug mode; return a safe category plus
+`request_id` and keep full stack traces in server logs only.
 
 ## Debugging Error Propagation
 

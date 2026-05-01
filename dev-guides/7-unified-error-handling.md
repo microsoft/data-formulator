@@ -43,8 +43,9 @@
 | 流运行中非致命警告（helper/深层函数内） | `collect_stream_warning("msg")` | 攒到 `flask.g`，generator 用 `flush_stream_warnings()` 统一输出 |
 | LLM / 外部 API 异常分类 | `classify_and_wrap_llm_error(exc)` | 把原始异常转成安全的 `AppError`，用于上面两个 stream helper |
 
-**安全规则**：所有返回给客户端的 `detail` 字段（debug 模式才出现）都会经过
-`sanitize_error_message()` 清洗，绝不暴露原始 traceback、文件路径或凭据。
+**安全规则**：所有返回给客户端的 `detail` 字段（debug 模式才出现）都必须是安全摘要。
+`AppError.detail` 会经过 `sanitize_error_message()` 清洗；未捕获异常永远不返回原始
+traceback，只返回粗粒度错误分类和 `request_id`，完整 traceback 仅写入服务端日志。
 
 ## 1. 核心契约
 

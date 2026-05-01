@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import traceback
 from uuid import uuid4
 
 import flask
@@ -31,6 +30,22 @@ from data_formulator.errors import AppError, ErrorCode
 from data_formulator.security.sanitize import classify_llm_error, sanitize_error_message
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_unexpected_detail(exc: Exception, request_id: str) -> str:
+    """Return a safe debug hint for an unhandled exception."""
+    if isinstance(exc, TimeoutError):
+        category = "timeout"
+    elif isinstance(exc, PermissionError):
+        category = "permission error"
+    elif isinstance(exc, ValueError):
+        category = "invalid internal state"
+    else:
+        category = "server error"
+    return (
+        f"Unexpected {category}. "
+        f"Use request_id={request_id} to find full details in server logs."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -330,5 +345,5 @@ def register_error_handlers(app: flask.Flask) -> None:
             "request_id": request_id,
         }
         if app.debug:
-            error_body["detail"] = sanitize_error_message(traceback.format_exc())
+            error_body["detail"] = _safe_unexpected_detail(e, request_id)
         return jsonify({"status": "error", "error": error_body}), 500

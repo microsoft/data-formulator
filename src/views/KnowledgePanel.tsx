@@ -49,6 +49,7 @@ import { useKnowledgeStore } from '../app/useKnowledgeStore';
 import { deleteKnowledge, type KnowledgeCategory } from '../api/knowledgeApi';
 import type { KnowledgeItem } from '../api/knowledgeApi';
 import { borderColor, radius } from '../app/tokens';
+import { patchRuleFrontMatterContent } from './knowledgePanelFrontMatter';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -208,16 +209,7 @@ export const KnowledgePanel: React.FC = () => {
 
     const patchRuleFrontMatter = useCallback((raw: string): string => {
         if (editorCategory !== 'rules') return raw;
-        const fmMatch = raw.match(/^---[ \t]*\r?\n([\s\S]*?\r?\n)---[ \t]*\r?\n?/);
-        if (fmMatch) {
-            let fm = fmMatch[1];
-            fm = fm.replace(/^description:.*$/m, '').replace(/^alwaysApply:.*$/m, '');
-            fm = fm.replace(/\n{2,}/g, '\n').trim();
-            fm += `\ndescription: "${editorDescription.replace(/"/g, '\\"')}"\nalwaysApply: ${editorAlwaysApply}\n`;
-            return `---\n${fm}---\n` + raw.slice(fmMatch[0].length);
-        }
-        const header = `---\ndescription: "${editorDescription.replace(/"/g, '\\"')}"\nalwaysApply: ${editorAlwaysApply}\n---\n\n`;
-        return header + raw;
+        return patchRuleFrontMatterContent(raw, editorDescription, editorAlwaysApply);
     }, [editorCategory, editorDescription, editorAlwaysApply]);
 
     const handleSave = useCallback(async () => {

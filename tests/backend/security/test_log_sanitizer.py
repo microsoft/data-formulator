@@ -44,6 +44,7 @@ class TestSanitizeUrl:
         result = sanitize_url(url)
         assert "P@ssw0rd" not in result
         assert "user:***@" in result
+        assert "db.host:5432" in result
 
     def test_empty_string(self):
         assert sanitize_url("") == ""
@@ -60,6 +61,22 @@ class TestSanitizeUrl:
         result = sanitize_url(text)
         assert "secret1" not in result
         assert "secret2" not in result
+
+    def test_url_with_sensitive_query_params(self):
+        url = (
+            "https://idp.example.com/callback?"
+            "client_secret=supersecret&access-token=tok123&redirect_uri=https%3A%2F%2Fapp.example.com"
+        )
+        result = sanitize_url(url)
+        assert "supersecret" not in result
+        assert "tok123" not in result
+        assert "client_secret=***" in result
+        assert "access-token=***" in result
+        assert "redirect_uri=https%3A%2F%2Fapp.example.com" in result
+
+    def test_url_without_sensitive_query_params_preserves_query(self):
+        url = "https://idp.example.com/callback?redirect_uri=https%3A%2F%2Fapp.example.com&state=a%2Bb"
+        assert sanitize_url(url) == url
 
 
 # ── sanitize_params ───────────────────────────────────────────────────────
@@ -164,6 +181,13 @@ class TestApplyPatterns:
         result = _apply_patterns(text)
         assert "mypassword" not in result
         assert "***@db.example.com" in result
+
+    def test_url_query_credentials(self):
+        text = "Redirecting to https://idp.example.com/cb?token=secret-token&state=keep"
+        result = _apply_patterns(text)
+        assert "secret-token" not in result
+        assert "token=***" in result
+        assert "state=keep" in result
 
     def test_key_value_password(self):
         text = "Config: password=SuperSecret123"
