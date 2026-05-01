@@ -45,19 +45,32 @@ def get_test_config() -> Dict[str, Any]:
 
 
 def bq_emulator_available() -> bool:
-    """Return True if BigQuery emulator is reachable."""
+    """Return True if BigQuery emulator HTTP endpoint accepts TCP (fast probe).
+
+    ``google-cloud-bigquery`` calls can block for a long time when nothing is
+    listening; this runs during ``@unittest.skipUnless`` at import/collect time,
+    so keep it bounded (same idea as MySQL/PostgreSQL loader probes).
+    """
+    import socket
+    from urllib.parse import urlparse
+
+    config = get_test_config()
+    parsed = urlparse(config["http_endpoint"])
+    host = parsed.hostname or "localhost"
+    port = parsed.port
+    if port is None:
+        scheme = (parsed.scheme or "http").lower()
+        port = 443 if scheme == "https" else 80
+    if host in ("localhost", "127.0.0.1"):
+        host = "127.0.0.1"
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(2)
     try:
-        from google.cloud import bigquery
-        from google.auth.credentials import AnonymousCredentials
-        config = get_test_config()
-        client = bigquery.Client(
-            project=config["project_id"],
-            credentials=AnonymousCredentials(),
-            client_options={"api_endpoint": config["http_endpoint"]},
-        )
-        list(client.list_datasets(max_results=1))
+        sock.connect((host, port))
+        sock.close()
         return True
-    except Exception:
+    except (socket.error, OSError):
         return False
 
 
@@ -85,6 +98,25 @@ def create_loader_for_emulator(config: Dict[str, Any], dataset_ids: list | None 
     loader.location = config["location"]
     loader.client = create_emulator_client(config)
     return loader
+
+
+class TestBigQueryEmulatorProbe(unittest.TestCase):
+    """Regression: emulator probe must not block pytest collection / imports."""
+
+    def test_bq_emulator_available_false_quickly_on_closed_port(self) -> None:
+        import time
+
+        prev = os.environ.get("BQ_HTTP_ENDPOINT")
+        os.environ["BQ_HTTP_ENDPOINT"] = "http://127.0.0.1:59998"
+        try:
+            start = time.monotonic()
+            self.assertFalse(bq_emulator_available())
+            self.assertLess(time.monotonic() - start, 5.0)
+        finally:
+            if prev is None:
+                os.environ.pop("BQ_HTTP_ENDPOINT", None)
+            else:
+                os.environ["BQ_HTTP_ENDPOINT"] = prev
 
 
 @unittest.skipUnless(

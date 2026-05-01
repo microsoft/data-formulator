@@ -23,13 +23,19 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import flask
-import pyarrow as pa
 import pytest
 
-from data_formulator.data_connector import DataConnector
-from data_formulator.data_loader.external_data_loader import CatalogNode
+from data_formulator.data_connector import DATA_CONNECTORS, DataConnector, connectors_bp
+from data_formulator.error_handler import register_error_handlers
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
+
+
+def _success_data(resp):
+    data = resp.get_json()
+    assert resp.status_code == 200
+    assert data["status"] == "success"
+    return data["data"]
 
 
 # ------------------------------------------------------------------
@@ -169,37 +175,53 @@ def _mock_superset_imports():
     sdl.SupersetClient, sdl.SupersetAuthBridge = old_client, old_bridge
 
 
+@pytest.fixture(autouse=True)
+def _clean_data_connectors():
+    """Reset the global connector registry between tests."""
+    old = dict(DATA_CONNECTORS)
+    DATA_CONNECTORS.clear()
+    yield
+    DATA_CONNECTORS.clear()
+    DATA_CONNECTORS.update(old)
+
+
 @pytest.fixture
 def app():
     _app = flask.Flask(__name__)
     _app.config["TESTING"] = True
     _app.secret_key = "test"
+    _app.register_blueprint(connectors_bp)
+    register_error_handlers(_app)
     return _app
 
 
 @pytest.fixture
 def source():
     from data_formulator.data_loader.superset_data_loader import SupersetLoader
-    return DataConnector.from_loader(
+    connector = DataConnector.from_loader(
         SupersetLoader,
         source_id="superset",
         display_name="Test Superset",
     )
+    DATA_CONNECTORS["superset"] = connector
+    return connector
 
 
 @pytest.fixture
 def client(app, source):
-    app.register_blueprint(source.create_blueprint())
     return app.test_client()
 
 
 @pytest.fixture
 def connected_client(client):
-    with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-        resp = client.post("/api/connectors/superset/auth/connect", json={
+    with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+         patch.object(DataConnector, "_get_vault", return_value=None):
+        resp = client.post("/api/connectors/connect", json={
+            "connector_id": "superset",
             "params": {"url": "https://bi.example.com", "username": "admin", "password": "admin"},
+            "persist": False,
         })
-        assert resp.status_code == 200
+        _success_data(resp)
         yield client
 
 
@@ -210,26 +232,29 @@ def connected_client(client):
 class TestSupersetAuth:
 
     def test_connect_success(self, client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = client.post("/api/connectors/superset/auth/connect", json={
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(DataConnector, "_get_vault", return_value=None):
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "superset",
                 "params": {"url": "https://bi.example.com", "username": "admin", "password": "admin"},
+                "persist": False,
             })
-        data = resp.get_json()
-        assert resp.status_code == 200
+        data = _success_data(resp)
         assert data["status"] == "connected"
-        # Hierarchy: dashboard → dataset
         keys = [h["key"] for h in data["hierarchy"]]
         assert keys == ["dashboard", "dataset"]
 
     def test_connect_bad_credentials(self, client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = client.post("/api/connectors/superset/auth/connect", json={
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(DataConnector, "_get_vault", return_value=None):
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "superset",
                 "params": {"url": "https://bi.example.com", "username": "admin", "password": "wrong"},
+                "persist": False,
             })
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "error"
-        # Must not leak the password
         assert "wrong" not in json.dumps(data)
 
     def test_auth_mode_is_token(self):
@@ -237,12 +262,17 @@ class TestSupersetAuth:
         assert SupersetLoader.auth_mode() == "token"
 
     def test_disconnect_and_status(self, connected_client):
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/superset/auth/disconnect")
-            assert resp.get_json()["status"] == "disconnected"
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(DataConnector, "_get_vault", return_value=None):
+            resp = connected_client.post("/api/connectors/disconnect", json={
+                "connector_id": "superset",
+            })
+            assert _success_data(resp) is None
 
-            resp = connected_client.get("/api/connectors/superset/auth/status")
-            assert resp.get_json()["connected"] is False
+            resp = connected_client.post("/api/connectors/get-status", json={
+                "connector_id": "superset",
+            })
+            assert _success_data(resp)["connected"] is False
 
 
 # ==================================================================
@@ -253,27 +283,30 @@ class TestSupersetCatalog:
 
     def test_ls_root_lists_dashboards_and_all_datasets(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/superset/catalog/ls", json={"path": []})
-        data = resp.get_json()
-        assert resp.status_code == 200
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "superset",
+                "path": [],
+            })
+        data = _success_data(resp)
 
         names = [n["name"] for n in data["nodes"]]
         assert "Sales Dashboard" in names
         assert "User Analytics" in names
         assert "All Datasets" in names
 
-        # All root nodes should be namespace
-        for node in data["nodes"]:
-            assert node["node_type"] == "namespace"
+        node_types = {node["name"]: node["node_type"] for node in data["nodes"]}
+        assert node_types["Sales Dashboard"] == "table_group"
+        assert node_types["User Analytics"] == "table_group"
+        assert node_types["All Datasets"] == "namespace"
 
     def test_ls_dashboard_lists_its_datasets(self, connected_client):
         """Expand Sales Dashboard → should see orders_fact."""
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/superset/catalog/ls", json={
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "superset",
                 "path": ["10"],  # Sales Dashboard ID
             })
-        data = resp.get_json()
-        assert resp.status_code == 200
+        data = _success_data(resp)
         assert len(data["nodes"]) >= 1
         names = [n["name"] for n in data["nodes"]]
         assert "orders_fact" in names
@@ -283,32 +316,34 @@ class TestSupersetCatalog:
     def test_ls_all_datasets(self, connected_client):
         """Expand 'All Datasets' → should see both datasets."""
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/superset/catalog/ls", json={
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "superset",
                 "path": ["__all__"],
             })
-        data = resp.get_json()
+        data = _success_data(resp)
         names = [n["name"] for n in data["nodes"]]
         assert "orders_fact" in names
         assert "users_dim" in names
 
     def test_ls_with_filter(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/superset/catalog/ls", json={
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "superset",
                 "path": ["__all__"],
                 "filter": "orders",
             })
-        nodes = resp.get_json()["nodes"]
+        nodes = _success_data(resp)["nodes"]
         assert len(nodes) == 1
         assert nodes[0]["name"] == "orders_fact"
 
     def test_catalog_metadata(self, connected_client):
         """Get metadata for a specific dataset."""
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/superset/catalog/metadata", json={
+            resp = connected_client.post("/api/connectors/get-catalog", json={
+                "connector_id": "superset",
                 "path": ["10", "1"],  # dashboard_id, dataset_id
             })
-        data = resp.get_json()
-        assert resp.status_code == 200
+        data = _success_data(resp)
         meta = data["metadata"]
         assert meta["dataset_id"] == 1
         assert meta["row_count"] == 50000
@@ -318,10 +353,15 @@ class TestSupersetCatalog:
 
     def test_list_tables_flat(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/superset/catalog/list_tables", json={})
-        data = resp.get_json()
-        assert len(data["tables"]) == 2
-        names = [t["name"] for t in data["tables"]]
+            resp = connected_client.post("/api/connectors/get-catalog-tree", json={
+                "connector_id": "superset",
+            })
+        data = _success_data(resp)
+        root_names = [n["name"] for n in data["tree"]]
+        assert "Sales Dashboard" in root_names
+        assert "All Datasets" in root_names
+        all_datasets = next(n for n in data["tree"] if n["name"] == "All Datasets")
+        names = [t["name"] for t in all_datasets["children"]]
         assert any("orders_fact" in n for n in names)
         assert any("users_dim" in n for n in names)
 
@@ -334,12 +374,12 @@ class TestSupersetData:
 
     def test_preview(self, connected_client):
         with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            resp = connected_client.post("/api/connectors/superset/data/preview", json={
-                "source_table": "1:orders_fact",
-                "size": 3,
+            resp = connected_client.post("/api/connectors/preview-data", json={
+                "connector_id": "superset",
+                "source_table": {"id": "1", "name": "orders_fact"},
+                "limit": 3,
             })
-        data = resp.get_json()
-        assert resp.status_code == 200
+        data = _success_data(resp)
         assert data["status"] == "success"
         assert data["row_count"] > 0
         col_names = {c["name"] for c in data["columns"]}
@@ -356,13 +396,12 @@ class TestSupersetData:
 
             from data_formulator.data_loader.superset_data_loader import SupersetLoader
             with patch.object(SupersetLoader, "ingest_to_workspace", return_value=mock_meta):
-                resp = connected_client.post("/api/connectors/superset/data/import", json={
-                    "source_table": "1:orders_fact",
+                resp = connected_client.post("/api/connectors/import-data", json={
+                    "connector_id": "superset",
+                    "source_table": {"id": "1", "name": "orders_fact"},
                     "table_name": "orders",
                 })
-        data = resp.get_json()
-        assert resp.status_code == 200
-        assert data["status"] == "success"
+        data = _success_data(resp)
         assert data["table_name"] == "orders"
         assert data["refreshable"] is True
 
@@ -375,20 +414,20 @@ class TestSupersetTokenRefresh:
 
     def test_connect_with_expired_token_triggers_refresh(self, client):
         """If token expires between connect and catalog call, refresh should work."""
-        from data_formulator.data_loader.superset_data_loader import SupersetLoader
-
-        with patch.object(DataConnector, "_get_identity", return_value="test-user"):
-            # Connect
-            resp = client.post("/api/connectors/superset/auth/connect", json={
+        with patch.object(DataConnector, "_get_identity", return_value="test-user"), \
+             patch.object(DataConnector, "_get_vault", return_value=None):
+            resp = client.post("/api/connectors/connect", json={
+                "connector_id": "superset",
                 "params": {"url": "https://bi.example.com", "username": "admin", "password": "admin"},
+                "persist": False,
             })
-            assert resp.status_code == 200
+            _success_data(resp)
 
-            # Now artificially expire the token
-            # The mock _ensure_token will handle refresh via MockAuthBridge
-            resp = client.post("/api/connectors/superset/catalog/ls", json={"path": []})
-            assert resp.status_code == 200
-            assert len(resp.get_json()["nodes"]) > 0
+            resp = client.post("/api/connectors/get-catalog", json={
+                "connector_id": "superset",
+                "path": [],
+            })
+            assert len(_success_data(resp)["nodes"]) > 0
 
 
 # ==================================================================

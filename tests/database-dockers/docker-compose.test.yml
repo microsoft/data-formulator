@@ -1,0 +1,135 @@
+# Unified local test services for Data Formulator data-loader integration tests.
+#
+# This file is intentionally additive: existing per-service docker-compose.yml
+# files and start.sh scripts remain unchanged.
+
+name: data-formulator-test-dbs
+
+services:
+  mysql:
+    profiles: ["core", "mysql"]
+    build:
+      context: ./mysql
+    container_name: df-test-mysql
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql
+      MYSQL_DATABASE: testdb
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pmysql"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  postgres:
+    profiles: ["core", "postgres"]
+    build:
+      context: ./postgres
+    container_name: df-test-postgres
+    ports:
+      - "${PG_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: testdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mongodb:
+    profiles: ["core", "mongodb"]
+    build:
+      context: ./mongodb
+    container_name: df-test-mongodb
+    ports:
+      - "${MONGO_PORT:-27018}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin
+      MONGO_INITDB_DATABASE: testdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  bigquery:
+    profiles: ["core", "bigquery"]
+    build:
+      context: ./bigquery
+    container_name: df-test-bigquery
+    ports:
+      - "${BQ_PORT:-9050}:9050"
+      - "${BQ_GRPC_PORT:-9060}:9060"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9050 || exit 0"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  cosmosdb:
+    profiles: ["heavy", "cosmosdb"]
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    platform: linux/amd64
+    container_name: df-test-cosmosdb
+    ports:
+      - "${COSMOS_PORT:-8081}:8081"
+      - "10250:10250"
+      - "10251:10251"
+      - "10252:10252"
+      - "10253:10253"
+      - "10254:10254"
+    environment:
+      AZURE_COSMOS_EMULATOR_PARTITION_COUNT: 10
+      AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "true"
+      AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE: "127.0.0.1"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -k https://localhost:8081/_explorer/emulator.pem || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  superset:
+    profiles: ["heavy", "superset"]
+    image: apache/superset:4.1.1
+    container_name: df-test-superset
+    ports:
+      - "${SUPERSET_PORT:-8088}:8088"
+    environment:
+      SUPERSET_SECRET_KEY: "df-test-secret-key-change-in-prod-1234567890"
+      TALISMAN_ENABLED: "False"
+      SUPERSET_CORS_ENABLED: "true"
+      SUPERSET_CORS_ORIGINS: '["http://localhost:5567","http://127.0.0.1:5567","http://localhost:5173","http://127.0.0.1:5173"]'
+      PUBLIC_ROLE_LIKE: "Gamma"
+    volumes:
+      - superset-data:/app/superset_home
+      - ./superset/init-superset.sh:/docker-entrypoint-initdb.d/init-superset.sh:ro
+      - ./superset/sample_data.py:/tmp/sample_data.py:ro
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        superset db upgrade
+        superset fab create-admin \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --email admin@example.com \
+          --password admin || true
+        superset init
+        superset load_examples --force || echo "Examples load failed (non-fatal)"
+        python /tmp/sample_data.py || echo "Custom sample data load failed (non-fatal)"
+        superset run -h 0.0.0.0 -p 8088 --with-threads --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  superset-data:

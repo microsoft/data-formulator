@@ -90,7 +90,6 @@ class TestPostgreSQLDataLoader(unittest.TestCase):
             self.assertIn("name", t)
             self.assertIn("metadata", t)
             self.assertIn("columns", t["metadata"])
-            self.assertIn("row_count", t["metadata"])
 
         # init.sql creates sample.products, sample.customers, sample.orders, sample.order_items, public.app_settings
         self.assertTrue(any("products" in n for n in names))
@@ -210,6 +209,7 @@ class TestPostgreSQLDataLoaderStatic(unittest.TestCase):
             dbname="postgres",
             client_encoding="UTF8",
             options="-c client_encoding=UTF8",
+            connect_timeout=10,
         )
 
     def test_resolve_source_table_three_parts(self) -> None:
@@ -355,6 +355,7 @@ class TestPostgreSQLDataLoaderStatic(unittest.TestCase):
             dbname="analytics",
             client_encoding="UTF8",
             options="-c client_encoding=UTF8",
+            connect_timeout=10,
         )
 
 

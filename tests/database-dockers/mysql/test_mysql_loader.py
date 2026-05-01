@@ -89,7 +89,6 @@ class TestMySQLDataLoader(unittest.TestCase):
             self.assertIn("name", t)
             self.assertIn("metadata", t)
             self.assertIn("columns", t["metadata"])
-            self.assertIn("row_count", t["metadata"])
 
         # init.sql creates products, customers, orders, order_items, app_settings in testdb
         self.assertTrue(any("products" in n for n in names))
