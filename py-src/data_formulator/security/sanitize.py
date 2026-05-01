@@ -21,6 +21,26 @@ _GENERIC_5XX = "An unexpected error occurred"
 _GENERIC_502 = "Upstream service unavailable"
 _GENERIC_4XX = "Bad request"
 
+
+def _extract_traceback_summary(message: str) -> str:
+    """Return the final exception line from a Python traceback when possible."""
+    if "Traceback (most recent call last):" not in message:
+        return message
+
+    for line in reversed(message.splitlines()):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("Traceback (most recent call last):"):
+            continue
+        if stripped.startswith("File "):
+            continue
+        if stripped.startswith("^"):
+            continue
+        if re.match(r"^[\w.]+(?:Error|Exception|Warning|Interrupt|Exit)\b", stripped):
+            return stripped
+    return ""
+
 _HTTP_CLIENT_MESSAGES: dict[int, str] = {
     400: "Bad request",
     401: "Authentication required",
@@ -151,11 +171,11 @@ def sanitize_error_message(error_message: str) -> str:
     summary is returned to the browser.
     """
     # Cap input length first to prevent ReDoS on crafted payloads.
-    message = html.escape(error_message[:2000])
+    message = html.escape(_extract_traceback_summary(error_message[:2000]))
 
-    # Remove API keys / tokens
+    # Remove credentials and tokens from key=value-style messages.
     message = re.sub(
-        r'(api[-_]?key|api[-_]?token)[=:]\s*[^\s&]+',
+        r'(api[-_]?key|api[-_]?token|access[-_]?token|refresh[-_]?token|token|password|passwd|pwd|secret|client[-_]?secret|connection[-_]?string)[=:]\s*[^\s&]+',
         r'\1=<redacted>', message, flags=re.IGNORECASE,
     )
 

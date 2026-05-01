@@ -6,8 +6,8 @@ import time
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary, supplement_missing_block, ensure_output_variable_in_code
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
+from data_formulator.security.sanitize import sanitize_error_message
 
-import traceback
 import pandas as pd
 
 import logging
@@ -254,8 +254,10 @@ class DataRecAgent(object):
         t_exec_total = 0.0
 
         if isinstance(response, Exception):
-            result = {'status': 'other error', 'content': str(response.body),
-                      'diagnostics': self._diag.for_error(messages, error=str(response.body))}
+            raw_error = str(getattr(response, "body", response))
+            safe_error = sanitize_error_message(raw_error)
+            result = {'status': 'other error', 'content': safe_error,
+                      'diagnostics': self._diag.for_error(messages, error=safe_error)}
             return [result]
 
         candidates = []
@@ -337,9 +339,18 @@ class DataRecAgent(object):
                     )
                     t_exec_total += time.time() - t_exec_start
 
+                    if execution_result['status'] != 'ok':
+                        diagnostics = execution_result.get("diagnostics", {})
+                        raw_exec_error = diagnostics.get(
+                            "safe_detail",
+                            execution_result.get('content', execution_result.get('error_message', 'Unknown error')),
+                        )
+                        safe_exec_error = sanitize_error_message(raw_exec_error)
+                    else:
+                        safe_exec_error = None
                     _diag_exec = {
                         "status": execution_result['status'],
-                        "error_message": execution_result.get('content') if execution_result['status'] != 'ok' else None,
+                        "error_message": safe_exec_error,
                         "available_dataframes": execution_result.get('df_names', []),
                     }
 
@@ -368,19 +379,22 @@ class DataRecAgent(object):
                             },
                         }
                     else:
-                        error_message = execution_result.get('content', execution_result.get('error_message', 'Unknown error'))
                         result = {
                             'status': 'error',
                             'code': code,
-                            'content': error_message
+                            'content': safe_exec_error or 'Unknown error'
                         }
 
                 except Exception as e:
-                    logger.warning('Error occurred during code execution:')
-                    error_message = traceback.format_exc()
-                    logger.warning(error_message)
-                    result = {'status': 'other error', 'code': code, 'content': f"Unexpected error: {error_message}", 'content_code': 'agent.unexpectedError'}
-                    _diag_exec = {"status": "exception", "error_message": str(e)}
+                    logger.exception('Error occurred during code execution')
+                    safe_error = sanitize_error_message(f"{type(e).__name__}: {e}")
+                    result = {
+                        'status': 'other error',
+                        'code': code,
+                        'content': "Unexpected error during code execution.",
+                        'content_code': 'agent.unexpectedError'
+                    }
+                    _diag_exec = {"status": "exception", "error_message": safe_error}
             else:
                 result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task.", 'content_code': 'agent.noCodeBlock'}
 

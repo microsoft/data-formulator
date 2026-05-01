@@ -250,12 +250,24 @@ class SSOBridgeView(BaseView):
         origin = cls._normalise_origin(raw)
         return origin if origin in cls._allowed_origins() else ""
 
+    @staticmethod
+    def _safe_next_path(raw_path):
+        """只允许站内相对路径进入 login next 参数。"""
+        next_path = (raw_path or "/").rstrip("?").replace("\\", "/")
+        parsed = urlparse(next_path)
+        if (
+            not next_path.startswith("/")
+            or next_path.startswith("//")
+            or parsed.scheme
+            or parsed.netloc
+        ):
+            return "/"
+        return next_path
+
     @expose("/", methods=["GET"])
     def df_sso_bridge(self):
         if not self._is_real_logged_in_user():
-            next_url = request.full_path.rstrip("?")
-            if not next_url.startswith("/"):
-                next_url = "/"
+            next_url = self._safe_next_path(request.full_path)
             return redirect(f"/login/?next={quote(next_url)}")
 
         df_origin = self._validate_origin(request.args.get("df_origin"))
