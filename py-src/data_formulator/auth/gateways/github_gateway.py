@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import urllib.parse
 
 import requests as http_requests
@@ -29,16 +30,48 @@ def _error_redirect(code: str):
     return redirect(f"/?auth_error={urllib.parse.quote(code)}")
 
 
+def _fetch_primary_email(access_token: str) -> str | None:
+    """Fetch the user's primary verified email when /user omits private email."""
+    try:
+        resp = http_requests.get(
+            "https://api.github.com/user/emails",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+            },
+            timeout=10,
+        )
+        if not resp.ok:
+            return None
+        emails = resp.json()
+    except Exception:
+        return None
+
+    if not isinstance(emails, list):
+        return None
+
+    verified = [
+        item for item in emails
+        if isinstance(item, dict) and item.get("verified") and item.get("email")
+    ]
+    primary = next((item for item in verified if item.get("primary")), None)
+    selected = primary or (verified[0] if verified else None)
+    return selected.get("email") if selected else None
+
+
 @github_bp.route("/login")
 def github_login():
     """Redirect the browser to GitHub's authorization page."""
     client_id = os.environ.get("GITHUB_CLIENT_ID", "")
     redirect_uri = request.url_root.rstrip("/") + "/api/auth/github/callback"
     scope = "read:user user:email"
+    state = secrets.token_urlsafe(32)
+    session["_github_oauth_state"] = state
     params = urllib.parse.urlencode({
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "scope": scope,
+        "state": state,
     })
     return redirect(f"https://github.com/login/oauth/authorize?{params}")
 
@@ -49,6 +82,10 @@ def github_callback():
     code = request.args.get("code")
     if not code:
         return _error_redirect("missing_authorization_code")
+    state = request.args.get("state")
+    if state != session.pop("_github_oauth_state", None):
+        logger.warning("GitHub OAuth callback: invalid or missing state")
+        return _error_redirect("invalid_state")
 
     client_id = os.environ.get("GITHUB_CLIENT_ID", "")
     client_secret = os.environ.get("GITHUB_CLIENT_SECRET", "")
@@ -86,11 +123,12 @@ def github_callback():
     user_info = user_resp.json()
     user_id = str(user_info.get("id", ""))
     login = user_info.get("login", "")
+    email = user_info.get("email") or _fetch_primary_email(access_token)
 
     session["df_user"] = {
         "user_id": f"github:{user_id}",
         "display_name": user_info.get("name") or login,
-        "email": user_info.get("email"),
+        "email": email,
         "raw_token": access_token,
         "provider": "github",
     }

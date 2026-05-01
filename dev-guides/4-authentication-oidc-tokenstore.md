@@ -195,6 +195,8 @@ def auth_config() -> dict:
 - **Session 安全**：生产环境必须配置 `SESSION_COOKIE_SECURE=True`、`SESSION_COOKIE_HTTPONLY=True`
 - **client_secret 不暴露**：后端模式下 `client_secret` 仅在服务端使用，不传给前端
 - **State 参数**：OIDC `/login` 生成随机 state，`/callback` 校验 state 防止 CSRF
+- **OAuth Redirect 安全**：非 OIDC redirect provider（例如 GitHub）也必须生成并校验 state
+- **GitHub 私有邮箱**：`/user` 的 `email` 可能为空；已申请 `user:email` 时应通过 `/user/emails` 取 primary verified email
 
 ---
 
@@ -205,6 +207,7 @@ def auth_config() -> dict:
 | `tests/backend/auth/test_token_store.py` | TokenStore 解析链、存储、过期、刷新、SSO Exchange |
 | `tests/backend/auth/test_oidc_gateway.py` | OIDC 登录/回调/状态/登出、token 保存路由 |
 | `tests/backend/auth/test_oidc_provider.py` | JWT 验证（前端模式） |
+| `tests/backend/auth/sso_provider_contracts/` | 无 Docker 的主流 SSO provider 契约模拟（Apple、Microsoft、Google、GitLab、Keycloak、Okta、Auth0、AWS Cognito、阿里云 IDaaS、腾讯云 IDaaS、华为云 OneAccess、GitHub） |
 
 测试使用 Flask 测试客户端 + mocked HTTP，不需要真实 IdP。
 
