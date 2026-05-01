@@ -32,6 +32,7 @@ import logging
 import os
 import re
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # ---------------------------------------------------------------------------
 # Sensitive key names (case-insensitive matching)
@@ -61,6 +62,9 @@ _RE_URL_CREDS = re.compile(
     r"(://[^/:@\s]+:)[^/@\s]+(@)",
 )
 
+# URL-like token inside a larger log message.
+_RE_URL_LIKE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s]+")
+
 # key=value patterns (password=xxx, api_key=xxx, secret=xxx, etc.)
 _SENSITIVE_KEY_NAMES = (
     r"password|passwd|pwd|secret|client_secret"
@@ -75,7 +79,7 @@ _SENSITIVE_KEY_NAMES = (
 _RE_KEY_VALUE = re.compile(
     rf"({_SENSITIVE_KEY_NAMES})"     # group 1: key name
     r"(\s*[=:]\s*)"                  # group 2: separator (= or :)
-    r"(\S+)",                        # group 3: value
+    r"([^&\s]+)",                    # group 3: value
     re.IGNORECASE,
 )
 
@@ -108,11 +112,44 @@ def sanitize_url(url: str) -> str:
 
     ``https://user:s3cret@host/path`` → ``https://user:***@host/path``
 
-    Safe to call on URLs without credentials (returns unchanged).
+    Sensitive query parameters such as ``password`` and ``access_token`` are
+    also replaced with ``***``.  Safe to call on URLs without credentials or
+    sensitive query parameters (returns unchanged).
     """
     if not url or "://" not in url:
         return url
-    return _RE_URL_CREDS.sub(rf"\g<1>{_REDACTED}\2", url)
+    return _RE_URL_LIKE.sub(lambda match: _sanitize_url_token(match.group(0)), url)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    normalized = key.strip().lower().replace("-", "_")
+    return normalized in SENSITIVE_KEYS
+
+
+def _sanitize_url_token(url: str) -> str:
+    """Sanitize one URL-like token while preserving non-sensitive URLs."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return _RE_URL_CREDS.sub(rf"\g<1>{_REDACTED}\2", url)
+
+    netloc = parts.netloc
+    if "@" in netloc:
+        userinfo, hostinfo = netloc.rsplit("@", 1)
+        if ":" in userinfo:
+            username, _password = userinfo.split(":", 1)
+            netloc = f"{username}:{_REDACTED}@{hostinfo}"
+
+    query = parts.query
+    if query:
+        pairs = parse_qsl(query, keep_blank_values=True)
+        if any(_is_sensitive_key(key) for key, _value in pairs):
+            query = urlencode([
+                (key, _REDACTED if _is_sensitive_key(key) else value)
+                for key, value in pairs
+            ], safe="*")
+
+    return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
 
 
 def sanitize_params(params: dict[str, Any],
@@ -157,7 +194,7 @@ def redact_token(token: str, visible: int = 4) -> str:
 def _apply_patterns(text: str) -> str:
     """Run all redaction patterns on *text* and return the sanitized version."""
     # Order matters: most specific patterns first to avoid partial matches.
-    text = _RE_URL_CREDS.sub(rf"\g<1>{_REDACTED}\2", text)
+    text = _RE_URL_LIKE.sub(lambda match: _sanitize_url_token(match.group(0)), text)
     text = _RE_BEARER.sub(rf"\g<1>{_REDACTED_TOKEN}", text)
     text = _RE_KEY_VALUE.sub(rf"\g<1>\g<2>{_REDACTED}", text)
     text = _RE_DICT_SENSITIVE.sub(

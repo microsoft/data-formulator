@@ -234,13 +234,19 @@ class TestRegisterErrorHandlers:
         assert "broke" not in data["error"]["message"]
         assert data["error"]["request_id"] == resp.headers["X-Request-Id"]
 
-    def test_unexpected_error_debug_includes_traceback(self, app) -> None:
+    def test_unexpected_error_debug_includes_safe_detail(self, app) -> None:
         app.debug = True
         with app.test_client() as c:
             resp = c.get("/raise-unexpected")
             data = resp.get_json()
             assert "detail" in data["error"]
-            assert "RuntimeError" in data["error"]["detail"]
+            assert data["error"]["detail"] == (
+                "Unexpected server error. "
+                f"Use request_id={data['error']['request_id']} to find full details in server logs."
+            )
+            assert "RuntimeError" not in data["error"]["detail"]
+            assert "something broke" not in data["error"]["detail"]
+            assert "Traceback" not in data["error"]["detail"]
 
     def test_413_returns_unified_format(self, app) -> None:
         @app.route("/api/upload", methods=["POST"])

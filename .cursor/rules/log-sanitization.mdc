@@ -26,7 +26,7 @@ Layer 1 is the primary defense; Layer 2 is a safety net. Both are required.
 | Data Type | Utility | Example |
 |-----------|---------|---------|
 | `dict` with password/secret/token keys | `sanitize_params(params)` | `log.info("Init: %s", sanitize_params(params))` |
-| URL (may have `user:pass@host`) | `sanitize_url(url)` | `logger.info("Connecting to %s", sanitize_url(url))` |
+| URL (may have `user:pass@host` or sensitive query params) | `sanitize_url(url)` | `logger.info("Connecting to %s", sanitize_url(url))` |
 | Bearer / access token | `redact_token(token)` | `logger.debug("Token: %s", redact_token(token))` |
 | Normal string (no secrets) | Nothing needed | `logger.info("Processing table %s", name)` |
 
@@ -44,6 +44,8 @@ Layer 1 is the primary defense; Layer 2 is a safety net. Both are required.
 
 4. **URL logging** — use `sanitize_url()` for any URL from configuration or
    environment variables (issuer URLs, JWKS URLs, database URLs, API base URLs).
+   It masks embedded credentials and sensitive query parameters such as
+   `password`, `client_secret`, `token`, and `api_key`.
 
 5. **Use `%s`-style formatting** instead of f-strings for log messages. This allows
    the filter to intercept arguments before formatting and provides better

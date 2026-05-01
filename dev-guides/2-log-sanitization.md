@@ -75,6 +75,7 @@ from data_formulator.security.log_sanitizer import sanitize_url
 
 logger.info("Issuer: %s", sanitize_url(issuer_url))
 # https://admin:secret@idp.example.com → https://admin:***@idp.example.com
+# https://idp.example.com/cb?client_secret=s3 → https://idp.example.com/cb?client_secret=***
 # https://idp.example.com → https://idp.example.com (无凭据时不变)
 ```
 
