@@ -105,6 +105,32 @@ class TestLogFileCreation:
         rlog.close()
         rlog.close()  # should not raise
 
+    def test_rotates_to_new_date_directory(self, tmp_path):
+        safe_id = sanitize_identity_dirname(TEST_IDENTITY)
+
+        with patch(
+            "data_formulator.agents.reasoning_log._today_str",
+            side_effect=["2026-05-01", "2026-05-01", "2026-05-02"],
+        ):
+            with ReasoningLogger(TEST_IDENTITY, "TestAgent", "sess-1") as rlog:
+                rlog.log("session_start")
+                rlog.log("session_end", status="success")
+
+        day1_file = (
+            tmp_path / "agent-logs" / "2026-05-01" / safe_id
+            / "sess-1-TestAgent.jsonl"
+        )
+        day2_file = (
+            tmp_path / "agent-logs" / "2026-05-02" / safe_id
+            / "sess-1-TestAgent.jsonl"
+        )
+        assert json.loads(day1_file.read_text(encoding="utf-8"))[
+            "step_type"
+        ] == "session_start"
+        assert json.loads(day2_file.read_text(encoding="utf-8"))[
+            "step_type"
+        ] == "session_end"
+
 
 # ── DF_AGENT_LOG=off ──────────────────────────────────────────────────────
 

@@ -119,28 +119,29 @@ class ReasoningLogger:
         self._agent_type = agent_type
         self._session_id = session_id
         self._identity_id = identity_id
+        self._agent_logs_root: Path | None = None
+        self._safe_identity_id: str | None = None
+        self._filename: str | None = None
+        self._current_date: str | None = None
 
         if self._level == "off":
             return
 
         from data_formulator.datalake.workspace import sanitize_identity_dirname
 
-        safe_identity_id = sanitize_identity_dirname(identity_id)
-        agent_logs_root = get_agent_logs_root()
+        self._safe_identity_id = sanitize_identity_dirname(identity_id)
+        self._agent_logs_root = get_agent_logs_root()
+        self._filename = _safe_log_filename(session_id, agent_type)
 
         # Best-effort async cleanup of expired log directories.
         t = threading.Thread(
             target=_cleanup_expired_logs,
-            args=(agent_logs_root,),
+            args=(self._agent_logs_root,),
             daemon=True,
         )
         t.start()
 
-        today = _today_str()
-        jail = ConfinedDir(agent_logs_root / today / safe_identity_id, mkdir=True)
-        filename = _safe_log_filename(session_id, agent_type)
-        log_path = jail.resolve(filename, mkdir_parents=True)
-        self._fd = open(log_path, "a", encoding="utf-8")
+        self._ensure_fd_for_today()
 
     # -- public API --------------------------------------------------------
 
@@ -154,6 +155,9 @@ class ReasoningLogger:
         In ``verbose`` mode, the entire *kwargs* dict (including nested
         dicts and lists) is sanitised via ``log_sanitizer.sanitize_params``.
         """
+        if self._level == "off":
+            return
+        self._ensure_fd_for_today()
         if self._fd is None:
             return
 
@@ -194,6 +198,33 @@ class ReasoningLogger:
         self.close()
 
     # -- internals ---------------------------------------------------------
+
+    def _ensure_fd_for_today(self) -> None:
+        """Open today's log file, rotating date partitions when needed."""
+        if (
+            self._agent_logs_root is None
+            or self._safe_identity_id is None
+            or self._filename is None
+        ):
+            return
+
+        today = _today_str()
+        if self._fd is not None and self._current_date == today:
+            return
+
+        if self._fd is not None:
+            try:
+                self._fd.close()
+            except Exception:
+                pass
+
+        jail = ConfinedDir(
+            self._agent_logs_root / today / self._safe_identity_id,
+            mkdir=True,
+        )
+        log_path = jail.resolve(self._filename, mkdir_parents=True)
+        self._fd = open(log_path, "a", encoding="utf-8")
+        self._current_date = today
 
     @staticmethod
     def _sanitize_verbose(kwargs: dict[str, Any]) -> dict[str, Any]:
