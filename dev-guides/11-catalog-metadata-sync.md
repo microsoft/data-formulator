@@ -439,6 +439,28 @@ Agent 构建数据摘要时（`generate_data_summary`、`build_lightweight_table
 通过 `user_home` property 自动派生用户目录。所有需要 catalog 数据的函数从
 workspace 内部获取，调用方无需关心存储路径。
 
+### import_options 加载口径注入
+
+当表通过数据连接器导入时，用户选择的过滤条件、排序和行数限制
+（统称 `import_options`）会存储在 `TableMetadata.import_options` 中。
+Agent 在构建数据摘要时会自动读取该字段并生成人类可读的 provenance 描述，
+例如：`Data subset: 2 filter(s), sorted by created_at desc, row limit 50,000`。
+
+**传递路径：**
+
+1. **数据导入** — `write_parquet_from_arrow(source_info={'import_options': ...})`
+   将 `import_options` 持久化到 workspace metadata。
+2. **数据刷新** — `refresh_parquet_from_arrow()` 自动从旧 metadata 复制
+   `import_options` 到新 metadata，确保刷新不丢失加载口径。
+3. **API 暴露** — `/api/tables/list-tables` 在 `source_metadata` 中返回
+   `import_options`，前端可展示或传递。
+4. **Agent 上下文** — `generate_data_summary()` 和 `build_lightweight_table_context()`
+   通过 `_format_import_options()` 将 `import_options` 格式化后注入表描述。
+
+**格式化函数** `_format_import_options(opts)` 位于 `agent_utils.py`，
+返回如 `Data subset: 1 filter(s), sorted by id asc, row limit 10,000` 的字符串。
+空 opts 返回空字符串。
+
 ## 错误码
 
 | 错误码 | 触发场景 |
@@ -497,32 +519,37 @@ workspace 内部获取，调用方无需关心存储路径。
 | `verbose_name` | Loader（如 Superset） | 列的显示别名（如中文名） |
 | `expression` | Loader（如 Superset） | 计算列公式（如 `SUM(line_items.amount)`） |
 | `notes` / `tags` | annotations | 用户标注的备注和标签 |
+| `import_options` | 数据导入/刷新 | 用户选择的过滤/排序/行限制条件（与本次分析相关） |
 
 ### 管线节点传递矩阵
 
-| 管线节点 | description | verbose_name | expression | source/user_desc | notes/tags |
-|----------|:-----------:|:------------:|:----------:|:----------------:|:----------:|
-| **Loader** (`list_tables` / `sync_catalog_metadata`) | ✅ | ✅ (Superset) | ✅ (Superset) | — | — |
-| **catalog_cache** (`save_catalog` / `load_catalog`) | ✅ | ✅ | ✅ | ✅ | — |
-| **catalog_merge** (`merge_table_metadata`) | ✅ → `display_description` | ✅ (透传) | ✅ (透传) | ✅ | ✅ |
-| **`build_catalog_metadata_lookups`** (`agent_utils.py`) | ✅ `col_desc_cache` | ✅ `col_meta_cache` | ✅ `col_meta_cache` | ✅ `table_extra_cache` | ✅ `table_extra_cache` |
-| **`get_field_summary`** (`agent_utils.py`) | ✅ `(description)` | ✅ `[verbose_name]` | ✅ `[calc: expr]` | ✅ `(source: ... \| user: ...)` | — |
-| **`generate_data_summary`** (`agent_utils.py`) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **`build_lightweight_table_context`** (`context.py`) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **`handle_read_catalog_metadata`** (`context.py`) | ✅ | ✅ `[verbose_name]` | ✅ `[calc: expr]` | ✅ | ✅ |
+| 管线节点 | description | verbose_name | expression | source/user_desc | notes/tags | import_options |
+|----------|:-----------:|:------------:|:----------:|:----------------:|:----------:|:--------------:|
+| **Loader** (`list_tables` / `sync_catalog_metadata`) | ✅ | ✅ (Superset) | ✅ (Superset) | — | — | — |
+| **catalog_cache** (`save_catalog` / `load_catalog`) | ✅ | ✅ | ✅ | ✅ | — | — |
+| **catalog_merge** (`merge_table_metadata`) | ✅ → `display_description` | ✅ (透传) | ✅ (透传) | ✅ | ✅ | — |
+| **`write_parquet_from_arrow`** (`workspace.py`) | — | — | — | — | — | ✅ 持久化 |
+| **`refresh_parquet_from_arrow`** (`workspace.py`) | — | — | — | — | — | ✅ 保留 |
+| **`_table_metadata_to_source_metadata`** (`tables.py`) | — | — | — | — | — | ✅ API 暴露 |
+| **`build_catalog_metadata_lookups`** (`agent_utils.py`) | ✅ `col_desc_cache` | ✅ `col_meta_cache` | ✅ `col_meta_cache` | ✅ `table_extra_cache` | ✅ `table_extra_cache` | — |
+| **`_format_import_options`** (`agent_utils.py`) | — | — | — | — | — | ✅ 格式化 |
+| **`get_field_summary`** (`agent_utils.py`) | ✅ `(description)` | ✅ `[verbose_name]` | ✅ `[calc: expr]` | ✅ `(source: ... \| user: ...)` | — | — |
+| **`generate_data_summary`** (`agent_utils.py`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **`build_lightweight_table_context`** (`context.py`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **`handle_read_catalog_metadata`** (`context.py`) | ✅ | ✅ `[verbose_name]` | ✅ `[calc: expr]` | ✅ | ✅ | — |
 
 ### Agent 受益矩阵
 
-| Agent | 上下文入口 | description | verbose_name | expression | 双来源描述 |
-|-------|-----------|:-----------:|:------------:|:----------:|:----------:|
-| DataAgent | `generate_data_summary` + `read_catalog_metadata` tool | ✅ | ✅ | ✅ | ✅ |
-| DataTransformationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
-| DataRecAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
-| InteractiveExploreAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ |
-| ReportGenAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ |
-| ChartInsightAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
-| CodeExplanationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
-| SimpleAgents (`nl_to_filter`) | 直接列描述注入 | ✅ | — | — | — |
+| Agent | 上下文入口 | description | verbose_name | expression | 双来源描述 | import_options |
+|-------|-----------|:-----------:|:------------:|:----------:|:----------:|:--------------:|
+| DataAgent | `generate_data_summary` + `read_catalog_metadata` tool | ✅ | ✅ | ✅ | ✅ | ✅ |
+| DataTransformationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| DataRecAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| InteractiveExploreAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ReportGenAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ChartInsightAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| CodeExplanationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| SimpleAgents (`nl_to_filter`) | 直接列描述注入 | ✅ | — | — | — | — |
 
 > **双来源描述**：当 `source_description` 和 `user_description` 同时存在且不同时，
 > Agent 会看到 `(source: ... | user: ...)` 格式，确保用户注释作为补充而非覆盖源描述。

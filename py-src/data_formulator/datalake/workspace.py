@@ -721,6 +721,7 @@ class Workspace:
             'loader_params': old_meta.loader_params,
             'source_table': old_meta.source_table,
             'source_query': old_meta.source_query,
+            'import_options': old_meta.import_options,
         }
         new_meta = self.write_parquet_from_arrow(
             table=table,

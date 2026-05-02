@@ -642,6 +642,30 @@ class SupersetLoader(ExternalDataLoader):
 
         return clauses
 
+    @staticmethod
+    def _build_sort_clause(
+        sort_columns: list[str] | None,
+        sort_order: str | None = "asc",
+        quote_char: str = '"',
+    ) -> str:
+        """Build an ORDER BY clause from import_options sort settings."""
+        if not isinstance(sort_columns, list) or not sort_columns:
+            return ""
+
+        direction = "DESC" if str(sort_order).lower() == "desc" else "ASC"
+        sort_refs = []
+        for col in sort_columns:
+            if not isinstance(col, str):
+                continue
+            col_name = col.strip()
+            if not col_name:
+                continue
+            sort_refs.append(f"{_column_ref(col_name, quote_char)} {direction}")
+
+        if not sort_refs:
+            return ""
+        return f"ORDER BY {', '.join(sort_refs)}"
+
     # -- get_metadata / get_column_types ------------------------------------
 
     def get_metadata(self, path: list[str]) -> dict[str, Any]:
@@ -886,12 +910,19 @@ class SupersetLoader(ExternalDataLoader):
         where_clauses = self._build_source_filter_clauses(
             opts.get("source_filters"), quote_char,
         )
+        sort_clause = self._build_sort_clause(
+            opts.get("sort_columns"),
+            opts.get("sort_order", "asc"),
+            quote_char,
+        )
 
         # Build SQL
+        full_sql = f"SELECT * FROM ({base_sql}) AS _src"
         if where_clauses:
-            full_sql = f"SELECT * FROM ({base_sql}) AS _src WHERE {' AND '.join(where_clauses)} LIMIT {size}"
-        else:
-            full_sql = f"SELECT * FROM ({base_sql}) AS _src LIMIT {size}"
+            full_sql += f" WHERE {' AND '.join(where_clauses)}"
+        if sort_clause:
+            full_sql += f" {sort_clause}"
+        full_sql += f" LIMIT {size}"
 
         # Execute via SQL Lab
         sql_session = self._client.create_sql_session(token)
