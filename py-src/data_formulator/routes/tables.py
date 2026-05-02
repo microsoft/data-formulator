@@ -152,6 +152,7 @@ def _table_metadata_to_source_metadata(meta: DatalakeTableMetadata) -> dict | No
         "data_loader_params": meta.loader_params or {},
         "source_table_name": meta.source_table,
         "source_query": meta.source_query,
+        "import_options": meta.import_options,
         "last_refreshed": meta.last_synced.isoformat() if meta.last_synced else None,
         "content_hash": meta.content_hash,
     }

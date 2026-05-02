@@ -16,6 +16,7 @@ from data_formulator.agents.agent_utils import (
     format_dataframe_sample_with_budget,
     generate_data_summary,
     get_field_summary,
+    _format_import_options,
 )
 from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
 
@@ -25,14 +26,15 @@ TABLE_SAMPLE_MAX_ROWS = 5
 TABLE_SAMPLE_CHAR_LIMIT = 1000
 
 
-def _get_workspace_metadata_lookups(workspace: Any) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
-    """Return table and column descriptions from workspace metadata."""
+def _get_workspace_metadata_lookups(workspace: Any) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, str]]:
+    """Return table descriptions, column descriptions, and import options from workspace metadata."""
     table_descs: dict[str, str] = {}
     col_descs: dict[str, dict[str, str]] = {}
+    import_opts: dict[str, str] = {}
     try:
         ws_meta = workspace.get_metadata()
         if not ws_meta:
-            return table_descs, col_descs
+            return table_descs, col_descs, import_opts
         for tname, tmeta in ws_meta.tables.items():
             if tmeta.description:
                 table_descs[tname] = tmeta.description
@@ -42,9 +44,12 @@ def _get_workspace_metadata_lookups(workspace: Any) -> tuple[dict[str, str], dic
                     table_cols[col.name] = col.description
             if table_cols:
                 col_descs[tname] = table_cols
+            opts_line = _format_import_options(tmeta.import_options)
+            if opts_line:
+                import_opts[tname] = opts_line
     except Exception:
         logger.debug("Could not read workspace metadata for agent context", exc_info=True)
-    return table_descs, col_descs
+    return table_descs, col_descs, import_opts
 
 
 def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
@@ -113,7 +118,7 @@ def build_lightweight_table_context(
     When ``primary_tables`` is provided, tables are grouped into
     [PRIMARY TABLE(S)] and [OTHER AVAILABLE TABLES] sections.
     """
-    table_desc_cache, col_desc_cache = _get_workspace_metadata_lookups(workspace)
+    table_desc_cache, col_desc_cache, import_opts_cache = _get_workspace_metadata_lookups(workspace)
     table_extra_cache: dict[str, list[str]] = {}
     col_meta_cache: dict[str, dict[str, dict]] = {}
     catalog_table_descs, catalog_col_descs, catalog_extras, catalog_col_metas = build_catalog_metadata_lookups(
@@ -154,6 +159,9 @@ def build_lightweight_table_context(
 
             if description:
                 lines.append(f"  Description: {description}")
+            load_provenance = import_opts_cache.get(table_name, "")
+            if load_provenance:
+                lines.append(f"  {load_provenance}")
             extra_lines = table_extra_cache.get(table_name, [])
             for extra in extra_lines:
                 lines.append(f"  {extra}")

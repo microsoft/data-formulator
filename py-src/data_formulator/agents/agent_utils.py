@@ -467,6 +467,27 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100,
         line += f"  [calc: {expression}]"
     return line
 
+
+def _format_import_options(opts: dict | None) -> str:
+    """Format import_options into a concise human-readable provenance line."""
+    if not opts:
+        return ""
+    parts: list[str] = []
+    sf = opts.get("source_filters")
+    if sf and isinstance(sf, list) and len(sf) > 0:
+        parts.append(f"{len(sf)} filter(s)")
+    sc = opts.get("sort_columns")
+    so = opts.get("sort_order", "asc")
+    if sc and isinstance(sc, list) and len(sc) > 0:
+        parts.append(f"sorted by {', '.join(sc)} {so}")
+    size = opts.get("size")
+    if size is not None:
+        parts.append(f"row limit {size:,}")
+    if not parts:
+        return ""
+    return "Data subset: " + ", ".join(parts)
+
+
 def generate_data_summary(
     input_tables,
     workspace,
@@ -507,6 +528,7 @@ def generate_data_summary(
     col_desc_cache: dict[str, dict[str, str]] = {}
     table_desc_cache: dict[str, str] = {}
     table_extra_cache: dict[str, list[str]] = {}
+    import_opts_cache: dict[str, str] = {}
     try:
         ws_meta = workspace.get_metadata()
         if ws_meta:
@@ -520,6 +542,9 @@ def generate_data_summary(
                             cd[col.name] = col.description
                     if cd:
                         col_desc_cache[tname] = cd
+                opts_line = _format_import_options(tmeta.import_options)
+                if opts_line:
+                    import_opts_cache[tname] = opts_line
     except Exception:
         pass
 
@@ -577,6 +602,9 @@ def generate_data_summary(
 
         if description:
             sections.append(f"### Description\n{description}\n")
+        load_provenance = import_opts_cache.get(table_name, "")
+        if load_provenance:
+            sections.append(f"- **{load_provenance}**\n")
         extra_lines = table_extra_cache.get(table_name, [])
         if extra_lines:
             sections.append("### Catalog Metadata\n" + "\n".join(f"- {line}" for line in extra_lines) + "\n")

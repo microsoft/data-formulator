@@ -159,6 +159,33 @@ class TestBuildSourceFilterClauses:
 
 
 # ==================================================================
+# _build_sort_clause
+# ==================================================================
+
+class TestBuildSortClause:
+
+    def test_empty_sort_columns(self):
+        assert SupersetLoader._build_sort_clause(None) == ""
+        assert SupersetLoader._build_sort_clause([]) == ""
+
+    def test_desc_sort_clause(self):
+        clause = SupersetLoader._build_sort_clause(["id"], "desc")
+        assert clause == "ORDER BY id DESC"
+
+    def test_defaults_to_ascending_for_unknown_order(self):
+        clause = SupersetLoader._build_sort_clause(["id"], "DROP TABLE")
+        assert clause == "ORDER BY id ASC"
+
+    def test_quotes_special_column_names(self):
+        clause = SupersetLoader._build_sort_clause(["order amount"], "asc", quote_char="`")
+        assert clause == "ORDER BY `order amount` ASC"
+
+    def test_skips_invalid_columns(self):
+        clause = SupersetLoader._build_sort_clause(["", None, "id"], "asc")
+        assert clause == "ORDER BY id ASC"
+
+
+# ==================================================================
 # SQL helpers
 # ==================================================================
 
@@ -344,6 +371,64 @@ class TestGetColumnValues:
         result = loader.get_column_values("42", "col")
         assert result["options"] == []
         assert result["has_more"] is False
+
+
+# ==================================================================
+# fetch_data_as_arrow SQL generation
+# ==================================================================
+
+class TestFetchDataAsArrow:
+
+    @pytest.fixture
+    def loader(self):
+        return _make_mock_loader()
+
+    def test_applies_sort_options_to_sql(self, loader):
+        loader._client.get_dataset_detail.return_value = {
+            "table_name": "orders",
+            "database": {"id": 1, "backend": "postgresql"},
+            "schema": "public",
+        }
+        loader._client.create_sql_session.return_value = MagicMock()
+        loader._client.execute_sql_with_session.return_value = {
+            "data": [{"id": 2}, {"id": 1}],
+            "columns": [{"column_name": "id"}],
+            "status": "success",
+        }
+
+        loader.fetch_data_as_arrow(
+            "42",
+            {"size": 10, "sort_columns": ["id"], "sort_order": "desc"},
+        )
+
+        sql = loader._client.execute_sql_with_session.call_args.args[2]
+        assert "ORDER BY id DESC LIMIT 10" in sql
+
+    def test_applies_filters_before_sort(self, loader):
+        loader._client.get_dataset_detail.return_value = {
+            "table_name": "orders",
+            "database": {"id": 1, "backend": "postgresql"},
+            "schema": "public",
+        }
+        loader._client.create_sql_session.return_value = MagicMock()
+        loader._client.execute_sql_with_session.return_value = {
+            "data": [{"id": 2, "status": "active"}],
+            "columns": [{"column_name": "id"}, {"column_name": "status"}],
+            "status": "success",
+        }
+
+        loader.fetch_data_as_arrow(
+            "42",
+            {
+                "size": 10,
+                "source_filters": [{"column": "status", "operator": "EQ", "value": "active"}],
+                "sort_columns": ["id"],
+                "sort_order": "desc",
+            },
+        )
+
+        sql = loader._client.execute_sql_with_session.call_args.args[2]
+        assert "WHERE status = 'active' ORDER BY id DESC LIMIT 10" in sql
 
 
 # ==================================================================

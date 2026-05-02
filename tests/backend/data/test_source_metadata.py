@@ -416,3 +416,116 @@ class TestCatalogTreeMetadataStatus:
         }]
         tree = loader._tables_to_catalog_tree(tables)
         assert tree[0]["metadata"]["source_metadata_status"] == "partial"
+
+
+# ── Refresh preserves import_options ──────────────────────────────────
+
+class TestRefreshPreservesImportOptions:
+    """import_options must survive refresh_parquet_from_arrow."""
+
+    def test_import_options_retained_after_refresh(self, tmp_path):
+        import pyarrow as pa
+        from data_formulator.datalake.workspace import Workspace
+
+        ws = Workspace(str(tmp_path))
+        original_opts = {
+            "size": 50000,
+            "sort_columns": ["id"],
+            "sort_order": "desc",
+            "source_filters": [{"column": "status", "operator": "EQ", "value": "active"}],
+        }
+        source_info = {
+            "loader_type": "TestLoader",
+            "source_table": "orders",
+            "import_options": original_opts,
+        }
+        table = pa.table({"id": [1, 2], "status": ["active", "active"]})
+        ws.write_parquet_from_arrow(table, "orders", source_info=source_info)
+
+        meta_before = ws.get_table_metadata("orders")
+        assert meta_before.import_options == original_opts
+
+        new_table = pa.table({"id": [3, 4, 5], "status": ["active", "done", "active"]})
+        new_meta, changed = ws.refresh_parquet_from_arrow("orders", new_table)
+
+        assert changed is True
+        assert new_meta.import_options == original_opts
+
+
+# ── _format_import_options ────────────────────────────────────────────
+
+class TestFormatImportOptions:
+    """_format_import_options produces human-readable provenance lines."""
+
+    def test_empty_returns_empty(self):
+        from data_formulator.agents.agent_utils import _format_import_options
+        assert _format_import_options(None) == ""
+        assert _format_import_options({}) == ""
+
+    def test_sort_only(self):
+        from data_formulator.agents.agent_utils import _format_import_options
+        result = _format_import_options({"sort_columns": ["id"], "sort_order": "desc"})
+        assert "sorted by id desc" in result
+
+    def test_filters_and_limit(self):
+        from data_formulator.agents.agent_utils import _format_import_options
+        result = _format_import_options({
+            "source_filters": [{"column": "x", "operator": "EQ", "value": 1}],
+            "size": 50000,
+        })
+        assert "1 filter(s)" in result
+        assert "row limit 50,000" in result
+
+    def test_full_options(self):
+        from data_formulator.agents.agent_utils import _format_import_options
+        result = _format_import_options({
+            "source_filters": [{"column": "a", "operator": "EQ", "value": "x"}],
+            "sort_columns": ["created"],
+            "sort_order": "asc",
+            "size": 10000,
+        })
+        assert result.startswith("Data subset:")
+        assert "1 filter(s)" in result
+        assert "sorted by created asc" in result
+        assert "row limit" in result
+
+
+# ── _table_metadata_to_source_metadata exposes import_options ─────────
+
+class TestSourceMetadataImportOptions:
+    """_table_metadata_to_source_metadata must include import_options."""
+
+    def test_import_options_in_response(self):
+        from data_formulator.routes.tables import _table_metadata_to_source_metadata
+
+        meta = TableMetadata(
+            name="t1",
+            source_type="data_loader",
+            filename="t1.parquet",
+            file_type="parquet",
+            created_at=datetime.now(timezone.utc),
+            content_hash="abc123",
+            loader_type="TestLoader",
+            loader_params={"host": "localhost"},
+            source_table="orders",
+            import_options={"size": 1000, "sort_columns": ["id"], "sort_order": "asc"},
+        )
+        result = _table_metadata_to_source_metadata(meta)
+        assert result is not None
+        assert result["import_options"] == {"size": 1000, "sort_columns": ["id"], "sort_order": "asc"}
+
+    def test_import_options_none_when_absent(self):
+        from data_formulator.routes.tables import _table_metadata_to_source_metadata
+
+        meta = TableMetadata(
+            name="t2",
+            source_type="data_loader",
+            filename="t2.parquet",
+            file_type="parquet",
+            created_at=datetime.now(timezone.utc),
+            content_hash="def456",
+            loader_type="TestLoader",
+        )
+        result = _table_metadata_to_source_metadata(meta)
+        assert result is not None
+        assert result["import_options"] is None
