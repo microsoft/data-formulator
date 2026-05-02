@@ -82,14 +82,15 @@ def mock_client():
 def mock_workspace():
     ws = MagicMock()
     ws.get_fresh_name = MagicMock(return_value="test-table")
+    ws.user_home = None
     return ws
 
 
 def _make_agent(mock_client, mock_workspace, user_home, **kwargs):
+    mock_workspace.user_home = user_home
     return DataAgent(
         client=mock_client,
         workspace=mock_workspace,
-        user_home=user_home,
         **kwargs,
     )
 
@@ -123,10 +124,10 @@ class TestRulesInjection:
         assert "## User Rules" not in prompt
 
     def test_no_knowledge_store_graceful(self, mock_client, mock_workspace):
+        mock_workspace.user_home = None
         agent = DataAgent(
             client=mock_client,
             workspace=mock_workspace,
-            user_home=None,
         )
         prompt = agent._build_system_prompt()
         assert "## User Rules" not in prompt
@@ -213,7 +214,8 @@ class TestKnowledgeToolHandlers:
         assert "Invalid path" in result or "not found" in result.lower()
 
     def test_no_knowledge_store_returns_message(self, mock_client, mock_workspace):
-        agent = DataAgent(client=mock_client, workspace=mock_workspace, user_home=None)
+        mock_workspace.user_home = None
+        agent = DataAgent(client=mock_client, workspace=mock_workspace)
         result = agent._handle_search_knowledge({"query": "anything"})
         assert "not available" in result
 
@@ -227,10 +229,10 @@ class TestKnowledgeToolHandlers:
 class TestGracefulDegradation:
     def test_agent_works_without_knowledge(self, mock_client, mock_workspace):
         """Agent with no user_home still constructs valid system prompt."""
+        mock_workspace.user_home = None
         agent = DataAgent(
             client=mock_client,
             workspace=mock_workspace,
-            user_home=None,
         )
         prompt = agent._build_system_prompt()
         assert "data exploration agent" in prompt

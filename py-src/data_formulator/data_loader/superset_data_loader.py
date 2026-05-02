@@ -317,7 +317,9 @@ class SupersetLoader(ExternalDataLoader):
                         table_entry.setdefault("metadata", {})["columns"] = columns
                         table_entry["metadata"]["source_metadata_status"] = "synced"
                     else:
-                        table_entry.setdefault("metadata", {})["source_metadata_status"] = "unavailable"
+                        meta = table_entry.setdefault("metadata", {})
+                        meta["columns"] = []
+                        meta["source_metadata_status"] = "partial"
                 except Exception:
                     logger.warning(
                         "Column fetch failed for dataset %s",

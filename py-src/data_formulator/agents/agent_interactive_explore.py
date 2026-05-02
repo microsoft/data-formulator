@@ -131,7 +131,7 @@ class InteractiveExploreAgent(object):
         t_ctx = time.time()
 
         context = build_lightweight_table_context(
-            input_tables, self.workspace, primary_tables=primary_tables
+            input_tables, self.workspace, primary_tables=primary_tables,
         )
 
         if focused_thread:
@@ -145,7 +145,7 @@ class InteractiveExploreAgent(object):
                     'attached_metadata': table.get('description', ''),
                 } for i, table in enumerate(exploration_thread, 1)],
                 self.workspace,
-                table_name_prefix="Thread Table"
+                table_name_prefix="Thread Table",
             )
             context += f"\n\n[EXPLORATION THREAD]\n\n{thread_summary}"
 

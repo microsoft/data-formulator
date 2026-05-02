@@ -343,11 +343,12 @@ export const fetchFieldSemanticType = createAsyncThunk(
 
         let state = getState() as DataFormulatorState;
 
+        const sampleRows = (table.rows || []).slice(0, 30);
         const { data } = await apiRequest(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                input_data: {name: table.id, rows: table.rows, virtual: table.virtual ? true : false},
+                input_data: {name: table.id, rows: sampleRows, virtual: table.virtual ? true : false},
                 model: dfSelectors.getActiveModel(state)
             }),
         });

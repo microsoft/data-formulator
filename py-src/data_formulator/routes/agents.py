@@ -25,7 +25,7 @@ from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_simple import SimpleAgents
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
-from data_formulator.datalake.workspace import Workspace
+from data_formulator.datalake.workspace import Workspace, get_user_home
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
@@ -573,9 +573,6 @@ def data_agent_streaming():
 
     def generate():
         try:
-            from data_formulator.datalake.workspace import get_user_home
-            user_home = get_user_home(identity_id)
-
             agent = DataAgent(
                 client=client,
                 workspace=workspace,
@@ -584,7 +581,6 @@ def data_agent_streaming():
                 language_instruction=language_instruction,
                 max_iterations=max_iterations,
                 max_repair_attempts=max_repair_attempts,
-                user_home=user_home,
                 identity_id=identity_id,
             )
 

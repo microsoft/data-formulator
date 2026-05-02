@@ -303,6 +303,8 @@ const DataSourceSidebarPanel: React.FC<{
         connectorId: string;
         tableKey: string;
         tableName: string;
+        sourceDescription: string;
+        displayDescription: string;
         description: string;
         notes: string;
         version: number | null;
@@ -497,6 +499,15 @@ const DataSourceSidebarPanel: React.FC<{
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ connector_id: connectorId }),
             });
+            const tree: CatalogTreeNode[] = data.tree || [];
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: successLoadable(
+                    { tree, fetchedAt: Date.now() },
+                    cache => cache.tree.length === 0,
+                ),
+            }));
+            setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
             if (data.message_code === 'catalog.syncPartial') {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'warning',
@@ -517,8 +528,7 @@ const DataSourceSidebarPanel: React.FC<{
         } finally {
             fetchingRef.current.delete(syncKey);
         }
-        fetchCatalogTree(connectorId);
-    }, [dispatch, t, fetchCatalogTree]);
+    }, [dispatch, t]);
 
     const clearCatalogSearch = useCallback(() => {
         setCatalogSearch('');
@@ -683,6 +693,7 @@ const DataSourceSidebarPanel: React.FC<{
         if (node.node_type !== 'table') return;
 
         const ref = buildSourceTableRef(node);
+        const nodeMeta = node.metadata || {};
 
         setPreview({
             connectorId,
@@ -690,6 +701,7 @@ const DataSourceSidebarPanel: React.FC<{
             columns: [],
             sampleRows: [],
             rowCount: node.metadata?.row_count ?? null,
+            tableDescription: nodeMeta.display_description || nodeMeta.source_description || nodeMeta.description,
             loading: true,
         });
         setPreviewAnchor(anchorEl);
@@ -765,13 +777,25 @@ const DataSourceSidebarPanel: React.FC<{
             sourceTableRef: ref,
             importOptions: importOptions || {},
         })).unwrap()
-            .then(() => {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(),
-                    type: 'success',
-                    component: 'data source sidebar',
-                    value: t('sidebar.loadedTable', { name: ref.name }),
-                }));
+            .then((result) => {
+                if (result.truncated) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        type: 'warning',
+                        component: 'data source sidebar',
+                        value: t('sidebar.loadedTableTruncated', {
+                            name: ref.name,
+                            count: (result.originalRowCount ?? 0).toLocaleString(),
+                        }),
+                    }));
+                } else {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        type: 'success',
+                        component: 'data source sidebar',
+                        value: t('sidebar.loadedTable', { name: ref.name }),
+                    }));
+                }
                 closePreview();
             })
             .catch((error) => {
@@ -830,6 +854,7 @@ const DataSourceSidebarPanel: React.FC<{
 
     const handleOpenAnnotation = useCallback((connectorId: string, node: CatalogTreeNode) => {
         const tableKey = node.metadata?.table_key || node.metadata?._source_name || node.name;
+        const sourceDescription = node.metadata?.source_description || node.metadata?.description || '';
         apiRequest(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS + `?connector_id=${encodeURIComponent(connectorId)}`, {
             method: 'GET',
         })
@@ -840,6 +865,8 @@ const DataSourceSidebarPanel: React.FC<{
                     connectorId,
                     tableKey,
                     tableName: node.name,
+                    sourceDescription,
+                    displayDescription: existing.description || sourceDescription,
                     description: existing.description || '',
                     notes: existing.notes || '',
                     version: data.version ?? null,
@@ -850,6 +877,8 @@ const DataSourceSidebarPanel: React.FC<{
                     connectorId,
                     tableKey,
                     tableName: node.name,
+                    sourceDescription,
+                    displayDescription: sourceDescription,
                     description: '',
                     notes: '',
                     version: null,
@@ -878,6 +907,7 @@ const DataSourceSidebarPanel: React.FC<{
                 value: translateBackend(data.message ?? t('dataLoading.annotationSaved'), data.message_code),
             }));
             setAnnotationEdit(null);
+            fetchCatalogTree(annotationEdit.connectorId);
         } catch (e: any) {
             const isConflict = e?.apiError?.code === 'ANNOTATION_CONFLICT';
             dispatch(dfActions.addMessages({
@@ -888,7 +918,7 @@ const DataSourceSidebarPanel: React.FC<{
         } finally {
             setAnnotationSaving(false);
         }
-    }, [annotationEdit, dispatch, t]);
+    }, [annotationEdit, dispatch, fetchCatalogTree, t]);
 
     const clearConnectorUiState = useCallback((connectorId: string) => {
         setCatalogByConnector(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
@@ -1466,13 +1496,20 @@ const DataSourceSidebarPanel: React.FC<{
                     const pathKey = preview.node.path.join('/');
                     const alreadyLoaded = !!(loadedTablesMap[preview.node.name] || loadedTablesMap[pathKey]);
                     const sourceTableRef = buildSourceTableRef(preview.node);
+                    const nodeMeta = preview.node.metadata || {};
+                    const sourceDescription = nodeMeta.source_description || preview.tableDescription || nodeMeta.description;
+                    const userDescription = nodeMeta.user_description || '';
+                    const effectiveDescription = nodeMeta.display_description || userDescription || preview.tableDescription || sourceDescription;
                     return (
                         <Box sx={{ p: 2, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
                             <ConnectorTablePreview
                                 connectorId={preview.connectorId}
                                 sourceTable={sourceTableRef}
                                 displayName={preview.node.name}
-                                tableDescription={preview.tableDescription}
+                                tableDescription={effectiveDescription}
+                                sourceDescription={sourceDescription}
+                                userDescription={userDescription}
+                                metadataStatus={nodeMeta.source_metadata_status}
                                 columns={preview.columns}
                                 sampleRows={preview.sampleRows}
                                 rowCount={preview.rowCount}
@@ -1553,7 +1590,18 @@ const DataSourceSidebarPanel: React.FC<{
                         {annotationEdit?.tableName}
                     </Typography>
                     <TextField
-                        label={t('sidebar.annotationDescription', { defaultValue: 'Description' })}
+                        label={t('sidebar.sourceDescription')}
+                        value={annotationEdit?.sourceDescription || t('sidebar.noSourceDescription')}
+                        size="small"
+                        fullWidth
+                        multiline
+                        minRows={2}
+                        maxRows={4}
+                        InputProps={{ readOnly: true, sx: { fontSize: 13 } }}
+                        InputLabelProps={{ sx: { fontSize: 13 } }}
+                    />
+                    <TextField
+                        label={t('sidebar.annotationDescription')}
                         value={annotationEdit?.description ?? ''}
                         onChange={(e) => setAnnotationEdit(prev => prev ? { ...prev, description: e.target.value } : prev)}
                         size="small"
@@ -1565,7 +1613,7 @@ const DataSourceSidebarPanel: React.FC<{
                         InputLabelProps={{ sx: { fontSize: 13 } }}
                     />
                     <TextField
-                        label={t('sidebar.annotationNotes', { defaultValue: 'Notes' })}
+                        label={t('sidebar.annotationNotes')}
                         value={annotationEdit?.notes ?? ''}
                         onChange={(e) => setAnnotationEdit(prev => prev ? { ...prev, notes: e.target.value } : prev)}
                         size="small"
@@ -1574,6 +1622,21 @@ const DataSourceSidebarPanel: React.FC<{
                         minRows={2}
                         maxRows={6}
                         InputProps={{ sx: { fontSize: 13 } }}
+                        InputLabelProps={{ sx: { fontSize: 13 } }}
+                    />
+                    <TextField
+                        label={t('sidebar.effectiveDescription')}
+                        value={
+                            annotationEdit?.description
+                                ? annotationEdit.description
+                                : (annotationEdit?.sourceDescription || t('sidebar.noEffectiveDescription'))
+                        }
+                        size="small"
+                        fullWidth
+                        multiline
+                        minRows={2}
+                        maxRows={4}
+                        InputProps={{ readOnly: true, sx: { fontSize: 13 } }}
                         InputLabelProps={{ sx: { fontSize: 13 } }}
                     />
                 </DialogContent>

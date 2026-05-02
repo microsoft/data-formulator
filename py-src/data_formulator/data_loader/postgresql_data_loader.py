@@ -344,7 +344,10 @@ class PostgreSQLDataLoader(ExternalDataLoader):
                     continue
 
                 columns = col_map.get(full_table_name, [])
-                metadata: dict[str, Any] = {"columns": columns}
+                metadata: dict[str, Any] = {
+                    "columns": columns,
+                    "source_metadata_status": "synced" if columns else "partial",
+                }
                 table_desc = table_comment_map.get(full_table_name)
                 if table_desc:
                     metadata["description"] = table_desc
@@ -492,6 +495,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             metadata: dict[str, Any] = {
                 "_source_name": full_source,
                 "columns": columns,
+                "source_metadata_status": "synced" if columns else "partial",
             }
             table_desc = table_comment_map.get(schema_table)
             if table_desc:

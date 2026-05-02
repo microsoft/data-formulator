@@ -22,6 +22,8 @@ from data_formulator.data_connector import (
     DATA_CONNECTORS,
     connectors_bp,
 )
+from data_formulator.datalake.catalog_annotations import patch_annotation
+from data_formulator.datalake.catalog_cache import save_catalog
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader
 from data_formulator.error_handler import register_error_handlers
 
@@ -246,3 +248,127 @@ class TestSyncCatalogMetadataEndpoint:
         })
         data = resp.get_json()
         assert data["status"] == "error"
+
+    def test_sync_then_catalog_tree_preserves_column_metadata_in_cache(self, app, tmp_path):
+        """A post-sync tree refresh must not replace rich metadata with list_tables output."""
+
+        class _RichSyncLeanListLoader(_StubLoader):
+            def list_tables(self, table_filter=None):
+                return [
+                    {
+                        "name": "orders",
+                        "table_key": "uuid-1",
+                        "metadata": {
+                            "_source_name": "orders",
+                            "description": "Order table",
+                        },
+                    },
+                ]
+
+            def sync_catalog_metadata(self, table_filter=None):
+                return [
+                    {
+                        "name": "orders",
+                        "table_key": "uuid-1",
+                        "metadata": {
+                            "_source_name": "orders",
+                            "description": "Order table",
+                            "columns": [{"name": "id", "description": "PK"}],
+                            "source_metadata_status": "synced",
+                        },
+                    },
+                ]
+
+        connector = DataConnector.from_loader(
+            _RichSyncLeanListLoader, source_id="test_rich", display_name="Rich",
+        )
+        DATA_CONNECTORS["test_rich"] = connector
+        user_home = tmp_path / "users" / "test_user"
+
+        try:
+            with patch.object(DataConnector, "_get_identity", return_value="test_user"), \
+                 patch.object(DataConnector, "_get_vault", return_value=None), \
+                 patch("data_formulator.datalake.workspace.get_user_home", return_value=user_home):
+                client = app.test_client()
+                client.post("/api/connectors/connect", json={
+                    "connector_id": "test_rich",
+                    "params": {"host": "localhost"},
+                    "persist": False,
+                })
+                sync_resp = client.post("/api/connectors/sync-catalog-metadata", json={
+                    "connector_id": "test_rich",
+                })
+                assert sync_resp.get_json()["status"] == "success"
+
+                tree_resp = client.post("/api/connectors/get-catalog-tree", json={
+                    "connector_id": "test_rich",
+                })
+                assert tree_resp.get_json()["status"] == "success"
+
+            cache_file = user_home / "catalog_cache" / "test_rich.json"
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+
+            meta = cached["tables"][0]["metadata"]
+            assert meta["source_metadata_status"] == "synced"
+            assert meta["columns"] == [{"name": "id", "description": "PK"}]
+        finally:
+            DATA_CONNECTORS.pop("test_rich", None)
+
+    def test_catalog_tree_returns_merged_annotations_from_cache(self, app, tmp_path):
+        """Catalog tree responses should expose source/user/display descriptions."""
+        connector = DataConnector.from_loader(
+            _StubLoader, source_id="test_merged", display_name="Merged",
+        )
+        DATA_CONNECTORS["test_merged"] = connector
+        user_home = tmp_path / "users" / "test_user"
+
+        save_catalog(user_home, "test_merged", [
+            {
+                "name": "orders",
+                "table_key": "uuid-1",
+                "metadata": {
+                    "_source_name": "orders",
+                    "description": "Source order table",
+                    "columns": [{"name": "id"}],
+                    "source_metadata_status": "synced",
+                },
+            },
+        ])
+        patch_annotation(
+            user_home,
+            "test_merged",
+            "uuid-1",
+            {
+                "description": "User order annotation",
+                "notes": "Prefer settled orders",
+                "tags": ["finance"],
+            },
+            expected_version=0,
+        )
+
+        try:
+            with patch.object(DataConnector, "_get_identity", return_value="test_user"), \
+                 patch.object(DataConnector, "_get_vault", return_value=None), \
+                 patch("data_formulator.datalake.workspace.get_user_home", return_value=user_home):
+                client = app.test_client()
+                client.post("/api/connectors/connect", json={
+                    "connector_id": "test_merged",
+                    "params": {"host": "localhost"},
+                    "persist": False,
+                })
+                resp = client.post("/api/connectors/get-catalog-tree", json={
+                    "connector_id": "test_merged",
+                })
+
+            data = resp.get_json()
+            assert data["status"] == "success"
+            meta = data["data"]["tree"][0]["metadata"]
+            assert meta["source_description"] == "Source order table"
+            assert meta["user_description"] == "User order annotation"
+            assert meta["display_description"] == "User order annotation"
+            assert meta["notes"] == "Prefer settled orders"
+            assert meta["tags"] == ["finance"]
+            assert "columns" not in meta
+        finally:
+            DATA_CONNECTORS.pop("test_merged", None)

@@ -159,12 +159,8 @@ export const loadTable = createAsyncThunk<
                         Number.isFinite(selectedRowLimit) && selectedRowLimit > 0 &&
                         Number.isFinite(loadedRowCount) && loadedRowCount >= selectedRowLimit
                     ) {
-                        dispatch(dfActions.addMessages({
-                            timestamp: Date.now(),
-                            type: 'warning',
-                            component: 'data loader',
-                            value: i18n.t('messages.rowLimitReached', { count: loadedRowCount.toLocaleString() }),
-                        }));
+                        truncated = true;
+                        originalRowCount = loadedRowCount;
                     }
                 } catch (err) {
                     console.error('Failed to ingest database table to workspace:', err);
@@ -314,8 +310,11 @@ export const loadTable = createAsyncThunk<
         dispatch(dfActions.addTableToStore(finalTable));
         dispatch(fetchFieldSemanticType(finalTable));
 
-        // Notify user about truncation
-        if (truncated && originalRowCount) {
+        // Notify user about local (browser) truncation only.
+        // Database-side truncation (row limit from import options) is
+        // reported by the caller (e.g. DataSourceSidebar) via the returned
+        // LoadTableResult.truncated flag to avoid duplicate/misordered messages.
+        if (truncated && originalRowCount && !connectorId) {
             const workspaceBackend = state.serverConfig?.WORKSPACE_BACKEND;
             const storageLabel = workspaceBackend === 'azure_blob' ? 'Azure' : 'Disk';
             const baseMsg = `Table "${finalTable.displayId || finalTable.id}" was truncated from ${originalRowCount.toLocaleString()} to ${frontendRowLimit.toLocaleString()} rows (browser limit).`;

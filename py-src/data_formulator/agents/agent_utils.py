@@ -5,11 +5,107 @@ import json
 import keyword
 import logging
 import time
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import re
 
 _logger = logging.getLogger(__name__)
+
+
+def _source_table_matches_catalog_entry(
+    source_table: str,
+    catalog_entry: dict[str, Any],
+) -> bool:
+    meta = catalog_entry.get("metadata") or {}
+    candidates = {
+        str(catalog_entry.get("table_key") or ""),
+        str(catalog_entry.get("name") or ""),
+        str(meta.get("_source_name") or ""),
+        str(meta.get("dataset_id") or ""),
+        str(meta.get("uuid") or ""),
+    }
+    return bool(source_table and source_table in candidates)
+
+
+def build_catalog_metadata_lookups(
+    workspace,
+) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, list[str]]]:
+    """Build table/column metadata overlays from catalog cache + annotations.
+
+    Resolves the user home directory from the workspace object automatically.
+    Falls back gracefully when the workspace has no ``user_home`` property
+    (e.g. in tests or non-local backends).
+    """
+    table_desc_cache: dict[str, str] = {}
+    col_desc_cache: dict[str, dict[str, str]] = {}
+    table_extra_cache: dict[str, list[str]] = {}
+
+    user_home = getattr(workspace, "user_home", None)
+    if not user_home:
+        return table_desc_cache, col_desc_cache, table_extra_cache
+
+    try:
+        ws_meta = workspace.get_metadata()
+        if not ws_meta:
+            return table_desc_cache, col_desc_cache, table_extra_cache
+
+        from data_formulator.datalake.catalog_annotations import load_annotations
+        from data_formulator.datalake.catalog_cache import list_cached_sources, load_catalog
+        from data_formulator.datalake.catalog_merge import merge_catalog
+
+        merged_catalogs: list[dict[str, Any]] = []
+        for source_id in list_cached_sources(user_home):
+            catalog = load_catalog(Path(user_home), source_id) or []
+            annotations = load_annotations(Path(user_home), source_id)
+            merged_catalogs.extend(merge_catalog(catalog, annotations))
+
+        for table_name, table_meta in ws_meta.tables.items():
+            source_table = getattr(table_meta, "source_table", None)
+            if not source_table:
+                continue
+            match = next(
+                (
+                    entry for entry in merged_catalogs
+                    if _source_table_matches_catalog_entry(str(source_table), entry)
+                ),
+                None,
+            )
+            if not match:
+                continue
+
+            meta = match.get("metadata") or {}
+            display_desc = meta.get("display_description") or meta.get("description")
+            if display_desc:
+                table_desc_cache[table_name] = str(display_desc)
+
+            column_descs = {
+                str(col.get("name")): str(col.get("display_description"))
+                for col in meta.get("columns", [])
+                if isinstance(col, dict) and col.get("name") and col.get("display_description")
+            }
+            if column_descs:
+                col_desc_cache[table_name] = column_descs
+
+            extras: list[str] = []
+            source_desc = meta.get("source_description")
+            user_desc = meta.get("user_description")
+            if source_desc and user_desc and source_desc != user_desc:
+                extras.append(f"Source description: {source_desc}")
+                extras.append(f"User annotation: {user_desc}")
+            notes = meta.get("notes")
+            if notes:
+                extras.append(f"Notes: {notes}")
+            tags = meta.get("tags")
+            if tags:
+                extras.append(f"Tags: {', '.join(str(tag) for tag in tags)}")
+            if extras:
+                table_extra_cache[table_name] = extras
+    except Exception:
+        _logger.debug("Failed to build catalog metadata lookups", exc_info=True)
+
+    return table_desc_cache, col_desc_cache, table_extra_cache
 
 def format_dataframe_sample_with_budget(
     df,
@@ -375,6 +471,7 @@ def generate_data_summary(
     # Build column description lookup from workspace metadata
     col_desc_cache: dict[str, dict[str, str]] = {}
     table_desc_cache: dict[str, str] = {}
+    table_extra_cache: dict[str, list[str]] = {}
     try:
         ws_meta = workspace.get_metadata()
         if ws_meta:
@@ -391,6 +488,14 @@ def generate_data_summary(
     except Exception:
         pass
 
+    catalog_table_descs, catalog_col_descs, catalog_extras = build_catalog_metadata_lookups(
+        workspace,
+    )
+    table_desc_cache.update(catalog_table_descs)
+    for tname, col_descs in catalog_col_descs.items():
+        col_desc_cache.setdefault(tname, {}).update(col_descs)
+    table_extra_cache.update(catalog_extras)
+
     def assemble_table_summary(table, idx):
         table_name = table['name']
         description = table.get("attached_metadata", "")
@@ -402,15 +507,24 @@ def generate_data_summary(
         try:
             df = workspace.read_data_as_df(table_name)
         except (FileNotFoundError, KeyError) as exc:
-            _logger.warning("Could not read table %s for summary: %s", table_name, exc)
-            from data_formulator.error_handler import collect_stream_warning
-            collect_stream_warning(
-                f"Table '{table_name}' data unavailable — it may have been removed or renamed",
-                message_code="TABLE_READ_FAILED",
-            )
-            return f"## {table_name_prefix} {idx + 1}: {table_name}\n- ⚠ Table data unavailable (may have been removed or renamed)"
+            _logger.info("Table %s not in workspace, trying inline rows", table_name)
+            inline_rows = table.get("rows")
+            if inline_rows and len(inline_rows) > 0:
+                import pandas as pd
+                df = pd.DataFrame(inline_rows)
+            else:
+                _logger.warning("Could not read table %s for summary: %s", table_name, exc)
+                from data_formulator.error_handler import collect_stream_warning
+                collect_stream_warning(
+                    f"Table '{table_name}' data unavailable — it may have been removed or renamed",
+                    message_code="TABLE_READ_FAILED",
+                )
+                return f"## {table_name_prefix} {idx + 1}: {table_name}\n- ⚠ Table data unavailable (may have been removed or renamed)"
 
-        data_file_path = workspace.get_relative_data_file_path(table_name)
+        try:
+            data_file_path = workspace.get_relative_data_file_path(table_name)
+        except (FileNotFoundError, KeyError):
+            data_file_path = "(in-memory)"
 
         num_rows = len(df)
         num_cols = len(df.columns)
@@ -426,6 +540,9 @@ def generate_data_summary(
 
         if description:
             sections.append(f"### Description\n{description}\n")
+        extra_lines = table_extra_cache.get(table_name, [])
+        if extra_lines:
+            sections.append("### Catalog Metadata\n" + "\n".join(f"- {line}" for line in extra_lines) + "\n")
 
         col_descs = col_desc_cache.get(table_name, {})
         fields_summary = '\n'.join([

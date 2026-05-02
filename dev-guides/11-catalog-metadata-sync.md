@@ -15,11 +15,26 @@ catalog_merge.py                — 运行时合并（用户标注优先）
 
 ### 数据流
 
-1. 用户连接或点击刷新 → 前端调用 `POST /sync-catalog-metadata`
+**用户点击刷新（sync）：**
+1. 前端调用 `POST /sync-catalog-metadata`
 2. 后端调用 `loader.sync_catalog_metadata()` → 返回增强的表列表
-3. 结果写入 `catalog_cache/` 并作为完整树返回给前端
-4. 前端将完整树存入 React state；节点展开为纯本地操作
-5. Agent 通过 `search_data_tables` → `read_catalog_metadata` 进行数据发现
+3. 结果以 `mode="replace"` 写入 `catalog_cache/`
+4. 后端将 cache 与 `catalog_annotations` 运行时合并
+5. 合并后的完整树**直接返回给前端**（前端不再二次调用 `GET_CATALOG_TREE`）
+
+**页面重载/普通展开（tree）：**
+1. 前端调用 `POST /get-catalog-tree`
+2. 后端**优先读 `catalog_cache`**，如有则合并 annotations 后返回
+3. 无 cache 时降级调用 `loader.list_tables()`，但**不写入 cache**
+4. 前端将轻量树存入 React state
+
+**首次连接（connect）：**
+1. 后端调用 `loader.list_tables()` 获取轻量表信息
+2. 以 `mode="seed_if_missing"` 写入 cache — **仅在无 cache 时写入**，不覆盖已有富数据
+
+**Agent 数据发现：**
+1. `search_data_tables` 搜索 workspace + cache（返回 `source_id`/`table_key`）
+2. `read_catalog_metadata` 读取 cache + annotations 的 merged view
 
 ### 身份隔离
 
@@ -42,14 +57,31 @@ catalog_merge.py                — 运行时合并（用户标注优先）
 | `py-src/.../datalake/catalog_merge.py` | 运行时合并：`display_description = user \|\| source` |
 | `py-src/.../data_connector.py` | API 端点：sync、PATCH/GET annotations |
 | `py-src/.../agents/context.py` | `handle_read_catalog_metadata()` + `handle_search_data_tables()` |
-| `src/views/DataSourceSidebar.tsx` | 前端：sync API + 本地树渲染 |
+| `py-src/.../agents/agent_utils.py` | `build_catalog_metadata_lookups()` — Agent 上下文自动注入 |
+| `src/views/DataSourceSidebar.tsx` | 前端：sync API + 本地树渲染 + 标注弹窗 |
+| `src/components/VirtualizedCatalogTree.tsx` | 虚拟化树渲染 + merged tooltip + 标注提示图标 |
 | `src/app/utils.tsx` | `CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA` / `CATALOG_ANNOTATIONS` |
+
+## 缓存写入边界
+
+`save_catalog()` 支持两种写入模式：
+
+| 模式 | 行为 | 使用场景 |
+|------|------|---------|
+| `"replace"` (默认) | 无条件覆盖 cache 文件 | `sync-catalog-metadata`（用户点击刷新） |
+| `"seed_if_missing"` | 仅在文件不存在时写入 | `connect`（首次连接时种子 cache） |
+
+**核心原则：** `GET_CATALOG_TREE`（浏览接口）**不写 cache**。只有 sync（刷新）和
+connect（首次种子）才写入。这防止轻量 `list_tables()` 的结果覆盖 sync 拉到的富
+metadata（columns、source_metadata_status 等）。
 
 ## API 端点
 
 | 端点 | 方法 | 用途 |
 |------|------|------|
-| `/api/connectors/sync-catalog-metadata` | POST | 全量 metadata 同步 → 返回目录树 + 同步摘要 |
+| `/api/connectors/sync-catalog-metadata` | POST | 全量 metadata 同步 → 直接返回 merged 目录树 + 同步摘要 |
+| `/api/connectors/get-catalog-tree` | POST | 浏览树（优先读 cache，不写 cache） |
+| `/api/connectors/get-cached-catalog-tree` | POST | 纯读 cache + annotations（页面重载） |
 | `/api/connectors/catalog-annotations` | PATCH | 单表标注 patch，乐观并发控制 |
 | `/api/connectors/catalog-annotations` | GET | 读取某个数据源的所有标注 |
 
@@ -131,12 +163,12 @@ catalog_merge.py                — 运行时合并（用户标注优先）
 
 ### source_metadata_status 枚举
 
-| 值 | 含义 |
-|----|------|
-| `"synced"` | 已完整同步（表描述 + 列信息） |
-| `"partial"` | 部分成功（如表描述有但列信息拉取失败） |
-| `"unavailable"` | metadata 获取完全失败，仅有 `list_tables` 级别的基础信息 |
-| `"not_synced"` | 从未执行过全量同步（仅有轻量 `list_tables` 结果） |
+| 值 | 含义 | 典型场景 |
+|----|------|---------|
+| `"synced"` | 已完整同步（表描述 + 列信息） | SQL loader 从 info_schema 拿到列；Superset 列 API 返回数据 |
+| `"partial"` | 部分成功（有描述但列信息为空或缺失） | Superset 列 API 返回空列表；SQL 表存在但无列 |
+| `"unavailable"` | metadata 获取完全失败（API 错误） | 网络超时、认证失败 |
+| `"not_synced"` | 从未执行过全量同步（仅有轻量 `list_tables` 结果） | 初始连接后未点刷新 |
 
 ## table_key 契约
 
@@ -283,8 +315,8 @@ def sync_catalog_metadata(self, table_filter=None):
 │                                                                       │
 │ 点击刷新按钮      → POST /api/connectors/sync-catalog-metadata        │
 │                    (全量拉取远端 metadata，更新磁盘缓存)               │
-│                    完成后 → POST /api/connectors/get-catalog-tree      │
-│                    前端: 重新加载轻量树到 state                        │
+│                    后端直接返回 merged tree（不再二次调 tree 接口）     │
+│                    前端: 直接将返回的 tree 存入 state                  │
 │                                                                       │
 │ 展开/收起文件夹   → 纯前端操作，更新 treeExpanded state，零网络请求    │
 │                                                                       │
@@ -311,18 +343,23 @@ def sync_catalog_metadata(self, table_filter=None):
 
 ### 数据结构
 
-`GET_CATALOG_TREE` 返回的树节点（`CatalogTreeNode`）：
+`GET_CATALOG_TREE` 和 `SYNC_CATALOG_METADATA` 返回的树节点（`CatalogTreeNode`）：
 
 ```typescript
 {
     name: string;           // 显示名
     node_type: 'namespace' | 'table' | 'table_group';
     path: string[];         // 从根到当前节点的路径
-    metadata: {             // 轻量 metadata
+    metadata: {             // 轻量 merged metadata
         _source_name?: string;
         dataset_id?: number;
         row_count?: number;
-        description?: string;
+        description?: string;          // 等同 display_description
+        source_description?: string;   // 远端系统描述（只读）
+        user_description?: string;     // 用户标注描述
+        display_description?: string;  // = user_description || source_description
+        notes?: string;                // 用户备注
+        tags?: string[];               // 用户标签
         source_metadata_status?: string;
         // 注意：不含 columns（轻量版）
     } | null;
@@ -379,11 +416,26 @@ onExpandedChange={(newIds) => {
 
 | 工具 | 层级 | 输入 | 输出 |
 |------|------|------|------|
-| `search_data_tables` | Search | keyword + scope | 候选列表：名称、描述、匹配列、分数、匹配原因 |
-| `read_catalog_metadata` | Read | source_id + table_key | 完整 merged metadata：列、类型、描述、schema、row_count |
-| `inspect_source_data` | Data | table_names（仅已导入） | Parquet schema、样例行、统计信息 |
+| `search_data_tables` | Search | keyword + scope | 候选列表：名称、描述、匹配列 + **source_id/table_key**（not-imported） |
+| `read_catalog_metadata` | Read | source_id + table_key + workspace | 完整 merged metadata：列、类型、描述、schema、row_count |
+| `inspect_source_data` | Data | table_names + workspace（仅已导入） | Parquet schema、样例行、统计信息 |
 
 工作流：搜索 → 读取 metadata → （需要时导入） → 检查数据。
+
+### Agent 上下文自动注入
+
+Agent 构建数据摘要时（`generate_data_summary`、`build_lightweight_table_context`），
+会自动通过 `build_catalog_metadata_lookups(workspace)` 将 merged catalog 元数据
+注入到上下文中。该函数：
+
+1. 从 `workspace.user_home` 自动解析用户目录（无需外部传参）
+2. 加载所有 source 的 `catalog_cache` 和 `catalog_annotations`
+3. 按 `table_key` / `_source_name` / `name` 匹配 workspace 中的表
+4. 提取 `display_description`、列描述、notes、tags 叠加到 LLM 上下文
+
+**设计原则：** `user_home` 不通过函数参数传播。`Workspace` 对象持有 `_identity_id`，
+通过 `user_home` property 自动派生用户目录。所有需要 catalog 数据的函数从
+workspace 内部获取，调用方无需关心存储路径。
 
 ## 错误码
 

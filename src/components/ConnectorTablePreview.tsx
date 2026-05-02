@@ -12,13 +12,14 @@
  * sort controls, DataFrameTable, and Load / Already-Loaded footer.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Autocomplete,
     Box,
     Button,
     CircularProgress,
+    Collapse,
     IconButton,
     MenuItem,
     Stack,
@@ -32,6 +33,8 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckIcon from '@mui/icons-material/Check';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 
 import { DataFrameTable } from '../views/DataFrameTable';
 import { RowLimitUnderlineSelect } from './RowLimitUnderlineSelect';
@@ -45,6 +48,11 @@ export interface ColumnMeta {
     type: string;
     source_type?: string;
     description?: string;
+    source_description?: string;
+    user_description?: string;
+    display_description?: string;
+    verbose_name?: string;
+    expression?: string;
 }
 
 export interface PreviewFilter {
@@ -66,8 +74,14 @@ export interface ConnectorTablePreviewProps {
     sourceTable: SourceTableRef;
     displayName: string;
     pathBreadcrumb?: string;
-    /** Table-level description from the source system. */
+    /** Effective table-level description shown to users. */
     tableDescription?: string;
+    /** Original source-system table description, before user annotation override. */
+    sourceDescription?: string;
+    /** User annotation description, if present. */
+    userDescription?: string;
+    /** Source metadata sync status (synced, partial, unavailable, not_synced). */
+    metadataStatus?: string;
 
     columns: ColumnMeta[];
     sampleRows: Record<string, any>[];
@@ -146,6 +160,9 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     displayName,
     pathBreadcrumb,
     tableDescription,
+    sourceDescription,
+    userDescription,
+    metadataStatus,
     columns,
     sampleRows,
     rowCount,
@@ -176,8 +193,14 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
 
     // Preview refresh loading (separate from parent loading)
     const [refreshing, setRefreshing] = useState(false);
+    const [metadataExpanded, setMetadataExpanded] = useState(false);
 
     const isLoading = loading || refreshing;
+    const effectiveDesc = (tableDescription || sourceDescription || '').trim();
+    const statusLabel = metadataStatus
+        ? t(`connectorPreview.metadataStatus.${metadataStatus}`, { defaultValue: metadataStatus })
+        : '';
+    const hasMetadataRow = Boolean(effectiveDesc || metadataStatus || columns.length > 0);
 
     // ── Operator definitions ─────────────────────────────────────────────
 
@@ -257,6 +280,12 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
 
     const handleRefreshPreview = useCallback(() => {
         const validFilters = coerceFilters(filters, columns);
+        const opts: Record<string, any> = { size: 10 };
+        if (validFilters.length > 0) opts.source_filters = validFilters;
+        if (sortColumn) {
+            opts.sort_columns = [sortColumn];
+            opts.sort_order = sortOrder;
+        }
         setRefreshing(true);
         apiRequest<any>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
             method: 'POST',
@@ -264,10 +293,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
             body: JSON.stringify({
                 connector_id: connectorId,
                 source_table: sourceTable,
-                import_options: {
-                    size: 10,
-                    source_filters: validFilters.length > 0 ? validFilters : undefined,
-                },
+                import_options: opts,
             }),
         })
             .then(({ data }) => {
@@ -277,7 +303,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
             })
             .catch(() => { /* best-effort */ })
             .finally(() => setRefreshing(false));
-    }, [filters, columns, connectorId, sourceTable, onRefreshPreview]);
+    }, [filters, columns, connectorId, sourceTable, sortColumn, sortOrder, onRefreshPreview]);
 
     // ── Load handler ─────────────────────────────────────────────────────
 
@@ -288,8 +314,8 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
             opts.source_filters = validFilters;
         }
         if (sortColumn) {
-            opts.sortColumns = [sortColumn];
-            opts.sortOrder = sortOrder;
+            opts.sort_columns = [sortColumn];
+            opts.sort_order = sortOrder;
         }
         onLoad(opts);
     }, [rowLimit, filters, columns, sortColumn, sortOrder, onLoad]);
@@ -439,11 +465,6 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     {pathBreadcrumb && (
                         <Typography sx={{ fontSize: 11, color: 'text.disabled' }} noWrap>{pathBreadcrumb}</Typography>
                     )}
-                    {tableDescription && (
-                        <Typography sx={{ fontSize: 11, color: 'text.secondary', fontStyle: 'italic', mt: 0.25 }} noWrap>
-                            {tableDescription}
-                        </Typography>
-                    )}
                     {rowCount != null && (
                         <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
                             {t('connectorPreview.rowCount', { count: Number(rowCount).toLocaleString(), defaultValue: '{{count}} rows' })}
@@ -469,6 +490,114 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     </Box>
                 )}
             </Box>
+
+            {hasMetadataRow && (
+                <Box sx={{ flexShrink: 0 }}>
+                    <Box
+                        onClick={() => setMetadataExpanded(v => !v)}
+                        sx={{
+                            display: 'flex', alignItems: 'center', gap: 0.5,
+                            py: 0.25, cursor: 'pointer', userSelect: 'none',
+                            '&:hover': { bgcolor: 'action.hover' },
+                        }}
+                    >
+                        {metadataExpanded
+                            ? <KeyboardArrowDownIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                            : <KeyboardArrowRightIcon sx={{ fontSize: 14, color: 'text.disabled' }} />}
+                        <Typography noWrap sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', flex: 1 }}>
+                            {t('connectorPreview.sourceMetadata')}
+                        </Typography>
+                        {statusLabel && (
+                            <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
+                                {statusLabel}
+                            </Typography>
+                        )}
+                        {columns.length > 0 && (
+                            <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
+                                · {columns.length} {t('connectorPreview.columnsCount', { defaultValue: 'columns' })}
+                            </Typography>
+                        )}
+                    </Box>
+                    <Collapse in={metadataExpanded}>
+                        <Box sx={{ pl: 2.5, pb: 0.5 }}>
+                            {effectiveDesc && (
+                                <Typography sx={{ fontSize: 10.5, color: 'text.secondary', whiteSpace: 'pre-wrap', mb: 0.5 }}>
+                                    {effectiveDesc}
+                                </Typography>
+                            )}
+                            {columns.length > 0 ? (
+                                <Box
+                                    component="table"
+                                    sx={{
+                                        width: '100%',
+                                        borderCollapse: 'collapse',
+                                        fontSize: 10.5,
+                                        maxHeight: 200,
+                                        display: 'block',
+                                        overflowY: 'auto',
+                                        '& th, & td': {
+                                            px: 0.75, py: '3px',
+                                            borderBottom: '1px solid',
+                                            borderColor: 'divider',
+                                            textAlign: 'left',
+                                            whiteSpace: 'nowrap',
+                                        },
+                                        '& th': {
+                                            fontWeight: 600,
+                                            color: 'text.secondary',
+                                            bgcolor: 'action.hover',
+                                            position: 'sticky',
+                                            top: 0,
+                                            zIndex: 1,
+                                        },
+                                        '& td': { color: 'text.secondary' },
+                                        '& tr:nth-of-type(even) td': { bgcolor: 'action.hover' },
+                                    }}
+                                >
+                                    <thead>
+                                        <tr>
+                                            <Box component="th" sx={{ width: 28 }}>#</Box>
+                                            <th>{t('connectorPreview.colName', { defaultValue: 'Column' })}</th>
+                                            <th>{t('connectorPreview.colType', { defaultValue: 'Type' })}</th>
+                                            <th>{t('connectorPreview.colDesc', { defaultValue: 'Description' })}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {columns.map((col, i) => {
+                                            const desc = col.display_description || col.description || col.source_description || '';
+                                            const label = col.verbose_name && col.verbose_name !== col.name ? col.verbose_name : '';
+                                            return (
+                                                <tr key={col.name}>
+                                                    <Box component="td" sx={{ color: 'text.disabled', width: 28 }}>{i + 1}</Box>
+                                                    <td>
+                                                        <Box component="span" sx={{ fontWeight: 600 }}>{col.name}</Box>
+                                                        {label && (
+                                                            <Box component="span" sx={{ color: 'text.disabled', ml: 0.5 }}>({label})</Box>
+                                                        )}
+                                                    </td>
+                                                    <Box component="td" sx={{ color: 'text.disabled' }}>{col.type}</Box>
+                                                    <Box component="td" sx={{ whiteSpace: 'normal', maxWidth: 220 }}>
+                                                        {desc || <Box component="span" sx={{ color: 'text.disabled' }}>—</Box>}
+                                                        {col.expression && (
+                                                            <Box component="div" sx={{ fontSize: 9.5, color: 'text.disabled', fontFamily: 'monospace', mt: '1px' }}>
+                                                                {col.expression}
+                                                            </Box>
+                                                        )}
+                                                    </Box>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </Box>
+                            ) : !effectiveDesc && (
+                                <Typography sx={{ fontSize: 10.5, color: 'text.disabled', fontStyle: 'italic' }}>
+                                    {t('connectorPreview.noSourceMetadata')}
+                                </Typography>
+                            )}
+                        </Box>
+                    </Collapse>
+                </Box>
+            )}
 
             {/* Filter conditions */}
             {enableFilters && columns.length > 0 && !alreadyLoaded && (

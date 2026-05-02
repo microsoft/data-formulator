@@ -18,8 +18,8 @@ from data_formulator.datalake.workspace_metadata import (
 from data_formulator.data_loader.external_data_loader import (
     _merge_source_metadata,
     infer_source_metadata_status,
-    SOURCE_METADATA_OK,
     SOURCE_METADATA_PARTIAL,
+    SOURCE_METADATA_SYNCED,
     SOURCE_METADATA_UNAVAILABLE,
 )
 
@@ -332,20 +332,20 @@ class TestInferSourceMetadataStatus:
     def test_empty_metadata_returns_unavailable(self):
         assert infer_source_metadata_status({}) == SOURCE_METADATA_UNAVAILABLE
 
-    def test_table_desc_only_returns_partial(self):
+    def test_columns_without_descriptions_returns_synced(self):
         meta = {"description": "Order table", "columns": [{"name": "id"}]}
-        assert infer_source_metadata_status(meta) == SOURCE_METADATA_PARTIAL
+        assert infer_source_metadata_status(meta) == SOURCE_METADATA_SYNCED
 
-    def test_col_desc_only_returns_partial(self):
+    def test_columns_with_description_returns_synced(self):
         meta = {"columns": [{"name": "id", "description": "Primary key"}]}
-        assert infer_source_metadata_status(meta) == SOURCE_METADATA_PARTIAL
+        assert infer_source_metadata_status(meta) == SOURCE_METADATA_SYNCED
 
-    def test_both_descs_returns_ok(self):
+    def test_both_table_and_column_metadata_returns_synced(self):
         meta = {
             "description": "Order table",
             "columns": [{"name": "id", "description": "PK"}],
         }
-        assert infer_source_metadata_status(meta) == SOURCE_METADATA_OK
+        assert infer_source_metadata_status(meta) == SOURCE_METADATA_SYNCED
 
     def test_explicit_status_overrides_inference(self):
         meta = {"source_metadata_status": "unavailable", "description": "Override"}
@@ -353,6 +353,10 @@ class TestInferSourceMetadataStatus:
 
     def test_no_columns_key_returns_partial_with_desc(self):
         meta = {"description": "Table only"}
+        assert infer_source_metadata_status(meta) == SOURCE_METADATA_PARTIAL
+
+    def test_empty_columns_returns_partial(self):
+        meta = {"description": "Known empty columns", "columns": []}
         assert infer_source_metadata_status(meta) == SOURCE_METADATA_PARTIAL
 
 
@@ -401,8 +405,8 @@ class TestCatalogTreeMetadataStatus:
         tree = loader._tables_to_catalog_tree(tables)
         orders = next(n for n in tree if n["name"] == "orders")
         bare = next(n for n in tree if n["name"] == "bare_table")
-        assert orders["metadata"]["source_metadata_status"] == SOURCE_METADATA_OK
-        assert bare["metadata"]["source_metadata_status"] == SOURCE_METADATA_UNAVAILABLE
+        assert orders["metadata"]["source_metadata_status"] == SOURCE_METADATA_SYNCED
+        assert bare["metadata"]["source_metadata_status"] == SOURCE_METADATA_SYNCED
 
     def test_explicit_status_preserved_in_tree(self):
         loader = self._make_loader()

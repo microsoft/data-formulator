@@ -362,7 +362,19 @@
     "noPreviewAvailable": "暂无预览数据",
     "loaded": "已加载",
     "unload": "卸载",
-    "loadTable": "加载表"
+    "loadTable": "加载表",
+    "sourceMetadata": "源元数据",
+    "noSourceMetadata": "暂无源元数据",
+    "columnsCount": "列",
+    "colName": "列名",
+    "colType": "类型",
+    "colDesc": "描述",
+    "metadataStatus": {
+      "synced": "已同步",
+      "partial": "不完整",
+      "unavailable": "不可用",
+      "not_synced": "未同步"
+    }
   },
   "dataThread": {
     "title": "数据线程",
@@ -704,6 +716,7 @@
     "sessionDeleted": "会话已删除",
     "failedDeleteSession": "删除会话失败",
     "loadedTable": "已加载表「{{name}}」",
+    "loadedTableTruncated": "已加载「{{name}}」的 {{count}} 行（达到行数上限，源数据可能还有更多行）",
     "failedLoadTable": "加载「{{name}}」失败：{{error}}",
     "refreshedTable": "已刷新「{{name}}」",
     "currentSession": "当前会话",
@@ -748,6 +761,11 @@
     "editAnnotationTitle": "编辑表标注",
     "annotationDescription": "描述",
     "annotationNotes": "备注",
+    "sourceDescription": "源系统说明",
+    "effectiveDescription": "AI 使用的说明",
+    "noSourceDescription": "源系统暂无说明",
+    "noEffectiveDescription": "暂无可用说明",
+    "userAnnotationAvailable": "已有用户标注",
     "saving": "保存中..."
   },
   "knowledge": {

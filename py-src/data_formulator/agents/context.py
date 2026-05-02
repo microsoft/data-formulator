@@ -12,6 +12,7 @@ import logging
 from typing import Any
 
 from data_formulator.agents.agent_utils import (
+    build_catalog_metadata_lookups,
     format_dataframe_sample_with_budget,
     generate_data_summary,
     get_field_summary,
@@ -113,6 +114,14 @@ def build_lightweight_table_context(
     [PRIMARY TABLE(S)] and [OTHER AVAILABLE TABLES] sections.
     """
     table_desc_cache, col_desc_cache = _get_workspace_metadata_lookups(workspace)
+    table_extra_cache: dict[str, list[str]] = {}
+    catalog_table_descs, catalog_col_descs, catalog_extras = build_catalog_metadata_lookups(
+        workspace,
+    )
+    table_desc_cache.update(catalog_table_descs)
+    for table_name, descs in catalog_col_descs.items():
+        col_desc_cache.setdefault(table_name, {}).update(descs)
+    table_extra_cache.update(catalog_extras)
 
     def _table_section(table: dict[str, Any]) -> str:
         table_name = table['name']
@@ -138,6 +147,9 @@ def build_lightweight_table_context(
 
             if description:
                 lines.append(f"  Description: {description}")
+            extra_lines = table_extra_cache.get(table_name, [])
+            for extra in extra_lines:
+                lines.append(f"  {extra}")
 
             if len(df.columns) > 0:
                 field_lines = [
@@ -259,20 +271,19 @@ def handle_search_data_tables(
     query: str,
     scope: str,
     workspace: Any,
-    user_home: str | None = None,
 ) -> str:
     """Handle a search_data_tables tool call.
 
     Combines workspace metadata search (layer 1) and disk catalog cache
     search (layer 2) into a single Level 0 result set.
 
-    Args:
-        user_home: Path to the user's home directory (``get_user_home(identity)``).
-            Catalog cache files live under ``<user_home>/catalog_cache/``.
+    The user home directory is resolved from ``workspace.user_home``
+    automatically; catalog cache files live under ``<user_home>/catalog_cache/``.
 
     Returns a text summary suitable for LLM consumption.  Results are
     capped to keep context usage low (~3K tokens).
     """
+    user_home = getattr(workspace, "user_home", None)
     if not query or not query.strip():
         return "Please provide a search keyword."
 
@@ -322,6 +333,8 @@ def handle_search_data_tables(
             for hit in cache_hits:
                 results.append({
                     "source": hit.get("source_id", "connected"),
+                    "source_id": hit.get("source_id", ""),
+                    "table_key": hit.get("table_key", ""),
                     "name": hit["name"],
                     "description": (hit.get("description") or "")[:120],
                     "matched_columns": hit.get("matched_columns", []),
@@ -342,6 +355,8 @@ def handle_search_data_tables(
         if r["matched_columns"]:
             line += f"  (matched columns: {', '.join(r['matched_columns'][:5])})"
         line += f"  [{r['status']}]"
+        if r.get("source_id") and r.get("table_key"):
+            line += f"  {{source_id: {r['source_id']}, table_key: {r['table_key']}}}"
         lines.append(line)
 
     text = "\n".join(lines)
@@ -351,17 +366,20 @@ def handle_search_data_tables(
 def handle_read_catalog_metadata(
     source_id: str,
     table_key: str,
-    user_home: str | None = None,
+    workspace: Any = None,
 ) -> str:
     """Handle a read_catalog_metadata tool call.
 
     Reads the cached catalog entry and overlays user annotations to
     produce a merged metadata view for the LLM.  Returns a text
     summary safe for LLM consumption (no credentials or internal paths).
+
+    The user home directory is resolved from ``workspace.user_home``.
     """
     if not source_id or not table_key:
         return "Both source_id and table_key are required."
 
+    user_home = getattr(workspace, "user_home", None) if workspace else None
     if not user_home:
         return "Cannot read catalog metadata: user home not available."
 

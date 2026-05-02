@@ -213,6 +213,65 @@ class TestSummarySystemDescriptionFallback:
         assert "System description from source" in result
 
 
+# ── build_catalog_metadata_lookups via workspace.user_home ────────────
+
+class TestCatalogMetadataLookups:
+    """Verify that build_catalog_metadata_lookups resolves user_home from workspace."""
+
+    def test_lookups_use_workspace_user_home(self):
+        """Catalog descriptions injected into summary when workspace.user_home is set."""
+        from data_formulator.agents.agent_utils import build_catalog_metadata_lookups
+        from data_formulator.datalake.catalog_cache import save_catalog
+        from data_formulator.datalake.catalog_annotations import patch_annotation
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            save_catalog(tmp_path, "pg", [
+                {"name": "daily_sales", "table_key": "ds-1",
+                 "metadata": {
+                     "description": "Source sales table",
+                     "columns": [
+                         {"name": "amount", "description": "Transaction amount"},
+                     ],
+                 }},
+            ])
+            patch_annotation(tmp_path, "pg", "ds-1", {
+                "description": "Enriched sales with notes",
+                "notes": "Used for monthly reporting",
+                "tags": ["finance", "kpi"],
+            }, expected_version=0)
+
+            ws = MagicMock()
+            ws.user_home = tmp_path
+
+            ws_meta = WorkspaceMetadata.create_new()
+            ws_meta.add_table(TableMetadata(
+                name="daily_sales",
+                source_type="data_loader",
+                filename="daily_sales.parquet",
+                file_type="parquet",
+                created_at=datetime.now(timezone.utc),
+                source_table="daily_sales",
+            ))
+            ws.get_metadata.return_value = ws_meta
+
+            table_descs, col_descs, extras = build_catalog_metadata_lookups(ws)
+            assert "daily_sales" in table_descs
+            assert "Enriched" in table_descs["daily_sales"]
+            assert "amount" in col_descs.get("daily_sales", {})
+            assert any("finance" in e for e in extras.get("daily_sales", []))
+
+    def test_lookups_graceful_without_user_home(self):
+        """Returns empty dicts when workspace has no user_home."""
+        from data_formulator.agents.agent_utils import build_catalog_metadata_lookups
+
+        ws = MagicMock(spec=[])
+        table_descs, col_descs, extras = build_catalog_metadata_lookups(ws)
+        assert table_descs == {}
+        assert col_descs == {}
+        assert extras == {}
+
+
 # ── handle_search_data_tables ─────────────────────────────────────────
 
 class TestSearchDataTablesTool:
@@ -255,12 +314,65 @@ class TestSearchDataTablesTool:
             ws.get_metadata.return_value = ws_meta
 
             save_catalog(tmp, "pg", [
-                {"name": "remote_orders", "metadata": {"description": "Remote order data", "columns": []}},
+                {"name": "remote_orders", "table_key": "uuid-remote-1",
+                 "metadata": {"description": "Remote order data", "columns": []}},
             ])
 
-            result = handle_search_data_tables("order", "all", ws, user_home=tmp)
+            ws.user_home = Path(tmp)
+            result = handle_search_data_tables("order", "all", ws)
             assert "orders" in result
             assert "remote_orders" in result
+
+    def test_not_imported_results_include_source_id_and_table_key(self):
+        """Not-imported search results must include source_id and table_key for read_catalog_metadata."""
+        from data_formulator.agents.context import handle_search_data_tables
+        from data_formulator.datalake.catalog_cache import save_catalog
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = MagicMock()
+            ws.get_metadata.return_value = None
+
+            save_catalog(tmp, "superset_prod", [
+                {"name": "monthly_orders", "table_key": "uuid-42",
+                 "metadata": {"description": "Monthly order aggregation", "columns": []}},
+            ])
+
+            ws.user_home = Path(tmp)
+            result = handle_search_data_tables("order", "all", ws)
+            assert "source_id: superset_prod" in result
+            assert "table_key: uuid-42" in result
+
+    def test_search_then_read_catalog_metadata_roundtrip(self):
+        """search_data_tables output provides source_id/table_key for read_catalog_metadata."""
+        from data_formulator.agents.context import handle_search_data_tables, handle_read_catalog_metadata
+        from data_formulator.datalake.catalog_cache import save_catalog
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = MagicMock()
+            ws.get_metadata.return_value = None
+
+            save_catalog(tmp, "pg_analytics", [
+                {"name": "revenue_summary", "table_key": "rev-uuid-1",
+                 "metadata": {
+                     "description": "Monthly revenue rollup",
+                     "columns": [
+                         {"name": "month", "type": "DATE"},
+                         {"name": "total_revenue", "type": "DECIMAL"},
+                     ],
+                     "source_metadata_status": "synced",
+                 }},
+            ])
+
+            ws.user_home = Path(tmp)
+            search_result = handle_search_data_tables("revenue", "all", ws)
+            assert "source_id: pg_analytics" in search_result
+            assert "table_key: rev-uuid-1" in search_result
+
+            read_result = handle_read_catalog_metadata(
+                "pg_analytics", "rev-uuid-1", workspace=ws,
+            )
+            assert "revenue_summary" in read_result
+            assert "total_revenue" in read_result
+            assert "DECIMAL" in read_result
+            assert "synced" in read_result
 
     def test_empty_query_returns_message(self):
         from data_formulator.agents.context import handle_search_data_tables
@@ -281,7 +393,8 @@ class TestSearchDataTablesTool:
                     "columns": [{"name": "email"}],
                 }},
             ])
-            result = handle_search_data_tables("user", "all", ws, user_home=tmp)
+            ws.user_home = Path(tmp)
+            result = handle_search_data_tables("user", "all", ws)
             for sensitive in ("password", "api_key", "secret", "token", "connection_string"):
                 assert sensitive not in result.lower()
 

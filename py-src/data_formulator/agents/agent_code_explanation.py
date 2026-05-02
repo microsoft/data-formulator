@@ -147,7 +147,11 @@ class CodeExplanationAgent(object):
 
     def run(self, input_tables, code, n=1):
 
-        data_summary = generate_data_summary(input_tables, workspace=self.workspace, include_data_samples=True)
+        data_summary = generate_data_summary(
+            input_tables,
+            workspace=self.workspace,
+            include_data_samples=True,
+        )
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[CODE]\n\nhere is the transformation code: {code}\n\n[EXPLANATION]\n"
 

@@ -302,9 +302,9 @@ SOURCE_METADATA_NOT_SYNCED = "not_synced"
 def infer_source_metadata_status(metadata: dict[str, Any] | None) -> str:
     """Infer ``source_metadata_status`` from a catalog node's metadata dict.
 
-    Returns ``"ok"`` when both table description and at least one column
-    description are present, ``"partial"`` when only table or column info
-    exists, and ``"unavailable"`` otherwise.  Loaders may override the
+    Returns ``"synced"`` when column metadata is present, ``"partial"``
+    when only table-level metadata is available or the column list is known
+    to be empty, and ``"unavailable"`` otherwise. Loaders may override the
     status by setting ``source_metadata_status`` explicitly.
     """
     if not metadata:
@@ -312,11 +312,12 @@ def infer_source_metadata_status(metadata: dict[str, Any] | None) -> str:
     if "source_metadata_status" in metadata:
         return metadata["source_metadata_status"]
     has_table_desc = bool(metadata.get("description"))
-    columns = metadata.get("columns") or []
-    has_col_desc = any(c.get("description") for c in columns if isinstance(c, dict))
-    if has_table_desc and has_col_desc:
-        return SOURCE_METADATA_OK
-    if has_table_desc or has_col_desc:
+    if "columns" in metadata:
+        columns = metadata.get("columns") or []
+        if columns:
+            return SOURCE_METADATA_SYNCED
+        return SOURCE_METADATA_PARTIAL
+    if has_table_desc:
         return SOURCE_METADATA_PARTIAL
     return SOURCE_METADATA_UNAVAILABLE
 
