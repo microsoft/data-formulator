@@ -110,6 +110,67 @@ def _catalog_pagination_args(data: dict[str, Any]) -> tuple[int | None, int]:
     return min(limit, _MAX_CATALOG_PAGE_SIZE), max(0, offset)
 
 
+def _filter_catalog_tables(
+    tables: list[dict[str, Any]],
+    name_filter: str | None,
+) -> list[dict[str, Any]]:
+    """Filter flat catalog tables without querying the source again."""
+    needle = (name_filter or "").strip().lower()
+    if not needle:
+        return tables
+
+    def _matches(table: dict[str, Any]) -> bool:
+        meta = table.get("metadata") or {}
+        haystacks = [
+            table.get("name", ""),
+            " ".join(str(p) for p in table.get("path", []) if p is not None),
+            meta.get("description", ""),
+            meta.get("display_description", ""),
+            meta.get("source_description", ""),
+            meta.get("user_description", ""),
+        ]
+        return any(needle in str(value).lower() for value in haystacks if value)
+
+    return [table for table in tables if _matches(table)]
+
+
+def _lightweight_tree_for_response(tree: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop heavy metadata fields from a catalog tree response."""
+    result: list[dict[str, Any]] = []
+    for node in tree:
+        cloned = dict(node)
+        meta = cloned.get("metadata")
+        if isinstance(meta, dict):
+            cloned["metadata"] = {k: v for k, v in meta.items() if k != "columns"}
+        children = cloned.get("children")
+        if isinstance(children, list):
+            cloned["children"] = _lightweight_tree_for_response(children)
+        result.append(cloned)
+    return result
+
+
+def _merged_catalog_tables(
+    user_home: Path | str,
+    source_id: str,
+    flat_tables: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return cache tables overlaid with user annotations."""
+    from data_formulator.datalake.catalog_annotations import load_annotations
+    from data_formulator.datalake.catalog_merge import merge_catalog
+
+    annotations = load_annotations(Path(user_home), source_id)
+    return merge_catalog(flat_tables, annotations)
+
+
+def _catalog_tree_payload(
+    loader: ExternalDataLoader,
+    flat_tables: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build the lightweight tree sent to the frontend."""
+    tree = loader._tables_to_catalog_tree(flat_tables)
+    return _lightweight_tree_for_response(tree)
+
+
 def _user_connector_key(identity: str, source_id: str) -> str:
     """Return the internal registry key for a user-owned connector."""
     return f"{_USER_CONNECTOR_PREFIX}{identity}::{source_id}"
@@ -1088,15 +1149,19 @@ def connector_connect():
 
         safe = loader.get_safe_params()
 
-        # Best-effort: pull lightweight catalog and persist to disk for agent search.
-        # This uses list_tables() which only queries information_schema (fast).
+        # Best-effort: seed a lightweight catalog for agent search.
+        # Do not overwrite a richer sync-catalog-metadata snapshot.
         try:
             from data_formulator.datalake.catalog_cache import save_catalog
             from data_formulator.datalake.workspace import get_user_home
             identity_for_cache = source._get_identity()
             user_home = get_user_home(identity_for_cache)
             flat_tables = loader.list_tables()
-            save_catalog(user_home, source._source_id, flat_tables)
+            loader.ensure_table_keys(flat_tables)
+            save_catalog(
+                user_home, source._source_id, flat_tables,
+                mode="seed_if_missing",
+            )
         except Exception:
             logger.debug("Failed to save catalog cache on connect for '%s'",
                          source._source_id, exc_info=True)
@@ -1258,7 +1323,7 @@ def connector_get_catalog():
 
 @connectors_bp.route("/api/connectors/get-catalog-tree", methods=["POST"])
 def connector_get_catalog_tree():
-    """Build nested tree from ``list_tables()`` with full metadata."""
+    """Build nested tree from cache, falling back to live lightweight listing."""
     data = request.get_json() or {}
     source = _resolve_connector(data)
 
@@ -1266,21 +1331,22 @@ def connector_get_catalog_tree():
         loader = source._require_loader()
         name_filter = data.get("filter")
 
-        # Call list_tables() once, reuse for both tree building and cache
-        flat_tables = loader.list_tables(table_filter=name_filter)
-        loader.ensure_table_keys(flat_tables)
-        tree = loader._tables_to_catalog_tree(flat_tables)
+        from data_formulator.datalake.workspace import get_user_home
+        from data_formulator.datalake.catalog_cache import _load_catalog_raw
 
-        # Best-effort: persist lightweight catalog to disk for agent search
-        try:
-            from data_formulator.datalake.catalog_cache import save_catalog
-            from data_formulator.auth.identity import get_identity_id
-            from data_formulator.datalake.workspace import get_user_home
-            identity = get_identity_id()
-            user_home = get_user_home(identity)
-            save_catalog(user_home, source._source_id, flat_tables)
-        except Exception:
-            logger.debug("Failed to save catalog cache for '%s'", source._source_id, exc_info=True)
+        identity = source._get_identity()
+        user_home = get_user_home(identity)
+        raw = _load_catalog_raw(user_home, source._source_id)
+
+        if raw and raw.get("tables"):
+            flat_tables = _filter_catalog_tables(raw.get("tables", []), name_filter)
+            flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
+        else:
+            flat_tables = loader.list_tables(table_filter=name_filter)
+            loader.ensure_table_keys(flat_tables)
+            flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
+
+        tree = _catalog_tree_payload(loader, flat_tables)
 
         return json_ok({
             "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
@@ -1316,10 +1382,9 @@ def connector_get_cached_catalog_tree():
     source = _resolve_connector(data)
 
     try:
-        from data_formulator.auth.identity import get_identity_id
         from data_formulator.datalake.workspace import get_user_home
 
-        identity = get_identity_id()
+        identity = source._get_identity()
         user_home = get_user_home(identity)
         raw = _load_catalog_raw(user_home, source._source_id)
 
@@ -1331,7 +1396,8 @@ def connector_get_cached_catalog_tree():
             return json_ok({"cache_hit": False})
 
         loader = source._require_loader()
-        tree = loader._tables_to_catalog_tree(flat_tables)
+        flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
+        tree = _catalog_tree_payload(loader, flat_tables)
 
         return json_ok({
             "cache_hit": True,
@@ -1384,8 +1450,6 @@ def connector_sync_catalog_metadata():
                 retry=True,
             )
 
-        tree = loader._tables_to_catalog_tree(flat_tables)
-
         # Compute sync summary from per-table source_metadata_status
         summary = {"synced": 0, "partial": 0, "failed": 0, "total": len(flat_tables)}
         for t in flat_tables:
@@ -1397,19 +1461,23 @@ def connector_sync_catalog_metadata():
             elif status == "unavailable":
                 summary["failed"] += 1
 
+        merged_tables = flat_tables
+
         # Persist to catalog_cache for agent search
         try:
             from data_formulator.datalake.catalog_cache import save_catalog
-            from data_formulator.auth.identity import get_identity_id
             from data_formulator.datalake.workspace import get_user_home
-            identity = get_identity_id()
+            identity = source._get_identity()
             user_home = get_user_home(identity)
             save_catalog(user_home, source._source_id, flat_tables)
+            merged_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
         except Exception:
             logger.debug(
                 "Failed to save catalog cache for '%s'", source._source_id,
                 exc_info=True,
             )
+
+        tree = _catalog_tree_payload(loader, merged_tables)
 
         is_partial = summary["failed"] > 0 or summary["partial"] > 0
         if is_partial:
@@ -1723,6 +1791,10 @@ def connector_preview_data():
                         col_info["source_type"] = src.get("type", "")
                         if src.get("description"):
                             col_info["description"] = src["description"]
+                        if src.get("verbose_name"):
+                            col_info["verbose_name"] = src["verbose_name"]
+                        if src.get("expression"):
+                            col_info["expression"] = src["expression"]
                         if src.get("is_dttm"):
                             col_info["source_type"] = "TEMPORAL"
         except Exception:

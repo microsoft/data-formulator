@@ -186,7 +186,9 @@ class DataLoadAgent(object):
             [input_data],
             workspace=self.workspace,
             include_data_samples=True,
-            field_sample_size=30
+            field_sample_size=15,
+            row_sample_size=5,
+            sample_char_limit=4000,
         )
 
         user_query = f"[DATA]\n\n{data_summary}\n\n[OUTPUT]"

@@ -335,6 +335,8 @@ export const DBManagerPane: React.FC<{
                             setIsUploading(false);
                             if (status === "success") {
                                 setSystemMessage(message, "success");
+                            } else if (status === "warning") {
+                                setSystemMessage(message, "warning");
                             } else {
                                 setSystemMessage(message, "error");
                             }
@@ -427,7 +429,7 @@ const GroupLoadPanel: React.FC<{
     loadedKey?: string;
     onLoaded: (label: string) => void;
     onImport: () => void;
-    onFinish: (severity: "error" | "success", msg: string, tableIds?: string[]) => void;
+    onFinish: (severity: "error" | "success" | "warning", msg: string, tableIds?: string[]) => void;
 }> = ({ groupName, tables, rowLimitPresets, connectorId, loadedKey, onLoaded, onImport, onFinish }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
@@ -617,7 +619,7 @@ export const DataLoaderForm: React.FC<{
     delegatedLogin?: { login_url: string; label?: string } | null,
     authMode?: string,
     onImport: () => void,
-    onFinish: (status: "success" | "error", message: string, importedTables?: string[]) => void,
+    onFinish: (status: "success" | "error" | "warning", message: string, importedTables?: string[]) => void,
     onConnected?: () => void,
     /** Called when the user clicks Delete. Receives the connectorId. */
     onDelete?: (connectorId: string) => void,
@@ -1079,7 +1081,12 @@ export const DataLoaderForm: React.FC<{
         })).unwrap()
             .then((result) => {
                 setLoadedTables(prev => ({ ...prev, [pathKey]: label || 'loaded' }));
-                onFinish("success", `Loaded table "${ref.name}"`, [result.table.id]);
+                if (result.truncated) {
+                    const count = (result.originalRowCount ?? 0).toLocaleString();
+                    onFinish("warning", t('sidebar.loadedTableTruncated', { name: ref.name, count }), [result.table.id]);
+                } else {
+                    onFinish("success", `Loaded table "${ref.name}"`, [result.table.id]);
+                }
             })
             .catch((error) => {
                 console.error('Failed to load data:', error);
@@ -1363,8 +1370,21 @@ export const DataLoaderForm: React.FC<{
                                         sourceTable={ref}
                                         displayName={displayName}
                                         pathBreadcrumb={selectedTreeNode && selectedTreeNode.path.length > 1 ? selectedTreeNode.path.slice(0, -1).join(' / ') : undefined}
-                                        tableDescription={metadata?.description}
-                                        columns={(metadata.columns || []).map((c: any) => ({ name: c.name, type: c.type || 'unknown', source_type: c.source_type, description: c.description }))}
+                                        tableDescription={metadata?.display_description || metadata?.user_description || metadata?.description}
+                                        sourceDescription={metadata?.source_description || metadata?.description}
+                                        userDescription={metadata?.user_description}
+                                        metadataStatus={metadata?.source_metadata_status}
+                                        columns={(metadata.columns || []).map((c: any) => ({
+                                            name: c.name,
+                                            type: c.type || 'unknown',
+                                            source_type: c.source_type,
+                                            description: c.display_description || c.description,
+                                            source_description: c.source_description,
+                                            user_description: c.user_description,
+                                            display_description: c.display_description,
+                                            verbose_name: c.verbose_name,
+                                            expression: c.expression,
+                                        }))}
                                         sampleRows={previewTable.rows}
                                         rowCount={metadata?.row_count ?? null}
                                         loading={false}

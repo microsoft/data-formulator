@@ -463,7 +463,11 @@ class DataRecAgent(object):
         logger.info(f"[DataRecAgent] run start | tables={table_names} | primary={primary_tables}")
 
         # Generate data summary with file references
-        data_summary = generate_data_summary(input_tables, workspace=self.workspace, primary_tables=primary_tables)
+        data_summary = generate_data_summary(
+            input_tables,
+            workspace=self.workspace,
+            primary_tables=primary_tables,
+        )
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
         if len(prev_messages) > 0:

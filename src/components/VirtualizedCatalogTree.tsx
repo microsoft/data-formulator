@@ -144,7 +144,12 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
     const groupLoaded = isGroup ? loadedMap[itemId] : undefined;
     const childCount = isNamespace ? (node.children?.length ?? 0) : 0;
     const tableCount = isGroup ? (node.metadata?.tables?.length ?? 0) : 0;
-    const nodeDescription = (isTable || isGroup) ? (node.metadata?.description || '') : '';
+    const nodeDescription = (isTable || isGroup)
+        ? (node.metadata?.display_description || node.metadata?.description || '')
+        : '';
+    const hasUserAnnotation = Boolean(
+        node.metadata?.user_description || node.metadata?.notes || node.metadata?.tags?.length,
+    );
     const metaStatus = node.metadata?.source_metadata_status;
     const isSelected = selectedItemId === itemId;
 
@@ -209,6 +214,12 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                     </Typography>
                     {/* Loaded check */}
                     {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: 13, color: 'success.main', flexShrink: 0 }} />}
+                    {/* User annotation hint */}
+                    {isTable && hasUserAnnotation && (
+                        <Tooltip title={t('sidebar.userAnnotationAvailable')} placement="top">
+                            <InfoOutlinedIcon sx={{ fontSize: 12, color: 'primary.main', flexShrink: 0, opacity: 0.75 }} />
+                        </Tooltip>
+                    )}
                     {/* Metadata status hint */}
                     {isTable && metaStatus && metaStatus !== 'ok' && metaStatus !== 'synced' && (
                         <Tooltip title={metaStatus === 'partial' ? t('sidebar.metadataPartial') : t('sidebar.metadataUnavailable')} placement="top">

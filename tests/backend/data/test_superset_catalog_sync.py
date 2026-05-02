@@ -225,7 +225,7 @@ class TestSupersetSyncCatalogMetadata:
         assert len(broken) >= 1
         assert broken[0]["metadata"]["source_metadata_status"] == "unavailable"
 
-    def test_empty_columns_marks_unavailable(self):
+    def test_empty_columns_marks_partial(self):
         datasets = [
             {"id": 50, "table_name": "empty_cols", "uuid": "uuid-50",
              "database": {"database_name": "db"}},
@@ -233,7 +233,8 @@ class TestSupersetSyncCatalogMetadata:
         loader = _make_mock_loader(datasets=datasets, columns_by_id={50: []})
         result = loader.sync_catalog_metadata()
         entry = [t for t in result if t.get("table_key") == "uuid-50"]
-        assert entry[0]["metadata"]["source_metadata_status"] == "unavailable"
+        assert entry[0]["metadata"]["source_metadata_status"] == "partial"
+        assert entry[0]["metadata"]["columns"] == []
 
     def test_table_key_fallback_without_uuid(self):
         datasets = [

@@ -362,7 +362,19 @@
     "noPreviewAvailable": "No preview available",
     "loaded": "Loaded",
     "unload": "Unload",
-    "loadTable": "Load Table"
+    "loadTable": "Load Table",
+    "sourceMetadata": "Source metadata",
+    "noSourceMetadata": "No source metadata",
+    "columnsCount": "columns",
+    "colName": "Column",
+    "colType": "Type",
+    "colDesc": "Description",
+    "metadataStatus": {
+      "synced": "Synced",
+      "partial": "Partial",
+      "unavailable": "Unavailable",
+      "not_synced": "Not synced"
+    }
   },
   "dataThread": {
     "title": "Data Threads",
@@ -704,6 +716,7 @@
     "sessionDeleted": "Session deleted",
     "failedDeleteSession": "Failed to delete session",
     "loadedTable": "Loaded table \"{{name}}\"",
+    "loadedTableTruncated": "Loaded {{count}} rows from \"{{name}}\" (row limit reached, source may have more data)",
     "failedLoadTable": "Failed to load \"{{name}}\": {{error}}",
     "refreshedTable": "Refreshed \"{{name}}\"",
     "currentSession": "Current session",
@@ -748,6 +761,11 @@
     "editAnnotationTitle": "Edit table annotation",
     "annotationDescription": "Description",
     "annotationNotes": "Notes",
+    "sourceDescription": "Source system description",
+    "effectiveDescription": "Description used by AI",
+    "noSourceDescription": "No source description",
+    "noEffectiveDescription": "No description available",
+    "userAnnotationAvailable": "User annotation available",
     "saving": "Saving..."
   },
   "knowledge": {

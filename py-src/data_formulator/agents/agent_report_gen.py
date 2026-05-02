@@ -122,7 +122,7 @@ Guidelines:
 - For each chart, briefly explain what it shows and the key insight
 - Use chart embeds at appropriate places
 - Use markdown tables when you want to show specific data points
-- End with a **In summary** paragraph
+- End with a **In summary:** paragraph
 - Write in markdown, be concise, respect facts in the data
 - Adapt your style to the user's request (blog, executive summary, casual, etc.)
 - Do NOT make up facts or judgements beyond what the data shows
@@ -163,7 +163,7 @@ class ReportGenAgent:
         """
         # Build context
         context = build_lightweight_table_context(
-            input_tables, self.workspace, primary_tables=primary_tables
+            input_tables, self.workspace, primary_tables=primary_tables,
         )
         if focused_thread:
             context += "\n\n" + build_focused_thread_context(focused_thread)

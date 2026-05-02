@@ -153,6 +153,77 @@ class TestFieldSummaryWithDescription:
         line = get_field_summary("x", df, 5, column_description="Primary key")
         assert "(Primary key)" in line
 
+    def test_with_verbose_name(self):
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"order_id": [1, 2, 3]})
+        line = get_field_summary("order_id", df, 5, verbose_name="订单编号")
+        assert "[订单编号]" in line
+        assert "order_id [订单编号] -- type:" in line
+
+    def test_with_expression(self):
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"total": [100, 200]})
+        line = get_field_summary("total", df, 5, expression="SUM(line_items.amount)")
+        assert "[calc: SUM(line_items.amount)]" in line
+
+    def test_with_all_metadata(self):
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"amount": [10.5, 20.3]})
+        line = get_field_summary(
+            "amount", df, 5,
+            column_description="Transaction amount",
+            verbose_name="金额",
+            expression="SUM(payments.amount)",
+        )
+        assert "amount [金额] -- type:" in line
+        assert "(Transaction amount)" in line
+        assert "[calc: SUM(payments.amount)]" in line
+
+    def test_dual_source_descriptions_both_shown(self):
+        """When source and user descriptions differ, both are shown."""
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"amount": [10.5]})
+        line = get_field_summary(
+            "amount", df, 5,
+            column_description="fallback",
+            source_description="Order total from ERP",
+            user_description="Includes tax and shipping",
+        )
+        assert "source: Order total from ERP" in line
+        assert "user: Includes tax and shipping" in line
+        assert "fallback" not in line
+
+    def test_dual_source_same_uses_column_description(self):
+        """When source and user are identical, fall back to column_description."""
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"amount": [10.5]})
+        line = get_field_summary(
+            "amount", df, 5,
+            column_description="Same desc",
+            source_description="Same desc",
+            user_description="Same desc",
+        )
+        assert "(Same desc)" in line
+        assert "source:" not in line
+
+    def test_only_source_description(self):
+        """When only source_description exists, column_description is used."""
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"x": [1]})
+        line = get_field_summary(
+            "x", df, 5,
+            column_description="From source",
+            source_description="From source",
+        )
+        assert "(From source)" in line
+        assert "source:" not in line
+
 
 # ── generate_data_summary with system description fallback ───────────
 
@@ -213,6 +284,83 @@ class TestSummarySystemDescriptionFallback:
         assert "System description from source" in result
 
 
+# ── build_catalog_metadata_lookups via workspace.user_home ────────────
+
+class TestCatalogMetadataLookups:
+    """Verify that build_catalog_metadata_lookups resolves user_home from workspace."""
+
+    def test_lookups_use_workspace_user_home(self):
+        """Catalog descriptions injected into summary when workspace.user_home is set."""
+        from data_formulator.agents.agent_utils import build_catalog_metadata_lookups
+        from data_formulator.datalake.catalog_cache import save_catalog
+        from data_formulator.datalake.catalog_annotations import patch_annotation
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            save_catalog(tmp_path, "pg", [
+                {"name": "daily_sales", "table_key": "ds-1",
+                 "metadata": {
+                     "description": "Source sales table",
+                     "columns": [
+                         {"name": "amount", "description": "Transaction amount",
+                          "verbose_name": "金额", "expression": "SUM(line_items.amount)"},
+                         {"name": "order_id", "description": "Primary key",
+                          "verbose_name": "订单编号"},
+                     ],
+                 }},
+            ])
+            patch_annotation(tmp_path, "pg", "ds-1", {
+                "description": "Enriched sales with notes",
+                "notes": "Used for monthly reporting",
+                "tags": ["finance", "kpi"],
+                "columns": {
+                    "amount": {"description": "User: total including tax"},
+                },
+            }, expected_version=0)
+
+            ws = MagicMock()
+            ws.user_home = tmp_path
+
+            ws_meta = WorkspaceMetadata.create_new()
+            ws_meta.add_table(TableMetadata(
+                name="daily_sales",
+                source_type="data_loader",
+                filename="daily_sales.parquet",
+                file_type="parquet",
+                created_at=datetime.now(timezone.utc),
+                source_table="daily_sales",
+            ))
+            ws.get_metadata.return_value = ws_meta
+
+            table_descs, col_descs, extras, col_metas = build_catalog_metadata_lookups(ws)
+            assert "daily_sales" in table_descs
+            assert "Enriched" in table_descs["daily_sales"]
+            assert "amount" in col_descs.get("daily_sales", {})
+            assert any("finance" in e for e in extras.get("daily_sales", []))
+
+            assert "daily_sales" in col_metas
+            amount_meta = col_metas["daily_sales"].get("amount", {})
+            assert amount_meta.get("verbose_name") == "金额"
+            assert amount_meta.get("expression") == "SUM(line_items.amount)"
+            assert amount_meta.get("source_description") == "Transaction amount"
+            assert amount_meta.get("user_description") == "User: total including tax"
+            order_meta = col_metas["daily_sales"].get("order_id", {})
+            assert order_meta.get("verbose_name") == "订单编号"
+            assert order_meta.get("source_description") == "Primary key"
+            assert "expression" not in order_meta
+
+    def test_lookups_graceful_without_user_home(self):
+        """Returns empty dicts when workspace has no user_home."""
+        from data_formulator.agents.agent_utils import build_catalog_metadata_lookups
+
+        ws = MagicMock(spec=[])
+        table_descs, col_descs, extras, col_metas = build_catalog_metadata_lookups(ws)
+        assert table_descs == {}
+        assert col_descs == {}
+        assert extras == {}
+        assert col_metas == {}
+
+
 # ── handle_search_data_tables ─────────────────────────────────────────
 
 class TestSearchDataTablesTool:
@@ -255,12 +403,65 @@ class TestSearchDataTablesTool:
             ws.get_metadata.return_value = ws_meta
 
             save_catalog(tmp, "pg", [
-                {"name": "remote_orders", "metadata": {"description": "Remote order data", "columns": []}},
+                {"name": "remote_orders", "table_key": "uuid-remote-1",
+                 "metadata": {"description": "Remote order data", "columns": []}},
             ])
 
-            result = handle_search_data_tables("order", "all", ws, user_home=tmp)
+            ws.user_home = Path(tmp)
+            result = handle_search_data_tables("order", "all", ws)
             assert "orders" in result
             assert "remote_orders" in result
+
+    def test_not_imported_results_include_source_id_and_table_key(self):
+        """Not-imported search results must include source_id and table_key for read_catalog_metadata."""
+        from data_formulator.agents.context import handle_search_data_tables
+        from data_formulator.datalake.catalog_cache import save_catalog
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = MagicMock()
+            ws.get_metadata.return_value = None
+
+            save_catalog(tmp, "superset_prod", [
+                {"name": "monthly_orders", "table_key": "uuid-42",
+                 "metadata": {"description": "Monthly order aggregation", "columns": []}},
+            ])
+
+            ws.user_home = Path(tmp)
+            result = handle_search_data_tables("order", "all", ws)
+            assert "source_id: superset_prod" in result
+            assert "table_key: uuid-42" in result
+
+    def test_search_then_read_catalog_metadata_roundtrip(self):
+        """search_data_tables output provides source_id/table_key for read_catalog_metadata."""
+        from data_formulator.agents.context import handle_search_data_tables, handle_read_catalog_metadata
+        from data_formulator.datalake.catalog_cache import save_catalog
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = MagicMock()
+            ws.get_metadata.return_value = None
+
+            save_catalog(tmp, "pg_analytics", [
+                {"name": "revenue_summary", "table_key": "rev-uuid-1",
+                 "metadata": {
+                     "description": "Monthly revenue rollup",
+                     "columns": [
+                         {"name": "month", "type": "DATE"},
+                         {"name": "total_revenue", "type": "DECIMAL"},
+                     ],
+                     "source_metadata_status": "synced",
+                 }},
+            ])
+
+            ws.user_home = Path(tmp)
+            search_result = handle_search_data_tables("revenue", "all", ws)
+            assert "source_id: pg_analytics" in search_result
+            assert "table_key: rev-uuid-1" in search_result
+
+            read_result = handle_read_catalog_metadata(
+                "pg_analytics", "rev-uuid-1", workspace=ws,
+            )
+            assert "revenue_summary" in read_result
+            assert "total_revenue" in read_result
+            assert "DECIMAL" in read_result
+            assert "synced" in read_result
 
     def test_empty_query_returns_message(self):
         from data_formulator.agents.context import handle_search_data_tables
@@ -281,7 +482,8 @@ class TestSearchDataTablesTool:
                     "columns": [{"name": "email"}],
                 }},
             ])
-            result = handle_search_data_tables("user", "all", ws, user_home=tmp)
+            ws.user_home = Path(tmp)
+            result = handle_search_data_tables("user", "all", ws)
             for sensitive in ("password", "api_key", "secret", "token", "connection_string"):
                 assert sensitive not in result.lower()
 

@@ -50,7 +50,7 @@ class ChartInsightAgent(object):
         if input_tables and self.workspace:
             data_summary = generate_data_summary(
                 input_tables, workspace=self.workspace,
-                include_data_samples=True, row_sample_size=3
+                include_data_samples=True, row_sample_size=3,
             )
             context_parts.append(f"\nData summary:\n{data_summary}")
 

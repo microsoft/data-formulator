@@ -59,10 +59,23 @@ def save_catalog(
     workspace_root: Path | str,
     source_id: str,
     tables: list[dict[str, Any]],
+    *,
+    mode: str = "replace",
 ) -> None:
-    """Persist catalog data to disk. Best-effort — errors are logged, not raised."""
+    """Persist catalog data to disk. Best-effort — errors are logged, not raised.
+
+    ``mode="replace"`` stores a fresh source snapshot. ``mode="seed_if_missing"``
+    only writes when no cache exists, so lightweight list calls cannot downgrade
+    a richer sync-catalog-metadata snapshot.
+    """
     try:
         path = _cache_file(workspace_root, source_id, mkdir=True)
+        if mode == "seed_if_missing" and path.exists():
+            logger.debug("Catalog cache seed skipped; cache already exists: %s", path)
+            return
+        if mode not in ("replace", "seed_if_missing"):
+            logger.debug("Unknown catalog cache save mode %s for %s", mode, source_id)
+            mode = "replace"
         payload = {
             "source_id": source_id,
             "synced_at": datetime.now(timezone.utc).isoformat(),
@@ -276,9 +289,13 @@ def _search_duckdb(
                 ORDER BY base_score DESC
             """, [like_pat, like_pat, list(exclude)]).fetchall()
 
-            # Determine original source_id from file
+            # Determine original source_id and build table_key lookup from raw data
             raw = _load_catalog_raw(workspace_root, sid)
             original_source_id = raw.get("source_id", sid) if raw else sid
+            tkey_lookup = {
+                t.get("name", ""): t.get("table_key", "")
+                for t in (raw.get("tables", []) if raw else [])
+            }
 
             source_hits: list[dict[str, Any]] = []
             for tname, tdesc, cols_raw, base_score in rows:
@@ -300,6 +317,7 @@ def _search_duckdb(
                 if score > 0:
                     source_hits.append({
                         "source_id": original_source_id,
+                        "table_key": tkey_lookup.get(tname, ""),
                         "name": tname,
                         "description": tdesc,
                         "matched_columns": list(dict.fromkeys(matched_cols)),

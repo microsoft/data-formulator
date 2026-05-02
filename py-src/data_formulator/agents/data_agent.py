@@ -136,8 +136,10 @@ TOOLS = [
             "description": (
                 "Search for tables by keyword across workspace and connected "
                 "data sources. Returns Level 0 summaries: table name, one-line "
-                "description, and matched columns. Use inspect_source_data to "
-                "get full schema for specific tables."
+                "description, matched columns, and — for not-imported tables — "
+                "source_id and table_key needed by read_catalog_metadata. "
+                "Use inspect_source_data for imported tables, "
+                "read_catalog_metadata for not-imported candidates."
             ),
             "parameters": {
                 "type": "object",
@@ -261,12 +263,14 @@ You have tools you can call to gather data and share reasoning:
 - **inspect_source_data(table_names)** — get schema, stats, and sample rows
   for source tables (cheaper than explore for basic inspection).
 - **search_data_tables(query, scope)** — search for tables by keyword across
-  workspace and connected data sources.  Returns Level 0 summaries (name +
-  description + matched columns).  Use read_catalog_metadata to see full
-  metadata for not-imported candidates, or inspect_source_data for imported tables.
+  workspace and connected data sources.  Returns Level 0 summaries (name,
+  description, matched columns).  Not-imported results include ``source_id``
+  and ``table_key`` — pass them to read_catalog_metadata to see full details.
+  For imported tables, use inspect_source_data instead.
 - **read_catalog_metadata(source_id, table_key)** — read full cached metadata
-  for a specific table from a connected source (columns, types, descriptions,
-  schema, row count).  Use after search_data_tables finds a not-imported match.
+  for a specific not-imported table from a connected source (columns, types,
+  descriptions, schema, row count).  Only use with ``source_id`` and
+  ``table_key`` from search_data_tables results; do NOT fabricate these values.
 - **search_knowledge(query, categories?)** — search the user's knowledge base
   (rules, skills, experiences) for relevant entries.
 - **read_knowledge(category, path)** — read the full content of a knowledge entry.
@@ -281,6 +285,13 @@ produce your action.  Tools are NOT shown to the user.
 After gathering data (or immediately if the data is clear), output
 **exactly one action** as a JSON object in your text response.  Actions
 are shown to the user and end the current turn.
+
+⚠ **CRITICAL**: `visualize`, `clarify`, and `present` are **actions**,
+NOT tools.  Never call them via function/tool calling — they MUST appear
+as a JSON object in your **text reply**.  Only the items listed in the
+Tools section above (`explore`, `inspect_source_data`,
+`search_data_tables`, `read_catalog_metadata`, `search_knowledge`,
+`read_knowledge`, `think`) may be invoked as tool calls.
 
 ### `visualize`
 ```json
@@ -369,7 +380,6 @@ class DataAgent:
         language_instruction: str = "",
         max_iterations: int = 5,
         max_repair_attempts: int = 2,
-        user_home: Path | str | None = None,
         identity_id: str | None = None,
     ):
         self.client = client
@@ -398,10 +408,11 @@ class DataAgent:
         self._knowledge_store = None
         self._injected_knowledge: list[dict[str, Any]] = []
         self._injected_rules: list[str] = []
-        if user_home:
+        _user_home = getattr(workspace, "user_home", None)
+        if _user_home:
             try:
                 from data_formulator.knowledge.store import KnowledgeStore
-                self._knowledge_store = KnowledgeStore(user_home)
+                self._knowledge_store = KnowledgeStore(_user_home)
             except Exception:
                 logger.warning("Failed to initialise KnowledgeStore", exc_info=True)
 
@@ -1404,7 +1415,11 @@ class DataAgent:
     def _build_lightweight_table_context(
         self, input_tables: list[dict[str, Any]], primary_tables: list[str] | None = None
     ) -> str:
-        return build_lightweight_table_context(input_tables, self.workspace, primary_tables)
+        return build_lightweight_table_context(
+            input_tables,
+            self.workspace,
+            primary_tables,
+        )
 
     # ------------------------------------------------------------------
     # LLM interaction (with internal tool-calling loop)
@@ -1587,7 +1602,7 @@ class DataAgent:
                     elif tool_name == "inspect_source_data":
                         table_names = tool_args.get("table_names", [])
                         tool_content = handle_inspect_source_data(
-                            table_names, input_tables or [], self.workspace
+                            table_names, input_tables or [], self.workspace,
                         )
                         yield {
                             "type": "tool_result",
@@ -1596,18 +1611,10 @@ class DataAgent:
                             "stdout": tool_content,
                         }
                     elif tool_name == "search_data_tables":
-                        user_home = None
-                        try:
-                            from data_formulator.auth.identity import get_identity_id
-                            from data_formulator.datalake.workspace import get_user_home
-                            user_home = str(get_user_home(get_identity_id()))
-                        except Exception:
-                            pass
                         tool_content = handle_search_data_tables(
                             query=tool_args.get("query", ""),
                             scope=tool_args.get("scope", "all"),
                             workspace=self.workspace,
-                            user_home=user_home,
                         )
                         yield {
                             "type": "tool_result",
@@ -1616,17 +1623,10 @@ class DataAgent:
                             "stdout": tool_content,
                         }
                     elif tool_name == "read_catalog_metadata":
-                        user_home = None
-                        try:
-                            from data_formulator.auth.identity import get_identity_id
-                            from data_formulator.datalake.workspace import get_user_home
-                            user_home = str(get_user_home(get_identity_id()))
-                        except Exception:
-                            pass
                         tool_content = handle_read_catalog_metadata(
                             source_id=tool_args.get("source_id", ""),
                             table_key=tool_args.get("table_key", ""),
-                            user_home=user_home,
+                            workspace=self.workspace,
                         )
                         yield {
                             "type": "tool_result",
