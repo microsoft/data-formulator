@@ -1,10 +1,11 @@
 """Catalog merge — produce a merged metadata view from cache + annotations.
 
-Merge rules (from design doc):
+Merge rules:
 
-* User annotation wins for display: ``display_description = user || source``
-* Both user and source descriptions are preserved in separate keys for
-  agent search weighting.
+* ``display_description = user || source`` — used for frontend display only.
+* ``source_description`` and ``user_description`` are always preserved as
+  separate keys so that Agent context can show **both** to the LLM.
+  User annotations supplement (not replace) source descriptions for Agents.
 * Column-level merge follows the same pattern.
 * Tags and notes come from annotations only.
 """

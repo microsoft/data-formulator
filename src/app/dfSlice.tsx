@@ -343,7 +343,7 @@ export const fetchFieldSemanticType = createAsyncThunk(
 
         let state = getState() as DataFormulatorState;
 
-        const sampleRows = (table.rows || []).slice(0, 30);
+        const sampleRows = (table.rows || []).slice(0, 15);
         const { data } = await apiRequest(getUrls().SERVER_PROCESS_DATA_ON_LOAD, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

@@ -153,6 +153,77 @@ class TestFieldSummaryWithDescription:
         line = get_field_summary("x", df, 5, column_description="Primary key")
         assert "(Primary key)" in line
 
+    def test_with_verbose_name(self):
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"order_id": [1, 2, 3]})
+        line = get_field_summary("order_id", df, 5, verbose_name="订单编号")
+        assert "[订单编号]" in line
+        assert "order_id [订单编号] -- type:" in line
+
+    def test_with_expression(self):
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"total": [100, 200]})
+        line = get_field_summary("total", df, 5, expression="SUM(line_items.amount)")
+        assert "[calc: SUM(line_items.amount)]" in line
+
+    def test_with_all_metadata(self):
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"amount": [10.5, 20.3]})
+        line = get_field_summary(
+            "amount", df, 5,
+            column_description="Transaction amount",
+            verbose_name="金额",
+            expression="SUM(payments.amount)",
+        )
+        assert "amount [金额] -- type:" in line
+        assert "(Transaction amount)" in line
+        assert "[calc: SUM(payments.amount)]" in line
+
+    def test_dual_source_descriptions_both_shown(self):
+        """When source and user descriptions differ, both are shown."""
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"amount": [10.5]})
+        line = get_field_summary(
+            "amount", df, 5,
+            column_description="fallback",
+            source_description="Order total from ERP",
+            user_description="Includes tax and shipping",
+        )
+        assert "source: Order total from ERP" in line
+        assert "user: Includes tax and shipping" in line
+        assert "fallback" not in line
+
+    def test_dual_source_same_uses_column_description(self):
+        """When source and user are identical, fall back to column_description."""
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"amount": [10.5]})
+        line = get_field_summary(
+            "amount", df, 5,
+            column_description="Same desc",
+            source_description="Same desc",
+            user_description="Same desc",
+        )
+        assert "(Same desc)" in line
+        assert "source:" not in line
+
+    def test_only_source_description(self):
+        """When only source_description exists, column_description is used."""
+        import pandas as pd
+        from data_formulator.agents.agent_utils import get_field_summary
+        df = pd.DataFrame({"x": [1]})
+        line = get_field_summary(
+            "x", df, 5,
+            column_description="From source",
+            source_description="From source",
+        )
+        assert "(From source)" in line
+        assert "source:" not in line
+
 
 # ── generate_data_summary with system description fallback ───────────
 
@@ -231,7 +302,10 @@ class TestCatalogMetadataLookups:
                  "metadata": {
                      "description": "Source sales table",
                      "columns": [
-                         {"name": "amount", "description": "Transaction amount"},
+                         {"name": "amount", "description": "Transaction amount",
+                          "verbose_name": "金额", "expression": "SUM(line_items.amount)"},
+                         {"name": "order_id", "description": "Primary key",
+                          "verbose_name": "订单编号"},
                      ],
                  }},
             ])
@@ -239,6 +313,9 @@ class TestCatalogMetadataLookups:
                 "description": "Enriched sales with notes",
                 "notes": "Used for monthly reporting",
                 "tags": ["finance", "kpi"],
+                "columns": {
+                    "amount": {"description": "User: total including tax"},
+                },
             }, expected_version=0)
 
             ws = MagicMock()
@@ -255,21 +332,33 @@ class TestCatalogMetadataLookups:
             ))
             ws.get_metadata.return_value = ws_meta
 
-            table_descs, col_descs, extras = build_catalog_metadata_lookups(ws)
+            table_descs, col_descs, extras, col_metas = build_catalog_metadata_lookups(ws)
             assert "daily_sales" in table_descs
             assert "Enriched" in table_descs["daily_sales"]
             assert "amount" in col_descs.get("daily_sales", {})
             assert any("finance" in e for e in extras.get("daily_sales", []))
+
+            assert "daily_sales" in col_metas
+            amount_meta = col_metas["daily_sales"].get("amount", {})
+            assert amount_meta.get("verbose_name") == "金额"
+            assert amount_meta.get("expression") == "SUM(line_items.amount)"
+            assert amount_meta.get("source_description") == "Transaction amount"
+            assert amount_meta.get("user_description") == "User: total including tax"
+            order_meta = col_metas["daily_sales"].get("order_id", {})
+            assert order_meta.get("verbose_name") == "订单编号"
+            assert order_meta.get("source_description") == "Primary key"
+            assert "expression" not in order_meta
 
     def test_lookups_graceful_without_user_home(self):
         """Returns empty dicts when workspace has no user_home."""
         from data_formulator.agents.agent_utils import build_catalog_metadata_lookups
 
         ws = MagicMock(spec=[])
-        table_descs, col_descs, extras = build_catalog_metadata_lookups(ws)
+        table_descs, col_descs, extras, col_metas = build_catalog_metadata_lookups(ws)
         assert table_descs == {}
         assert col_descs == {}
         assert extras == {}
+        assert col_metas == {}
 
 
 # ── handle_search_data_tables ─────────────────────────────────────────

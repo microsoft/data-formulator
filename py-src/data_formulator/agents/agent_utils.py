@@ -31,25 +31,27 @@ def _source_table_matches_catalog_entry(
 
 def build_catalog_metadata_lookups(
     workspace,
-) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, list[str]]]:
+) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, list[str]], dict[str, dict[str, dict]]]:
     """Build table/column metadata overlays from catalog cache + annotations.
 
-    Resolves the user home directory from the workspace object automatically.
-    Falls back gracefully when the workspace has no ``user_home`` property
-    (e.g. in tests or non-local backends).
+    Returns
+    -------
+    4-tuple of (table_desc_cache, col_desc_cache, table_extra_cache, col_meta_cache)
+    where col_meta_cache maps table_name -> {col_name: {"verbose_name": ..., "expression": ...}}.
     """
     table_desc_cache: dict[str, str] = {}
     col_desc_cache: dict[str, dict[str, str]] = {}
     table_extra_cache: dict[str, list[str]] = {}
+    col_meta_cache: dict[str, dict[str, dict]] = {}
 
     user_home = getattr(workspace, "user_home", None)
     if not user_home:
-        return table_desc_cache, col_desc_cache, table_extra_cache
+        return table_desc_cache, col_desc_cache, table_extra_cache, col_meta_cache
 
     try:
         ws_meta = workspace.get_metadata()
         if not ws_meta:
-            return table_desc_cache, col_desc_cache, table_extra_cache
+            return table_desc_cache, col_desc_cache, table_extra_cache, col_meta_cache
 
         from data_formulator.datalake.catalog_annotations import load_annotations
         from data_formulator.datalake.catalog_cache import list_cached_sources, load_catalog
@@ -88,12 +90,36 @@ def build_catalog_metadata_lookups(
             if column_descs:
                 col_desc_cache[table_name] = column_descs
 
+            col_metas: dict[str, dict] = {}
+            for col in meta.get("columns", []):
+                if not isinstance(col, dict) or not col.get("name"):
+                    continue
+                cm: dict[str, str] = {}
+                vn = col.get("verbose_name")
+                if vn:
+                    cm["verbose_name"] = vn
+                expr = col.get("expression")
+                if expr:
+                    cm["expression"] = expr
+                src_cdesc = col.get("source_description", "")
+                usr_cdesc = col.get("user_description", "")
+                if src_cdesc:
+                    cm["source_description"] = src_cdesc
+                if usr_cdesc:
+                    cm["user_description"] = usr_cdesc
+                if cm:
+                    col_metas[str(col["name"])] = cm
+            if col_metas:
+                col_meta_cache[table_name] = col_metas
+
             extras: list[str] = []
             source_desc = meta.get("source_description")
             user_desc = meta.get("user_description")
             if source_desc and user_desc and source_desc != user_desc:
                 extras.append(f"Source description: {source_desc}")
                 extras.append(f"User annotation: {user_desc}")
+            elif source_desc and user_desc and source_desc == user_desc:
+                pass  # identical — display_description already covers it
             notes = meta.get("notes")
             if notes:
                 extras.append(f"Notes: {notes}")
@@ -105,7 +131,7 @@ def build_catalog_metadata_lookups(
     except Exception:
         _logger.debug("Failed to build catalog metadata lookups", exc_info=True)
 
-    return table_desc_cache, col_desc_cache, table_extra_cache
+    return table_desc_cache, col_desc_cache, table_extra_cache, col_meta_cache
 
 def format_dataframe_sample_with_budget(
     df,
@@ -392,7 +418,9 @@ def supplement_missing_block(client, messages, assistant_content,
     return parsed_json, code_blocks, None, 0.0
 
 
-def get_field_summary(field_name, df, field_sample_size, max_val_chars=100, column_description=None):
+def get_field_summary(field_name, df, field_sample_size, max_val_chars=100,
+                      column_description=None, verbose_name=None, expression=None,
+                      source_description=None, user_description=None):
     def make_hashable(val):
         if val is None:
             return None
@@ -427,9 +455,16 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100, colu
 
     val_str = ', '.join([sample_val_cap(str(s)) for s in val_sample])
 
-    line = f"{field_name} -- type: {df[field_name].dtype}, values: {val_str}"
-    if column_description:
+    line = f"{field_name}"
+    if verbose_name:
+        line += f" [{verbose_name}]"
+    line += f" -- type: {df[field_name].dtype}, values: {val_str}"
+    if source_description and user_description and source_description != user_description:
+        line += f"  (source: {source_description} | user: {user_description})"
+    elif column_description:
         line += f"  ({column_description})"
+    if expression:
+        line += f"  [calc: {expression}]"
     return line
 
 def generate_data_summary(
@@ -488,13 +523,15 @@ def generate_data_summary(
     except Exception:
         pass
 
-    catalog_table_descs, catalog_col_descs, catalog_extras = build_catalog_metadata_lookups(
+    catalog_table_descs, catalog_col_descs, catalog_extras, catalog_col_metas = build_catalog_metadata_lookups(
         workspace,
     )
+    col_meta_cache: dict[str, dict[str, dict]] = {}
     table_desc_cache.update(catalog_table_descs)
     for tname, col_descs in catalog_col_descs.items():
         col_desc_cache.setdefault(tname, {}).update(col_descs)
     table_extra_cache.update(catalog_extras)
+    col_meta_cache.update(catalog_col_metas)
 
     def assemble_table_summary(table, idx):
         table_name = table['name']
@@ -545,9 +582,16 @@ def generate_data_summary(
             sections.append("### Catalog Metadata\n" + "\n".join(f"- {line}" for line in extra_lines) + "\n")
 
         col_descs = col_desc_cache.get(table_name, {})
+        col_metas = col_meta_cache.get(table_name, {})
         fields_summary = '\n'.join([
-            '  - ' + get_field_summary(fname, df, field_sample_size, max_val_chars,
-                                       column_description=col_descs.get(fname))
+            '  - ' + get_field_summary(
+                fname, df, field_sample_size, max_val_chars,
+                column_description=col_descs.get(fname),
+                verbose_name=col_metas.get(fname, {}).get("verbose_name"),
+                expression=col_metas.get(fname, {}).get("expression"),
+                source_description=col_metas.get(fname, {}).get("source_description"),
+                user_description=col_metas.get(fname, {}).get("user_description"),
+            )
             for fname in df.columns
         ])
         sections.append(f"### Schema ({num_cols} fields)\n{fields_summary}\n")

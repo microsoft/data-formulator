@@ -527,16 +527,21 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                             )}
                             {columns.length > 0 ? (
                                 <Box
-                                    component="table"
                                     sx={{
-                                        width: '100%',
-                                        borderCollapse: 'collapse',
-                                        fontSize: 10.5,
                                         maxHeight: 200,
-                                        display: 'block',
                                         overflowY: 'auto',
+                                        bgcolor: 'background.paper',
+                                        border: '1px solid',
+                                        borderColor: 'divider',
+                                        borderRadius: 1,
+                                        '& table': {
+                                            width: '100%',
+                                            borderCollapse: 'separate',
+                                            borderSpacing: 0,
+                                            fontSize: 10.5,
+                                        },
                                         '& th, & td': {
-                                            px: 0.75, py: '3px',
+                                            px: 0.9, py: '4px',
                                             borderBottom: '1px solid',
                                             borderColor: 'divider',
                                             textAlign: 'left',
@@ -545,49 +550,57 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                                         '& th': {
                                             fontWeight: 600,
                                             color: 'text.secondary',
-                                            bgcolor: 'action.hover',
+                                            bgcolor: (theme) => theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.grey[50],
+                                            backgroundClip: 'padding-box',
                                             position: 'sticky',
                                             top: 0,
-                                            zIndex: 1,
+                                            zIndex: 2,
                                         },
                                         '& td': { color: 'text.secondary' },
-                                        '& tr:nth-of-type(even) td': { bgcolor: 'action.hover' },
+                                        '& tr:nth-of-type(even) td': {
+                                            bgcolor: (theme) => theme.palette.mode === 'dark'
+                                                ? 'rgba(255,255,255,0.02)'
+                                                : 'rgba(0,0,0,0.015)',
+                                        },
+                                        '& tbody tr:last-child td': { borderBottom: 'none' },
                                     }}
                                 >
-                                    <thead>
-                                        <tr>
-                                            <Box component="th" sx={{ width: 28 }}>#</Box>
-                                            <th>{t('connectorPreview.colName', { defaultValue: 'Column' })}</th>
-                                            <th>{t('connectorPreview.colType', { defaultValue: 'Type' })}</th>
-                                            <th>{t('connectorPreview.colDesc', { defaultValue: 'Description' })}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {columns.map((col, i) => {
-                                            const desc = col.display_description || col.description || col.source_description || '';
-                                            const label = col.verbose_name && col.verbose_name !== col.name ? col.verbose_name : '';
-                                            return (
-                                                <tr key={col.name}>
-                                                    <Box component="td" sx={{ color: 'text.disabled', width: 28 }}>{i + 1}</Box>
-                                                    <td>
-                                                        <Box component="span" sx={{ fontWeight: 600 }}>{col.name}</Box>
-                                                        {label && (
-                                                            <Box component="span" sx={{ color: 'text.disabled', ml: 0.5 }}>({label})</Box>
-                                                        )}
-                                                    </td>
-                                                    <Box component="td" sx={{ color: 'text.disabled' }}>{col.type}</Box>
-                                                    <Box component="td" sx={{ whiteSpace: 'normal', maxWidth: 220 }}>
-                                                        {desc || <Box component="span" sx={{ color: 'text.disabled' }}>—</Box>}
-                                                        {col.expression && (
-                                                            <Box component="div" sx={{ fontSize: 9.5, color: 'text.disabled', fontFamily: 'monospace', mt: '1px' }}>
-                                                                {col.expression}
-                                                            </Box>
-                                                        )}
-                                                    </Box>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
+                                    <Box component="table">
+                                        <thead>
+                                            <tr>
+                                                <Box component="th" sx={{ width: 32 }}>#</Box>
+                                                <th>{t('connectorPreview.colName', { defaultValue: 'Column' })}</th>
+                                                <th>{t('connectorPreview.colType', { defaultValue: 'Type' })}</th>
+                                                <th>{t('connectorPreview.colDesc', { defaultValue: 'Description' })}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {columns.map((col, i) => {
+                                                const desc = col.display_description || col.description || col.source_description || '';
+                                                const label = col.verbose_name && col.verbose_name !== col.name ? col.verbose_name : '';
+                                                return (
+                                                    <tr key={col.name}>
+                                                        <Box component="td" sx={{ color: 'text.disabled', width: 32 }}>{i + 1}</Box>
+                                                        <td>
+                                                            <Box component="span">{col.name}</Box>
+                                                            {label && (
+                                                                <Box component="span" sx={{ color: 'text.disabled', ml: 0.5 }}>({label})</Box>
+                                                            )}
+                                                        </td>
+                                                        <Box component="td" sx={{ color: 'text.disabled' }}>{col.type}</Box>
+                                                        <Box component="td" sx={{ whiteSpace: 'normal', maxWidth: 220 }}>
+                                                            {desc || <Box component="span" sx={{ color: 'text.disabled' }}>—</Box>}
+                                                            {col.expression && (
+                                                                <Box component="div" sx={{ fontSize: 9.5, color: 'text.disabled', fontFamily: 'monospace', mt: '1px' }}>
+                                                                    {col.expression}
+                                                                </Box>
+                                                            )}
+                                                        </Box>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </Box>
                                 </Box>
                             ) : !effectiveDesc && (
                                 <Typography sx={{ fontSize: 10.5, color: 'text.disabled', fontStyle: 'italic' }}>

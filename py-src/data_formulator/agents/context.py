@@ -115,13 +115,15 @@ def build_lightweight_table_context(
     """
     table_desc_cache, col_desc_cache = _get_workspace_metadata_lookups(workspace)
     table_extra_cache: dict[str, list[str]] = {}
-    catalog_table_descs, catalog_col_descs, catalog_extras = build_catalog_metadata_lookups(
+    col_meta_cache: dict[str, dict[str, dict]] = {}
+    catalog_table_descs, catalog_col_descs, catalog_extras, catalog_col_metas = build_catalog_metadata_lookups(
         workspace,
     )
     table_desc_cache.update(catalog_table_descs)
     for table_name, descs in catalog_col_descs.items():
         col_desc_cache.setdefault(table_name, {}).update(descs)
     table_extra_cache.update(catalog_extras)
+    col_meta_cache.update(catalog_col_metas)
 
     def _table_section(table: dict[str, Any]) -> str:
         table_name = table['name']
@@ -132,10 +134,15 @@ def build_lightweight_table_context(
             description = table.get("attached_metadata", "") or table_desc_cache.get(table_name, "")
             column_descriptions = col_desc_cache.get(table_name, {})
 
+            col_metas = col_meta_cache.get(table_name, {})
             col_info = []
             for col in df.columns:
                 dtype = normalize_dtype_to_app_type(str(df[col].dtype))
-                col_text = f"{col}({dtype})"
+                vn = col_metas.get(col, {}).get("verbose_name")
+                col_text = f"{col}"
+                if vn:
+                    col_text += f"[{vn}]"
+                col_text += f"({dtype})"
                 if column_descriptions.get(col):
                     col_text += f": {column_descriptions[col]}"
                 col_info.append(col_text)
@@ -159,6 +166,10 @@ def build_lightweight_table_context(
                         field_sample_size=7,
                         max_val_chars=80,
                         column_description=column_descriptions.get(col),
+                        verbose_name=col_metas.get(col, {}).get("verbose_name"),
+                        expression=col_metas.get(col, {}).get("expression"),
+                        source_description=col_metas.get(col, {}).get("source_description"),
+                        user_description=col_metas.get(col, {}).get("user_description"),
                     )
                     for col in df.columns
                 ]
@@ -446,12 +457,22 @@ def handle_read_catalog_metadata(
         for col in columns[:50]:
             cname = col.get("name", "?")
             ctype = col.get("type", "")
+            src_cdesc = col.get("source_description", "")
+            usr_cdesc = col.get("user_description", "")
             cdesc = col.get("display_description", col.get("description", ""))
+            vname = col.get("verbose_name", "")
+            expr = col.get("expression", "")
             line = f"  - {cname}"
+            if vname:
+                line += f" [{vname}]"
             if ctype:
                 line += f" ({ctype})"
-            if cdesc:
+            if src_cdesc and usr_cdesc and src_cdesc != usr_cdesc:
+                line += f": source: {src_cdesc} | user: {usr_cdesc}"
+            elif cdesc:
                 line += f": {cdesc}"
+            if expr:
+                line += f"  [calc: {expr}]"
             lines.append(line)
         if len(columns) > 50:
             lines.append(f"  ... and {len(columns) - 50} more columns")

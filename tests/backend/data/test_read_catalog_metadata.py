@@ -41,8 +41,10 @@ def _setup_cache(user_home: Path) -> None:
                 "row_count": 15000,
                 "source_metadata_status": "synced",
                 "columns": [
-                    {"name": "order_id", "type": "INTEGER", "description": "Primary key"},
-                    {"name": "amount", "type": "DECIMAL", "description": "Order amount"},
+                    {"name": "order_id", "type": "INTEGER", "description": "Primary key",
+                     "verbose_name": "订单编号"},
+                    {"name": "amount", "type": "DECIMAL", "description": "Order amount",
+                     "verbose_name": "金额", "expression": "SUM(line_items.amount)"},
                     {"name": "created_at", "type": "TIMESTAMP", "is_dttm": True},
                 ],
             },
@@ -87,7 +89,8 @@ class TestReadCatalogMetadata:
         )
         assert "User enriched description" in result
         assert "Q1 analysis" in result
-        assert "Unique order identifier" in result
+        assert "source: Primary key" in result
+        assert "user: Unique order identifier" in result
 
     def test_table_not_found(self, tmp_path: Path):
         _setup_cache(tmp_path)
@@ -119,6 +122,17 @@ class TestReadCatalogMetadata:
             "superset_prod", "uuid-42", workspace=_mock_workspace(tmp_path),
         )
         assert "Sales Dashboard" in result
+
+    def test_verbose_name_and_expression_in_output(self, tmp_path: Path):
+        _setup_cache(tmp_path)
+        result = handle_read_catalog_metadata(
+            "superset_prod", "uuid-42", workspace=_mock_workspace(tmp_path),
+        )
+        assert "[订单编号]" in result
+        assert "[金额]" in result
+        assert "[calc: SUM(line_items.amount)]" in result
+        assert "created_at" in result
+        assert "[calc:" not in result.split("created_at")[1] if "created_at" in result else True
 
     def test_no_credentials_in_output(self, tmp_path: Path):
         _setup_cache(tmp_path)

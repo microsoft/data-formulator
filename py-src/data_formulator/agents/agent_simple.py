@@ -92,7 +92,9 @@ class SimpleAgents:
         dict with keys ``conditions``, ``sort_columns``, ``sort_order``, ``limit``.
         """
         col_desc = "\n".join(
-            f"  - {c['name']} ({c.get('type', 'unknown')})" for c in columns
+            f"  - {c['name']} ({c.get('type', 'unknown')})"
+            + (f": {c['description']}" if c.get('description') else "")
+            for c in columns
         )
         user_msg = f"Table columns:\n{col_desc}\n\nFilter instruction: {instruction}"
 

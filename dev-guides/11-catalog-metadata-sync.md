@@ -10,7 +10,7 @@
 ```
 catalog_cache/<source>.json     — 从远端自动同步（刷新时覆盖）
 catalog_annotations/<source>.json — 用户自有（同步时绝不覆盖）
-catalog_merge.py                — 运行时合并（用户标注优先）
+catalog_merge.py                — 运行时合并（双来源均保留，Agent 同时可见）
 ```
 
 ### 数据流
@@ -54,7 +54,7 @@ catalog_merge.py                — 运行时合并（用户标注优先）
 | `py-src/.../superset_client.py` | `get_dataset_columns()`，含 fallback 到完整详情接口 |
 | `py-src/.../datalake/catalog_cache.py` | 磁盘缓存，含 `synced_at`、DuckDB/Python 双路径搜索 |
 | `py-src/.../datalake/catalog_annotations.py` | 用户标注，文件锁 + 乐观版本控制 |
-| `py-src/.../datalake/catalog_merge.py` | 运行时合并：`display_description = user \|\| source` |
+| `py-src/.../datalake/catalog_merge.py` | 运行时合并：`display_description` 用于前端显示；`source_description` + `user_description` 双来源保留供 Agent |
 | `py-src/.../data_connector.py` | API 端点：sync、PATCH/GET annotations |
 | `py-src/.../agents/context.py` | `handle_read_catalog_metadata()` + `handle_search_data_tables()` |
 | `py-src/.../agents/agent_utils.py` | `build_catalog_metadata_lookups()` — Agent 上下文自动注入 |
@@ -192,9 +192,11 @@ metadata（columns、source_metadata_status 等）。
 
 读取时生成运行时 **merged metadata view**，不直接修改任何文件。
 
-- 表级：`display_description = user.description || source.description`
-- 列级：`display_column_description = user.columns[col].description || source.columns[col].description`
-- `source_description` 和 `user_description` 同时保留，供 Agent 搜索分别加权。
+- 表级：`display_description = user.description || source.description`（仅用于前端展示）
+- 列级：`display_column_description = user.columns[col].description || source.columns[col].description`（仅用于前端展示）
+- **Agent 上下文同时保留双来源**：`source_description` 和 `user_description` 均传给 Agent，
+  当两者都存在且不同时，Agent 会看到 `(source: ... | user: ...)` 格式的描述。
+  用户注释是补充而非覆盖，确保 Agent 不会丢失源系统的原始语义。
 - tags 和 notes 仅来自 annotations。
 
 合并调用点：
@@ -480,3 +482,51 @@ workspace 内部获取，调用方无需关心存储路径。
 - [ ] 为每张表设置 `source_metadata_status`：`"synced"`、`"partial"` 或 `"unavailable"`
 - [ ] 在 `sync_catalog_metadata()` 返回前调用 `self.ensure_table_keys(tables)`
 - [ ] 对于 info_schema 按库隔离的 SQL loader，在 `sync_catalog_metadata()` 中遍历所有可访问数据库
+
+## Agent 元数据传递审计表
+
+下表列出每个元数据字段在 Agent 上下文管线中的传递状态。
+
+### 元数据字段说明
+
+| 字段 | 来源 | 说明 |
+|------|------|------|
+| `display_description` | merge 输出 | 前端展示用（`user_description \|\| source_description`）|
+| `source_description` | Loader → catalog_cache | 来自源系统的原始描述 |
+| `user_description` | annotations | 用户手工添加的注释（**补充**而非覆盖源描述）|
+| `verbose_name` | Loader（如 Superset） | 列的显示别名（如中文名） |
+| `expression` | Loader（如 Superset） | 计算列公式（如 `SUM(line_items.amount)`） |
+| `notes` / `tags` | annotations | 用户标注的备注和标签 |
+
+### 管线节点传递矩阵
+
+| 管线节点 | description | verbose_name | expression | source/user_desc | notes/tags |
+|----------|:-----------:|:------------:|:----------:|:----------------:|:----------:|
+| **Loader** (`list_tables` / `sync_catalog_metadata`) | ✅ | ✅ (Superset) | ✅ (Superset) | — | — |
+| **catalog_cache** (`save_catalog` / `load_catalog`) | ✅ | ✅ | ✅ | ✅ | — |
+| **catalog_merge** (`merge_table_metadata`) | ✅ → `display_description` | ✅ (透传) | ✅ (透传) | ✅ | ✅ |
+| **`build_catalog_metadata_lookups`** (`agent_utils.py`) | ✅ `col_desc_cache` | ✅ `col_meta_cache` | ✅ `col_meta_cache` | ✅ `table_extra_cache` | ✅ `table_extra_cache` |
+| **`get_field_summary`** (`agent_utils.py`) | ✅ `(description)` | ✅ `[verbose_name]` | ✅ `[calc: expr]` | ✅ `(source: ... \| user: ...)` | — |
+| **`generate_data_summary`** (`agent_utils.py`) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **`build_lightweight_table_context`** (`context.py`) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **`handle_read_catalog_metadata`** (`context.py`) | ✅ | ✅ `[verbose_name]` | ✅ `[calc: expr]` | ✅ | ✅ |
+
+### Agent 受益矩阵
+
+| Agent | 上下文入口 | description | verbose_name | expression | 双来源描述 |
+|-------|-----------|:-----------:|:------------:|:----------:|:----------:|
+| DataAgent | `generate_data_summary` + `read_catalog_metadata` tool | ✅ | ✅ | ✅ | ✅ |
+| DataTransformationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
+| DataRecAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
+| InteractiveExploreAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ |
+| ReportGenAgent | `build_lightweight_table_context` | ✅ | ✅ | ✅ | ✅ |
+| ChartInsightAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
+| CodeExplanationAgent | `generate_data_summary` | ✅ | ✅ | ✅ | ✅ |
+| SimpleAgents (`nl_to_filter`) | 直接列描述注入 | ✅ | — | — | — |
+
+> **双来源描述**：当 `source_description` 和 `user_description` 同时存在且不同时，
+> Agent 会看到 `(source: ... | user: ...)` 格式，确保用户注释作为补充而非覆盖源描述。
+> 当两者一致或只有一方时，显示 `display_description`。
+>
+> **注意**：`nl_to_filter` 目前仅注入 `description`，不包含 `verbose_name`/`expression`/双来源。
+> 这是因为 filter 场景下列名+类型+描述已足够。
