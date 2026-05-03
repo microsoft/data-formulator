@@ -1,10 +1,11 @@
 """
 Superset OAuth + Data Formulator 桥接配置
 
-本文件部署在 Superset 服务端（PYTHONPATH 下），包含三部分：
+本文件部署在 Superset 服务端（PYTHONPATH 下），包含四部分：
   1. SsoHandler            — 从 SSO userinfo 端点解析用户信息
   2. CustomSsoSecurityManager — 用户创建/更新 + 角色同步
-  3. SSOBridgeView         — DF 通过弹窗获取 Superset JWT
+  3. SSOBridgeView         — DF 通过弹窗获取 Superset JWT（委托模式）
+  4. TokenExchangeView     — DF 后端静默换票获取 Superset JWT（SSO Exchange 模式）
 
 使用方法：
   1. 复制本文件到 Superset 的 PYTHONPATH 下，命名为 oauth_config.py
@@ -310,6 +311,111 @@ class SSOBridgeView(BaseView):
             csp_nonce=csp_nonce,
         )
         return Response(html, mimetype="text/html")
+
+
+# =============================================================================
+# 第四部分：Data Formulator SSO 换票端点（可选）
+#
+# 当 DF 和 Superset 接入同一个 SSO IdP 时，启用此端点可实现后端静默换票，
+# 用户无需弹窗登录即可访问 Superset 数据。
+#
+# 流程：
+#   1. 用户在 DF 完成 SSO 登录，DF 后端获得 IdP 颁发的 access_token
+#   2. DF 后端 POST /api/v1/df-token-exchange/ {sso_access_token: "..."}
+#   3. 本端点用该 token 向 IdP userinfo 验证身份
+#   4. 查找 Superset 中对应用户，签发 Superset JWT 返回
+#   5. DF 自动存储 JWT，后续 API 调用使用 Bearer token
+#
+# 安全说明：
+#   - 仅接受服务端到服务端调用，不直接暴露给浏览器
+#   - 通过 DF_EXCHANGE_SHARED_SECRET 验证调用方（可选但推荐）
+#   - SSO token 通过实际调用 IdP userinfo 验证，不仅仅解码 JWT
+# =============================================================================
+
+from flask import Blueprint, jsonify
+
+df_exchange_bp = Blueprint("df_token_exchange", __name__)
+
+
+def _verify_exchange_secret():
+    """Verify the shared secret header if DF_EXCHANGE_SHARED_SECRET is set.
+
+    When the env var is empty or unset, all requests are allowed (for
+    development). In production, set the same secret on both DF and Superset
+    to prevent unauthorized token exchange.
+    """
+    expected = os.environ.get("DF_EXCHANGE_SHARED_SECRET", "").strip()
+    if not expected:
+        return True
+    provided = (request.headers.get("X-DF-Exchange-Secret") or "").strip()
+    return secrets.compare_digest(expected, provided)
+
+
+@df_exchange_bp.route("/api/v1/df-token-exchange/", methods=["POST"])
+def df_token_exchange():
+    """Exchange an SSO access token for a Superset JWT.
+
+    Request body: {"sso_access_token": "<IdP access token>"}
+    Response:     {"access_token": "...", "refresh_token": "...",
+                   "expires_in": 3600, "user": {...}}
+    """
+    if not _verify_exchange_secret():
+        return jsonify({"error": "unauthorized", "message": "Invalid exchange secret"}), 403
+
+    data = request.get_json(silent=True) or {}
+    sso_token = data.get("sso_access_token")
+    if not sso_token:
+        return jsonify({"error": "bad_request", "message": "Missing sso_access_token"}), 400
+
+    # ① Validate SSO token against the IdP userinfo endpoint
+    try:
+        user_details = SsoHandler.parse_user_details(sso_token)
+    except Exception as exc:
+        logger.warning("Token exchange: SSO validation failed: %s", exc)
+        return jsonify({"error": "invalid_token", "message": "SSO token validation failed"}), 401
+
+    if not user_details or not user_details.get("username"):
+        return jsonify({"error": "invalid_token", "message": "Could not resolve user from SSO token"}), 401
+
+    # ② Find the corresponding Superset user
+    from superset import appbuilder
+    sm = appbuilder.sm
+    user = sm.find_user(username=user_details["username"])
+    if not user:
+        # Optionally: allow auto-registration during exchange (same as OAuth login)
+        logger.info("Token exchange: user '%s' not found in Superset", user_details["username"])
+        return jsonify({"error": "user_not_found", "message": "User not registered in Superset"}), 403
+    if not getattr(user, "is_active", False):
+        return jsonify({"error": "user_inactive", "message": "User account is inactive"}), 403
+
+    # ③ Issue Superset JWT
+    from flask_jwt_extended import create_access_token, create_refresh_token
+
+    user_id_str = str(user.id)
+    additional_claims = {
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "first_name": getattr(user, "first_name", "") or "",
+            "last_name": getattr(user, "last_name", "") or "",
+        }
+    }
+    access_token = create_access_token(
+        identity=user_id_str, fresh=True, additional_claims=additional_claims,
+    )
+    refresh_token = create_refresh_token(
+        identity=user_id_str, additional_claims=additional_claims,
+    )
+
+    logger.info("Token exchange: issued JWT for user '%s' (id=%s)", user.username, user.id)
+
+    # ④ Return tokens
+    return jsonify({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_in": 3600,
+        "user": additional_claims["user"],
+    })
 
 
 # =============================================================================
