@@ -40,6 +40,71 @@ KNOWLEDGE_LIMITS: dict[str, int] = {
     "experiences": 2000,
 }
 
+# ---------------------------------------------------------------------------
+# Tokenization helpers for improved search scoring
+# ---------------------------------------------------------------------------
+
+_ENGLISH_STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "shall",
+    "should", "may", "might", "must", "can", "could",
+    "i", "me", "my", "we", "our", "you", "your", "he", "him", "his",
+    "she", "her", "it", "its", "they", "them", "their",
+    "what", "which", "who", "whom", "this", "that", "these", "those",
+    "am", "if", "or", "but", "not", "no", "nor", "so", "too", "very",
+    "and", "as", "at", "by", "for", "from", "in", "into", "of", "on",
+    "to", "up", "with", "about", "after", "before", "between", "down",
+    "during", "each", "few", "more", "most", "other", "some", "such",
+    "than", "then", "how", "when", "where", "why", "all", "any", "both",
+    "every", "here", "there", "just", "only", "also", "over", "own",
+    "same", "out",
+    "show", "find", "get", "use", "make", "help", "let", "want", "need",
+    "please", "like", "using", "used",
+})
+
+_MIN_TOKEN_LEN = 2
+
+_CJK_ASCII_RE = re.compile(
+    r"([\u2e80-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f]+|[a-z0-9_]+)",
+)
+
+
+def _tokenize_query(query: str) -> list[str]:
+    """Split *query* into meaningful keyword tokens.
+
+    1. Space-split the query.
+    2. For tokens containing **both** CJK and ASCII characters, further
+       split into CJK segments and ASCII segments so each can match
+       independently.  E.g. ``"帮我分析ROI"`` → ``["帮我分析", "roi"]``.
+    3. Filter English stopwords and short ASCII tokens (≤ 2 chars).
+    4. Non-ASCII tokens (e.g. Chinese phrases) are kept regardless of
+       length — they participate in whole-substring matching.
+
+    When proper Chinese word segmentation is needed in the future,
+    only this function needs to change (e.g. integrate *jieba*).
+    """
+    raw = query.lower().split()
+    tokens: list[str] = []
+    for t in raw:
+        if t in _ENGLISH_STOPWORDS:
+            continue
+
+        has_cjk = not t.isascii()
+        has_ascii = any(c.isascii() and c.isalnum() for c in t)
+
+        if has_cjk and has_ascii:
+            for seg in _CJK_ASCII_RE.findall(t):
+                if seg in _ENGLISH_STOPWORDS:
+                    continue
+                if seg.isascii() and len(seg) <= _MIN_TOKEN_LEN:
+                    continue
+                tokens.append(seg)
+        else:
+            if t.isascii() and len(t) <= _MIN_TOKEN_LEN:
+                continue
+            tokens.append(t)
+    return tokens
+
 
 # ---------------------------------------------------------------------------
 # Front matter parsing
@@ -294,6 +359,77 @@ class KnowledgeStore:
         self.validate_path(category, path)
         self._jail(category).unlink(path)
 
+    # -- alwaysApply rules helper ------------------------------------------
+
+    def load_always_apply_rules(self) -> list[dict[str, str]]:
+        """Load rules with ``alwaysApply=true`` for system prompt injection.
+
+        Returns a list of ``{"title": ..., "body": ...}`` dicts.
+        Non-alwaysApply rules are excluded (they are picked up via search).
+        Returns empty list on failure (graceful degradation).
+        """
+        try:
+            items = self.list_all("rules")
+            result: list[dict[str, str]] = []
+            for item in items:
+                if not item.get("alwaysApply", True):
+                    continue
+                try:
+                    content = self.read("rules", item["path"])
+                    _, body = parse_front_matter(content)
+                    if body.strip():
+                        result.append({"title": item["title"], "body": body.strip()})
+                except Exception:
+                    continue
+            return result
+        except Exception:
+            logger.warning("Failed to load alwaysApply rules", exc_info=True)
+            return []
+
+    def format_rules_block(
+        self, rules: list[dict[str, str]] | None = None
+    ) -> str:
+        """Return a formatted prompt block for ``alwaysApply`` rules.
+
+        Args:
+            rules: Pre-loaded rules from :meth:`load_always_apply_rules`.
+                   When *None* (default), calls ``load_always_apply_rules()``
+                   automatically.  Pass an already-loaded list to avoid a
+                   second file-system scan when the caller also needs the
+                   raw data (e.g. for ``_injected_rules`` tracking).
+
+        Returns a ready-to-append string (including leading newlines) or
+        an empty string when there are no rules.  Handles all exceptions
+        internally so callers need no try/except.
+
+        Usage in any Agent::
+
+            # Simple — one-liner, loads + formats internally
+            prompt += store.format_rules_block()
+
+            # With pre-loaded data (when you also need the list)
+            rules = store.load_always_apply_rules()
+            titles = [r["title"] for r in rules]
+            prompt += store.format_rules_block(rules)
+        """
+        try:
+            if rules is None:
+                rules = self.load_always_apply_rules()
+            if not rules:
+                return ""
+            block = (
+                "\n\n## ⚠ User Rules (MANDATORY — override defaults)\n\n"
+                "The following rules are set by the user and MUST be followed.\n"
+                "When a user rule conflicts with other guidelines, "
+                "the user rule takes priority.\n"
+            )
+            for rule in rules:
+                block += f"\n### {rule['title']}\n{rule['body']}\n"
+            return block
+        except Exception:
+            logger.warning("Failed to format rules block", exc_info=True)
+            return ""
+
     # -- search ------------------------------------------------------------
 
     def search(
@@ -301,19 +437,24 @@ class KnowledgeStore:
         query: str,
         categories: list[str] | None = None,
         max_results: int = 10,
+        table_names: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Search across knowledge categories.
 
-        Matching is case-insensitive substring against title, tags,
-        file name (stem), and the first 200 characters of body text.
-        Results are ranked: title > tags > filename > body.
+        Tokenizes *query* into keywords and scores each entry using
+        multi-field weighted matching (title > tags > filename > body).
+        Whole-string exact matches and table-name / tag overlaps receive
+        additional bonuses.  Non-manual sources are slightly discounted.
+
+        *table_names* (optional) are table names from the current session;
+        when a table name appears in an entry's tags the entry is boosted.
         """
         if not query or not query.strip():
             return []
 
-        q = query.strip().lower()
+        q = query.strip()
         cats = categories or list(VALID_CATEGORIES)
-        scored: list[tuple[int, dict[str, Any]]] = []
+        scored: list[tuple[float, dict[str, Any]]] = []
 
         for cat in cats:
             if cat not in self._jails:
@@ -331,8 +472,11 @@ class KnowledgeStore:
                 if cat == "rules" and km.always_apply:
                     continue
 
-                score = self._match_score(q, km.title, km.tags, md_file.stem, body[:200])
-                if score == 0:
+                score = self._match_score(
+                    q, km.title, km.tags, md_file.stem, body[:200],
+                    source=km.source, table_names=table_names,
+                )
+                if score <= 0:
                     continue
 
                 rel = str(md_file.relative_to(jail.root)).replace("\\", "/")
@@ -355,19 +499,54 @@ class KnowledgeStore:
         tags: list[str],
         stem: str,
         body_prefix: str,
-    ) -> int:
+        *,
+        source: str = "manual",
+        table_names: list[str] | None = None,
+    ) -> float:
         """Compute a relevance score (0 = no match).
 
-        All inputs are guaranteed str/list[str] by KnowledgeItemMeta,
-        but we keep str() as belt-and-suspenders defense.
+        Tokenizes *query*, then scores each token against multiple fields
+        with weights normalised by token count.  Whole-string and
+        table-name bonuses are added on top.  Non-manual sources receive
+        a 0.9× discount.
         """
-        score = 0
-        if query in title.lower():
-            score += 100
-        if any(query in t.lower() for t in tags):
+        tokens = _tokenize_query(query)
+        q = query.strip().lower()
+        n = len(tokens)
+        score: float = 0.0
+
+        # Per-token multi-field weighted scoring
+        if n > 0:
+            title_l = title.lower()
+            stem_l = stem.lower()
+            body_l = body_prefix.lower()
+            tags_l = [t.lower() for t in tags]
+
+            for token in tokens:
+                if token in title_l:
+                    score += 100 / n
+                if any(token in tl for tl in tags_l):
+                    score += 50 / n
+                if token in stem_l:
+                    score += 30 / n
+                if token in body_l:
+                    score += 10 / n
+
+        # Whole-string bonus (handles short queries like "ROI")
+        if q and q in title.lower():
             score += 50
-        if query in stem.lower():
-            score += 30
-        if query in body_prefix.lower():
-            score += 10
+        if q and any(q in t.lower() for t in tags):
+            score += 50
+
+        # Table-name → tag overlap bonus
+        if table_names:
+            tags_l_set = {t.lower() for t in tags}
+            for tn in table_names:
+                if any(tn.lower() in tl for tl in tags_l_set):
+                    score += 30
+
+        # Non-manual source slight discount
+        if score > 0 and source != "manual":
+            score *= 0.9
+
         return score

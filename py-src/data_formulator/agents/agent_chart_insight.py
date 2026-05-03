@@ -88,6 +88,10 @@ class ChartInsightAgent(object):
         ]
 
         system_prompt = SYSTEM_PROMPT
+
+        if self._knowledge_store:
+            system_prompt += self._knowledge_store.format_rules_block()
+
         if self.language_instruction:
             system_prompt = system_prompt + "\n\n" + self.language_instruction
 

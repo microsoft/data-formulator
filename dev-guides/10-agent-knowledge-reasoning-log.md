@@ -1,7 +1,7 @@
 # Agent 知识系统与推理日志开发规范
 
 > **维护者**: DF 核心团队  
-> **最后更新**: 2026-04-28  
+> **最后更新**: 2026-05-03  
 > **适用范围**: 后端 Agent、知识库路由、推理日志、前端知识面板、保存经验流程
 
 本规范记录已经落地的 Agent 知识系统、推理日志和经验提炼实现。设计背景和历史计划见 `design-docs/15-agent-knowledge-reasoning-log.md`；仍未完成的后续优化见 `design-docs/15.2-knowledge-system-followup-improvements.md`。
@@ -85,7 +85,48 @@ results = store.search("missing values", categories=["experiences"])
 - 路径穿越、绝对路径和 symlink 逃逸由 `ConfinedDir` 拦截。
 - 搜索结果只返回摘要，完整内容通过 `read()` 读取。
 
-当前搜索实现是大小写不敏感的子串匹配，匹配 title、tags、文件名 stem 和正文前 200 字，并按 title > tags > filename > body 加权。它还不是分词加权搜索；长 query 自动注入命中率有限，见 `design-docs/15.2-knowledge-system-followup-improvements.md`。
+### 搜索算法
+
+`KnowledgeStore.search()` 使用分词 + 多字段加权匹配。核心逻辑在 `_match_score()` 中，`_tokenize_query()` 负责将 query 拆分为关键词。
+
+**分词规则**（`_tokenize_query`）：
+
+- 空格分词后过滤英文停用词和长度 ≤ 2 的 ASCII 短词。
+- 中英混合 token（如 `"帮我分析ROI"`）自动拆分为 CJK 段和 ASCII 段，各自独立参与匹配。
+- 纯中文 token 保持整串，以子串方式匹配（暂不做中文分词，后续可引入 jieba）。
+
+**评分规则**（`_match_score`）：
+
+对 N 个 token 中的每一个，按字段命中加权（分数除以 N 以归一化）：
+
+| 字段 | 权重 |
+|------|------|
+| title | 100 / N |
+| tags | 50 / N |
+| filename stem | 30 / N |
+| body[:200] | 10 / N |
+
+额外加分项（不除以 N）：
+
+| 条件 | 加分 |
+|------|------|
+| 完整 query 是 title 的子串 | +50 |
+| 完整 query 是某个 tag 的子串 | +50 |
+| 会话 table_name 出现在 tags 中 | 每个 +30 |
+| `source != "manual"` | 总分 ×0.9 |
+
+**调用方式**：
+
+```python
+results = store.search(
+    "分析各区域的ROI",
+    categories=["rules", "experiences"],
+    max_results=5,
+    table_names=["sales_data", "regions"],  # 可选，用于 tag 加分
+)
+```
+
+`alwaysApply=true` 的 rules 始终被搜索跳过（它们通过 system prompt 注入）。
 
 ## 4. Knowledge API
 
@@ -145,11 +186,37 @@ DataAgent 当前记录的主要事件：
 
 ### 模式 A：Rules 系统提示词注入
 
-适用于 DataAgent、DataTransformationAgent、DataRecAgent。只把 `alwaysApply != false` 的 rules 注入系统提示词；非 always-apply rules 通过搜索注入。
+适用于**所有 Agent**（DataAgent、DataTransformationAgent、DataRecAgent、DataLoadingAgent、InteractiveExploreAgent、ChartInsightAgent）。只把 `alwaysApply != false` 的 rules 注入系统提示词；非 always-apply rules 通过搜索注入。
+
+所有 Agent 统一通过 `KnowledgeStore` 的两个方法完成规则注入：
+
+- **`load_always_apply_rules()`** — 返回 `[{"title":..., "body":...}]` 列表，适用于需要额外处理原始数据的场景（如 DataAgent 需追踪 `_injected_rules` 标题）。
+- **`format_rules_block(rules=None)`** — 直接返回格式化好的 prompt 块（`## User Rules` + `### {title}\n{body}`），内部自动加载规则并处理异常；也可传入 `load_always_apply_rules()` 预加载结果避免二次读取。
+
+各 Agent 典型用法：
+
+```python
+# 简单场景（大多数 Agent）—— 一行搞定
+if self._knowledge_store:
+    prompt += self._knowledge_store.format_rules_block()
+
+# 需要追踪注入了哪些规则（DataAgent）
+if self._knowledge_store:
+    rules = self._knowledge_store.load_always_apply_rules()
+    self._injected_rules = [r["title"] for r in rules]
+    prompt += self._knowledge_store.format_rules_block(rules)
+
+# 需要与 agent_coding_rules 合并（DataRecAgent / DataTransformationAgent）
+knowledge_rules = knowledge_store.load_always_apply_rules() if knowledge_store else []
+combined_rules = _combine_rules(agent_coding_rules, knowledge_rules)
+```
 
 ### 模式 B：Library 知识上下文注入
 
 适用于 DataAgent、DataLoadingAgent、InteractiveExploreAgent、ChartInsightAgent。运行时搜索相关 `experiences` 条目，把摘要注入上下文。`KnowledgeStore.search()` 自动跳过 `alwaysApply=true` 的 rules，避免与 system prompt 重复注入。
+
+- **DataAgent** 使用 `_search_relevant_knowledge(user_question, table_names)` 搜索，user question 作为 query，table_names 通过 `search()` 的 `table_names` 参数独立传入以获得 tag 加分。
+- **DataLoadingAgent** 使用最近一条用户消息作为搜索 query；无用户消息时回退到 `"data loading cleaning preparation"`。
 
 ### 模式 C：DataAgent 工具调用
 
@@ -239,6 +306,9 @@ python -m pytest \
 
 以下事项尚未完全落地，不应在新代码中假定已经完成：
 
-- `KnowledgeStore.search()` 仍是整串子串匹配，不是分词加权匹配。
+- ~~`KnowledgeStore.search()` 仍是整串子串匹配~~ → 已改为分词 + 多字段加权匹配（2026-05-03）。
 - `test_relevant_knowledge_injected` 仍允许无命中兜底，搜索注入效果需要加强测试。
 - `KnowledgeStore.list_all()` / `search()` 内部仍有 `Path.read_text()` 风格不统一问题，安全影响低但建议改成 `jail.read_text(rel)`。
+- 中文搜索目前保持整串子串匹配（CJK/ASCII 混合文本中的 ASCII 部分会独立拆出），后续可引入 `jieba` 做中文分词。
+- 知识预加载（后台线程 + 0.5s 超时 + 降级）尚未实现，当前仍为同步搜索。见 `design-docs/21` §4。
+- 上下文预算管理（分块 token 预算 + trajectory 压缩）尚未实现。见 `design-docs/21` §6。

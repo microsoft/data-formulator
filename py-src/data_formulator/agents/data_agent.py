@@ -1269,22 +1269,25 @@ class DataAgent:
             agent_exploration_rules=rules_block,
             context_guide=context_guide,
         )
-        # Append the chart creation guide so the LLM knows chart types,
-        # encoding channels, semantic types, and code rules from the start.
+
+        # Inject alwaysApply rules RIGHT AFTER the core prompt, BEFORE
+        # technical reference material (chart guide, coding rules).
+        # This placement ensures the LLM sees user rules early, while
+        # they are still in the high-attention window.
+        if self._knowledge_store:
+            knowledge_rules = self._knowledge_store.load_always_apply_rules()
+            self._injected_rules = [r["title"] for r in knowledge_rules]
+            prompt += self._knowledge_store.format_rules_block(knowledge_rules)
+        else:
+            self._injected_rules = []
+
+        # Append technical reference material after user rules
         prompt += "\n\n" + CHART_CREATION_GUIDE
         if self.agent_coding_rules and self.agent_coding_rules.strip():
             prompt += (
                 "\n\n## Agent Coding Rules\n\n"
                 + self.agent_coding_rules.strip()
             )
-
-        # Inject rules from KnowledgeStore (Phase 3.1)
-        knowledge_rules = self._load_knowledge_rules()
-        self._injected_rules = [r["title"] for r in knowledge_rules]
-        if knowledge_rules:
-            prompt += "\n\n## User Rules\n"
-            for rule in knowledge_rules:
-                prompt += f"\n### {rule['title']}\n{rule['body']}\n"
 
         if self.language_instruction:
             prompt = prompt + "\n\n" + self.language_instruction
@@ -1842,39 +1845,6 @@ class DataAgent:
     # Knowledge helpers
     # ------------------------------------------------------------------
 
-    def _load_knowledge_rules(self) -> list[dict[str, str]]:
-        """Load ``alwaysApply`` rules from KnowledgeStore for system prompt injection.
-
-        Only rules whose front-matter ``alwaysApply`` is true (the default)
-        are returned here.  Non-alwaysApply rules are picked up via
-        :meth:`_search_relevant_knowledge` instead.
-
-        Returns a list of ``{"title": ..., "body": ...}`` dicts.
-        Returns empty list on failure (graceful degradation).
-        """
-        if not self._knowledge_store:
-            return []
-        try:
-            from data_formulator.knowledge.store import parse_front_matter
-            items = self._knowledge_store.list_all("rules")
-            result = []
-            for item in items:
-                if not item.get("alwaysApply", True):
-                    continue
-                try:
-                    content = self._knowledge_store.read("rules", item["path"])
-                    _, body = parse_front_matter(content)
-                    result.append({
-                        "title": item["title"],
-                        "body": body.strip(),
-                    })
-                except Exception:
-                    continue
-            return result
-        except Exception:
-            logger.warning("Failed to load knowledge rules", exc_info=True)
-            return []
-
     def _search_relevant_knowledge(
         self,
         user_question: str,
@@ -1883,23 +1853,20 @@ class DataAgent:
     ) -> list[dict[str, Any]]:
         """Search experiences and non-alwaysApply rules relevant to the current session.
 
-        Extracts keywords from the user question and table names, then
-        searches the knowledge store.  Returns up to *max_items* results.
-        alwaysApply rules are excluded by KnowledgeStore.search() since
-        they are already injected via system prompt.
+        Uses the user question as the search query and passes table names
+        separately for tag-overlap boosting.  alwaysApply rules are
+        excluded by KnowledgeStore.search() since they are already
+        injected via system prompt.
         Graceful degradation: returns empty list on failure.
         """
         if not self._knowledge_store:
             return []
         try:
-            query_parts = [user_question]
-            query_parts.extend(table_names[:5])
-            query = " ".join(query_parts)
-
             results = self._knowledge_store.search(
-                query,
+                user_question,
                 categories=["rules", "experiences"],
                 max_results=max_items,
+                table_names=table_names[:5],
             )
             return results
         except Exception:

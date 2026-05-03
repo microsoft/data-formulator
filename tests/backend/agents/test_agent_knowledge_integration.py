@@ -102,9 +102,17 @@ class TestRulesInjection:
     def test_rules_injected_into_system_prompt(self, mock_client, mock_workspace, user_home):
         agent = _make_agent(mock_client, mock_workspace, user_home)
         prompt = agent._build_system_prompt()
-        assert "## User Rules" in prompt
+        assert "User Rules" in prompt
+        assert "MANDATORY" in prompt
         assert "ROI Standard" in prompt
         assert "ROI = (revenue - cost) / cost" in prompt
+        # User rules should appear BEFORE technical reference material
+        rules_pos = prompt.index("User Rules")
+        assert "Chart Creation Guide" in prompt
+        chart_guide_pos = prompt.index("Chart Creation Guide")
+        assert rules_pos < chart_guide_pos, (
+            "User Rules must be injected before chart guide for higher attention"
+        )
 
     def test_text_rules_and_knowledge_rules_coexist(
         self, mock_client, mock_workspace, user_home
@@ -121,7 +129,7 @@ class TestRulesInjection:
         (tmp_path / "knowledge" / "rules").mkdir(parents=True)
         agent = _make_agent(mock_client, mock_workspace, tmp_path)
         prompt = agent._build_system_prompt()
-        assert "## User Rules" not in prompt
+        assert "User Rules" not in prompt
 
     def test_no_knowledge_store_graceful(self, mock_client, mock_workspace):
         mock_workspace.user_home = None
@@ -130,7 +138,7 @@ class TestRulesInjection:
             workspace=mock_workspace,
         )
         prompt = agent._build_system_prompt()
-        assert "## User Rules" not in prompt
+        assert "User Rules" not in prompt
 
 
 # ── Library knowledge injection ───────────────────────────────────────────
@@ -242,7 +250,7 @@ class TestGracefulDegradation:
         (tmp_path / "knowledge" / "experiences").mkdir(parents=True)
         agent = _make_agent(mock_client, mock_workspace, tmp_path)
         prompt = agent._build_system_prompt()
-        assert "## User Rules" not in prompt
+        assert "User Rules" not in prompt
 
 
 # ── Reasoning log integration ─────────────────────────────────────────────

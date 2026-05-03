@@ -4,8 +4,8 @@
 /**
  * KnowledgePanel — tree-view panel for browsing and editing knowledge items.
  *
- * Shows three collapsible sections: Rules (flat), Skills (one-level),
- * Experiences (one-level).  Supports search, create, edit, and delete.
+ * Shows two collapsible sections: Rules (flat) and Experiences (one-level
+ * sub-dirs).  Supports search, create, edit, and delete.
  */
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
