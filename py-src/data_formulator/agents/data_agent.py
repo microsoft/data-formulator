@@ -56,6 +56,40 @@ from data_formulator.workflows.create_vl_plots import (
 
 logger = logging.getLogger(__name__)
 
+# ── Weak-model rescue helpers ─────────────────────────────────────────────
+# When a weaker LLM calls visualize/clarify/present as a tool instead of
+# outputting JSON in text, these helpers validate and normalise the args
+# so the action can be rescued without wasting rounds.
+
+_ACTION_REQUIRED_FIELDS: dict[str, list[str]] = {
+    "visualize": ["code", "output_variable", "chart"],
+    "clarify": ["questions"],
+    "present": ["summary"],
+}
+
+
+def _rescue_unpack_json_strings(data: dict) -> None:
+    """In-place: parse values that are JSON-encoded strings back to objects.
+
+    Weak models sometimes double-serialise nested fields, e.g.
+    ``"chart": "{\\"chart_type\\": \\"Scatter Plot\\"}"`` instead of a dict.
+    """
+    for key in ("chart", "input_tables", "questions", "field_metadata", "field_display_names"):
+        val = data.get(key)
+        if isinstance(val, str) and val.strip()[:1] in ("{", "["):
+            try:
+                data[key] = json.loads(val)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+
+def _rescue_validate_action(data: dict) -> list[str]:
+    """Return list of missing required fields for the action, or [] if valid."""
+    action = data.get("action", "")
+    required = _ACTION_REQUIRED_FIELDS.get(action, [])
+    return [f for f in required if not data.get(f)]
+
+
 # ── Tool definitions (OpenAI function-calling format) ─────────────────────
 # These are internal tools the agent can use freely within a turn to
 # gather data before committing to a user-visible action.
@@ -189,7 +223,7 @@ TOOLS = [
         "function": {
             "name": "search_knowledge",
             "description": (
-                "Search the user's knowledge base (rules, skills, experiences) "
+                "Search the user's knowledge base (rules, experiences) "
                 "for relevant entries. Returns title, category, snippet, and "
                 "path for each match. Use read_knowledge to get full content."
             ),
@@ -204,7 +238,7 @@ TOOLS = [
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["rules", "skills", "experiences"],
+                            "enum": ["rules", "experiences"],
                         },
                         "description": "Optional: limit search to specific categories.",
                     },
@@ -226,7 +260,7 @@ TOOLS = [
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["rules", "skills", "experiences"],
+                        "enum": ["rules", "experiences"],
                         "description": "Knowledge category.",
                     },
                     "path": {
@@ -272,7 +306,7 @@ You have tools you can call to gather data and share reasoning:
   descriptions, schema, row count).  Only use with ``source_id`` and
   ``table_key`` from search_data_tables results; do NOT fabricate these values.
 - **search_knowledge(query, categories?)** — search the user's knowledge base
-  (rules, skills, experiences) for relevant entries.
+  (rules, experiences) for relevant entries.
 - **read_knowledge(category, path)** — read the full content of a knowledge entry.
 
 The initial context already includes sample rows and statistics for each
@@ -490,6 +524,16 @@ class DataAgent:
                     knowledge_rules_injected=self._injected_rules,
                     knowledge_injected=self._injected_knowledge,
                 )
+
+                if self._injected_rules or self._injected_knowledge:
+                    yield {
+                        "type": "context_info",
+                        "rules_injected": self._injected_rules,
+                        "knowledge_injected": [
+                            {"category": k["category"], "title": k["title"]}
+                            for k in self._injected_knowledge
+                        ],
+                    }
 
             action_retry_budget = 1  # one extra chance when the LLM fails to produce an action
 
@@ -1269,22 +1313,25 @@ class DataAgent:
             agent_exploration_rules=rules_block,
             context_guide=context_guide,
         )
-        # Append the chart creation guide so the LLM knows chart types,
-        # encoding channels, semantic types, and code rules from the start.
+
+        # Inject alwaysApply rules RIGHT AFTER the core prompt, BEFORE
+        # technical reference material (chart guide, coding rules).
+        # This placement ensures the LLM sees user rules early, while
+        # they are still in the high-attention window.
+        if self._knowledge_store:
+            knowledge_rules = self._knowledge_store.load_always_apply_rules()
+            self._injected_rules = [r["title"] for r in knowledge_rules]
+            prompt += self._knowledge_store.format_rules_block(knowledge_rules)
+        else:
+            self._injected_rules = []
+
+        # Append technical reference material after user rules
         prompt += "\n\n" + CHART_CREATION_GUIDE
         if self.agent_coding_rules and self.agent_coding_rules.strip():
             prompt += (
                 "\n\n## Agent Coding Rules\n\n"
                 + self.agent_coding_rules.strip()
             )
-
-        # Inject rules from KnowledgeStore (Phase 3.1)
-        knowledge_rules = self._load_knowledge_rules()
-        self._injected_rules = [r["title"] for r in knowledge_rules]
-        if knowledge_rules:
-            prompt += "\n\n## User Rules\n"
-            for rule in knowledge_rules:
-                prompt += f"\n### {rule['title']}\n{rule['body']}\n"
 
         if self.language_instruction:
             prompt = prompt + "\n\n" + self.language_instruction
@@ -1330,14 +1377,15 @@ class DataAgent:
         if peripheral_block:
             user_content += f"{peripheral_block}\n\n"
 
-        # Search and inject relevant skills/experiences (Phase 3.2)
+        # Search and inject relevant knowledge (experiences + non-alwaysApply rules)
         table_names = [t.get("name", "") for t in input_tables if t.get("name")]
         relevant_knowledge = self._search_relevant_knowledge(user_question, table_names)
         if relevant_knowledge:
             knowledge_block = "[RELEVANT KNOWLEDGE]\n"
             for item in relevant_knowledge:
+                label = "rule" if item["category"] == "rules" else "knowledge"
                 knowledge_block += (
-                    f"\n### [{item['category']}] {item['title']}\n"
+                    f"\n### [{label}] {item['title']}\n"
                     f"{item['snippet']}\n"
                 )
             user_content += f"{knowledge_block}\n\n"
@@ -1359,6 +1407,14 @@ class DataAgent:
                 for item in relevant_knowledge
             ],
         )
+
+        # Inject alwaysApply rules into user message for better visibility
+        # (rules in system prompt are often ignored; rules in user message have higher impact)
+        if self._knowledge_store:
+            always_apply_rules = self._knowledge_store.load_always_apply_rules()
+            if always_apply_rules:
+                rules_text = "\n\n".join([f"### {r['title']}\n{r['body']}" for r in always_apply_rules])
+                user_content += f"[USER RULES - MUST FOLLOW]\n\n{rules_text}\n\n"
 
         user_content += f"[USER QUESTION]\n\n{user_question}"
 
@@ -1653,6 +1709,44 @@ class DataAgent:
                             "status": "ok",
                             "stdout": tool_content,
                         }
+                    elif tool_name in ("visualize", "clarify", "present", "action"):
+                        action_data = dict(tool_args)
+                        if "action" not in action_data:
+                            real_name = tool_name if tool_name != "action" else action_data.get("type", "present")
+                            action_data["action"] = real_name
+
+                        _rescue_unpack_json_strings(action_data)
+
+                        missing = _rescue_validate_action(action_data)
+                        if missing:
+                            tool_content = (
+                                f"ERROR: '{action_data['action']}' is an ACTION, not a tool. "
+                                f"Output it as a JSON object in your text reply. "
+                                f"Also, these required fields are missing: {', '.join(missing)}."
+                            )
+                            logger.warning("[DataAgent] Action-as-tool with missing fields %s, sending correction", missing)
+                            yield {
+                                "type": "tool_result",
+                                "tool": tool_name,
+                                "status": "error",
+                                "error": f"Missing fields: {', '.join(missing)}",
+                            }
+                        else:
+                            logger.info("[DataAgent] Rescued action '%s' from tool call (weak-model fallback)", action_data.get("action"))
+                            tool_content = "ok"
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": tool_content,
+                            })
+                            rlog.log("tool_execution", iteration=outer_iteration,
+                                     tool=tool_name,
+                                     input_summary="rescued_as_action",
+                                     output_summary="ok",
+                                     latency_ms=0, status="ok")
+                            yield {"type": "agent_action", "action_data": action_data,
+                                   "reason": "ok", "llm_calls": llm_calls_in_cycle}
+                            return
                     else:
                         tool_content = f"Unknown tool: {tool_name}"
 
@@ -1841,62 +1935,28 @@ class DataAgent:
     # Knowledge helpers
     # ------------------------------------------------------------------
 
-    def _load_knowledge_rules(self) -> list[dict[str, str]]:
-        """Load ``alwaysApply`` rules from KnowledgeStore for system prompt injection.
-
-        Only rules whose front-matter ``alwaysApply`` is true (the default)
-        are returned here.  Non-alwaysApply rules are picked up via
-        :meth:`_search_relevant_knowledge` instead.
-
-        Returns a list of ``{"title": ..., "body": ...}`` dicts.
-        Returns empty list on failure (graceful degradation).
-        """
-        if not self._knowledge_store:
-            return []
-        try:
-            from data_formulator.knowledge.store import parse_front_matter
-            items = self._knowledge_store.list_all("rules")
-            result = []
-            for item in items:
-                if not item.get("alwaysApply", True):
-                    continue
-                try:
-                    content = self._knowledge_store.read("rules", item["path"])
-                    _, body = parse_front_matter(content)
-                    result.append({
-                        "title": item["title"],
-                        "body": body.strip(),
-                    })
-                except Exception:
-                    continue
-            return result
-        except Exception:
-            logger.warning("Failed to load knowledge rules", exc_info=True)
-            return []
-
     def _search_relevant_knowledge(
         self,
         user_question: str,
         table_names: list[str],
         max_items: int = 5,
     ) -> list[dict[str, Any]]:
-        """Search skills, experiences, and non-alwaysApply rules relevant to the current session.
+        """Search experiences and non-alwaysApply rules relevant to the current session.
 
-        Extracts keywords from the user question and table names, then
-        searches the knowledge store.  Returns up to *max_items* results.
+        Uses the user question as the search query and passes table names
+        separately for tag-overlap boosting.  alwaysApply rules are
+        excluded by KnowledgeStore.search() since they are already
+        injected via system prompt.
         Graceful degradation: returns empty list on failure.
         """
         if not self._knowledge_store:
             return []
         try:
-            query_parts = [user_question]
-            query_parts.extend(table_names[:5])
-            query = " ".join(query_parts)
-
             results = self._knowledge_store.search(
-                query,
-                categories=["rules", "skills", "experiences"],
+                user_question,
+                categories=["rules", "experiences"],
                 max_results=max_items,
+                table_names=table_names[:5],
             )
             return results
         except Exception:
@@ -2055,7 +2115,7 @@ class DataAgent:
 
             # Regular messages (system, user, assistant without tool_calls)
             elif content:
-                if isinstance(content, str) and len(content) > 4000:
+                if role != "system" and isinstance(content, str) and len(content) > 4000:
                     content = content[:4000] + "\n... (truncated)"
                 snapshot.append({"role": role, "content": content})
         return snapshot

@@ -23,6 +23,7 @@
     "data": "数据",
     "chat": "对话",
     "code": "代码",
+    "agentLog": "Agent 日志",
     "explain": "解释",
     "concepts": "解释",
     "orStartWithChartType": "或者，从图表类型开始",

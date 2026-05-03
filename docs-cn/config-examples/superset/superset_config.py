@@ -100,6 +100,14 @@ try:
         from oauth_config import SSOBridgeView
         appbuilder.add_view_no_menu(SSOBridgeView())
 
+        # 注册 SSO 换票 Blueprint（可选：当 DF 与 Superset 共用同一 IdP 时启用）
+        try:
+            from oauth_config import df_exchange_bp
+            app.register_blueprint(df_exchange_bp)
+            print("DF Token Exchange 端点已注册: /api/v1/df-token-exchange/")
+        except ImportError:
+            print("DF Token Exchange 端点未启用（oauth_config 中未定义 df_exchange_bp）")
+
         _jwt_logger = logging.getLogger("df_jwt_bridge")
 
         @app.before_request

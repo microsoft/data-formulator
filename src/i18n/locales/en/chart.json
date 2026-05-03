@@ -23,6 +23,7 @@
     "data": "data",
     "chat": "chat",
     "code": "code",
+    "agentLog": "Agent Log",
     "explain": "explain",
     "concepts": "explanation",
     "orStartWithChartType": "or, start with a chart type",

@@ -167,9 +167,9 @@ class TestKnowledgeDelete:
 
 class TestKnowledgeSearch:
     def test_search_returns_results(self, client, tmp_path):
-        rules_dir = tmp_path / "knowledge" / "rules"
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        (rules_dir / "roi.md").write_text(SAMPLE_MD, encoding="utf-8")
+        exp_dir = tmp_path / "knowledge" / "experiences" / "finance"
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        (exp_dir / "roi.md").write_text(SAMPLE_MD, encoding="utf-8")
 
         resp = client.post("/api/knowledge/search",
                            json={"query": "ROI"})
@@ -191,12 +191,12 @@ class TestKnowledgeSearch:
         assert data["status"] == "error"
 
     def test_search_filters_by_category(self, client, tmp_path):
-        rules_dir = tmp_path / "knowledge" / "rules"
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        (rules_dir / "roi.md").write_text(SAMPLE_MD, encoding="utf-8")
+        exp_dir = tmp_path / "knowledge" / "experiences" / "finance"
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        (exp_dir / "roi.md").write_text(SAMPLE_MD, encoding="utf-8")
 
         resp = client.post("/api/knowledge/search",
-                           json={"query": "ROI", "categories": ["skills"]})
+                           json={"query": "ROI", "categories": ["rules"]})
         data = resp.get_json()
         assert data["status"] == "success"
         assert len(data["data"]["results"]) == 0

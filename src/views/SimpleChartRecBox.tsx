@@ -678,6 +678,26 @@ export const SimpleChartRecBox: FC = function () {
         let pendingThought: string = '';
 
         const processStreamingResult = (result: any) => {
+            // ── context_info: show injected rules/knowledge at the top ──
+            if (result.type === "context_info") {
+                const parts: string[] = [];
+                const rules: string[] = result.rules_injected || [];
+                const knowledge: Array<{category: string; title: string}> = result.knowledge_injected || [];
+                if (rules.length > 0) {
+                    parts.push(t('dataThread.rulesLoaded', { rules: rules.join(', ') }));
+                }
+                if (knowledge.length > 0) {
+                    const titles = knowledge.map(k => k.title).join(', ');
+                    parts.push(t('dataThread.knowledgeLoaded', { knowledge: titles }));
+                }
+                if (parts.length > 0) {
+                    thinkingSteps.push('📋 ' + parts.join(' | '));
+                    if (currentDraftId) {
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                    }
+                }
+            }
+
             // ── thinking_text: LLM reasoning alongside tool calls ──
             // Accumulate into pendingThought; don't create a visible step
             if (result.type === "thinking_text") {
@@ -711,6 +731,11 @@ export const SimpleChartRecBox: FC = function () {
                 } else if (result.tool === "inspect_source_data") {
                     const tableNames = result.table_names?.join(', ') || '';
                     thinkingSteps.push(t('dataThread.inspectingData') + (tableNames ? ` ${tableNames}` : ''));
+                } else if (result.tool === "search_data_tables" || result.tool === "search_knowledge") {
+                    const query = result.query || '';
+                    thinkingSteps.push(t('dataThread.searching') + (query ? ` "${query}"` : ''));
+                } else if (["visualize", "clarify", "present", "action"].includes(result.tool)) {
+                    thinkingSteps.push(t('dataThread.producingAction', { action: result.tool }));
                 }
                 if (currentDraftId) {
                     dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
@@ -720,12 +745,16 @@ export const SimpleChartRecBox: FC = function () {
             // ── tool_result: mark the last tool step as done ──
             // (skip for think tool — it doesn't add steps)
             if (result.type === "tool_result" && result.tool !== "think") {
-                // Find the last non-✓ tool step (skip over any thinking entries)
+                const isError = result.status === "error" || !!result.error;
                 for (let i = thinkingSteps.length - 1; i >= 0; i--) {
-                    if (!thinkingSteps[i].startsWith('✓')) {
-                        thinkingSteps[i] = '✓ ' + thinkingSteps[i];
+                    if (!thinkingSteps[i].startsWith('✓') && !thinkingSteps[i].startsWith('✗')) {
+                        thinkingSteps[i] = (isError ? '✗ ' : '✓ ') + thinkingSteps[i];
                         break;
                     }
+                }
+                if (isError && result.error) {
+                    const errPreview = String(result.error).split('\n').pop()?.trim() || String(result.error).slice(0, 120);
+                    thinkingSteps.push('⚠ ' + errPreview);
                 }
                 if (currentDraftId) {
                     dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
@@ -798,7 +827,7 @@ export const SimpleChartRecBox: FC = function () {
                             ...currentDraftInteraction,
                             {
                                 from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
-                                plan: [lastAgentThought, pendingThought, ...thinkingSteps.filter(s => s.trim())].filter(Boolean).join('\n') || undefined,
+                                plan: [lastAgentThought, pendingThought, ...thinkingSteps.filter(s => s.trim())].filter(Boolean).join('\x1E') || undefined,
                                 content: question || displayInstruction,
                                 displayContent: displayInstruction,
                                 inputTableNames: resolvedSourceNames,
@@ -999,7 +1028,11 @@ export const SimpleChartRecBox: FC = function () {
                     body: messageBody,
                 }, controller.signal)) {
                     if (data.type === "error") {
-                        const errMsg = data.error ? getErrorMessage(data.error) : t('chartRec.errorDuringExploration');
+                        const errMsg = data.error
+                            ? getErrorMessage(data.error)
+                            : data.message
+                                ? translateBackend(data.message, data.message_code, data.message_params)
+                                : t('chartRec.errorDuringExploration');
                         setIsChatFormulating(false);
                         clearTimeout(timeoutId);
                         dispatch(dfActions.addMessages({

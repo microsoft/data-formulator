@@ -14,7 +14,7 @@ import { apiRequest } from '../app/apiClient';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-export type KnowledgeCategory = 'rules' | 'skills' | 'experiences';
+export type KnowledgeCategory = 'rules' | 'experiences';
 
 export interface KnowledgeItem {
     title: string;
@@ -31,7 +31,6 @@ export interface KnowledgeItem {
 export interface KnowledgeLimits {
     rule_description_max: number;
     rules: number;
-    skills: number;
     experiences: number;
 }
 
@@ -151,6 +150,7 @@ export async function distillExperience(
     experienceContext: ExperienceContext,
     model: Record<string, any>,
     categoryHint?: string,
+    timeoutSeconds?: number,
     signal?: AbortSignal,
 ): Promise<DistillExperienceResult> {
     const { data } = await apiRequest<{ path: string; category: string }>('/api/knowledge/distill-experience', {
@@ -160,6 +160,7 @@ export async function distillExperience(
             experience_context: experienceContext,
             model,
             category_hint: categoryHint,
+            timeout_seconds: timeoutSeconds,
         }),
         signal,
     });

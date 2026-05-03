@@ -418,6 +418,10 @@
     "runningCode": "running code...",
     "creatingChart": "creating chart...",
     "inspectingData": "inspecting source data...",
+    "rulesLoaded": "Rules: {{rules}}",
+    "knowledgeLoaded": "Knowledge: {{knowledge}}",
+    "searching": "searching...",
+    "producingAction": "outputting {{action}}...",
     "jumpToThreadRange": "Jump to thread(s) {{label}}",
     "collapse": "collapse",
     "expand": "expand",
@@ -560,7 +564,10 @@
     "noHistory": "There is no conversation history yet",
     "you": "You",
     "assistant": "Assistant",
-    "agentLog": "Agent Log"
+    "agentLog": "Agent Log",
+    "truncatedPreview": "Content collapsed. Expand to view the full message.",
+    "expandFullMessage": "Expand full message ({{count}} chars)",
+    "collapseFullMessage": "Collapse full message"
   },
   "dataView": {
     "breadcrumb": "breadcrumb"
@@ -771,11 +778,9 @@
   "knowledge": {
     "title": "Knowledge Base",
     "rules": "Rules",
-    "skills": "Skills",
     "experiences": "Experiences",
     "rulesDescription": "Constraints and standards that agents must follow",
-    "skillsDescription": "Reusable analysis methods and technique templates",
-    "experiencesDescription": "Insights distilled from successful analyses",
+    "experiencesDescription": "Reusable methods, tips, and knowledge distilled from analyses",
     "newItem": "New",
     "search": "Search",
     "searchPlaceholder": "Search knowledge...",
@@ -817,7 +822,7 @@
     "itemCount": "({{count}})",
     "collapse": "Collapse",
     "expand": "Expand",
-    "emptyState": "Add rules, skills, or experiences to help AI agents work better.",
+    "emptyState": "Add rules or experiences to help AI agents work better.",
     "markdownEditor": "Markdown Editor",
     "description": "Description",
     "descriptionPlaceholder": "Short summary of this rule (max {{max}} chars)",

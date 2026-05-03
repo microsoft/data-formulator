@@ -74,28 +74,6 @@ Check if the user's "chart" (chart_type + encodings) is sufficient for their "go
 {SHARED_DUCKDB_NOTES}'''
 
 
-def _load_knowledge_rules(knowledge_store) -> list[dict]:
-    """Load rules from KnowledgeStore. Returns list of {title, body} dicts."""
-    if not knowledge_store:
-        return []
-    try:
-        from data_formulator.knowledge.store import parse_front_matter
-        items = knowledge_store.list_all("rules")
-        result = []
-        for item in items:
-            try:
-                content = knowledge_store.read("rules", item["path"])
-                _, body = parse_front_matter(content)
-                if body.strip():
-                    result.append({"title": item["title"], "body": body.strip()})
-            except Exception:
-                pass
-        return result
-    except Exception:
-        logger.warning("Failed to load knowledge rules", exc_info=True)
-        return []
-
-
 def _combine_rules(text_rules: str, knowledge_rules: list[dict]) -> str:
     """Merge text rules and knowledge-file rules into a single string."""
     parts = []
@@ -116,7 +94,7 @@ class DataTransformationAgent(object):
         self._agent_coding_rules = agent_coding_rules
         self._language_instruction = language_instruction
 
-        knowledge_rules = _load_knowledge_rules(knowledge_store)
+        knowledge_rules = knowledge_store.load_always_apply_rules() if knowledge_store else []
         combined_rules = _combine_rules(agent_coding_rules, knowledge_rules)
 
         if system_prompt is not None:

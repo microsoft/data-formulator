@@ -25,7 +25,7 @@ import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 
 import { DataFormulatorState, dfActions, type ModelConfig } from '../app/dfSlice';
-import type { AppDispatch } from '../app/store';
+import { store, type AppDispatch } from '../app/store';
 import { handleApiError } from '../app/errorHandler';
 import { distillExperience, type ExperienceContext } from '../api/knowledgeApi';
 import type { DictTable } from '../components/ComponentType';
@@ -171,7 +171,14 @@ export const SaveExperienceButton: React.FC<SaveExperienceButtonProps> = ({
 
         try {
             const modelConfig = buildDistillModelConfig(selectedModel);
-            await distillExperience(experienceContext, modelConfig, categoryHint.trim() || undefined);
+            const timeoutSeconds = (store.getState() as DataFormulatorState).config.formulateTimeoutSeconds;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
+            try {
+                await distillExperience(experienceContext, modelConfig, categoryHint.trim() || undefined, timeoutSeconds, controller.signal);
+            } finally {
+                clearTimeout(timeoutId);
+            }
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'success',

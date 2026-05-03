@@ -43,17 +43,16 @@ export function useKnowledgeStore() {
     const { t } = useTranslation();
 
     const [rules, setRules] = useState<KnowledgeCategoryState>({ ...EMPTY_CATEGORY });
-    const [skills, setSkills] = useState<KnowledgeCategoryState>({ ...EMPTY_CATEGORY });
     const [experiences, setExperiences] = useState<KnowledgeCategoryState>({ ...EMPTY_CATEGORY });
 
     const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
     const [searching, setSearching] = useState(false);
 
-    const DEFAULT_LIMITS: KnowledgeLimits = { rule_description_max: 100, rules: 350, skills: 2000, experiences: 2000 };
+    const DEFAULT_LIMITS: KnowledgeLimits = { rule_description_max: 100, rules: 350, experiences: 2000 };
     const [limits, setLimits] = useState<KnowledgeLimits>(DEFAULT_LIMITS);
 
-    const stateMap = { rules, skills, experiences };
-    const setterMap = useRef({ rules: setRules, skills: setSkills, experiences: setExperiences });
+    const stateMap = { rules, experiences };
+    const setterMap = useRef({ rules: setRules, experiences: setExperiences });
 
     const fetchList = useCallback(async (category: KnowledgeCategory) => {
         const setter = setterMap.current[category];
@@ -75,7 +74,6 @@ export function useKnowledgeStore() {
     const fetchAll = useCallback(async () => {
         await Promise.all([
             fetchList('rules'),
-            fetchList('skills'),
             fetchList('experiences'),
             fetchKnowledgeLimits().then(setLimits).catch(() => { /* best-effort */ }),
         ]);
@@ -210,7 +208,6 @@ export function useKnowledgeStore() {
 
     return {
         rules,
-        skills,
         experiences,
         stateMap,
         limits,

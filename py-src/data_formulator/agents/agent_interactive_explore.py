@@ -169,7 +169,7 @@ class InteractiveExploreAgent(object):
                         search_query, categories=["experiences"], max_results=3,
                     )
                     if relevant:
-                        knowledge_block = "[RELEVANT EXPERIENCES]\n"
+                        knowledge_block = "[RELEVANT KNOWLEDGE]\n"
                         for item in relevant:
                             knowledge_block += f"\n### {item['title']}\n{item['snippet']}\n"
                         context += f"\n\n{knowledge_block}"
@@ -181,6 +181,9 @@ class InteractiveExploreAgent(object):
 
         if self.agent_exploration_rules and self.agent_exploration_rules.strip():
             system_prompt += "\n\n[AGENT EXPLORATION RULES]\n\n" + self.agent_exploration_rules.strip() + "\n\nPlease follow the above agent exploration rules when suggesting questions."
+
+        if self._knowledge_store:
+            system_prompt += self._knowledge_store.format_rules_block()
 
         if self.language_instruction:
             system_prompt = system_prompt + "\n\n" + self.language_instruction

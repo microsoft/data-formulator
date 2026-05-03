@@ -242,7 +242,12 @@ class DataLoadingAgent:
             Chat history in the format:
             [{"role": "user", "content": "...", "attachments": [...]}, ...]
         """
-        system_prompt = self._build_system_prompt()
+        last_user_text = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                last_user_text = str(msg.get("content", ""))
+                break
+        system_prompt = self._build_system_prompt(last_user_text)
         llm_messages = [{"role": "system", "content": system_prompt}]
 
         # Convert chat messages to LLM format
@@ -785,8 +790,13 @@ class DataLoadingAgent:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _build_system_prompt(self):
-        """Build the system prompt with current workspace context."""
+    def _build_system_prompt(self, last_user_text: str = ""):
+        """Build the system prompt with current workspace context.
+
+        *last_user_text* is used to search the knowledge store for
+        experiences relevant to the user's current request.  Falls back
+        to a generic query when empty.
+        """
         table_names = "none"
         try:
             metadata = self.workspace.list_tables()
@@ -805,21 +815,29 @@ class DataLoadingAgent:
             table_names=table_names,
         )
 
-        # Inject relevant skills from knowledge store
+        if self._knowledge_store:
+            prompt += self._knowledge_store.format_rules_block()
+
+        # Inject relevant experiences from knowledge store
         if self._knowledge_store:
             try:
+                search_query = (
+                    last_user_text.strip()
+                    if last_user_text and last_user_text.strip()
+                    else "data loading cleaning preparation"
+                )
                 relevant = self._knowledge_store.search(
-                    "data loading cleaning preparation",
-                    categories=["skills"],
+                    search_query,
+                    categories=["experiences"],
                     max_results=3,
                 )
                 if relevant:
-                    skills_block = "[RELEVANT SKILLS]\n"
+                    knowledge_block = "[RELEVANT KNOWLEDGE]\n"
                     for item in relevant:
-                        skills_block += f"\n### {item['title']}\n{item['snippet']}\n"
-                    prompt += "\n\n" + skills_block
+                        knowledge_block += f"\n### {item['title']}\n{item['snippet']}\n"
+                    prompt += "\n\n" + knowledge_block
             except Exception:
-                logger.warning("Failed to search knowledge skills", exc_info=True)
+                logger.warning("Failed to search knowledge experiences", exc_info=True)
 
         if self.language_instruction:
             prompt += "\n\n" + self.language_instruction
