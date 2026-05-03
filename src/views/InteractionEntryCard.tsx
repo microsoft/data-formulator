@@ -13,17 +13,24 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import CheckIcon from '@mui/icons-material/Check';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { InteractionEntry } from '../components/ComponentType';
 import { AgentIcon, TableIcon } from '../icons';
 import { radius, borderColor } from '../app/tokens';
 
 /** Pick the icon component for a step line based on known prefixes. */
 export const getStepIconComponent = (line: string) => {
+    if (line.startsWith('✗')) return ErrorOutlineIcon;
+    if (line.startsWith('⚠')) return WarningAmberIcon;
+    if (line.startsWith('📋')) return InfoOutlinedIcon;
     const stripped = line.startsWith('✓') ? line.slice(2) : line;
     const lbl = stripped.toLowerCase();
     if (lbl.startsWith('running code') || lbl.startsWith('运行')) return TerminalIcon;
     if (lbl.startsWith('inspecting') || lbl.startsWith('检查')) return SearchIcon;
-    if (lbl.startsWith('creating chart') || lbl.startsWith('图表')) return AutoGraphIcon;
+    if (lbl.startsWith('searching') || lbl.startsWith('搜索')) return SearchIcon;
+    if (lbl.startsWith('creating chart') || lbl.startsWith('图表') || lbl.startsWith('生成图表')) return AutoGraphIcon;
     return AutoAwesomeIcon;
 };
 
@@ -34,8 +41,14 @@ const PlanStepItem: React.FC<{
 }> = ({ step, showShimmer }) => {
     const [expanded, setExpanded] = useState(false);
     const isChecked = step.startsWith('✓');
-    const displayLine = isChecked ? step.slice(2) : step;
+    const isFailed = step.startsWith('✗');
+    const isWarning = step.startsWith('⚠');
+    const isInfo = step.startsWith('📋');
+    const displayLine = (isChecked || isFailed) ? step.slice(2) : (isWarning || isInfo) ? step.slice(2).trimStart() : step;
     const IconComp = getStepIconComponent(step);
+
+    const stepColor = isFailed ? 'error.main' : isWarning ? 'warning.main' : isInfo ? 'info.main'
+        : showShimmer ? 'text.secondary' : 'text.disabled';
 
     return (
         <Box sx={{
@@ -59,10 +72,10 @@ const PlanStepItem: React.FC<{
         }}
         onClick={() => setExpanded(prev => !prev)}
         >
-            <IconComp sx={{ width: 10, height: 10, color: 'text.disabled', flexShrink: 0, mt: '2px' }} />
+            <IconComp sx={{ width: 10, height: 10, color: stepColor, flexShrink: 0, mt: '2px' }} />
             <Typography component="span" sx={{
                 fontSize: '10px',
-                color: showShimmer ? 'text.secondary' : 'text.disabled',
+                color: stepColor,
                 fontStyle: 'italic',
                 lineHeight: 1.4,
                 ...(!expanded ? {
@@ -293,7 +306,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
             >
                 <Collapse in={expanded}>
                     {hasPlan && (() => {
-                        const planLines = entry.plan!.split('\n').filter(l => l.trim());
+                        const planLines = (entry.plan!.includes('\x1E') ? entry.plan!.split('\x1E') : entry.plan!.split('\n')).filter(l => l.trim());
                         return (
                             <Box sx={{ py: '2px' }}>
                                 <PlanStepsView steps={planLines} filterCreatingChart />

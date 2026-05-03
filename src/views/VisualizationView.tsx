@@ -77,6 +77,7 @@ import 'prismjs/themes/prism.css'; //Example style, you can use another
 import { useTranslation } from 'react-i18next';
 
 import { ChatDialog } from './ChatDialog';
+import { PlanStepsView } from './InteractionEntryCard';
 import { EncodingShelfThread } from './EncodingShelfThread';
 import { CustomReactTable } from './ReactTable';
 import { InsightIcon } from '../icons';
@@ -119,7 +120,7 @@ export let renderTableChart = (
 
     let colDefs = fields.map(field => {
         let name = field.name;
-        const isNumeric = field.type === 'integer' || field.type === 'number';
+        const isNumeric = rows.some(row => typeof row[name] === 'number');
         return {
             id: name, label: fieldDisplayNames?.[name] || name, minWidth: 30,
             align: (isNumeric ? 'right' : undefined) as 'right' | undefined, 
@@ -907,6 +908,24 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     {bottomTab === 'code' && hasDerived && (
                         <Box sx={{ ...panelBoxSx, minWidth: 440, maxWidth: 800 }}>
                             <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                                {(() => {
+                                    const derive = triggerTable?.derive || table.derive;
+                                    const interaction = derive?.trigger?.interaction;
+                                    const lastEntry = interaction?.[interaction.length - 1];
+                                    const plan = lastEntry?.plan || '';
+                                    const planSteps = plan ? (plan.includes('\x1E') ? plan.split('\x1E') : plan.split('\n')).filter((s: string) => s.trim()) : [];
+                                    if (planSteps.length > 0) {
+                                        return (
+                                            <Box sx={{ px: 1.5, pt: 1, pb: 0.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                                                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                                                    {t('chart.agentLog')}
+                                                </Typography>
+                                                <PlanStepsView steps={planSteps} />
+                                            </Box>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                                 <CodeBox code={transformCode.trimStart()} language={table.virtual ? "sql" : "python"} />
                             </Box>
                         </Box>

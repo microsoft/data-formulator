@@ -418,6 +418,10 @@
     "runningCode": "运行代码中...",
     "creatingChart": "生成图表中...",
     "inspectingData": "检查数据源中...",
+    "rulesLoaded": "已加载规则：{{rules}}",
+    "knowledgeLoaded": "已加载知识：{{knowledge}}",
+    "searching": "搜索中...",
+    "producingAction": "输出 {{action}} 中...",
     "jumpToThreadRange": "跳转到线程 {{label}}",
     "collapse": "收起",
     "expand": "展开",
@@ -456,7 +460,10 @@
     "noHistory": "尚无对话记录",
     "you": "你",
     "assistant": "助手",
-    "agentLog": "Agent 日志"
+    "agentLog": "Agent 日志",
+    "truncatedPreview": "内容已折叠，展开可查看完整消息。",
+    "expandFullMessage": "展开完整消息（{{count}} 字符）",
+    "collapseFullMessage": "收起完整消息"
   },
   "dataView": {
     "breadcrumb": "面包屑"

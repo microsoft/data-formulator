@@ -418,6 +418,10 @@
     "runningCode": "running code...",
     "creatingChart": "creating chart...",
     "inspectingData": "inspecting source data...",
+    "rulesLoaded": "Rules: {{rules}}",
+    "knowledgeLoaded": "Knowledge: {{knowledge}}",
+    "searching": "searching...",
+    "producingAction": "outputting {{action}}...",
     "jumpToThreadRange": "Jump to thread(s) {{label}}",
     "collapse": "collapse",
     "expand": "expand",
@@ -560,7 +564,10 @@
     "noHistory": "There is no conversation history yet",
     "you": "You",
     "assistant": "Assistant",
-    "agentLog": "Agent Log"
+    "agentLog": "Agent Log",
+    "truncatedPreview": "Content collapsed. Expand to view the full message.",
+    "expandFullMessage": "Expand full message ({{count}} chars)",
+    "collapseFullMessage": "Collapse full message"
   },
   "dataView": {
     "breadcrumb": "breadcrumb"

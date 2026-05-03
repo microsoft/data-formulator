@@ -56,6 +56,40 @@ from data_formulator.workflows.create_vl_plots import (
 
 logger = logging.getLogger(__name__)
 
+# ── Weak-model rescue helpers ─────────────────────────────────────────────
+# When a weaker LLM calls visualize/clarify/present as a tool instead of
+# outputting JSON in text, these helpers validate and normalise the args
+# so the action can be rescued without wasting rounds.
+
+_ACTION_REQUIRED_FIELDS: dict[str, list[str]] = {
+    "visualize": ["code", "output_variable", "chart"],
+    "clarify": ["questions"],
+    "present": ["summary"],
+}
+
+
+def _rescue_unpack_json_strings(data: dict) -> None:
+    """In-place: parse values that are JSON-encoded strings back to objects.
+
+    Weak models sometimes double-serialise nested fields, e.g.
+    ``"chart": "{\\"chart_type\\": \\"Scatter Plot\\"}"`` instead of a dict.
+    """
+    for key in ("chart", "input_tables", "questions", "field_metadata", "field_display_names"):
+        val = data.get(key)
+        if isinstance(val, str) and val.strip()[:1] in ("{", "["):
+            try:
+                data[key] = json.loads(val)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+
+def _rescue_validate_action(data: dict) -> list[str]:
+    """Return list of missing required fields for the action, or [] if valid."""
+    action = data.get("action", "")
+    required = _ACTION_REQUIRED_FIELDS.get(action, [])
+    return [f for f in required if not data.get(f)]
+
+
 # ── Tool definitions (OpenAI function-calling format) ─────────────────────
 # These are internal tools the agent can use freely within a turn to
 # gather data before committing to a user-visible action.
@@ -490,6 +524,16 @@ class DataAgent:
                     knowledge_rules_injected=self._injected_rules,
                     knowledge_injected=self._injected_knowledge,
                 )
+
+                if self._injected_rules or self._injected_knowledge:
+                    yield {
+                        "type": "context_info",
+                        "rules_injected": self._injected_rules,
+                        "knowledge_injected": [
+                            {"category": k["category"], "title": k["title"]}
+                            for k in self._injected_knowledge
+                        ],
+                    }
 
             action_retry_budget = 1  # one extra chance when the LLM fails to produce an action
 
@@ -1364,6 +1408,14 @@ class DataAgent:
             ],
         )
 
+        # Inject alwaysApply rules into user message for better visibility
+        # (rules in system prompt are often ignored; rules in user message have higher impact)
+        if self._knowledge_store:
+            always_apply_rules = self._knowledge_store.load_always_apply_rules()
+            if always_apply_rules:
+                rules_text = "\n\n".join([f"### {r['title']}\n{r['body']}" for r in always_apply_rules])
+                user_content += f"[USER RULES - MUST FOLLOW]\n\n{rules_text}\n\n"
+
         user_content += f"[USER QUESTION]\n\n{user_question}"
 
         # Check if any step in the focused thread has a chart thumbnail
@@ -1657,6 +1709,44 @@ class DataAgent:
                             "status": "ok",
                             "stdout": tool_content,
                         }
+                    elif tool_name in ("visualize", "clarify", "present", "action"):
+                        action_data = dict(tool_args)
+                        if "action" not in action_data:
+                            real_name = tool_name if tool_name != "action" else action_data.get("type", "present")
+                            action_data["action"] = real_name
+
+                        _rescue_unpack_json_strings(action_data)
+
+                        missing = _rescue_validate_action(action_data)
+                        if missing:
+                            tool_content = (
+                                f"ERROR: '{action_data['action']}' is an ACTION, not a tool. "
+                                f"Output it as a JSON object in your text reply. "
+                                f"Also, these required fields are missing: {', '.join(missing)}."
+                            )
+                            logger.warning("[DataAgent] Action-as-tool with missing fields %s, sending correction", missing)
+                            yield {
+                                "type": "tool_result",
+                                "tool": tool_name,
+                                "status": "error",
+                                "error": f"Missing fields: {', '.join(missing)}",
+                            }
+                        else:
+                            logger.info("[DataAgent] Rescued action '%s' from tool call (weak-model fallback)", action_data.get("action"))
+                            tool_content = "ok"
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": tool_content,
+                            })
+                            rlog.log("tool_execution", iteration=outer_iteration,
+                                     tool=tool_name,
+                                     input_summary="rescued_as_action",
+                                     output_summary="ok",
+                                     latency_ms=0, status="ok")
+                            yield {"type": "agent_action", "action_data": action_data,
+                                   "reason": "ok", "llm_calls": llm_calls_in_cycle}
+                            return
                     else:
                         tool_content = f"Unknown tool: {tool_name}"
 
@@ -2025,7 +2115,7 @@ class DataAgent:
 
             # Regular messages (system, user, assistant without tool_calls)
             elif content:
-                if isinstance(content, str) and len(content) > 4000:
+                if role != "system" and isinstance(content, str) and len(content) > 4000:
                     content = content[:4000] + "\n... (truncated)"
                 snapshot.append({"role": role, "content": content})
         return snapshot

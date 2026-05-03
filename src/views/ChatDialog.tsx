@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import { FC, useRef, useEffect } from 'react'
+import { FC, useRef, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { radius } from '../app/tokens';
 import { Divider } from "@mui/material";
@@ -221,6 +221,37 @@ const renderMessageContent = (role: string, message: string) => {
     return <Box>{parts}</Box>;
 };
 
+const LONG_MESSAGE_LIMIT = 4000;
+const MESSAGE_PREVIEW_LIMIT = 2500;
+
+const ExpandableMessageContent: FC<{
+    role: string;
+    message: string;
+}> = ({ role, message }) => {
+    const { t } = useTranslation();
+    const [expanded, setExpanded] = useState(false);
+    const isLong = message.length > LONG_MESSAGE_LIMIT;
+    const visibleMessage = isLong && !expanded
+        ? message.slice(0, MESSAGE_PREVIEW_LIMIT) + "\n\n... " + t('chatDialog.truncatedPreview')
+        : message;
+
+    return (
+        <Box>
+            {renderMessageContent(role, visibleMessage)}
+            {isLong && (
+                <Button
+                    size="small"
+                    variant="text"
+                    sx={{ mt: 0.5, px: 0, minWidth: 0, textTransform: 'none' }}
+                    onClick={() => setExpanded(prev => !prev)}
+                >
+                    {expanded ? t('chatDialog.collapseFullMessage') : t('chatDialog.expandFullMessage', { count: message.length })}
+                </Button>
+            )}
+        </Box>
+    );
+};
+
 export interface ChatDialogProps {
     code: string, // final code generated
     dialog: any[],
@@ -317,7 +348,7 @@ export const ChatDialog: FC<ChatDialogProps> = function ChatDialog({code, dialog
                             <Box sx={{display: 'flex', flexDirection: "column", alignItems: "flex-start", flex: 'auto'}}>
                                 <Box sx={{maxWidth: 800, width: 'fit-content', display: 'flex', flexDirection: 'column'}}>
                                     <Box sx={{ color: textColor }}>
-                                        {renderMessageContent(role, message)}
+                                        <ExpandableMessageContent role={role} message={message} />
                                     </Box>
                                 </Box>
                             </Box>

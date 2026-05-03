@@ -82,6 +82,9 @@ import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ArticleIcon from '@mui/icons-material/Article';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 
@@ -1261,7 +1264,7 @@ let SingleThreadGroupView: FC<{
 
             // 2. First-round thinking steps (snapshotted in clarify entry's plan)
             if (clarifyEntry.plan) {
-                const priorLines = clarifyEntry.plan.split('\n').filter((l: string) => l.trim());
+                const priorLines = (clarifyEntry.plan.includes('\x1E') ? clarifyEntry.plan.split('\x1E') : clarifyEntry.plan.split('\n')).filter((l: string) => l.trim());
                 if (priorLines.length > 0) {
                     timelineItems.push({
                         key: `agent-thinking-prior-${tableId}`,
@@ -1663,12 +1666,16 @@ let SingleThreadGroupView: FC<{
                 : 'rgba(0,0,0,0.15)';
             // Pick step-specific icon for completed thinking steps
             const getStepIcon = (label: string, color: string) => {
+                const iconSx = { width: 12, height: 12, color };
+                if (label.startsWith('✗')) return <ErrorOutlineIcon sx={{ ...iconSx, color: theme.palette.error.main }} />;
+                if (label.startsWith('⚠')) return <WarningAmberIcon sx={{ ...iconSx, color: theme.palette.warning.main }} />;
+                if (label.startsWith('📋')) return <InfoOutlinedIcon sx={{ ...iconSx, color: theme.palette.info.main }} />;
                 const stripped = label.startsWith('✓') ? label.slice(2) : label;
                 const lbl = stripped.toLowerCase();
-                const iconSx = { width: 12, height: 12, color };
                 if (lbl.startsWith('running code') || lbl.startsWith('运行')) return <TerminalIcon sx={iconSx} />;
                 if (lbl.startsWith('inspecting') || lbl.startsWith('检查')) return <SearchIcon sx={iconSx} />;
-                if (lbl.startsWith('creating chart') || lbl.startsWith('图表')) return <AutoGraphIcon sx={iconSx} />;
+                if (lbl.startsWith('searching') || lbl.startsWith('搜索')) return <SearchIcon sx={iconSx} />;
+                if (lbl.startsWith('creating chart') || lbl.startsWith('图表') || lbl.startsWith('生成图表')) return <AutoGraphIcon sx={iconSx} />;
                 return <AutoAwesomeIcon sx={iconSx} />;
             };
             const gutterIcon = item.isRunning
