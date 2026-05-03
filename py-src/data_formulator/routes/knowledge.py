@@ -205,6 +205,11 @@ def distill_experience():
     category_hint_raw = data.get("category_hint", "")
     category_hint = category_hint_raw.strip() if isinstance(category_hint_raw, str) else ""
 
+    timeout_raw = data.get("timeout_seconds")
+    timeout_seconds: int | None = None
+    if isinstance(timeout_raw, (int, float)) and timeout_raw > 0:
+        timeout_seconds = int(timeout_raw)
+
     identity_id = get_identity_id()
     user_home = get_user_home(identity_id)
 
@@ -217,6 +222,7 @@ def distill_experience():
     agent = ExperienceDistillAgent(
         client=client,
         language_code=_get_ui_lang(),
+        timeout_seconds=timeout_seconds,
     )
     try:
         md_content = agent.run_from_context(experience_context)

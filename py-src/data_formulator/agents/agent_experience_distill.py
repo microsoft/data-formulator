@@ -168,15 +168,19 @@ class ExperienceDistillAgent:
         "pt": "Portuguese",
     }
 
+    DEFAULT_TIMEOUT = 120
+
     def __init__(
         self,
         client: Client,
         language_instruction: str = "",
         language_code: str = "en",
+        timeout_seconds: int | float | None = None,
     ) -> None:
         self.client = client
         self.language_instruction = language_instruction
         self.language_code = (language_code or "en").strip().lower()
+        self.timeout_seconds = int(timeout_seconds) if timeout_seconds else self.DEFAULT_TIMEOUT
 
     def run(
         self,
@@ -315,6 +319,18 @@ class ExperienceDistillAgent:
     def _truncate(value: Any, limit: int = 500) -> str:
         text = "" if value is None else str(value)
         return text if len(text) <= limit else text[:limit] + "..."
+
+    @staticmethod
+    def _truncate_code(code: str, limit: int = 800) -> str:
+        """Return the first *limit* characters of meaningful code lines."""
+        lines = [
+            line for line in code.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        text = "\n".join(lines)
+        if len(text) <= limit:
+            return text
+        return text[:limit] + "\n# ... (truncated)"
 
     @staticmethod
     def _extract_tool_name_from_dialog_content(content: Any) -> str | None:
@@ -506,14 +522,18 @@ class ExperienceDistillAgent:
                 )
             if result.get("code"):
                 parts.append(
-                    f"- Final code summary: {cls._summarize_code_shape(result.get('code'))}"
+                    f"- Final code pattern: {cls._summarize_code_shape(result.get('code'))}"
                 )
+                code_preview = cls._truncate_code(str(result["code"]), 800)
+                if code_preview:
+                    parts.append(f"- Final code (truncated):\n{code_preview}")
 
         dialog = context.get("dialog", [])
         if isinstance(dialog, list) and dialog:
             dialog_roles: dict[str, int] = {}
             dialog_tools: list[str] = []
             tool_result_count = 0
+            assistant_snippets: list[str] = []
 
             for msg in dialog[-20:]:
                 if not isinstance(msg, dict):
@@ -532,6 +552,9 @@ class ExperienceDistillAgent:
                 elif isinstance(content, str) and content.strip().startswith("[tool result"):
                     tool_result_count += 1
 
+                if role == "assistant" and isinstance(content, str) and content.strip():
+                    assistant_snippets.append(cls._truncate(content.strip(), 300))
+
             if dialog_roles:
                 role_counts = ", ".join(
                     f"{role}={count}" for role, count in sorted(dialog_roles.items())
@@ -541,6 +564,8 @@ class ExperienceDistillAgent:
                 parts.append(f"- Dialog tool calls: {', '.join(dialog_tools)}")
             if tool_result_count:
                 parts.append(f"- Dialog tool results observed: {tool_result_count}")
+            for i, snippet in enumerate(assistant_snippets[-5:]):
+                parts.append(f"- Agent reasoning [{i + 1}]: {snippet}")
 
         return "\n".join(parts) if parts else "(empty context)"
 
@@ -550,7 +575,7 @@ class ExperienceDistillAgent:
             client = openai.OpenAI(
                 base_url=self.client.params.get("api_base"),
                 api_key=self.client.params.get("api_key", ""),
-                timeout=60,
+                timeout=self.timeout_seconds,
             )
             resp = client.chat.completions.create(
                 model=self.client.model,
@@ -558,6 +583,7 @@ class ExperienceDistillAgent:
             )
         else:
             params = self.client.params.copy()
+            params.setdefault("timeout", self.timeout_seconds)
             resp = litellm.completion(
                 model=self.client.model,
                 messages=messages,

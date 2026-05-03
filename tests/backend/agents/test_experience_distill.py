@@ -140,8 +140,9 @@ class TestExtractContextSummary:
         assert "revenue" in summary
         assert "Dialog structure" in summary
         assert "explore" in summary
-        assert "Checked region values" not in summary
-        assert "result_df =" not in summary
+        assert "Agent reasoning" in summary
+        assert "Checked region values" in summary
+        assert "Final code (truncated)" in summary
         assert "groupby" in summary
         assert "Failed code summary" in summary
         assert "Repair code summary" in summary

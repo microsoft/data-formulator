@@ -150,6 +150,7 @@ export async function distillExperience(
     experienceContext: ExperienceContext,
     model: Record<string, any>,
     categoryHint?: string,
+    timeoutSeconds?: number,
     signal?: AbortSignal,
 ): Promise<DistillExperienceResult> {
     const { data } = await apiRequest<{ path: string; category: string }>('/api/knowledge/distill-experience', {
@@ -159,6 +160,7 @@ export async function distillExperience(
             experience_context: experienceContext,
             model,
             category_hint: categoryHint,
+            timeout_seconds: timeoutSeconds,
         }),
         signal,
     });
