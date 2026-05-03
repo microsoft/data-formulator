@@ -129,25 +129,26 @@ Agent 调用 propose_load_plan({
 
 > **详细方案见** `design-docs/21.1-knowledge-directory-merge.md`
 
-### 3.1 结论：合并 skills + experiences 为 kb，rules 独立
+### 3.1 结论：合并 skills 为 experiences，rules 独立
 
 原三目录 `rules` / `skills` / `experiences` 合并为两目录：
 
 | 目录 | 内容 | 深度 | body 限制 |
 |------|------|------|----------|
 | `rules/` | 手动创建的约束规则，有 `alwaysApply` 语义 | flat（1 层） | 350 字符 |
-| `kb/` | 所有经验/技能/案例，统一为"知识" | 1 层子目录 + 文件 | 2000 字符 |
+| `experiences/` | 可复用的通用方法论，统一为"经验" | 1 层子目录 + 文件 | 2000 字符 |
 
 不引入 `kind` 分类字段——合并目录的初衷就是消除分类负担。用已有的 `source: manual | distill | auto` 区分来源即可。
 
 ### 3.2 rules 注入分两层
 
 - **`alwaysApply` rules** → 写进需要遵守规则的 Agent 的 system prompt（不走搜索）
-- **非 `alwaysApply` rules** → 仅 `DataAgent` 搜索时包含（`categories=["rules", "kb"]`），其余轻量 Agent 只搜 `["kb"]`
+- **非 `alwaysApply` rules** → 仅 `DataAgent` 搜索时包含（`categories=["rules", "experiences"]`），其余轻量 Agent 只搜 `["experiences"]`
+- `KnowledgeStore.search()` 自动跳过 `alwaysApply=true` 的 rules，避免与 system prompt 重复注入
 
 ### 3.3 未来考虑：高频知识升级为 rule
 
-当一条 kb 条目被 Agent 反复命中时（`hit_count >= 5`），可以建议用户将其提炼为 rule：
+当一条 experiences 条目被 Agent 反复命中时（`hit_count >= 5`），可以建议用户将其提炼为 rule：
 
 - 前端 KnowledgePanel 标 badge 提示"此条知识被频繁引用"
 - 用户确认后，由精简版 distill agent 提取约束生成 rule 候选

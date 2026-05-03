@@ -22,11 +22,10 @@ Agent 知识系统由三部分组成：
 <user_home>/
 └── knowledge/
     ├── rules/
-    ├── skills/
     └── experiences/
 ```
 
-`rules` 只允许扁平 `.md` 文件；`skills` 和 `experiences` 最多允许一级子目录。所有知识文件访问必须通过 `KnowledgeStore`，不要在调用方直接拼接 `Path(user_home) / "knowledge" / user_input`。
+`rules` 只允许扁平 `.md` 文件；`experiences` 最多允许一级子目录。所有知识文件访问必须通过 `KnowledgeStore`，不要在调用方直接拼接 `Path(user_home) / "knowledge" / user_input`。
 
 ## 2. 知识文件格式
 
@@ -73,16 +72,16 @@ from data_formulator.knowledge.store import KnowledgeStore
 store = KnowledgeStore(user_home_path)
 items = store.list_all("rules")
 content = store.read("rules", "roi.md")
-store.write("skills", "cleaning/missing-values.md", content)
+store.write("experiences", "cleaning/missing-values.md", content)
 store.delete("experiences", "sales/quarterly-trend.md")
-results = store.search("missing values", categories=["skills"])
+results = store.search("missing values", categories=["experiences"])
 ```
 
 必须遵守：
 
-- 只使用 `rules`、`skills`、`experiences` 三个 category。
+- 只使用 `rules`、`experiences` 两个 category。
 - 所有知识文件必须是 `.md`。
-- `rules` 路径只能是 `file.md`；`skills` / `experiences` 路径最多是 `folder/file.md`。
+- `rules` 路径只能是 `file.md`；`experiences` 路径最多是 `folder/file.md`。
 - 路径穿越、绝对路径和 symlink 逃逸由 `ConfinedDir` 拦截。
 - 搜索结果只返回摘要，完整内容通过 `read()` 读取。
 
@@ -148,9 +147,9 @@ DataAgent 当前记录的主要事件：
 
 适用于 DataAgent、DataTransformationAgent、DataRecAgent。只把 `alwaysApply != false` 的 rules 注入系统提示词；非 always-apply rules 通过搜索注入。
 
-### 模式 B：Skills / Experiences 上下文注入
+### 模式 B：Library 知识上下文注入
 
-适用于 DataAgent、DataLoadingAgent、InteractiveExploreAgent、ChartInsightAgent。运行时搜索相关 `skills` 或 `experiences`，把摘要注入上下文。
+适用于 DataAgent、DataLoadingAgent、InteractiveExploreAgent、ChartInsightAgent。运行时搜索相关 `experiences` 条目，把摘要注入上下文。`KnowledgeStore.search()` 自动跳过 `alwaysApply=true` 的 rules，避免与 system prompt 重复注入。
 
 ### 模式 C：DataAgent 工具调用
 
@@ -174,7 +173,7 @@ DataAgent 提供两个内部工具：
 
 用户已删除的中间节点不会进入经验上下文。`execution_attempts` 只携带失败/修复代码的结构化摘要，不应携带失败代码或修复代码原文。
 
-后端 `/api/knowledge/distill-experience` 使用前端提交的 `experience_context` 调用 `ExperienceDistillAgent`，然后写入 `knowledge/experiences/`。这个端点不读取管理员推理日志。
+后端 `/api/knowledge/distill-experience` 使用前端提交的 `experience_context` 调用 `ExperienceDistillAgent`，然后写入 `knowledge/experiences/`。`ExperienceDistillAgent` 的 prompt 引导提取可复用的通用方法论，而非特定案例细节。这个端点不读取管理员推理日志。
 
 ## 8. 前端实现约定
 
@@ -206,7 +205,7 @@ window.dispatchEvent(new CustomEvent('knowledge-changed', {
 
 添加新 Agent 或修改知识集成时：
 
-- [ ] 明确该 Agent 需要 `rules`、`skills`、`experiences` 中哪些类别。
+- [ ] 明确该 Agent 需要 `rules`、`experiences` 中哪些类别。
 - [ ] 在 Agent 构造函数中添加可选 `knowledge_store` 参数。
 - [ ] 在 `routes/agents.py` 对应路由中传入 `_get_knowledge_store(identity_id)`。
 - [ ] 选择集成模式：Rules 注入、上下文注入或 DataAgent 工具调用。
@@ -230,7 +229,7 @@ python -m pytest \
 
 前端相关流程当前主要依赖手动验证和通用 `yarn test`。修改 `KnowledgePanel`、`SaveExperienceButton` 或 leaf-table 逻辑时，至少手动覆盖：
 
-- 创建、编辑、删除 rules / skills / experiences。
+- 创建、编辑、删除 rules / experiences。
 - 搜索知识条目。
 - 多步 DataAgent 分析后只在最终 leaf table 显示保存经验按钮。
 - 删除中间 table 后，保存经验上下文不包含已删除节点。

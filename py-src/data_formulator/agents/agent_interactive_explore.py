@@ -169,7 +169,7 @@ class InteractiveExploreAgent(object):
                         search_query, categories=["experiences"], max_results=3,
                     )
                     if relevant:
-                        knowledge_block = "[RELEVANT EXPERIENCES]\n"
+                        knowledge_block = "[RELEVANT KNOWLEDGE]\n"
                         for item in relevant:
                             knowledge_block += f"\n### {item['title']}\n{item['snippet']}\n"
                         context += f"\n\n{knowledge_block}"

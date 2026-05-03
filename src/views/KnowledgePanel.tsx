@@ -93,7 +93,7 @@ export const KnowledgePanel: React.FC = () => {
 
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-        new Set(['rules', 'skills', 'experiences']),
+        new Set(['rules', 'experiences']),
     );
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -324,9 +324,18 @@ export const KnowledgePanel: React.FC = () => {
                     <Typography noWrap sx={{ fontSize: 12, fontWeight: 600, flex: 1, color: 'text.primary' }}>
                         {label}
                     </Typography>
-                    <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
-                        {count > 0 ? t('knowledge.itemCount', { count }) : ''}
-                    </Typography>
+                    {count > 0 && (
+                        <Box sx={{
+                            minWidth: 16, height: 16, px: 0.5,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            borderRadius: '8px',
+                            bgcolor: 'action.hover',
+                            fontSize: 10, fontWeight: 400,
+                            color: 'text.disabled', lineHeight: 1,
+                        }}>
+                            {count}
+                        </Box>
+                    )}
                     <Tooltip title={t('knowledge.newItem')}>
                         <IconButton
                             size="small"
@@ -373,9 +382,16 @@ export const KnowledgePanel: React.FC = () => {
                                     <Typography noWrap sx={{ fontSize: 11, fontWeight: 500, flex: 1, color: 'text.secondary' }}>
                                         {group.name}
                                     </Typography>
-                                    <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
-                                        {t('knowledge.itemCount', { count: group.items.length })}
-                                    </Typography>
+                                    <Box sx={{
+                                        minWidth: 14, height: 14, px: 0.4,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        borderRadius: '7px',
+                                        bgcolor: 'action.hover',
+                                        fontSize: 9, fontWeight: 400,
+                                        color: 'text.disabled', lineHeight: 1,
+                                    }}>
+                                        {group.items.length}
+                                    </Box>
                                 </Box>
                                 <Collapse in={groupExpanded}>
                                     {group.items.map(item => renderItem(category, item, true))}
@@ -479,12 +495,11 @@ export const KnowledgePanel: React.FC = () => {
                     // Tree view
                     <Box>
                         {renderCategorySection('rules', t('knowledge.rules'))}
-                        {renderCategorySection('skills', t('knowledge.skills'))}
                         {renderCategorySection('experiences', t('knowledge.experiences'))}
 
                         {/* Empty state */}
-                        {!store.rules.loading && !store.skills.loading && !store.experiences.loading &&
-                         store.rules.items.length === 0 && store.skills.items.length === 0 && store.experiences.items.length === 0 && (
+                        {!store.rules.loading && !store.experiences.loading &&
+                         store.rules.items.length === 0 && store.experiences.items.length === 0 && (
                             <Typography sx={{ fontSize: 11, color: 'text.disabled', px: 1.5, py: 3, textAlign: 'center', fontStyle: 'italic' }}>
                                 {t('knowledge.emptyState')}
                             </Typography>
@@ -516,12 +531,11 @@ export const KnowledgePanel: React.FC = () => {
                                     sx={{ fontSize: 12 }}
                                 >
                                     <MenuItem value="rules" sx={{ fontSize: 12 }}>{t('knowledge.rules')}</MenuItem>
-                                    <MenuItem value="skills" sx={{ fontSize: 12 }}>{t('knowledge.skills')}</MenuItem>
                                     <MenuItem value="experiences" sx={{ fontSize: 12 }}>{t('knowledge.experiences')}</MenuItem>
                                 </Select>
                             </FormControl>
                         )}
-                        {(editorCategory === 'skills' || editorCategory === 'experiences') && (
+                        {editorCategory === 'experiences' && (
                             <Autocomplete
                                 freeSolo
                                 size="small"

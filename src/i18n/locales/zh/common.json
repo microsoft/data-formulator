@@ -771,11 +771,9 @@
   "knowledge": {
     "title": "知识库",
     "rules": "规则",
-    "skills": "技能",
     "experiences": "经验",
     "rulesDescription": "Agent 必须遵守的约束和编码规范",
-    "skillsDescription": "可复用的分析方法和技巧模板",
-    "experiencesDescription": "从成功分析中提炼的洞察和案例",
+    "experiencesDescription": "从分析中提炼的可复用方法和技巧",
     "newItem": "新建",
     "search": "搜索",
     "searchPlaceholder": "搜索知识...",

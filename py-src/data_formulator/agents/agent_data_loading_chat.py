@@ -805,21 +805,21 @@ class DataLoadingAgent:
             table_names=table_names,
         )
 
-        # Inject relevant skills from knowledge store
+        # Inject relevant experiences from knowledge store
         if self._knowledge_store:
             try:
                 relevant = self._knowledge_store.search(
                     "data loading cleaning preparation",
-                    categories=["skills"],
+                    categories=["experiences"],
                     max_results=3,
                 )
                 if relevant:
-                    skills_block = "[RELEVANT SKILLS]\n"
+                    knowledge_block = "[RELEVANT KNOWLEDGE]\n"
                     for item in relevant:
-                        skills_block += f"\n### {item['title']}\n{item['snippet']}\n"
-                    prompt += "\n\n" + skills_block
+                        knowledge_block += f"\n### {item['title']}\n{item['snippet']}\n"
+                    prompt += "\n\n" + knowledge_block
             except Exception:
-                logger.warning("Failed to search knowledge skills", exc_info=True)
+                logger.warning("Failed to search knowledge experiences", exc_info=True)
 
         if self.language_instruction:
             prompt += "\n\n" + self.language_instruction

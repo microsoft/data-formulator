@@ -189,7 +189,7 @@ TOOLS = [
         "function": {
             "name": "search_knowledge",
             "description": (
-                "Search the user's knowledge base (rules, skills, experiences) "
+                "Search the user's knowledge base (rules, experiences) "
                 "for relevant entries. Returns title, category, snippet, and "
                 "path for each match. Use read_knowledge to get full content."
             ),
@@ -204,7 +204,7 @@ TOOLS = [
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["rules", "skills", "experiences"],
+                            "enum": ["rules", "experiences"],
                         },
                         "description": "Optional: limit search to specific categories.",
                     },
@@ -226,7 +226,7 @@ TOOLS = [
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["rules", "skills", "experiences"],
+                        "enum": ["rules", "experiences"],
                         "description": "Knowledge category.",
                     },
                     "path": {
@@ -272,7 +272,7 @@ You have tools you can call to gather data and share reasoning:
   descriptions, schema, row count).  Only use with ``source_id`` and
   ``table_key`` from search_data_tables results; do NOT fabricate these values.
 - **search_knowledge(query, categories?)** — search the user's knowledge base
-  (rules, skills, experiences) for relevant entries.
+  (rules, experiences) for relevant entries.
 - **read_knowledge(category, path)** — read the full content of a knowledge entry.
 
 The initial context already includes sample rows and statistics for each
@@ -1330,14 +1330,15 @@ class DataAgent:
         if peripheral_block:
             user_content += f"{peripheral_block}\n\n"
 
-        # Search and inject relevant skills/experiences (Phase 3.2)
+        # Search and inject relevant knowledge (experiences + non-alwaysApply rules)
         table_names = [t.get("name", "") for t in input_tables if t.get("name")]
         relevant_knowledge = self._search_relevant_knowledge(user_question, table_names)
         if relevant_knowledge:
             knowledge_block = "[RELEVANT KNOWLEDGE]\n"
             for item in relevant_knowledge:
+                label = "rule" if item["category"] == "rules" else "knowledge"
                 knowledge_block += (
-                    f"\n### [{item['category']}] {item['title']}\n"
+                    f"\n### [{label}] {item['title']}\n"
                     f"{item['snippet']}\n"
                 )
             user_content += f"{knowledge_block}\n\n"
@@ -1880,10 +1881,12 @@ class DataAgent:
         table_names: list[str],
         max_items: int = 5,
     ) -> list[dict[str, Any]]:
-        """Search skills, experiences, and non-alwaysApply rules relevant to the current session.
+        """Search experiences and non-alwaysApply rules relevant to the current session.
 
         Extracts keywords from the user question and table names, then
         searches the knowledge store.  Returns up to *max_items* results.
+        alwaysApply rules are excluded by KnowledgeStore.search() since
+        they are already injected via system prompt.
         Graceful degradation: returns empty list on failure.
         """
         if not self._knowledge_store:
@@ -1895,7 +1898,7 @@ class DataAgent:
 
             results = self._knowledge_store.search(
                 query,
-                categories=["rules", "skills", "experiences"],
+                categories=["rules", "experiences"],
                 max_results=max_items,
             )
             return results

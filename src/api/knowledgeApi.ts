@@ -14,7 +14,7 @@ import { apiRequest } from '../app/apiClient';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-export type KnowledgeCategory = 'rules' | 'skills' | 'experiences';
+export type KnowledgeCategory = 'rules' | 'experiences';
 
 export interface KnowledgeItem {
     title: string;
@@ -31,7 +31,6 @@ export interface KnowledgeItem {
 export interface KnowledgeLimits {
     rule_description_max: number;
     rules: number;
-    skills: number;
     experiences: number;
 }
 

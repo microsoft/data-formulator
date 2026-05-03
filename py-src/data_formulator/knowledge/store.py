@@ -1,18 +1,17 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Knowledge store — manages user knowledge files (rules, skills, experiences).
+"""Knowledge store — manages user knowledge files (rules, experiences).
 
-Each user has a ``knowledge/`` directory under their home with three
-sub-directories: ``rules``, ``skills``, ``experiences``.  Every knowledge
-entry is a Markdown file with YAML front matter.
+Each user has a ``knowledge/`` directory under their home with two
+sub-directories: ``rules`` and ``experiences``.  Every knowledge entry is a
+Markdown file with YAML front matter.
 
 All file I/O is routed through :class:`ConfinedDir` for path safety.
 
 Directory depth constraints:
 
 - ``rules``: flat — only files directly under ``rules/`` (1 path part)
-- ``skills``: one level of sub-directories (up to 2 path parts)
 - ``experiences``: one level of sub-directories (up to 2 path parts)
 """
 
@@ -28,18 +27,16 @@ from data_formulator.security.path_safety import ConfinedDir
 
 logger = logging.getLogger(__name__)
 
-VALID_CATEGORIES = frozenset({"rules", "skills", "experiences"})
+VALID_CATEGORIES = frozenset({"rules", "experiences"})
 
 _MAX_DEPTH = {
-    "rules": 1,       # flat: only "file.md"
-    "skills": 2,      # one sub-dir: "category/file.md"
-    "experiences": 2,  # one sub-dir: "category/file.md"
+    "rules": 1,     # flat: only "file.md"
+    "experiences": 2,   # one sub-dir: "topic/file.md"
 }
 
 KNOWLEDGE_LIMITS: dict[str, int] = {
     "rule_description_max": 100,
     "rules": 350,
-    "skills": 2000,
     "experiences": 2000,
 }
 
@@ -173,10 +170,10 @@ class KnowledgeStore:
 
         store = KnowledgeStore(user_home)
         items = store.list_all("rules")
-        content = store.read("skills", "data-cleaning/handle-missing.md")
+        content = store.read("experiences", "data-cleaning/handle-missing.md")
         store.write("rules", "date-format.md", md_content)
         store.delete("rules", "date-format.md")
-        results = store.search("ROI", categories=["rules", "skills"])
+        results = store.search("ROI", categories=["rules", "experiences"])
     """
 
     def __init__(self, user_home: Path | str) -> None:
@@ -184,7 +181,6 @@ class KnowledgeStore:
         self._root = ConfinedDir(user_home / "knowledge", mkdir=True)
         self._jails: dict[str, ConfinedDir] = {
             "rules": ConfinedDir(self._root.root / "rules", mkdir=True),
-            "skills": ConfinedDir(self._root.root / "skills", mkdir=True),
             "experiences": ConfinedDir(self._root.root / "experiences", mkdir=True),
         }
 
@@ -331,6 +327,9 @@ class KnowledgeStore:
 
                 raw_meta, body = parse_front_matter(raw)
                 km = KnowledgeItemMeta.from_raw(raw_meta, md_file.stem)
+
+                if cat == "rules" and km.always_apply:
+                    continue
 
                 score = self._match_score(q, km.title, km.tags, md_file.stem, body[:200])
                 if score == 0:

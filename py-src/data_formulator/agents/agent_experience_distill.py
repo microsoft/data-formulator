@@ -28,22 +28,23 @@ logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """\
-You are a data analysis experience summarizer. Given the context of a
-successful data analysis session, distill a reusable experience document.
+You are a knowledge distiller. Given the context of a data analysis session,
+extract reusable methodology that can help with similar future tasks.
 
-The experience document must include:
+The knowledge entry must include:
 
 1. **Title**: a descriptive title following the pattern \
-"[Data domain / source table name]: [Analysis technique or goal] — [Key outcome]". \
-The title must be specific enough that a reader can understand what data was \
-analyzed, what method was applied, and what was discovered, without reading \
-the body. Aim for 15–40 words.
-2. **Scenario**: when is this experience applicable?
-3. **Method**: the concrete analysis steps or techniques used
-4. **Key findings**: important discoveries or caveats
+"[Method/technique]: [applicable scenario] — [core takeaway]". \
+Focus on the method, not the specific dataset. Aim for 10–30 words.
+2. **When to Use**: describe the general conditions where this method applies.
+3. **Method**: the concrete steps, abstracted from the specific dataset. \
+Use generic placeholders (e.g. "the target column", "the grouping key") \
+instead of actual column names when the names are not universally meaningful.
+4. **Pitfalls & Tips**: gotchas encountered during the session, workarounds, \
+and things to watch out for. This is the most valuable section.
 5. **Tags**: keywords for future search (as a YAML list). Include the data \
-domain, source table names, chart type, key pandas/vega operations, and \
-outcome keywords so that future semantic search can match this experience.
+domain, chart type, key pandas/vega operations, and general technique names \
+so that future semantic search can match this entry.
 
 Output the result as a Markdown file with YAML front matter, like this:
 
@@ -53,59 +54,61 @@ title: <title>
 tags: [<tag1>, <tag2>, ...]
 created: <today's date YYYY-MM-DD>
 updated: <today's date YYYY-MM-DD>
-source: agent_summarized
+source: distill
 source_context: <context_id>
 ---
 
-## Scenario
+## When to Use
 
-<when to use>
+<general conditions>
 
 ## Method
 
-<step by step>
+<step by step, abstracted>
 
-## Key Findings
+## Pitfalls & Tips
 
-<important points>
+<gotchas and workarounds>
 ```
 
 Rules:
-- Keep the experience concise and actionable (under 500 words).
-- Focus on *reusable* patterns, not one-off specifics.
-- Explain the final successful analysis path.
-- Capture failed attempts or repairs when they changed the path.
-- Capture user clarification or correction and how it changed the analysis.
+- Focus on *transferable* methods and caveats, not case-specific details.
+- If a repair/retry was needed, explain *why* it failed and the general fix, \
+not just what happened in this specific run.
+- Keep under 500 words. Prefer concise, actionable guidance.
+- Omit specific data values, column names, and row counts unless they \
+illustrate a universal pattern.
 - Tags should be broad enough to match future queries.
 - Do NOT include raw data, private identifiers, API keys, or sensitive information.
 - Output ONLY the Markdown document, nothing else.
-- The `title` value, all section headings (Scenario / Method / Key Findings), \
-all section body text, and `tags` MUST be written in the user's language \
-(see [LANGUAGE INSTRUCTION] below). Only YAML front-matter keys and the \
-literal values of `source`, `source_context`, `created`, `updated` stay in English.
+- The `title` value, all section headings (## When to Use, ## Method, \
+## Pitfalls & Tips), all section body text, and `tags` MUST be written \
+in {output_language}. Only YAML front-matter keys (`title`, `tags`, \
+`created`, `updated`, `source`, `source_context`) stay in English.
 
 {language_instruction}
 """
 
 
 LOG_SYSTEM_PROMPT = """\
-You are a data analysis experience summarizer. Given a structured reasoning
-log summary from a successful data analysis session, distill a reusable
-experience document.
+You are a knowledge distiller. Given a structured reasoning log summary from
+a data analysis session, extract reusable methodology that can help with
+similar future tasks.
 
-The experience document must include:
+The knowledge entry must include:
 
 1. **Title**: a descriptive title following the pattern \
-"[Data domain / source table name]: [Analysis technique or goal] — [Key outcome]". \
-The title must be specific enough that a reader can understand what data was \
-analyzed, what method was applied, and what was discovered, without reading \
-the body. Aim for 15–40 words.
-2. **Scenario**: when is this experience applicable?
-3. **Method**: the concrete analysis steps or techniques used
-4. **Key findings**: important discoveries or caveats
+"[Method/technique]: [applicable scenario] — [core takeaway]". \
+Focus on the method, not the specific dataset. Aim for 10–30 words.
+2. **When to Use**: describe the general conditions where this method applies.
+3. **Method**: the concrete steps, abstracted from the specific dataset. \
+Use generic placeholders (e.g. "the target column", "the grouping key") \
+instead of actual column names when the names are not universally meaningful.
+4. **Pitfalls & Tips**: gotchas encountered during the session, workarounds, \
+and things to watch out for. This is the most valuable section.
 5. **Tags**: keywords for future search (as a YAML list). Include the data \
-domain, source table names, chart type, key pandas/vega operations, and \
-outcome keywords so that future semantic search can match this experience.
+domain, chart type, key pandas/vega operations, and general technique names \
+so that future semantic search can match this entry.
 
 Output the result as a Markdown file with YAML front matter, like this:
 
@@ -115,36 +118,37 @@ title: <title>
 tags: [<tag1>, <tag2>, ...]
 created: <today's date YYYY-MM-DD>
 updated: <today's date YYYY-MM-DD>
-source: agent_summarized
+source: distill
 source_session: <session_id>
 ---
 
-## Scenario
+## When to Use
 
-<when to use>
+<general conditions>
 
 ## Method
 
-<step by step>
+<step by step, abstracted>
 
-## Key Findings
+## Pitfalls & Tips
 
-<important points>
+<gotchas and workarounds>
 ```
 
 Rules:
-- Keep the experience concise and actionable (under 500 words).
-- Focus on *reusable* patterns, not one-off specifics.
-- Explain the final successful analysis path.
-- Capture failed attempts or repairs when they changed the path.
-- Capture user clarification or correction and how it changed the analysis.
+- Focus on *transferable* methods and caveats, not case-specific details.
+- If a repair/retry was needed, explain *why* it failed and the general fix, \
+not just what happened in this specific run.
+- Keep under 500 words. Prefer concise, actionable guidance.
+- Omit specific data values, column names, and row counts unless they \
+illustrate a universal pattern.
 - Tags should be broad enough to match future queries.
 - Do NOT include raw data, private identifiers, API keys, or sensitive information.
 - Output ONLY the Markdown document, nothing else.
-- The `title` value, all section headings (Scenario / Method / Key Findings), \
-all section body text, and `tags` MUST be written in the user's language \
-(see [LANGUAGE INSTRUCTION] below). Only YAML front-matter keys and the \
-literal values of `source`, `source_session`, `created`, `updated` stay in English.
+- The `title` value, all section headings (## When to Use, ## Method, \
+## Pitfalls & Tips), all section body text, and `tags` MUST be written \
+in {output_language}. Only YAML front-matter keys (`title`, `tags`, \
+`created`, `updated`, `source`, `source_session`) stay in English.
 
 {language_instruction}
 """
@@ -153,13 +157,26 @@ literal values of `source`, `source_session`, `created`, `updated` stay in Engli
 class ExperienceDistillAgent:
     """Distills analysis context into a reusable experience document."""
 
+    # Language display names for experience-specific prompts
+    _LANG_NAMES: dict[str, str] = {
+        "zh": "Simplified Chinese (简体中文)",
+        "ja": "Japanese (日本語)",
+        "ko": "Korean (한국어)",
+        "fr": "French",
+        "de": "German",
+        "es": "Spanish",
+        "pt": "Portuguese",
+    }
+
     def __init__(
         self,
         client: Client,
         language_instruction: str = "",
+        language_code: str = "en",
     ) -> None:
         self.client = client
         self.language_instruction = language_instruction
+        self.language_code = (language_code or "en").strip().lower()
 
     def run(
         self,
@@ -193,16 +210,17 @@ class ExperienceDistillAgent:
             f"Reasoning log summary:\n{summary}"
         )
 
-        system = LOG_SYSTEM_PROMPT.format(
-            language_instruction=self.language_instruction or "",
-        )
+        system = LOG_SYSTEM_PROMPT.format(**self._prompt_format_kwargs())
 
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ]
 
-        content = self._call_llm(messages)
+        from data_formulator.knowledge.store import KNOWLEDGE_LIMITS
+        content = self._call_with_length_retry(
+            messages, KNOWLEDGE_LIMITS.get("experiences", 2000),
+        )
 
         if not content.strip().startswith("---"):
             content = self._add_fallback_front_matter(
@@ -224,16 +242,17 @@ class ExperienceDistillAgent:
             f"Experience context summary:\n{summary}"
         )
 
-        system = SYSTEM_PROMPT.format(
-            language_instruction=self.language_instruction or "",
-        )
+        system = SYSTEM_PROMPT.format(**self._prompt_format_kwargs())
 
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ]
 
-        content = self._call_llm(messages)
+        from data_formulator.knowledge.store import KNOWLEDGE_LIMITS
+        content = self._call_with_length_retry(
+            messages, KNOWLEDGE_LIMITS.get("experiences", 2000),
+        )
 
         if not content.strip().startswith("---"):
             content = self._add_fallback_front_matter(
@@ -241,6 +260,54 @@ class ExperienceDistillAgent:
             )
 
         return content
+
+    def _prompt_format_kwargs(self) -> dict[str, str]:
+        """Build template kwargs for SYSTEM_PROMPT / LOG_SYSTEM_PROMPT."""
+        lang = self.language_code
+        display_name = self._LANG_NAMES.get(lang, "English")
+        if lang == "en":
+            output_language = "English"
+            lang_block = ""
+        else:
+            output_language = display_name
+            lang_block = (
+                f"[LANGUAGE INSTRUCTION]\n"
+                f"The user's language is **{display_name}**.\n"
+                f"Write the title, all section headings, all body text, and tags "
+                f"in {display_name}. YAML front-matter keys stay in English."
+            )
+        return {
+            "output_language": output_language,
+            "language_instruction": self.language_instruction or lang_block,
+        }
+
+    def _call_with_length_retry(
+        self,
+        messages: list[dict],
+        body_limit: int,
+    ) -> str:
+        """Call LLM and retry once if the body exceeds *body_limit* characters."""
+        from data_formulator.knowledge.store import parse_front_matter
+
+        content = self._call_llm(messages)
+        _, body = parse_front_matter(content)
+        if len(body.strip()) <= body_limit:
+            return content
+
+        logger.info(
+            "Distilled content too long (%d > %d), retrying with condensation prompt",
+            len(body.strip()), body_limit,
+        )
+        messages = messages + [
+            {"role": "assistant", "content": content},
+            {"role": "user", "content": (
+                f"Your output body is {len(body.strip())} characters, which exceeds "
+                f"the limit of {body_limit}. Please condense the document to fit "
+                f"within {body_limit} characters while keeping the most important "
+                f"insights. Output ONLY the revised Markdown document."
+            )},
+        ]
+        return self._call_llm(messages)
 
     # -- internals ---------------------------------------------------------
 
@@ -506,14 +573,14 @@ class ExperienceDistillAgent:
     ) -> str:
         """Prepend front matter if the LLM didn't include it."""
         first_line = content.strip().split("\n")[0] if content.strip() else ""
-        title = first_line.lstrip("# ").strip()[:80] or "Untitled Experience"
+        title = first_line.lstrip("# ").strip()[:80] or "Untitled Knowledge"
 
         header = (
             f"---\ntitle: {title}\n"
             f"tags: []\n"
             f"created: {today}\n"
             f"updated: {today}\n"
-            f"source: agent_summarized\n"
+            f"source: distill\n"
             f"{source_field}: {source_id}\n"
             f"---\n\n"
         )

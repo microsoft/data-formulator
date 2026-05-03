@@ -7,7 +7,7 @@ Covers:
 - Rules from KnowledgeStore injected into system prompt
 - Both file-based rules and text-based rules coexist
 - No rules → no User Rules section
-- Skills/Experiences search and injection
+- Library knowledge search and injection
 - No matches → no injection
 - Max 5 items limit
 - search_knowledge / read_knowledge tool handlers
@@ -62,9 +62,9 @@ def user_home(tmp_path):
     rules_dir.mkdir(parents=True)
     (rules_dir / "roi.md").write_text(RULE_MD, encoding="utf-8")
 
-    skills_dir = tmp_path / "knowledge" / "skills" / "cleaning"
-    skills_dir.mkdir(parents=True)
-    (skills_dir / "missing.md").write_text(SKILL_MD, encoding="utf-8")
+    exp_dir = tmp_path / "knowledge" / "experiences" / "cleaning"
+    exp_dir.mkdir(parents=True)
+    (exp_dir / "missing.md").write_text(SKILL_MD, encoding="utf-8")
 
     return tmp_path
 
@@ -133,7 +133,7 @@ class TestRulesInjection:
         assert "## User Rules" not in prompt
 
 
-# ── Skills/Experiences injection ──────────────────────────────────────────
+# ── Library knowledge injection ───────────────────────────────────────────
 
 
 class TestKnowledgeSearchInjection:
@@ -162,7 +162,6 @@ class TestKnowledgeSearchInjection:
     def test_max_five_items(self, mock_client, mock_workspace, tmp_path):
         rules_dir = tmp_path / "knowledge" / "rules"
         rules_dir.mkdir(parents=True)
-        (tmp_path / "knowledge" / "skills").mkdir(parents=True)
         exp_dir = tmp_path / "knowledge" / "experiences" / "common"
         exp_dir.mkdir(parents=True)
         for i in range(10):
@@ -184,8 +183,8 @@ class TestKnowledgeSearchInjection:
 class TestKnowledgeToolHandlers:
     def test_search_knowledge_returns_results(self, mock_client, mock_workspace, user_home):
         agent = _make_agent(mock_client, mock_workspace, user_home)
-        result = agent._handle_search_knowledge({"query": "ROI"})
-        assert "ROI Standard" in result
+        result = agent._handle_search_knowledge({"query": "missing values"})
+        assert "Handle Missing Values" in result
 
     def test_search_knowledge_no_match(self, mock_client, mock_workspace, user_home):
         agent = _make_agent(mock_client, mock_workspace, user_home)
@@ -240,7 +239,6 @@ class TestGracefulDegradation:
     def test_empty_knowledge_dir(self, mock_client, mock_workspace, tmp_path):
         """Agent with empty knowledge dir works normally."""
         (tmp_path / "knowledge" / "rules").mkdir(parents=True)
-        (tmp_path / "knowledge" / "skills").mkdir(parents=True)
         (tmp_path / "knowledge" / "experiences").mkdir(parents=True)
         agent = _make_agent(mock_client, mock_workspace, tmp_path)
         prompt = agent._build_system_prompt()

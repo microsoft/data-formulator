@@ -54,7 +54,7 @@ class ChartInsightAgent(object):
             )
             context_parts.append(f"\nData summary:\n{data_summary}")
 
-        # Search relevant experiences for analysis context
+        # Search relevant knowledge for analysis context
         if self._knowledge_store:
             try:
                 search_query = " ".join([chart_type] + field_names[:5]).strip()
@@ -63,10 +63,10 @@ class ChartInsightAgent(object):
                         search_query, categories=["experiences"], max_results=3,
                     )
                     if relevant:
-                        exp_parts = ["Relevant analysis experiences:"]
+                        kb_parts = ["Relevant analysis knowledge:"]
                         for item in relevant:
-                            exp_parts.append(f"- {item['title']}: {item['snippet'][:200]}")
-                        context_parts.append("\n".join(exp_parts))
+                            kb_parts.append(f"- {item['title']}: {item['snippet'][:200]}")
+                        context_parts.append("\n".join(kb_parts))
             except Exception:
                 logger.warning("Failed to search knowledge experiences", exc_info=True)
 

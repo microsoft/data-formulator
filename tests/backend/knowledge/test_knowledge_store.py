@@ -5,11 +5,12 @@
 
 Covers:
 - list_all, read, write, delete for each category
-- path depth constraints (rules=flat, skills/experiences=1 sub-dir)
+- path depth constraints (rules=flat, experiences=1 sub-dir)
 - .md extension enforcement
 - ConfinedDir traversal rejection
 - front matter parsing and graceful degradation
 - search: title, tags, filename, body matching + ranking + limit
+- search skips alwaysApply rules (they are injected via system prompt)
 """
 
 from __future__ import annotations
@@ -73,12 +74,12 @@ class TestListAll:
         assert items[0]["path"] == "roi.md"
         assert items[0]["source"] == "manual"
 
-    def test_lists_skills_in_subdirs(self, store, tmp_path):
-        skills_dir = tmp_path / "knowledge" / "skills" / "cleaning"
-        skills_dir.mkdir(parents=True)
-        (skills_dir / "missing.md").write_text(SAMPLE_MD_SKILL, encoding="utf-8")
+    def test_lists_experiences_in_subdirs(self, store, tmp_path):
+        exp_dir = tmp_path / "knowledge" / "experiences" / "cleaning"
+        exp_dir.mkdir(parents=True)
+        (exp_dir / "missing.md").write_text(SAMPLE_MD_SKILL, encoding="utf-8")
 
-        items = store.list_all("skills")
+        items = store.list_all("experiences")
         assert len(items) == 1
         assert items[0]["path"] == "cleaning/missing.md"
 
@@ -135,9 +136,9 @@ class TestWrite:
         content = store.read("rules", "fm.md")
         assert "title: ROI Calculation" in content
 
-    def test_writes_skill_in_subdir(self, store, tmp_path):
-        store.write("skills", "cleaning/handle-missing.md", SAMPLE_MD_SKILL)
-        assert (tmp_path / "knowledge" / "skills" / "cleaning" / "handle-missing.md").exists()
+    def test_writes_experiences_in_subdir(self, store, tmp_path):
+        store.write("experiences", "cleaning/handle-missing.md", SAMPLE_MD_SKILL)
+        assert (tmp_path / "knowledge" / "experiences" / "cleaning" / "handle-missing.md").exists()
 
 
 # ── CRUD: delete ──────────────────────────────────────────────────────────
@@ -165,19 +166,16 @@ class TestValidatePath:
         with pytest.raises(ValueError, match="sub-directories"):
             KnowledgeStore.validate_path("rules", "sub/file.md")
 
-    def test_skills_one_subdir_ok(self):
-        KnowledgeStore.validate_path("skills", "cat/file.md")
-
-    def test_skills_two_subdirs_rejected(self):
-        with pytest.raises(ValueError, match="one level"):
-            KnowledgeStore.validate_path("skills", "cat/sub/file.md")
-
     def test_experiences_one_subdir_ok(self):
         KnowledgeStore.validate_path("experiences", "cat/file.md")
 
     def test_experiences_two_subdirs_rejected(self):
         with pytest.raises(ValueError, match="one level"):
             KnowledgeStore.validate_path("experiences", "cat/sub/file.md")
+
+    def test_skills_rejected_as_invalid(self):
+        with pytest.raises(ValueError, match="Invalid category"):
+            KnowledgeStore.validate_path("skills", "file.md")
 
     def test_non_md_extension_rejected(self):
         with pytest.raises(ValueError, match=".md"):
@@ -227,14 +225,14 @@ class TestSearch:
         rules_dir = tmp_path / "knowledge" / "rules"
         (rules_dir / "roi.md").write_text(SAMPLE_MD, encoding="utf-8")
 
-        skills_dir = tmp_path / "knowledge" / "skills" / "cleaning"
-        skills_dir.mkdir(parents=True)
-        (skills_dir / "missing.md").write_text(SAMPLE_MD_SKILL, encoding="utf-8")
+        exp_dir = tmp_path / "knowledge" / "experiences" / "cleaning"
+        exp_dir.mkdir(parents=True)
+        (exp_dir / "missing.md").write_text(SAMPLE_MD_SKILL, encoding="utf-8")
 
     def test_search_by_title(self, store):
-        results = store.search("ROI")
+        results = store.search("Handle Missing")
         assert len(results) >= 1
-        assert results[0]["title"] == "ROI Calculation"
+        assert results[0]["title"] == "Handle Missing Values"
 
     def test_search_by_tags(self, store):
         results = store.search("pandas")
@@ -246,9 +244,9 @@ class TestSearch:
         assert len(results) >= 1
 
     def test_search_by_body(self, store):
-        results = store.search("revenue")
+        results = store.search("median")
         assert len(results) >= 1
-        assert results[0]["title"] == "ROI Calculation"
+        assert results[0]["title"] == "Handle Missing Values"
 
     def test_empty_query_returns_empty(self, store):
         assert store.search("") == []
@@ -268,15 +266,30 @@ class TestSearch:
         assert len(results) <= 5
 
     def test_search_filters_by_category(self, store):
-        results = store.search("ROI", categories=["skills"])
+        results = store.search("ROI", categories=["experiences"])
         assert len(results) == 0
 
+    def test_search_skips_always_apply_rules(self, store, tmp_path):
+        """alwaysApply rules are injected via system prompt, not search."""
+        results = store.search("ROI", categories=["rules"])
+        assert len(results) == 0
+
+    def test_search_returns_non_always_apply_rules(self, store, tmp_path):
+        rules_dir = tmp_path / "knowledge" / "rules"
+        (rules_dir / "optional.md").write_text(
+            "---\ntitle: Optional Rule\ntags: [test]\nalwaysApply: false\n---\nOptional content.\n",
+            encoding="utf-8",
+        )
+        results = store.search("Optional", categories=["rules"])
+        assert len(results) == 1
+        assert results[0]["title"] == "Optional Rule"
+
     def test_title_match_ranks_higher(self, store):
-        results = store.search("ROI")
-        if len(results) > 1:
-            assert results[0]["title"] == "ROI Calculation"
+        results = store.search("Handle Missing Values")
+        assert len(results) >= 1
+        assert results[0]["title"] == "Handle Missing Values"
 
     def test_search_case_insensitive(self, store):
-        results = store.search("roi")
+        results = store.search("handle missing")
         assert len(results) >= 1
-        assert results[0]["title"] == "ROI Calculation"
+        assert results[0]["title"] == "Handle Missing Values"

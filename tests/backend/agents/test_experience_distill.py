@@ -7,7 +7,7 @@ Covers:
 - _extract_log_summary correctly extracts key info
 - _extract_context_summary correctly extracts experience context
 - Output Markdown includes valid YAML front matter
-- front matter contains source: agent_summarized and source metadata
+- front matter contains source: distill and source metadata
 - Generated experience file written to correct directory
 - category_hint controls sub-directory
 """
@@ -163,11 +163,11 @@ title: Regional Sales Analysis Pattern
 tags: [sales, regional, bar-chart]
 created: 2026-04-26
 updated: 2026-04-26
-source: agent_summarized
+source: distill
 source_session: sess-test
 ---
 
-## Scenario
+## When to Use
 
 When analyzing sales data broken down by geographical regions.
 
@@ -210,7 +210,7 @@ class TestRunWithMockedLLM:
 
         assert result.startswith("---")
         meta, body = parse_front_matter(result)
-        assert meta["source"] == "agent_summarized"
+        assert meta["source"] == "distill"
         assert meta["source_session"] == "sess-test"
         assert "tags" in meta
 
@@ -224,7 +224,7 @@ class TestRunWithMockedLLM:
 
         assert result.startswith("---")
         meta, _ = parse_front_matter(result)
-        assert meta["source"] == "agent_summarized"
+        assert meta["source"] == "distill"
         assert meta["source_session"] == "sess-x"
 
     def test_run_from_context_produces_valid_markdown(self):
@@ -236,7 +236,7 @@ class TestRunWithMockedLLM:
 
         assert result.startswith("---")
         meta, _ = parse_front_matter(result)
-        assert meta["source"] == "agent_summarized"
+        assert meta["source"] == "distill"
         assert meta["source_context"] == "table-123"
 
     def test_run_from_context_fallback_front_matter_added(self):
@@ -247,8 +247,54 @@ class TestRunWithMockedLLM:
             result = agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
 
         meta, _ = parse_front_matter(result)
-        assert meta["source"] == "agent_summarized"
+        assert meta["source"] == "distill"
         assert meta["source_context"] == "table-123"
+
+    def test_retries_once_when_body_too_long(self):
+        """If first LLM call produces body > limit, agent retries with condensation prompt."""
+        client = self._mock_client()
+        agent = ExperienceDistillAgent(client=client)
+
+        long_body = "x" * 3000
+        long_response = (
+            "---\ntitle: Long\ntags: []\ncreated: 2026-01-01\n"
+            "updated: 2026-01-01\nsource: distill\nsource_context: t1\n---\n\n"
+            + long_body
+        )
+        short_response = MOCK_CONTEXT_RESPONSE
+
+        call_count = 0
+
+        def fake_call_llm(messages):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return long_response
+            return short_response
+
+        with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
+            result = agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+
+        assert call_count == 2
+        _, body = parse_front_matter(result)
+        assert len(body.strip()) <= 2000
+
+    def test_no_retry_when_body_within_limit(self):
+        """If first LLM call is within limit, no retry happens."""
+        client = self._mock_client()
+        agent = ExperienceDistillAgent(client=client)
+
+        call_count = 0
+
+        def fake_call_llm(messages):
+            nonlocal call_count
+            call_count += 1
+            return MOCK_CONTEXT_RESPONSE
+
+        with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
+            agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+
+        assert call_count == 1
 
     def test_language_instruction_injected_into_system_prompt(self):
         client = self._mock_client()
@@ -267,12 +313,44 @@ class TestRunWithMockedLLM:
         system_content = captured_messages[0]["content"]
         assert "[LANGUAGE INSTRUCTION]" in system_content
         assert "Simplified Chinese" in system_content
-        assert "title" in system_content and "user's language" in system_content
+
+    def test_language_code_zh_injects_chinese_instruction(self):
+        client = self._mock_client()
+        agent = ExperienceDistillAgent(client=client, language_code="zh")
+
+        captured_messages = []
+
+        def fake_call_llm(messages):
+            captured_messages.extend(messages)
+            return MOCK_CONTEXT_RESPONSE
+
+        with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
+            agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+
+        system_content = captured_messages[0]["content"]
+        assert "Simplified Chinese" in system_content
+        assert "[LANGUAGE INSTRUCTION]" in system_content
+
+    def test_language_code_en_no_extra_instruction(self):
+        client = self._mock_client()
+        agent = ExperienceDistillAgent(client=client, language_code="en")
+
+        captured_messages = []
+
+        def fake_call_llm(messages):
+            captured_messages.extend(messages)
+            return MOCK_CONTEXT_RESPONSE
+
+        with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
+            agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+
+        system_content = captured_messages[0]["content"]
+        assert "in English" in system_content
+        assert "[LANGUAGE INSTRUCTION]" not in system_content
 
     def test_language_instruction_injected_into_log_prompt(self):
         client = self._mock_client()
-        zh_instruction = "[LANGUAGE INSTRUCTION]\nWrite in Simplified Chinese."
-        agent = ExperienceDistillAgent(client=client, language_instruction=zh_instruction)
+        agent = ExperienceDistillAgent(client=client, language_code="zh")
 
         captured_messages = []
 
@@ -284,9 +362,7 @@ class TestRunWithMockedLLM:
             agent.run(SAMPLE_LOG_LINES, "Show sales by region", session_id="sess-test")
 
         system_content = captured_messages[0]["content"]
-        assert "[LANGUAGE INSTRUCTION]" in system_content
         assert "Simplified Chinese" in system_content
-        assert "title" in system_content and "user's language" in system_content
 
 
 # ── _experience_filename ──────────────────────────────────────────────────
