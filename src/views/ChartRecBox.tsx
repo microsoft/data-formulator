@@ -688,7 +688,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     }
   };
 
-  const deriveDataFromNL = (instruction: string) => {
+  const deriveDataFromNL = (
+    instruction: string,
+    promptSource: string = "user",
+  ) => {
     if (selectedTableIds.length === 0 || instruction.trim() === "") {
       return;
     }
@@ -771,7 +774,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       max_repair_attempts: config.maxRepairAttempts,
       agent_coding_rules: agentRules.coding,
       language: actionTables.some((t) => t.virtual) ? "sql" : "python",
-      prompt_source: "user",
+      prompt_source: promptSource,
     });
     let engine = getUrls().DERIVE_DATA;
 
@@ -806,7 +809,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           max_repair_attempts: config.maxRepairAttempts,
           agent_coding_rules: agentRules.coding,
           language: actionTables.some((t) => t.virtual) ? "sql" : "python",
-          prompt_source: "user",
+          prompt_source: promptSource,
         });
         engine = getUrls().DERIVE_DATA;
       } else {
@@ -831,7 +834,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           max_repair_attempts: config.maxRepairAttempts,
           agent_coding_rules: agentRules.coding,
           language: actionTables.some((t) => t.virtual) ? "sql" : "python",
-          prompt_source: "user",
+          prompt_source: promptSource,
         });
         engine = getUrls().REFINE_DATA;
       }
@@ -1830,7 +1833,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                   onClick={() => {
                     focusNextChartRef.current = true;
                     setPrompt(idea.text);
-                    deriveDataFromNL(idea.text);
+                    deriveDataFromNL(idea.text, "idea");
                   }}
                   disabled={isFormulating}
                   sx={{
@@ -1895,7 +1898,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                     idea.breadth_questions.forEach((question, index) => {
                       setTimeout(() => {
                         setPrompt(question);
-                        deriveDataFromNL(question);
+                        deriveDataFromNL(question, "idea");
                       }, (index + 1) * 1000); // 1000ms delay between each call
                     });
                   }}

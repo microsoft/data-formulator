@@ -36,7 +36,6 @@ import chartIconPie from "../assets/PieChart.png";
 import chartIconArea from "../assets/area-chart.png";
 import { interpolate, line } from "d3";
 import { size } from "lodash";
-import { log } from "console";
 
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({
@@ -146,6 +145,7 @@ export const CHANNEL_LIST = [
   "QCSHIFT",
   "VALUE",
   "INDEX",
+  "threshold",
 ] as const;
 
 export const ChannelGroups = {
@@ -179,6 +179,7 @@ export const ChannelGroups = {
     "QCSHIFT",
     "VALUE",
     "INDEX",
+    "threshold",
   ],
 };
 
@@ -473,20 +474,6 @@ const barCharts: ChartTemplate[] = [
         if (!yDef || !yDef.field) return vgSpec;
 
         const yField = yDef.field;
-        const domain = calculateOptimalYDomain(table, yField, 10);
-
-        // Configure Y-axis scale
-        if (domain) {
-          if (!yDef.scale) yDef.scale = {};
-          yDef.scale.domain = [
-            Math.floor(domain[0] * 100) / 100,
-            Math.ceil(domain[1] * 100) / 100,
-          ];
-          yDef.scale.zero = false;
-          yDef.scale.nice = false;
-          yDef.scale.clamp = true; // 🔧 Clamp values to domain
-        }
-
         // Calculate responsive width based on number of bars
         const xDef = vgSpec.encoding?.x;
         const xField = xDef?.field;
@@ -543,48 +530,18 @@ const barCharts: ChartTemplate[] = [
     chart: "Pyramid Chart",
     icon: <ChartIcon src={chartIconColumn} />,
     template: {
-      spacing: 0,
-
-      resolve: { scale: { y: "shared" } },
-      hconcat: [
-        {
-          mark: "bar",
-          encoding: {
-            y: {},
-            x: { scale: { reverse: true }, stack: null },
-            color: { legend: null },
-            opacity: { value: 0.9 },
-          },
-        },
-        {
-          mark: "bar",
-          encoding: {
-            y: { axis: null },
-            x: { stack: null },
-            color: { legend: null },
-            opacity: { value: 0.9 },
-          },
-        },
-      ],
-      config: {
-        view: { stroke: null },
-        axis: { grid: false },
+      // Top-level encoding so the framework can fill fields properly
+      encoding: {
+        x: {},
+        y: {},
+        color: {},
       },
     },
     channels: ["x", "y", "color"],
     paths: {
-      x: [
-        ["hconcat", 0, "encoding", "x"],
-        ["hconcat", 1, "encoding", "x"],
-      ],
-      y: [
-        ["hconcat", 0, "encoding", "y"],
-        ["hconcat", 1, "encoding", "y"],
-      ],
-      color: [
-        ["hconcat", 0, "encoding", "color"],
-        ["hconcat", 1, "encoding", "color"],
-      ],
+      x: ["encoding", "x"],
+      y: ["encoding", "y"],
+      color: ["encoding", "color"],
     },
     postProcessor: (
       vgSpec: any,
@@ -594,36 +551,111 @@ const barCharts: ChartTemplate[] = [
       chartHeight?: number,
     ) => {
       try {
-        if (table) {
-          let colorField = vgSpec["hconcat"][0]["encoding"]["color"]["field"];
-          let colorValues = [...new Set(table.map((r) => r[colorField]))];
-          vgSpec.hconcat[0].transform = [
-            { filter: `datum[\"${colorField}\"] == \"${colorValues[0]}\"` },
-          ];
-          vgSpec.hconcat[0].title = colorValues[0];
-          vgSpec.hconcat[1].transform = [
-            { filter: `datum[\"${colorField}\"] == \"${colorValues[1]}\"` },
-          ];
-          vgSpec.hconcat[1].title = colorValues[1];
-          let xField = vgSpec["hconcat"][0]["encoding"]["x"]["field"];
-          let xValues = [
-            ...new Set(
-              table
-                .filter(
-                  (r) =>
-                    r[colorField] == colorValues[0] ||
-                    r[colorField] == colorValues[1],
-                )
-                .map((r) => r[xField]),
-            ),
-          ];
-          let domain = [Math.min(...xValues, 0), Math.max(...xValues)];
-          vgSpec.hconcat[0]["encoding"]["x"]["scale"]["domain"] = domain;
-          vgSpec.hconcat[1]["encoding"]["x"]["scale"] = { domain: domain };
+        const xDef = vgSpec.encoding?.x;
+        const yDef = vgSpec.encoding?.y;
+        const colorDef = vgSpec.encoding?.color;
+
+        if (!xDef?.field || !yDef?.field || !colorDef?.field) return vgSpec;
+
+        const xField = xDef.field;
+        let categoryField = yDef.field; // Y axis: the ordinal categories (e.g. AgeGroup)
+        let splitField = colorDef.field; // Split left/right (e.g. Gender — should have exactly 2 values)
+
+        if (table && table.length > 0) {
+          const splitUniq = new Set(table.map((r: any) => r[splitField])).size;
+          const catUniq = new Set(table.map((r: any) => r[categoryField])).size;
+          // Auto-detect: the split field should have fewer unique values (ideally 2)
+          // If user accidentally swapped y and color, swap them back
+          if (splitUniq > catUniq) {
+            [splitField, categoryField] = [categoryField, splitField];
+          }
         }
-      } catch {}
-      vgSpec.width = chartWidth || 800;
-      vgSpec.height = chartHeight || 400;
+
+        // Get exactly 2 split values for left/right
+        const splitValues = table
+          ? [...new Set(table.map((r: any) => r[splitField]))]
+          : [];
+        if (splitValues.length < 2) return vgSpec;
+
+        const leftVal = splitValues[0];
+        const rightVal = splitValues[1];
+
+        // Compute X domain from all data — use Number() to handle string values from CSV
+        let maxVal = 0;
+        if (table) {
+          for (const row of table) {
+            const v = Number(row[xField]);
+            if (isFinite(v) && v > maxVal) maxVal = v;
+          }
+        }
+        const domain: [number, number] = [0, maxVal > 0 ? maxVal : 1];
+
+        const halfWidth = Math.floor((chartWidth || 800) / 2);
+        const viewHeight = chartHeight || 400;
+
+        const leftView = {
+          mark: { type: "bar", tooltip: true },
+          width: halfWidth,
+          height: viewHeight,
+          transform: [{ filter: `datum["${splitField}"] == "${leftVal}"` }],
+          title: String(leftVal),
+          encoding: {
+            y: {
+              field: categoryField,
+              type: "ordinal",
+              sort: "descending",
+              axis: { title: null },
+            },
+            x: {
+              field: xField,
+              type: "quantitative",
+              scale: { reverse: true, domain },
+              axis: { title: xField, format: "~s" },
+              stack: null,
+            },
+            color: { field: splitField, type: "nominal", legend: null },
+            opacity: { value: 0.85 },
+          },
+        };
+
+        const rightView = {
+          mark: { type: "bar", tooltip: true },
+          width: halfWidth,
+          height: viewHeight,
+          transform: [{ filter: `datum["${splitField}"] == "${rightVal}"` }],
+          title: String(rightVal),
+          encoding: {
+            y: {
+              field: categoryField,
+              type: "ordinal",
+              sort: "descending",
+              axis: null,
+            },
+            x: {
+              field: xField,
+              type: "quantitative",
+              scale: { domain },
+              axis: { title: xField, format: "~s" },
+              stack: null,
+            },
+            color: { field: splitField, type: "nominal", legend: null },
+            opacity: { value: 0.85 },
+          },
+        };
+
+        // Rebuild spec as hconcat from scratch
+        delete vgSpec.encoding;
+        delete vgSpec.mark;
+        delete vgSpec.width;
+        delete vgSpec.height;
+
+        vgSpec.spacing = 0;
+        vgSpec.resolve = { scale: { y: "shared" } };
+        vgSpec.hconcat = [leftView, rightView];
+        vgSpec.config = { view: { stroke: null }, axis: { grid: false } };
+      } catch (e) {
+        console.warn("Pyramid Chart postProcessor error:", e);
+      }
       return vgSpec;
     },
   },
@@ -656,22 +688,6 @@ const barCharts: ChartTemplate[] = [
       try {
         const yDef = vgSpec.encoding?.y;
         if (!yDef || !yDef.field) return vgSpec;
-
-        const yField = yDef.field;
-        const domain = calculateOptimalYDomain(table, yField, 10);
-
-        // Configure Y-axis scale
-        if (domain) {
-          if (!yDef.scale) yDef.scale = {};
-          yDef.scale.domain = [
-            Math.floor(domain[0] * 100) / 100,
-            Math.ceil(domain[1] * 100) / 100,
-          ];
-          yDef.scale.zero = false;
-          yDef.scale.nice = false;
-          yDef.scale.clamp = true;
-        }
-
         // Calculate responsive width based on number of groups
         const xDef = vgSpec.encoding?.x;
         const xField = xDef?.field;
@@ -743,22 +759,6 @@ const barCharts: ChartTemplate[] = [
       try {
         const yDef = vgSpec.encoding?.y;
         if (!yDef || !yDef.field) return vgSpec;
-
-        const yField = yDef.field;
-        const domain = calculateOptimalYDomain(table, yField, 10);
-
-        // Configure Y-axis scale
-        if (domain) {
-          if (!yDef.scale) yDef.scale = {};
-          yDef.scale.domain = [
-            Math.floor(domain[0] * 100) / 100,
-            Math.ceil(domain[1] * 100) / 100,
-          ];
-          yDef.scale.zero = false;
-          yDef.scale.nice = false;
-          yDef.scale.clamp = true;
-        }
-
         // Calculate responsive width based on number of bars
         const xDef = vgSpec.encoding?.x;
         const xField = xDef?.field;
@@ -831,21 +831,6 @@ const barCharts: ChartTemplate[] = [
         const yDef = vgSpec.encoding?.y;
         if (!yDef || !yDef.field) return vgSpec;
 
-        const yField = yDef.field;
-        const domain = calculateOptimalYDomain(table, yField, 10);
-
-        // Configure Y-axis scale
-        if (domain) {
-          if (!yDef.scale) yDef.scale = {};
-          yDef.scale.domain = [
-            Math.floor(domain[0] * 100) / 100,
-            Math.ceil(domain[1] * 100) / 100,
-          ];
-          yDef.scale.zero = false;
-          yDef.scale.nice = false;
-          yDef.scale.clamp = true;
-        }
-
         // Calculate responsive width based on number of bins
         const xDef = vgSpec.encoding?.x;
         const xField = xDef?.field;
@@ -897,7 +882,7 @@ const barCharts: ChartTemplate[] = [
     template: {
       mark: "bar",
       encoding: {
-        x: { field: "field1", type: "quantitative" }, // <-- X là số (liên tục)
+        x: { field: "field1", type: "ordinal" },
         y: { field: "field2", type: "quantitative" },
         threshold: { field: "field3" },
       },
@@ -933,14 +918,29 @@ const barCharts: ChartTemplate[] = [
       }
 
       // ===============================
+      // Xác định type trục X (dùng type từ user, mặc định ordinal)
+      // ===============================
+      const xType = xDef.type || "ordinal";
+      const isQuantitativeX = xType === "quantitative";
+
+      // Cấu hình trục X chung
+      const xEncBase: any = { field: xField, type: xType, title: xField };
+      if (!isQuantitativeX) {
+        // Ordinal/nominal: dùng band scale, không dùng fixed width
+        xEncBase.scale = { padding: 0.1 };
+      }
+
+      // ===============================
       // Layer 1: Base bar (xanh dương)
       // ===============================
       const mainLayer = {
         layer: [
           {
-            mark: { type: "bar", width: 5 }, // bar hẹp để tách riêng
+            mark: isQuantitativeX
+              ? { type: "bar", width: 5 }
+              : { type: "bar", tooltip: true },
             encoding: {
-              x: { field: xField, type: "quantitative", title: xField },
+              x: xEncBase,
               y: {
                 field: yField,
                 type: "quantitative",
@@ -950,16 +950,18 @@ const barCharts: ChartTemplate[] = [
               color: { value: "#1f77b4" },
             },
           },
-          ...(thresholdValue
+          ...(thresholdValue !== null
             ? [
                 {
-                  mark: { type: "bar", width: 5 },
+                  mark: isQuantitativeX
+                    ? { type: "bar", width: 5 }
+                    : { type: "bar" },
                   transform: [
                     { filter: `datum["${yField}"] > ${thresholdValue}` },
                     { calculate: `${thresholdValue}`, as: "baseline" },
                   ],
                   encoding: {
-                    x: { field: xField, type: "quantitative" },
+                    x: xEncBase,
                     y: { field: "baseline", type: "quantitative" },
                     y2: { field: yField },
                     color: { value: "#e45755" },
@@ -1707,50 +1709,6 @@ let customCharts: ChartTemplate[] = [
       // =========================================================================
       const tableColumns = Object.keys(table[0]);
 
-      // Get original full table if available (contains limit columns)
-      const fullTable = vgSpec._originalTable || table;
-      const fullTableColumns =
-        fullTable && fullTable.length > 0 ? Object.keys(fullTable[0]) : [];
-
-      // If full original table contains SLIPNO, merge it into the working `table` rows
-      // Match rows by `INDEX` when available, otherwise fall back to `QCDATE|QCSHIFT` key
-      try {
-        if (
-          fullTable &&
-          fullTable.length > 0 &&
-          fullTableColumns.includes("SLIPNO")
-        ) {
-          const fullMap = new Map<string, any>();
-          for (const fr of fullTable) {
-            let key: string | null = null;
-            if (fr[indexField] !== undefined) {
-              key = String(fr[indexField]);
-            } else if (qcDateDef?.field && fr[qcDateDef.field] !== undefined) {
-              const shiftVal = qcShiftDef?.field ? fr[qcShiftDef.field] : "";
-              key = `${String(fr[qcDateDef.field])}|${String(shiftVal)}`;
-            }
-            if (key != null && fr.SLIPNO !== undefined) {
-              fullMap.set(key, fr.SLIPNO);
-            }
-          }
-
-          for (const r of table) {
-            let key: string | null = null;
-            if (r[indexField] !== undefined) {
-              key = String(r[indexField]);
-            } else if (qcDateDef?.field && r[qcDateDef.field] !== undefined) {
-              const shiftVal = qcShiftDef?.field ? r[qcShiftDef.field] : "";
-              key = `${String(r[qcDateDef.field])}|${String(shiftVal)}`;
-            }
-            if (key != null && fullMap.has(key)) {
-              r.SLIPNO = fullMap.get(key);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to merge SLIPNO from original table:", err);
-      }
-
       // Collect per-row limit series instead of single scalar
       let detectedLimitSeries: Record<
         string,
@@ -1758,15 +1716,10 @@ let customCharts: ChartTemplate[] = [
       > = {};
       const limitFieldNames = ["TARGET", "ARUL", "ARLL", "UL", "LL"];
 
-      const sourceTable = fullTableColumns.length > 0 ? fullTable : table;
-      const columnsToSearch =
-        fullTableColumns.length > 0 ? fullTableColumns : tableColumns;
       limitFieldNames.forEach((name) => {
-        const col = columnsToSearch.find(
-          (c: string) => c.toUpperCase() === name,
-        );
+        const col = tableColumns.find((c: string) => c.toUpperCase() === name);
         if (!col) return;
-        const series = sourceTable
+        const series = table
           .map((r: any) => ({ idx: r[indexField], val: r[col] }))
           .filter(
             (d: any) =>
@@ -1811,10 +1764,15 @@ let customCharts: ChartTemplate[] = [
         finalMin = lower - padding;
         finalMax = upper + padding;
       }
-
+      console.log("Calculated Y domain:", { finalMin, finalMax, hasAnyLimit });
       // =========================================================================
       // 6. LAYER: ĐIỂM + LOESS + GIỚI HẠN (CHỈ DỪNG TẠI detectedLimits)
       // =========================================================================
+
+      // detect UL/LL column names (case-insensitive)
+      const ulCol = tableColumns.find((c: string) => c.toUpperCase() === "UL");
+      const llCol = tableColumns.find((c: string) => c.toUpperCase() === "LL");
+
       const pointLayer = {
         mark: { type: "line", point: true, interpolate: "monotone" },
         encoding: {
@@ -1825,7 +1783,21 @@ let customCharts: ChartTemplate[] = [
             scale: { zero: false },
           },
           color: {
-            ...colorDef,
+            condition:
+              ulCol || llCol
+                ? {
+                    test:
+                      ulCol && llCol
+                        ? `datum["${valueField}"] >= datum["${ulCol}"] || datum["${valueField}"] <= datum["${llCol}"]`
+                        : ulCol
+                        ? `datum["${valueField}"] >= datum["${ulCol}"]`
+                        : `datum["${valueField}"] <= datum["${llCol}"]`,
+                    value: "#d62728",
+                  }
+                : undefined,
+            ...(colorDef?.field
+              ? { field: colorDef.field }
+              : { value: "#486BB9" }),
             type:
               colorDef.type === "quantitative"
                 ? "nominal"
@@ -1855,6 +1827,7 @@ let customCharts: ChartTemplate[] = [
               title: qcShiftDef?.field,
             },
             { field: "SLIPNO", title: "SLIPNO" },
+            { field: "ITEMNAME", title: "ITEMNAME" },
           ],
         },
       };
@@ -2172,11 +2145,6 @@ let customCharts: ChartTemplate[] = [
       // 2. DỮ LIỆU GỐC
       // =========================================================================
       const tableColumns = Object.keys(table[0]);
-
-      // Get original full table if available (contains limit columns)
-      const fullTable = vgSpec._originalTable || table;
-      const fullTableColumns =
-        fullTable && fullTable.length > 0 ? Object.keys(fullTable[0]) : [];
       // =========================================================================
       // 2️⃣ PHÁT HIỆN GIỚI HẠN QC
       // =========================================================================
@@ -2184,19 +2152,10 @@ let customCharts: ChartTemplate[] = [
       let detectedLimits: Record<string, number | undefined> = {};
       const limitFieldNames = ["TARGET", "ARUL", "ARLL", "UL", "LL"];
 
-      // Try to find limit columns in full table first, then fallback to working table
-      const sourceTable = fullTableColumns.length > 0 ? fullTable : table;
-      const columnsToSearch =
-        fullTableColumns.length > 0 ? fullTableColumns : tableColumns;
-
       limitFieldNames.forEach((name) => {
-        const col = columnsToSearch.find(
-          (c: string) => c.toUpperCase() === name,
-        );
+        const col = tableColumns.find((c: string) => c.toUpperCase() === name);
         if (col) {
-          const val = sourceTable.find(
-            (r: any) => typeof r[col] === "number",
-          )?.[col];
+          const val = table.find((r: any) => typeof r[col] === "number")?.[col];
           if (typeof val === "number" && isFinite(val)) {
             detectedLimits[name] = val;
           }
@@ -2449,21 +2408,8 @@ let customCharts: ChartTemplate[] = [
     ) => {
       try {
         if (!table || table.length === 0) return vgSpec;
-
-        // Get original full table if available (contains limit columns)
-        const fullTable = vgSpec._originalTable || table;
         const tableColumns = Object.keys(table[0] || {});
-        const fullTableColumns =
-          fullTable && fullTable.length > 0
-            ? Object.keys(fullTable[0] || {})
-            : [];
-
         let detectedLimits: Record<string, number | undefined> = {};
-
-        // Try to find limit columns in full table first, then fallback to working table
-        const sourceTable = fullTableColumns.length > 0 ? fullTable : table;
-        const columnsToSearch =
-          fullTableColumns.length > 0 ? fullTableColumns : tableColumns;
         // Assume color field represents ValueType
         const qcdateField = vgSpec.encoding?.QCDATE?.field || "QCDATE";
         const qcshiftField = vgSpec.encoding?.QCSHIFT?.field || "QCSHIFT";
@@ -2594,9 +2540,9 @@ let customCharts: ChartTemplate[] = [
         if (qcLimitsMode) {
           const limitFieldNames = ["TARGET", "ARUL", "ARLL", "UL", "LL"];
           limitFieldNames.forEach((name) => {
-            const col = columnsToSearch.find((c) => c.toUpperCase() === name);
+            const col = tableColumns.find((c) => c.toUpperCase() === name);
             if (col) {
-              const vals = sourceTable
+              const vals = table
                 .map((r: any) => r[col])
                 .filter((v: any) => typeof v === "number" && isFinite(v));
               if (vals.length > 0) detectedLimits[name] = vals[0];

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="100" viewBox="0 0 240 100">
+  <rect width="240" height="100" fill="#f0f6ff"/>
+  <!-- ARUL action limit -->
+  <line x1="0" y1="15" x2="240" y2="15" stroke="#e74c3c" stroke-width="1" stroke-dasharray="2,2" opacity="0.6"/>
+  <!-- UL control limit -->
+  <line x1="0" y1="28" x2="240" y2="28" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <!-- TARGET -->
+  <line x1="0" y1="50" x2="240" y2="50" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <!-- LL control limit -->
+  <line x1="0" y1="72" x2="240" y2="72" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <!-- ARLL action limit -->
+  <line x1="0" y1="85" x2="240" y2="85" stroke="#e74c3c" stroke-width="1" stroke-dasharray="2,2" opacity="0.6"/>
+  <!-- Value line -->
+  <polyline points="15,45 40,38 60,52 80,30 100,48 125,60 145,70 165,46 185,43 210,50 230,47" fill="none" stroke="#2980b9" stroke-width="2.5"/>
+  <!-- Data points -->
+  <circle cx="15" cy="45" r="3" fill="#2980b9"/>
+  <circle cx="40" cy="38" r="3" fill="#2980b9"/>
+  <circle cx="60" cy="52" r="3" fill="#2980b9"/>
+  <circle cx="80" cy="30" r="3.5" fill="#e67e22" stroke="white" stroke-width="1"/>
+  <circle cx="100" cy="48" r="3" fill="#2980b9"/>
+  <circle cx="125" cy="60" r="3" fill="#2980b9"/>
+  <circle cx="145" cy="70" r="3.5" fill="#e67e22" stroke="white" stroke-width="1"/>
+  <circle cx="165" cy="46" r="3" fill="#2980b9"/>
+  <circle cx="185" cy="43" r="3" fill="#2980b9"/>
+  <circle cx="210" cy="50" r="3" fill="#2980b9"/>
+  <circle cx="230" cy="47" r="3" fill="#2980b9"/>
+  <!-- Labels -->
+  <text x="195" y="12" font-size="8" fill="#e74c3c" font-family="sans-serif">ARUL</text>
+  <text x="200" y="26" font-size="8" fill="#e67e22" font-family="sans-serif">UL</text>
+  <text x="195" y="48" font-size="8" fill="#27ae60" font-family="sans-serif">TARGET</text>
+  <text x="200" y="70" font-size="8" fill="#e67e22" font-family="sans-serif">LL</text>
+  <text x="196" y="83" font-size="8" fill="#e74c3c" font-family="sans-serif">ARLL</text>
+</svg>

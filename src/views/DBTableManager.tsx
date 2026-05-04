@@ -508,6 +508,9 @@ export const DBTableSelectionDialog: React.FC<{
 
   const [isUploading, setIsUploading] = useState<boolean>(false);
 
+  // Permission flag from backend session - controls whether download actions are enabled
+  const [downloadAllowed, setDownloadAllowed] = useState<boolean>(false);
+
   // Maps table name → QC loader params used when that table was ingested.
   // Used so each virtual table remembers its own query params independently.
   const pendingLoaderParamsRef = useRef<Record<string, Record<string, string>>>(
@@ -530,6 +533,27 @@ export const DBTableSelectionDialog: React.FC<{
 
   useEffect(() => {
     fetchDataLoaders();
+  }, []);
+
+  // Fetch current user info (including download permission) so we can enable/disable
+  // download-related UI without triggering protected requests.
+  useEffect(() => {
+    (async () => {
+      try {
+        const resp = await fetch("/api/auth/me", { credentials: "include" });
+        const j = await resp.json();
+        const dl = Array.isArray(j) && j.length > 0 ? j[0].download : null;
+        const allowed =
+          dl === true ||
+          dl === 1 ||
+          dl === "1" ||
+          dl === "true" ||
+          dl === "True";
+        setDownloadAllowed(Boolean(allowed));
+      } catch (e) {
+        setDownloadAllowed(false);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -997,7 +1021,7 @@ export const DBTableSelectionDialog: React.FC<{
             setSystemMessage("Failed to download database file", "error");
           });
         }}
-        disabled={isUploading || dbTables.length === 0}
+        disabled={isUploading || dbTables.length === 0 || !downloadAllowed}
       >
         export
       </Button>
@@ -1472,6 +1496,13 @@ export const DBTableSelectionDialog: React.FC<{
                   dbTables.find((t) => t.name === selectedTabKey) === undefined
                 }
                 onClick={async () => {
+                  if (!downloadAllowed) {
+                    setSystemMessage(
+                      "You don't have permission to download this table",
+                      "error",
+                    );
+                    return;
+                  }
                   const tableName = selectedTabKey;
                   if (!tableName) return;
 
@@ -1779,6 +1810,18 @@ export const DataLoaderForm: React.FC<{
     (state: DataFormulatorState) =>
       state.dataLoaderConnectParams[dataLoaderType] ?? {},
   );
+
+  // Helper function to calculate from_date (current date - 7 days) and to_date (current date)
+  const getCalculatedDates = () => {
+    const today = new Date();
+    const toDate = today.toISOString().split("T")[0]; // YYYY-MM-DD format
+
+    const fromDate = new Date(today);
+    fromDate.setDate(fromDate.getDate() - 7);
+    const fromDateStr = fromDate.toISOString().split("T")[0]; // YYYY-MM-DD format
+
+    return { from_date: fromDateStr, to_date: toDate };
+  };
 
   const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
   let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>(
@@ -2779,6 +2822,8 @@ export const QCDataDialog: React.FC<{
   const [tableAnalysisMap, setTableAnalysisMap] = useState<
     Record<string, ColumnStatistics[] | null>
   >({});
+  // Permission flag for QC dialog downloads
+  const [downloadAllowed, setDownloadAllowed] = useState<boolean>(false);
   const [pendingTableToSelect, setPendingTableToSelect] = useState<string>("");
   const pendingLoaderParamsRef = useRef<Record<string, Record<string, string>>>(
     {},
@@ -2813,7 +2858,48 @@ export const QCDataDialog: React.FC<{
     if (qcDialogOpen) {
       fetchDataLoaders();
       fetchTables();
+      // Reset from_date and to_date when dialog opens
+      const today = new Date();
+      const toDate = today.toISOString().split("T")[0];
+      const fromDate = new Date(today);
+      fromDate.setDate(fromDate.getDate() - 7);
+      const fromDateStr = fromDate.toISOString().split("T")[0];
+
+      dispatch(
+        dfActions.updateDataLoaderConnectParam({
+          dataLoaderType: "QC_Data",
+          paramName: "from_date",
+          paramValue: fromDateStr,
+        }),
+      );
+      dispatch(
+        dfActions.updateDataLoaderConnectParam({
+          dataLoaderType: "QC_Data",
+          paramName: "to_date",
+          paramValue: toDate,
+        }),
+      );
     }
+  }, [qcDialogOpen, dispatch]);
+
+  // Read download permission for QC dialog
+  useEffect(() => {
+    (async () => {
+      try {
+        const resp = await fetch("/api/auth/me", { credentials: "include" });
+        const j = await resp.json();
+        const dl = Array.isArray(j) && j.length > 0 ? j[0].download : null;
+        const allowed =
+          dl === true ||
+          dl === 1 ||
+          dl === "1" ||
+          dl === "true" ||
+          dl === "True";
+        setDownloadAllowed(Boolean(allowed));
+      } catch (e) {
+        setDownloadAllowed(false);
+      }
+    })();
   }, [qcDialogOpen]);
 
   const fetchDataLoaders = async () => {
@@ -3006,6 +3092,13 @@ export const QCDataDialog: React.FC<{
   };
 
   const handleDownloadTable = async (tableName: string) => {
+    if (!downloadAllowed) {
+      setSystemMessage(
+        "You don't have permission to download this table",
+        "error",
+      );
+      return;
+    }
     try {
       const response = await fetch(getUrls().SAMPLE_TABLE, {
         method: "POST",
@@ -3167,8 +3260,52 @@ export const QCDataDialog: React.FC<{
             <RefreshIcon sx={{ fontSize: 14 }} />
           </IconButton>
         </Tooltip>
-      </Box>
+        <Tooltip title="Delete all tables">
+          <IconButton
+            size="small"
+            color="error"
+            sx={{
+              "&:hover": { transform: "scale(1.05)" },
+              transition: "transform 0.15s ease-in-out",
+            }}
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (dbTables.length === 0) return;
+              const confirmed = window.confirm(
+                `Delete all ${dbTables.length} table(s)? This action cannot be undone.`,
+              );
+              if (!confirmed) return;
 
+              let deletedCount = 0;
+              for (const table of dbTables) {
+                try {
+                  const resp = await fetch(getUrls().DELETE_TABLE, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ table_name: table.name }),
+                  });
+                  const jd = await resp.json();
+                  if (jd.status === "success") deletedCount++;
+                } catch (err) {
+                  console.error(`Failed to delete table ${table.name}:`, err);
+                }
+              }
+
+              await fetchTables();
+              setTableAnalysisMap({});
+              setSelectedTabKey("");
+              if (deletedCount > 0) {
+                setSystemMessage(
+                  `Successfully deleted ${deletedCount} table(s)`,
+                  "success",
+                );
+              }
+            }}
+          >
+            <DeleteIcon sx={{ fontSize: 14 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
       {dbTables.length == 0 && (
         <Typography
           variant="caption"
@@ -3212,7 +3349,7 @@ export const QCDataDialog: React.FC<{
       </Button>
 
       {dbTables
-        //.filter((t) => !t.name.endsWith("_live"))
+        .filter((t) => !t.name.endsWith("_live"))
         .map((t, i) => (
           <Box
             key={t.name}
@@ -3546,14 +3683,14 @@ export const DataQueryForm: React.FC<{
   // Helper function to validate required params
   const validateRequiredParams = (): string | null => {
     for (const paramDef of paramDefs) {
+      // Skip from_date and to_date as they are auto-calculated
+      if (paramDef.name === "from_date" || paramDef.name === "to_date") {
+        continue;
+      }
       if (paramDef.required && !dataLoaderParams[paramDef.name]) {
         // Format param names for display
         const paramLabel =
-          paramDef.name === "from_date"
-            ? "from_date"
-            : paramDef.name === "to_date"
-            ? "to_date"
-            : paramDef.name === "std_param_name"
+          paramDef.name === "std_param_name"
             ? "Parameter"
             : paramDef.name === "facode_name"
             ? "Factory (Facode)"

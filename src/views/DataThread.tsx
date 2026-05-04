@@ -1580,7 +1580,6 @@ const MemoizedChartObject = memo<{
       chart.qcLimitsMode || false,
       undefined,
       undefined,
-      chartOriginalTables[chart.id] || table.rows,
     );
 
     // Check if assembledChart is valid (not a fallback array)
@@ -1723,11 +1722,17 @@ export const DataThread: FC<{ sx?: SxProps }> = function ({ sx }) {
   const dispatch = useDispatch();
 
   const handleDeleteAll = () => {
-    if (tables.length > 0) {
+    if (tables.length > 0 || charts.length > 0) {
       const confirmed = window.confirm(
-        `Delete all ${tables.length} table(s)? This action cannot be undone.`,
+        `Delete all ${tables.length} table(s) and ${charts.length} chart(s)? This action cannot be undone.`,
       );
       if (confirmed) {
+        // delete all charts first
+        charts.forEach((chart) => {
+          dispatch(dfActions.deleteChartById(chart.id));
+        });
+
+        // then delete all tables
         tables.forEach((table) => {
           dispatch(dfActions.deleteTable(table.id));
         });

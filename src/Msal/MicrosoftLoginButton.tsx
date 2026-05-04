@@ -40,28 +40,32 @@ const MicrosoftLoginButton: React.FC = () => {
         alert("Microsoft auth is not available in this environment.");
         return;
       }
-      // ✅ Đăng nhập Microsoft
-      const loginResponse = await instance.loginPopup(loginRequest);
-      const account = loginResponse.account;
+      // ✅ Microsoft login
+      const loginResponse = await instance.loginPopup({
+        scopes: ["openid", "profile", "email"],
+      });
+      const idToken = loginResponse.idToken;
+      const claims = loginResponse.account.idTokenClaims;
 
-      if (!account) {
-        alert("Không lấy được thông tin tài khoản Microsoft!");
+      if (!claims) {
+        alert("Your Microsoft account not found!");
         return;
       }
 
-      // ✅ Lấy email + tên từ Microsoft
-      const email = account.username;
-      const username = account.name || account.username;
-      // ✅ Gửi email + username sang backend để kiểm tra quyền
+      // ✅ Get email + name from Microsoft
+      const email = claims?.email;
+      const username = claims?.name || claims?.email;
+      // ✅ Send email + username to backend for permission check
       const apiResponse = await fetch("/api/auth/microsoft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, username }),
+        body: JSON.stringify({ email, username, idToken }),
       });
 
       if (apiResponse.status === 403) {
-        alert("❌ Your account is not registered to use this application.");
+        const json = await apiResponse.json();
+        alert(`❌ ${json.message}`);
         return;
       }
 

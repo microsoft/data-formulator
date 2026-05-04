@@ -92,9 +92,9 @@ Additional rules:
   - User explicitly requests the specific QC chart type AND the dataset contains QC control limit columns (TARGET, LL, UL, ARLL, ARUL)
 - **IMPORTANT: Always respect the user's explicit chart type request**, regardless of data characteristics. If user requests a chart type (e.g., "linear regression", "histogram", "line", "bar") and it's in the supported list, use exactly that chart type without questioning it.
 - To identify QC data, check for the presence of these control limit fields: TARGET (required), LL, UL, ARLL, ARUL. If TARGET column exists along with at least one of (LL, UL, ARLL, ARUL), then it's QC data.
-  * For "qc_trend_line": Output fields must include INDEX, QCDATE, QCSHIFT, VALUE, QCSTDPARAMNAME. Also include TARGET, LL, UL, ARLL, ARUL for rendering control limit lines (these are used by frontend to display limits, not in chart_encodings).
-  * For "qc_histogram": Output fields must include INDEX, VALUE, QCSTDPARAMNAME. Also include TARGET, LL, UL, ARLL, ARUL.
-  * For "qc_trend_bar": Output fields must include INDEX, QCDATE, QCSHIFT, VALUE. Also include TARGET.
+  * For "qc_trend_line": Output fields must include INDEX, QCDATE, QCSHIFT, VALUE, QCSTDPARAMNAME. Also include TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME for rendering control limit lines (these are used by frontend to display limits, not in chart_encodings).
+  * For "qc_histogram": Output fields must include INDEX, VALUE, QCSTDPARAMNAME. Also include TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME.
+  * For "qc_trend_bar": Output fields must include INDEX, QCDATE, QCSHIFT, VALUE. Also include TARGET, SLIPNO, ITEMNAME.
   * For other chart types with QC data: Keep all fields used in chart_encodings. Use QCSTDPARAMNAME as default color field if needed.
   * **NOTE ON QCDATE vs LASTUPDATE**: QCDATE is the control date, LASTUPDATE is the record timestamp. Always include both if available. Use LASTUPDATE for temporal sorting/ordering when needed.
 - "qc_trend_line" means a quality control trend chart that visualizes values and control limits over time. Only use this when user explicitly requests it.
@@ -165,7 +165,7 @@ Concretely:
                 - rolling_average: x="INDEX" (default), y="VALUE" (default), color (optional)
                 - radial_plot: x="INDEX" (default), y="VALUE" (default), color (optional)
             - ⚠️ QC CHARTS (CRITICAL - DO NOT USE x, y):
-                - **IMPORTANT: For QC charts, VERIFY that columns (INDEX, VALUE, QCDATE, QCSHIFT, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL) exist in the actual input data. If any required column is missing, use available alternatives or note that data is incomplete for this chart type.**
+                - **IMPORTANT: For QC charts, VERIFY that columns (INDEX, VALUE, QCDATE, QCSHIFT, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME) exist in the actual input data. If any required column is missing, use available alternatives or note that data is incomplete for this chart type.**
                 - qc_trend_line: ONLY use [INDEX, VALUE, QCDATE, QCSHIFT, color] - NEVER use x, y
                   * INDEX = x-axis (position/sequence)
                   * VALUE = y-axis (quantitative data)
@@ -176,10 +176,25 @@ Concretely:
                   * INDEX = secondary field
                   * color = QCSTDPARAMNAME (default)
                 - qc_trend_bar: ONLY use [VALUE, QCDATE, QCSHIFT] - NEVER use x, y, color
+        
+        - **QC CHART ENCODING REQUIREMENTS** (CRITICAL - MUST FOLLOW for QC CHARTS):
+            - When chart_type is "qc_trend_line", chart_encodings MUST include ALL 5 channels:
+              * {"INDEX": "INDEX", "VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT", "color": "QCSTDPARAMNAME"}
+              * NEVER omit QCDATE or QCSHIFT - they are REQUIRED
+              * Do NOT use "x" or "y" channels
+            
+            - When chart_type is "qc_histogram", chart_encodings MUST include ALL 3 channels:
+              * {"VALUE": "VALUE", "INDEX": "INDEX", "color": "QCSTDPARAMNAME"}
+              * Do NOT use "x" or "y" channels
+            
+            - When chart_type is "qc_trend_bar", chart_encodings MUST include ALL 3 channels:
+              * {"VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT"}
+              * Do NOT include "color" or use "x", "y" channels
+        
         - note that all fields used in "chart_encodings" should be included in "output_fields".
             - all fields you need for visualizations should be transformed into the output fields!
             - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
-        - typically only 2-3 fields should be used to create the visualization (x, y, color/size), facet use be added if it's a faceted visualization (totally 4 fields used).
+        - typically only 2-3 fields should be used to create the visualization (x, y, color/size), facet use be added if it's a faceted visualization (totally 4 fields used). **EXCEPTION: QC charts may use 3-5 channels as specified in QC CHART ENCODING REQUIREMENTS above.**
     - Guidelines for choosing chart type and visualization fields:
         - Consider chart types as follows:
              - (point) Scatter Plots: x (DEFAULT: INDEX), y (DEFAULT: VALUE), color (DEFAULT: QCSTDPARAMNAME), size, facet
@@ -304,9 +319,9 @@ some notes:
 **QC_CHART_SPECIFICATIONS:**
 
 Refer to QC chart definitions embedded below. These channel and field specifications are FIXED and CANNOT be modified:
-- qc_trend_line: Channels=[INDEX, VALUE, QCDATE, QCSHIFT, color] | Default color=QCSTDPARAMNAME | Include control limits (TARGET, LL, UL, ARLL, ARUL) in output_fields
-- qc_histogram: Channels=[VALUE, INDEX, color] | Default color=QCSTDPARAMNAME | Include control limits (TARGET, LL, UL, ARLL, ARUL) in output_fields
-- qc_trend_bar: Channels=[VALUE, QCDATE, QCSHIFT] | No color field | Include TARGET in output_fields
+- qc_trend_line: Channels=[INDEX, VALUE, QCDATE, QCSHIFT, color] | Default color=QCSTDPARAMNAME | Include control limits (TARGET, LL, UL, ARLL, ARUL) and additional fields (SLIPNO, ITEMNAME) in output_fields
+- qc_histogram: Channels=[VALUE, INDEX, color] | Default color=QCSTDPARAMNAME | Include control limits (TARGET, LL, UL, ARLL, ARUL) and additional fields (SLIPNO, ITEMNAME) in output_fields
+- qc_trend_bar: Channels=[VALUE, QCDATE, QCSHIFT] | No color field | Include TARGET and additional fields (SLIPNO, ITEMNAME) in output_fields
 
 For detailed field mapping rules for each QC chart type, refer to the QC_CHART_SPECIFICATIONS embedded within SYSTEM_PROMPT implementation.
 '''

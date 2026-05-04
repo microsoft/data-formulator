@@ -946,14 +946,6 @@ export const dataFormulatorSlice = createSlice({
       state.chartPreviewImages[chartId] = { url, width, height, dataVersion };
     },
 
-    updateChartOriginalTable: (
-      state,
-      action: PayloadAction<{ chartId: string; originalTable: any[] }>,
-    ) => {
-      const { chartId, originalTable } = action.payload;
-      state.chartOriginalTables[chartId] = originalTable;
-    },
-
     updateChartDataSampleRange: (
       state,
       action: PayloadAction<{ chartId: string; sampleRange: [number, number] }>,

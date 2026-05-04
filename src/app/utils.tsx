@@ -479,7 +479,6 @@ export const assembleVegaChart = (
   qcLimitsMode?: boolean,
   chartWidth?: number,
   chartHeight?: number,
-  originalTable?: any[], // Original full table containing all columns including QC limits
 ) => {
   if (chartType == "Table") {
     return ["Table", undefined];
@@ -487,10 +486,6 @@ export const assembleVegaChart = (
 
   // ✅ Sanitize input data to remove Infinity/NaN values before processing
   const cleanedTable = sanitizeDataForVega(workingTable);
-  const cleanedOriginalTable = originalTable
-    ? sanitizeDataForVega(originalTable)
-    : undefined;
-
   let chartTemplate = getChartTemplate(chartType) as ChartTemplate;
   //console.log(chartTemplate);
 
@@ -835,10 +830,6 @@ export const assembleVegaChart = (
 
   // use post processor to handle smart chart instantiation
   if (chartTemplate.postProcessor) {
-    // Attach original table to vgObj so postProcessor can access it
-    vgObj._originalTable = cleanedOriginalTable || cleanedTable;
-    vgObj._workingTable = cleanedTable;
-
     vgObj = chartTemplate.postProcessor(
       vgObj,
       cleanedTable,
@@ -1232,16 +1223,25 @@ export const assembleVegaChart = (
   }
 
   if (addTooltips) {
-    // Add tooltip configuration to the mark
-    if (!vgObj.mark) {
-      vgObj.mark = {};
-    }
-    if (typeof vgObj.mark === "string") {
-      vgObj.mark = { type: vgObj.mark };
-    }
+    // Only add top-level mark tooltip for unit specs (not hconcat/vconcat/concat/layer)
+    // Composite specs do not have a top-level mark; adding one would make the spec invalid
+    const isCompositeSpec =
+      vgObj.hconcat != null ||
+      vgObj.vconcat != null ||
+      vgObj.concat != null ||
+      vgObj.layer != null;
 
-    // Add tooltip to the mark
-    vgObj.mark.tooltip = true;
+    if (!isCompositeSpec) {
+      // Add tooltip configuration to the mark
+      if (!vgObj.mark) {
+        vgObj.mark = {};
+      }
+      if (typeof vgObj.mark === "string") {
+        vgObj.mark = { type: vgObj.mark };
+      }
+      // Add tooltip to the mark
+      vgObj.mark.tooltip = true;
+    }
   }
 
   if (vgObj.encoding) {

@@ -68,7 +68,7 @@ export const DashboardView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [chatbotOpen, setChatbotOpen] = useState<boolean>(false);
   const [selectedDashboard, setSelectedDashboard] = useState<Dashboard | null>(
-    null
+    null,
   );
   const [panelCollapsed, setPanelCollapsed] = useState<boolean>(false);
 
@@ -304,7 +304,7 @@ export const DashboardView: React.FC = () => {
                         : {
                             xs: "1fr",
                             sm: "repeat(2, 1fr)",
-                            lg: "repeat(3, 1fr)",
+                            lg: "repeat(4, 1fr)",
                           },
                     gap: 2,
                   }}

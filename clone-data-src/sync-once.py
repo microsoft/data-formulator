@@ -39,7 +39,7 @@ CLICKHOUSE_USER = os.environ.get("CH_USER", "admin")
 CLICKHOUSE_PASS = os.environ.get("CH_PASSWORD", "1fEQlaBivOpYXzw#")
 
 CLICKHOUSE_TABLE = "DPD_QC_INFO"
-BATCH_SIZE = 1000
+BATCH_SIZE = 30000 
 MAX_RETRIES = 3
 
 # ================= CONNECTION =================
@@ -120,6 +120,11 @@ def safe_float(val):
 def safe_str(val):
     if val is None:
         return None
+    return str(val)
+
+def safe_str_or_empty(val):
+    if val is None:
+        return ''
     return str(val)
 
 def safe_str_upper(val):
@@ -268,7 +273,7 @@ def build_row(r):
         safe_int(r.get("spindleno")),
         safe_str(r.get("ngtype")),
         safe_str(r.get("updateby")),
-        safe_datetime_str(r.get("lastupdate")),
+        safe_datetime_str(r.get("qcmeasuredtime")),
         safe_str(r.get("pdmachineno")),
         safe_str(r.get("controllotno")),
         safe_str(r.get("qcterminal")),
@@ -308,6 +313,8 @@ def build_row(r):
         safe_str(r.get("batchtype")),
         safe_int(r.get("batchseq")),
         safe_int(r.get("mainslipno")),
+        safe_str_or_empty(r.get("mcconsumptionlist")),
+        safe_datetime_str(r.get("qcmeasuredtime")),
         safe_int(r.get("seq")),
         safe_int(is_deleted)
     ]
@@ -333,6 +340,7 @@ COLUMN_NAMES = [
     "MC_2P", "DATE2P", "SHIFT2P",
     "NGUSL", "NGLSL", "NGUCL", "NGLCL",
     "BATCHNO", "BATCHQTY", "BATCHTYPE", "BATCHSEQ", "MAINSLIPNO",
+    "MCCONSUMPTIONLIST", "QCMEASUREDTIME",
     "SEQ", "IS_DELETED",
 ]
 

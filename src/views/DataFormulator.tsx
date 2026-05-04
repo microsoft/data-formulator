@@ -35,7 +35,7 @@ import {
 import { FreeDataViewFC } from "./DataView";
 import { VisualizationViewFC } from "./VisualizationView";
 
-import { ConceptShelf } from "./ConceptShelf";
+//import { ConceptShelf } from "./ConceptShelf";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import {
@@ -58,6 +58,7 @@ import { LiveView } from "./LiveView";
 import {
   ExampleSession,
   exampleSessions,
+  qcExampleSessions,
   ExampleSessionCard,
 } from "./ExampleSessions";
 
@@ -339,7 +340,7 @@ export const DataFormulatorFC = ({}) => {
         {viewMode === "editor" ? (
           <>
             {visPane}
-            <ConceptShelf />
+            {/* <ConceptShelf /> */}
           </>
         ) : viewMode === "report" ? (
           <ReportView />
@@ -688,6 +689,60 @@ Totals (7 entries)	5	5	5	15
               }}
             >
               {exampleSessions.map((session) => (
+                <ExampleSessionCard
+                  key={session.id}
+                  session={session}
+                  theme={theme}
+                  onClick={() => handleLoadExampleSession(session)}
+                />
+              ))}
+            </Box>
+          </Box>
+        </Box>
+        {/* QC Examples Section */}
+        <Box
+          sx={{
+            mt: 4,
+            borderRadius: 8,
+            p: 2,
+            background: `
+                 linear-gradient(90deg, ${alpha(
+                   theme.palette.text.secondary,
+                   0.02,
+                 )} 1px, transparent 1px),
+                 linear-gradient(0deg, ${alpha(
+                   theme.palette.text.secondary,
+                   0.02,
+                 )} 1px, transparent 1px)
+                `,
+            backgroundSize: "16px 16px",
+          }}
+        >
+          <Divider
+            sx={{
+              width: "200px",
+              mx: "auto",
+              mb: 3,
+              fontSize: "1.2rem",
+              color: "text.disabled",
+            }}
+          >
+            <Typography sx={{ fontSize: 14, color: "text.disabled" }}>
+              or, QC examples
+            </Typography>
+          </Divider>
+          <Box sx={{ alignItems: "center" }}>
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+                gap: 2,
+                maxWidth: 1000,
+                margin: "0 auto",
+                px: 1,
+              }}
+            >
+              {qcExampleSessions.map((session) => (
                 <ExampleSessionCard
                   key={session.id}
                   session={session}

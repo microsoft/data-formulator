@@ -7,6 +7,7 @@ import pandas as pd
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary, extract_and_log_user_prompt
 from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
+from data_formulator.agents.qc_chart_config import is_qc_data
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,15 @@ class InteractiveExploreAgent(object):
         # Generate data summary
         data_summary = self.get_data_summary(input_tables)
         
+        # Detect QC data from input_tables
+        all_columns = set()
+        for table in input_tables:
+            if isinstance(table, dict) and 'rows' in table and table['rows']:
+                first_row = table['rows'][0]
+                if isinstance(first_row, dict):
+                    all_columns.update(first_row.keys())
+        data_is_qc = is_qc_data(all_columns) if all_columns else False
+        
         # Build context including exploration thread if available
         context = f"[DATASET]\n\n{data_summary}"
         
@@ -175,11 +185,23 @@ class InteractiveExploreAgent(object):
 
         base_system_prompt = SYSTEM_PROMPT_AGENT if mode == 'agent' else SYSTEM_PROMPT
         
+        # Inject QC chart type guidance when data is QC data
+        qc_hint = ""
+        if data_is_qc:
+            qc_hint = (
+                "\n\n[QC DATA DETECTED]\n\n"
+                "The dataset contains QC (Quality Control) characteristics (TARGET + control limit columns like LL, UL, ARUL, ARLL). "
+                "When suggesting chart questions, include EXACTLY ONE suggestion for a QC-specific chart type (e.g. QC Trend Line, QC Trend Bar, or QC Histogram). "
+                "The remaining suggestions should be diverse and cover a variety of other standard chart types available in the system (bar, line, scatter, histogram, pie, heatmap, bubble, etc.). "
+                "The one QC suggestion must explicitly name the QC chart type in its text so the user knows which chart to use. "
+                "Example QC suggestion: 'Draw a QC Trend Line chart to monitor values against control limits over time.'"
+            )
+        
         # Incorporate agent exploration rules into system prompt if provided
         if self.agent_exploration_rules and self.agent_exploration_rules.strip():
-            system_prompt = base_system_prompt + "\n\n[AGENT EXPLORATION RULES]\n\n" + self.agent_exploration_rules.strip() + "\n\nPlease follow the above agent exploration rules when suggesting questions."
+            system_prompt = base_system_prompt + qc_hint + "\n\n[AGENT EXPLORATION RULES]\n\n" + self.agent_exploration_rules.strip() + "\n\nPlease follow the above agent exploration rules when suggesting questions."
         else:
-            system_prompt = base_system_prompt
+            system_prompt = base_system_prompt + qc_hint
 
         logger.info(f"Interactive explore agent input: {context}")
         

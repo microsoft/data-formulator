@@ -22,7 +22,7 @@ QC_CHART_TYPES = {
         "channels": ["INDEX", "VALUE", "QCDATE", "QCSHIFT", "color"],
         "description": "Quality control trend chart that visualizes values and control limits over time",
         "use_case": "Quality control monitoring, tracking values against control limits over time",
-        "required_fields": ["TARGET"],
+        "required_fields": ["TARGET", "SLIPNO", "ITEMNAME"],
         "optional_fields": ["LL", "UL", "ARLL", "ARUL"],
         "control_limit_fields": ["TARGET", "LL", "UL", "ARLL", "ARUL"],
         "default_color_field": "QCSTDPARAMNAME",
@@ -44,7 +44,7 @@ QC_CHART_TYPES = {
         "channels": ["VALUE", "QCDATE", "QCSHIFT"],
         "description": "Quality control trend bar chart that visualizes categorical values and control limits",
         "use_case": "Quality control monitoring with categorical values",
-        "required_fields": ["TARGET"],
+        "required_fields": ["TARGET", "SLIPNO", "ITEMNAME"],
         "optional_fields": ["LL", "UL", "ARLL", "ARUL"],
         "control_limit_fields": ["TARGET", "LL", "UL", "ARLL", "ARUL"],
         "default_color_field": None,
@@ -117,21 +117,21 @@ For chart_type = "qc_trend_line":
   - Channels: INDEX, VALUE, QCDATE, QCSHIFT, color
   - chart_encodings MUST include: {"INDEX": "INDEX", "VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT", "color": "QCSTDPARAMNAME"}
   - Do NOT include LL, UL, ARLL, ARUL, TARGET in chart_encodings (used internally)
-  - output_fields MUST include: INDEX, VALUE, QCDATE, QCSHIFT, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL
+  - output_fields MUST include: INDEX, VALUE, QCDATE, QCSHIFT, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME
   - Default color field: QCSTDPARAMNAME
 
 For chart_type = "qc_histogram":
   - Channels: VALUE, INDEX, color
   - chart_encodings MUST include: {"VALUE": "VALUE", "INDEX": "INDEX", "color": "QCSTDPARAMNAME"}
   - Do NOT include x-axis field, LL, UL, ARLL, ARUL, TARGET in chart_encodings
-  - output_fields MUST include: VALUE, INDEX, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL
+  - output_fields MUST include: VALUE, INDEX, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME
   - Default color field: QCSTDPARAMNAME
 
 For chart_type = "qc_trend_bar":
   - Channels: VALUE, QCDATE, QCSHIFT
   - chart_encodings MUST include: {"VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT"}
   - Do NOT include LL, UL, ARLL, ARUL, TARGET in chart_encodings
-  - output_fields MUST include: VALUE, QCDATE, QCSHIFT
+  - output_fields MUST include: VALUE, QCDATE, QCSHIFT, SLIPNO, ITEMNAME
 """
     return rules
 
@@ -221,19 +221,20 @@ def fix_qc_chart_encodings(chart_type, chart_encodings):
     """
     Auto-fix common LLM mistakes in QC chart encodings.
     If LLM sends x, y instead of INDEX, VALUE, auto-correct it.
+    ALSO auto-populate missing required channels to ensure all channels are present.
     
     Args:
         chart_type: Chart type string
         chart_encodings: dict of chart encodings from LLM output
         
     Returns:
-        dict: Corrected chart_encodings or original if no fix needed
+        dict: Corrected chart_encodings with all required channels ensured
     """
     if chart_type not in QC_CHART_TYPES:
         return chart_encodings
     
     if not chart_encodings:
-        return chart_encodings
+        chart_encodings = {}
     
     fixed = dict(chart_encodings)  # Create a copy
     made_changes = False
@@ -248,6 +249,16 @@ def fix_qc_chart_encodings(chart_type, chart_encodings):
         if "y" in fixed:
             fixed["VALUE"] = fixed.pop("y")
             made_changes = True
+        
+        # ⚠️ CRITICAL: Ensure ALL required channels are present
+        required_channels = ["INDEX", "VALUE", "QCDATE", "QCSHIFT", "color"]
+        for channel in required_channels:
+            if channel not in fixed:
+                if channel == "color":
+                    fixed[channel] = "QCSTDPARAMNAME"  # Default color field
+                else:
+                    fixed[channel] = channel  # Use channel name as default field name
+                made_changes = True
     
     elif chart_type == "qc_histogram":
         # qc_histogram uses VALUE, INDEX, color (no x, y)
@@ -258,6 +269,16 @@ def fix_qc_chart_encodings(chart_type, chart_encodings):
             # Remove y, it's not used in qc_histogram
             fixed.pop("y")
             made_changes = True
+        
+        # ⚠️ Ensure ALL required channels for qc_histogram are present
+        required_channels = ["VALUE", "INDEX", "color"]
+        for channel in required_channels:
+            if channel not in fixed:
+                if channel == "color":
+                    fixed[channel] = "QCSTDPARAMNAME"
+                else:
+                    fixed[channel] = channel
+                made_changes = True
     
     elif chart_type == "qc_trend_bar":
         # qc_trend_bar uses VALUE, QCDATE, QCSHIFT (no x, y)
@@ -267,9 +288,16 @@ def fix_qc_chart_encodings(chart_type, chart_encodings):
         if "y" in fixed:
             fixed.pop("y")
             made_changes = True
+        
+        # ⚠️ Ensure ALL required channels for qc_trend_bar are present
+        required_channels = ["VALUE", "QCDATE", "QCSHIFT"]
+        for channel in required_channels:
+            if channel not in fixed:
+                fixed[channel] = channel  # Use channel name as default field name
+                made_changes = True
     
     if made_changes:
-        print(f"⚠️ Auto-corrected QC chart encodings for {chart_type}")
+        print(f"⚠️ Auto-fixed QC chart encodings for {chart_type}")
         print(f"   Original: {chart_encodings}")
         print(f"   Fixed:    {fixed}")
     

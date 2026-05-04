@@ -48,8 +48,9 @@ Concretely, you should first refine users' goal and then create a python functio
                 - if the user didn't provide sufficient fields in "chart_encodings", add missing fields in "chart_encodings" (ordered them based on whether the field will be used in x,y axes or legends);
                     - "chart_encodings" should only include fields that will be visualized (do not include other intermediate fields from "output_fields")  
                     - Note: INDEX should be in output_fields but do NOT include it in chart_encodings (it's a row identifier, not a visualization field)
-                    - when adding new fields to "chart_encodings", be efficient and add only a minimal number of fields that are needed to achive the user's goal. 
-                    - generally, the total number of fields in "chart_encodings" should be no more than 3 for x,y,legend.
+                    - when adding new fields to "chart_encodings", be efficient and add only a minimal number of fields that are needed to achive the user's goal.
+                    - **EXCEPTION FOR QC CHARTS**: For QC charts (qc_trend_line, qc_histogram, qc_trend_bar), there are FIXED channel requirements that MUST be followed (see QC_CHART_REQUIREMENTS section below). These have 3-5 channels each, and ALL required channels MUST be included.
+                    - for non-QC charts: the total number of fields in "chart_encodings" should be no more than 3-4 for x,y,color,facet.
                 - if the user's "chart_encodings" is sufficient but can be optimized, you can reorder encodings to visualize the data more effectively.
             - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "chart_encodings"
                 - e.g., they may mention "use B metric instead" while A metric is in provided fields, in this case, you should update "chart_encodings" to update A metric with B metric.
@@ -65,6 +66,23 @@ Concretely, you should first refine users' goal and then create a python functio
         - when the user asks for clustering:
             - the output should be a long format table where actual x, y pairs with a third column "cluster_id" that indicates the cluster id of the data point.
             - the recommended chart should be scatter plot (quantitative x, y)
+        
+        - **QC_CHART_REQUIREMENTS** (CRITICAL - MUST FOLLOW EXACTLY):
+            - If chart_type is "qc_trend_line", you MUST:
+              * Include in output_fields: INDEX, VALUE, QCDATE, QCSHIFT, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME
+              * Include in chart_encodings EXACTLY: {"INDEX": "INDEX", "VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT", "color": "QCSTDPARAMNAME"}
+              * DO NOT omit QCDATE or QCSHIFT - these are REQUIRED channels for QC trend line
+              * Do NOT use "x" or "y" channels - use INDEX, VALUE, QCDATE, QCSHIFT instead
+            
+            - If chart_type is "qc_histogram", you MUST:
+              * Include in output_fields: INDEX, VALUE, QCSTDPARAMNAME, TARGET, LL, UL, ARLL, ARUL, SLIPNO, ITEMNAME
+              * Include in chart_encodings EXACTLY: {"VALUE": "VALUE", "INDEX": "INDEX", "color": "QCSTDPARAMNAME"}
+              * Do NOT use "x" or "y" channels
+            
+            - If chart_type is "qc_trend_bar", you MUST:
+              * Include in output_fields: INDEX, VALUE, QCDATE, QCSHIFT, SLIPNO, ITEMNAME, TARGET (if available)
+              * Include in chart_encodings EXACTLY: {"VALUE": "VALUE", "QCDATE": "QCDATE", "QCSHIFT": "QCSHIFT"}
+              * Do NOT include "color" or use "x", "y" channels
     
     Prepare the result in the following json format:
 

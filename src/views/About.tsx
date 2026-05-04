@@ -300,243 +300,245 @@ export const About: FC<{}> = function About({}) {
           exploration paths you choose.
         </Typography>
         {actionButtons}
-
-        {/* Interactive Features Carousel */}
-        <Box
-          sx={{
-            mx: "auto",
-            maxWidth: 1200,
-            borderRadius: 3,
-            background: `
-                        linear-gradient(90deg, ${alpha(
-                          theme.palette.text.secondary,
-                          0.02,
-                        )} 1px, transparent 1px),
-                        linear-gradient(0deg, ${alpha(
-                          theme.palette.text.secondary,
-                          0.02,
-                        )} 1px, transparent 1px)
-                    `,
-            backgroundSize: "16px 16px",
-            position: "relative",
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 3,
-              height: "40vh",
-              minHeight: 320,
-            }}
-          >
-            {/* Left Arrow */}
-            <IconButton
-              onClick={handlePrevious}
-              sx={{
-                flexShrink: 0,
-                bgcolor: alpha(theme.palette.primary.main, 0.1),
-                "&:hover": {
-                  bgcolor: alpha(theme.palette.primary.main, 0.2),
-                },
-              }}
-            >
-              <ArrowBackIosNewIcon />
-            </IconButton>
-
-            {/* Feature Content */}
-            <Box
-              sx={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "row",
-                gap: 4,
-                alignItems: "center",
-              }}
-            >
-              {/* Text Content */}
-              <Box
-                sx={{
-                  flex: 1,
-                  textAlign: "left",
-                  minWidth: 300,
-                }}
-              >
-                <Typography
-                  variant="h4"
-                  sx={{
-                    mb: 2,
-                    fontWeight: 300,
-                    color: "text.primary",
-                    letterSpacing: "0.02em",
-                  }}
-                >
-                  {features[currentFeature].title}
-                </Typography>
-                <Typography
-                  variant="body1"
-                  sx={{
-                    color: "text.secondary",
-                    lineHeight: 1.8,
-                    fontSize: "1.1rem",
-                  }}
-                >
-                  {features[currentFeature].description}
-                </Typography>
-
-                {/* Feature Indicators */}
-                <Box sx={{ display: "flex", gap: 1, mt: 3 }}>
-                  {features.map((_, index) => (
-                    <Box
-                      key={index}
-                      onClick={() => setCurrentFeature(index)}
-                      sx={{
-                        width: 32,
-                        height: 4,
-                        borderRadius: 2,
-                        bgcolor:
-                          index === currentFeature
-                            ? theme.palette.primary.main
-                            : alpha(theme.palette.text.secondary, 0.2),
-                        cursor: "pointer",
-                        transition: "all 0.3s ease",
-                        "&:hover": {
-                          bgcolor:
-                            index === currentFeature
-                              ? theme.palette.primary.main
-                              : alpha(theme.palette.text.secondary, 0.4),
-                        },
-                      }}
-                    />
-                  ))}
-                </Box>
-              </Box>
-
-              {/* Media Content */}
-              <Box
-                sx={{
-                  flex: 1,
-                  borderRadius: 2,
-                  overflow: "hidden",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                  minWidth: 300,
-                  maxWidth: 500,
-                }}
-              >
-                {features[currentFeature].mediaType === "video" ? (
-                  <Box
-                    component="video"
-                    key={features[currentFeature].media}
-                    src={features[currentFeature].media}
-                    ref={videoRef}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    preload="metadata"
-                    onLoadedMetadata={(e) => {
-                      const video = e.currentTarget as HTMLVideoElement;
-                      if (video.duration && !isNaN(video.duration)) {
-                        videoDurationsRef.current.set(
-                          features[currentFeature].media,
-                          video.duration,
-                        );
-                      }
-                    }}
-                    sx={{
-                      width: "100%",
-                      height: "auto",
-                      display: "block",
-                    }}
-                  />
-                ) : (
-                  <Box
-                    component="img"
-                    src={features[currentFeature].media}
-                    alt={features[currentFeature].title}
-                    loading="lazy"
-                    sx={{
-                      width: "100%",
-                      height: "auto",
-                      display: "block",
-                    }}
-                  />
-                )}
-              </Box>
-            </Box>
-
-            {/* Right Arrow */}
-            <IconButton
-              onClick={handleNext}
-              sx={{
-                flexShrink: 0,
-                bgcolor: alpha(theme.palette.primary.main, 0.1),
-                "&:hover": {
-                  bgcolor: alpha(theme.palette.primary.main, 0.2),
-                },
-              }}
-            >
-              <ArrowForwardIosIcon />
-            </IconButton>
-          </Box>
-        </Box>
-
-        <Box sx={{ mt: 6, mx: 2 }}>
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-            }}
-          >
-            <Typography
-              variant="caption"
-              sx={{
-                color: "text.secondary",
-                fontWeight: 600,
-                letterSpacing: "0.02em",
-              }}
-            >
-              How does GDIS AI Agent handle your data?
-            </Typography>
-            <Typography
-              component="ul"
-              variant="caption"
-              sx={{
-                fontWeight: 300,
-                mt: 1,
-                color: "text.primary",
-                letterSpacing: "0.02em",
-                textAlign: "left",
-                maxWidth: 1000,
-              }}
-            >
-              <ul>
-                <li>
-                  📦 <strong>Data Storage:</strong> Uploaded data (csv, xlsx,
-                  json, clipboard, messy data etc.) is stored in browser's local
-                  storage only
-                </li>
-                <li>
-                  ⚙️ <strong>Data Processing:</strong> Local installation runs
-                  Python on your machine; online demo sends the data to server
-                  for data transformations (but not stored)
-                </li>
-                <li>
-                  🗄️ <strong>Database:</strong> Only available for locally
-                  installed GDIS AI Agent (a DuckDB database file is created in
-                  temp directory to store data); not available in online demo
-                </li>
-                <li>
-                  🤖 <strong>LLM Endpoints:</strong> Small data samples are sent
-                  to LLM endpoints along with the prompt. Use your trusted model
-                  provider if working with private data.
-                </li>
-              </ul>
-            </Typography>
-          </Box>
-        </Box>
       </Box>
     </Box>
   );
 };
+//         <Box
+//           sx={{
+//             mx: "auto",
+//             maxWidth: 1200,
+//             borderRadius: 3,
+//             background: `
+//                         linear-gradient(90deg, ${alpha(
+//                           theme.palette.text.secondary,
+//                           0.02,
+//                         )} 1px, transparent 1px),
+//                         linear-gradient(0deg, ${alpha(
+//                           theme.palette.text.secondary,
+//                           0.02,
+//                         )} 1px, transparent 1px)
+//                     `,
+//             backgroundSize: "16px 16px",
+//             position: "relative",
+//           }}
+//         >
+//           <Box
+//             sx={{
+//               display: "flex",
+//               alignItems: "center",
+//               gap: 3,
+//               height: "40vh",
+//               minHeight: 320,
+//             }}
+//           >
+//             {/* Left Arrow */}
+//             <IconButton
+//               onClick={handlePrevious}
+//               sx={{
+//                 flexShrink: 0,
+//                 bgcolor: alpha(theme.palette.primary.main, 0.1),
+//                 "&:hover": {
+//                   bgcolor: alpha(theme.palette.primary.main, 0.2),
+//                 },
+//               }}
+//             >
+//               <ArrowBackIosNewIcon />
+//             </IconButton>
+
+//             {/* Feature Content */}
+//             <Box
+//               sx={{
+//                 flex: 1,
+//                 display: "flex",
+//                 flexDirection: "row",
+//                 gap: 4,
+//                 alignItems: "center",
+//               }}
+//             >
+//               {/* Text Content */}
+//               <Box
+//                 sx={{
+//                   flex: 1,
+//                   textAlign: "left",
+//                   minWidth: 300,
+//                 }}
+//               >
+//                 <Typography
+//                   variant="h4"
+//                   sx={{
+//                     mb: 2,
+//                     fontWeight: 300,
+//                     color: "text.primary",
+//                     letterSpacing: "0.02em",
+//                   }}
+//                 >
+//                   {features[currentFeature].title}
+//                 </Typography>
+//                 <Typography
+//                   variant="body1"
+//                   sx={{
+//                     color: "text.secondary",
+//                     lineHeight: 1.8,
+//                     fontSize: "1.1rem",
+//                   }}
+//                 >
+//                   {features[currentFeature].description}
+//                 </Typography>
+
+//                 {/* Feature Indicators */}
+//                 <Box sx={{ display: "flex", gap: 1, mt: 3 }}>
+//                   {features.map((_, index) => (
+//                     <Box
+//                       key={index}
+//                       onClick={() => setCurrentFeature(index)}
+//                       sx={{
+//                         width: 32,
+//                         height: 4,
+//                         borderRadius: 2,
+//                         bgcolor:
+//                           index === currentFeature
+//                             ? theme.palette.primary.main
+//                             : alpha(theme.palette.text.secondary, 0.2),
+//                         cursor: "pointer",
+//                         transition: "all 0.3s ease",
+//                         "&:hover": {
+//                           bgcolor:
+//                             index === currentFeature
+//                               ? theme.palette.primary.main
+//                               : alpha(theme.palette.text.secondary, 0.4),
+//                         },
+//                       }}
+//                     />
+//                   ))}
+//                 </Box>
+//               </Box>
+
+//               {/* Media Content */}
+//               <Box
+//                 sx={{
+//                   flex: 1,
+//                   borderRadius: 2,
+//                   overflow: "hidden",
+//                   boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+//                   minWidth: 300,
+//                   maxWidth: 500,
+//                 }}
+//               >
+//                 {features[currentFeature].mediaType === "video" ? (
+//                   <Box
+//                     component="video"
+//                     key={features[currentFeature].media}
+//                     src={features[currentFeature].media}
+//                     ref={videoRef}
+//                     autoPlay
+//                     loop
+//                     muted
+//                     playsInline
+//                     preload="metadata"
+//                     onLoadedMetadata={(e) => {
+//                       const video = e.currentTarget as HTMLVideoElement;
+//                       if (video.duration && !isNaN(video.duration)) {
+//                         videoDurationsRef.current.set(
+//                           features[currentFeature].media,
+//                           video.duration,
+//                         );
+//                       }
+//                     }}
+//                     sx={{
+//                       width: "100%",
+//                       height: "auto",
+//                       display: "block",
+//                     }}
+//                   />
+//                 ) : (
+//                   <Box
+//                     component="img"
+//                     src={features[currentFeature].media}
+//                     alt={features[currentFeature].title}
+//                     loading="lazy"
+//                     sx={{
+//                       width: "100%",
+//                       height: "auto",
+//                       display: "block",
+//                     }}
+//                   />
+//                 )}
+//               </Box>
+//             </Box>
+
+//             {/* Right Arrow */}
+//             <IconButton
+//               onClick={handleNext}
+//               sx={{
+//                 flexShrink: 0,
+//                 bgcolor: alpha(theme.palette.primary.main, 0.1),
+//                 "&:hover": {
+//                   bgcolor: alpha(theme.palette.primary.main, 0.2),
+//                 },
+//               }}
+//             >
+//               <ArrowForwardIosIcon />
+//             </IconButton>
+//           </Box>
+//         </Box>
+
+//         <Box sx={{ mt: 6, mx: 2 }}>
+//           <Box
+//             sx={{
+//               display: "flex",
+//               flexDirection: "column",
+//               alignItems: "center",
+//             }}
+//           >
+//             <Typography
+//               variant="caption"
+//               sx={{
+//                 color: "text.secondary",
+//                 fontWeight: 600,
+//                 letterSpacing: "0.02em",
+//               }}
+//             >
+//               How does GDIS AI Agent handle your data?
+//             </Typography>
+//             <Typography
+//               component="ul"
+//               variant="caption"
+//               sx={{
+//                 fontWeight: 300,
+//                 mt: 1,
+//                 color: "text.primary",
+//                 letterSpacing: "0.02em",
+//                 textAlign: "left",
+//                 maxWidth: 1000,
+//               }}
+//             >
+//               <ul>
+//                 <li>
+//                   📦 <strong>Data Storage:</strong> Uploaded data (csv, xlsx,
+//                   json, clipboard, messy data etc.) is stored in browser's local
+//                   storage only
+//                 </li>
+//                 <li>
+//                   ⚙️ <strong>Data Processing:</strong> Local installation runs
+//                   Python on your machine; online demo sends the data to server
+//                   for data transformations (but not stored)
+//                 </li>
+//                 <li>
+//                   🗄️ <strong>Database:</strong> Only available for locally
+//                   installed GDIS AI Agent (a DuckDB database file is created in
+//                   temp directory to store data); not available in online demo
+//                 </li>
+//                 <li>
+//                   🤖 <strong>LLM Endpoints:</strong> Small data samples are sent
+//                   to LLM endpoints along with the prompt. Use your trusted model
+//                   provider if working with private data.
+//                 </li>
+//               </ul>
+//             </Typography>
+//           </Box>
+//         </Box>
+//       </Box>
+//     </Box>
+//   );
+// };

@@ -1626,13 +1626,13 @@ export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
                 <Divider orientation="vertical" variant="middle" flexItem />
               </>
             ) : null}
-            <Typography
+            {/* <Typography
               fontSize="inherit"
               component="div"
               sx={{ display: "flex", alignItems: "center", gap: 1 }}
             >
               <SessionMenu />
-            </Typography>
+            </Typography> */}
             <Divider orientation="vertical" variant="middle" flexItem />
             <ResetDialog />
             {isAuthenticated && userInfo && (

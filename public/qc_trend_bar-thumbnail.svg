@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="100" viewBox="0 0 240 100">
+  <rect width="240" height="100" fill="#fff8f0"/>
+  <!-- Bar chart columns with stacked segments -->
+  <rect x="12" y="50" width="20" height="40" fill="#2980b9" opacity="0.8"/>
+  <rect x="12" y="36" width="20" height="14" fill="#27ae60" opacity="0.8"/>
+  <rect x="37" y="44" width="20" height="46" fill="#2980b9" opacity="0.8"/>
+  <rect x="37" y="32" width="20" height="12" fill="#27ae60" opacity="0.8"/>
+  <rect x="62" y="30" width="20" height="60" fill="#e67e22" opacity="0.8"/>
+  <rect x="62" y="18" width="20" height="12" fill="#e74c3c" opacity="0.7"/>
+  <rect x="87" y="48" width="20" height="42" fill="#2980b9" opacity="0.8"/>
+  <rect x="87" y="36" width="20" height="12" fill="#27ae60" opacity="0.8"/>
+  <rect x="112" y="55" width="20" height="35" fill="#2980b9" opacity="0.8"/>
+  <rect x="112" y="43" width="20" height="12" fill="#27ae60" opacity="0.8"/>
+  <rect x="137" y="38" width="20" height="52" fill="#e67e22" opacity="0.8"/>
+  <rect x="137" y="26" width="20" height="12" fill="#e74c3c" opacity="0.7"/>
+  <rect x="162" y="52" width="20" height="38" fill="#2980b9" opacity="0.8"/>
+  <rect x="162" y="40" width="20" height="12" fill="#27ae60" opacity="0.8"/>
+  <rect x="187" y="45" width="20" height="45" fill="#2980b9" opacity="0.8"/>
+  <rect x="187" y="33" width="20" height="12" fill="#27ae60" opacity="0.8"/>
+  <!-- UL line -->
+  <line x1="5" y1="30" x2="235" y2="30" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <!-- TARGET line -->
+  <line x1="5" y1="50" x2="235" y2="50" stroke="#27ae60" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <!-- Labels -->
+  <text x="3" y="28" font-size="8" fill="#e67e22" font-family="sans-serif">UL</text>
+  <text x="3" y="48" font-size="8" fill="#27ae60" font-family="sans-serif">TGT</text>
+</svg>
