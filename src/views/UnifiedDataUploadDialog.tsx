@@ -1519,7 +1519,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             'explore': t('upload.sampleDatasets'),
             'upload': t('upload.uploadFile'),
             'paste': t('upload.pasteData'),
-            'extract': t('upload.extractFromDocuments'),
+            'extract': t('upload.dataAssistant'),
             'url': t('upload.loadFromUrl'),
             'database': t('upload.database'),
             'local-folder': t('upload.localFolder', { defaultValue: 'Local Folder' }),

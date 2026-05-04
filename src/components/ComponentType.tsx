@@ -181,6 +181,24 @@ export interface PendingTableLoad {
     };
 }
 
+export interface LoadPlanCandidate {
+    sourceId: string;
+    tableKey: string;
+    displayName: string;
+    sourceTable: string;
+    sourceTableName?: string;
+    filters?: Array<{ column: string; operator: string; value?: any }>;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    rowLimit?: number;
+    selected?: boolean;
+}
+
+export interface LoadPlan {
+    candidates: LoadPlanCandidate[];
+    reasoning?: string;
+}
+
 export interface ChatMessage {
     id: string;
     role: 'user' | 'assistant';
@@ -189,6 +207,7 @@ export interface ChatMessage {
     tables?: InlineTablePreview[];      // tables to show inline (assistant only)
     codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
     pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
+    loadPlan?: LoadPlan;                // Agent-proposed data loading plan
     timestamp: number;
 }
 
