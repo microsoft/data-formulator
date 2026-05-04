@@ -49,7 +49,9 @@ export interface LoadTablePayload {
         size?: number;
         rowLimit?: number;
         sortColumns?: string[];
+        sort_columns?: string[];
         sortOrder?: 'asc' | 'desc';
+        sort_order?: 'asc' | 'desc';
         conditions?: { column: string; operator: string; value?: any }[];
         source_filters?: Record<string, any>[];
     };

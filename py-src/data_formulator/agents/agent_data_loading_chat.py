@@ -38,10 +38,13 @@ Tools available:
 - execute_python — run Python (pandas, numpy, DuckDB). All DataFrames are auto-saved to scratch/.
 - list_sample_datasets — list available built-in datasets with their tables and exact call syntax
 - show_user_data_preview — show interactive table preview with Load button
+- search_data_candidates — search across all data sources for tables matching a keyword
+- read_candidate_metadata — read detailed metadata for a table from a connected source
+- propose_load_plan — propose a multi-table loading plan for user confirmation
 
 CRITICAL: You MUST call the show_user_data_preview tool to show data. Do NOT just describe data in text.
 
-Three workflows:
+Four workflows:
 
 **Workflow 1 — Sample dataset:**
 1. Call list_sample_datasets to see what's available (returns exact dataset_name to use)
@@ -56,12 +59,34 @@ Three workflows:
 1. Extract table into CSV format
 2. Call show_user_data_preview(tables=[{{"name": "...", "data": "col1,col2\\n..."}}])
 
+**Workflow 4 — Find and load data from connected sources:**
+1. Call search_data_candidates(query="...", scope="all") to find relevant tables
+2. For EACH promising not-imported table, call read_candidate_metadata(source_id, table_key) to inspect columns and understand available values
+3. Based on the column metadata, decide which columns to filter on and what values to use
+4. Call propose_load_plan(candidates=[...], reasoning="...") — the UI shows a confirmation card
+5. Keep your text brief after propose_load_plan. The UI handles the rest.
+
 Rules:
-- After show_user_data_preview, keep text VERY brief. The UI shows the preview automatically.
+- After show_user_data_preview or propose_load_plan, keep text VERY brief. The UI shows the preview automatically.
 - For sample datasets, NEVER use execute_python or write_file to recreate them.
 - execute_python auto-saves ALL DataFrames created in code.
+- Use Workflow 4 when the user describes an analysis goal and you need to find relevant data from connected sources.
+- In propose_load_plan, always pass source_id and table_key exactly from search_data_candidates/read_candidate_metadata.
+- Set row_limit when loading connected sources; use 50000 by default unless the user asks otherwise.
 
+Filter rules for propose_load_plan:
+- You MUST call read_candidate_metadata BEFORE proposing filters. Do NOT guess column names or values.
+- Use the column names exactly as returned by read_candidate_metadata. Do NOT invent column names.
+- Filter values must be plain values without SQL wildcards. WRONG: "%奔图%". CORRECT: "奔图".
+- For partial text matching, use operator ILIKE — the backend adds wildcards automatically.
+- For exact matching of a known category value, use operator EQ.
+- Preferred operators: EQ (exact match), ILIKE (contains text), IN (multiple values), GT/LT/GTE/LTE (numeric/date ranges), BETWEEN (date ranges).
+- Do NOT use LIKE with manually added % wildcards. Always use ILIKE for text search — it is case-insensitive and auto-wildcarded.
+- If you are unsure about the exact filter value, prefer ILIKE over EQ for text columns.
+
+Current date and time: {current_time}
 Currently loaded workspace tables: {table_names}
+Connected data sources: {connector_summary}
 Sample datasets are available — call list_sample_datasets to see them.
 
 IMPORTANT:
@@ -203,6 +228,77 @@ TOOLS = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_data_candidates",
+            "description": "Search across all data sources (workspace tables, connected databases, sample datasets) for tables matching a keyword.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search keyword (e.g. 'orders', 'sales')"},
+                    "scope": {"type": "string", "enum": ["all", "workspace", "connected"], "description": "Search scope. Default: all"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_candidate_metadata",
+            "description": "Read detailed metadata (columns, types, description, row count) for a specific table from a connected data source. Use source_id and table_key from search_data_candidates results.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_id": {"type": "string", "description": "Data source identifier"},
+                    "table_key": {"type": "string", "description": "Table key within the source"},
+                },
+                "required": ["source_id", "table_key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "propose_load_plan",
+            "description": "Propose a data loading plan for the user to confirm. The UI will show an interactive card with checkboxes and a Load button. Use ONLY for connected data source tables (not workspace/sample).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "candidates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "source_id": {"type": "string"},
+                                "table_key": {"type": "string"},
+                                "display_name": {"type": "string"},
+                                "source_table": {"type": "string", "description": "Optional legacy import id. Prefer source_id + table_key; the backend resolves the real import id."},
+                                "filters": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "column": {"type": "string"},
+                                            "operator": {"type": "string"},
+                                            "value": {"description": "Filter value. BETWEEN/IN may use an array."},
+                                        },
+                                    },
+                                },
+                                "sort_by": {"type": "string"},
+                                "sort_order": {"type": "string", "enum": ["asc", "desc"]},
+                                "row_limit": {"type": "integer"},
+                            },
+                            "required": ["source_id", "table_key", "display_name"],
+                        },
+                    },
+                    "reasoning": {"type": "string", "description": "Brief explanation of why these tables are recommended"},
+                },
+                "required": ["candidates"],
             },
         },
     },
@@ -445,6 +541,12 @@ class DataLoadingAgent:
             return self._tool_list_sample_datasets()
         elif name == "show_user_data_preview":
             return self._tool_show_user_data_preview(args, scratch_jail)
+        elif name == "search_data_candidates":
+            return self._tool_search_data_candidates(args)
+        elif name == "read_candidate_metadata":
+            return self._tool_read_candidate_metadata(args)
+        elif name == "propose_load_plan":
+            return self._tool_propose_load_plan(args)
         else:
             return {"error": f"Unknown tool: {name}"}
 
@@ -787,6 +889,160 @@ class DataLoadingAgent:
         return {"actions": actions}
 
     # ------------------------------------------------------------------
+    # Data discovery tools
+    # ------------------------------------------------------------------
+
+    def _tool_search_data_candidates(self, args):
+        """Search across workspace + connector catalog for matching tables."""
+        from data_formulator.agents.context import handle_search_data_tables
+        query = args.get("query", "")
+        scope = args.get("scope", "all")
+        text = handle_search_data_tables(query, scope, self.workspace)
+        return {"result": text}
+
+    def _tool_read_candidate_metadata(self, args):
+        """Read detailed metadata for a specific table from a connected source."""
+        from data_formulator.agents.context import handle_read_catalog_metadata
+        source_id = args.get("source_id", "")
+        table_key = args.get("table_key", "")
+        text = handle_read_catalog_metadata(source_id, table_key, self.workspace)
+        return {"result": text}
+
+    def _tool_propose_load_plan(self, args):
+        """Produce a structured load plan action for frontend rendering."""
+        candidates = [
+            self._normalize_load_plan_candidate(c)
+            for c in (args.get("candidates", []) or [])
+            if isinstance(c, dict)
+        ]
+        reasoning = args.get("reasoning", "")
+        actions = [{
+            "type": "load_plan",
+            "candidates": candidates,
+            "reasoning": reasoning,
+        }]
+        return {"actions": actions}
+
+    def _normalize_load_plan_candidate(self, candidate):
+        """Resolve a model-proposed candidate into frontend import shape.
+
+        The model sees catalog names and stable table keys, but each loader may
+        require a different opaque import id.  Superset, for example, must be
+        loaded by numeric dataset_id, not by the Chinese dataset label.
+        """
+        result = dict(candidate)
+        source_id = str(result.get("source_id") or "")
+        table_key = str(result.get("table_key") or "")
+        catalog_entry = self._lookup_catalog_entry(source_id, table_key)
+
+        metadata = (catalog_entry or {}).get("metadata") or {}
+        display_name = (
+            result.get("display_name")
+            or (catalog_entry or {}).get("name")
+            or table_key
+            or result.get("source_table")
+            or "table"
+        )
+        import_id = (
+            metadata.get("dataset_id")
+            if metadata.get("dataset_id") is not None
+            else metadata.get("_source_name")
+        )
+        if import_id is None:
+            import_id = result.get("source_table") or table_key or display_name
+
+        source_name = (
+            metadata.get("_source_name")
+            or metadata.get("_catalogName")
+            or display_name
+        )
+
+        result["source_id"] = source_id
+        result["table_key"] = table_key
+        result["display_name"] = str(display_name)
+        result["source_table"] = str(import_id)
+        result["source_table_name"] = str(source_name)
+        result["filters"] = self._normalize_load_plan_filters(result.get("filters"))
+        if not result.get("row_limit"):
+            result["row_limit"] = 50000
+        return result
+
+    def _lookup_catalog_entry(self, source_id, table_key):
+        if not source_id or not table_key:
+            return None
+        try:
+            user_home = getattr(self.workspace, "user_home", None)
+            if not user_home:
+                return None
+            from pathlib import Path
+            from data_formulator.datalake.catalog_cache import load_catalog
+
+            for table in load_catalog(Path(user_home), source_id) or []:
+                meta = table.get("metadata") or {}
+                identifiers = {
+                    str(table.get("table_key") or ""),
+                    str(meta.get("uuid") or ""),
+                    str(meta.get("dataset_id") or ""),
+                    str(meta.get("_source_name") or ""),
+                    str(table.get("name") or ""),
+                }
+                if table_key in identifiers:
+                    return table
+        except Exception:
+            logger.debug("Could not resolve load plan candidate from catalog", exc_info=True)
+        return None
+
+    @staticmethod
+    def _normalize_load_plan_filters(filters):
+        if not isinstance(filters, list):
+            return []
+        op_map = {
+            "=": "EQ",
+            "==": "EQ",
+            "!=": "NEQ",
+            "<>": "NEQ",
+            ">": "GT",
+            ">=": "GTE",
+            "<": "LT",
+            "<=": "LTE",
+            "CONTAINS": "ILIKE",
+        }
+        valid_ops = {
+            "EQ", "NEQ", "GT", "GTE", "LT", "LTE", "IN", "NOT_IN",
+            "LIKE", "ILIKE", "IS_NULL", "IS_NOT_NULL", "BETWEEN",
+        }
+        normalized = []
+        for item in filters:
+            if not isinstance(item, dict):
+                continue
+            column = str(item.get("column") or "").strip()
+            if not column:
+                continue
+            op = str(item.get("operator") or "EQ").strip().upper()
+            op = op_map.get(op, op)
+            if op not in valid_ops:
+                op = "EQ"
+            if op not in {"IS_NULL", "IS_NOT_NULL"}:
+                value = item.get("value")
+                if isinstance(value, str):
+                    raw = value.strip()
+                    stripped = raw.strip("%")
+                    has_wildcards = stripped != raw
+                    if has_wildcards:
+                        value = stripped
+                        if not value:
+                            continue
+                        if op in ("EQ", "LIKE"):
+                            op = "ILIKE"
+                    elif op == "LIKE":
+                        op = "ILIKE"
+                entry = {"column": column, "operator": op, "value": value}
+            else:
+                entry = {"column": column, "operator": op}
+            normalized.append(entry)
+        return normalized
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
@@ -811,8 +1067,24 @@ class DataLoadingAgent:
                 message_code="TABLE_LIST_FAILED",
             )
 
+        connector_summary = "none"
+        try:
+            user_home = getattr(self.workspace, "user_home", None)
+            if user_home:
+                from data_formulator.datalake.catalog_cache import list_cached_sources
+                sources = list_cached_sources(user_home)
+                if sources:
+                    connector_summary = ", ".join(sources)
+        except Exception:
+            logger.debug("Could not list cached sources for prompt", exc_info=True)
+
+        from datetime import datetime
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
+
         prompt = SYSTEM_PROMPT.format(
             table_names=table_names,
+            connector_summary=connector_summary,
+            current_time=current_time,
         )
 
         if self._knowledge_store:

@@ -28,6 +28,17 @@
     "metadataStatusNotSynced": "未同步",
     "annotationSaved": "标注已保存",
     "annotationConflict": "标注已被其他会话修改，请刷新后重试",
+    "loadPlan": {
+      "title": "Agent 建议载入以下数据",
+      "filters": "筛选条件",
+      "rowLimit": "行数限制",
+      "loadSelected": "加载选中的表",
+      "loaded": "已加载",
+      "preview": "预览",
+      "previewing": "正在预览...",
+      "previewFailed": "预览失败",
+      "noFilters": "无筛选条件"
+    },
     "toolLabels": {
       "readingFile": "读取文件",
       "writingFile": "写入文件",

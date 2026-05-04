@@ -28,6 +28,17 @@
     "metadataStatusNotSynced": "Not synced",
     "annotationSaved": "Annotation saved",
     "annotationConflict": "Annotation was modified by another session — please reload and try again",
+    "loadPlan": {
+      "title": "Agent recommends loading",
+      "filters": "Filters",
+      "rowLimit": "Row limit",
+      "loadSelected": "Load selected",
+      "loaded": "Loaded",
+      "preview": "Preview",
+      "previewing": "Previewing...",
+      "previewFailed": "Preview failed",
+      "noFilters": "No filters"
+    },
     "toolLabels": {
       "readingFile": "Reading file",
       "writingFile": "Writing file",

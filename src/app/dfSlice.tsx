@@ -1385,6 +1385,12 @@ export const dataFormulatorSlice = createSlice({
                 }
             }
         },
+        markLoadPlanConfirmed: (state, action: PayloadAction<{messageId: string}>) => {
+            const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
+            if (msg?.loadPlan) {
+                msg.loadPlan.candidates.forEach(c => { c.selected = false; });
+            }
+        },
         setDataLoadingChatInProgress: (state, action: PayloadAction<boolean>) => {
             state.dataLoadingChatInProgress = action.payload;
         },

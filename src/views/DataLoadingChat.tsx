@@ -33,12 +33,13 @@ import { borderColor, transition, radius, shadow } from '../app/tokens';
 import exampleImageTable from '../assets/example-image-table.png';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest, streamRequest } from '../app/apiClient';
-import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad } from '../components/ComponentType';
+import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { createTableFromFromObjectArray } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
 import { TableIcon } from '../icons';
 import { DataFrameTable } from './DataFrameTable';
+import { LoadPlanCard } from '../components/LoadPlanCard';
 
 /** Returns true when the model name suggests it does not support image input. */
 export function checkIsLikelyTextOnlyModel(modelName: string | undefined): boolean {
@@ -468,6 +469,49 @@ const ChatBubble: React.FC<{
                         </Button>
                     </Box>
                 )}
+
+                {/* Load plan card — Agent-proposed multi-table import */}
+                {message.loadPlan && (
+                    <LoadPlanCard
+                        plan={message.loadPlan}
+                        confirmed={message.loadPlan.candidates.every(c => c.selected === false)}
+                        onConfirm={async (selected: LoadPlanCandidate[]) => {
+                            for (const item of selected) {
+                                const sourceTableName = item.sourceTableName || item.displayName;
+                                const table = {
+                                    kind: 'table' as const,
+                                    id: item.displayName,
+                                    displayId: item.displayName,
+                                    names: [] as string[],
+                                    metadata: {},
+                                    rows: [] as any[],
+                                    virtual: { tableId: item.displayName, rowCount: 0 },
+                                    anchored: true,
+                                    attachedMetadata: '',
+                                    source: {
+                                        type: 'database' as const,
+                                        databaseTable: sourceTableName,
+                                        canRefresh: true,
+                                        lastRefreshed: Date.now(),
+                                        connectorId: item.sourceId,
+                                    },
+                                };
+                                await dispatch(loadTable({
+                                    table,
+                                    connectorId: item.sourceId,
+                                    sourceTableRef: { id: item.sourceTable, name: item.displayName },
+                                    importOptions: {
+                                        size: item.rowLimit || 50000,
+                                        source_filters: item.filters || [],
+                                        sort_columns: item.sortBy ? [item.sortBy] : undefined,
+                                        sort_order: item.sortOrder,
+                                    },
+                                }));
+                            }
+                            dispatch(dfActions.markLoadPlanConfirmed({ messageId: message.id }));
+                        }}
+                    />
+                )}
                 {/* Timestamp + debug — always reserves space, content visible on hover */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, height: 18, opacity: hovered ? 1 : 0, transition: 'opacity 0.15s' }}>
                     <Typography sx={{ fontSize: 10, color: 'text.disabled' }}>
@@ -733,6 +777,7 @@ export const DataLoadingChat: React.FC = () => {
                 const codeBlocks: CodeExecution[] = [];
                 const tables: InlineTablePreview[] = [];
                 const pendingLoads: PendingTableLoad[] = [];
+                let loadPlanRef: LoadPlan | undefined;
                 const rawEvents: any[] = [];
                 let streamingToolStepsRef: ToolStep[] = [];
 
@@ -776,6 +821,22 @@ export const DataLoadingChat: React.FC = () => {
                                 },
                             });
                         }
+                    } else if (action.type === 'load_plan') {
+                        loadPlanRef = {
+                            candidates: (action.candidates || []).map((c: any) => ({
+                                sourceId: c.source_id,
+                                tableKey: c.table_key,
+                                displayName: c.display_name,
+                                sourceTable: c.source_table,
+                                sourceTableName: c.source_table_name,
+                                filters: c.filters,
+                                sortBy: c.sort_by,
+                                sortOrder: c.sort_order,
+                                rowLimit: c.row_limit,
+                                selected: true,
+                            })),
+                            reasoning: action.reasoning,
+                        };
                     }
                 }
             };
@@ -853,6 +914,7 @@ export const DataLoadingChat: React.FC = () => {
                 codeBlocks: codeBlocks.length > 0 ? codeBlocks : undefined,
                 tables: tables.length > 0 && pendingLoads.length === 0 ? tables : undefined,
                 pendingLoads: pendingLoads.length > 0 ? pendingLoads : undefined,
+                loadPlan: loadPlanRef,
                 timestamp: Date.now(),
             };
             dispatch(dfActions.addChatMessage(assistantMsg));
