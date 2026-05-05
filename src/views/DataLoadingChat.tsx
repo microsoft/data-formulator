@@ -832,7 +832,6 @@ export const DataLoadingChat: React.FC = () => {
                                 filters: c.filters,
                                 sortBy: c.sort_by,
                                 sortOrder: c.sort_order,
-                                rowLimit: c.row_limit,
                                 selected: true,
                             })),
                             reasoning: action.reasoning,

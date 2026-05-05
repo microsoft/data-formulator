@@ -207,13 +207,6 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
                                     sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }}
                                 />
                             )}
-                            {c.rowLimit && (
-                                <Chip
-                                    label={`${t('dataLoading.loadPlan.rowLimit')}: ${c.rowLimit.toLocaleString()}`}
-                                    size="small" variant="outlined"
-                                    sx={{ height: 18, fontSize: 10, '& .MuiChip-label': { px: 0.75 } }}
-                                />
-                            )}
                     </Box>
                     <Collapse in={!!preview?.expanded}>
                         <Box sx={{ pl: confirmed ? 0 : 3.5, mt: 0.75 }}>
