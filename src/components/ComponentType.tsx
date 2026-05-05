@@ -190,7 +190,6 @@ export interface LoadPlanCandidate {
     filters?: Array<{ column: string; operator: string; value?: any }>;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
-    rowLimit?: number;
     selected?: boolean;
 }
 

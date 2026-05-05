@@ -100,7 +100,6 @@ class TestProposeLoadPlan:
                     "table_key": "public.orders",
                     "display_name": "orders",
                     "source_table": "public.orders",
-                    "row_limit": 50000,
                 },
                 {
                     "source_id": "pg_prod",
@@ -118,7 +117,7 @@ class TestProposeLoadPlan:
         assert action["type"] == "load_plan"
         assert len(action["candidates"]) == 2
         assert action["candidates"][0]["source_id"] == "pg_prod"
-        assert action["candidates"][0]["row_limit"] == 50000
+        assert "row_limit" not in action["candidates"][0]
         assert action["reasoning"] == "Orders for last quarter + customer dimension"
 
     def test_empty_candidates_returns_empty_action(self) -> None:
@@ -164,7 +163,7 @@ class TestProposeLoadPlan:
         assert candidate["source_table"] == "136"
         assert candidate["source_table_name"] == "product_periodic_sales_trend"
         assert candidate["filters"] == [{"column": "brand", "operator": "EQ", "value": "Pantum"}]
-        assert candidate["row_limit"] == 2_000_000
+        assert "row_limit" not in candidate
 
 
 class TestNormalizeLoadPlanFilters:
