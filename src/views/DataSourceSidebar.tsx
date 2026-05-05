@@ -282,7 +282,6 @@ const DataSourceSidebarPanel: React.FC<{
     const [preview, setPreview] = useState<PreviewState | null>(null);
     const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
     const [importing, setImporting] = useState(false);
-    const sidebarRowLimitPresets = useMemo(() => [20_000, 50_000, 100_000, 200_000, 300_000, 500_000], []);
 
     // Delete connector confirmation
     const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
@@ -1514,8 +1513,6 @@ const DataSourceSidebarPanel: React.FC<{
                                 sampleRows={preview.sampleRows}
                                 rowCount={preview.rowCount}
                                 loading={preview.loading || importing}
-                                rowLimitPresets={sidebarRowLimitPresets}
-                                defaultRowLimit={50_000}
                                 alreadyLoaded={alreadyLoaded}
                                 enableFilters
                                 enableSort

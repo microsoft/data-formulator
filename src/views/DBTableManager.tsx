@@ -43,7 +43,6 @@ import CheckIcon from '@mui/icons-material/Check';
 
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import { TableIcon } from '../icons';
-import { RowLimitUnderlineSelect } from '../components/RowLimitUnderlineSelect';
 import {
     appendChildrenAtPath,
     CatalogTreeNode,
@@ -424,13 +423,12 @@ export const DBManagerPane: React.FC<{
 const GroupLoadPanel: React.FC<{
     groupName: string;
     tables: { name: string; dataset_id: number; row_count?: number; columns?: string[] }[];
-    rowLimitPresets: number[];
     connectorId: string;
     loadedKey?: string;
     onLoaded: (label: string) => void;
     onImport: () => void;
     onFinish: (severity: "error" | "success" | "warning", msg: string, tableIds?: string[]) => void;
-}> = ({ groupName, tables, rowLimitPresets, connectorId, loadedKey, onLoaded, onImport, onFinish }) => {
+}> = ({ groupName, tables, connectorId, loadedKey, onLoaded, onImport, onFinish }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -448,7 +446,6 @@ const GroupLoadPanel: React.FC<{
         });
     };
 
-    const [rowLimit, setRowLimit] = useState<number>(50_000);
     const [isLoading, setIsLoading] = useState(false);
 
     const selectedTables = tables.filter(t => selectedIds.has(t.dataset_id));
@@ -465,7 +462,6 @@ const GroupLoadPanel: React.FC<{
                 body: JSON.stringify({
                     connector_id: connectorId,
                     tables: selectedTables.map(t => ({ dataset_id: t.dataset_id, name: t.name })),
-                    row_limit: rowLimit,
                     group_name: groupName,
                 }),
             });
@@ -577,29 +573,15 @@ const GroupLoadPanel: React.FC<{
                         {t('db.loaded')}
                     </Button>
                 ) : (
-                    <>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.25 }}>
-                            <Typography sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-                                {t('db.maxRows', { defaultValue: 'Max rows' })}/table
-                            </Typography>
-                            <RowLimitUnderlineSelect
-                                value={rowLimit}
-                                presets={rowLimitPresets}
-                                onChange={setRowLimit}
-                                fontSize={11}
-                            />
-                        </Box>
-                        <Box sx={{ flex: 1 }} />
-                        <Button
-                            variant="contained" size="small"
-                            disabled={isLoading || selectedTables.length === 0}
-                            onClick={handleLoadGroup}
-                            startIcon={isLoading ? <CircularProgress size={14} /> : <DashboardOutlinedIcon sx={{ fontSize: 14 }} />}
-                            sx={{ textTransform: 'none', fontSize: 12, px: 2, height: 30, flexShrink: 0 }}
-                        >
-                            {isLoading ? 'Loading...' : `Import Selected (${selectedTables.length})`}
-                        </Button>
-                    </>
+                    <Button
+                        variant="contained" size="small"
+                        disabled={isLoading || selectedTables.length === 0}
+                        onClick={handleLoadGroup}
+                        startIcon={isLoading ? <CircularProgress size={14} /> : <DashboardOutlinedIcon sx={{ fontSize: 14 }} />}
+                        sx={{ textTransform: 'none', fontSize: 12, px: 2, height: 30, flexShrink: 0 }}
+                    >
+                        {isLoading ? 'Loading...' : `Import Selected (${selectedTables.length})`}
+                    </Button>
                 )}
             </Box>
         </Box>
@@ -644,7 +626,6 @@ export const DataLoaderForm: React.FC<{
     const connectorIdRef = useRef(connectorId);
     useEffect(() => { connectorIdRef.current = connectorId; }, [connectorId]);
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
-    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
     const workspaceTables = useSelector((state: DataFormulatorState) => state.tables);
 
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
@@ -657,12 +638,6 @@ export const DataLoaderForm: React.FC<{
     const [isCatalogSearching, setIsCatalogSearching] = useState(false);
     const [selectedTreeNode, setSelectedTreeNode] = useState<CatalogTreeNode | null>(null);
     const [expandedItems, setExpandedItems] = useState<string[]>([]);
-    // Import options for the currently selected table
-    // Standard row-limit presets, capped by the system frontendRowLimit setting
-    const rowLimitPresets = useMemo(
-        () => [20_000, 50_000, 100_000, 200_000, 300_000, 500_000].filter(n => n <= frontendRowLimit),
-        [frontendRowLimit],
-    );
     // Track which tables have been loaded and how (persists across table selections)
     const [loadedTables, setLoadedTables] = useState<Record<string, string>>({});
 
@@ -1352,7 +1327,6 @@ export const DataLoaderForm: React.FC<{
                                     <GroupLoadPanel
                                         groupName={groupName}
                                         tables={tables}
-                                        rowLimitPresets={rowLimitPresets}
                                         connectorId={connectorIdRef.current!}
                                         loadedKey={effectiveLoadedTables[selectedPreviewTable]}
                                         onLoaded={(label) => setLoadedTables(prev => ({ ...prev, [selectedPreviewTable!]: label }))}
@@ -1388,8 +1362,6 @@ export const DataLoaderForm: React.FC<{
                                         sampleRows={previewTable.rows}
                                         rowCount={metadata?.row_count ?? null}
                                         loading={false}
-                                        rowLimitPresets={rowLimitPresets}
-                                        defaultRowLimit={50_000}
                                         alreadyLoaded={!!effectiveLoadedTables[selectedPreviewTable]}
                                         enableFilters
                                         enableSort

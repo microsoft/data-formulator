@@ -7,11 +7,15 @@ import logging
 
 from data_formulator.datalake.table_names import sanitize_external_loader_table_name
 
+MAX_IMPORT_ROWS = 2_000_000
+
 if TYPE_CHECKING:
     from data_formulator.datalake.workspace import Workspace
     from data_formulator.datalake.workspace_metadata import TableMetadata
 
 logger = logging.getLogger(__name__)
+
+MAX_IMPORT_ROWS = 2_000_000
 
 
 class ConnectorParamError(ValueError):
@@ -401,7 +405,7 @@ class ExternalDataLoader(ABC):
         Args:
             source_table: Full table name (or table identifier) to fetch from
             import_options: Optional dict controlling what/how data is fetched:
-                - size (int): Maximum number of rows to fetch (default: 1000000)
+                - size (int): Maximum number of rows to fetch (capped by MAX_IMPORT_ROWS)
                 - columns (list[str]): Column selection / projection
                 - sort_columns (list[str]): Columns to sort by before limiting
                 - sort_order (str): 'asc' or 'desc'
