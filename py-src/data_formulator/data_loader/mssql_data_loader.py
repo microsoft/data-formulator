@@ -6,7 +6,7 @@ from typing import Any
 import pyarrow as pa
 import pyodbc
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
 
 log = logging.getLogger(__name__)
 
@@ -226,7 +226,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
         Fetch data from SQL Server as a PyArrow Table.
         """
         opts = import_options or {}
-        size = opts.get("size", 1000000)
+        size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
 

@@ -556,6 +556,7 @@
     "loading": "Loading ...",
     "sortBy": "Sort by {{label}}",
     "rowCount": "{{count}} rows",
+    "loadedOfTotal": "{{loaded}} / {{total}} rows",
     "viewRandomRows": "view 10000 random rows from this table",
     "downloadAsCsv": "Download as CSV",
     "downloading": "Downloading..."

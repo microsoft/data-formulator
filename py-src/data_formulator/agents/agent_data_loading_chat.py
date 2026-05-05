@@ -72,7 +72,7 @@ Rules:
 - execute_python auto-saves ALL DataFrames created in code.
 - Use Workflow 4 when the user describes an analysis goal and you need to find relevant data from connected sources.
 - In propose_load_plan, always pass source_id and table_key exactly from search_data_candidates/read_candidate_metadata.
-- Set row_limit when loading connected sources; use 50000 by default unless the user asks otherwise.
+- Set row_limit when loading connected sources; the system will apply the user's configured limit automatically.
 
 Filter rules for propose_load_plan:
 - You MUST call read_candidate_metadata BEFORE proposing filters. Do NOT guess column names or values.
@@ -318,12 +318,13 @@ def _secure_filename(name: str) -> str:
 class DataLoadingAgent:
     """Conversational agent for data loading and extraction."""
 
-    def __init__(self, client, workspace, available_datasets=None, language_instruction="", knowledge_store=None):
+    def __init__(self, client, workspace, available_datasets=None, language_instruction="", knowledge_store=None, row_limit=None):
         self.client = client
         self.workspace = workspace
         self.available_datasets = available_datasets or []
         self.language_instruction = language_instruction
         self._knowledge_store = knowledge_store
+        self.row_limit = row_limit or 2_000_000
 
     # ------------------------------------------------------------------
     # Main streaming entry point
@@ -964,7 +965,7 @@ class DataLoadingAgent:
         result["source_table_name"] = str(source_name)
         result["filters"] = self._normalize_load_plan_filters(result.get("filters"))
         if not result.get("row_limit"):
-            result["row_limit"] = 50000
+            result["row_limit"] = self.row_limit
         return result
 
     def _lookup_catalog_entry(self, source_id, table_key):

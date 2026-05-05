@@ -164,7 +164,7 @@ class TestProposeLoadPlan:
         assert candidate["source_table"] == "136"
         assert candidate["source_table_name"] == "product_periodic_sales_trend"
         assert candidate["filters"] == [{"column": "brand", "operator": "EQ", "value": "Pantum"}]
-        assert candidate["row_limit"] == 50000
+        assert candidate["row_limit"] == 2_000_000
 
 
 class TestNormalizeLoadPlanFilters:

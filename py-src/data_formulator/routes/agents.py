@@ -1242,6 +1242,7 @@ def data_loading_chat():
                 available_datasets=available_datasets,
                 language_instruction=language_instruction,
                 knowledge_store=knowledge_store,
+                row_limit=content.get("row_limit"),
             )
 
             for event in agent.stream(messages):

@@ -501,7 +501,6 @@ const ChatBubble: React.FC<{
                                     connectorId: item.sourceId,
                                     sourceTableRef: { id: item.sourceTable, name: item.displayName },
                                     importOptions: {
-                                        size: item.rowLimit || 50000,
                                         source_filters: item.filters || [],
                                         sort_columns: item.sortBy ? [item.sortBy] : undefined,
                                         sort_order: item.sortOrder,
@@ -667,6 +666,7 @@ export const DataLoadingChat: React.FC = () => {
     const chatInProgress = useSelector((state: DataFormulatorState) => state.dataLoadingChatInProgress);
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const activeModel = useSelector(dfSelectors.getActiveModel);
+    const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
     const existingNames = new Set(existingTables.map(tbl => tbl.id));
 
     const [prompt, setPrompt] = useState('');
@@ -848,6 +848,7 @@ export const DataLoadingChat: React.FC = () => {
                     model: activeModel,
                     messages: allMessages,
                     workspace_tables: existingTables.map(tbl => tbl.id),
+                    row_limit: frontendRowLimit,
                 }),
             }, controller.signal)) {
                 // Log all events for debug panel

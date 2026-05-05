@@ -4,7 +4,7 @@ from typing import Any
 import pandas as pd
 import pyarrow as pa
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
 
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
 from azure.kusto.data.helpers import dataframe_from_result_table
@@ -144,7 +144,7 @@ class KustoDataLoader(ExternalDataLoader):
             sort_order: Sort direction
         """
         opts = import_options or {}
-        size = opts.get("size", 1000000)
+        size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
 

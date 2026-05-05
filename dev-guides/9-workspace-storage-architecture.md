@@ -316,6 +316,9 @@ def _ensure_meta(self, workspace_id: str) -> dict:
 - Session 路由全部返回 no-op
 - 进程退出时 `atexit` 清理临时目录
 - 适用于 `--disable-database` 模式（无服务端持久化）
+- 默认行数限制为 20,000（`DEFAULT_ROW_LIMIT_EPHEMERAL`），以兼顾浏览器性能
+
+> **行数限制**: 两种模式的数据导入行数由统一的 `frontendRowLimit`（前端）和 `MAX_IMPORT_ROWS`（后端硬上限 200 万）控制。详见 `dev-guides/13-unified-row-limits.md`。
 
 ---
 

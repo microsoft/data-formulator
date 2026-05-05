@@ -444,7 +444,7 @@ workspace 内部获取，调用方无需关心存储路径。
 当表通过数据连接器导入时，用户选择的过滤条件、排序和行数限制
 （统称 `import_options`）会存储在 `TableMetadata.import_options` 中。
 Agent 在构建数据摘要时会自动读取该字段并生成人类可读的 provenance 描述，
-例如：`Data subset: 2 filter(s), sorted by created_at desc, row limit 50,000`。
+例如：`Data subset: 2 filter(s), sorted by created_at desc, row limit 2,000,000`。
 
 **传递路径：**
 
@@ -458,7 +458,7 @@ Agent 在构建数据摘要时会自动读取该字段并生成人类可读的 p
    通过 `_format_import_options()` 将 `import_options` 格式化后注入表描述。
 
 **格式化函数** `_format_import_options(opts)` 位于 `agent_utils.py`，
-返回如 `Data subset: 1 filter(s), sorted by id asc, row limit 10,000` 的字符串。
+返回如 `Data subset: 1 filter(s), sorted by id asc, row limit 2,000,000` 的字符串。
 空 opts 返回空字符串。
 
 ## 错误码

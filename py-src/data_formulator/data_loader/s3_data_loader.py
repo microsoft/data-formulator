@@ -9,7 +9,7 @@ import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
 from pyarrow import fs as pa_fs
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class S3DataLoader(ExternalDataLoader):
         For files (parquet, csv), reads directly using PyArrow.
         """
         opts = import_options or {}
-        size = opts.get("size", 1000000)
+        size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
 

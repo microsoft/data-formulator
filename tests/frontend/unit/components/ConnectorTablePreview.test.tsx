@@ -45,7 +45,6 @@ describe('ConnectorTablePreview source metadata', () => {
         sampleRows: [],
         rowCount: 1,
         loading: false,
-        rowLimitPresets: [50000],
         alreadyLoaded: false,
         onLoad: vi.fn(),
     };

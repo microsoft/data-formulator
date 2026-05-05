@@ -281,6 +281,8 @@ const VirtuosoTableBody = React.forwardRef<HTMLTableSectionElement>((props, ref)
     <TableBody {...props} ref={ref} />
 ));
 
+const PAGE_SIZE = 500;
+
 export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(({ 
     tableId, rows, tableName, columnDefs, rowCount, virtual }) => {
 
@@ -292,20 +294,24 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
 
     const [rowsToDisplay, setRowsToDisplay] = React.useState<any[]>(rows);
     
-    // Initialize as true to cover the initial mount delay
     const [isLoading, setIsLoading] = React.useState<boolean>(true);
+    const [isLoadingMore, setIsLoadingMore] = React.useState<boolean>(false);
     const [isDownloading, setIsDownloading] = React.useState<boolean>(false);
+    const [hasMore, setHasMore] = React.useState<boolean>(virtual ? rows.length < rowCount : false);
+    const fetchIdRef = React.useRef(0);
     
-    // Clear loading state after first render
     React.useEffect(() => {
         setIsLoading(false);
     }, []);
 
     React.useEffect(() => {
-        if (orderBy && !isLoading) {
+        if (orderBy && !isLoading && !virtual) {
             setRowsToDisplay(rows.slice().sort(getComparator(order, orderBy)));
-        } else {
+        } else if (!virtual) {
             setRowsToDisplay(rows);
+        }
+        if (!virtual) {
+            setHasMore(false);
         }
     }, [rows, order, orderBy])
 
@@ -371,39 +377,66 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         }
     };
 
-    const fetchVirtualData = (sortByColumnIds: string[], sortOrder: 'asc' | 'desc') => {
-        // Set loading to true when starting the fetch
-        setIsLoading(true);
-
-        let message = sortByColumnIds.length > 0 ? {
-            table: tableId,
-            size: 1000,
-            method: sortOrder === 'asc' ? 'head' : 'bottom',
-            order_by_fields: sortByColumnIds
-        } : {
-            table: tableId,
-            size: 1000,
-            method: 'head',
-            order_by_fields: ['#rowId']
+    const fetchVirtualData = React.useCallback((
+        sortByColumnIds: string[],
+        sortOrder: 'asc' | 'desc',
+        offset: number = 0,
+        append: boolean = false,
+    ) => {
+        if (!append) {
+            setIsLoading(true);
+        } else {
+            setIsLoadingMore(true);
         }
-        
-        // Use the SAMPLE_TABLE endpoint with appropriate ordering
+
+        const currentFetchId = ++fetchIdRef.current;
+
+        const message: Record<string, any> = {
+            table: tableId,
+            size: PAGE_SIZE,
+            offset,
+            method: sortByColumnIds.length > 0
+                ? (sortOrder === 'asc' ? 'head' : 'bottom')
+                : 'head',
+            order_by_fields: sortByColumnIds.length > 0 ? sortByColumnIds : ['#rowId'],
+        };
+
         apiRequest<any>(getUrls().SAMPLE_TABLE, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(message),
         })
         .then(({ data }) => {
-            setRowsToDisplay(data.rows || []);
+            if (fetchIdRef.current !== currentFetchId) return;
+            const newRows = data.rows || [];
+            const totalCount = data.total_row_count ?? rowCount;
+
+            if (append) {
+                setRowsToDisplay(prev => [...prev, ...newRows]);
+            } else {
+                setRowsToDisplay(newRows);
+            }
+            setHasMore(offset + newRows.length < totalCount);
             setIsLoading(false);
+            setIsLoadingMore(false);
         })
         .catch(error => {
+            if (fetchIdRef.current !== currentFetchId) return;
             console.error('Error fetching sorted table data:', error);
             setIsLoading(false);
+            setIsLoadingMore(false);
         });
-    };
+    }, [tableId, rowCount]);
+
+    const handleEndReached = React.useCallback(() => {
+        if (!virtual || !hasMore || isLoadingMore || isLoading) return;
+        fetchVirtualData(
+            orderBy ? [orderBy] : [],
+            order,
+            rowsToDisplay.length,
+            true,
+        );
+    }, [virtual, hasMore, isLoadingMore, isLoading, fetchVirtualData, orderBy, order, rowsToDisplay.length]);
 
     return (
         <Box className="table-container table-container-small"
@@ -443,6 +476,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                             style={{ flex: '1 1', paddingBottom: 32 }}
                             data={rowsToDisplay}
                             components={tableComponents}
+                            endReached={handleEndReached}
+                            overscan={200}
                             fixedHeaderContent={() => {
                         return (
                             <TableRow key='header-fixed' style={{ paddingRight: 0, marginRight: '17px', height: '24px'}}>
@@ -520,11 +555,6 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                             <>
                                 {columnDefs.map((column, colIndex) => {
                                     let backgroundColor = "rgba(255,255,255,0.05)";
-                                    // if (column.source == "custom") {
-                                    //     backgroundColor = alpha(theme.palette.custom.main, 0.03);
-                                    // } else {
-                                    //     backgroundColor = "rgba(255,255,255,0.05)";
-                                    // }
 
                                     return (
                                         <TableCell
@@ -546,12 +576,23 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                 />
                 </Box>
             </Fade>
+            {/* Loading-more indicator at the bottom of the scroll area */}
+            {isLoadingMore && (
+                <Box sx={{
+                    position: 'absolute', bottom: 32, left: 0, right: 0, zIndex: 6,
+                    display: 'flex', justifyContent: 'center', py: 0.5,
+                }}>
+                    <CircularProgress size={16} sx={{ color: 'text.secondary' }} />
+                </Box>
+            )}
             <Paper variant="outlined"
                 sx={{ display: 'flex', flexDirection: 'row', position: 'absolute', bottom: 4, right: 20, zIndex: 5 }}>
                 <Box sx={{display: 'flex', alignItems: 'center', mx: 1}}>
                     <Typography sx={{display: 'flex', alignItems: 'center', fontSize: '12px'}}>
                         {virtual && <TableIcon sx={{width: 14, height: 14, mr: 1}}/> }
-                        {t('dataGrid.rowCount', { count: rowCount })}
+                        {virtual && rowsToDisplay.length < rowCount
+                            ? t('dataGrid.loadedOfTotal', { loaded: rowsToDisplay.length, total: rowCount })
+                            : t('dataGrid.rowCount', { count: rowCount })}
                     </Typography>
                     {virtual && rowCount > 10000 && (
                         <Tooltip title={t('dataGrid.viewRandomRows')}>
@@ -560,6 +601,8 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                                 color="primary" 
                                 sx={{marginRight: 1}}
                                 onClick={() => {
+                                    setOrderBy(undefined);
+                                    setOrder('asc');
                                     fetchVirtualData([], 'asc');
                                 }}
                             >

@@ -8,7 +8,7 @@ from azure.storage.blob import BlobServiceClient
 from azure.identity import DefaultAzureCredential
 from pyarrow import fs as pa_fs
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ Just provide `account_name` + `container_name`. Requires `az login` or Managed I
         For files (parquet, csv), reads directly using PyArrow's Azure filesystem.
         """
         opts = import_options or {}
-        size = opts.get("size", 1000000)
+        size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
 

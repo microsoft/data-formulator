@@ -46,8 +46,6 @@ export interface LoadTablePayload {
     sourceTableRef?: SourceTableRef;
     connectorId?: string;
     importOptions?: {
-        size?: number;
-        rowLimit?: number;
         sortColumns?: string[];
         sort_columns?: string[];
         sortOrder?: 'asc' | 'desc';
@@ -143,7 +141,10 @@ export const loadTable = createAsyncThunk<
                         connector_id: connectorId,
                         source_table: sourceTableRef,
                         table_name: sourceTableRef.name,
-                        import_options: importOptions || {},
+                        import_options: {
+                            ...importOptions,
+                            size: frontendRowLimit,
+                        },
                     };
                     const { data } = await apiRequest(ingestUrl, {
                         method: 'POST',
@@ -155,11 +156,10 @@ export const loadTable = createAsyncThunk<
                     if (wsTable) {
                         finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
                     }
-                    const selectedRowLimit = Number(importOptions?.size);
                     const loadedRowCount = Number(data.row_count);
                     if (
-                        Number.isFinite(selectedRowLimit) && selectedRowLimit > 0 &&
-                        Number.isFinite(loadedRowCount) && loadedRowCount >= selectedRowLimit
+                        Number.isFinite(frontendRowLimit) && frontendRowLimit > 0 &&
+                        Number.isFinite(loadedRowCount) && loadedRowCount >= frontendRowLimit
                     ) {
                         truncated = true;
                         originalRowCount = loadedRowCount;

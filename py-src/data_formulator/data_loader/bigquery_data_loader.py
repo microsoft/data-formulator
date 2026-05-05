@@ -3,7 +3,7 @@ import re
 from typing import Any
 import pyarrow as pa
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
 
 from google.cloud import bigquery
 from google.oauth2 import service_account
@@ -151,7 +151,7 @@ Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account JSON file path. Lea
         data transfer, avoiding pandas conversion overhead.
         """
         opts = import_options or {}
-        size = opts.get("size", 1000000)
+        size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
 

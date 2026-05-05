@@ -13,6 +13,7 @@ import psycopg2
 from data_formulator.data_loader.external_data_loader import (
     CatalogNode,
     ExternalDataLoader,
+    MAX_IMPORT_ROWS,
     build_source_filter_where_clause_inline,
     build_where_clause_inline,
     _esc_id,
@@ -202,7 +203,7 @@ class PostgreSQLDataLoader(ExternalDataLoader):
         Fetch data from PostgreSQL as a PyArrow Table.
         """
         opts = import_options or {}
-        size = opts.get("size", 1000000)
+        size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
         sort_columns = opts.get("sort_columns")
         sort_order = opts.get("sort_order", "asc")
         conditions = opts.get("conditions", [])

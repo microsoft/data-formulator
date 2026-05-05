@@ -8,7 +8,7 @@
  *  - DataSourceSidebar (Popover preview when clicking a dataset)
  *  - DBTableManager / DataLoaderForm (right-hand preview panel)
  *
- * Provides: header with name/row-count, RowLimitUnderlineSelect, smart filters,
+ * Provides: header with name/row-count, smart filters,
  * sort controls, DataFrameTable, and Load / Already-Loaded footer.
  */
 
@@ -37,7 +37,6 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 
 import { DataFrameTable } from '../views/DataFrameTable';
-import { RowLimitUnderlineSelect } from './RowLimitUnderlineSelect';
 import { fetchWithIdentity, CONNECTOR_ACTION_URLS, SourceTableRef } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 
@@ -87,10 +86,6 @@ export interface ConnectorTablePreviewProps {
     sampleRows: Record<string, any>[];
     rowCount: number | null;
     loading: boolean;
-
-    /** Row-limit presets for the RowLimitUnderlineSelect. */
-    rowLimitPresets: number[];
-    defaultRowLimit?: number;
 
     alreadyLoaded: boolean;
 
@@ -167,8 +162,6 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     sampleRows,
     rowCount,
     loading,
-    rowLimitPresets,
-    defaultRowLimit = 50_000,
     alreadyLoaded,
     enableFilters = true,
     enableSort = true,
@@ -177,9 +170,6 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     onRefreshPreview,
 }) => {
     const { t } = useTranslation();
-
-    // Row limit
-    const [rowLimit, setRowLimit] = useState<number>(defaultRowLimit);
 
     // Filters
     const [filters, setFilters] = useState<PreviewFilter[]>([]);
@@ -308,7 +298,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     // ── Load handler ─────────────────────────────────────────────────────
 
     const handleLoad = useCallback(() => {
-        const opts: Record<string, any> = { size: rowLimit };
+        const opts: Record<string, any> = {};
         const validFilters = coerceFilters(filters, columns);
         if (validFilters.length > 0) {
             opts.source_filters = validFilters;
@@ -318,7 +308,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
             opts.sort_order = sortOrder;
         }
         onLoad(opts);
-    }, [rowLimit, filters, columns, sortColumn, sortOrder, onLoad]);
+    }, [filters, columns, sortColumn, sortOrder, onLoad]);
 
     // ── Shared styles ────────────────────────────────────────────────────
 
@@ -476,19 +466,6 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                         </Typography>
                     )}
                 </Box>
-                {!alreadyLoaded && (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.25, flexShrink: 0, mt: 0.125 }}>
-                        <Typography sx={{ fontSize: 10, color: 'text.secondary', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-                            {t('connectorPreview.maxRows', { defaultValue: 'Max rows' })}
-                        </Typography>
-                        <RowLimitUnderlineSelect
-                            value={rowLimit}
-                            presets={rowLimitPresets}
-                            onChange={setRowLimit}
-                            fontSize={12}
-                        />
-                    </Box>
-                )}
             </Box>
 
             {hasMetadataRow && (

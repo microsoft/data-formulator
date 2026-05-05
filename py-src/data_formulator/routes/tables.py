@@ -78,6 +78,7 @@ def _build_parquet_sample_sql(
     method: str,
     order_by_fields: list,
     sample_size: int,
+    offset: int = 0,
 ) -> tuple[str, str]:
     """
     Build DuckDB SQL for sampling (and optional aggregation) over parquet.
@@ -119,7 +120,8 @@ def _build_parquet_sample_sql(
             order_by = " ORDER BY " + ", ".join(f"sub.{_quote_duckdb(c)} DESC" for c in valid_order)
         else:
             order_by = ""
-        main_sql = f"SELECT * FROM ({inner}) AS sub{order_by} LIMIT {sample_size}"
+        offset_clause = f" OFFSET {offset}" if offset > 0 else ""
+        main_sql = f"SELECT * FROM ({inner}) AS sub{order_by} LIMIT {sample_size}{offset_clause}"
         return main_sql, count_sql
 
     count_sql = "SELECT COUNT(*) FROM {parquet} AS t"
@@ -134,11 +136,12 @@ def _build_parquet_sample_sql(
         order_by = " ORDER BY " + ", ".join(f"t.{_quote_duckdb(c)} DESC" for c in valid_order)
     else:
         order_by = ""
+    offset_clause = f" OFFSET {offset}" if offset > 0 else ""
     if valid_select:
         select_list = "t.\"#rowId\", " + ", ".join(f"t.{_quote_duckdb(c)}" for c in valid_select)
-        main_sql = f"SELECT {select_list} FROM {base}{order_by} LIMIT {sample_size}"
+        main_sql = f"SELECT {select_list} FROM {base}{order_by} LIMIT {sample_size}{offset_clause}"
     else:
-        main_sql = f"SELECT * FROM {base}{order_by} LIMIT {sample_size}"
+        main_sql = f"SELECT * FROM {base}{order_by} LIMIT {sample_size}{offset_clause}"
     return main_sql, count_sql
 
 
@@ -271,6 +274,7 @@ def _apply_aggregation_and_sample(
     method: str,
     order_by_fields: list,
     sample_size: int,
+    offset: int = 0,
 ) -> tuple[pd.DataFrame, int]:
     """
     Apply aggregation (optional), then sample with ordering.
@@ -320,11 +324,17 @@ def _apply_aggregation_and_sample(
     if method == "random":
         work = work.sample(n=min(sample_size, len(work)), random_state=None)
     elif method == "head":
-        work = work.sort_values(by=valid_order, ascending=True).head(sample_size) if valid_order else work.head(sample_size)
+        if valid_order:
+            work = work.sort_values(by=valid_order, ascending=True)
+        work = work.iloc[offset:offset + sample_size]
     elif method == "bottom":
-        work = work.sort_values(by=valid_order, ascending=False).head(sample_size) if valid_order else work.tail(sample_size).iloc[::-1].reset_index(drop=True)
+        if valid_order:
+            work = work.sort_values(by=valid_order, ascending=False)
+        else:
+            work = work.iloc[::-1]
+        work = work.iloc[offset:offset + sample_size]
     else:
-        work = work.head(sample_size)
+        work = work.iloc[offset:offset + sample_size]
     return work, total_row_count
 
 
@@ -339,6 +349,7 @@ def sample_table():
         select_fields = data.get('select_fields', [])
         method = data.get('method', 'random')
         order_by_fields = data.get('order_by_fields', [])
+        offset = data.get('offset', 0)
 
         workspace = _get_workspace()
         if _should_use_duckdb(workspace, table_id):
@@ -351,6 +362,7 @@ def sample_table():
                 method,
                 order_by_fields,
                 sample_size,
+                offset,
             )
             total_row_count = int(workspace.run_parquet_sql(table_id, count_sql).iloc[0, 0])
             result_df = workspace.run_parquet_sql(table_id, main_sql)
@@ -363,6 +375,7 @@ def sample_table():
                 method,
                 order_by_fields,
                 sample_size,
+                offset,
             )
         result_df = _dedup_dataframe_columns(result_df)
         rows_json = json.loads(result_df.to_json(orient='records', date_format='iso'))
