@@ -315,6 +315,7 @@ my_report_data_loader.py -> my_report
 - [ ] 大目录优先实现 `ls(path, filter, limit, offset)` 与 `search_catalog(query)`，避免前端展开时全量扫描。
 - [ ] table 节点携带稳定源标识符，例如 `metadata["_source_name"]`，供 preview/import/refresh 使用。
 - [ ] `fetch_data_as_arrow()` 尊重 `import_options` 中的 `size`、`columns`、`sort_columns`、`sort_order`、`filters`、`source_filters`。
+- [ ] `size` 必须通过 `min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)` 截断，从 `external_data_loader` 导入 `MAX_IMPORT_ROWS`。详见 `dev-guides/13-unified-row-limits.md`。
 - [ ] SQL 类 loader 构造筛选条件时使用参数化、标识符白名单或受控运算符集合，禁止拼接未校验的 operator/column。
 
 **可靠性与测试**
@@ -449,6 +450,7 @@ Loader 应在 SQL 构建时使用参数化或白名单校验运算符（参考 `
 - 连接和读取错误必须抛出清晰的 `ValueError`
 - 表名/对象名需校验或清洗
 - `fetch_data_as_arrow` 必须尊重 `import_options` 中的 `size`、`columns`、`sort_columns`、`sort_order`、`filters`、`source_filters`
+- `size` 参数必须受 `MAX_IMPORT_ROWS`（200 万）硬上限约束，防止意外 OOM（参见 `dev-guides/13-unified-row-limits.md`）
 - `list_tables()` 返回值必须包含统一的轻量 metadata 字段（至少稳定源标识、列名/类型；有低成本来源时包含表/列描述）
 - 覆盖 `get_column_types()` 或 `get_metadata()` 时，测试表级 `description`、列级 `description`、空描述清空、缺 key 保留和 metadata 失败不阻断导入/预览
 

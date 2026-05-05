@@ -88,7 +88,7 @@ One button [⊕] handles both small and large datasets:
 ```
 ┌─ Import: orders_fact (1.2M rows) ──────────────────┐
 │                                                     │
-│  This dataset exceeds the row limit (50,000).       │
+│  This dataset exceeds the row limit (2,000,000).    │
 │  Select columns and filters to narrow the data.     │
 │                                                     │
 │  Columns (12 available):                            │
@@ -250,7 +250,8 @@ interface DataSourcePluginDescriptor {
     search?: boolean;            // Can this plugin handle server-side search?
     preview?: boolean;           // Can tables be previewed before import?
     serverSideFilter?: boolean;  // Can the plugin apply WHERE clauses before download?
-    rowLimitOptions?: number[];  // e.g. [20000, 50000, 100000]
+    // NOTE: rowLimitOptions 已移除。行数限制统一由全局 Settings.frontendRowLimit 控制，
+    // 后端硬上限 MAX_IMPORT_ROWS=2,000,000。详见 dev-guides/13-unified-row-limits.md
   };
 }
 
@@ -274,7 +275,7 @@ interface HierarchyLevel {
     { type: 'dashboard', label: 'Dashboards', icon: '📊', expandable: true },
     { type: 'dataset',   label: 'Datasets',   icon: '📄', expandable: false, isLeaf: true }
   ],
-  capabilities: { search: true, serverSideFilter: true, rowLimitOptions: [20000, 50000, 100000] }
+  capabilities: { search: true, serverSideFilter: true }
 }
 
 // MySQL: 2 levels (schema → table)
@@ -284,7 +285,7 @@ interface HierarchyLevel {
     { type: 'schema', label: 'Schemas', icon: '📁', expandable: true },
     { type: 'table',  label: 'Tables',  icon: '📄', expandable: false, isLeaf: true }
   ],
-  capabilities: { search: true, preview: true, rowLimitOptions: [10000, 50000, 200000] }
+  capabilities: { search: true, preview: true }
 }
 
 // File upload: flat (just tables)

@@ -89,10 +89,10 @@ Agent 调用 read_candidate_metadata(connector:pg_prod:public.orders)
   ▼
 Agent 调用 propose_load_plan({
     candidates: [
-        {id: "connector:pg_prod:public.orders", filters: [{column: "created_at", op: "GTE", value: "2025-01-01"}], row_limit: 50000},
+        {id: "connector:pg_prod:public.orders", filters: [{column: "created_at", op: "GTE", value: "2025-01-01"}], row_limit: 2000000},
         {id: "connector:pg_prod:public.customers", row_limit: -1},
     ],
-    reasoning: "订单表筛最近一年数据（约 5 万行），客户表全量导入用于关联"
+    reasoning: "订单表筛最近一年数据，客户表全量导入用于关联"
 })
   │
   ▼
@@ -102,7 +102,7 @@ Agent 调用 propose_load_plan({
   │                                           │
   │ ☑ orders (pg_prod)                        │
   │   筛选: created_at >= 2025-01-01          │
-  │   行数限制: 50,000                         │
+  │   行数限制: 2,000,000 (全局设置)            │
   │                                           │
   │ ☑ customers (pg_prod)                     │
   │   全量导入                                 │
