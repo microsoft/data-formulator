@@ -3,14 +3,15 @@
 
 """Experience distillation agent — extracts reusable knowledge from analysis context.
 
-Given a user-visible analysis context, this agent calls an LLM to produce a
-structured Markdown experience document with YAML front matter suitable for
-storage in the knowledge base.
+Given a user-visible analysis context (timeline of events) plus an optional
+user instruction, this agent calls an LLM to produce a structured Markdown
+experience document with YAML front matter suitable for storage in the
+knowledge base.
 
 Usage::
 
     agent = ExperienceDistillAgent(client)
-    md_content = agent.run_from_context(experience_context)
+    md_content = agent.run(experience_context, user_instruction="...")
 """
 
 from __future__ import annotations
@@ -28,127 +29,56 @@ logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """\
-You are a knowledge distiller. Given the context of a data analysis session,
-extract reusable methodology that can help with similar future tasks.
+You are a knowledge distiller. Given the chronological events of a data
+analysis session plus an optional user instruction, write a short reusable
+Markdown note that will help with similar future tasks.
 
-The knowledge entry must include:
+The events use three types:
+- `message` — directed speech, formatted as `[<from>→<to>/<role>] <content>`.
+  Self-loops like `[data-agent→data-agent/tool_call] <tool>` mark tool invocations.
+- `create_table via=visualize|repair` — the agent ran code that produced a
+  derived table (followed by columns, row count, sample, and code).
+  `via=repair` means the prior failure is visible in the surrounding messages.
+- `create_chart` — a chart emitted on a table (mark + encoding summary).
 
-1. **Title**: a descriptive title following the pattern \
-"[Method/technique]: [applicable scenario] — [core takeaway]". \
-Focus on the method, not the specific dataset. Aim for 10–30 words.
-2. **When to Use**: describe the general conditions where this method applies.
-3. **Method**: the concrete steps, abstracted from the specific dataset. \
-Use generic placeholders (e.g. "the target column", "the grouping key") \
-instead of actual column names when the names are not universally meaningful.
-4. **Pitfalls & Tips**: gotchas encountered during the session, workarounds, \
-and things to watch out for. This is the most valuable section.
-5. **Tags**: keywords for future search (as a YAML list). Include the data \
-domain, chart type, key pandas/vega operations, and general technique names \
-so that future semantic search can match this entry.
+If a user instruction is provided, focus the note on that instruction.
+Otherwise, distill the most transferable methodology from the events.
 
-Output the result as a Markdown file with YAML front matter, like this:
+Output format (Markdown with YAML front matter, nothing else):
 
 ```
 ---
-title: <title>
-tags: [<tag1>, <tag2>, ...]
-created: <today's date YYYY-MM-DD>
-updated: <today's date YYYY-MM-DD>
+title: <short, scannable noun phrase, 3-8 words; no colons, dashes, or run-on lists>
+tags: [<broad search keywords: domain, chart type, key operations, technique>]
+created: <today YYYY-MM-DD>
+updated: <today YYYY-MM-DD>
 source: distill
 source_context: <context_id>
 ---
 
 ## When to Use
-
-<general conditions>
+<general conditions where this method applies>
 
 ## Method
-
-<step by step, abstracted>
+<concrete steps, abstracted; use generic placeholders like "the target column"
+instead of actual column names when names aren't universally meaningful>
 
 ## Pitfalls & Tips
-
-<gotchas and workarounds>
+<gotchas, workarounds, and things to watch out for — the most valuable section.
+If a repair was needed, explain *why* it failed and the general fix.>
 ```
 
 Rules:
+- Title must be a short, scannable noun phrase (3-8 words). Name the
+  technique or pattern. Do NOT pack scenario, takeaway, and steps into the
+  title — leave the details for `## When to Use` and `## Method`.
+  Good: "Year-over-year volatility comparison". "Repairing pandas dtype mismatches".
+  Bad:  "Time series analysis workflow: aggregate, visualize trends, quantify YoY spikes, and compare volatility across periods".
 - Focus on *transferable* methods and caveats, not case-specific details.
-- If a repair/retry was needed, explain *why* it failed and the general fix, \
-not just what happened in this specific run.
-- Keep under 500 words. Prefer concise, actionable guidance.
-- Omit specific data values, column names, and row counts unless they \
-illustrate a universal pattern.
-- Tags should be broad enough to match future queries.
-- Do NOT include raw data, private identifiers, API keys, or sensitive information.
-- Output ONLY the Markdown document, nothing else.
-- The `title` value, all section headings (## When to Use, ## Method, \
-## Pitfalls & Tips), all section body text, and `tags` MUST be written \
-in {output_language}. Only YAML front-matter keys (`title`, `tags`, \
-`created`, `updated`, `source`, `source_context`) stay in English.
-
-{language_instruction}
-"""
-
-
-LOG_SYSTEM_PROMPT = """\
-You are a knowledge distiller. Given a structured reasoning log summary from
-a data analysis session, extract reusable methodology that can help with
-similar future tasks.
-
-The knowledge entry must include:
-
-1. **Title**: a descriptive title following the pattern \
-"[Method/technique]: [applicable scenario] — [core takeaway]". \
-Focus on the method, not the specific dataset. Aim for 10–30 words.
-2. **When to Use**: describe the general conditions where this method applies.
-3. **Method**: the concrete steps, abstracted from the specific dataset. \
-Use generic placeholders (e.g. "the target column", "the grouping key") \
-instead of actual column names when the names are not universally meaningful.
-4. **Pitfalls & Tips**: gotchas encountered during the session, workarounds, \
-and things to watch out for. This is the most valuable section.
-5. **Tags**: keywords for future search (as a YAML list). Include the data \
-domain, chart type, key pandas/vega operations, and general technique names \
-so that future semantic search can match this entry.
-
-Output the result as a Markdown file with YAML front matter, like this:
-
-```
----
-title: <title>
-tags: [<tag1>, <tag2>, ...]
-created: <today's date YYYY-MM-DD>
-updated: <today's date YYYY-MM-DD>
-source: distill
-source_session: <session_id>
----
-
-## When to Use
-
-<general conditions>
-
-## Method
-
-<step by step, abstracted>
-
-## Pitfalls & Tips
-
-<gotchas and workarounds>
-```
-
-Rules:
-- Focus on *transferable* methods and caveats, not case-specific details.
-- If a repair/retry was needed, explain *why* it failed and the general fix, \
-not just what happened in this specific run.
-- Keep under 500 words. Prefer concise, actionable guidance.
-- Omit specific data values, column names, and row counts unless they \
-illustrate a universal pattern.
-- Tags should be broad enough to match future queries.
-- Do NOT include raw data, private identifiers, API keys, or sensitive information.
-- Output ONLY the Markdown document, nothing else.
-- The `title` value, all section headings (## When to Use, ## Method, \
-## Pitfalls & Tips), all section body text, and `tags` MUST be written \
-in {output_language}. Only YAML front-matter keys (`title`, `tags`, \
-`created`, `updated`, `source`, `source_session`) stay in English.
+- Keep the body under 500 words.
+- No raw data, PII, secrets, or specific values unless they show a universal pattern.
+- Write the title, headings, body, and tags in {output_language}.
+  YAML front-matter keys stay in English.
 
 {language_instruction}
 """
@@ -182,68 +112,22 @@ class ExperienceDistillAgent:
         self.language_code = (language_code or "en").strip().lower()
         self.timeout_seconds = int(timeout_seconds) if timeout_seconds else self.DEFAULT_TIMEOUT
 
-    def run(
-        self,
-        reasoning_log: list[dict[str, Any]],
-        user_question: str,
-        session_id: str = "",
-    ) -> str:
-        """Distill *reasoning_log* into a Markdown experience.
-
-        Parameters
-        ----------
-        reasoning_log:
-            Parsed JSONL lines from a reasoning log file.
-        user_question:
-            The original question the user asked.
-        session_id:
-            The session ID (embedded in front matter ``source_session``).
-
-        Returns
-        -------
-        str
-            The Markdown content (with YAML front matter).
-        """
-        summary = self._extract_log_summary(reasoning_log)
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-        user_msg = (
-            f"User question: {user_question}\n\n"
-            f"Session ID: {session_id}\n"
-            f"Today's date: {today}\n\n"
-            f"Reasoning log summary:\n{summary}"
-        )
-
-        system = LOG_SYSTEM_PROMPT.format(**self._prompt_format_kwargs())
-
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_msg},
-        ]
-
-        from data_formulator.knowledge.store import KNOWLEDGE_LIMITS
-        content = self._call_with_length_retry(
-            messages, KNOWLEDGE_LIMITS.get("experiences", 2000),
-        )
-
-        if not content.strip().startswith("---"):
-            content = self._add_fallback_front_matter(
-                content, session_id, today, source_field="source_session",
-            )
-
-        return content
-
-    def run_from_context(self, context: dict[str, Any]) -> str:
+    def run(self, context: dict[str, Any], user_instruction: str = "") -> str:
         """Distill an experience document from user-visible session context."""
         summary = self._extract_context_summary(context)
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         context_id = str(context.get("context_id", "") or "")
 
+        instruction_block = (
+            f"\n[USER INSTRUCTION]\n{user_instruction.strip()}\n"
+            f"Focus the distilled experience on the above instruction.\n"
+        ) if user_instruction and user_instruction.strip() else ""
+
         user_msg = (
-            f"User question: {context.get('user_question', '')}\n\n"
             f"Context ID: {context_id}\n"
-            f"Today's date: {today}\n\n"
-            f"Experience context summary:\n{summary}"
+            f"Today's date: {today}\n"
+            f"{instruction_block}\n"
+            f"Session events (chronological):\n{summary}"
         )
 
         system = SYSTEM_PROMPT.format(**self._prompt_format_kwargs())
@@ -266,7 +150,7 @@ class ExperienceDistillAgent:
         return content
 
     def _prompt_format_kwargs(self) -> dict[str, str]:
-        """Build template kwargs for SYSTEM_PROMPT / LOG_SYSTEM_PROMPT."""
+        """Build template kwargs for SYSTEM_PROMPT."""
         lang = self.language_code
         display_name = self._LANG_NAMES.get(lang, "English")
         if lang == "en":
@@ -285,12 +169,22 @@ class ExperienceDistillAgent:
             "language_instruction": self.language_instruction or lang_block,
         }
 
+    # Slack the model gets on the condensation retry: we ask for
+    # `body_limit - RETRY_MARGIN` so a small overshoot still fits in
+    # `body_limit`. If the retry still overshoots, we hard-truncate.
+    RETRY_MARGIN: int = 100
+    TRUNCATION_MARKER: str = "\n\n…(truncated to fit length limit)"
+
     def _call_with_length_retry(
         self,
         messages: list[dict],
         body_limit: int,
     ) -> str:
-        """Call LLM and retry once if the body exceeds *body_limit* characters."""
+        """Call LLM and retry once if the body exceeds *body_limit* characters.
+
+        If the retry *still* overshoots, hard-truncate the body so the
+        document is saved instead of the entire distillation being lost.
+        """
         from data_formulator.knowledge.store import parse_front_matter
 
         content = self._call_llm(messages)
@@ -298,20 +192,55 @@ class ExperienceDistillAgent:
         if len(body.strip()) <= body_limit:
             return content
 
+        retry_target = max(body_limit - self.RETRY_MARGIN, 1)
         logger.info(
-            "Distilled content too long (%d > %d), retrying with condensation prompt",
-            len(body.strip()), body_limit,
+            "Distilled content too long (%d > %d), retrying with condensation prompt (target ≤ %d)",
+            len(body.strip()), body_limit, retry_target,
         )
         messages = messages + [
             {"role": "assistant", "content": content},
             {"role": "user", "content": (
                 f"Your output body is {len(body.strip())} characters, which exceeds "
                 f"the limit of {body_limit}. Please condense the document to fit "
-                f"within {body_limit} characters while keeping the most important "
+                f"within {retry_target} characters while keeping the most important "
                 f"insights. Output ONLY the revised Markdown document."
             )},
         ]
-        return self._call_llm(messages)
+        retried = self._call_llm(messages)
+
+        # Hard-trim if the retry still overshoots — better a slightly
+        # truncated experience than a save failure.
+        return self._truncate_body_to_limit(retried, body_limit)
+
+    @classmethod
+    def _truncate_body_to_limit(cls, content: str, body_limit: int) -> str:
+        """If the body of *content* exceeds *body_limit*, truncate it.
+
+        Front matter is preserved verbatim; only the body is trimmed.
+        Returns *content* unchanged when within the limit.
+        """
+        from data_formulator.knowledge.store import _FM_PATTERN
+
+        m = _FM_PATTERN.match(content)
+        if m:
+            head = content[: m.end()]
+            body = content[m.end():]
+        else:
+            head = ""
+            body = content
+
+        stripped_len = len(body.strip())
+        if stripped_len <= body_limit:
+            return content
+
+        marker = cls.TRUNCATION_MARKER
+        keep = max(body_limit - len(marker), 0)
+        truncated_body = body[:keep].rstrip() + marker
+        logger.warning(
+            "Distilled body still over budget after retry (%d > %d); hard-trimming to %d chars",
+            stripped_len, body_limit, len(truncated_body.strip()),
+        )
+        return head + truncated_body
 
     # -- internals ---------------------------------------------------------
 
@@ -321,7 +250,7 @@ class ExperienceDistillAgent:
         return text if len(text) <= limit else text[:limit] + "..."
 
     @staticmethod
-    def _truncate_code(code: str, limit: int = 800) -> str:
+    def _truncate_code(code: str, limit: int = 1500) -> str:
         """Return the first *limit* characters of meaningful code lines."""
         lines = [
             line for line in code.splitlines()
@@ -333,239 +262,82 @@ class ExperienceDistillAgent:
         return text[:limit] + "\n# ... (truncated)"
 
     @staticmethod
-    def _extract_tool_name_from_dialog_content(content: Any) -> str | None:
-        """Extract a bracketed tool name without forwarding dialog content."""
-        text = "" if content is None else str(content).strip()
-        if not text.startswith("[tool:"):
-            return None
+    def _render_sample(rows: Any, max_rows: int = 5) -> str:
+        """Render a small data sample as a compact one-line-per-row block.
 
-        first_line = text.splitlines()[0].strip()
-        if not first_line.endswith("]"):
-            return None
-
-        tool_name = first_line[len("[tool:"):-1].strip()
-        return tool_name or None
-
-    @staticmethod
-    def _summarize_code_shape(code: Any) -> str:
-        """Summarize generated code without forwarding source text."""
-        text = "" if code is None else str(code)
-        lines = [
-            line.strip()
-            for line in text.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
-        checks = (
-            ("groupby", "groupby"),
-            ("agg(", "aggregate"),
-            (".sum(", "sum"),
-            ("merge(", "merge/join"),
-            (".join(", "merge/join"),
-            ("pivot", "pivot"),
-            ("melt(", "reshape"),
-            ("query(", "filter"),
-            (".loc[", "filter"),
-            ("sort_values", "sort"),
-            ("reset_index", "reset-index"),
-            ("assign(", "derive-column"),
-            ("value_counts", "count"),
-            ("to_datetime", "datetime-conversion"),
-            ("fillna", "missing-value handling"),
-            ("dropna", "missing-value handling"),
-        )
-        operations = [
-            label
-            for needle, label in checks
-            if needle in text
-        ]
-        unique_operations = list(dict.fromkeys(operations))
-
-        if unique_operations:
-            return (
-                f"{len(lines)} non-empty lines; operations="
-                f"{', '.join(unique_operations)}"
-            )
-        return f"{len(lines)} non-empty lines; operations=unspecified"
-
-    @staticmethod
-    def _extract_log_summary(log_lines: list[dict[str, Any]]) -> str:
-        """Extract key information from reasoning log lines.
-
-        Only includes step_type, action summaries, tool names, and key
-        findings — never full message content or raw data.
+        Mirrors the frontend preview — the user sees the same sample.
         """
-        parts: list[str] = []
-        for entry in log_lines:
-            step = entry.get("step_type", "unknown")
-
-            if step == "session_start":
-                parts.append(
-                    f"- Session started: question={entry.get('user_question', '?')}, "
-                    f"tables={entry.get('input_tables', [])}, "
-                    f"model={entry.get('model', '?')}"
-                )
-            elif step == "context_built":
-                parts.append(
-                    f"- Context: {entry.get('total_tables', '?')} tables, "
-                    f"primary={entry.get('primary_tables', [])}"
-                )
-            elif step == "llm_response":
-                tc = entry.get("tool_calls", [])
-                if tc:
-                    tools = ", ".join(t.get("name", "?") for t in tc)
-                    parts.append(f"- LLM called tools: {tools}")
-                fr = entry.get("finish_reason", "")
-                if fr == "stop":
-                    action = entry.get("action", {})
-                    if isinstance(action, dict):
-                        parts.append(
-                            f"- LLM action: {action.get('action', '?')}"
-                        )
-            elif step == "tool_execution":
-                tool = entry.get("tool", "?")
-                output = entry.get("output_summary", "")[:150]
-                parts.append(f"- Tool {tool}: {output}")
-            elif step == "action_execution":
-                action = entry.get("action", "?")
-                status = entry.get("status", "?")
-                extra = ""
-                if entry.get("chart_type"):
-                    extra = f", chart={entry['chart_type']}"
-                if entry.get("output_rows"):
-                    extra += f", rows={entry['output_rows']}"
-                parts.append(f"- Action {action}: {status}{extra}")
-            elif step == "repair_attempt":
-                parts.append(
-                    f"- Repair attempt {entry.get('attempt', '?')}: "
-                    f"{entry.get('status', '?')}"
-                )
-            elif step == "session_end":
-                parts.append(
-                    f"- Session ended: status={entry.get('status', '?')}, "
-                    f"iterations={entry.get('total_iterations', '?')}, "
-                    f"llm_calls={entry.get('total_llm_calls', '?')}, "
-                    f"latency={entry.get('total_latency_ms', '?')}ms"
-                )
-
-        return "\n".join(parts) if parts else "(empty log)"
+        if not isinstance(rows, list) or not rows:
+            return "    (no sample)"
+        out: list[str] = []
+        for r in rows[:max_rows]:
+            try:
+                if isinstance(r, dict):
+                    pairs = ", ".join(f"{k}={r[k]!r}" for k in list(r.keys())[:8])
+                    out.append(f"    - {pairs}")
+                else:
+                    out.append(f"    - {r!r}")
+            except Exception:
+                out.append("    - (unrenderable row)")
+        return "\n".join(out)
 
     @classmethod
     def _extract_context_summary(cls, context: dict[str, Any]) -> str:
-        """Extract reusable signals from a frontend experience context."""
+        """Render the timeline payload (events[]) as a compact text block.
+
+        See design-docs/21.3-distill-payload-vs-preview-alignment.md §5.2.
+        Three event types are recognized:
+
+        - ``message``       — directed speech act
+        - ``create_table``  — derived table side-effect
+        - ``create_chart``  — chart side-effect on a table
+        """
+        events = context.get("events") or []
+        if not isinstance(events, list):
+            return "(empty context)"
+
         parts: list[str] = []
-        parts.append(f"- User question: {cls._truncate(context.get('user_question', ''), 500)}")
+        for ev in events:
+            if not isinstance(ev, dict):
+                continue
+            kind = ev.get("type")
 
-        interaction = context.get("interaction", [])
-        if isinstance(interaction, list):
-            for item in interaction:
-                if not isinstance(item, dict):
-                    continue
-                role = str(item.get("role", ""))
-                source = str(item.get("from", ""))
-                if role == "prompt" and source == "user":
-                    content = item.get("displayContent") or item.get("content", "")
-                    parts.append(
-                        f"- User prompt or clarification: {cls._truncate(content, 500)}"
-                    )
-                elif role == "clarify":
-                    content = item.get("displayContent") or item.get("content", "")
-                    parts.append(
-                        f"- Agent clarification question: {cls._truncate(content, 500)}"
-                    )
-                elif role == "instruction":
-                    content = item.get("displayContent") or item.get("content", "")
-                    parts.append(
-                        f"- Agent instruction summary: {cls._truncate(content, 500)}"
-                    )
-                elif role == "summary":
-                    parts.append("- Agent summary was shown")
+            if kind == "message":
+                f = ev.get("from", "?")
+                t = ev.get("to", "?")
+                role = ev.get("role", "?")
+                line = f"[{f}→{t}/{role}]"
+                if ev.get("content"):
+                    line += f" {cls._truncate(ev['content'], 500)}"
+                if ev.get("summary"):
+                    line += f" — {cls._truncate(ev['summary'], 200)}"
+                parts.append(line)
 
-        attempts = context.get("execution_attempts", [])
-        if isinstance(attempts, list):
-            for attempt in attempts:
-                if not isinstance(attempt, dict):
-                    continue
-                parts.append(
-                    f"- Attempt {attempt.get('kind', '?')}: "
-                    f"{attempt.get('status', '?')} - "
-                    f"{cls._truncate(attempt.get('summary', ''), 400)}"
-                )
-                if attempt.get("error"):
-                    parts.append(
-                        f"  Error: {cls._truncate(attempt.get('error'), 400)}"
-                    )
-                if attempt.get("failed_code_summary"):
-                    parts.append(
-                        "  Failed code summary: "
-                        f"{cls._truncate(attempt.get('failed_code_summary'), 400)}"
-                    )
-                if attempt.get("repair_code_summary"):
-                    parts.append(
-                        "  Repair code summary: "
-                        f"{cls._truncate(attempt.get('repair_code_summary'), 400)}"
-                    )
+            elif kind == "create_table":
+                via = ev.get("via", "?")
+                table_id = ev.get("table_id", "?")
+                parts.append(f"[create_table via={via}] {table_id}")
+                source_tables = ev.get("source_tables") or []
+                if source_tables:
+                    parts.append(f"  sources: {', '.join(str(s) for s in source_tables)}")
+                columns = ev.get("columns") or []
+                if columns:
+                    parts.append(f"  columns: {list(columns)}")
+                if ev.get("row_count") is not None:
+                    parts.append(f"  rows: {ev.get('row_count')}")
+                sample = ev.get("sample_rows") or []
+                if isinstance(sample, list) and sample:
+                    parts.append(f"  sample (first {len(sample)} rows):")
+                    parts.append(cls._render_sample(sample))
+                if ev.get("code"):
+                    parts.append(f"  code:\n{cls._truncate_code(str(ev['code']), 1500)}")
 
-        result = context.get("result_summary", {})
-        if isinstance(result, dict):
-            source_tables = result.get("source_tables") or []
-            if source_tables:
-                parts.append(f"- Source tables: {source_tables}")
-            parts.append(
-                f"- Final result: fields={result.get('output_fields', [])}, "
-                f"rows={result.get('output_rows')}, "
-                f"chart={result.get('chart_type')}"
-            )
-            if result.get("display_instruction"):
-                parts.append(
-                    "- Final display instruction: "
-                    f"{cls._truncate(result.get('display_instruction'), 500)}"
-                )
-            if result.get("code"):
-                parts.append(
-                    f"- Final code pattern: {cls._summarize_code_shape(result.get('code'))}"
-                )
-                code_preview = cls._truncate_code(str(result["code"]), 800)
-                if code_preview:
-                    parts.append(f"- Final code (truncated):\n{code_preview}")
-
-        dialog = context.get("dialog", [])
-        if isinstance(dialog, list) and dialog:
-            dialog_roles: dict[str, int] = {}
-            dialog_tools: list[str] = []
-            tool_result_count = 0
-            assistant_snippets: list[str] = []
-
-            for msg in dialog[-20:]:
-                if not isinstance(msg, dict):
-                    continue
-
-                role = str(msg.get("role", "?"))
-                dialog_roles[role] = dialog_roles.get(role, 0) + 1
-
-                if role == "tool":
-                    tool_result_count += 1
-
-                content = msg.get("content", "")
-                tool_name = cls._extract_tool_name_from_dialog_content(content)
-                if tool_name:
-                    dialog_tools.append(tool_name)
-                elif isinstance(content, str) and content.strip().startswith("[tool result"):
-                    tool_result_count += 1
-
-                if role == "assistant" and isinstance(content, str) and content.strip():
-                    assistant_snippets.append(cls._truncate(content.strip(), 300))
-
-            if dialog_roles:
-                role_counts = ", ".join(
-                    f"{role}={count}" for role, count in sorted(dialog_roles.items())
-                )
-                parts.append(f"- Dialog structure: {role_counts}")
-            if dialog_tools:
-                parts.append(f"- Dialog tool calls: {', '.join(dialog_tools)}")
-            if tool_result_count:
-                parts.append(f"- Dialog tool results observed: {tool_result_count}")
-            for i, snippet in enumerate(assistant_snippets[-5:]):
-                parts.append(f"- Agent reasoning [{i + 1}]: {snippet}")
+            elif kind == "create_chart":
+                mark = ev.get("mark_or_type", "?")
+                related = ev.get("related_table_id", "?")
+                parts.append(f"[create_chart] {mark} on {related}")
+                if ev.get("encoding_summary"):
+                    parts.append(f"  encoding: {ev.get('encoding_summary')}")
 
         return "\n".join(parts) if parts else "(empty context)"
 

@@ -29,13 +29,21 @@ function makeDerived(
         executionAttempts?: any[];
         dialog?: any[];
         anchored?: boolean;
+        chart?: any;
+        names?: string[];
+        rows?: any[];
+        rowCount?: number;
+        code?: string;
     },
 ): DictTable {
     return makeTable(id, {
         anchored: opts?.anchored ?? false,
+        names: opts?.names ?? ['col1'],
+        rows: opts?.rows ?? [{ col1: 'a' }],
+        virtual: { tableId: id, rowCount: opts?.rowCount ?? (opts?.rows ? opts.rows.length : 1) },
         derive: {
             source: [parentId],
-            code: 'df = ...',
+            code: opts?.code ?? 'df = ...',
             outputVariable: 'result_df',
             dialog: opts?.dialog ?? [],
             executionAttempts: opts?.executionAttempts,
@@ -43,9 +51,15 @@ function makeDerived(
                 tableId: parentId,
                 resultTableId: id,
                 interaction: opts?.interaction ?? [],
+                ...(opts?.chart ? { chart: opts.chart } : {}),
             },
         },
     });
+}
+
+// Helper: filter events by type
+function eventsOfType(ctx: { events: Array<Record<string, any>> } | null, type: string) {
+    return (ctx?.events ?? []).filter(e => e.type === type);
 }
 
 // ── isLeafDerivedTable ──────────────────────────────────────────────────────
@@ -78,6 +92,7 @@ describe('isLeafDerivedTable', () => {
     });
 });
 
+
 // ── buildExperienceContext ───────────────────────────────────────────────────
 
 describe('buildExperienceContext', () => {
@@ -92,7 +107,6 @@ describe('buildExperienceContext', () => {
         to: 'datarec-agent' as const,
         role: 'instruction' as const,
         content: 'create line chart',
-        displayContent: 'Line chart of sales',
     };
 
     it('returns null for non-derived table', () => {
@@ -100,7 +114,7 @@ describe('buildExperienceContext', () => {
         expect(buildExperienceContext(root, [root])).toBeNull();
     });
 
-    it('returns null when no user prompt exists in chain', () => {
+    it('returns null when no user-originated message exists in chain', () => {
         const root = makeTable('root');
         const t1 = makeDerived('t1', 'root', {
             interaction: [agentInstruction],
@@ -108,82 +122,104 @@ describe('buildExperienceContext', () => {
         expect(buildExperienceContext(t1, [root, t1])).toBeNull();
     });
 
-    it('builds context from single-step chain', () => {
+    it('builds a flat event timeline from a single-step chain', () => {
         const root = makeTable('root');
         const t1 = makeDerived('t1', 'root', {
             interaction: [userPrompt, agentInstruction],
-            dialog: [{ role: 'system', content: 'sys' }],
+            // Only [tool: ...] dialog content becomes a tool_call event;
+            // the rest is dropped (raw assistant snippets aren't useful).
+            dialog: [
+                { role: 'assistant', content: '[tool: explore]\n```python\n...```' },
+                { role: 'system', content: 'system prompt' },
+            ],
         });
         const ctx = buildExperienceContext(t1, [root, t1]);
         expect(ctx).not.toBeNull();
-        expect(ctx!.user_question).toBe('Show sales trend');
         expect(ctx!.context_id).toBe('t1');
-        expect(ctx!.dialog).toHaveLength(1);
-        expect(ctx!.interaction).toHaveLength(2);
+
+        const messages = eventsOfType(ctx, 'message');
+        // 2 from interaction + 1 synthesized tool_call
+        expect(messages).toHaveLength(3);
+        expect(messages[0]).toMatchObject({
+            type: 'message',
+            from: 'user',
+            to: 'data-agent',
+            role: 'prompt',
+            content: 'Show sales trend',
+        });
+        expect(messages[1]).toMatchObject({
+            from: 'data-agent',
+            to: 'datarec-agent',
+            role: 'instruction',
+        });
+        expect(messages[2]).toMatchObject({
+            from: 'data-agent',
+            to: 'data-agent',
+            role: 'tool_call',
+            content: 'explore',
+        });
+
+        // Each derived step always emits one create_table.
+        const tables = eventsOfType(ctx, 'create_table');
+        expect(tables).toHaveLength(1);
+        expect(tables[0]).toMatchObject({
+            type: 'create_table',
+            table_id: 't1',
+            source_tables: ['root'],
+            via: 'visualize',
+        });
     });
 
-    it('merges interaction/dialog from multi-step chain', () => {
+    it('emits one create_table per derived step in a multi-step chain', () => {
         const root = makeTable('root');
         const t1 = makeDerived('t1', 'root', {
             interaction: [userPrompt, agentInstruction],
-            dialog: [{ role: 'system', content: 'd1' }],
         });
         const step2Instruction = {
-            from: 'data-agent' as const,
-            to: 'datarec-agent' as const,
+            from: 'user' as const,
+            to: 'data-agent' as const,
             role: 'instruction' as const,
             content: 'refine chart',
         };
         const t2 = makeDerived('t2', 't1', {
             interaction: [step2Instruction],
-            dialog: [{ role: 'system', content: 'd2' }],
         });
         const ctx = buildExperienceContext(t2, [root, t1, t2]);
         expect(ctx).not.toBeNull();
-        expect(ctx!.user_question).toBe('Show sales trend');
         expect(ctx!.context_id).toBe('t2');
-        expect(ctx!.interaction).toHaveLength(3);
-        expect(ctx!.dialog).toHaveLength(2);
+
+        const tables = eventsOfType(ctx, 'create_table');
+        expect(tables.map(e => e.table_id)).toEqual(['t1', 't2']);
+
+        const messages = eventsOfType(ctx, 'message');
+        // userPrompt + agentInstruction + step2Instruction
+        expect(messages.map(m => m.content)).toEqual([
+            'Show sales trend', 'create line chart', 'refine chart',
+        ]);
     });
 
-    it('skips deleted middle table (chain re-parented)', () => {
+    it('skips the deleted middle table (chain re-parented)', () => {
         const root = makeTable('root');
         const t1 = makeDerived('t1', 'root', {
             interaction: [userPrompt, agentInstruction],
-            dialog: [{ role: 'system', content: 'd1' }],
         });
-        const t2 = makeDerived('t2', 't1', {
-            interaction: [{ from: 'data-agent', to: 'datarec-agent', role: 'instruction', content: 'step2' }],
-            dialog: [{ role: 'system', content: 'd2' }],
-        });
-        const t3 = makeDerived('t3', 't2', {
-            interaction: [{ from: 'data-agent', to: 'datarec-agent', role: 'instruction', content: 'step3' }],
-            dialog: [{ role: 'system', content: 'd3' }],
+        // Simulate t2 deleted: t3 re-parented directly to t1.
+        const t3 = makeDerived('t3', 't1', {
+            interaction: [{
+                from: 'user', to: 'data-agent', role: 'instruction', content: 'step3',
+            }],
             executionAttempts: [{ kind: 'visualize', status: 'ok', summary: 'ok' }],
         });
-
-        // Simulate deleting t2: re-parent t3 to t1
-        const t3AfterDelete = makeDerived('t3', 't1', {
-            interaction: t3.derive!.trigger.interaction,
-            dialog: t3.derive!.dialog,
-            executionAttempts: t3.derive!.executionAttempts,
-        });
-        const tablesAfterDelete = [root, t1, t3AfterDelete];
-
-        const ctx = buildExperienceContext(t3AfterDelete, tablesAfterDelete);
+        const ctx = buildExperienceContext(t3, [root, t1, t3]);
         expect(ctx).not.toBeNull();
-        // t2's dialog should NOT be included (deleted)
-        expect(ctx!.dialog).toHaveLength(2); // d1 + d3
-        expect(ctx!.dialog.map((d: any) => d.content)).toEqual(['d1', 'd3']);
-        // t3's own execution_attempts preserved
-        expect(ctx!.execution_attempts).toHaveLength(1);
-        expect(ctx!.execution_attempts![0].summary).toBe('ok');
+        const tables = eventsOfType(ctx, 'create_table');
+        expect(tables.map(e => e.table_id)).toEqual(['t1', 't3']);
     });
 
-    it('preserves leaf execution_attempts (failure/repair)', () => {
+    it('detects via=repair from the last successful execution attempt', () => {
         const root = makeTable('root');
         const t1 = makeDerived('t1', 'root', {
-            interaction: [userPrompt, agentInstruction],
+            interaction: [userPrompt],
             executionAttempts: [
                 { kind: 'visualize', attempt: 1, status: 'error', summary: 'failed', error: 'TypeError' },
                 { kind: 'repair', attempt: 2, status: 'ok', summary: 'fixed' },
@@ -191,9 +227,85 @@ describe('buildExperienceContext', () => {
         });
         const ctx = buildExperienceContext(t1, [root, t1]);
         expect(ctx).not.toBeNull();
-        expect(ctx!.execution_attempts).toHaveLength(2);
-        expect(ctx!.execution_attempts![0].status).toBe('error');
-        expect(ctx!.execution_attempts![1].status).toBe('ok');
+        const tables = eventsOfType(ctx, 'create_table');
+        expect(tables[0].via).toBe('repair');
+        // No repair_reason is emitted — failure context is in the messages.
+        expect(tables[0]).not.toHaveProperty('repair_reason');
+        expect(tables[0]).not.toHaveProperty('code_shape');
+    });
+
+    it('emits create_chart paired with create_table when the step has a chart', () => {
+        const root = makeTable('root');
+        const t1 = makeDerived('t1', 'root', {
+            interaction: [userPrompt],
+            chart: {
+                chartType: 'bar',
+                encodingMap: {
+                    x: { fieldID: 'region', dtype: 'nominal' },
+                    y: { fieldID: 'revenue', dtype: 'quantitative', aggregate: 'sum' },
+                },
+            },
+        });
+        const ctx = buildExperienceContext(t1, [root, t1]);
+        expect(ctx).not.toBeNull();
+        const types = ctx!.events.map(e => e.type);
+        // create_table immediately followed by create_chart for the same step.
+        const tIdx = types.indexOf('create_table');
+        expect(types[tIdx + 1]).toBe('create_chart');
+        const chart = ctx!.events[tIdx + 1];
+        expect(chart).toMatchObject({
+            type: 'create_chart',
+            related_table_id: 't1',
+            mark_or_type: 'bar',
+        });
+        expect(chart.encoding_summary).toContain('x=region(nominal)');
+        expect(chart.encoding_summary).toContain('y=revenue(quantitative) [sum]');
+    });
+
+    it('drops error-role and empty interaction entries', () => {
+        const root = makeTable('root');
+        const t1 = makeDerived('t1', 'root', {
+            interaction: [
+                userPrompt,
+                { from: 'user', to: 'data-agent', role: 'instruction', content: '' },
+                { from: 'user', to: 'data-agent', role: 'error', content: 'boom' },
+            ],
+        });
+        const ctx = buildExperienceContext(t1, [root, t1]);
+        const messages = eventsOfType(ctx, 'message');
+        expect(messages).toHaveLength(1);
+        expect(messages[0].content).toBe('Show sales trend');
+    });
+
+    it('sends raw code (not a code shape summary)', () => {
+        const root = makeTable('root');
+        const code = "result_df = df.groupby('region').sum()";
+        const t1 = makeDerived('t1', 'root', {
+            interaction: [userPrompt],
+            code,
+        });
+        const ctx = buildExperienceContext(t1, [root, t1]);
+        const tables = eventsOfType(ctx, 'create_table');
+        expect(tables[0].code).toBe(code);
+        expect(tables[0]).not.toHaveProperty('code_shape');
+    });
+
+    it('includes columns, row_count, and sample_rows on create_table', () => {
+        const root = makeTable('root');
+        const rows = Array.from({ length: 8 }, (_, i) => ({ region: `R${i}`, revenue: i * 10 }));
+        const t1 = makeDerived('t1', 'root', {
+            interaction: [userPrompt],
+            names: ['region', 'revenue'],
+            rows,
+            rowCount: rows.length,
+        });
+        const ctx = buildExperienceContext(t1, [root, t1]);
+        const tables = eventsOfType(ctx, 'create_table');
+        expect(tables[0].columns).toEqual(['region', 'revenue']);
+        expect(tables[0].row_count).toBe(8);
+        // Sample is capped at 5 rows.
+        expect(tables[0].sample_rows).toHaveLength(5);
+        expect(tables[0].sample_rows[0]).toEqual({ region: 'R0', revenue: 0 });
     });
 });
 

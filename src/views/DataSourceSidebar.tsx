@@ -130,6 +130,19 @@ export const DataSourceSidebar: React.FC<{
 
     const [initialTab, setInitialTab] = useState<'sources' | 'sessions' | 'knowledge'>('sources');
 
+    // External callers (e.g. SaveExperienceButton on success) can ask the
+    // sidebar to open and switch to a specific tab.
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail || {};
+            const tab = detail.tab as 'sources' | 'sessions' | 'knowledge' | undefined;
+            setInitialTab(tab ?? 'knowledge');
+            dispatch(dfActions.setDataSourceSidebarOpen(true));
+        };
+        window.addEventListener('open-knowledge-panel', handler);
+        return () => window.removeEventListener('open-knowledge-panel', handler);
+    }, [dispatch]);
+
     // Resizable panel width, persisted in localStorage
     const [panelWidth, setPanelWidth] = useState<number>(() => {
         const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);

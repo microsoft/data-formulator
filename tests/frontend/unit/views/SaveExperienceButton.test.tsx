@@ -36,18 +36,20 @@ vi.mock('react-i18next', () => ({
             const labels: Record<string, string> = {
                 'knowledge.saveAsExperience': 'Save as Experience',
                 'knowledge.saveAsExperienceTitle': 'Save as Experience',
-                'knowledge.saveAsExperienceHint': 'AI will distill the analysis into a reusable experience',
-                'knowledge.categoryHint': 'Sub-directory (optional)',
-                'knowledge.categoryHintPlaceholder': 'e.g. sales-analysis',
+                'knowledge.distillHint': 'Distill experience hint',
+                'knowledge.distillFromHeading': 'Distill from',
+                'knowledge.distillingOverlay': 'Distilling experience…',
                 'knowledge.distillStarted': 'Distilling experience...',
                 'knowledge.distilling': 'Distilling experience...',
                 'knowledge.distilled': 'Experience saved',
                 'knowledge.distillFailedRetry': 'Save failed, retry',
-                'knowledge.save': 'Save',
+                'knowledge.distillExperience': 'Distill',
+                'knowledge.userInstruction': 'User instruction (optional)',
+                'knowledge.userInstructionPlaceholder': 'what to focus on, what to skip…',
                 'app.cancel': 'Cancel',
                 'report.noModelSelected': 'No model selected',
             };
-            return labels[key] || key;
+            return labels[key] ?? key;
         },
     }),
 }));
@@ -107,50 +109,59 @@ describe('SaveExperienceButton', () => {
         cleanup();
     });
 
-    it('closes the dialog immediately and reports background distillation progress', async () => {
+    it('keeps the dialog open with an overlay during distill, then closes on success and asks to open the knowledge panel', async () => {
         const root = makeTable('root');
         const leaf = makeDerivedTable('leaf', 'root');
         let resolveDistill!: () => void;
         vi.mocked(distillExperience).mockReturnValue(new Promise(resolve => {
-            resolveDistill = () => resolve({ path: 'leaf.md', category: 'experiences' });
+            resolveDistill = () => resolve({ path: 'sales-by-region.md', category: 'experiences' });
         }));
         const onKnowledgeChanged = vi.fn();
+        const onOpenKnowledgePanel = vi.fn();
         window.addEventListener('knowledge-changed', onKnowledgeChanged);
+        window.addEventListener('open-knowledge-panel', onOpenKnowledgePanel);
 
         render(<SaveExperienceButton table={leaf} tables={[root, leaf]} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Save as Experience' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Distill' }));
 
+        // Dialog stays open while distilling — the overlay communicates progress.
+        await waitFor(() => {
+            expect(screen.getByText('Distilling experience…')).toBeInTheDocument();
+        });
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        // Both action buttons are disabled during distillation.
+        expect(screen.getByRole('button', { name: 'Distilling experience...' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+
+        resolveDistill();
+
+        // Once the distillation resolves, the dialog closes and the
+        // knowledge panel is asked to open with the new experience path.
         await waitFor(() => {
             expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
         });
         expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
             payload: expect.objectContaining({
-                type: 'info',
+                type: 'success',
                 component: 'knowledge',
-                value: 'Distilling experience...',
+                value: 'Experience saved',
             }),
         }));
-        expect(screen.getByRole('button', { name: 'Distilling experience...' })).toBeDisabled();
-
-        resolveDistill();
-
-        await waitFor(() => {
-            expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
-                payload: expect.objectContaining({
-                    type: 'success',
-                    component: 'knowledge',
-                    value: 'Experience saved',
-                }),
-            }));
-        });
-        expect(screen.getByRole('button', { name: 'Save as Experience' })).toBeEnabled();
         expect(onKnowledgeChanged).toHaveBeenCalled();
+        expect(onOpenKnowledgePanel).toHaveBeenCalled();
+        const openEvent = onOpenKnowledgePanel.mock.calls[0][0] as CustomEvent;
+        expect(openEvent.detail).toMatchObject({
+            category: 'experiences',
+            path: 'sales-by-region.md',
+        });
+
         window.removeEventListener('knowledge-changed', onKnowledgeChanged);
+        window.removeEventListener('open-knowledge-panel', onOpenKnowledgePanel);
     });
 
-    it('uses the unified API error handler for distillation failures', async () => {
+    it('keeps the dialog open with re-enabled buttons after a distillation failure', async () => {
         const root = makeTable('root');
         const leaf = makeDerivedTable('leaf', 'root');
         const error = new Error('Request timed out');
@@ -159,16 +170,71 @@ describe('SaveExperienceButton', () => {
         render(<SaveExperienceButton table={leaf} tables={[root, leaf]} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Save as Experience' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Distill' }));
 
         await waitFor(() => {
             expect(handleApiError).toHaveBeenCalledWith(error, 'knowledge');
         });
-        const retryButton = await screen.findByRole('button', { name: 'Save failed, retry' });
-        expect(retryButton).toBeEnabled();
 
-        fireEvent.click(retryButton);
-
+        // The dialog stays open so the user can retry without losing context.
         expect(screen.getByRole('dialog')).toBeInTheDocument();
+        // Both action buttons are re-enabled so the user can retry or cancel.
+        const distillBtn = screen.getByRole('button', { name: 'Distill' });
+        const cancelBtn = screen.getByRole('button', { name: 'Cancel' });
+        expect(distillBtn).toBeEnabled();
+        expect(cancelBtn).toBeEnabled();
+
+        // Cancel closes the dialog cleanly.
+        fireEvent.click(cancelBtn);
+        await waitFor(() => {
+            expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        });
+    });
+
+    it('renders hint, Distill from panel, and User instruction in the dialog', () => {
+        const root = makeTable('root');
+        const leaf = makeDerivedTable('leaf', 'root');
+        render(<SaveExperienceButton table={leaf} tables={[root, leaf]} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Save as Experience' }));
+
+        // Hint line
+        expect(screen.getByText('Distill experience hint')).toBeInTheDocument();
+        // Distill from heading
+        expect(screen.getByText('Distill from')).toBeInTheDocument();
+        // The user prompt is rendered as a flat event line.
+        expect(screen.getByText(/\[user→data-agent\/prompt\] Show sales trend/)).toBeInTheDocument();
+        // The create_table side-effect for the leaf step is rendered.
+        expect(screen.getByText(/\[create_table via=visualize\] leaf/)).toBeInTheDocument();
+        // User instruction field is rendered with optional label
+        expect(screen.getByLabelText(/User instruction \(optional\)/)).toBeInTheDocument();
+    });
+
+    it('renders one create_table line per derived table across a multi-step chain', () => {
+        const root = makeTable('root');
+        const t1 = makeDerivedTable('t1', 'root');
+        t1.derive!.trigger.interaction = [{
+            from: 'user', to: 'data-agent', role: 'instruction', content: 'load gasoline prices',
+        }];
+        const t2 = makeDerivedTable('t2', 't1');
+        t2.derive!.trigger.interaction = [{
+            from: 'user', to: 'data-agent', role: 'instruction', content: 'filter to 2024',
+        }];
+        const leaf = makeDerivedTable('leaf', 't2');
+        leaf.derive!.trigger.interaction = [{
+            from: 'user', to: 'data-agent', role: 'instruction', content: 'which fuel grade is highest',
+        }];
+
+        render(<SaveExperienceButton table={leaf} tables={[root, t1, t2, leaf]} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Save as Experience' }));
+
+        // One create_table line per derived table on the visible chain.
+        expect(screen.getByText(/\[create_table via=visualize\] t1/)).toBeInTheDocument();
+        expect(screen.getByText(/\[create_table via=visualize\] t2/)).toBeInTheDocument();
+        expect(screen.getByText(/\[create_table via=visualize\] leaf/)).toBeInTheDocument();
+        // Each user instruction renders as its own message event line.
+        expect(screen.getByText(/\[user→data-agent\/instruction\] load gasoline prices/)).toBeInTheDocument();
+        expect(screen.getByText(/\[user→data-agent\/instruction\] filter to 2024/)).toBeInTheDocument();
+        expect(screen.getByText(/\[user→data-agent\/instruction\] which fuel grade is highest/)).toBeInTheDocument();
     });
 });

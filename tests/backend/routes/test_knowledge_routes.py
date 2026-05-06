@@ -229,9 +229,9 @@ class TestDistillExperience:
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
              patch(
                  "data_formulator.agents.agent_experience_distill."
-                 "ExperienceDistillAgent.run_from_context",
+                 "ExperienceDistillAgent.run",
                  return_value=SAMPLE_MD,
-             ) as run_from_context:
+             ) as run:
             resp = client.post("/api/knowledge/distill-experience", json={
                 "experience_context": EXPERIENCE_CONTEXT,
                 "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
@@ -242,14 +242,14 @@ class TestDistillExperience:
         assert data["data"]["category"] == "experiences"
         assert (tmp_path / "knowledge" / "experiences" / data["data"]["path"]).exists()
         assert not (tmp_path / "agent-logs").exists()
-        run_from_context.assert_called_once()
+        run.assert_called_once()
 
     def test_distill_experience_llm_timeout_returns_structured_error(self, client):
         with patch("data_formulator.routes.agents.get_client", return_value=object()), \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
              patch(
                  "data_formulator.agents.agent_experience_distill."
-                 "ExperienceDistillAgent.run_from_context",
+                 "ExperienceDistillAgent.run",
                  side_effect=TimeoutError("request timed out"),
              ):
             resp = client.post("/api/knowledge/distill-experience", json={

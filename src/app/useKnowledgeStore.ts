@@ -13,7 +13,6 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { dfActions } from './dfSlice';
-import { handleApiError } from './errorHandler';
 import type { AppDispatch } from './store';
 import {
     listKnowledge,
@@ -21,9 +20,7 @@ import {
     writeKnowledge,
     deleteKnowledge,
     searchKnowledge,
-    distillExperience,
     fetchKnowledgeLimits,
-    type ExperienceContext,
     type KnowledgeCategory,
     type KnowledgeItem,
     type KnowledgeLimits,
@@ -185,27 +182,6 @@ export function useKnowledgeStore() {
         setSearchResults([]);
     }, []);
 
-    const distill = useCallback(async (
-        experienceContext: ExperienceContext,
-        model: Record<string, any>,
-        categoryHint?: string,
-    ): Promise<boolean> => {
-        try {
-            await distillExperience(experienceContext, model, categoryHint);
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'success',
-                component: 'knowledge',
-                value: t('knowledge.distilled'),
-            }));
-            await fetchList('experiences');
-            return true;
-        } catch (error) {
-            handleApiError(error, 'knowledge');
-            return false;
-        }
-    }, [dispatch, t, fetchList]);
-
     return {
         rules,
         experiences,
@@ -220,6 +196,5 @@ export function useKnowledgeStore() {
         remove,
         search,
         clearSearch,
-        distill,
     };
 }

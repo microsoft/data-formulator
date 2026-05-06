@@ -41,26 +41,6 @@ def _require_json_field(data: dict, field: str) -> str:
     return value.strip()
 
 
-def _require_context_string(context: dict, field: str) -> str:
-    value = context.get(field, "")
-    if not value or not isinstance(value, str) or not value.strip():
-        raise AppError(
-            ErrorCode.INVALID_REQUEST,
-            f"'experience_context.{field}' is required",
-        )
-    return value.strip()
-
-
-def _require_context_list(context: dict, field: str) -> list:
-    value = context.get(field)
-    if not isinstance(value, list):
-        raise AppError(
-            ErrorCode.INVALID_REQUEST,
-            f"'experience_context.{field}' must be a list",
-        )
-    return value
-
-
 # ── limits ─────────────────────────────────────────────────────────────────
 
 
@@ -182,25 +162,28 @@ def distill_experience():
     """Distill user-visible analysis context into a reusable experience.
 
     Required body fields: ``experience_context`` and ``model``.
-    Optional: ``category_hint`` (sub-directory under experiences/).
+    Optional: ``user_instruction`` (natural-language focus hint for the LLM),
+    ``category_hint`` (sub-directory under experiences/).
     """
     data = request.get_json(silent=True) or {}
     experience_context = data.get("experience_context")
     if not isinstance(experience_context, dict):
         raise AppError(ErrorCode.INVALID_REQUEST, "'experience_context' is required")
 
-    _require_context_string(experience_context, "user_question")
-    _require_context_list(experience_context, "dialog")
-    _require_context_list(experience_context, "interaction")
-    if not isinstance(experience_context.get("result_summary"), dict):
+    # Timeline payload (21.3): a single chronological list of events.
+    events = experience_context.get("events")
+    if not isinstance(events, list) or not events:
         raise AppError(
             ErrorCode.INVALID_REQUEST,
-            "'experience_context.result_summary' is required",
+            "'experience_context.events' is required and must be a non-empty list",
         )
 
     model_config = data.get("model")
     if not model_config or not isinstance(model_config, dict):
         raise AppError(ErrorCode.INVALID_REQUEST, "'model' configuration is required")
+
+    user_instruction_raw = data.get("user_instruction", "")
+    user_instruction = user_instruction_raw.strip() if isinstance(user_instruction_raw, str) else ""
 
     category_hint_raw = data.get("category_hint", "")
     category_hint = category_hint_raw.strip() if isinstance(category_hint_raw, str) else ""
@@ -225,7 +208,7 @@ def distill_experience():
         timeout_seconds=timeout_seconds,
     )
     try:
-        md_content = agent.run_from_context(experience_context)
+        md_content = agent.run(experience_context, user_instruction=user_instruction)
     except Exception as exc:
         logger.warning("Experience distillation LLM call failed: %s", type(exc).__name__)
         from data_formulator.error_handler import classify_and_wrap_llm_error

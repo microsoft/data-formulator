@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 VALID_CATEGORIES = frozenset({"rules", "experiences"})
 
 _MAX_DEPTH = {
-    "rules": 1,     # flat: only "file.md"
-    "experiences": 2,   # one sub-dir: "topic/file.md"
+    "rules": 1,
+    "experiences": 1,   # flat: only "file.md" (no sub-directories)
 }
 
 KNOWLEDGE_LIMITS: dict[str, int] = {
@@ -248,6 +248,35 @@ class KnowledgeStore:
             "rules": ConfinedDir(self._root.root / "rules", mkdir=True),
             "experiences": ConfinedDir(self._root.root / "experiences", mkdir=True),
         }
+        self._migrate_flat()
+
+    # -- migration ---------------------------------------------------------
+
+    def _migrate_flat(self) -> None:
+        """Move any experiences/subdir/file.md → experiences/file.md (one-time migration)."""
+        exp_root = self._jails["experiences"].root
+        for md_file in list(exp_root.rglob("*.md")):
+            rel = md_file.relative_to(exp_root)
+            if len(rel.parts) <= 1:
+                continue
+            # File is nested; move it to the flat root
+            dest = exp_root / rel.name
+            if dest.exists():
+                # Avoid collision: append a suffix
+                stem = rel.stem
+                suffix_n = 1
+                while dest.exists():
+                    dest = exp_root / f"{stem}-{suffix_n}.md"
+                    suffix_n += 1
+            try:
+                md_file.rename(dest)
+                # Remove empty parent dirs
+                parent = md_file.parent
+                if parent != exp_root and not any(parent.iterdir()):
+                    parent.rmdir()
+                logger.info("Migrated knowledge experience %s → %s", rel, dest.name)
+            except Exception:
+                logger.warning("Failed to migrate experience file %s", md_file, exc_info=True)
 
     # -- path validation ---------------------------------------------------
 

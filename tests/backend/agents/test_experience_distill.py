@@ -4,7 +4,6 @@
 """Tests for ExperienceDistillAgent and the /api/knowledge/distill-experience endpoint.
 
 Covers:
-- _extract_log_summary correctly extracts key info
 - _extract_context_summary correctly extracts experience context
 - Output Markdown includes valid YAML front matter
 - front matter contains source: distill and source metadata
@@ -25,134 +24,140 @@ from data_formulator.knowledge.store import parse_front_matter
 pytestmark = [pytest.mark.backend]
 
 
-SAMPLE_LOG_LINES = [
-    {
-        "step_type": "session_start",
-        "ts": "2026-04-26T10:00:00+00:00",
-        "user_question": "Show sales by region",
-        "input_tables": ["sales", "regions"],
-        "model": "gpt-4o",
-    },
-    {
-        "step_type": "context_built",
-        "ts": "2026-04-26T10:00:01+00:00",
-        "total_tables": 2,
-        "primary_tables": ["sales"],
-    },
-    {
-        "step_type": "llm_response",
-        "ts": "2026-04-26T10:00:03+00:00",
-        "finish_reason": "tool_calls",
-        "tool_calls": [{"name": "explore"}],
-    },
-    {
-        "step_type": "tool_execution",
-        "ts": "2026-04-26T10:00:04+00:00",
-        "tool": "explore",
-        "output_summary": "Regions: North, South, East, West",
-    },
-    {
-        "step_type": "action_execution",
-        "ts": "2026-04-26T10:00:05+00:00",
-        "action": "visualize",
-        "status": "ok",
-        "output_rows": 25,
-        "chart_type": "bar",
-    },
-    {
-        "step_type": "session_end",
-        "ts": "2026-04-26T10:00:10+00:00",
-        "status": "success",
-        "total_iterations": 2,
-        "total_llm_calls": 3,
-        "total_latency_ms": 10000,
-    },
-]
-
 SAMPLE_EXPERIENCE_CONTEXT = {
     "context_id": "table-123",
-    "source_table_id": "source-table",
-    "user_question": "Show sales by region",
-    "dialog": [
-        {"role": "user", "content": "Show sales by region"},
-        {"role": "assistant", "content": "[tool: explore]\nChecked region values"},
-    ],
-    "interaction": [
-        {"from": "user", "role": "prompt", "content": "Show sales by region"},
-        {"from": "data-agent", "role": "clarify", "content": "Which metric?"},
-        {"from": "user", "role": "prompt", "content": "Use revenue"},
-    ],
-    "result_summary": {
-        "display_instruction": "Revenue by region",
-        "source_tables": ["sales", "regions"],
-        "output_fields": ["region", "revenue"],
-        "output_rows": 4,
-        "chart_type": "bar",
-        "code": "result_df = sales.groupby('region').revenue.sum().reset_index()",
-    },
-    "execution_attempts": [
+    "events": [
         {
-            "kind": "visualize",
-            "attempt": 0,
-            "status": "error",
-            "summary": "Initial chart",
-            "failed_code_summary": "1 non-empty lines; operations=count",
-            "error": "missing column",
+            "type": "message",
+            "from": "user",
+            "to": "data-agent",
+            "role": "prompt",
+            "content": "Show sales by region",
         },
         {
-            "kind": "repair",
-            "attempt": 1,
-            "status": "ok",
-            "summary": "Use revenue column",
-            "repair_code_summary": "1 non-empty lines; operations=groupby, sum",
+            "type": "message",
+            "from": "data-agent",
+            "to": "user",
+            "role": "clarify",
+            "content": "Which metric?",
+        },
+        {
+            "type": "message",
+            "from": "user",
+            "to": "data-agent",
+            "role": "instruction",
+            "content": "Use revenue",
+        },
+        {
+            "type": "message",
+            "from": "data-agent",
+            "to": "data-agent",
+            "role": "tool_call",
+            "content": "explore",
+        },
+        {
+            "type": "create_table",
+            "table_id": "t1",
+            "source_tables": ["sales", "regions"],
+            "via": "repair",
+            "columns": ["region", "revenue"],
+            "row_count": 4,
+            "sample_rows": [
+                {"region": "North", "revenue": 100},
+                {"region": "South", "revenue": 90},
+            ],
+            "code": "result_df = sales.groupby('region').revenue.sum().reset_index()",
+        },
+        {
+            "type": "create_chart",
+            "related_table_id": "t1",
+            "mark_or_type": "bar",
+            "encoding_summary": "x=region(nominal), y=revenue(quantitative)",
         },
     ],
 }
 
 
-# ── _extract_log_summary ──────────────────────────────────────────────────
-
-
-class TestExtractLogSummary:
-    def test_extracts_key_info(self):
-        summary = ExperienceDistillAgent._extract_log_summary(SAMPLE_LOG_LINES)
-        assert "sales by region" in summary
-        assert "explore" in summary
-        assert "bar" in summary
-        assert "success" in summary
-
-    def test_empty_log_returns_empty_marker(self):
-        summary = ExperienceDistillAgent._extract_log_summary([])
-        assert "empty" in summary.lower()
-
-    def test_handles_unknown_step_types(self):
-        lines = [{"step_type": "unknown_type", "data": "value"}]
-        summary = ExperienceDistillAgent._extract_log_summary(lines)
-        assert isinstance(summary, str)
+# ── _extract_context_summary ──────────────────────────────────────────────
 
 
 class TestExtractContextSummary:
-    def test_extracts_context_signals(self):
+    def test_renders_each_event_type(self):
         summary = ExperienceDistillAgent._extract_context_summary(SAMPLE_EXPERIENCE_CONTEXT)
-        assert "sales by region" in summary
+        # message events
+        assert "[user→data-agent/prompt]" in summary
+        assert "Show sales by region" in summary
+        assert "[data-agent→user/clarify]" in summary
         assert "Which metric" in summary
-        assert "missing column" in summary
-        assert "revenue" in summary
-        assert "Dialog structure" in summary
+        assert "[user→data-agent/instruction]" in summary
+        assert "Use revenue" in summary
+        # tool_call self-loop
+        assert "[data-agent→data-agent/tool_call]" in summary
         assert "explore" in summary
-        assert "Agent reasoning" in summary
-        assert "Checked region values" in summary
-        assert "Final code (truncated)" in summary
-        assert "groupby" in summary
-        assert "Failed code summary" in summary
-        assert "Repair code summary" in summary
-        assert "Source tables" in summary
-        assert "sales" in summary and "regions" in summary
+        # create_table
+        assert "[create_table via=repair] t1" in summary
+        assert "sources: sales, regions" in summary
+        assert "columns: ['region', 'revenue']" in summary
+        assert "rows: 4" in summary
+        assert "sample (first 2 rows):" in summary
+        assert "groupby" in summary  # from code
+        # repair_reason and code_shape are intentionally NOT emitted
+        # (the surrounding messages already capture failure context).
+        assert "code shape" not in summary
+        assert "repair reason" not in summary
+        # create_chart
+        assert "[create_chart] bar on t1" in summary
+        assert "encoding: x=region(nominal)" in summary
 
-    def test_empty_context_returns_marker(self):
+    def test_empty_events_returns_marker(self):
         summary = ExperienceDistillAgent._extract_context_summary({})
-        assert "empty" not in summary.lower()
-        assert "User question" in summary
+        assert summary == "(empty context)"
+
+    def test_user_content_is_not_displaycontent(self):
+        # Frontend now sends raw .content, not displayContent. The renderer
+        # just prints whatever 'content' is on the event.
+        ctx = {
+            "events": [{
+                "type": "message",
+                "from": "user",
+                "to": "data-agent",
+                "role": "instruction",
+                "content": "raw text",
+            }],
+        }
+        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        assert "raw text" in summary
+
+    def test_skips_non_dict_events(self):
+        ctx = {"events": ["not-a-dict", None, 42, {"type": "message", "from": "user", "to": "data-agent", "role": "prompt", "content": "ok"}]}
+        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        assert "[user→data-agent/prompt]" in summary
+        # No crashes; the bogus entries are silently dropped.
+
+    def test_create_table_visualize_no_repair_reason(self):
+        ctx = {"events": [{
+            "type": "create_table",
+            "table_id": "t1",
+            "source_tables": ["src"],
+            "via": "visualize",
+            "columns": ["a"],
+            "row_count": 1,
+            "sample_rows": [{"a": 1}],
+            "code": "x = 1",
+        }]}
+        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        assert "via=visualize" in summary
+        assert "repair reason" not in summary
+
+    def test_create_chart_without_encoding(self):
+        ctx = {"events": [{
+            "type": "create_chart",
+            "related_table_id": "t1",
+            "mark_or_type": "line",
+        }]}
+        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        assert "[create_chart] line on t1" in summary
+        assert "encoding:" not in summary
 
 
 # ── run (mocked LLM) ─────────────────────────────────────────────────────
@@ -165,7 +170,7 @@ tags: [sales, regional, bar-chart]
 created: 2026-04-26
 updated: 2026-04-26
 source: distill
-source_session: sess-test
+source_context: table-123
 ---
 
 ## When to Use
@@ -184,10 +189,7 @@ When analyzing sales data broken down by geographical regions.
 - Bar charts are effective for comparing discrete regional categories.
 """
 
-MOCK_CONTEXT_RESPONSE = MOCK_LLM_RESPONSE.replace(
-    "source_session: sess-test",
-    "source_context: table-123",
-)
+MOCK_CONTEXT_RESPONSE = MOCK_LLM_RESPONSE
 
 
 class TestRunWithMockedLLM:
@@ -202,17 +204,13 @@ class TestRunWithMockedLLM:
         client = self._mock_client()
         agent = ExperienceDistillAgent(client=client)
 
-        mock_resp = MagicMock()
-        mock_resp.choices = [MagicMock()]
-        mock_resp.choices[0].message.content = MOCK_LLM_RESPONSE
-
-        with patch.object(agent, "_call_llm", return_value=MOCK_LLM_RESPONSE):
-            result = agent.run(SAMPLE_LOG_LINES, "Show sales by region", session_id="sess-test")
+        with patch.object(agent, "_call_llm", return_value=MOCK_CONTEXT_RESPONSE):
+            result = agent.run(SAMPLE_EXPERIENCE_CONTEXT)
 
         assert result.startswith("---")
         meta, body = parse_front_matter(result)
         assert meta["source"] == "distill"
-        assert meta["source_session"] == "sess-test"
+        assert meta["source_context"] == "table-123"
         assert "tags" in meta
 
     def test_fallback_front_matter_added(self):
@@ -221,32 +219,9 @@ class TestRunWithMockedLLM:
 
         no_fm_response = "# Sales Analysis\n\nJust some content."
         with patch.object(agent, "_call_llm", return_value=no_fm_response):
-            result = agent.run(SAMPLE_LOG_LINES, "test", session_id="sess-x")
+            result = agent.run(SAMPLE_EXPERIENCE_CONTEXT)
 
         assert result.startswith("---")
-        meta, _ = parse_front_matter(result)
-        assert meta["source"] == "distill"
-        assert meta["source_session"] == "sess-x"
-
-    def test_run_from_context_produces_valid_markdown(self):
-        client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client)
-
-        with patch.object(agent, "_call_llm", return_value=MOCK_CONTEXT_RESPONSE):
-            result = agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
-
-        assert result.startswith("---")
-        meta, _ = parse_front_matter(result)
-        assert meta["source"] == "distill"
-        assert meta["source_context"] == "table-123"
-
-    def test_run_from_context_fallback_front_matter_added(self):
-        client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client)
-
-        with patch.object(agent, "_call_llm", return_value="# Experience\n\nContent"):
-            result = agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
-
         meta, _ = parse_front_matter(result)
         assert meta["source"] == "distill"
         assert meta["source_context"] == "table-123"
@@ -274,11 +249,74 @@ class TestRunWithMockedLLM:
             return short_response
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            result = agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+            result = agent.run(SAMPLE_EXPERIENCE_CONTEXT)
 
         assert call_count == 2
         _, body = parse_front_matter(result)
         assert len(body.strip()) <= 2000
+
+    def test_retry_asks_for_slack_under_limit(self):
+        """The retry prompt asks the model for less than the hard limit."""
+        client = self._mock_client()
+        agent = ExperienceDistillAgent(client=client)
+
+        long_body = "x" * 3000
+        long_response = (
+            "---\ntitle: L\ntags: []\ncreated: 2026-01-01\n"
+            "updated: 2026-01-01\nsource: distill\nsource_context: t1\n---\n\n"
+            + long_body
+        )
+
+        captured: list[list[dict]] = []
+
+        def fake_call_llm(messages):
+            captured.append(messages)
+            # First call returns the long body; second call returns short.
+            return long_response if len(captured) == 1 else MOCK_CONTEXT_RESPONSE
+
+        with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
+            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+
+        assert len(captured) == 2
+        retry_prompt = captured[1][-1]["content"]
+        # Must mention the slacked target (limit minus margin), not the raw limit.
+        expected_target = 2000 - agent.RETRY_MARGIN
+        assert f"within {expected_target} characters" in retry_prompt
+
+    def test_hard_trims_when_retry_still_over_limit(self):
+        """If the retry still overshoots, body is hard-trimmed to fit the limit."""
+        client = self._mock_client()
+        agent = ExperienceDistillAgent(client=client)
+
+        first_body = "x" * 3000
+        retry_body = "y" * 2014  # mimics the real-world failure: 14 over
+        front_matter = (
+            "---\ntitle: T\ntags: []\ncreated: 2026-01-01\n"
+            "updated: 2026-01-01\nsource: distill\nsource_context: t1\n---\n\n"
+        )
+
+        responses = [front_matter + first_body, front_matter + retry_body]
+        call_count = 0
+
+        def fake_call_llm(messages):
+            nonlocal call_count
+            resp = responses[call_count]
+            call_count += 1
+            return resp
+
+        with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
+            result = agent.run(SAMPLE_EXPERIENCE_CONTEXT)
+
+        # Both LLM calls happened.
+        assert call_count == 2
+        # Final body fits the hard limit (no save failure).
+        _, body = parse_front_matter(result)
+        assert len(body.strip()) <= 2000
+        # Truncation marker is present so the user can see it was trimmed.
+        assert "truncated" in body
+        # Front matter preserved.
+        meta, _ = parse_front_matter(result)
+        assert meta["source_context"] == "t1"
 
     def test_no_retry_when_body_within_limit(self):
         """If first LLM call is within limit, no retry happens."""
@@ -293,7 +331,7 @@ class TestRunWithMockedLLM:
             return MOCK_CONTEXT_RESPONSE
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
 
         assert call_count == 1
 
@@ -309,7 +347,7 @@ class TestRunWithMockedLLM:
             return MOCK_CONTEXT_RESPONSE
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
 
         system_content = captured_messages[0]["content"]
         assert "[LANGUAGE INSTRUCTION]" in system_content
@@ -326,7 +364,7 @@ class TestRunWithMockedLLM:
             return MOCK_CONTEXT_RESPONSE
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
 
         system_content = captured_messages[0]["content"]
         assert "Simplified Chinese" in system_content
@@ -343,27 +381,11 @@ class TestRunWithMockedLLM:
             return MOCK_CONTEXT_RESPONSE
 
         with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run_from_context(SAMPLE_EXPERIENCE_CONTEXT)
+            agent.run(SAMPLE_EXPERIENCE_CONTEXT)
 
         system_content = captured_messages[0]["content"]
         assert "in English" in system_content
         assert "[LANGUAGE INSTRUCTION]" not in system_content
-
-    def test_language_instruction_injected_into_log_prompt(self):
-        client = self._mock_client()
-        agent = ExperienceDistillAgent(client=client, language_code="zh")
-
-        captured_messages = []
-
-        def fake_call_llm(messages):
-            captured_messages.extend(messages)
-            return MOCK_LLM_RESPONSE
-
-        with patch.object(agent, "_call_llm", side_effect=fake_call_llm):
-            agent.run(SAMPLE_LOG_LINES, "Show sales by region", session_id="sess-test")
-
-        system_content = captured_messages[0]["content"]
-        assert "Simplified Chinese" in system_content
 
 
 # ── _experience_filename ──────────────────────────────────────────────────
@@ -420,9 +442,19 @@ class TestDistillEndpoint:
         data = resp.get_json()
         assert data["status"] == "error"
 
-    def test_missing_context_field_returns_error(self, client):
-        bad_context = {**SAMPLE_EXPERIENCE_CONTEXT}
-        bad_context.pop("result_summary")
+    def test_missing_events_returns_error(self, client):
+        # Empty events list should be rejected by the route validator.
+        bad_context = {"context_id": "x", "events": []}
+        resp = client.post("/api/knowledge/distill-experience",
+                           json={
+                               "experience_context": bad_context,
+                               "model": {"endpoint": "openai", "model": "gpt-4o", "api_key": "test"},
+                           })
+        data = resp.get_json()
+        assert data["status"] == "error"
+
+    def test_missing_events_field_returns_error(self, client):
+        bad_context = {"context_id": "x"}  # no 'events' key
         resp = client.post("/api/knowledge/distill-experience",
                            json={
                                "experience_context": bad_context,
@@ -434,7 +466,7 @@ class TestDistillEndpoint:
     def test_successful_distill(self, client, tmp_path):
         with patch("data_formulator.routes.agents.get_client") as mock_gc, \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
-             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run_from_context",
+             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run",
                    return_value=MOCK_CONTEXT_RESPONSE):
 
             mock_gc.return_value = MagicMock()
@@ -457,7 +489,7 @@ class TestDistillEndpoint:
     def test_category_hint_creates_subdir(self, client, tmp_path):
         with patch("data_formulator.routes.agents.get_client") as mock_gc, \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
-             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run_from_context",
+             patch("data_formulator.agents.agent_experience_distill.ExperienceDistillAgent.run",
                    return_value=MOCK_CONTEXT_RESPONSE):
 
             mock_gc.return_value = MagicMock()

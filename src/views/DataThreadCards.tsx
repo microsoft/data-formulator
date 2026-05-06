@@ -287,6 +287,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                                 <SaveExperienceButton
                                     table={table!}
                                     tables={tables}
+                                    variant="icon"
                                 />
                             </Box>
                         )}
