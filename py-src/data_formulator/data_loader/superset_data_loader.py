@@ -727,9 +727,10 @@ class SupersetLoader(ExternalDataLoader):
     def _build_column_entry(cls, c: dict[str, Any]) -> dict[str, Any]:
         """Build a standardised column metadata dict from a Superset column record.
 
-        Extracts ``verbose_name``, ``description``, and ``expression``
-        when available.  ``description`` falls back to ``verbose_name``
-        so consumers that only read ``description`` still get useful text.
+        Merges ``verbose_name``, ``description``, and ``expression`` into a
+        single ``description`` field so that catalog search can match on any
+        of these dimensions.  Individual fields are also preserved for
+        consumers that need them separately.
         """
         entry: dict[str, Any] = {
             "name": c.get("column_name", ""),
@@ -738,12 +739,21 @@ class SupersetLoader(ExternalDataLoader):
         }
         verbose = (c.get("verbose_name") or "").strip()
         desc = (c.get("description") or "").strip()
-        entry["description"] = verbose or desc or None
+        expr = (c.get("expression") or "").strip()
+
         if verbose:
             entry["verbose_name"] = verbose
-        expr = (c.get("expression") or "").strip()
         if expr:
             entry["expression"] = expr
+
+        parts: list[str] = []
+        if verbose:
+            parts.append(verbose)
+        if desc and desc != verbose:
+            parts.append(desc)
+        if expr:
+            parts.append(f"expr: {expr}")
+        entry["description"] = " | ".join(parts) if parts else None
         return entry
 
     @staticmethod
