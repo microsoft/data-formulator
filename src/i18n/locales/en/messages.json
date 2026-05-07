@@ -56,8 +56,7 @@
     },
     "catalog": {
       "syncComplete": "Catalog sync complete",
-      "syncPartial": "Catalog sync partially completed — {{synced}}/{{total}} tables synced, {{failed}} failed",
-      "annotationSaved": "Annotation saved"
+      "syncPartial": "Catalog sync partially completed — {{synced}}/{{total}} tables synced, {{failed}} failed"
     },
     "agent": {
       "clarifyExhausted": "I've been exploring extensively but haven't reached a conclusion yet.\n\nCompleted steps so far:\n{{steps}}\n\nHow would you like to proceed?",

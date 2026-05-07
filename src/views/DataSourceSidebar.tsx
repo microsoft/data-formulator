@@ -18,7 +18,6 @@ import {
     Tooltip,
     Collapse,
     CircularProgress,
-    Divider,
     Popover,
     Button,
     Dialog,
@@ -40,8 +39,11 @@ import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
 
 import StorageIcon from '@mui/icons-material/Storage';
 import AddIcon from '@mui/icons-material/Add';
+import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -50,26 +52,19 @@ import ExploreOutlinedIcon from '@mui/icons-material/ExploreOutlined';
 import ContentPasteOutlinedIcon from '@mui/icons-material/ContentPasteOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
-
-import HistoryIcon from '@mui/icons-material/History';
-
-import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 
 import { KnowledgePanel } from './KnowledgePanel';
 
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
-import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
+import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
-import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
-import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
+import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
+import { loadTable } from '../app/tableThunks';
 import { listWorkspaces, loadWorkspace, deleteWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import { borderColor } from '../app/tokens';
@@ -128,7 +123,7 @@ export const DataSourceSidebar: React.FC<{
 
     const toggle = () => dispatch(dfActions.setDataSourceSidebarOpen(!isOpen));
 
-    const [initialTab, setInitialTab] = useState<'sources' | 'sessions' | 'knowledge'>('sources');
+    const [initialTab, setInitialTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>('sources');
 
     // External callers (e.g. SaveExperienceButton on success) can ask the
     // sidebar to open and switch to a specific tab.
@@ -165,11 +160,25 @@ export const DataSourceSidebar: React.FC<{
 
     const totalWidth = isOpen ? RAIL_WIDTH + panelWidth : RAIL_WIDTH;
 
+    // Keep the panel mounted during the close animation so its content
+    // doesn't pop out before the wrapper width has finished collapsing.
+    // We mount immediately on open and only unmount after the same
+    // duration as the wrapper transition (200ms).
+    const [showPanel, setShowPanel] = useState<boolean>(isOpen);
+    useEffect(() => {
+        if (isOpen) {
+            setShowPanel(true);
+            return;
+        }
+        const timeoutId = setTimeout(() => setShowPanel(false), 200);
+        return () => clearTimeout(timeoutId);
+    }, [isOpen]);
+
     return (
         <Box sx={{
             width: totalWidth,
             minWidth: totalWidth,
-            transition: isOpen ? undefined : 'width 0.2s ease, min-width 0.2s ease',
+            transition: 'width 0.2s ease, min-width 0.2s ease',
             display: 'flex',
             flexDirection: 'row',
             borderRight: `1px solid ${borderColor.view}`,
@@ -187,38 +196,50 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
-                <Tooltip title={t('sidebar.openDataSources', { defaultValue: 'Data Sources' })} placement="right">
+                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Add data' })} placement="right">
+                    <IconButton size="small" onClick={() => { setInitialTab('upload'); if (!isOpen) toggle(); else if (initialTab !== 'upload') setInitialTab('upload'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'upload' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'upload' ? 'action.selected' : 'transparent',
+                        borderRadius: 1,
+                    }}>
+                        <FileUploadOutlinedIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('sidebar.openDataConnectors', { defaultValue: 'Data connectors' })} placement="right">
                     <IconButton size="small" onClick={() => { setInitialTab('sources'); if (!isOpen) toggle(); else if (initialTab !== 'sources') setInitialTab('sources'); else toggle(); }} sx={{
                         color: isOpen && initialTab === 'sources' ? 'primary.main' : 'text.secondary',
                         bgcolor: isOpen && initialTab === 'sources' ? 'action.selected' : 'transparent',
                         borderRadius: 1,
                     }}>
-                        <DatabaseIcon fontSize="small" />
+                        <RelationalDBIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                <Tooltip title={t('sidebar.sessions', { defaultValue: 'Sessions' })} placement="right">
+                <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
                     <IconButton size="small" onClick={() => { setInitialTab('sessions'); if (!isOpen) toggle(); else if (initialTab !== 'sessions') setInitialTab('sessions'); else toggle(); }} sx={{
                         color: isOpen && initialTab === 'sessions' ? 'primary.main' : 'text.secondary',
                         bgcolor: isOpen && initialTab === 'sessions' ? 'action.selected' : 'transparent',
                         borderRadius: 1,
                     }}>
-                        <HistoryIcon fontSize="small" />
+                        <FolderOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                <Tooltip title={t('sidebar.knowledge', { defaultValue: 'Knowledge' })} placement="right">
+                <Tooltip title={t('sidebar.knowledge', { defaultValue: 'Agent knowledge' })} placement="right">
                     <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
                         color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
                         bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
                         borderRadius: 1,
                     }}>
-                        <MenuBookOutlinedIcon fontSize="small" />
+                        <LightbulbOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
             </Box>
 
-            {/* Panel — rendered when open */}
-            {isOpen && (
+            {/* Panel — stays mounted during the close animation so its
+                content doesn't disappear before the wrapper has finished
+                collapsing. See `showPanel` above. */}
+            {showPanel && (
                 <DataSourceSidebarPanel
+                    panelWidth={panelWidth}
                     onOpenUploadDialog={onOpenUploadDialog}
                     onCollapse={toggle}
                     initialTab={initialTab}
@@ -227,7 +248,7 @@ export const DataSourceSidebar: React.FC<{
             )}
 
             {/* Resize handle — draggable right edge */}
-            {isOpen && (
+            {showPanel && (
                 <ResizeHandle
                     direction="horizontal"
                     onResize={handleResize}
@@ -241,11 +262,12 @@ export const DataSourceSidebar: React.FC<{
 // ─── Inner panel — only mounted when open, subscribes to heavier state ───────
 
 const DataSourceSidebarPanel: React.FC<{
+    panelWidth: number;
     onOpenUploadDialog?: (tab?: string) => void;
     onCollapse: () => void;
-    initialTab?: 'sources' | 'sessions' | 'knowledge';
+    initialTab?: 'upload' | 'sources' | 'sessions' | 'knowledge';
     connectorRefreshKey?: number;
-}> = ({ onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0 }) => {
+}> = ({ panelWidth, onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0 }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -299,7 +321,6 @@ const DataSourceSidebarPanel: React.FC<{
     // Delete connector confirmation
     const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
     const [deleting, setDeleting] = useState(false);
-    const [disconnectingConnectorId, setDisconnectingConnectorId] = useState<string | null>(null);
 
     // Add-connector menu anchor
     const [addConnectorAnchor, setAddConnectorAnchor] = useState<HTMLElement | null>(null);
@@ -310,21 +331,8 @@ const DataSourceSidebarPanel: React.FC<{
     const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
     const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
 
-    // Annotation editing
-    const [annotationEdit, setAnnotationEdit] = useState<{
-        connectorId: string;
-        tableKey: string;
-        tableName: string;
-        sourceDescription: string;
-        displayDescription: string;
-        description: string;
-        notes: string;
-        version: number | null;
-    } | null>(null);
-    const [annotationSaving, setAnnotationSaving] = useState(false);
-
     // Sidebar tab: 'sources' or 'sessions' or 'knowledge'
-    const [activeTab, setActiveTab] = useState<'sources' | 'sessions' | 'knowledge'>(initialTab);
+    const [activeTab, setActiveTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>(initialTab);
 
     // Sync tab when rail icon switches it
     useEffect(() => {
@@ -481,7 +489,17 @@ const DataSourceSidebarPanel: React.FC<{
                     cache => cache.tree.length === 0,
                 ),
             }));
-            setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
+            // Auto-expand top-level namespaces when the count is modest, so
+            // small/scoped catalogs (Sakila, single-DB Postgres) reveal
+            // their tables on first render. Tree data is already in memory,
+            // so this is purely a UI default.
+            const topNamespaceIds = tree
+                .filter(n => n.node_type === 'namespace' || n.node_type === 'table_group')
+                .map(n => n.path.join('/'));
+            const autoExpand = topNamespaceIds.length > 0 && topNamespaceIds.length <= 10
+                ? topNamespaceIds
+                : [];
+            setTreeExpanded(prev => ({ ...prev, [connectorId]: autoExpand }));
         } catch (e: any) {
             setCatalogByConnector(prev => ({
                 ...prev,
@@ -519,7 +537,14 @@ const DataSourceSidebarPanel: React.FC<{
                     cache => cache.tree.length === 0,
                 ),
             }));
-            setTreeExpanded(prev => ({ ...prev, [connectorId]: [] }));
+            // Same auto-expand rule as the initial fetch.
+            const topNamespaceIds = tree
+                .filter(n => n.node_type === 'namespace' || n.node_type === 'table_group')
+                .map(n => n.path.join('/'));
+            const autoExpand = topNamespaceIds.length > 0 && topNamespaceIds.length <= 10
+                ? topNamespaceIds
+                : [];
+            setTreeExpanded(prev => ({ ...prev, [connectorId]: autoExpand }));
             if (data.message_code === 'catalog.syncPartial') {
                 dispatch(dfActions.addMessages({
                     timestamp: Date.now(), type: 'warning',
@@ -693,6 +718,27 @@ const DataSourceSidebarPanel: React.FC<{
         });
     }, [fetchCatalogTree]);
 
+    // Auto-expand the first connected connector once per fetch so the
+    // sidebar opens with content visible (instead of an all-collapsed list).
+    // Tracked per identity/refresh so a user collapse stays collapsed.
+    const autoExpandedRef = useRef<string>('');
+    useEffect(() => {
+        const key = `${identityKey}:${connectorRefreshKey}`;
+        if (autoExpandedRef.current === key) return;
+        const first = sortedConnectors.find(c => c.connected);
+        if (!first) return;
+        autoExpandedRef.current = key;
+        setExpandedSources(prev => {
+            if (prev.has(first.id)) return prev;
+            const next = new Set(prev);
+            next.add(first.id);
+            return next;
+        });
+        if (!catalogCacheRef.current[first.id]) {
+            fetchCatalogTree(first.id);
+        }
+    }, [sortedConnectors, identityKey, connectorRefreshKey, fetchCatalogTree]);
+
     // ── Preview a table on click ──────────────────────────────────────────
 
     const buildSourceTableRef = useCallback((node: CatalogTreeNode): SourceTableRef => {
@@ -713,7 +759,7 @@ const DataSourceSidebarPanel: React.FC<{
             columns: [],
             sampleRows: [],
             rowCount: node.metadata?.row_count ?? null,
-            tableDescription: nodeMeta.display_description || nodeMeta.source_description || nodeMeta.description,
+            tableDescription: nodeMeta.source_description || nodeMeta.description,
             loading: true,
         });
         setPreviewAnchor(anchorEl);
@@ -772,7 +818,7 @@ const DataSourceSidebarPanel: React.FC<{
             rows: [],
             virtual: { tableId: node.name, rowCount: node.metadata?.row_count || 0 },
             anchored: true,
-            attachedMetadata: '',
+            description: '',
             source: {
                 type: 'database' as const,
                 databaseTable: pathKey,
@@ -862,76 +908,6 @@ const DataSourceSidebarPanel: React.FC<{
             });
     }, [tableIdentities, dispatch, buildSourceTableRef]);
 
-    // ── Annotation editing ──────────────────────────────────────────────────
-
-    const handleOpenAnnotation = useCallback((connectorId: string, node: CatalogTreeNode) => {
-        const tableKey = node.metadata?.table_key || node.metadata?._source_name || node.name;
-        const sourceDescription = node.metadata?.source_description || node.metadata?.description || '';
-        apiRequest(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS + `?connector_id=${encodeURIComponent(connectorId)}`, {
-            method: 'GET',
-        })
-            .then(({ data }) => {
-                const tables = data.tables || {};
-                const existing = tables[tableKey] || {};
-                setAnnotationEdit({
-                    connectorId,
-                    tableKey,
-                    tableName: node.name,
-                    sourceDescription,
-                    displayDescription: existing.description || sourceDescription,
-                    description: existing.description || '',
-                    notes: existing.notes || '',
-                    version: data.version ?? null,
-                });
-            })
-            .catch(() => {
-                setAnnotationEdit({
-                    connectorId,
-                    tableKey,
-                    tableName: node.name,
-                    sourceDescription,
-                    displayDescription: sourceDescription,
-                    description: '',
-                    notes: '',
-                    version: null,
-                });
-            });
-    }, []);
-
-    const handleSaveAnnotation = useCallback(async () => {
-        if (!annotationEdit) return;
-        setAnnotationSaving(true);
-        try {
-            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.CATALOG_ANNOTATIONS, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    connector_id: annotationEdit.connectorId,
-                    table_key: annotationEdit.tableKey,
-                    expected_version: annotationEdit.version ?? 0,
-                    description: annotationEdit.description,
-                    notes: annotationEdit.notes,
-                }),
-            });
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: 'success',
-                component: 'data-source-sidebar',
-                value: translateBackend(data.message ?? t('dataLoading.annotationSaved'), data.message_code),
-            }));
-            setAnnotationEdit(null);
-            fetchCatalogTree(annotationEdit.connectorId);
-        } catch (e: any) {
-            const isConflict = e?.apiError?.code === 'ANNOTATION_CONFLICT';
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(), type: isConflict ? 'warning' : 'error',
-                component: 'data-source-sidebar',
-                value: t('dataLoading.annotationConflict'),
-            }));
-        } finally {
-            setAnnotationSaving(false);
-        }
-    }, [annotationEdit, dispatch, fetchCatalogTree, t]);
-
     const clearConnectorUiState = useCallback((connectorId: string) => {
         setCatalogByConnector(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setSearchCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
@@ -971,62 +947,28 @@ const DataSourceSidebarPanel: React.FC<{
         }
     }, [clearConnectorUiState, deleteTarget, dispatch, t]);
 
-    const handleDisconnectConnector = useCallback(async (
-        connector: ConnectorInstance,
-        e: React.MouseEvent,
-    ) => {
-        e.stopPropagation();
-        setDisconnectingConnectorId(connector.id);
-        try {
-            await apiRequest(CONNECTOR_ACTION_URLS.DISCONNECT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connector.id }),
-            });
-            setConnectors(prev => prev.map(c => (
-                c.id === connector.id
-                    ? { ...c, connected: false, sso_auto_connect: false }
-                    : c
-            )));
-            clearConnectorUiState(connector.id);
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'success',
-                component: 'data source sidebar',
-                value: t('sidebar.connectorDisconnected', { name: connector.display_name }),
-            }));
-        } catch (err: any) {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'error',
-                component: 'data source sidebar',
-                value: err?.apiError?.message || t('sidebar.failedDisconnectConnector'),
-            }));
-        } finally {
-            setDisconnectingConnectorId(null);
-        }
-    }, [clearConnectorUiState, dispatch, t]);
-
     // ── Render ───────────────────────────────────────────────────────────────
 
     return (
         <Box sx={{
-            flex: 1,
-            minWidth: 0,
+            // Pin width to the resolved panelWidth so internal layout doesn't
+            // reflow while the wrapper's width transitions on open/close —
+            // the wrapper clips us until it has caught up.
+            width: panelWidth,
+            minWidth: panelWidth,
+            flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
             borderLeft: `1px solid ${borderColor.view}`,
             overflow: 'hidden',
         }}>
 
-            {/* ── Data Sources tab ── */}
-            {activeTab === 'sources' && (
+            {/* ── Upload Data tab ── */}
+            {activeTab === 'upload' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <Box
-                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
-                >
+                <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}>
                     <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
-                        {t('sidebar.dataSources', { defaultValue: 'Data Sources' })}
+                        {t('sidebar.uploadData', { defaultValue: 'Upload Data' })}
                     </Typography>
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
@@ -1034,41 +976,41 @@ const DataSourceSidebarPanel: React.FC<{
                         </IconButton>
                     </Tooltip>
                 </Box>
-            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
+                <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', py: 0.5 }}>
+                    {[
+                        { icon: <ExploreOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.sampleDatasets', { defaultValue: 'Sample datasets' }), tab: 'explore' },
+                        { icon: <UploadFileIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.uploadFile', { defaultValue: 'Upload file' }), tab: 'upload' },
+                        { icon: <ContentPasteOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.pasteData', { defaultValue: 'Paste data' }), tab: 'paste' },
+                        { icon: <SmartToyOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.extractData', { defaultValue: 'Data Assistant' }), tab: 'extract' },
+                        { icon: <LinkOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.loadFromUrl', { defaultValue: 'Load from URL' }), tab: 'url' },
+                    ].map((item, i) => (
+                        <Box
+                            key={i}
+                            onClick={() => onOpenUploadDialog?.(item.tab)}
+                            sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, cursor: 'pointer', color: 'text.primary', '&:hover': { bgcolor: 'action.hover' }, userSelect: 'none' }}
+                        >
+                            {item.icon}
+                            <Typography noWrap sx={{ fontSize: 12, fontWeight: 500 }}>{item.label}</Typography>
+                        </Box>
+                    ))}
+                </Box>
+            </Box>
+            )}
 
-                {/* ── Load Data section ── */}
-                <Typography sx={{ px: 1.5, pt: 1, pb: 0.25, fontSize: 10, color: 'text.secondary', letterSpacing: 0.3, textTransform: 'uppercase' }}>
-                    {t('sidebar.loadData', { defaultValue: 'Load data' })}
-                </Typography>
-                {[
-                    { icon: <ExploreOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.sampleDatasets', { defaultValue: 'Sample datasets' }), tab: 'explore' },
-                    { icon: <UploadFileIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.uploadFile', { defaultValue: 'Upload file' }), tab: 'upload' },
-                    { icon: <ContentPasteOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.pasteData', { defaultValue: 'Paste data' }), tab: 'paste' },
-                    { icon: <SmartToyOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.extractData', { defaultValue: 'Data Assistant' }), tab: 'extract' },
-                    { icon: <LinkOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.loadFromUrl', { defaultValue: 'Load from URL' }), tab: 'url' },
-                ].map((item, i) => (
-                    <Box
-                        key={i}
-                        onClick={() => onOpenUploadDialog?.(item.tab)}
-                        sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, cursor: 'pointer', color: 'text.primary', '&:hover': { bgcolor: 'action.hover' }, userSelect: 'none' }}
-                    >
-                        {item.icon}
-                        <Typography noWrap sx={{ fontSize: 12, fontWeight: 500 }}>{item.label}</Typography>
-                    </Box>
-                ))}
-
-                <Divider />
-
-                {/* ── Data Connectors section ── */}
-                <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pt: 1, pb: 0.25 }}>
-                    <Typography sx={{ flex: 1, fontSize: 10, color: 'text.secondary', letterSpacing: 0.3, textTransform: 'uppercase' }}>
-                        {t('sidebar.dataConnectors', { defaultValue: 'Data connectors' })}
+            {/* ── Data Connectors tab ── */}
+            {activeTab === 'sources' && (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                >
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                        {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
                     </Typography>
                     <Tooltip title={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}>
                         <IconButton
                             size="small"
                             onClick={(e) => setAddConnectorAnchor(e.currentTarget)}
-                            sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.primary' } }}
+                            sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.primary' } }}
                         >
                             <AddIcon sx={{ fontSize: 16 }} />
                         </IconButton>
@@ -1083,21 +1025,27 @@ const DataSourceSidebarPanel: React.FC<{
                     >
                         <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.(); }} sx={{ fontSize: 12, py: 0.75 }}>
                             <ListItemIcon><StorageIcon sx={{ fontSize: 16 }} /></ListItemIcon>
-                            <ListItemText primaryTypographyProps={{ fontSize: 12 }}>
+                            <ListItemText slotProps={{ primary: { sx: { fontSize: 12 } } }}>
                                 {t('sidebar.addConnector', { defaultValue: 'Add data connector' })}
                             </ListItemText>
                         </MenuItem>
                         <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.('local-folder'); }} sx={{ fontSize: 12, py: 0.75 }}>
                             <ListItemIcon><FolderOpenIcon sx={{ fontSize: 16 }} /></ListItemIcon>
-                            <ListItemText primaryTypographyProps={{ fontSize: 12 }}>
+                            <ListItemText slotProps={{ primary: { sx: { fontSize: 12 } } }}>
                                 {t('sidebar.linkLocalFolder', { defaultValue: 'Link local folder' })}
                             </ListItemText>
                         </MenuItem>
                     </Menu>
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
                 </Box>
+            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
 
                 {/* Search box: typing filters local cache, Enter/button searches backend. */}
-                <Box sx={{ px: 1.5, pt: 0.5, pb: 0.5 }}>
+                <Box sx={{ px: 1.5, pt: 1, pb: 0.5 }}>
                     <TextField
                         size="small"
                         fullWidth
@@ -1203,8 +1151,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     py: 0.75,
                                     cursor: 'pointer',
                                     '&:hover': { bgcolor: 'action.hover' },
-                                    '&:hover .disconnect-connector-btn': { visibility: 'visible' },
-                                    '&:hover .delete-connector-btn': { visibility: 'visible' },
+                                    '&:hover .connector-row-action': { visibility: 'visible' },
                                     userSelect: 'none',
                                 }}
                             >
@@ -1223,6 +1170,7 @@ const DataSourceSidebarPanel: React.FC<{
                                     <Tooltip title={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}>
                                         <IconButton
                                             size="small"
+                                            className="connector-row-action"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 if (serverSearchActive && searchText) {
@@ -1231,7 +1179,12 @@ const DataSourceSidebarPanel: React.FC<{
                                                     syncCatalogMetadata(connector.id);
                                                 }
                                             }}
-                                            sx={{ color: 'text.disabled', p: 0.25, visibility: isExpanded ? 'visible' : 'hidden' }}
+                                            sx={{
+                                                color: 'text.disabled', p: 0.25,
+                                                // Stays visible while a refresh is in-flight so the
+                                                // spinner is always shown.
+                                                visibility: isLoading ? 'visible' : 'hidden',
+                                            }}
                                         >
                                             {isLoading
                                                 ? <CircularProgress size={12} />
@@ -1239,31 +1192,11 @@ const DataSourceSidebarPanel: React.FC<{
                                         </IconButton>
                                     </Tooltip>
                                 )}
-                                {connector.connected && (
-                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect connector' })}>
-                                        <IconButton
-                                            size="small"
-                                            className="disconnect-connector-btn"
-                                            disabled={disconnectingConnectorId === connector.id}
-                                            onClick={(e) => handleDisconnectConnector(connector, e)}
-                                            sx={{
-                                                color: 'text.disabled',
-                                                p: 0.25,
-                                                visibility: isExpanded ? 'visible' : 'hidden',
-                                                '&:hover': { color: 'warning.main' },
-                                            }}
-                                        >
-                                            {disconnectingConnectorId === connector.id
-                                                ? <CircularProgress size={12} />
-                                                : <LinkOffIcon sx={{ fontSize: 14 }} />}
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
                                 {connector.deletable && (
                                     <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
                                         <IconButton
                                             size="small"
-                                            className="delete-connector-btn"
+                                            className="connector-row-action"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setDeleteTarget(connector);
@@ -1276,10 +1209,16 @@ const DataSourceSidebarPanel: React.FC<{
                                 )}
                             </Box>
 
-                            {/* Catalog tree — only for connected sources */}
+                            {/* Catalog tree — only for connected sources.
+                                Wrapper pl is intentionally one indent step (8px)
+                                deeper than the connector header's `px: 1.5`,
+                                so the first-level namespace icon sits one
+                                step right of the database icon — same step as
+                                namespace → leaf. Keeps the icon column visually
+                                uniform between connector → namespace → leaf. */}
                             {connector.connected && (
-                            <Collapse in={isExpanded}>
-                                <Box sx={{ pl: 1, pr: 0.5, pb: 1 }}>
+                            <Collapse in={isExpanded} timeout={100}>
+                                <Box sx={{ pl: 2, pr: 0.5, pb: 1 }}>
                                     {!displayCache && isLoading && (
                                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
                                             <CircularProgress size={16} />
@@ -1317,30 +1256,17 @@ const DataSourceSidebarPanel: React.FC<{
                                                 const pathKey = node.path.join('/');
                                                 const sourceName = node.metadata?._source_name;
                                                 const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
+                                                if (!isLoaded) return null;
                                                 return (
-                                                    <>
-                                                        <Tooltip title={t('sidebar.editAnnotation', { defaultValue: 'Edit annotation' })}>
-                                                            <IconButton
-                                                                size="small"
-                                                                className="catalog-hover-action"
-                                                                onClick={(e) => { e.stopPropagation(); handleOpenAnnotation(connector.id, node); }}
-                                                                sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
-                                                            >
-                                                                <EditOutlinedIcon sx={{ fontSize: 13 }} />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                        {isLoaded && (
-                                                            <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
-                                                                <IconButton
-                                                                    size="small"
-                                                                    onClick={(e) => { e.stopPropagation(); handleRefreshTable(connector.id, node, e); }}
-                                                                    sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
-                                                                >
-                                                                    <RefreshIcon sx={{ fontSize: 13 }} />
-                                                                </IconButton>
-                                                            </Tooltip>
-                                                        )}
-                                                    </>
+                                                    <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => { e.stopPropagation(); handleRefreshTable(connector.id, node, e); }}
+                                                            sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                                        >
+                                                            <RefreshIcon sx={{ fontSize: 13 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
                                                 );
                                             }}
                                             maxHeight="none"
@@ -1475,7 +1401,7 @@ const DataSourceSidebarPanel: React.FC<{
                     sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
                 >
                     <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
-                        {t('knowledge.title', { defaultValue: 'Knowledge Base' })}
+                        {t('knowledge.title', { defaultValue: 'Agent Knowledge' })}
                     </Typography>
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
@@ -1497,7 +1423,16 @@ const DataSourceSidebarPanel: React.FC<{
                 slotProps={{
                     paper: {
                         sx: {
-                            width: '66vw', maxWidth: '92vw', minWidth: 400, minHeight: 300, maxHeight: '85vh',
+                            // Size to the table's natural width (DataFrameTable
+                            // is rendered with autoWidth in the connector
+                            // preview), bounded so very narrow tables still
+                            // give the header room and very wide tables
+                            // don't overflow the viewport.
+                            width: 'auto',
+                            minWidth: 480,
+                            maxWidth: '92vw',
+                            minHeight: 300,
+                            maxHeight: '85vh',
                             display: 'flex', flexDirection: 'column', overflow: 'hidden',
                             resize: 'both',
                         },
@@ -1510,18 +1445,14 @@ const DataSourceSidebarPanel: React.FC<{
                     const sourceTableRef = buildSourceTableRef(preview.node);
                     const nodeMeta = preview.node.metadata || {};
                     const sourceDescription = nodeMeta.source_description || preview.tableDescription || nodeMeta.description;
-                    const userDescription = nodeMeta.user_description || '';
-                    const effectiveDescription = nodeMeta.display_description || userDescription || preview.tableDescription || sourceDescription;
                     return (
                         <Box sx={{ p: 2, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
                             <ConnectorTablePreview
                                 connectorId={preview.connectorId}
                                 sourceTable={sourceTableRef}
                                 displayName={preview.node.name}
-                                tableDescription={effectiveDescription}
+                                tableDescription={sourceDescription}
                                 sourceDescription={sourceDescription}
-                                userDescription={userDescription}
-                                metadataStatus={nodeMeta.source_metadata_status}
                                 columns={preview.columns}
                                 sampleRows={preview.sampleRows}
                                 rowCount={preview.rowCount}
@@ -1581,92 +1512,6 @@ const DataSourceSidebarPanel: React.FC<{
                         {deleting
                             ? t('sidebar.deletingEllipsis', { defaultValue: 'Deleting...' })
                             : t('sidebar.deleteConfirmBtn', { defaultValue: 'Delete' })}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Annotation editing dialog */}
-            <Dialog
-                open={!!annotationEdit}
-                onClose={() => { if (!annotationSaving) setAnnotationEdit(null); }}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
-                    {t('sidebar.editAnnotationTitle', { defaultValue: 'Edit table annotation' })}
-                </DialogTitle>
-                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
-                    <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-                        {annotationEdit?.tableName}
-                    </Typography>
-                    <TextField
-                        label={t('sidebar.sourceDescription')}
-                        value={annotationEdit?.sourceDescription || t('sidebar.noSourceDescription')}
-                        size="small"
-                        fullWidth
-                        multiline
-                        minRows={2}
-                        maxRows={4}
-                        InputProps={{ readOnly: true, sx: { fontSize: 13 } }}
-                        InputLabelProps={{ sx: { fontSize: 13 } }}
-                    />
-                    <TextField
-                        label={t('sidebar.annotationDescription')}
-                        value={annotationEdit?.description ?? ''}
-                        onChange={(e) => setAnnotationEdit(prev => prev ? { ...prev, description: e.target.value } : prev)}
-                        size="small"
-                        fullWidth
-                        multiline
-                        minRows={2}
-                        maxRows={4}
-                        InputProps={{ sx: { fontSize: 13 } }}
-                        InputLabelProps={{ sx: { fontSize: 13 } }}
-                    />
-                    <TextField
-                        label={t('sidebar.annotationNotes')}
-                        value={annotationEdit?.notes ?? ''}
-                        onChange={(e) => setAnnotationEdit(prev => prev ? { ...prev, notes: e.target.value } : prev)}
-                        size="small"
-                        fullWidth
-                        multiline
-                        minRows={2}
-                        maxRows={6}
-                        InputProps={{ sx: { fontSize: 13 } }}
-                        InputLabelProps={{ sx: { fontSize: 13 } }}
-                    />
-                    <TextField
-                        label={t('sidebar.effectiveDescription')}
-                        value={
-                            annotationEdit?.description
-                                ? annotationEdit.description
-                                : (annotationEdit?.sourceDescription || t('sidebar.noEffectiveDescription'))
-                        }
-                        size="small"
-                        fullWidth
-                        multiline
-                        minRows={2}
-                        maxRows={4}
-                        InputProps={{ readOnly: true, sx: { fontSize: 13 } }}
-                        InputLabelProps={{ sx: { fontSize: 13 } }}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={() => setAnnotationEdit(null)}
-                        disabled={annotationSaving}
-                        sx={{ textTransform: 'none', fontSize: 12 }}
-                    >
-                        {t('app.cancel', { defaultValue: 'Cancel' })}
-                    </Button>
-                    <Button
-                        onClick={handleSaveAnnotation}
-                        disabled={annotationSaving}
-                        variant="contained"
-                        sx={{ textTransform: 'none', fontSize: 12 }}
-                    >
-                        {annotationSaving
-                            ? t('sidebar.saving', { defaultValue: 'Saving...' })
-                            : t('common.save', { defaultValue: 'Save' })}
                     </Button>
                 </DialogActions>
             </Dialog>

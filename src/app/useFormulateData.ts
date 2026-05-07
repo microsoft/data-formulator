@@ -204,6 +204,7 @@ export function useFormulateData() {
         onIdeas([]);
 
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        let timedOut = false;
         try {
             const focusedThread = buildFocusedThread(currentTable);
             const otherThreads = buildOtherThreads(currentTable);
@@ -231,7 +232,6 @@ export function useFormulateData() {
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
             const controller = new AbortController();
-            let timedOut = false;
             timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
             const questions: IdeaItem[] = [];
@@ -321,7 +321,6 @@ export function useFormulateData() {
         const inputTablesPayload = actionTables.map(t => ({
             name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
             rows: t.rows,
-            attached_metadata: t.attachedMetadata,
         }));
 
         // Determine primary table names for agent context prioritization

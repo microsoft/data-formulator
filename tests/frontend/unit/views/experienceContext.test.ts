@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
     isLeafDerivedTable,
-    buildExperienceContext,
+    buildLeafEvents,
     buildDistillModelConfig,
-} from '../../../../src/views/SaveExperienceButton';
+} from '../../../../src/views/experienceContext';
 import type { DictTable } from '../../../../src/components/ComponentType';
 
 function makeTable(id: string, overrides?: Partial<DictTable>): DictTable {
@@ -16,7 +16,7 @@ function makeTable(id: string, overrides?: Partial<DictTable>): DictTable {
         rows: [{ col1: 'a' }],
         virtual: { tableId: id, rowCount: 1 },
         anchored: false,
-        attachedMetadata: '',
+        description: '',
         ...overrides,
     } as DictTable;
 }
@@ -26,7 +26,6 @@ function makeDerived(
     parentId: string,
     opts?: {
         interaction?: any[];
-        executionAttempts?: any[];
         dialog?: any[];
         anchored?: boolean;
         chart?: any;
@@ -46,7 +45,6 @@ function makeDerived(
             code: opts?.code ?? 'df = ...',
             outputVariable: 'result_df',
             dialog: opts?.dialog ?? [],
-            executionAttempts: opts?.executionAttempts,
             trigger: {
                 tableId: parentId,
                 resultTableId: id,
@@ -58,8 +56,8 @@ function makeDerived(
 }
 
 // Helper: filter events by type
-function eventsOfType(ctx: { events: Array<Record<string, any>> } | null, type: string) {
-    return (ctx?.events ?? []).filter(e => e.type === type);
+function eventsOfType(events: Array<Record<string, any>> | null, type: string) {
+    return (events ?? []).filter(e => e.type === type);
 }
 
 // ── isLeafDerivedTable ──────────────────────────────────────────────────────
@@ -93,9 +91,9 @@ describe('isLeafDerivedTable', () => {
 });
 
 
-// ── buildExperienceContext ───────────────────────────────────────────────────
+// ── buildLeafEvents ───────────────────────────────────────────────────
 
-describe('buildExperienceContext', () => {
+describe('buildLeafEvents', () => {
     const userPrompt = {
         from: 'user' as const,
         to: 'data-agent' as const,
@@ -111,7 +109,7 @@ describe('buildExperienceContext', () => {
 
     it('returns null for non-derived table', () => {
         const root = makeTable('root');
-        expect(buildExperienceContext(root, [root])).toBeNull();
+        expect(buildLeafEvents(root, [root])).toBeNull();
     });
 
     it('returns null when no user-originated message exists in chain', () => {
@@ -119,7 +117,7 @@ describe('buildExperienceContext', () => {
         const t1 = makeDerived('t1', 'root', {
             interaction: [agentInstruction],
         });
-        expect(buildExperienceContext(t1, [root, t1])).toBeNull();
+        expect(buildLeafEvents(t1, [root, t1])).toBeNull();
     });
 
     it('builds a flat event timeline from a single-step chain', () => {
@@ -133,12 +131,12 @@ describe('buildExperienceContext', () => {
                 { role: 'system', content: 'system prompt' },
             ],
         });
-        const ctx = buildExperienceContext(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1]);
         expect(ctx).not.toBeNull();
-        expect(ctx!.context_id).toBe('t1');
 
         const messages = eventsOfType(ctx, 'message');
-        // 2 from interaction + 1 synthesized tool_call
+        // 2 from interaction + 1 synthesized tool_call.
+        // Order within a step: user input → tool calls → agent reply.
         expect(messages).toHaveLength(3);
         expect(messages[0]).toMatchObject({
             type: 'message',
@@ -149,14 +147,14 @@ describe('buildExperienceContext', () => {
         });
         expect(messages[1]).toMatchObject({
             from: 'data-agent',
-            to: 'datarec-agent',
-            role: 'instruction',
-        });
-        expect(messages[2]).toMatchObject({
-            from: 'data-agent',
             to: 'data-agent',
             role: 'tool_call',
             content: 'explore',
+        });
+        expect(messages[2]).toMatchObject({
+            from: 'data-agent',
+            to: 'datarec-agent',
+            role: 'instruction',
         });
 
         // Each derived step always emits one create_table.
@@ -166,7 +164,6 @@ describe('buildExperienceContext', () => {
             type: 'create_table',
             table_id: 't1',
             source_tables: ['root'],
-            via: 'visualize',
         });
     });
 
@@ -184,9 +181,8 @@ describe('buildExperienceContext', () => {
         const t2 = makeDerived('t2', 't1', {
             interaction: [step2Instruction],
         });
-        const ctx = buildExperienceContext(t2, [root, t1, t2]);
+        const ctx = buildLeafEvents(t2, [root, t1, t2]);
         expect(ctx).not.toBeNull();
-        expect(ctx!.context_id).toBe('t2');
 
         const tables = eventsOfType(ctx, 'create_table');
         expect(tables.map(e => e.table_id)).toEqual(['t1', 't2']);
@@ -208,30 +204,11 @@ describe('buildExperienceContext', () => {
             interaction: [{
                 from: 'user', to: 'data-agent', role: 'instruction', content: 'step3',
             }],
-            executionAttempts: [{ kind: 'visualize', status: 'ok', summary: 'ok' }],
         });
-        const ctx = buildExperienceContext(t3, [root, t1, t3]);
+        const ctx = buildLeafEvents(t3, [root, t1, t3]);
         expect(ctx).not.toBeNull();
         const tables = eventsOfType(ctx, 'create_table');
         expect(tables.map(e => e.table_id)).toEqual(['t1', 't3']);
-    });
-
-    it('detects via=repair from the last successful execution attempt', () => {
-        const root = makeTable('root');
-        const t1 = makeDerived('t1', 'root', {
-            interaction: [userPrompt],
-            executionAttempts: [
-                { kind: 'visualize', attempt: 1, status: 'error', summary: 'failed', error: 'TypeError' },
-                { kind: 'repair', attempt: 2, status: 'ok', summary: 'fixed' },
-            ],
-        });
-        const ctx = buildExperienceContext(t1, [root, t1]);
-        expect(ctx).not.toBeNull();
-        const tables = eventsOfType(ctx, 'create_table');
-        expect(tables[0].via).toBe('repair');
-        // No repair_reason is emitted — failure context is in the messages.
-        expect(tables[0]).not.toHaveProperty('repair_reason');
-        expect(tables[0]).not.toHaveProperty('code_shape');
     });
 
     it('emits create_chart paired with create_table when the step has a chart', () => {
@@ -246,13 +223,13 @@ describe('buildExperienceContext', () => {
                 },
             },
         });
-        const ctx = buildExperienceContext(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1]);
         expect(ctx).not.toBeNull();
-        const types = ctx!.events.map(e => e.type);
+        const types = ctx!.map(e => e.type);
         // create_table immediately followed by create_chart for the same step.
         const tIdx = types.indexOf('create_table');
         expect(types[tIdx + 1]).toBe('create_chart');
-        const chart = ctx!.events[tIdx + 1];
+        const chart = ctx![tIdx + 1];
         expect(chart).toMatchObject({
             type: 'create_chart',
             related_table_id: 't1',
@@ -271,7 +248,7 @@ describe('buildExperienceContext', () => {
                 { from: 'user', to: 'data-agent', role: 'error', content: 'boom' },
             ],
         });
-        const ctx = buildExperienceContext(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1]);
         const messages = eventsOfType(ctx, 'message');
         expect(messages).toHaveLength(1);
         expect(messages[0].content).toBe('Show sales trend');
@@ -284,7 +261,7 @@ describe('buildExperienceContext', () => {
             interaction: [userPrompt],
             code,
         });
-        const ctx = buildExperienceContext(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1]);
         const tables = eventsOfType(ctx, 'create_table');
         expect(tables[0].code).toBe(code);
         expect(tables[0]).not.toHaveProperty('code_shape');
@@ -299,7 +276,7 @@ describe('buildExperienceContext', () => {
             rows,
             rowCount: rows.length,
         });
-        const ctx = buildExperienceContext(t1, [root, t1]);
+        const ctx = buildLeafEvents(t1, [root, t1]);
         const tables = eventsOfType(ctx, 'create_table');
         expect(tables[0].columns).toEqual(['region', 'revenue']);
         expect(tables[0].row_count).toBe(8);

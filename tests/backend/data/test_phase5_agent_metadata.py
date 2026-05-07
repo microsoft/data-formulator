@@ -182,82 +182,24 @@ class TestFieldSummaryWithDescription:
         assert "(Transaction amount)" in line
         assert "[calc: SUM(payments.amount)]" in line
 
-    def test_dual_source_descriptions_both_shown(self):
-        """When source and user descriptions differ, both are shown."""
-        import pandas as pd
-        from data_formulator.agents.agent_utils import get_field_summary
-        df = pd.DataFrame({"amount": [10.5]})
-        line = get_field_summary(
-            "amount", df, 5,
-            column_description="fallback",
-            source_description="Order total from ERP",
-            user_description="Includes tax and shipping",
-        )
-        assert "source: Order total from ERP" in line
-        assert "user: Includes tax and shipping" in line
-        assert "fallback" not in line
-
-    def test_dual_source_same_uses_column_description(self):
-        """When source and user are identical, fall back to column_description."""
-        import pandas as pd
-        from data_formulator.agents.agent_utils import get_field_summary
-        df = pd.DataFrame({"amount": [10.5]})
-        line = get_field_summary(
-            "amount", df, 5,
-            column_description="Same desc",
-            source_description="Same desc",
-            user_description="Same desc",
-        )
-        assert "(Same desc)" in line
-        assert "source:" not in line
-
     def test_only_source_description(self):
-        """When only source_description exists, column_description is used."""
+        """When only column_description exists, it's shown in parens."""
         import pandas as pd
         from data_formulator.agents.agent_utils import get_field_summary
         df = pd.DataFrame({"x": [1]})
         line = get_field_summary(
             "x", df, 5,
             column_description="From source",
-            source_description="From source",
         )
         assert "(From source)" in line
-        assert "source:" not in line
 
 
-# ── generate_data_summary with system description fallback ───────────
+# ── generate_data_summary with system description ────────────────────
 
-class TestSummarySystemDescriptionFallback:
-    def test_uses_attached_metadata_when_present(self):
-        """attached_metadata takes priority over system description."""
-        from data_formulator.agents.agent_utils import generate_data_summary
-        import pandas as pd
-
-        workspace = MagicMock()
-        workspace.read_data_as_df.return_value = pd.DataFrame({"a": [1]})
-        workspace.get_relative_data_file_path.return_value = "data/t.parquet"
-
-        mock_ws_meta = WorkspaceMetadata.create_new()
-        mock_ws_meta.add_table(TableMetadata(
-            name="t",
-            source_type="data_loader",
-            filename="t.parquet",
-            file_type="parquet",
-            created_at=datetime.now(timezone.utc),
-            description="System description",
-        ))
-        workspace.get_metadata.return_value = mock_ws_meta
-
-        result = generate_data_summary(
-            [{"name": "t", "attached_metadata": "User annotation"}],
-            workspace,
-            include_data_samples=False,
-        )
-        assert "User annotation" in result
-        assert "System description" not in result
-
-    def test_falls_back_to_system_description(self):
-        """When attached_metadata is empty, use TableMetadata.description."""
+class TestSummarySystemDescription:
+    def test_uses_system_description_from_workspace_metadata(self):
+        """After the attached_metadata removal, system description from
+        TableMetadata is the only path into the prompt."""
         from data_formulator.agents.agent_utils import generate_data_summary
         import pandas as pd
 
@@ -277,11 +219,40 @@ class TestSummarySystemDescriptionFallback:
         workspace.get_metadata.return_value = mock_ws_meta
 
         result = generate_data_summary(
-            [{"name": "t", "attached_metadata": ""}],
+            [{"name": "t"}],
             workspace,
             include_data_samples=False,
         )
         assert "System description from source" in result
+
+    def test_attached_metadata_is_ignored_if_present(self):
+        """Legacy clients may still include attached_metadata in the
+        payload; it must be silently dropped, not surfaced in the prompt."""
+        from data_formulator.agents.agent_utils import generate_data_summary
+        import pandas as pd
+
+        workspace = MagicMock()
+        workspace.read_data_as_df.return_value = pd.DataFrame({"a": [1]})
+        workspace.get_relative_data_file_path.return_value = "data/t.parquet"
+
+        mock_ws_meta = WorkspaceMetadata.create_new()
+        mock_ws_meta.add_table(TableMetadata(
+            name="t",
+            source_type="data_loader",
+            filename="t.parquet",
+            file_type="parquet",
+            created_at=datetime.now(timezone.utc),
+            description="System description",
+        ))
+        workspace.get_metadata.return_value = mock_ws_meta
+
+        result = generate_data_summary(
+            [{"name": "t", "attached_metadata": "Legacy user annotation"}],
+            workspace,
+            include_data_samples=False,
+        )
+        assert "Legacy user annotation" not in result
+        assert "System description" in result
 
 
 # ── build_catalog_metadata_lookups via workspace.user_home ────────────
@@ -290,10 +261,9 @@ class TestCatalogMetadataLookups:
     """Verify that build_catalog_metadata_lookups resolves user_home from workspace."""
 
     def test_lookups_use_workspace_user_home(self):
-        """Catalog descriptions injected into summary when workspace.user_home is set."""
+        """Loader-supplied descriptions injected into summary when workspace.user_home is set."""
         from data_formulator.agents.agent_utils import build_catalog_metadata_lookups
         from data_formulator.datalake.catalog_cache import save_catalog
-        from data_formulator.datalake.catalog_annotations import patch_annotation
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -309,14 +279,6 @@ class TestCatalogMetadataLookups:
                      ],
                  }},
             ])
-            patch_annotation(tmp_path, "pg", "ds-1", {
-                "description": "Enriched sales with notes",
-                "notes": "Used for monthly reporting",
-                "tags": ["finance", "kpi"],
-                "columns": {
-                    "amount": {"description": "User: total including tax"},
-                },
-            }, expected_version=0)
 
             ws = MagicMock()
             ws.user_home = tmp_path
@@ -332,18 +294,15 @@ class TestCatalogMetadataLookups:
             ))
             ws.get_metadata.return_value = ws_meta
 
-            table_descs, col_descs, extras, col_metas = build_catalog_metadata_lookups(ws)
-            assert "daily_sales" in table_descs
-            assert "Enriched" in table_descs["daily_sales"]
-            assert "amount" in col_descs.get("daily_sales", {})
-            assert any("finance" in e for e in extras.get("daily_sales", []))
+            table_descs, col_descs, _extras, col_metas = build_catalog_metadata_lookups(ws)
+            assert table_descs.get("daily_sales") == "Source sales table"
+            assert col_descs.get("daily_sales", {}).get("amount") == "Transaction amount"
 
             assert "daily_sales" in col_metas
             amount_meta = col_metas["daily_sales"].get("amount", {})
             assert amount_meta.get("verbose_name") == "金额"
             assert amount_meta.get("expression") == "SUM(line_items.amount)"
             assert amount_meta.get("source_description") == "Transaction amount"
-            assert amount_meta.get("user_description") == "User: total including tax"
             order_meta = col_metas["daily_sales"].get("order_id", {})
             assert order_meta.get("verbose_name") == "订单编号"
             assert order_meta.get("source_description") == "Primary key"

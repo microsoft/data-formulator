@@ -33,12 +33,17 @@ You are a knowledge distiller. Given the chronological events of a data
 analysis session plus an optional user instruction, write a short reusable
 Markdown note that will help with similar future tasks.
 
+The session contains one or more threads (separate analysis branches in
+the same session) each rendered under a `### Thread N` header. When
+multiple threads are provided, synthesise lessons that hold across them
+— do NOT enumerate per-thread.
+
 The events use three types:
 - `message` — directed speech, formatted as `[<from>→<to>/<role>] <content>`.
   Self-loops like `[data-agent→data-agent/tool_call] <tool>` mark tool invocations.
-- `create_table via=visualize|repair` — the agent ran code that produced a
-  derived table (followed by columns, row count, sample, and code).
-  `via=repair` means the prior failure is visible in the surrounding messages.
+  Errors and repairs (e.g. `[CODE ERROR]` user turns) appear as messages too.
+- `create_table` — the agent ran code that produced a derived table
+  (followed by columns, row count, sample, and code).
 - `create_chart` — a chart emitted on a table (mark + encoding summary).
 
 If a user instruction is provided, focus the note on that instruction.
@@ -48,7 +53,7 @@ Output format (Markdown with YAML front matter, nothing else):
 
 ```
 ---
-title: <short, scannable noun phrase, 3-8 words; no colons, dashes, or run-on lists>
+subtitle: <short, scannable noun phrase, 3-8 words; no colons, dashes, or run-on lists>
 tags: [<broad search keywords: domain, chart type, key operations, technique>]
 created: <today YYYY-MM-DD>
 updated: <today YYYY-MM-DD>
@@ -69,15 +74,18 @@ If a repair was needed, explain *why* it failed and the general fix.>
 ```
 
 Rules:
-- Title must be a short, scannable noun phrase (3-8 words). Name the
-  technique or pattern. Do NOT pack scenario, takeaway, and steps into the
-  title — leave the details for `## When to Use` and `## Method`.
+- Subtitle must be a short, scannable noun phrase (3-8 words) that captures
+  the technique or pattern. The hosting application prefixes it with the
+  session name to form the full title (e.g. "Experience from <session>: <subtitle>"),
+  so do NOT include the session name in the subtitle. Do NOT pack scenario,
+  takeaway, and steps into the subtitle — leave details for `## When to Use`
+  and `## Method`.
   Good: "Year-over-year volatility comparison". "Repairing pandas dtype mismatches".
   Bad:  "Time series analysis workflow: aggregate, visualize trends, quantify YoY spikes, and compare volatility across periods".
 - Focus on *transferable* methods and caveats, not case-specific details.
 - Keep the body under 500 words.
 - No raw data, PII, secrets, or specific values unless they show a universal pattern.
-- Write the title, headings, body, and tags in {output_language}.
+- Write the subtitle, headings, body, and tags in {output_language}.
   YAML front-matter keys stay in English.
 
 {language_instruction}
@@ -117,16 +125,29 @@ class ExperienceDistillAgent:
         summary = self._extract_context_summary(context)
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         context_id = str(context.get("context_id", "") or "")
+        workspace_name = str(context.get("workspace_name", "") or "").strip()
+        payload_notes = context.get("payload_notes") or []
 
         instruction_block = (
             f"\n[USER INSTRUCTION]\n{user_instruction.strip()}\n"
             f"Focus the distilled experience on the above instruction.\n"
         ) if user_instruction and user_instruction.strip() else ""
 
+        workspace_block = (
+            f"Session name: {workspace_name}\n" if workspace_name else ""
+        )
+        notes_block = ""
+        if isinstance(payload_notes, list) and payload_notes:
+            note_lines = "\n".join(f"- {n}" for n in payload_notes if n)
+            if note_lines:
+                notes_block = f"\n[PAYLOAD NOTES]\n{note_lines}\n"
+
         user_msg = (
             f"Context ID: {context_id}\n"
+            f"{workspace_block}"
             f"Today's date: {today}\n"
-            f"{instruction_block}\n"
+            f"{instruction_block}"
+            f"{notes_block}\n"
             f"Session events (chronological):\n{summary}"
         )
 
@@ -283,16 +304,36 @@ class ExperienceDistillAgent:
 
     @classmethod
     def _extract_context_summary(cls, context: dict[str, Any]) -> str:
-        """Render the timeline payload (events[]) as a compact text block.
+        """Render the multi-thread session payload as a compact text block.
 
-        See design-docs/21.3-distill-payload-vs-preview-alignment.md §5.2.
-        Three event types are recognized:
+        ``context['threads']`` is a list of ``{thread_id, events[]}``
+        dicts (session-scoped distillation, see design-docs/24). Threads
+        are rendered under ``### Thread N`` headers so the LLM can see
+        the boundaries.
+
+        Three event types are recognized inside each timeline:
 
         - ``message``       — directed speech act
         - ``create_table``  — derived table side-effect
         - ``create_chart``  — chart side-effect on a table
         """
-        events = context.get("events") or []
+        threads = context.get("threads")
+        if not isinstance(threads, list) or not threads:
+            return "(empty context)"
+
+        blocks: list[str] = []
+        for idx, thread in enumerate(threads, start=1):
+            if not isinstance(thread, dict):
+                continue
+            thread_id = thread.get("thread_id") or f"t{idx}"
+            events = thread.get("events") or []
+            rendered = cls._render_events(events)
+            blocks.append(f"### Thread {idx} (id={thread_id})\n{rendered}")
+        return "\n\n".join(blocks) if blocks else "(empty context)"
+
+    @classmethod
+    def _render_events(cls, events: list[Any]) -> str:
+        """Render a flat event list as a compact text block."""
         if not isinstance(events, list):
             return "(empty context)"
 
@@ -312,11 +353,13 @@ class ExperienceDistillAgent:
                 if ev.get("summary"):
                     line += f" — {cls._truncate(ev['summary'], 200)}"
                 parts.append(line)
+                # Tool-call args/code preview (only present for tool_call events).
+                if role == "tool_call" and ev.get("args"):
+                    parts.append(f"  args: {cls._truncate(ev['args'], 600)}")
 
             elif kind == "create_table":
-                via = ev.get("via", "?")
                 table_id = ev.get("table_id", "?")
-                parts.append(f"[create_table via={via}] {table_id}")
+                parts.append(f"[create_table] {table_id}")
                 source_tables = ev.get("source_tables") or []
                 if source_tables:
                     parts.append(f"  sources: {', '.join(str(s) for s in source_tables)}")

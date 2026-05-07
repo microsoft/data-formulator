@@ -150,7 +150,10 @@ class KnowledgeItemMeta:
     produced.  Construct via ``from_raw(meta_dict, fallback_stem)``.
     """
 
-    __slots__ = ("title", "tags", "source", "created", "description", "always_apply")
+    __slots__ = (
+        "title", "tags", "source", "created", "description", "always_apply",
+        "source_workspace_id", "source_workspace_name",
+    )
 
     def __init__(
         self,
@@ -160,6 +163,8 @@ class KnowledgeItemMeta:
         created: str,
         description: str,
         always_apply: bool,
+        source_workspace_id: str = "",
+        source_workspace_name: str = "",
     ):
         self.title = title
         self.tags = tags
@@ -167,6 +172,8 @@ class KnowledgeItemMeta:
         self.created = created
         self.description = description
         self.always_apply = always_apply
+        self.source_workspace_id = source_workspace_id
+        self.source_workspace_name = source_workspace_name
 
     @classmethod
     def from_raw(cls, meta: dict[str, Any], fallback_stem: str = "") -> "KnowledgeItemMeta":
@@ -186,6 +193,8 @@ class KnowledgeItemMeta:
         created = str(meta.get("created", "") or "")
         description = str(meta.get("description", "") or "")
         always_apply = bool(meta.get("alwaysApply", True))
+        source_workspace_id = str(meta.get("source_workspace_id", "") or "")
+        source_workspace_name = str(meta.get("source_workspace_name", "") or "")
 
         return cls(
             title=title,
@@ -194,6 +203,8 @@ class KnowledgeItemMeta:
             created=created,
             description=description,
             always_apply=always_apply,
+            source_workspace_id=source_workspace_id,
+            source_workspace_name=source_workspace_name,
         )
 
 
@@ -342,6 +353,14 @@ class KnowledgeStore:
             if category == "rules":
                 item["description"] = km.description
                 item["alwaysApply"] = km.always_apply
+            if category == "experiences":
+                # Surface session-distillation provenance so the frontend can
+                # find an existing session experience by workspace id
+                # without re-reading every file. See design-docs/24.
+                if km.source_workspace_id:
+                    item["sourceWorkspaceId"] = km.source_workspace_id
+                if km.source_workspace_name:
+                    item["sourceWorkspaceName"] = km.source_workspace_name
             items.append(item)
 
         return items
@@ -387,6 +406,27 @@ class KnowledgeStore:
         """Delete a knowledge file."""
         self.validate_path(category, path)
         self._jail(category).unlink(path)
+
+    # -- session experience helpers ----------------------------------------
+
+    def find_experience_by_workspace_id(
+        self, workspace_id: str,
+    ) -> dict[str, Any] | None:
+        """Return the experience entry whose front matter records this workspace id.
+
+        Used by the session-scoped distillation flow (design-docs/24) to
+        upsert: when re-distilling the same session, overwrite the same
+        file even if the user has renamed the workspace since.
+        """
+        if not workspace_id or not workspace_id.strip():
+            return None
+        try:
+            for item in self.list_all("experiences"):
+                if item.get("sourceWorkspaceId") == workspace_id:
+                    return item
+        except Exception:
+            logger.warning("find_experience_by_workspace_id failed", exc_info=True)
+        return None
 
     # -- alwaysApply rules helper ------------------------------------------
 

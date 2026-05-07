@@ -103,7 +103,6 @@ export const CONNECTOR_ACTION_URLS = {
     SEARCH_CATALOG: '/api/connectors/search-catalog',
     SYNC_CATALOG_METADATA: '/api/connectors/sync-catalog-metadata',
     GET_CACHED_CATALOG_TREE: '/api/connectors/get-cached-catalog-tree',
-    CATALOG_ANNOTATIONS: '/api/connectors/catalog-annotations',
     IMPORT_DATA: '/api/connectors/import-data',
     REFRESH_DATA: '/api/connectors/refresh-data',
     PREVIEW_DATA: '/api/connectors/preview-data',
@@ -291,7 +290,7 @@ export function getAgentLanguage(): string {
 export function translateBackend(
     fallback: string,
     code?: string,
-    params?: Record<string, string>,
+    params?: Record<string, unknown>,
 ): string {
     if (!code) return fallback;
     const key = `messages.${code}`;
@@ -548,7 +547,7 @@ export const assembleVegaChart = (
     encodingMap: { [key in Channel]: EncodingItem; }, 
     conceptShelfItems: FieldItem[], 
     workingTable: any[],
-    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[], intrinsicDomain?: [number, number], unit?: string}},
+    tableMetadata: {[key: string]: {type: Type, semanticType: string, levels: any[], intrinsicDomain?: [number, number], unit?: string, displayName?: string, description?: string}},
     baseChartWidth: number = 100,
     baseChartHeight: number = 80,
     addTooltips: boolean = false,

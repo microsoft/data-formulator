@@ -10,6 +10,7 @@ current user via ``get_identity_id()`` and confined via ``ConfinedDir``.
 from __future__ import annotations
 
 import logging
+import re
 
 from flask import Blueprint, request
 
@@ -161,6 +162,13 @@ def knowledge_search():
 def distill_experience():
     """Distill user-visible analysis context into a reusable experience.
 
+    Session-scoped payload (design-docs/24):
+    ``experience_context`` carries a list of ``threads`` (one per leaf
+    derived table the user has on screen), each with its own chronological
+    ``events`` array. ``workspace_id`` + ``workspace_name`` bind the
+    resulting file to the active session so re-distilling upserts the
+    same file.
+
     Required body fields: ``experience_context`` and ``model``.
     Optional: ``user_instruction`` (natural-language focus hint for the LLM),
     ``category_hint`` (sub-directory under experiences/).
@@ -170,12 +178,21 @@ def distill_experience():
     if not isinstance(experience_context, dict):
         raise AppError(ErrorCode.INVALID_REQUEST, "'experience_context' is required")
 
-    # Timeline payload (21.3): a single chronological list of events.
-    events = experience_context.get("events")
-    if not isinstance(events, list) or not events:
+    threads = experience_context.get("threads")
+    if not isinstance(threads, list) or not threads:
         raise AppError(
             ErrorCode.INVALID_REQUEST,
-            "'experience_context.events' is required and must be a non-empty list",
+            "'experience_context.threads' is required and must be a non-empty list",
+        )
+
+    workspace_id_raw = experience_context.get("workspace_id", "")
+    workspace_id = workspace_id_raw.strip() if isinstance(workspace_id_raw, str) else ""
+    workspace_name_raw = experience_context.get("workspace_name", "")
+    workspace_name = workspace_name_raw.strip() if isinstance(workspace_name_raw, str) else ""
+    if not workspace_id or not workspace_name:
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            "'experience_context.workspace_id' and 'workspace_name' are required",
         )
 
     model_config = data.get("model")
@@ -216,32 +233,106 @@ def distill_experience():
 
     # Save to knowledge/experiences/
     store = KnowledgeStore(user_home)
-    context_id = str(experience_context.get("context_id") or "experience")
-    filename = _experience_filename(context_id, md_content)
-    if category_hint:
-        rel_path = f"{category_hint}/{filename}"
-    else:
-        rel_path = filename
+
+    # Bind the file to the workspace, override title to
+    # "Experience from <workspace name>: <subtitle>", and upsert below.
+    md_content = _apply_session_front_matter(md_content, workspace_id, workspace_name)
+
+    filename = _experience_filename(workspace_name)
+    rel_path = f"{category_hint}/{filename}" if category_hint else filename
+
+    # Upsert: if a previous experience exists for this workspace at a
+    # different path (e.g. user renamed the workspace), delete it after a
+    # successful write so we keep one file per session.
+    existing = store.find_experience_by_workspace_id(workspace_id)
 
     try:
         store.write("experiences", rel_path, md_content)
     except ValueError as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, str(exc)) from exc
 
+    if existing and existing.get("path") and existing["path"] != rel_path:
+        try:
+            store.delete("experiences", existing["path"])
+        except Exception:
+            logger.warning(
+                "Failed to delete stale session experience at %s",
+                existing.get("path"),
+                exc_info=True,
+            )
+
     return json_ok({"path": rel_path, "category": "experiences"})
 
 
-def _experience_filename(session_id: str, md_content: str) -> str:
-    """Derive a filename from session_id and content title."""
-    from data_formulator.datalake.parquet_utils import safe_data_filename
+# ── helpers for session-scoped distillation ───────────────────────────────
+
+
+def _apply_session_front_matter(
+    content: str, workspace_id: str, workspace_name: str,
+) -> str:
+    """Override / inject session-binding fields in the experience front matter.
+
+    - Composes the visible ``title`` as ``Experience from <name>: <subtitle>``
+      using the LLM-emitted ``subtitle`` (preferred) or pre-existing
+      ``title``. The original ``subtitle`` field is removed from the
+      front matter once consumed.
+    - Stamps ``source_workspace_id`` and ``source_workspace_name`` so the
+      file can be looked up on subsequent distillations.
+    - Forces ``source: distill`` (idempotent if already set).
+    """
     from data_formulator.knowledge.store import parse_front_matter
-    meta, _ = parse_front_matter(md_content)
-    title = meta.get("title", "")
-    if title:
-        slug = title.strip().replace(" ", "-").lower()[:80]
-        try:
-            name = safe_data_filename(f"{slug}.md")
-        except ValueError:
-            name = f"{session_id}.md"
-        return name
-    return f"{session_id}.md"
+
+    meta, body = parse_front_matter(content)
+    if not isinstance(meta, dict):
+        meta = {}
+
+    subtitle = str(meta.pop("subtitle", "") or "").strip()
+    existing_title = str(meta.get("title", "") or "").strip()
+
+    # Strip any "Experience from <prev name>: " prefix from a prior pass so
+    # update-mode runs don't double-prefix when the LLM echoes the title.
+    title_core = subtitle or _strip_experience_prefix(existing_title)
+    if not title_core:
+        title_core = workspace_name
+
+    new_title = f"Experience from {workspace_name}: {title_core}"
+    meta["title"] = new_title
+    meta["source"] = "distill"
+    meta["source_workspace_id"] = workspace_id
+    meta["source_workspace_name"] = workspace_name
+
+    return _serialize_front_matter(meta, body)
+
+
+_EXP_PREFIX_RE = re.compile(r"^\s*Experience from .+?:\s*", re.IGNORECASE)
+
+
+def _strip_experience_prefix(title: str) -> str:
+    return _EXP_PREFIX_RE.sub("", title).strip()
+
+
+def _serialize_front_matter(meta: dict, body: str) -> str:
+    """Render front matter back to YAML, preserving body verbatim."""
+    import yaml
+
+    yaml_text = yaml.safe_dump(
+        meta, allow_unicode=True, sort_keys=False, default_flow_style=False
+    ).rstrip("\n")
+    # Ensure body starts on a fresh line.
+    body_text = body.lstrip("\n")
+    return f"---\n{yaml_text}\n---\n\n{body_text}"
+
+
+def _experience_filename(workspace_name: str) -> str:
+    """Derive a deterministic filename from the workspace name.
+
+    Re-distilling the same session always lands on the same file.
+    Falls back to a literal slug when sanitisation rejects the name.
+    """
+    from data_formulator.datalake.parquet_utils import safe_data_filename
+
+    slug = workspace_name.strip().replace(" ", "-").lower()[:80] or "session-experience"
+    try:
+        return safe_data_filename(f"{slug}.md")
+    except ValueError:
+        return "session-experience.md"

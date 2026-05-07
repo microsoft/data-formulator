@@ -24,57 +24,60 @@ from data_formulator.knowledge.store import parse_front_matter
 pytestmark = [pytest.mark.backend]
 
 
+SAMPLE_EVENTS = [
+    {
+        "type": "message",
+        "from": "user",
+        "to": "data-agent",
+        "role": "prompt",
+        "content": "Show sales by region",
+    },
+    {
+        "type": "message",
+        "from": "data-agent",
+        "to": "user",
+        "role": "clarify",
+        "content": "Which metric?",
+    },
+    {
+        "type": "message",
+        "from": "user",
+        "to": "data-agent",
+        "role": "instruction",
+        "content": "Use revenue",
+    },
+    {
+        "type": "message",
+        "from": "data-agent",
+        "to": "data-agent",
+        "role": "tool_call",
+        "content": "explore",
+    },
+    {
+        "type": "create_table",
+        "table_id": "t1",
+        "source_tables": ["sales", "regions"],
+        "columns": ["region", "revenue"],
+        "row_count": 4,
+        "sample_rows": [
+            {"region": "North", "revenue": 100},
+            {"region": "South", "revenue": 90},
+        ],
+        "code": "result_df = sales.groupby('region').revenue.sum().reset_index()",
+    },
+    {
+        "type": "create_chart",
+        "related_table_id": "t1",
+        "mark_or_type": "bar",
+        "encoding_summary": "x=region(nominal), y=revenue(quantitative)",
+    },
+]
+
 SAMPLE_EXPERIENCE_CONTEXT = {
-    "context_id": "table-123",
-    "events": [
-        {
-            "type": "message",
-            "from": "user",
-            "to": "data-agent",
-            "role": "prompt",
-            "content": "Show sales by region",
-        },
-        {
-            "type": "message",
-            "from": "data-agent",
-            "to": "user",
-            "role": "clarify",
-            "content": "Which metric?",
-        },
-        {
-            "type": "message",
-            "from": "user",
-            "to": "data-agent",
-            "role": "instruction",
-            "content": "Use revenue",
-        },
-        {
-            "type": "message",
-            "from": "data-agent",
-            "to": "data-agent",
-            "role": "tool_call",
-            "content": "explore",
-        },
-        {
-            "type": "create_table",
-            "table_id": "t1",
-            "source_tables": ["sales", "regions"],
-            "via": "repair",
-            "columns": ["region", "revenue"],
-            "row_count": 4,
-            "sample_rows": [
-                {"region": "North", "revenue": 100},
-                {"region": "South", "revenue": 90},
-            ],
-            "code": "result_df = sales.groupby('region').revenue.sum().reset_index()",
-        },
-        {
-            "type": "create_chart",
-            "related_table_id": "t1",
-            "mark_or_type": "bar",
-            "encoding_summary": "x=region(nominal), y=revenue(quantitative)",
-        },
-    ],
+    "context_id": "ws-1",
+    "workspace_id": "ws-1",
+    "workspace_name": "Sales Region Analysis",
+    "threads": [{"thread_id": "t1", "events": SAMPLE_EVENTS}],
 }
 
 
@@ -95,7 +98,7 @@ class TestExtractContextSummary:
         assert "[data-agent→data-agent/tool_call]" in summary
         assert "explore" in summary
         # create_table
-        assert "[create_table via=repair] t1" in summary
+        assert "[create_table] t1" in summary
         assert "sources: sales, regions" in summary
         assert "columns: ['region', 'revenue']" in summary
         assert "rows: 4" in summary
@@ -117,47 +120,78 @@ class TestExtractContextSummary:
         # Frontend now sends raw .content, not displayContent. The renderer
         # just prints whatever 'content' is on the event.
         ctx = {
-            "events": [{
-                "type": "message",
-                "from": "user",
-                "to": "data-agent",
-                "role": "instruction",
-                "content": "raw text",
+            "threads": [{
+                "thread_id": "t1",
+                "events": [{
+                    "type": "message",
+                    "from": "user",
+                    "to": "data-agent",
+                    "role": "instruction",
+                    "content": "raw text",
+                }],
             }],
         }
         summary = ExperienceDistillAgent._extract_context_summary(ctx)
         assert "raw text" in summary
 
     def test_skips_non_dict_events(self):
-        ctx = {"events": ["not-a-dict", None, 42, {"type": "message", "from": "user", "to": "data-agent", "role": "prompt", "content": "ok"}]}
+        ctx = {"threads": [{"thread_id": "t1", "events": [
+            "not-a-dict", None, 42,
+            {"type": "message", "from": "user", "to": "data-agent",
+             "role": "prompt", "content": "ok"},
+        ]}]}
         summary = ExperienceDistillAgent._extract_context_summary(ctx)
         assert "[user→data-agent/prompt]" in summary
         # No crashes; the bogus entries are silently dropped.
 
-    def test_create_table_visualize_no_repair_reason(self):
-        ctx = {"events": [{
+    def test_create_table_basic(self):
+        ctx = {"threads": [{"thread_id": "t1", "events": [{
             "type": "create_table",
             "table_id": "t1",
             "source_tables": ["src"],
-            "via": "visualize",
             "columns": ["a"],
             "row_count": 1,
             "sample_rows": [{"a": 1}],
             "code": "x = 1",
-        }]}
+        }]}]}
         summary = ExperienceDistillAgent._extract_context_summary(ctx)
-        assert "via=visualize" in summary
-        assert "repair reason" not in summary
+        assert "[create_table] t1" in summary
 
     def test_create_chart_without_encoding(self):
-        ctx = {"events": [{
+        ctx = {"threads": [{"thread_id": "t1", "events": [{
             "type": "create_chart",
             "related_table_id": "t1",
             "mark_or_type": "line",
-        }]}
+        }]}]}
         summary = ExperienceDistillAgent._extract_context_summary(ctx)
         assert "[create_chart] line on t1" in summary
         assert "encoding:" not in summary
+
+    def test_renders_multi_thread_with_headers(self):
+        """Session-scoped payloads (design-docs/24) are rendered per thread."""
+        ctx = {
+            "threads": [
+                {
+                    "thread_id": "leaf-a",
+                    "events": [{
+                        "type": "message", "from": "user", "to": "data-agent",
+                        "role": "prompt", "content": "load gas prices",
+                    }],
+                },
+                {
+                    "thread_id": "leaf-b",
+                    "events": [{
+                        "type": "message", "from": "user", "to": "data-agent",
+                        "role": "prompt", "content": "filter to 2024",
+                    }],
+                },
+            ],
+        }
+        summary = ExperienceDistillAgent._extract_context_summary(ctx)
+        assert "### Thread 1 (id=leaf-a)" in summary
+        assert "### Thread 2 (id=leaf-b)" in summary
+        assert "load gas prices" in summary
+        assert "filter to 2024" in summary
 
 
 # ── run (mocked LLM) ─────────────────────────────────────────────────────
@@ -170,7 +204,7 @@ tags: [sales, regional, bar-chart]
 created: 2026-04-26
 updated: 2026-04-26
 source: distill
-source_context: table-123
+source_context: ws-1
 ---
 
 ## When to Use
@@ -210,7 +244,7 @@ class TestRunWithMockedLLM:
         assert result.startswith("---")
         meta, body = parse_front_matter(result)
         assert meta["source"] == "distill"
-        assert meta["source_context"] == "table-123"
+        assert meta["source_context"] == "ws-1"
         assert "tags" in meta
 
     def test_fallback_front_matter_added(self):
@@ -224,7 +258,7 @@ class TestRunWithMockedLLM:
         assert result.startswith("---")
         meta, _ = parse_front_matter(result)
         assert meta["source"] == "distill"
-        assert meta["source_context"] == "table-123"
+        assert meta["source_context"] == "ws-1"
 
     def test_retries_once_when_body_too_long(self):
         """If first LLM call produces body > limit, agent retries with condensation prompt."""
@@ -392,17 +426,16 @@ class TestRunWithMockedLLM:
 
 
 class TestExperienceFilename:
-    def test_derives_from_title(self):
+    def test_derives_from_workspace_name(self):
         from data_formulator.routes.knowledge import _experience_filename
-        md = "---\ntitle: Sales Analysis Pattern\n---\nContent"
-        name = _experience_filename("sess-1", md)
+        name = _experience_filename("Sales Analysis Pattern")
         assert name.endswith(".md")
-        assert "sales" in name.lower()
+        assert "sales-analysis-pattern" in name.lower()
 
-    def test_fallback_to_session_id(self):
+    def test_fallback_when_workspace_name_blank(self):
         from data_formulator.routes.knowledge import _experience_filename
-        name = _experience_filename("sess-1", "No front matter at all")
-        assert name == "sess-1.md"
+        name = _experience_filename("   ")
+        assert name == "session-experience.md"
 
 
 # ── API endpoint ──────────────────────────────────────────────────────────
@@ -443,8 +476,13 @@ class TestDistillEndpoint:
         assert data["status"] == "error"
 
     def test_missing_events_returns_error(self, client):
-        # Empty events list should be rejected by the route validator.
-        bad_context = {"context_id": "x", "events": []}
+        # Empty threads list should be rejected by the route validator.
+        bad_context = {
+            "context_id": "x",
+            "workspace_id": "ws-1",
+            "workspace_name": "Demo",
+            "threads": [],
+        }
         resp = client.post("/api/knowledge/distill-experience",
                            json={
                                "experience_context": bad_context,
@@ -454,7 +492,11 @@ class TestDistillEndpoint:
         assert data["status"] == "error"
 
     def test_missing_events_field_returns_error(self, client):
-        bad_context = {"context_id": "x"}  # no 'events' key
+        bad_context = {
+            "context_id": "x",
+            "workspace_id": "ws-1",
+            "workspace_name": "Demo",
+        }  # no 'threads' key
         resp = client.post("/api/knowledge/distill-experience",
                            json={
                                "experience_context": bad_context,

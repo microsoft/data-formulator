@@ -29,10 +29,10 @@ describe('buildDictTableFromWorkspace', () => {
         expect(result.metadata['status'].description).toBeUndefined();
     });
 
-    it('preserves table-level systemDescription', () => {
+    it('uses table-level loader description as DictTable.description', () => {
         const withDesc = { ...baseTable, description: 'Order fact table' };
         const result = buildDictTableFromWorkspace(withDesc, undefined);
-        expect(result.systemDescription).toBe('Order fact table');
+        expect(result.description).toBe('Order fact table');
     });
 
     it('works with no descriptions at all', () => {

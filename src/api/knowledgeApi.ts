@@ -26,6 +26,14 @@ export interface KnowledgeItem {
     description?: string;
     /** Rules only: if true the rule is always injected into the agent prompt. */
     alwaysApply?: boolean;
+    /**
+     * Experiences only: workspace id this experience was distilled from.
+     * Set by the session-scoped distillation flow (design-docs/24); used
+     * by the KnowledgePanel to find the existing session experience.
+     */
+    sourceWorkspaceId?: string;
+    /** Experiences only: workspace display name at distillation time. */
+    sourceWorkspaceName?: string;
 }
 
 export interface KnowledgeLimits {
@@ -119,8 +127,27 @@ export interface DistillExperienceResult {
     category: string;
 }
 
-export async function distillExperience(
-    experienceContext: { context_id?: string; events: Array<Record<string, any>> },
+/**
+ * Session-scoped distillation payload shape (design-docs/24).
+ *
+ * `workspace_id` + `workspace_name` enable upsert-by-workspace and produce
+ * a deterministic filename + title. `threads` carries one chronological
+ * `events` list per leaf table on screen.
+ */
+export interface SessionExperienceContext {
+    context_id?: string;
+    workspace_id: string;
+    workspace_name: string;
+    threads: Array<{
+        thread_id: string;
+        events: Array<Record<string, any>>;
+    }>;
+    /** Front-end notes about payload trimming (e.g. dropped tool calls). */
+    payload_notes?: string[];
+}
+
+export async function distillSessionExperience(
+    sessionContext: SessionExperienceContext,
     model: Record<string, any>,
     instruction?: string,
     timeoutSeconds?: number,
@@ -130,7 +157,7 @@ export async function distillExperience(
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({
-            experience_context: experienceContext,
+            experience_context: sessionContext,
             model,
             user_instruction: instruction,
             timeout_seconds: timeoutSeconds,

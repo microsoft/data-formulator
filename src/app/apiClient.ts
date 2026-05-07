@@ -34,6 +34,17 @@ export interface StreamEvent<T = any> {
     type: string;
     data?: T;
     error?: ApiError;
+    /**
+     * Optional human-readable message emitted by some streaming endpoints
+     * (e.g. the data agent's `error` events) at the top level of the
+     * envelope, separately from the structured `error` payload. When
+     * present, callers typically render it via `translateBackend`.
+     */
+    message?: string;
+    /** i18n key for {@link message}, when the backend supplies one. */
+    message_code?: string;
+    /** Interpolation params for {@link message_code}. */
+    message_params?: Record<string, unknown>;
 }
 
 // ====== ApiRequestError ====================================================

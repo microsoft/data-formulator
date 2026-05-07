@@ -125,9 +125,7 @@ def _filter_catalog_tables(
             table.get("name", ""),
             " ".join(str(p) for p in table.get("path", []) if p is not None),
             meta.get("description", ""),
-            meta.get("display_description", ""),
             meta.get("source_description", ""),
-            meta.get("user_description", ""),
         ]
         return any(needle in str(value).lower() for value in haystacks if value)
 
@@ -154,12 +152,15 @@ def _merged_catalog_tables(
     source_id: str,
     flat_tables: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Return cache tables overlaid with user annotations."""
-    from data_formulator.datalake.catalog_annotations import load_annotations
-    from data_formulator.datalake.catalog_merge import merge_catalog
+    """Return loader-produced catalog tables as-is.
 
-    annotations = load_annotations(Path(user_home), source_id)
-    return merge_catalog(flat_tables, annotations)
+    User annotations were removed in favor of source-system metadata only.
+    This helper kept its name to avoid call-site churn; it's now a no-op
+    pass-through around the loader output. Future automated metadata
+    enrichers (LLM-generated descriptions, etc.) would hook in here.
+    """
+    del user_home, source_id  # unused
+    return flat_tables
 
 
 def _catalog_tree_payload(
@@ -1208,9 +1209,9 @@ def connector_disconnect():
         except Exception as exc:
             logger.debug("TokenStore disconnect cleanup failed for %s: %s",
                          source._source_id, type(exc).__name__)
-        # catalog_cache and catalog_annotations are intentionally preserved
-        # on disconnect so that Agent search can still use cached metadata
-        # for offline discovery.  Only delete-connector deletes the cache.
+        # catalog_cache is intentionally preserved on disconnect so that
+        # Agent search can still use cached metadata for offline discovery.
+        # Only delete-connector deletes the cache.
         return json_ok(None)
     except AppError:
         raise
@@ -1499,132 +1500,6 @@ def connector_sync_catalog_metadata():
             "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
             "tree": tree,
             "sync_summary": summary,
-        })
-    except AppError:
-        raise
-    except Exception as e:
-        classify_and_raise_connector_error(e, operation="catalog")
-
-
-@connectors_bp.route("/api/connectors/catalog-annotations", methods=["PATCH"])
-def connector_patch_annotations():
-    """Single-table annotation patch with optimistic concurrency.
-
-    Request body::
-
-        {
-            "connector_id": "superset_prod",
-            "table_key": "uuid-...",
-            "expected_version": 1,
-            "description": "...",
-            "notes": "...",
-            "tags": ["..."],
-            "columns": { "<col>": {"description": "..."} }
-        }
-
-    Success: ``{"status": "success", "data": {"version": N}}``
-    Conflict: ``ANNOTATION_CONFLICT`` in the structured error body.
-    """
-    from data_formulator.errors import AppError, ErrorCode
-    from data_formulator.datalake.catalog_annotations import (
-        AnnotationConflict, patch_annotation,
-    )
-
-    data = request.get_json() or {}
-    source = _resolve_connector(data)
-
-    table_key = data.get("table_key")
-    if not table_key:
-        raise AppError(
-            ErrorCode.ANNOTATION_INVALID_PATCH,
-            "table_key is required",
-        )
-
-    patch_fields = {}
-    for field in ("description", "notes", "tags", "columns"):
-        if field in data:
-            patch_fields[field] = data[field]
-    if not patch_fields:
-        raise AppError(
-            ErrorCode.ANNOTATION_INVALID_PATCH,
-            "No annotation fields provided",
-        )
-
-    expected_version = data.get("expected_version")
-    if expected_version is not None:
-        try:
-            expected_version = int(expected_version)
-        except (TypeError, ValueError):
-            expected_version = None
-
-    try:
-        from data_formulator.auth.identity import get_identity_id
-        from data_formulator.datalake.workspace import get_user_home
-        identity = get_identity_id()
-        user_home = get_user_home(identity)
-
-        result = patch_annotation(
-            user_home, source._source_id, table_key,
-            patch_fields, expected_version=expected_version,
-        )
-        return json_ok({
-            "version": result["version"],
-            "message": "Annotation saved",
-            "message_code": "catalog.annotationSaved",
-        })
-    except AnnotationConflict as e:
-        raise AppError(
-            ErrorCode.ANNOTATION_CONFLICT,
-            "Annotation has changed; refresh and try again",
-            detail={"current_version": e.current_version},
-        ) from e
-    except AppError:
-        raise
-    except Exception as e:
-        classify_and_raise_connector_error(e, operation="catalog")
-
-
-@connectors_bp.route("/api/connectors/catalog-annotations", methods=["GET"])
-def connector_get_annotations():
-    """Read all annotations for a data source.
-
-    Query params: ``?connector_id=...``
-
-    Returns::
-
-        {
-            "status": "success",
-            "data": {
-                "source_id": "...",
-                "version": N,
-                "tables": { "<table_key>": { ... } }
-            }
-        }
-    """
-    connector_id = request.args.get("connector_id", "")
-    data = {"connector_id": connector_id}
-    source = _resolve_connector(data)
-
-    try:
-        from data_formulator.auth.identity import get_identity_id
-        from data_formulator.datalake.workspace import get_user_home
-        from data_formulator.datalake.catalog_annotations import load_annotations
-
-        identity = get_identity_id()
-        user_home = get_user_home(identity)
-        ann = load_annotations(user_home, source._source_id)
-
-        if ann is None:
-            return json_ok({
-                "source_id": source._source_id,
-                "version": 0,
-                "tables": {},
-            })
-
-        return json_ok({
-            "source_id": ann.get("source_id", source._source_id),
-            "version": ann.get("version", 0),
-            "tables": ann.get("tables", {}),
         })
     except AppError:
         raise

@@ -395,8 +395,10 @@ class MySQLDataLoader(ExternalDataLoader):
                 name = r["TABLE_NAME"]
                 if filter and filter.lower() not in name.lower():
                     continue
+                full_source = f"{db}.{name}"
                 nodes.append(CatalogNode(
                     name=name, node_type="table", path=path + [name],
+                    metadata={"_source_name": full_source},
                 ))
             return nodes
 

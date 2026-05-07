@@ -362,7 +362,6 @@ export const SimpleChartRecBox: FC = function () {
                 input_tables: sourceTables.map(t => ({
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
                     rows: t.rows,
-                    attached_metadata: t.attachedMetadata
                 })),
                 exploration_thread: explorationThread,
             });
@@ -584,7 +583,6 @@ export const SimpleChartRecBox: FC = function () {
         const requestBody: any = {
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                attached_metadata: t.attachedMetadata
             })),
             primary_tables: primaryTableNames,
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
@@ -818,7 +816,6 @@ export const SimpleChartRecBox: FC = function () {
                     outputVariable: refinedGoal?.output_variable || 'result_df',
                     source: resolvedSourceIds.length > 0 ? resolvedSourceIds : selectedTableIds,
                     dialog: dialog || [],
-                    executionAttempts: transformResult.execution_attempts || [],
                     trigger: {
                         tableId: triggerTableId,
                         resultTableId: candidateTableId,

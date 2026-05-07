@@ -38,6 +38,13 @@ export interface DataFrameTableProps {
     showIndex?: boolean;
     /** Optional column descriptions keyed by column name, shown as header tooltips. */
     columnDescriptions?: Record<string, string>;
+    /**
+     * When true, columns size to content (CSS `tableLayout: auto`,
+     * `width: max-content`) instead of stretching to fill the container.
+     * Use for previews inside containers that should adapt to the table's
+     * natural width rather than dictate it.
+     */
+    autoWidth?: boolean;
 }
 
 export const DataFrameTable: React.FC<DataFrameTableProps> = ({
@@ -51,6 +58,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
     headerFontSize = 10,
     showIndex = false,
     columnDescriptions,
+    autoWidth = false,
 }) => {
     const theme = useTheme();
     const visibleRows = maxRows != null ? rows.slice(0, maxRows) : rows;
@@ -83,8 +91,8 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                 borderSpacing: 0,
                 fontSize,
                 fontFamily: CODE_FONT,
-                width: '100%',
-                tableLayout: 'fixed',
+                width: autoWidth ? 'max-content' : '100%',
+                tableLayout: autoWidth ? 'auto' : 'fixed',
                 '& th, & td': {
                     px: 0.75, py: 0.3, textAlign: 'left',
                     borderBottom: '1px solid', borderColor: 'divider',

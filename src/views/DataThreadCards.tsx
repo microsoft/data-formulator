@@ -24,7 +24,6 @@ import AddchartIcon from '@mui/icons-material/Addchart';
 
 import { TriggerCard } from './EncodingShelfCard';
 import { ComponentBorderStyle, shadow, transition } from '../app/tokens';
-import { SaveExperienceButton, isLeafDerivedTable } from './SaveExperienceButton';
 
 
 // ─── Chart Card ──────────────────────────────────────────────────────────────
@@ -255,8 +254,8 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                 dispatch(dfActions.setFocused({ type: 'table', tableId }));
             }}>
             <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
-                '& .delete-table-btn, & .save-exp-btn': { opacity: 0, transition: 'opacity 0.15s' },
-                '&:hover .delete-table-btn, &:hover .save-exp-btn': { opacity: 1 },
+                '& .delete-table-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                '&:hover .delete-table-btn': { opacity: 1 },
             }}>
                 <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden' }} alignItems="center" gap={"2px"}>
                     {sourceTooltip
@@ -282,15 +281,6 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                 )}
                 {table?.derive && (
                     <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                        {isLeafDerivedTable(table, tables) && (
-                            <Box className="save-exp-btn" onClick={(e) => e.stopPropagation()}>
-                                <SaveExperienceButton
-                                    table={table!}
-                                    tables={tables}
-                                    variant="icon"
-                                />
-                            </Box>
-                        )}
                         <Tooltip title={t('dataThread.deleteTable')}>
                             <IconButton className="delete-table-btn" aria-label={t('dataThread.deleteTable')} size="small" color="error" sx={{ 
                                 padding: 0.5, flexShrink: 0, mr: 0.25,

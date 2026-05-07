@@ -629,6 +629,8 @@ export const DataLoaderForm: React.FC<{
     const workspaceTables = useSelector((state: DataFormulatorState) => state.tables);
 
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
+    // Tables for which a preview-fetch request is currently in flight.
+    const [previewLoadingKeys, setPreviewLoadingKeys] = useState<Set<string>>(new Set());
     const [selectedPreviewTable, setSelectedPreviewTable] = useState<string | null>(null);
     // Catalog tree state (hierarchical browsing)
     const [catalogTree, setCatalogTree] = useState<CatalogTreeNode[]>([]);
@@ -951,9 +953,16 @@ export const DataLoaderForm: React.FC<{
         const meta = tableMetadata[selectedPreviewTable];
         if (!meta || meta.sample_rows) return; // already has sample rows
 
+        const targetKey = selectedPreviewTable;
         const controller = new AbortController();
         const timerId = setTimeout(() => {
-            const ref = getSourceTableRef(selectedPreviewTable);
+            const ref = getSourceTableRef(targetKey);
+            setPreviewLoadingKeys(prev => {
+                if (prev.has(targetKey)) return prev;
+                const next = new Set(prev);
+                next.add(targetKey);
+                return next;
+            });
             apiRequest<any>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -968,16 +977,24 @@ export const DataLoaderForm: React.FC<{
                     if (data.rows && data.columns) {
                         setTableMetadata(prev => ({
                             ...prev,
-                            [selectedPreviewTable]: {
-                                ...prev[selectedPreviewTable],
+                            [targetKey]: {
+                                ...prev[targetKey],
                                 sample_rows: data.rows,
                                 columns: data.columns,
-                                row_count: data.total_row_count ?? prev[selectedPreviewTable]?.row_count,
+                                row_count: data.total_row_count ?? prev[targetKey]?.row_count,
                             },
                         }));
                     }
                 })
-                .catch(() => { /* preview fetch is best-effort; debounced and abortable */ });
+                .catch(() => { /* preview fetch is best-effort; debounced and abortable */ })
+                .finally(() => {
+                    setPreviewLoadingKeys(prev => {
+                        if (!prev.has(targetKey)) return prev;
+                        const next = new Set(prev);
+                        next.delete(targetKey);
+                        return next;
+                    });
+                });
         }, 300); // 300ms debounce
 
         return () => { clearTimeout(timerId); controller.abort(); };
@@ -1002,7 +1019,7 @@ export const DataLoaderForm: React.FC<{
             }), {}),
             virtual: { tableId: selectedPreviewTable, rowCount: metadata.row_count || sampleRows.length },
             anchored: true,
-            attachedMetadata: '',
+            description: '',
         };
     }, [selectedPreviewTable, tableMetadata]);
 
@@ -1037,7 +1054,7 @@ export const DataLoaderForm: React.FC<{
             rows: sampleRows,
             virtual: { tableId: ref.name.split('.').pop() || ref.name, rowCount: meta.row_count || sampleRows.length },
             anchored: true,
-            attachedMetadata: '',
+            description: '',
             source: {
                 type: 'database' as const,
                 databaseTable: pathKey,
@@ -1344,24 +1361,20 @@ export const DataLoaderForm: React.FC<{
                                         sourceTable={ref}
                                         displayName={displayName}
                                         pathBreadcrumb={selectedTreeNode && selectedTreeNode.path.length > 1 ? selectedTreeNode.path.slice(0, -1).join(' / ') : undefined}
-                                        tableDescription={metadata?.display_description || metadata?.user_description || metadata?.description}
+                                        tableDescription={metadata?.description || metadata?.source_description}
                                         sourceDescription={metadata?.source_description || metadata?.description}
-                                        userDescription={metadata?.user_description}
-                                        metadataStatus={metadata?.source_metadata_status}
                                         columns={(metadata.columns || []).map((c: any) => ({
                                             name: c.name,
                                             type: c.type || 'unknown',
                                             source_type: c.source_type,
-                                            description: c.display_description || c.description,
+                                            description: c.description || c.source_description,
                                             source_description: c.source_description,
-                                            user_description: c.user_description,
-                                            display_description: c.display_description,
                                             verbose_name: c.verbose_name,
                                             expression: c.expression,
                                         }))}
                                         sampleRows={previewTable.rows}
                                         rowCount={metadata?.row_count ?? null}
-                                        loading={false}
+                                        loading={previewLoadingKeys.has(selectedPreviewTable)}
                                         alreadyLoaded={!!effectiveLoadedTables[selectedPreviewTable]}
                                         enableFilters
                                         enableSort

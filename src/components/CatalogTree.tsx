@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { styled, Box, Tooltip, Typography } from '@mui/material';
+import { styled, Box, Chip, Tooltip, Typography } from '@mui/material';
 import { TreeItem, treeItemClasses } from '@mui/x-tree-view/TreeItem';
 
 import CheckIcon from '@mui/icons-material/Check';
@@ -96,16 +96,16 @@ export function findNodeByPath(nodes: CatalogTreeNode[], itemId: string): Catalo
 /** Styled TreeItem — clean, compact, GitHub-flavoured. */
 export const StyledTreeItem = styled(TreeItem)(({ theme }) => ({
     [`& .${treeItemClasses.groupTransition}`]: {
-        marginLeft: 12,
-        paddingLeft: 8,
+        marginLeft: 6,
+        paddingLeft: 4,
         borderLeft: `1px solid ${theme.palette.divider}`,
     },
     [`& > .${treeItemClasses.content}`]: {
-        padding: '2px 6px',
+        padding: '2px 4px',
         borderRadius: 6,
         gap: 4,
         [`& .${treeItemClasses.iconContainer}`]: {
-            width: 16, minWidth: 16,
+            width: 14, minWidth: 14,
             color: theme.palette.text.disabled,
         },
         // Hide the empty icon container on leaf items (no expand/collapse arrow)
@@ -124,12 +124,22 @@ export const StyledTreeItem = styled(TreeItem)(({ theme }) => ({
     },
 })) as typeof TreeItem;
 
-/** Shared count-badge style */
-export const countBadgeSx = {
-    fontSize: 11, color: 'text.disabled', bgcolor: 'action.selected',
-    borderRadius: 10, px: 0.8, lineHeight: '18px', flexShrink: 0,
-    fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'center',
-} as const;
+/** Shared count-badge component (uses MUI Chip for consistency). */
+export const CountBadge: React.FC<{ count: number | string }> = ({ count }) => (
+    <Chip
+        size="small"
+        label={count}
+        sx={{
+            height: 18,
+            bgcolor: 'action.selected',
+            color: 'text.disabled',
+            fontSize: 11,
+            fontVariantNumeric: 'tabular-nums',
+            flexShrink: 0,
+            '& .MuiChip-label': { px: 0.8 },
+        }}
+    />
+);
 
 // ---------- Tree renderer ----------
 
@@ -202,14 +212,10 @@ export function renderCatalogTreeItems(
                     </Typography>
                 )}
                 {isGroup && tableCount > 0 && (
-                    <Box component="span" sx={countBadgeSx}>
-                        {tableCount}
-                    </Box>
+                    <CountBadge count={tableCount} />
                 )}
                 {childCount > 0 && !isExpanded && (
-                    <Box component="span" sx={countBadgeSx}>
-                        {childCount}
-                    </Box>
+                    <CountBadge count={childCount} />
                 )}
                 {isTable && renderTableActions?.(node)}
             </Box>

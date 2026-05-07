@@ -587,7 +587,11 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
                 name = r["TABLE_NAME"]
                 if filter and filter.lower() not in name.lower():
                     continue
-                nodes.append(CatalogNode(name=name, node_type="table", path=path + [name]))
+                full_source = f"{db}.{schema}.{name}"
+                nodes.append(CatalogNode(
+                    name=name, node_type="table", path=path + [name],
+                    metadata={"_source_name": full_source},
+                ))
             return nodes
 
         return []

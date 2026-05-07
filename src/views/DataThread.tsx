@@ -299,42 +299,23 @@ const StreamingSettingsPopup = memo<{
     );
 });
 
-// Metadata Popup Component
+// Table Metadata Viewer (read-only)
+// Renders the source-supplied table description for connector/upload
+// tables, or the agent-produced code explanation for derived tables.
+// Per-column metadata is exposed elsewhere as header tooltips on the
+// data preview, not here. Strictly read-only and strictly textual.
+// See design-docs/23-table-description-unification.md.
 const MetadataPopup = memo<{
     open: boolean;
     anchorEl: HTMLElement | null;
     onClose: () => void;
-    onSave: (metadata: string) => void;
-    initialValue: string;
-    tableName: string;
-    systemDescription?: string;
-}>(({ open, anchorEl, onClose, onSave, initialValue, tableName, systemDescription }) => {
-    const [metadata, setMetadata] = useState(initialValue);
+    table: DictTable | null;
+}>(({ open, anchorEl, onClose, table }) => {
     const { t } = useTranslation();
 
-    let hasChanges = metadata !== initialValue;
-
-    useEffect(() => {
-        setMetadata(initialValue);
-    }, [initialValue, open]);
-
-    const handleSave = () => {
-        onSave(metadata);
-        onClose();
-    };
-
-    const handleCancel = () => {
-        setMetadata(initialValue);
-        onClose();
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Escape') {
-            handleCancel();
-        } else if (e.key === 'Enter' && e.ctrlKey) {
-            handleSave();
-        }
-    };
+    const tableName = table?.displayId || table?.id || '';
+    const description = (table?.description || '').trim();
+    const codeExplanation = (table?.derive?.explanation?.code || '').trim();
 
     return (
         <Popper
@@ -343,11 +324,13 @@ const MetadataPopup = memo<{
             placement="bottom-start"
             style={{ zIndex: 1300 }}
         >
-            <ClickAwayListener onClickAway={handleCancel}>
+            <ClickAwayListener onClickAway={onClose}>
                 <Paper
                     elevation={8}
                     sx={{
                         width: 480,
+                        maxHeight: '70vh',
+                        overflow: 'auto',
                         fontSize: 12,
                         p: 2,
                         mt: 1,
@@ -355,39 +338,34 @@ const MetadataPopup = memo<{
                     }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                        {t('dataThread.attachMetadataTo', { table: tableName })}
+                        {t('dataThread.metadataFor', { table: tableName, defaultValue: `Metadata for ${tableName}` })}
                     </Typography>
-                    {systemDescription && (
-                        <Box sx={{ mb: 1.5, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
-                                {t('dataThread.sourceDescription')}
+
+                    {description && (
+                        <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {description}
+                        </Typography>
+                    )}
+
+                    {!description && codeExplanation && (
+                        <Box>
+                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                                {t('dataThread.derivationSummary', { defaultValue: 'Derivation summary' })}
                             </Typography>
-                            <Typography variant="body2" sx={{ fontSize: 12, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
-                                {systemDescription}
+                            <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                                {codeExplanation}
                             </Typography>
                         </Box>
                     )}
-                    <TextField
-                        autoFocus
-                        label={t('dataThread.metadata')}
-                        placeholder={t('dataThread.metadataPlaceholder')}
-                        fullWidth
-                        multiline
-                        slotProps={{
-                            inputLabel: {shrink: true},
-                        }}
-                        minRows={3}
-                        maxRows={20}
-                        variant="outlined"
-                        size="small"
-                        value={metadata}
-                        onChange={(e) => setMetadata(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        sx={{ my: 1, '& .MuiInputBase-input': { fontSize: 12 } }}
-                    />
-                    <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <Button size="small" sx={{ml: 'auto'}} onClick={handleCancel} color="primary">{t('app.cancel')}</Button>
-                        <Button size="small" onClick={handleSave} color="primary" disabled={!hasChanges}>{t('app.save')}</Button>
+
+                    {!description && !codeExplanation && (
+                        <Typography sx={{ fontSize: 11.5, color: 'text.disabled', fontStyle: 'italic' }}>
+                            {t('dataThread.noMetadata', { defaultValue: 'No description available for this table.' })}
+                        </Typography>
+                    )}
+
+                    <Box sx={{ mt: 1.5, display: 'flex' }}>
+                        <Button size="small" sx={{ ml: 'auto' }} onClick={onClose} color="primary">{t('app.close', { defaultValue: 'Close' })}</Button>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -685,7 +663,7 @@ const WorkspacePanel: FC<{
                                                 </Typography>
                                             )}
                                         </Box>
-                                        {table.attachedMetadata && (
+                                        {table.description && (
                                             <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
                                         )}
                                     </Box>
@@ -938,15 +916,6 @@ let SingleThreadGroupView: FC<{
         setMetadataPopupOpen(false);
         setSelectedTableForMetadata(null);
         setMetadataAnchorEl(null);
-    };
-
-    const handleSaveMetadata = (metadata: string) => {
-        if (selectedTableForMetadata) {
-            dispatch(dfActions.updateTableAttachedMetadata({
-                tableId: selectedTableForMetadata.id,
-                attachedMetadata: metadata
-            }));
-        }
     };
 
     // Table menu handlers
@@ -1810,7 +1779,7 @@ let SingleThreadGroupView: FC<{
                         }} />
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: `${connWidth} ${connStyle} ${connColor}` }} />
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5 }}>
+                    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5, gap: 0.5 }}>
                         <Typography sx={{ 
                             fontSize: '11px', fontWeight: 700, 
                             textTransform: 'uppercase', letterSpacing: '0.02em',
@@ -1828,10 +1797,7 @@ let SingleThreadGroupView: FC<{
             open={metadataPopupOpen}
             anchorEl={metadataAnchorEl}
             onClose={handleCloseMetadataPopup}
-            onSave={handleSaveMetadata}
-            initialValue={selectedTableForMetadata?.attachedMetadata || ''}
-            tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
-            systemDescription={selectedTableForMetadata?.systemDescription}
+            table={selectedTableForMetadata}
         />
         <RenameTablePopup
             open={renamePopupOpen}
@@ -1878,8 +1844,9 @@ let SingleThreadGroupView: FC<{
                     {selectedTableForMenu?.anchored ? t('dataThread.unpinTable') : t('dataThread.pinTable')}
                 </MenuItem>
             )}
-            {/* Non-derived table options */}
-            {selectedTableForMenu?.derive == undefined && (
+            {/* View metadata - available for every table; read-only viewer of
+                source description + per-column descriptions (or derivation summary) */}
+            {selectedTableForMenu && (
                 <MenuItem 
                     onClick={(e) => {
                         e.stopPropagation();
@@ -1892,9 +1859,9 @@ let SingleThreadGroupView: FC<{
                 >
                     <AttachFileIcon sx={{ 
                         fontSize: 16,
-                        color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                        color: selectedTableForMenu?.description ? 'secondary.main' : 'text.secondary',
                     }}/>
-                    {selectedTableForMenu?.attachedMetadata ? t('dataThread.editMetadata') : t('dataThread.attachMetadata')}
+                    {t('dataThread.viewMetadata', { defaultValue: 'View metadata' })}
                 </MenuItem>
             )}
             {/* Refresh settings - shown for stream/database sources to configure auto-refresh interval */}
@@ -2335,7 +2302,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 rows: [],
                 virtual: { tableId: item.tableName, rowCount: 0 },
                 anchored: true,
-                attachedMetadata: '',
+                description: '',
                 source: {
                     type: 'database' as const,
                     databaseTable: item.tablePath.join('/'),
@@ -2468,43 +2435,8 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     }
     let leafTables = [ ...tables.filter(t => isLeafTable(t)) ];
 
-    // Split long derivation chains by promoting intermediate tables as additional "leaves".
-    // Compute effective max chain length from container height using per-table height estimates.
-    const containerH = containerRef.current?.clientHeight ?? 600;
-    const maxChainHeight = containerH; // split before exceeding the viewport
-
-    // Estimate height for a single table node (its entries + table card + charts)
-    const estimateSingleTableH = (tableId: string): number => {
-        const table = tableById.get(tableId);
-        const entryCount = table?.derive?.trigger?.interaction?.length || 1;
-        const chartCount = chartElements.filter(ce => ce.tableId === tableId).length;
-        return LAYOUT_TABLE_HEIGHT + entryCount * LAYOUT_ENTRY_HEIGHT + Math.max(1, chartCount) * LAYOUT_CHART_HEIGHT;
-    };
-
-    const claimedForSplit = new Set<string>();
+    // Note: long derivation chains are no longer auto-broken into sub-threads.
     const extraLeaves: DictTable[] = [];
-    for (const lt of leafTables) {
-        const triggers = getCachedTriggers(lt);
-        const allChainIds = [lt.id, ...triggers.map(t => t.resultTableId)];
-        const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.resultTableId));
-
-        // Walk owned triggers, accumulating height and inserting split points
-        let accHeight = 0;
-        for (const tp of ownedTriggers) {
-            accHeight += estimateSingleTableH(tp.resultTableId);
-            if (accHeight >= maxChainHeight) {
-                const midTable = tableById.get(tp.resultTableId);
-                if (midTable && !leafTables.includes(midTable) && !extraLeaves.includes(midTable)) {
-                    extraLeaves.push(midTable);
-                }
-                accHeight = 0;
-            }
-        }
-        allChainIds.forEach(id => claimedForSplit.add(id));
-    }
-    if (extraLeaves.length > 0) {
-        leafTables.push(...extraLeaves);
-    }
 
     // we want to sort the leaf tables by the order of their ancestors
     // for example if ancestor of list a is [0, 3] and the ancestor of list b is [0, 2] then b should come before a

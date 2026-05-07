@@ -886,43 +886,6 @@ class DataAgent:
     # Visualize execution (with repair)
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _summarize_execution_code(code: Any) -> str:
-        """Summarize generated code shape without storing source text."""
-        text = "" if code is None else str(code)
-        lines = [
-            line.strip()
-            for line in text.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
-        checks = (
-            ("groupby", "groupby"),
-            ("agg(", "aggregate"),
-            (".sum(", "sum"),
-            ("merge(", "merge/join"),
-            (".join(", "merge/join"),
-            ("pivot", "pivot"),
-            ("melt(", "reshape"),
-            ("query(", "filter"),
-            (".loc[", "filter"),
-            ("sort_values", "sort"),
-            ("reset_index", "reset-index"),
-            ("assign(", "derive-column"),
-            ("value_counts", "count"),
-            ("to_datetime", "datetime-conversion"),
-            ("fillna", "missing-value handling"),
-            ("dropna", "missing-value handling"),
-        )
-        operations = [label for needle, label in checks if needle in text]
-        unique_operations = list(dict.fromkeys(operations))
-
-        if unique_operations:
-            return (
-                f"{len(lines)} non-empty lines; operations="
-                f"{', '.join(unique_operations)}"
-            )
-        return f"{len(lines)} non-empty lines; operations=unspecified"
-
     def _execute_visualize(
         self,
         code: str,
@@ -955,27 +918,16 @@ class DataAgent:
         rlog = self._reasoning_log
         repair_llm_calls = 0
         attempt = 0
-        initial_code_summary = self._summarize_execution_code(code)
-        initial_attempt: dict[str, Any] = {
-            "kind": "visualize",
-            "attempt": attempt,
-            "status": viz_result["status"],
-            "summary": display_instruction,
-            "code_summary": initial_code_summary,
-            "error": (viz_result.get("error_message") or "")[:500],
-        }
-        last_failed_code_summary = ""
-        if viz_result["status"] != "ok":
-            initial_attempt["failed_code_summary"] = initial_code_summary
-            last_failed_code_summary = initial_code_summary
-        execution_attempts: list[dict[str, Any]] = [initial_attempt]
         while viz_result["status"] != "ok" and attempt < self.max_repair_attempts:
             attempt += 1
             error_msg = viz_result.get("error_message", "Unknown error")
             logger.warning(f"[DataAgent] Repair attempt {attempt}/{self.max_repair_attempts}: {error_msg}")
 
-            repair_messages = list(messages)
-            repair_messages.append({
+            # Mutate the canonical `messages` list so the dialog snapshot
+            # captures the repair turn just like any other tool round.
+            # The agent therefore sees one continuous conversation across
+            # the original visualize and any repairs, not a forked copy.
+            messages.append({
                 "role": "user",
                 "content": (
                     f"[CODE ERROR]\n\n{error_msg}\n\n"
@@ -984,17 +936,15 @@ class DataAgent:
             })
             repair_action = None
             for evt in self._get_next_action(
-                repair_messages, input_tables,
+                messages, input_tables,
                 outer_iteration=outer_iteration,
             ):
                 if evt.get("type") == "agent_action":
                     repair_action = evt.get("action_data")
                     repair_llm_calls += evt.get("llm_calls", 0)
             if repair_action and repair_action.get("action") == "visualize":
-                repair_code = repair_action.get("code", code)
-                repair_code_summary = self._summarize_execution_code(repair_code)
                 viz_result = self._run_visualize_code(
-                    code=repair_code,
+                    code=repair_action.get("code", code),
                     output_variable=repair_action.get("output_variable", output_variable),
                     chart_spec=repair_action.get("chart", chart_spec),
                     field_metadata=repair_action.get("field_metadata", field_metadata),
@@ -1002,41 +952,16 @@ class DataAgent:
                     display_instruction=display_instruction,
                     messages=messages,
                 )
-                repair_attempt: dict[str, Any] = {
-                    "kind": "repair",
-                    "attempt": attempt,
-                    "status": viz_result["status"],
-                    "summary": repair_action.get("display_instruction", display_instruction),
-                    "code_summary": repair_code_summary,
-                    "repair_code_summary": repair_code_summary,
-                    "error": (viz_result.get("error_message") or "")[:500],
-                }
-                if viz_result["status"] != "ok":
-                    repair_attempt["failed_code_summary"] = repair_code_summary
-                    last_failed_code_summary = repair_code_summary
-                execution_attempts.append(repair_attempt)
                 rlog.log("repair_attempt", attempt=attempt,
                          original_error=error_msg[:200],
                          status=viz_result["status"])
             else:
-                execution_attempts.append({
-                    "kind": "repair",
-                    "attempt": attempt,
-                    "status": "error",
-                    "summary": "repair action not produced",
-                    "failed_code_summary": last_failed_code_summary,
-                    "error": error_msg[:500],
-                })
                 rlog.log("repair_attempt", attempt=attempt,
                          original_error=error_msg[:200],
                          status="repair_failed")
                 break
 
         viz_result["repair_llm_calls"] = repair_llm_calls
-        if viz_result.get("status") == "ok" and isinstance(viz_result.get("transform_result"), dict):
-            viz_result["transform_result"]["execution_attempts"] = execution_attempts
-        else:
-            viz_result["execution_attempts"] = execution_attempts
         return viz_result
 
     def _run_explore_code(
@@ -1380,6 +1305,18 @@ class DataAgent:
         # Search and inject relevant knowledge (experiences + non-alwaysApply rules)
         table_names = [t.get("name", "") for t in input_tables if t.get("name")]
         relevant_knowledge = self._search_relevant_knowledge(user_question, table_names)
+
+        # Always include the experience distilled from the active workspace
+        # (design-docs/24 §3.6) so the session has stable working memory
+        # across turns regardless of search relevance.
+        session_exp = self._load_active_session_experience()
+        if session_exp:
+            existing_paths = {
+                (item["category"], item["path"]) for item in relevant_knowledge
+            }
+            if (session_exp["category"], session_exp["path"]) not in existing_paths:
+                relevant_knowledge = [session_exp] + relevant_knowledge
+
         if relevant_knowledge:
             knowledge_block = "[RELEVANT KNOWLEDGE]\n"
             for item in relevant_knowledge:
@@ -1962,6 +1899,49 @@ class DataAgent:
         except Exception:
             logger.warning("Failed to search knowledge", exc_info=True)
             return []
+
+    def _load_active_session_experience(self) -> dict[str, Any] | None:
+        """Return the experience distilled from the active workspace, if any.
+
+        The session-scoped distillation flow (design-docs/24) writes one
+        experience per workspace, stamped with ``source_workspace_id``.
+        We always inject that file into the agent's context so the agent
+        has stable working memory for the active session in addition to
+        whatever the relevance search picked.
+        """
+        if not self._knowledge_store:
+            return None
+        try:
+            from data_formulator.workspace_factory import get_active_workspace_id
+            ws_id = get_active_workspace_id()
+        except Exception:
+            ws_id = None
+        if not ws_id:
+            return None
+        try:
+            entry = self._knowledge_store.find_experience_by_workspace_id(ws_id)
+        except Exception:
+            logger.warning("find_experience_by_workspace_id failed", exc_info=True)
+            return None
+        if not entry:
+            return None
+        try:
+            content = self._knowledge_store.read("experiences", entry["path"])
+        except Exception:
+            return None
+        from data_formulator.knowledge.store import parse_front_matter
+        _, body = parse_front_matter(content)
+        snippet = body[:500].strip()
+        if not snippet:
+            return None
+        return {
+            "category": "experiences",
+            "title": entry.get("title", entry.get("path", "")),
+            "tags": entry.get("tags", []),
+            "path": entry["path"],
+            "snippet": snippet,
+            "source": entry.get("source", "distill"),
+        }
 
     def _handle_search_knowledge(self, tool_args: dict) -> str:
         """Handle the ``search_knowledge`` tool call."""

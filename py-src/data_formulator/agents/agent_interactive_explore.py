@@ -142,7 +142,6 @@ class InteractiveExploreAgent(object):
                 [{
                     'name': table.get('name', f'Table {i}'),
                     'rows': table.get('rows', []),
-                    'attached_metadata': table.get('description', ''),
                 } for i, table in enumerate(exploration_thread, 1)],
                 self.workspace,
                 table_name_prefix="Thread Table",

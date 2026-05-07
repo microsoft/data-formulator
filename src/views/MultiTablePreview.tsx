@@ -202,6 +202,11 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
                                 rows={activeTable.rows}
                                 totalRows={activeTable.virtual?.rowCount}
                                 maxRows={maxRows}
+                                columnDescriptions={activeTable.names.reduce<Record<string, string>>((acc, n) => {
+                                    const d = (activeTable.metadata?.[n]?.description as string | undefined) || '';
+                                    if (d) acc[n] = d;
+                                    return acc;
+                                }, {})}
                             />
                             {!hideRowCount && (
                                 <Typography variant="caption" color="text.secondary">

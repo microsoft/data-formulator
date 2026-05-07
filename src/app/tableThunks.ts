@@ -408,12 +408,14 @@ export function buildDictTableFromWorkspace(
             rowCount: wsTable.row_count,
         },
         anchored: true,
-        attachedMetadata: '',
+        // Loader-supplied table description, surfaced read-only in the
+        // table-card metadata viewer and used directly by the agent's
+        // prompt builders (server-side, via TableMetadata.description).
+        // For tables without a source description (uploads, paste, sample)
+        // this stays empty.
+        description: wsTable.description || '',
         source: sourceConfig,
     };
-    if (wsTable.description) {
-        result.systemDescription = wsTable.description;
-    }
     return result;
 }
 

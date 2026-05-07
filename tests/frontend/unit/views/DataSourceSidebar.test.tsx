@@ -58,7 +58,6 @@ vi.mock('../../../../src/app/utils', () => ({
         SEARCH_CATALOG: '/api/connectors/search-catalog',
         PREVIEW_DATA: '/api/connectors/preview-data',
         REFRESH_DATA: '/api/connectors/refresh-data',
-        CATALOG_ANNOTATIONS: '/api/connectors/catalog-annotations',
         DISCONNECT: '/api/connectors/disconnect',
     },
     translateBackend: (message: string) => message,
