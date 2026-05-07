@@ -641,6 +641,8 @@
     "deletedSession": "已删除会话「{{name}}」",
     "sessionTooltip": "会话：{{name}}",
     "newSessionTooltip": "新建会话",
+    "exit": "退出",
+    "exitSessionTooltip": "退出会话",
     "recoveredSession": "已恢复的会话",
     "errorOccurred": "发生了错误，请",
     "refreshSession": "刷新会话",

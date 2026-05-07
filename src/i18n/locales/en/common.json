@@ -641,6 +641,8 @@
     "deletedSession": "Deleted session \"{{name}}\"",
     "sessionTooltip": "Session: {{name}}",
     "newSessionTooltip": "New Session",
+    "exit": "Exit",
+    "exitSessionTooltip": "Exit session",
     "recoveredSession": "Recovered Session",
     "errorOccurred": "An error has occurred, please",
     "refreshSession": "refresh the session",
