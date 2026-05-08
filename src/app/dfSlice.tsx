@@ -184,6 +184,13 @@ export interface DataFormulatorState {
 
     /** Whether the data source sidebar is expanded (true) or collapsed to rail (false) */
     dataSourceSidebarOpen: boolean;
+
+    /**
+     * One-shot signal asking the sidebar to focus a specific connector
+     * (open the sidebar, switch to sources tab, expand + scroll-into-view
+     * + briefly highlight). Cleared by the sidebar after consumption.
+     */
+    focusedConnectorId?: string;
 }
 
 // Define the initial state using that type
@@ -249,6 +256,8 @@ const initialState: DataFormulatorState = {
     activeWorkspace: null,
 
     dataSourceSidebarOpen: false,
+
+    focusedConnectorId: undefined,
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -578,6 +587,19 @@ export const dataFormulatorSlice = createSlice({
         },
         setDataSourceSidebarOpen: (state, action: PayloadAction<boolean>) => {
             state.dataSourceSidebarOpen = action.payload;
+        },
+        /**
+         * Ask the data-source sidebar to focus a specific connector.
+         * Opens the sidebar (if collapsed) and stores the target id; the
+         * sidebar consumes the signal and clears it.
+         */
+        focusConnector: (state, action: PayloadAction<string>) => {
+            state.dataSourceSidebarOpen = true;
+            state.focusedConnectorId = action.payload;
+        },
+        /** Sidebar calls this once it has consumed a focus request. */
+        clearFocusedConnector: (state) => {
+            state.focusedConnectorId = undefined;
         },
         loadState: (state, action: PayloadAction<any>) => {
             const saved = action.payload;

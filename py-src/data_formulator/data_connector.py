@@ -212,10 +212,16 @@ def _connector_config_params(
     loader_class: type[ExternalDataLoader],
     params: dict[str, Any],
 ) -> dict[str, Any]:
-    """Keep only non-sensitive, non-auth params in persisted connector config."""
+    """Keep only non-sensitive params in persisted connector config.
+
+    Auth-tier identifiers (e.g. ``user``) are kept; only truly sensitive
+    fields (passwords, tokens, anything marked ``sensitive: True``) are
+    stripped. Sensitive credentials live in the per-identity vault, not
+    on disk.
+    """
     return {
         k: v for k, v in (params or {}).items()
-        if not _is_sensitive_or_auth_param(loader_class, k, include_auth_tier=True)
+        if not _is_sensitive_or_auth_param(loader_class, k, include_auth_tier=False)
     }
 
 
@@ -352,7 +358,18 @@ class DataConnector:
         "description": "Filter table by keywords (e.g. 'sales')",
     }
 
-    def get_frontend_config(self) -> dict[str, Any]:
+    def get_frontend_config(self, include_pinned_in_form: bool = False) -> dict[str, Any]:
+        """Build the frontend payload describing this connector's form.
+
+        Args:
+            include_pinned_in_form: When True, params that have saved
+                values in ``_default_params`` are still emitted in
+                ``params_form`` so the user can edit them. Used for
+                user-owned connectors where the user *is* the admin.
+                When False (default, admin-pinned connectors), pinned
+                params are hidden from the form and only their value
+                is surfaced via ``pinned_params`` for display.
+        """
         all_params = self._loader_class.list_params()
         form_fields: list[dict] = []
         pinned_params: dict[str, Any] = {}
@@ -360,8 +377,14 @@ class DataConnector:
         for param in all_params:
             name = param["name"]
             if name in self._default_params:
-                if not _is_sensitive_or_auth_param(self._loader_class, name, include_auth_tier=True):
+                # Surface non-sensitive values (incl. usernames in the auth
+                # tier) as pinned_params so the edit form can pre-populate
+                # them. Only truly sensitive params (passwords, tokens) are
+                # withheld — those keep the masked placeholder treatment.
+                if not _is_sensitive_or_auth_param(self._loader_class, name, include_auth_tier=False):
                     pinned_params[name] = self._default_params[name]
+                if include_pinned_in_form:
+                    form_fields.append(param)
             else:
                 form_fields.append(param)
 
@@ -823,11 +846,13 @@ def list_connectors():
 
     result = []
     for registry_key, connector, is_admin in _visible_connector_items(identity):
+        has_stored = False
         connected = False
         if identity:
+            has_stored = connector.has_stored_credentials(identity)
             connected = (
                 connector._get_loader(identity) is not None
-                or connector.has_stored_credentials(identity)
+                or has_stored
             )
         auth_mode = _loader_auth_mode(connector._loader_class)
         sso_blocked = (
@@ -842,7 +867,7 @@ def list_connectors():
             and not sso_blocked
             and bool(connector._default_params.get("url"))
         )
-        cfg = connector.get_frontend_config()
+        cfg = connector.get_frontend_config(include_pinned_in_form=not is_admin)
         public_id = _public_connector_id(registry_key, connector)
         result.append({
             "id": public_id,
@@ -852,6 +877,7 @@ def list_connectors():
             "display_name": connector._display_name,
             "icon": connector._icon,
             "connected": connected,
+            "has_stored_credentials": has_stored,
             "sso_auto_connect": sso_auto,
             "params_form": cfg["params_form"],
             "pinned_params": cfg["pinned_params"],

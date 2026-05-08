@@ -541,6 +541,16 @@ export const DataFormulatorFC = ({ }) => {
             <Box sx={{my: 4}}>
                 <DataLoadMenu 
                     onSelectTab={(tab) => openUploadDialog(tab)}
+                    onSelectConnector={(conn) => {
+                        // Already-authed connector → open the data-source
+                        // sidebar focused on it. Otherwise open the upload
+                        // dialog at the connector's auth/connect tab.
+                        if (conn.connected || conn.sso_auto_connect) {
+                            dispatch(dfActions.focusConnector(conn.id));
+                        } else {
+                            openUploadDialog(`connector:${conn.id}` as UploadTabType);
+                        }
+                    }}
                     serverConfig={serverConfig}
                     variant="page"
                     connectors={pageConnectors}

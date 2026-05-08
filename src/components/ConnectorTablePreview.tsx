@@ -24,8 +24,6 @@ import {
     MenuItem,
     Stack,
     TextField,
-    ToggleButton,
-    ToggleButtonGroup,
     Tooltip,
     Typography,
 } from '@mui/material';
@@ -84,9 +82,12 @@ export interface ConnectorTablePreviewProps {
     alreadyLoaded: boolean;
 
     enableFilters?: boolean;
-    enableSort?: boolean;
 
     onLoad: (importOptions: Record<string, any>) => void;
+    /** Optional: load the table into a brand-new workspace session. When
+     *  provided, a secondary "Load in new session" button appears next to
+     *  the primary Load button. */
+    onLoadInNewSession?: (importOptions: Record<string, any>) => void;
     onUnload?: () => void;
     /** Called when the user clicks "Preview" to refresh with filters. */
     onRefreshPreview?: (rows: Record<string, any>[], columns: ColumnMeta[], rowCount: number | null) => void;
@@ -156,8 +157,8 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     loading,
     alreadyLoaded,
     enableFilters = true,
-    enableSort = true,
     onLoad,
+    onLoadInNewSession,
     onUnload,
     onRefreshPreview,
 }) => {
@@ -168,10 +169,6 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
     const [filterOptionsMap, setFilterOptionsMap] = useState<Record<string, { label: string; value: any }[]>>({});
     const [filterOptionsLoading, setFilterOptionsLoading] = useState<string | null>(null);
     const [filterOptionsMore, setFilterOptionsMore] = useState<Record<string, boolean>>({});
-
-    // Sort
-    const [sortColumn, setSortColumn] = useState('');
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
     // Preview refresh loading (separate from parent loading)
     const [refreshing, setRefreshing] = useState(false);
@@ -264,10 +261,6 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
         const validFilters = coerceFilters(filters, columns);
         const opts: Record<string, any> = { size: 10 };
         if (validFilters.length > 0) opts.source_filters = validFilters;
-        if (sortColumn) {
-            opts.sort_columns = [sortColumn];
-            opts.sort_order = sortOrder;
-        }
         setRefreshing(true);
         apiRequest<any>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
             method: 'POST',
@@ -285,7 +278,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
             })
             .catch(() => { /* best-effort */ })
             .finally(() => setRefreshing(false));
-    }, [filters, columns, connectorId, sourceTable, sortColumn, sortOrder, onRefreshPreview]);
+    }, [filters, columns, connectorId, sourceTable, onRefreshPreview]);
 
     // ── Load handler ─────────────────────────────────────────────────────
 
@@ -295,12 +288,18 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
         if (validFilters.length > 0) {
             opts.source_filters = validFilters;
         }
-        if (sortColumn) {
-            opts.sort_columns = [sortColumn];
-            opts.sort_order = sortOrder;
-        }
         onLoad(opts);
-    }, [filters, columns, sortColumn, sortOrder, onLoad]);
+    }, [filters, columns, onLoad]);
+
+    const handleLoadInNewSession = useCallback(() => {
+        if (!onLoadInNewSession) return;
+        const opts: Record<string, any> = {};
+        const validFilters = coerceFilters(filters, columns);
+        if (validFilters.length > 0) {
+            opts.source_filters = validFilters;
+        }
+        onLoadInNewSession(opts);
+    }, [filters, columns, onLoadInNewSession]);
 
     // ── Shared styles ────────────────────────────────────────────────────
 
@@ -494,8 +493,10 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                 </Box>
             )}
 
-            {/* Preview table */}
-            <Box sx={{ flex: '1 1 0', minHeight: 260, overflowY: 'auto' }}>
+            {/* Preview table — sizes to its content (10-row cap upstream).
+                Scrollbar only kicks in if the parent container is height-
+                constrained below the table's natural size. */}
+            <Box sx={{ flex: '0 0 auto', minHeight: 0, overflowY: 'auto' }}>
                 {isLoading ? (
                     <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
                         <CircularProgress size={20} />
@@ -606,7 +607,7 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                 </Box>
             )}
 
-            {/* Footer — sort + load */}
+            {/* Footer — load buttons */}
             <Box sx={{ mt: 1, pt: 1, flexShrink: 0, borderTop: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {alreadyLoaded ? (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -635,32 +636,17 @@ export const ConnectorTablePreview: React.FC<ConnectorTablePreviewProps> = ({
                     </Box>
                 ) : (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                        {/* Sort controls */}
-                        {enableSort && columns.length > 0 && (<>
-                            <Typography variant="caption" sx={{ fontSize: 11, color: 'text.secondary', whiteSpace: 'nowrap' }}>Sort</Typography>
-                            <TextField
-                                select size="small" value={sortColumn}
-                                onChange={(e) => setSortColumn(e.target.value)}
-                                slotProps={{ select: { displayEmpty: true } }}
-                                sx={{ width: 110, '& .MuiInputBase-root': { fontSize: 11, height: 28 }, '& .MuiSelect-select': { py: 0.25, px: 0.75 } }}
-                            >
-                                <MenuItem value="" sx={{ fontSize: 11, color: 'text.disabled' }}><em>none</em></MenuItem>
-                                {columns.map(col => (
-                                    <MenuItem key={col.name} value={col.name} sx={{ fontSize: 11 }}>{col.name}</MenuItem>
-                                ))}
-                            </TextField>
-                            {sortColumn && (
-                                <ToggleButtonGroup
-                                    value={sortOrder} exclusive
-                                    onChange={(_, v) => { if (v) setSortOrder(v); }}
-                                    size="small" sx={{ height: 28 }}
-                                >
-                                    <ToggleButton value="asc" sx={{ px: 0.75, py: 0, fontSize: 10, textTransform: 'none' }}>ASC</ToggleButton>
-                                    <ToggleButton value="desc" sx={{ px: 0.75, py: 0, fontSize: 10, textTransform: 'none' }}>DESC</ToggleButton>
-                                </ToggleButtonGroup>
-                            )}
-                        </>)}
                         <Box sx={{ flex: 1 }} />
+                        {onLoadInNewSession && (
+                            <Button
+                                variant="outlined" size="small"
+                                disabled={isLoading}
+                                onClick={handleLoadInNewSession}
+                                sx={{ textTransform: 'none', fontSize: 12, px: 2, height: 30, flexShrink: 0 }}
+                            >
+                                {t('connectorPreview.loadInNewSession', { defaultValue: 'Load in new session' })}
+                            </Button>
+                        )}
                         <Button
                             variant="contained" size="small"
                             disabled={isLoading}

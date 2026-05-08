@@ -53,6 +53,7 @@ import ContentPasteOutlinedIcon from '@mui/icons-material/ContentPasteOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 
@@ -118,6 +119,7 @@ export const DataSourceSidebar: React.FC<{
 
     const isOpen = useSelector((state: DataFormulatorState) => state.dataSourceSidebarOpen);
     const disableConnectors = useSelector((state: DataFormulatorState) => state.serverConfig.DISABLE_DATA_CONNECTORS);
+    const focusedConnectorId = useSelector((state: DataFormulatorState) => state.focusedConnectorId);
 
     if (disableConnectors) return null;
 
@@ -144,14 +146,22 @@ export const DataSourceSidebar: React.FC<{
         return saved ? Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, Number(saved))) : DEFAULT_PANEL_WIDTH;
     });
 
+    // Suppress the open/close width transition while the user is actively
+    // dragging the resize handle. Otherwise every pixel of mouse motion
+    // kicks off a 200ms width animation, producing a visibly laggy drag
+    // that always trails the cursor.
+    const [resizing, setResizing] = useState(false);
+
     const handleResize = useCallback((delta: number) => {
+        if (!resizing) setResizing(true);
         setPanelWidth(prev => {
             const next = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, prev + delta));
             return next;
         });
-    }, []);
+    }, [resizing]);
 
     const handleResizeEnd = useCallback(() => {
+        setResizing(false);
         setPanelWidth(prev => {
             localStorage.setItem(SIDEBAR_WIDTH_KEY, String(prev));
             return prev;
@@ -159,6 +169,22 @@ export const DataSourceSidebar: React.FC<{
     }, []);
 
     const totalWidth = isOpen ? RAIL_WIDTH + panelWidth : RAIL_WIDTH;
+
+    // Brief sidebar-wide attention nudge whenever a focus request lands
+    // (e.g. dialog → sidebar handoff). A horizontal translateX is enough to
+    // pull the eye left without disturbing layout (transforms don't reflow).
+    // Bumping a counter on each new request guarantees the animation
+    // replays even when the same connector is focused twice in a row.
+    const [bounceTick, setBounceTick] = useState(0);
+    const lastFocusRef = useRef<string | undefined>(undefined);
+    useEffect(() => {
+        if (!focusedConnectorId) return;
+        if (focusedConnectorId === lastFocusRef.current) {
+            // Same target re-focused — still replay the bounce.
+        }
+        lastFocusRef.current = focusedConnectorId;
+        setBounceTick(t => t + 1);
+    }, [focusedConnectorId]);
 
     // Keep the panel mounted during the close animation so its content
     // doesn't pop out before the wrapper width has finished collapsing.
@@ -175,17 +201,38 @@ export const DataSourceSidebar: React.FC<{
     }, [isOpen]);
 
     return (
-        <Box sx={{
-            width: totalWidth,
-            minWidth: totalWidth,
-            transition: 'width 0.2s ease, min-width 0.2s ease',
-            display: 'flex',
-            flexDirection: 'row',
-            borderRight: `1px solid ${borderColor.view}`,
-            backgroundColor: 'background.paper',
-            overflow: 'visible',
-            position: 'relative',
-        }}>
+        <Box
+            sx={{
+                width: totalWidth,
+                minWidth: totalWidth,
+                transition: resizing ? 'none' : 'width 0.2s ease, min-width 0.2s ease',
+                display: 'flex',
+                flexDirection: 'row',
+                borderRight: `1px solid ${borderColor.view}`,
+                backgroundColor: 'background.paper',
+                // Clip during the open/close width transition so panel
+                // content doesn't bleed past the shrinking border. Tooltips
+                // and Popovers from inside still escape correctly because
+                // MUI portals them to document.body.
+                overflow: 'hidden',
+                position: 'relative',
+                // One-shot horizontal nudge on each focus request.
+                // Encoding bounceTick into the @keyframes name produces a
+                // fresh CSS rule per request, which forces the browser to
+                // replay the animation without having to remount the
+                // wrapper (a remount would tear down the panel state and
+                // trigger reloads).
+                ...(bounceTick > 0 && {
+                    animation: `df-sidebar-bounce-${bounceTick} 0.6s cubic-bezier(0.22, 1, 0.36, 1)`,
+                    [`@keyframes df-sidebar-bounce-${bounceTick}`]: {
+                        '0%':   { transform: 'translateX(0)' },
+                        '30%':  { transform: 'translateX(10px)' },
+                        '60%':  { transform: 'translateX(-2px)' },
+                        '100%': { transform: 'translateX(0)' },
+                    },
+                }),
+            }}
+        >
             {/* Rail — always visible */}
             <Box sx={{
                 width: RAIL_WIDTH,
@@ -307,8 +354,12 @@ const DataSourceSidebarPanel: React.FC<{
         return cache;
     }, [catalogByConnector]);
 
-    // Which source sections are expanded (by connector ID)
-    const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
+    // Which source section is currently expanded (only one at a time —
+    // clicking a different connector switches the expansion). Catalog
+    // browsing is a focused activity; users don't need multiple trees open
+    // simultaneously, and keeping it single-expanded means layout above any
+    // focused row stays stable.
+    const [expandedConnectorId, setExpandedConnectorId] = useState<string | null>(null);
 
     // Tree expanded items per connector
     const [treeExpanded, setTreeExpanded] = useState<Record<string, string[]>>({});
@@ -446,7 +497,7 @@ const DataSourceSidebarPanel: React.FC<{
         setSearchCatalogCache({});
         setServerSearchActive(false);
         setSearchingCatalog({});
-        setExpandedSources(new Set());
+        setExpandedConnectorId(null);
         setTreeExpanded({});
         setPreview(null);
         setPreviewAnchor(null);
@@ -704,40 +755,63 @@ const DataSourceSidebarPanel: React.FC<{
     catalogCacheRef.current = catalogCache;
 
     const toggleSource = useCallback((connectorId: string) => {
-        setExpandedSources(prev => {
-            const next = new Set(prev);
-            if (next.has(connectorId)) {
-                next.delete(connectorId);
-            } else {
-                next.add(connectorId);
-                if (!catalogCacheRef.current[connectorId]) {
-                    fetchCatalogTree(connectorId);
-                }
+        setExpandedConnectorId(prev => {
+            if (prev === connectorId) return null;
+            if (!catalogCacheRef.current[connectorId]) {
+                fetchCatalogTree(connectorId);
             }
-            return next;
+            return connectorId;
         });
     }, [fetchCatalogTree]);
 
-    // Auto-expand the first connected connector once per fetch so the
-    // sidebar opens with content visible (instead of an all-collapsed list).
-    // Tracked per identity/refresh so a user collapse stays collapsed.
+    // Auto-expand the first connected connector on panel open so the sidebar
+    // isn't an all-collapsed list. Tracked per identity/refresh so a user
+    // collapse stays collapsed across re-renders within the same panel mount.
+    // The panel re-mounts when the sidebar is reopened, which naturally
+    // re-triggers this effect.
+    //
+    // Suppressed when an explicit focus request is pending — otherwise that
+    // focus would compete with an unrelated expansion.
+    const focusedConnectorId = useSelector(
+        (state: DataFormulatorState) => state.focusedConnectorId,
+    );
     const autoExpandedRef = useRef<string>('');
     useEffect(() => {
         const key = `${identityKey}:${connectorRefreshKey}`;
         if (autoExpandedRef.current === key) return;
+        if (focusedConnectorId) return;
         const first = sortedConnectors.find(c => c.connected);
         if (!first) return;
         autoExpandedRef.current = key;
-        setExpandedSources(prev => {
-            if (prev.has(first.id)) return prev;
-            const next = new Set(prev);
-            next.add(first.id);
-            return next;
-        });
+        setExpandedConnectorId(prev => prev ?? first.id);
         if (!catalogCacheRef.current[first.id]) {
             fetchCatalogTree(first.id);
         }
-    }, [sortedConnectors, identityKey, connectorRefreshKey, fetchCatalogTree]);
+    }, [sortedConnectors, identityKey, connectorRefreshKey, fetchCatalogTree, focusedConnectorId]);
+
+    // ── Consume focus requests (e.g. handoff from the upload dialog).
+    //    The sidebar wrapper bounces on each focus request (handled in the
+    //    outer wrapper component); here we just switch tab and expand the
+    //    target connector.
+    useEffect(() => {
+        if (!focusedConnectorId) return;
+        const target = sortedConnectors.find(c => c.id === focusedConnectorId);
+        if (!target) return; // wait for the next render after connectors load
+
+        setActiveTab('sources');
+        // Mark the auto-expand slot as consumed so it doesn't fire after this.
+        autoExpandedRef.current = `${identityKey}:${connectorRefreshKey}`;
+
+        if (target.connected) {
+            setExpandedConnectorId(focusedConnectorId);
+            if (!catalogCacheRef.current[focusedConnectorId]) {
+                fetchCatalogTree(focusedConnectorId);
+            }
+        }
+
+        dispatch(dfActions.clearFocusedConnector());
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focusedConnectorId, sortedConnectors]);
 
     // ── Preview a table on click ──────────────────────────────────────────
 
@@ -867,6 +941,19 @@ const DataSourceSidebarPanel: React.FC<{
             .finally(() => setImporting(false));
     }, [dispatch, closePreview, buildSourceTableRef]);
 
+    // Import a table into a fresh workspace session. Reuses the same load
+    // path; the only difference is we reset workspace state first so the
+    // user lands in a clean session with just this table.
+    const handleImportTableInNewSession = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
+        const now = new Date();
+        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        const short = generateUUID().slice(0, 4);
+        const wsId = `session_${date}_${time}_${short}`;
+        dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
+        handleImportTable(connectorId, node, importOptions);
+    }, [dispatch, handleImportTable]);
+
     // ── Refresh table data ───────────────────────────────────────────────────
 
     const handleRefreshTable = useCallback((connectorId: string, node: CatalogTreeNode, e: React.MouseEvent) => {
@@ -912,7 +999,7 @@ const DataSourceSidebarPanel: React.FC<{
         setCatalogByConnector(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setSearchCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         setSearchingCatalog(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
-        setExpandedSources(prev => { const next = new Set(prev); next.delete(connectorId); return next; });
+        setExpandedConnectorId(prev => (prev === connectorId ? null : prev));
         setTreeExpanded(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
         if (preview?.connectorId === connectorId) {
             closePreview();
@@ -1122,7 +1209,7 @@ const DataSourceSidebarPanel: React.FC<{
                     const catalogState = catalogByConnector[connector.id];
                     const isExpanded = activeSearchMode
                         ? (!!displayCache && displayCache.tree.length > 0)
-                        : expandedSources.has(connector.id);
+                        : expandedConnectorId === connector.id;
                     const isLoading = serverSearchActive
                         ? (searchingCatalog[connector.id] ?? false)
                         : catalogState?.status === 'loading';
@@ -1189,6 +1276,21 @@ const DataSourceSidebarPanel: React.FC<{
                                             {isLoading
                                                 ? <CircularProgress size={12} />
                                                 : <RefreshIcon sx={{ fontSize: 14 }} />}
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                                {connector.deletable && (
+                                    <Tooltip title={t('sidebar.configureConnector', { defaultValue: 'Edit connection' })}>
+                                        <IconButton
+                                            size="small"
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onOpenUploadDialog?.(`connector:${connector.id}`);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
+                                        >
+                                            <SettingsOutlinedIcon sx={{ fontSize: 14 }} />
                                         </IconButton>
                                     </Tooltip>
                                 )}
@@ -1427,10 +1529,11 @@ const DataSourceSidebarPanel: React.FC<{
                             // is rendered with autoWidth in the connector
                             // preview), bounded so very narrow tables still
                             // give the header room and very wide tables
-                            // don't overflow the viewport.
+                            // don't dominate the viewport. Users can still
+                            // resize the popover larger via the resize handle.
                             width: 'auto',
                             minWidth: 480,
-                            maxWidth: '92vw',
+                            maxWidth: 'min(1100px, 75vw)',
                             minHeight: 300,
                             maxHeight: '85vh',
                             display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -1459,8 +1562,8 @@ const DataSourceSidebarPanel: React.FC<{
                                 loading={preview.loading || importing}
                                 alreadyLoaded={alreadyLoaded}
                                 enableFilters
-                                enableSort
                                 onLoad={(opts) => handleImportTable(preview.connectorId, preview.node, opts)}
+                                onLoadInNewSession={(opts) => handleImportTableInNewSession(preview.connectorId, preview.node, opts)}
                                 onRefreshPreview={(rows, cols, rc) => {
                                     setPreview(prev => {
                                         if (!prev) return null;

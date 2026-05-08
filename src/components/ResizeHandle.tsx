@@ -87,13 +87,17 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = ({
                     ? { top: 0, bottom: 0, right: 0, width: thickness, cursor: 'col-resize' }
                     : { left: 0, right: 0, bottom: 0, height: thickness, cursor: 'row-resize' }),
                 zIndex: 2,
+                // Hit area is `thickness` px wide for an easy grab target,
+                // but the visible hover indicator sits flush against the
+                // outer edge so it visually aligns with the panel border
+                // (otherwise the centered indicator leaves a noticeable gap
+                // between the highlight and the panel edge).
                 '&::after': {
                     content: '""',
                     position: 'absolute',
                     ...(isHorizontal
-                        ? { top: 0, bottom: 0, left: '50%', width: 2, transform: 'translateX(-50%)' }
-                        : { left: 0, right: 0, top: '50%', height: 2, transform: 'translateY(-50%)' }),
-                    borderRadius: 1,
+                        ? { top: 0, bottom: 0, right: 0, width: 2 }
+                        : { left: 0, right: 0, bottom: 0, height: 2 }),
                     bgcolor: 'transparent',
                     transition: 'background-color 0.15s',
                 },

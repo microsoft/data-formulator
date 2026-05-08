@@ -551,7 +551,7 @@
     "explorationFailed": "探索失败：{{message}}",
     "agentLost": "Agent 在数据中迷失了。",
     "couldYouClarify": "能否进一步说明？",
-    "clarificationTitle": "Agent 需要你确认几个点",
+    "clarificationTitle": "Clarify",
     "clarificationQuestionLabel": "{{index}}.",
     "optionalClarification": "（可选）",
     "freeTextClarificationPlaceholder": "输入你的回答...",
@@ -560,6 +560,9 @@
     "submitClarification": "继续",
     "cancelClarification": "取消",
     "invalidClarification": "Agent 返回了无效的澄清请求。",
+    "invalidExplanation": "Agent 返回了无效的解释。",
+    "explanationTitle": "Explain",
+    "explanationFollowupsLabel": "可能的下一步：",
     "errorDuringExploration": "探索过程中出错",
     "explorationStep": "探索步骤 {{step}}：{{question}}",
     "threadExplorePrompt": "探索这份数据中有趣的模式和趋势",
@@ -681,7 +684,8 @@
     "fromSource": "[来自 {{source}}]"
   },
   "interaction": {
-    "askedForClarification": "请求澄清"
+    "askedForClarification": "请求澄清",
+    "gaveExplanation": "做了说明"
   },
   "concepts": {
     "showFewer": "收起概念",

@@ -71,7 +71,7 @@ export interface ClarificationAutoSelect {
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
-    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error';
+    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error' | 'explain';
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
@@ -415,6 +415,10 @@ export interface ConnectorInstance {
     display_name: string;
     icon: string;
     connected: boolean;
+    /** Backend signals that the vault has stored credentials for this
+     *  connector + identity. Used by the connect form to render a placeholder
+     *  hint (••••••••) on sensitive fields whose values aren't returned. */
+    has_stored_credentials?: boolean;
     /** Backend signals that SSO token exchange can auto-connect this source. */
     sso_auto_connect?: boolean;
     deletable?: boolean;

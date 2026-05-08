@@ -530,7 +530,7 @@
     "explorationFailed": "Exploration failed: {{message}}",
     "agentLost": "The agent got lost in the data.",
     "couldYouClarify": "Could you clarify?",
-    "clarificationTitle": "Agent needs a few clarifications",
+    "clarificationTitle": "Clarify",
     "clarificationQuestionLabel": "{{index}}.",
     "optionalClarification": "(optional)",
     "freeTextClarificationPlaceholder": "Type your answer...",
@@ -539,6 +539,9 @@
     "submitClarification": "Continue",
     "cancelClarification": "Cancel",
     "invalidClarification": "The agent returned an invalid clarification request.",
+    "invalidExplanation": "The agent returned an invalid explanation.",
+    "explanationTitle": "Explain",
+    "explanationFollowupsLabel": "Possible next steps:",
     "errorDuringExploration": "Error during exploration",
     "explorationStep": "Exploration step {{step}}: {{question}}",
     "threadExplorePrompt": "Explore interesting patterns and trends in this data",
@@ -681,7 +684,8 @@
     "fromSource": "[from {{source}}]"
   },
   "interaction": {
-    "askedForClarification": "asked for clarification"
+    "askedForClarification": "asked for clarification",
+    "gaveExplanation": "shared an explanation"
   },
   "concepts": {
     "showFewer": "Show fewer concepts",

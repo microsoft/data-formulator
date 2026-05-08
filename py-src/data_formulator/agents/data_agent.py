@@ -7,8 +7,8 @@ Architecture:
   - **Tools** (explore, inspect_source_data): Called via OpenAI tool-calling
     API within a single LLM turn.  The agent gathers data silently — these
     are internal to the agent and not surfaced to the user.
-  - **Actions** (visualize, clarify, present): Structured JSON output in
-    the LLM's text response.  These are externalized to the user — each
+  - **Actions** (visualize, clarify, explain, present): Structured JSON output
+    in the LLM's text response.  These are externalized to the user — each
     one ends the current turn and produces visible output.
 
 The server-side while loop handles one action per iteration:
@@ -57,13 +57,14 @@ from data_formulator.workflows.create_vl_plots import (
 logger = logging.getLogger(__name__)
 
 # ── Weak-model rescue helpers ─────────────────────────────────────────────
-# When a weaker LLM calls visualize/clarify/present as a tool instead of
-# outputting JSON in text, these helpers validate and normalise the args
+# When a weaker LLM calls visualize/clarify/explain/present as a tool instead
+# of outputting JSON in text, these helpers validate and normalise the args
 # so the action can be rescued without wasting rounds.
 
 _ACTION_REQUIRED_FIELDS: dict[str, list[str]] = {
     "visualize": ["code", "output_variable", "chart"],
     "clarify": ["questions"],
+    "explain": ["explanation"],
     "present": ["summary"],
 }
 
@@ -74,7 +75,7 @@ def _rescue_unpack_json_strings(data: dict) -> None:
     Weak models sometimes double-serialise nested fields, e.g.
     ``"chart": "{\\"chart_type\\": \\"Scatter Plot\\"}"`` instead of a dict.
     """
-    for key in ("chart", "input_tables", "questions", "field_metadata", "field_display_names"):
+    for key in ("chart", "input_tables", "questions", "options", "followups", "field_metadata", "field_display_names"):
         val = data.get(key)
         if isinstance(val, str) and val.strip()[:1] in ("{", "["):
             try:
@@ -320,10 +321,10 @@ After gathering data (or immediately if the data is clear), output
 **exactly one action** as a JSON object in your text response.  Actions
 are shown to the user and end the current turn.
 
-⚠ **CRITICAL**: `visualize`, `clarify`, and `present` are **actions**,
-NOT tools.  Never call them via function/tool calling — they MUST appear
-as a JSON object in your **text reply**.  Only the items listed in the
-Tools section above (`explore`, `inspect_source_data`,
+⚠ **CRITICAL**: `visualize`, `clarify`, `explain`, and `present` are
+**actions**, NOT tools.  Never call them via function/tool calling — they
+MUST appear as a JSON object in your **text reply**.  Only the items
+listed in the Tools section above (`explore`, `inspect_source_data`,
 `search_data_tables`, `read_catalog_metadata`, `search_knowledge`,
 `read_knowledge`, `think`) may be invoked as tool calls.
 
@@ -369,6 +370,25 @@ multiple questions. Each question must own its own options; never put options
 for different questions into one shared array. Use `"responseType": "free_text"`
 only when the user needs to type a custom answer. Ask at most 3 questions.
 
+### `explain`
+```json
+{{
+    "action": "explain",
+    "explanation": "<a short, friendly answer in 1–3 sentences. Bold **column names**. Stay grounded in what the data actually shows; admit when something is unknown. Avoid long lectures.>",
+    "followups": [
+        "<a short visualization question the user might click next, phrased as something the user would say. Each followup should be a chart-producing question that naturally builds on the explanation, e.g. 'Plot **revenue** by **region**', 'Show monthly trend of **sign_ups**'.>"
+    ]
+}}
+```
+
+Use `explain` when the user is asking a conceptual / clarifying question
+about the data, the schema, the meaning of a field, or any informational
+exchange that does **not** require producing a chart right now. Keep the
+explanation concise (1–3 sentences). Followups are optional (≤4 items,
+≤8 words each) and must be visualization-oriented prompts — clicking one
+should lead to a `visualize` action on the next turn. Omit `followups`
+entirely if no useful chart-producing follow-ups exist.
+
 ### `present`
 ```json
 {{
@@ -384,11 +404,14 @@ only when the user needs to type a custom answer. Ask at most 3 questions.
 ## Decision guidelines
 
 - **Start** by understanding the question and data.  Use tools if needed,
-  then `visualize`.  If ambiguous, `clarify`.
+  then `visualize`.  If ambiguous, `clarify`. If the user is asking a
+  conceptual / informational question that does not call for a new chart,
+  `explain`.
 - **After a visualization**, review the observation (data + chart) and:
   - `visualize` again to go deeper (drill-down, breakdown, comparison).
   - `present` if findings are sufficient.
   - `clarify` if the question needs scoping.
+  - `explain` if the user is just asking about meaning / context.
 - **Build a narrative**: overview → drill-down → comparison.
 - **Never** repeat a visualization already in the trajectory.
 - Present after at most {max_iterations} visualization steps.
@@ -480,6 +503,7 @@ class DataAgent:
             ``"result"``      – a visualization result (data + chart)
             ``"explore_result"`` – explore code output
             ``"clarify"``     – clarification question (loop pauses)
+            ``"explain"``     – conversational explanation (loop pauses)
             ``"completion"``  – final summary (loop terminates)
             ``"error"``       – error information
         """
@@ -635,7 +659,8 @@ class DataAgent:
                                 "[SYSTEM] Your previous response could not be parsed. "
                                 "Here is what was already completed:\n"
                                 f"{steps_summary}\n\n"
-                                "Please output a JSON action object (visualize / clarify / present) "
+                                "Please output a JSON action object "
+                                "(visualize / clarify / explain / present) "
                                 "to continue."
                             ),
                         })
@@ -673,6 +698,32 @@ class DataAgent:
                         "iteration": iteration,
                         "thought": action.get("thought", ""),
                         **clarify_payload,
+                        "trajectory": self._strip_images(trajectory),
+                        "completed_step_count": len(completed_steps),
+                    }
+                    self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                    return
+
+                elif action_type == "explain":
+                    rlog.log("action_execution", action="explain", status="ok",
+                             iteration=iteration)
+                    final_status = "explain"
+                    try:
+                        explain_payload = self._normalize_explain_action(action)
+                    except ValueError:
+                        final_status = "parse_failed"
+                        yield self._error_event(
+                            iteration,
+                            "Explain action requires a non-empty explanation.",
+                            message_code="agent.parseActionFailed",
+                        )
+                        self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                        return
+                    yield {
+                        "type": "explain",
+                        "iteration": iteration,
+                        "thought": action.get("thought", ""),
+                        **explain_payload,
                         "trajectory": self._strip_images(trajectory),
                         "completed_step_count": len(completed_steps),
                     }
@@ -774,7 +825,7 @@ class DataAgent:
                         "role": "user",
                         "content": (
                             f"[ERROR] Unknown action '{action_type}'. "
-                            "Please choose one of: visualize, clarify, present."
+                            "Please choose one of: visualize, clarify, explain, present."
                         ),
                     })
                     yield self._error_event(iteration, f"Unknown action: {action_type}", message_code="agent.unknownAction")
@@ -881,6 +932,31 @@ class DataAgent:
         if not questions:
             raise ValueError("clarify action requires non-empty questions[]")
         return {"questions": questions}
+
+    @classmethod
+    def _normalize_explain_action(cls, action: dict[str, Any]) -> dict[str, Any]:
+        """Normalize an explain action into the same shape as clarify.
+
+        The frontend reuses the clarify pipeline (one question whose ``text``
+        is the explanation and whose ``options`` are clickable followups), so
+        we emit a ``questions[]`` payload here. The followups are optional
+        visualization-leading prompts; clicking one is equivalent to typing
+        that prompt as the next user message.
+        """
+        explanation = str(action.get("explanation", "")).strip()
+        if not explanation:
+            raise ValueError("explain action requires a non-empty 'explanation'")
+
+        options = cls._sanitize_clarification_options(action.get("followups"))
+        question: dict[str, Any] = {
+            "id": "explanation",
+            "text": explanation,
+            "responseType": "single_choice",
+            "required": False,
+        }
+        if options:
+            question["options"] = options
+        return {"questions": [question]}
 
     # ------------------------------------------------------------------
     # Visualize execution (with repair)
@@ -1646,7 +1722,7 @@ class DataAgent:
                             "status": "ok",
                             "stdout": tool_content,
                         }
-                    elif tool_name in ("visualize", "clarify", "present", "action"):
+                    elif tool_name in ("visualize", "clarify", "explain", "present", "action"):
                         action_data = dict(tool_args)
                         if "action" not in action_data:
                             real_name = tool_name if tool_name != "action" else action_data.get("type", "present")
@@ -1724,7 +1800,7 @@ class DataAgent:
                     "content": (
                         "[FORMAT ERROR] Your previous response did not contain a valid JSON action. "
                         "Please output ONLY a JSON object with one of these actions: "
-                        "visualize, clarify, or present. Do NOT repeat your analysis — "
+                        "visualize, clarify, explain, or present. Do NOT repeat your analysis — "
                         "just reformat your conclusion as JSON."
                     ),
                 })

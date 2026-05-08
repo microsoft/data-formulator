@@ -606,7 +606,7 @@ def data_agent_streaming():
             ):
                 yield json.dumps(event, ensure_ascii=False) + '\n'
 
-                if event.get("type") in ("completion", "clarify"):
+                if event.get("type") in ("completion", "clarify", "explain"):
                     break
 
         except Exception as e:

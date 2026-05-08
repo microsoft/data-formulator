@@ -1,7 +1,8 @@
 import React, { FC, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, TextField, Typography, useTheme } from '@mui/material';
+import { Box, IconButton, TextField, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import CloseIcon from '@mui/icons-material/Close';
 import { useTranslation } from 'react-i18next';
 import {
     ClarificationQuestion,
@@ -14,6 +15,16 @@ interface ClarificationPanelProps {
     autoSelectQuestionId?: string;
     autoSelectOptionId?: string;
     autoSelectTimeoutMs?: number;
+    /**
+     * 'clarify' (default) — agent is asking the user a question (warning palette).
+     * 'explain'           — agent gave an answer; options are suggested chart
+     *                       follow-ups the user can click (info palette).
+     *
+     * Both variants share the same simplified layout: a small header with a
+     * close (×) icon, the question/explanation text, and clickable options.
+     * Long-form replies happen in the main chat box below the panel.
+     */
+    variant?: 'clarify' | 'explain';
     onSubmit: (responses: ClarificationResponse[]) => void;
     onCancel: () => void;
 }
@@ -23,14 +34,13 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
     autoSelectQuestionId,
     autoSelectOptionId,
     autoSelectTimeoutMs,
+    variant = 'clarify',
     onSubmit,
     onCancel,
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
-    const [selected, setSelected] = useState<Record<string, ClarificationResponse>>({});
     const [textAnswers, setTextAnswers] = useState<Record<string, string>>({});
-    const [freeform, setFreeform] = useState('');
     const [autoProgress, setAutoProgress] = useState(1);
     const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
     const submittedRef = useRef(false);
@@ -41,43 +51,6 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         const option = question?.options?.find(o => o.id === autoSelectOptionId);
         return question && option ? { question, option } : null;
     }, [autoSelectOptionId, autoSelectQuestionId, questions]);
-
-    const buildStructuredResponses = () => {
-        const trimmedFreeform = freeform.trim();
-        if (trimmedFreeform) {
-            return [{
-                question_id: '__freeform__',
-                answer: trimmedFreeform,
-                source: 'freeform' as const,
-            }];
-        }
-
-        const responses: ClarificationResponse[] = [];
-        for (const question of questions) {
-            const selectedResponse = selected[question.id];
-            if (selectedResponse) {
-                responses.push(selectedResponse);
-                continue;
-            }
-
-            const textAnswer = (textAnswers[question.id] || '').trim();
-            if (textAnswer) {
-                responses.push({
-                    question_id: question.id,
-                    answer: textAnswer,
-                    source: 'free_text',
-                });
-            }
-        }
-        return responses;
-    };
-
-    const requiredQuestionIds = questions
-        .filter(question => question.required !== false)
-        .map(question => question.id);
-    const canSubmit = freeform.trim().length > 0 || requiredQuestionIds.every(questionId =>
-        selected[questionId] || (textAnswers[questionId] || '').trim().length > 0
-    );
 
     const submitResponses = (responses: ClarificationResponse[]) => {
         if (responses.length === 0 || submittedRef.current) return;
@@ -116,32 +89,54 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
         return () => window.clearInterval(timer);
     }, [autoOption, autoSelectTimeoutMs]);
 
+    // Variant-specific styling. Explain uses the info palette; clarify uses warning.
+    const isExplain = variant === 'explain';
+    const accentColor = isExplain ? theme.palette.info.main : theme.palette.warning.main;
+    const headerKey = isExplain ? 'chartRec.explanationTitle' : 'chartRec.clarificationTitle';
+
     return (
         <Box sx={{
-            display: 'flex', flexDirection: 'column', gap: '8px',
+            display: 'flex', flexDirection: 'column', gap: '4px',
             px: 0.5, py: '8px',
-            borderBottom: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
-            backgroundColor: alpha(theme.palette.warning.main, 0.05),
+            borderBottom: `1px solid ${alpha(accentColor, 0.2)}`,
+            backgroundColor: alpha(accentColor, 0.05),
             borderRadius: '8px 8px 0 0',
             mx: '-8px', mt: '-4px', mb: '4px',
         }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <SmartToyOutlinedIcon sx={{ fontSize: 14, color: theme.palette.warning.main, flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 12, fontWeight: 600, color: theme.palette.text.primary }}>
-                    {t('chartRec.clarificationTitle')}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', minHeight: 16 }}>
+                <SmartToyOutlinedIcon sx={{ fontSize: 14, color: accentColor, flexShrink: 0 }} />
+                <Typography sx={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: theme.palette.text.primary,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    flex: 1,
+                }}>
+                    {t(headerKey)}
                 </Typography>
+                <IconButton
+                    size="small"
+                    onClick={onCancel}
+                    sx={{
+                        ml: 'auto', p: 0, width: 16, height: 16,
+                        color: theme.palette.text.secondary,
+                        '&:hover': { color: theme.palette.error.main },
+                    }}
+                >
+                    <CloseIcon sx={{ fontSize: 14 }} />
+                </IconButton>
             </Box>
 
             {questions.map((question, questionIndex) => (
                 <Box key={question.id} sx={{ display: 'flex', flexDirection: 'column', gap: '4px', pl: '20px' }}>
-                    <Typography component="div" sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.4 }}>
-                        {t('chartRec.clarificationQuestionLabel', { index: questionIndex + 1 })}{' '}
-                        {renderFieldHighlights(question.text, alpha(theme.palette.warning.main, 0.12))}
-                        {question.required === false && (
-                            <Typography component="span" sx={{ ml: 0.5, fontSize: 10, color: theme.palette.text.secondary }}>
-                                {t('chartRec.optionalClarification')}
-                            </Typography>
+                    <Typography component="div" sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.5 }}>
+                        {!isExplain && questions.length > 1 && (
+                            <>
+                                {t('chartRec.clarificationQuestionLabel', { index: questionIndex + 1 })}{' '}
+                            </>
                         )}
+                        {renderFieldHighlights(question.text, alpha(accentColor, 0.06))}
                     </Typography>
 
                     {question.responseType === 'free_text' ? (
@@ -149,6 +144,19 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                             size="small"
                             value={textAnswers[question.id] || ''}
                             onChange={(event) => setTextAnswers(prev => ({ ...prev, [question.id]: event.target.value }))}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter' && !event.shiftKey) {
+                                    const value = (textAnswers[question.id] || '').trim();
+                                    if (value) {
+                                        event.preventDefault();
+                                        submitResponses([{
+                                            question_id: question.id,
+                                            answer: value,
+                                            source: 'free_text',
+                                        }]);
+                                    }
+                                }
+                            }}
                             placeholder={t('chartRec.freeTextClarificationPlaceholder')}
                             multiline
                             minRows={1}
@@ -157,11 +165,20 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                         />
                     ) : (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {isExplain && (question.options || []).length > 0 && (
+                                <Typography sx={{
+                                    fontSize: 10,
+                                    color: theme.palette.text.disabled,
+                                    fontStyle: 'italic',
+                                    mt: '2px',
+                                }}>
+                                    {t('chartRec.explanationFollowupsLabel')}
+                                </Typography>
+                            )}
                             {(question.options || []).map(option => {
-                                const isSelected = selected[question.id]?.option_id === option.id;
                                 const isAutoOption = autoOption?.question.id === question.id && autoOption?.option.id === option.id;
                                 return (
-                                    <Box key={option.id || option.label} sx={{ position: 'relative', width: 'fit-content', overflow: 'hidden', borderRadius: '6px' }}>
+                                    <Box key={option.id || option.label} sx={{ position: 'relative', maxWidth: '100%', overflow: 'hidden', borderRadius: '6px' }}>
                                         {isAutoOption && secondsRemaining != null && (
                                             <Box sx={{
                                                 position: 'absolute',
@@ -180,33 +197,33 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                                         <Typography
                                             component="button"
                                             type="button"
-                                            onClick={() => {
-                                                const response = {
-                                                    question_id: question.id,
-                                                    answer: option.label,
-                                                    option_id: option.id,
-                                                    source: 'option' as const,
-                                                };
-                                                if (questions.length === 1) {
-                                                    submitResponses([response]);
-                                                    return;
-                                                }
-                                                setSelected(prev => ({ ...prev, [question.id]: response }));
-                                            }}
+                                            // Click immediately submits — single-question is the only
+                                            // shape we emit now (multi-question clarify is rare and
+                                            // can also be answered via the main chat box).
+                                            onClick={() => submitResponses([{
+                                                question_id: question.id,
+                                                answer: option.label,
+                                                option_id: option.id,
+                                                source: 'option',
+                                            }])}
                                             sx={{
                                                 position: 'relative', zIndex: 1,
                                                 px: '8px', py: '4px',
                                                 borderRadius: '6px',
-                                                border: `1px solid ${isSelected ? alpha(theme.palette.primary.main, 0.65) : alpha(theme.palette.text.primary, 0.12)}`,
-                                                backgroundColor: isSelected ? alpha(theme.palette.primary.main, 0.08) : theme.palette.background.paper,
+                                                border: `1px solid ${alpha(theme.palette.text.primary, 0.12)}`,
+                                                backgroundColor: theme.palette.background.paper,
                                                 cursor: 'pointer',
                                                 fontSize: 11,
-                                                width: 'fit-content',
+                                                // Allow long labels to wrap gracefully instead of overflowing.
+                                                display: 'block',
+                                                maxWidth: '100%',
+                                                whiteSpace: 'normal',
+                                                wordBreak: 'break-word',
                                                 lineHeight: 1.4,
                                                 color: theme.palette.text.primary,
                                                 textAlign: 'left',
-                                                fontFamily: 'inherit',
-                                                '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.06) },
+                                                fontFamily: theme.typography.fontFamily,
+                                                '&:hover': { backgroundColor: alpha(accentColor, 0.08) },
                                             }}
                                         >
                                             {option.label}
@@ -223,37 +240,6 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                     )}
                 </Box>
             ))}
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', pl: '20px' }}>
-                <Typography sx={{ fontSize: 11, color: theme.palette.text.secondary }}>
-                    {t('chartRec.directClarificationLabel')}
-                </Typography>
-                <TextField
-                    size="small"
-                    value={freeform}
-                    onChange={(event) => setFreeform(event.target.value)}
-                    placeholder={t('chartRec.directClarificationPlaceholder')}
-                    multiline
-                    minRows={1}
-                    maxRows={3}
-                    sx={{ '& .MuiInputBase-input': { fontSize: 11 } }}
-                />
-            </Box>
-
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', pl: '20px' }}>
-                <Button size="small" onClick={onCancel} sx={{ fontSize: 11, minHeight: 24 }}>
-                    {t('chartRec.cancelClarification')}
-                </Button>
-                <Button
-                    size="small"
-                    variant="contained"
-                    disabled={!canSubmit}
-                    onClick={() => submitResponses(buildStructuredResponses())}
-                    sx={{ fontSize: 11, minHeight: 24 }}
-                >
-                    {t('chartRec.submitClarification')}
-                </Button>
-            </Box>
         </Box>
     );
 };
