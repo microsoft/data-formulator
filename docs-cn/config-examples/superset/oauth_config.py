@@ -41,6 +41,11 @@ class SsoHandler:
     # ── 需要修改 ──────────────────────────────────────────────
     userinfo_url = '<YOUR_SSO_USERINFO_URL>'
 
+    # SSO 角色 → Superset 角色映射
+    # DF 通过 Chart Data API 拉取数据，仅需 datasource access 权限。
+    # - Admin / Alpha：自动拥有所有数据集的访问权限
+    # - Gamma：需要管理员在 Superset 中授予具体数据集的 datasource access
+    # 不需要 SQL Lab 相关权限（can execute on SqlLab 等）。
     role_mapping = {
         'admin': 'Admin',
         'analyst': 'Alpha',

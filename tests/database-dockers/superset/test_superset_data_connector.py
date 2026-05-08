@@ -134,16 +134,16 @@ class MockSupersetClient:
         }
         return datasets.get(dataset_id, {})
 
-    def create_sql_session(self, token):
-        return {"session_id": "mock-session-123"}
-
-    def execute_sql_with_session(self, session, db_id, sql, schema, limit):
+    def post_chart_data(self, token, dataset_id, queries, result_format="json"):
         return {
-            "data": [
-                {"order_id": 1, "customer_id": 100, "amount": 99.99, "order_date": "2025-01-01"},
-                {"order_id": 2, "customer_id": 101, "amount": 150.00, "order_date": "2025-01-02"},
-                {"order_id": 3, "customer_id": 100, "amount": 75.50, "order_date": "2025-01-03"},
-            ]
+            "result": [{
+                "data": [
+                    {"order_id": 1, "customer_id": 100, "amount": 99.99, "order_date": "2025-01-01"},
+                    {"order_id": 2, "customer_id": 101, "amount": 150.00, "order_date": "2025-01-02"},
+                    {"order_id": 3, "customer_id": 100, "amount": 75.50, "order_date": "2025-01-03"},
+                ],
+                "colnames": ["order_id", "customer_id", "amount", "order_date"],
+            }],
         }
 
 

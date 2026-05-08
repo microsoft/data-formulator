@@ -5,9 +5,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import Any
 from urllib.parse import quote
 
@@ -142,62 +140,29 @@ class SupersetClient:
         resp.raise_for_status()
         return resp.json().get("result", {})
 
-    # -- SQL Lab ---------------------------------------------------------
+    # -- Chart Data API --------------------------------------------------
 
-    def get_csrf_token(self, access_token: str) -> str:
-        resp = requests.get(
-            f"{self.base_url}/api/v1/security/csrf_token/",
-            headers=self._headers(access_token),
-            timeout=self.timeout,
-        )
-        resp.raise_for_status()
-        return resp.json().get("result", "")
-
-    def create_sql_session(self, access_token: str) -> requests.Session:
-        """Create a reusable SQL Lab session with auth + CSRF prepared."""
-        sql_session = requests.Session()
-        sql_session.headers.update(self._headers(access_token))
-
-        csrf_resp = sql_session.get(
-            f"{self.base_url}/api/v1/security/csrf_token/",
-            timeout=self.timeout,
-        )
-        csrf_resp.raise_for_status()
-        csrf = csrf_resp.json().get("result", "")
-        if csrf:
-            sql_session.headers.update({"X-CSRFToken": csrf})
-        return sql_session
-
-    @staticmethod
-    def _extract_jinja_params(sql: str) -> dict[str, str]:
-        """Find {{ var }} references in SQL and return default empty values."""
-        params: dict[str, str] = {}
-        for match in re.finditer(r"\{\{\s*(\w+)\s*\}\}", sql):
-            params.setdefault(match.group(1), "")
-        return params
-
-    def execute_sql_with_session(
+    def post_chart_data(
         self,
-        sql_session: requests.Session,
-        database_id: int,
-        sql: str,
-        schema: str = "",
-        row_limit: int = 100_000,
+        access_token: str,
+        dataset_id: int,
+        queries: list[dict],
+        result_format: str = "json",
     ) -> dict:
-        """Execute SQL via an existing session."""
-        body: dict[str, Any] = {
-            "database_id": database_id,
-            "sql": sql,
-            "schema": schema,
-            "runAsync": False,
-            "queryLimit": row_limit,
-        }
-        jinja_params = self._extract_jinja_params(sql)
-        if jinja_params:
-            body["templateParams"] = json.dumps(jinja_params)
+        """Execute a query via Chart Data API (dataset-level permission).
 
-        resp = sql_session.post(
-            f"{self.base_url}/api/v1/sqllab/execute/",
+        Unlike SQL Lab, this endpoint only requires ``datasource access``
+        permission on the target dataset and automatically applies
+        Row-Level Security (RLS) rules.
+        """
+        body: dict[str, Any] = {
+            "datasource": {"id": dataset_id, "type": "table"},
+            "queries": queries,
+            "result_format": result_format,
+        }
+        resp = requests.post(
+            f"{self.base_url}/api/v1/chart/data",
+            headers=self._headers(access_token),
             json=body,
             timeout=self.timeout,
         )
@@ -213,3 +178,4 @@ class SupersetClient:
                 response=resp,
             )
         return resp.json()
+

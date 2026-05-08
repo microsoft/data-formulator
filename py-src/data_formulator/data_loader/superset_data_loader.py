@@ -7,12 +7,13 @@ Treats Superset as a hierarchical data source:
   dashboard (table_group) → dataset (table)
 
 Authentication is JWT-based (``auth_mode() = "token"``).  Data is fetched
-via Superset's SQL Lab API.
+via Superset's Chart Data API (``POST /api/v1/chart/data``), which only
+requires ``datasource access`` permission and automatically applies
+Row-Level Security (RLS).
 """
 
 import json
 import logging
-import re
 from typing import Any
 
 import pyarrow as pa
@@ -25,68 +26,6 @@ from data_formulator.data_loader.superset_client import SupersetClient
 from data_formulator.data_loader.superset_auth_bridge import SupersetAuthBridge
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# SQL building helpers
-# ---------------------------------------------------------------------------
-
-def _detect_quote_char(detail: dict) -> str:
-    """Return the SQL identifier quote character for the dataset's database backend.
-
-    MySQL/MariaDB use backticks; PostgreSQL, SQLite, and most ANSI-compliant
-    databases use double quotes.
-    """
-    backend = ((detail.get("database") or {}).get("backend") or "").lower()
-    if backend in ("mysql", "mariadb"):
-        return "`"
-    return '"'
-
-
-def _quote_identifier(name: str, quote_char: str = '"') -> str:
-    escaped = (name or "").replace(quote_char, quote_char * 2)
-    return f'{quote_char}{escaped}{quote_char}'
-
-
-def _column_ref(name: str, quote_char: str = '"') -> str:
-    """Reference a column name in SQL, quoting only when necessary.
-
-    Simple word-character identifiers (including CJK / Unicode letters)
-    are returned unquoted — this avoids MySQL's double-quote-as-string
-    pitfall while keeping the SQL readable.  Only names with spaces,
-    parentheses, or other special characters are quoted.
-    """
-    stripped = (name or "").strip()
-    if re.fullmatch(r"\w+", stripped, flags=re.UNICODE):
-        return stripped
-    return _quote_identifier(stripped, quote_char)
-
-
-def _sql_literal(value: Any) -> str:
-    if value is None:
-        return "NULL"
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    if isinstance(value, (int, float)):
-        return str(value)
-    escaped = str(value).replace("'", "''")
-    return f"'{escaped}'"
-
-
-def _build_dataset_sql(detail: dict) -> tuple[int, str, str]:
-    """Return (database_id, schema, base_select_sql) from a dataset detail."""
-    db_id = detail["database"]["id"]
-    table_name = detail["table_name"]
-    schema = detail.get("schema", "") or ""
-    dataset_sql = (detail.get("sql") or "").strip()
-    dataset_kind = (detail.get("kind") or "").lower()
-
-    if dataset_kind == "virtual" and dataset_sql:
-        return db_id, schema, f"SELECT * FROM ({dataset_sql.rstrip(';')}) AS _vds"
-
-    qc = _detect_quote_char(detail)
-    prefix = f'{_quote_identifier(schema, qc)}.' if schema else ""
-    return db_id, schema, f'SELECT * FROM {prefix}{_quote_identifier(table_name, qc)}'
 
 
 # ---------------------------------------------------------------------------
@@ -582,23 +521,22 @@ class SupersetLoader(ExternalDataLoader):
         return tables
 
 
-    @staticmethod
-    def _build_source_filter_clauses(
-        source_filters: list[dict] | None,
-        quote_char: str = '"',
-    ) -> list[str]:
-        """Convert source_filters from import_options into SQL WHERE clause fragments.
+    # -- Chart Data API query builders ------------------------------------
 
-        Each filter has: column, operator, value.
-        ``quote_char`` must match the target database dialect (backtick for
-        MySQL, double-quote for PostgreSQL / ANSI).  Simple Unicode-word
-        identifiers (CJK, Latin, etc.) are left unquoted via ``_column_ref``
-        so they work on all backends.
+    @staticmethod
+    def _build_chart_data_filters(
+        source_filters: list[dict] | None,
+    ) -> list[dict]:
+        """Convert *source_filters* to Chart Data API ``filters`` format.
+
+        Returns a list of ``{"col": ..., "op": ..., "val": ...}`` dicts
+        understood by ``POST /api/v1/chart/data``.  BETWEEN is split into
+        two conditions (``>=`` + ``<=``) since Chart Data API has no native
+        BETWEEN operator.
         """
         if not source_filters:
             return []
 
-        # Valid operators (prevents SQL injection via operator field)
         valid_ops = frozenset({
             "EQ", "NEQ", "GT", "GTE", "LT", "LTE",
             "IN", "NOT_IN", "LIKE", "ILIKE",
@@ -606,7 +544,15 @@ class SupersetLoader(ExternalDataLoader):
             "BETWEEN",
         })
 
-        clauses: list[str] = []
+        op_map = {
+            "EQ": "==", "NEQ": "!=",
+            "GT": ">", "GTE": ">=", "LT": "<", "LTE": "<=",
+            "IN": "IN", "NOT_IN": "NOT IN",
+            "LIKE": "LIKE", "ILIKE": "ILIKE",
+            "IS_NULL": "IS NULL", "IS_NOT_NULL": "IS NOT NULL",
+        }
+
+        filters: list[dict] = []
         for sf in source_filters:
             if not isinstance(sf, dict):
                 continue
@@ -617,54 +563,45 @@ class SupersetLoader(ExternalDataLoader):
             if not col or op not in valid_ops:
                 continue
 
-            qcol = _column_ref(col, quote_char)
-
-            if op == "IS_NULL":
-                clauses.append(f"{qcol} IS NULL")
-            elif op == "IS_NOT_NULL":
-                clauses.append(f"{qcol} IS NOT NULL")
+            if op in ("IS_NULL", "IS_NOT_NULL"):
+                filters.append({"col": col, "op": op_map[op], "val": None})
             elif op in ("IN", "NOT_IN"):
                 if not isinstance(value, list) or len(value) == 0:
                     continue
-                literals = ", ".join(_sql_literal(v) for v in value)
-                sql_op = "IN" if op == "IN" else "NOT IN"
-                clauses.append(f"{qcol} {sql_op} ({literals})")
+                filters.append({"col": col, "op": op_map[op], "val": value})
             elif op == "BETWEEN":
                 if not isinstance(value, list) or len(value) != 2:
                     continue
-                clauses.append(f"{qcol} BETWEEN {_sql_literal(value[0])} AND {_sql_literal(value[1])}")
+                filters.append({"col": col, "op": ">=", "val": value[0]})
+                filters.append({"col": col, "op": "<=", "val": value[1]})
             else:
-                sql_ops = {
-                    "EQ": "=", "NEQ": "!=", "GT": ">", "GTE": ">=",
-                    "LT": "<", "LTE": "<=", "LIKE": "LIKE", "ILIKE": "ILIKE",
-                }
-                clauses.append(f"{qcol} {sql_ops[op]} {_sql_literal(value)}")
+                filters.append({"col": col, "op": op_map[op], "val": value})
 
-        return clauses
+        return filters
 
     @staticmethod
-    def _build_sort_clause(
+    def _build_chart_data_orderby(
         sort_columns: list[str] | None,
         sort_order: str | None = "asc",
-        quote_char: str = '"',
-    ) -> str:
-        """Build an ORDER BY clause from import_options sort settings."""
-        if not isinstance(sort_columns, list) or not sort_columns:
-            return ""
+    ) -> list[list]:
+        """Convert sort settings to Chart Data API ``orderby`` format.
 
-        direction = "DESC" if str(sort_order).lower() == "desc" else "ASC"
-        sort_refs = []
+        Returns ``[["col_name", is_ascending], ...]``.
+        """
+        if not isinstance(sort_columns, list) or not sort_columns:
+            return []
+
+        is_asc = str(sort_order).lower() != "desc"
+        result: list[list] = []
         for col in sort_columns:
             if not isinstance(col, str):
                 continue
             col_name = col.strip()
             if not col_name:
                 continue
-            sort_refs.append(f"{_column_ref(col_name, quote_char)} {direction}")
+            result.append([col_name, is_asc])
 
-        if not sort_refs:
-            return ""
-        return f"ORDER BY {', '.join(sort_refs)}"
+        return result
 
     # -- get_metadata / get_column_types ------------------------------------
 
@@ -841,41 +778,42 @@ class SupersetLoader(ExternalDataLoader):
                     dataset_id, column_name, exc_info=True,
                 )
 
+        # Tier 3: Chart Data API with columns aggregation (GROUP BY = DISTINCT)
         try:
-            detail = self._client.get_dataset_detail(token, dataset_id)
-            db_id, schema, base_sql = _build_dataset_sql(detail)
-            qc = _detect_quote_char(detail)
-            qcol = _column_ref(column_name, qc)
-            where_parts = [f"{qcol} IS NOT NULL"]
+            query: dict[str, Any] = {
+                "columns": [column_name],
+                "filters": [
+                    {"col": column_name, "op": "IS NOT NULL", "val": None},
+                ],
+                "orderby": [[column_name, True]],
+                "row_limit": safe_limit + 1,
+                "row_offset": safe_offset,
+            }
             if trimmed:
-                where_parts.append(
-                    f"CAST({qcol} AS VARCHAR) ILIKE {_sql_literal(f'%{trimmed}%')}"
+                query["filters"].append(
+                    {"col": column_name, "op": "ILIKE", "val": f"%{trimmed}%"}
                 )
-            sql = (
-                f"SELECT DISTINCT {qcol} FROM ({base_sql}) AS _src "
-                f"WHERE {' AND '.join(where_parts)} "
-                f"ORDER BY 1 LIMIT {safe_limit + 1} OFFSET {safe_offset}"
-            )
-            session = self._client.create_sql_session(token)
-            result = self._client.execute_sql_with_session(
-                session, db_id, sql, schema, row_limit=safe_limit + 1,
-            )
-            rows = result.get("data", []) or []
+            result = self._client.post_chart_data(token, dataset_id, [query])
+
+            queries_result = result.get("result", [])
+            rows = queries_result[0].get("data", []) if queries_result else []
             has_more = len(rows) > safe_limit
             rows = rows[:safe_limit]
 
-            cols = result.get("columns") or []
-            col_key = (cols[0].get("column_name") or cols[0].get("name") or cols[0].get("label")) if cols else None
-            if not col_key and rows and isinstance(rows[0], dict):
-                col_key = next(iter(rows[0]), None)
+            col_key = column_name
+            if rows and isinstance(rows[0], dict) and column_name not in rows[0]:
+                col_key = next(iter(rows[0]), column_name)
 
             options = []
             for row in rows:
-                raw = row.get(col_key) if isinstance(row, dict) and col_key else row
+                raw = row.get(col_key) if isinstance(row, dict) else row
                 options.append({"label": str(raw) if raw is not None else "", "value": raw})
             return {"options": options, "has_more": has_more}
         except Exception:
-            logger.warning("SQL fallback for column values failed dataset=%s column=%s", dataset_id, column_name, exc_info=True)
+            logger.warning(
+                "Chart Data API fallback for column values failed dataset=%s column=%s",
+                dataset_id, column_name, exc_info=True,
+            )
             return {"options": [], "has_more": False}
 
     # -- fetch_data_as_arrow -----------------------------------------------
@@ -885,7 +823,11 @@ class SupersetLoader(ExternalDataLoader):
         source_table: str,
         import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
-        """Fetch dataset data via Superset's SQL Lab API.
+        """Fetch dataset data via Superset's Chart Data API.
+
+        Uses ``POST /api/v1/chart/data`` with ``result_type=samples``
+        which only requires ``datasource access`` permission (no SQL Lab
+        permission needed) and automatically applies Row-Level Security.
 
         ``source_table`` must be a numeric dataset ID as a string, e.g. ``"42"``.
         """
@@ -900,70 +842,67 @@ class SupersetLoader(ExternalDataLoader):
             )
 
         token = self._ensure_token()
-        detail = self._client.get_dataset_detail(token, dataset_id)
-        db_id, schema, base_sql = _build_dataset_sql(detail)
 
-        # Detect the database backend for correct identifier quoting
-        quote_char = _detect_quote_char(detail)
+        query: dict[str, Any] = {
+            "row_limit": size,
+            "result_type": "samples",
+        }
 
-        # Build WHERE clauses from source_filters
-        where_clauses = self._build_source_filter_clauses(
-            opts.get("source_filters"), quote_char,
+        filters = self._build_chart_data_filters(opts.get("source_filters"))
+        if filters:
+            query["filters"] = filters
+
+        orderby = self._build_chart_data_orderby(
+            opts.get("sort_columns"), opts.get("sort_order", "asc"),
         )
-        sort_clause = self._build_sort_clause(
-            opts.get("sort_columns"),
-            opts.get("sort_order", "asc"),
-            quote_char,
-        )
+        if orderby:
+            query["orderby"] = orderby
 
-        # Build SQL
-        full_sql = f"SELECT * FROM ({base_sql}) AS _src"
-        if where_clauses:
-            full_sql += f" WHERE {' AND '.join(where_clauses)}"
-        if sort_clause:
-            full_sql += f" {sort_clause}"
-        full_sql += f" LIMIT {size}"
-
-        # Execute via SQL Lab
-        sql_session = self._client.create_sql_session(token)
         logger.info(
-            "Superset SQL Lab execute: dataset_id=%s db_id=%s schema=%s sql=%s",
-            dataset_id, db_id, schema, full_sql,
+            "Superset Chart Data API: dataset_id=%s query=%s",
+            dataset_id, query,
         )
-        result = self._client.execute_sql_with_session(
-            sql_session, db_id, full_sql, schema, size,
-        )
+        result = self._client.post_chart_data(token, dataset_id, [query])
 
-        rows = result.get("data", []) or []
+        queries_result = result.get("result", [])
+        if not queries_result:
+            return self._empty_arrow_table(token, dataset_id)
+
+        query_result = queries_result[0]
+        rows = query_result.get("data", []) or []
         logger.info(
-            "Superset SQL Lab result: dataset_id=%s rows=%d status=%s",
-            dataset_id, len(rows), result.get("status", "unknown"),
+            "Superset Chart Data result: dataset_id=%s rows=%d",
+            dataset_id, len(rows),
         )
 
         if not rows:
-            # Return a 0-row table that preserves column schema from the
-            # dataset metadata (same approach as 0.6).  ``pa.table({})``
-            # would lose all column info, causing the frontend filter UI
-            # to disappear.
-            col_names = [
-                c.get("column_name") or c.get("name") or c.get("label")
-                for c in (result.get("columns") or [])
-            ]
-            col_names = [n for n in col_names if n]
+            col_names = query_result.get("colnames") or []
             if not col_names:
-                col_names = [
-                    c.get("column_name", "")
-                    for c in (detail.get("columns") or [])
-                    if c.get("column_name")
-                ]
-            if col_names:
-                return pa.table({name: pa.array([], type=pa.string()) for name in col_names})
-            return pa.table({})
+                return self._empty_arrow_table(token, dataset_id)
+            return pa.table(
+                {name: pa.array([], type=pa.string()) for name in col_names}
+            )
 
-        # Convert list-of-dicts to Arrow table
         columns = list(rows[0].keys())
         col_data = {col: [row.get(col) for row in rows] for col in columns}
         return pa.table(col_data)
+
+    def _empty_arrow_table(self, token: str, dataset_id: int) -> pa.Table:
+        """Build a 0-row Arrow table preserving column names from metadata."""
+        try:
+            detail = self._client.get_dataset_detail(token, dataset_id)
+            col_names = [
+                c.get("column_name", "")
+                for c in (detail.get("columns") or [])
+                if c.get("column_name")
+            ]
+            if col_names:
+                return pa.table(
+                    {name: pa.array([], type=pa.string()) for name in col_names}
+                )
+        except Exception:
+            logger.debug("Failed to fetch column names for empty table", exc_info=True)
+        return pa.table({})
 
     # -- list_tables_tree (override) ----------------------------------------
 
