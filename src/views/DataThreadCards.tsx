@@ -90,7 +90,6 @@ export interface BuildTableCardProps {
     parentTable: DictTable | undefined;
     tableIdList: string[];
     collapsed: boolean;
-    scrollRef: any;
     dispatch: any;
     handleOpenTableMenu: (table: DictTable, anchorEl: HTMLElement) => void;
     primaryBgColor: string | undefined;
@@ -110,7 +109,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
     const {
         tableId, tables, charts, chartElements, usedIntermediateTableIds,
         highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
-        parentTable, tableIdList, collapsed, scrollRef, dispatch,
+        parentTable, tableIdList, collapsed, dispatch,
         handleOpenTableMenu, primaryBgColor, t, showOriginalName = true,
         ghost = false,
     } = props;
@@ -209,6 +208,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
 
     let releventChartElements = relevantCharts.map((ce, j) =>
         <Box key={`relevant-chart-${ce.chartId}`}
+            data-chart-id={ce.chartId}
             sx={{ 
                 display: 'flex', padding: 0, ...collapsedProps }}>
             {buildChartCard(ce, focusedChartId)}
@@ -243,7 +243,8 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         </Box>
     );
 
-    let regularTableBox = <Box key={`regular-table-box-${tableId}`} ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
+    let regularTableBox = <Box key={`regular-table-box-${tableId}`}
+        data-table-id={tableId}
         className="data-thread-card-wrapper"
         sx={{ padding: '0px', display: 'flex', alignItems: 'center', gap: '2px' }}>
         <Card className={`data-thread-card ${selectedClassName}`} elevation={0}

@@ -352,13 +352,9 @@ listed in the Tools section above (`explore`, `inspect_source_data`,
     "action": "clarify",
     "questions": [
         {{
-            "id": "<short_snake_case_id>",
             "text": "<a polite, concise question>",
             "responseType": "single_choice",
-            "required": true,
-            "options": [
-                {{"id": "<option_id>", "label": "<option label>"}}
-            ]
+            "options": ["<option label>", "<option label>"]
         }}
     ]
 }}
@@ -366,8 +362,8 @@ listed in the Tools section above (`explore`, `inspect_source_data`,
 
 For clarification, always output `questions[]`. If there is one ambiguity,
 include one question. If there are multiple independent ambiguities, include
-multiple questions. Each question must own its own options; never put options
-for different questions into one shared array. Use `"responseType": "free_text"`
+multiple questions. Each question must own its own `options[]`; each option
+is a plain text label. Use `"responseType": "free_text"`
 only when the user needs to type a custom answer. Ask at most 3 questions.
 
 ### `explain`
@@ -593,7 +589,6 @@ class DataAgent:
                             "thought": "",
                             "questions": [
                                 {
-                                    "id": "continue_after_tool_rounds",
                                     "text": (
                                         "I've been exploring extensively but haven't reached "
                                         "a conclusion yet.\n\nCompleted steps so far:\n"
@@ -606,28 +601,20 @@ class DataAgent:
                                     "required": True,
                                     "options": [
                                         {
-                                            "id": "continue",
                                             "label": "Continue exploring",
                                             "label_code": "agent.clarifyOptionContinue",
                                         },
                                         {
-                                            "id": "simplify",
                                             "label": "Simplify the task",
                                             "label_code": "agent.clarifyOptionSimplify",
                                         },
                                         {
-                                            "id": "present",
                                             "label": "Present what you have so far",
                                             "label_code": "agent.clarifyOptionPresent",
                                         },
                                     ],
                                 }
                             ],
-                            "auto_select": {
-                                "question_id": "continue_after_tool_rounds",
-                                "option_id": "continue",
-                                "timeout_ms": 60000,
-                            },
                             "trajectory": self._strip_images(trajectory),
                             "completed_step_count": len(completed_steps),
                         }
@@ -846,38 +833,33 @@ class DataAgent:
         finally:
             rlog.close()
 
-    @staticmethod
-    def _make_clarification_id(prefix: str, value: Any, index: int) -> str:
-        """Build a small stable id from LLM-provided clarification text."""
-        raw = str(value or "").strip().lower()
-        candidate = "".join(ch if ch.isalnum() else "_" for ch in raw).strip("_")
-        candidate = "_".join(part for part in candidate.split("_") if part)
-        return (candidate[:48] or f"{prefix}_{index + 1}")
-
     @classmethod
     def _sanitize_clarification_options(cls, raw_options: Any) -> list[dict[str, Any]]:
+        """Normalize clarify/explain option payloads.
+
+        Accepts either bare strings (the new simplified shape) or
+        ``{label, label_code?}`` dicts (legacy). Output is always a list of
+        ``{label, label_code?}`` dicts — no ids. Position in the list is the
+        only stable handle, used by the response payload.
+        """
         if not isinstance(raw_options, list):
             return []
 
         options: list[dict[str, Any]] = []
-        for index, raw_option in enumerate(raw_options[:6]):
+        for raw_option in raw_options[:6]:
             if isinstance(raw_option, str):
                 label = raw_option.strip()
                 label_code = ""
-                option_id = cls._make_clarification_id("option", label, index)
             elif isinstance(raw_option, dict):
                 label = str(raw_option.get("label", "")).strip()
                 label_code = str(raw_option.get("label_code", "")).strip()
-                option_id = str(raw_option.get("id", "")).strip() or cls._make_clarification_id(
-                    "option", label or label_code, index
-                )
             else:
                 continue
 
             if not label and not label_code:
                 continue
 
-            option: dict[str, Any] = {"id": option_id}
+            option: dict[str, Any] = {}
             if label:
                 option["label"] = label
             if label_code:
@@ -892,7 +874,7 @@ class DataAgent:
             return []
 
         questions: list[dict[str, Any]] = []
-        for index, raw_question in enumerate(raw_questions[:3]):
+        for raw_question in raw_questions[:3]:
             if not isinstance(raw_question, dict):
                 continue
 
@@ -906,11 +888,7 @@ class DataAgent:
             if response_type not in ("single_choice", "free_text"):
                 response_type = "single_choice" if options else "free_text"
 
-            question_id = str(raw_question.get("id", "")).strip() or cls._make_clarification_id(
-                "question", text or text_code, index
-            )
             question: dict[str, Any] = {
-                "id": question_id,
                 "responseType": response_type,
                 "required": bool(raw_question.get("required", True)),
             }
@@ -949,7 +927,6 @@ class DataAgent:
 
         options = cls._sanitize_clarification_options(action.get("followups"))
         question: dict[str, Any] = {
-            "id": "explanation",
             "text": explanation,
             "responseType": "single_choice",
             "required": False,

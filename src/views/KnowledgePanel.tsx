@@ -29,11 +29,11 @@ import {
     Chip,
     Divider,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import Editor from 'react-simple-code-editor';
 
@@ -72,19 +72,17 @@ const ActionRow: React.FC<ActionRowProps> = ({ icon, label, hint, onClick }) => 
             mx: 1.5, my: 0.5,
             px: 1, py: 0.6,
             cursor: 'pointer',
-            color: 'text.secondary',
-            border: theme => `1px solid ${theme.palette.divider}`,
+            color: 'primary.main',
+            border: theme => `1px solid ${alpha(theme.palette.primary.main, 0.5)}`,
             borderRadius: 1,
             bgcolor: 'transparent',
-            transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease',
+            transition: 'background-color 120ms ease, border-color 120ms ease',
             '&:hover': {
-                bgcolor: 'action.hover',
-                borderColor: 'text.secondary',
-                color: 'text.primary',
-                '& .placeholder-hint': { color: 'text.secondary' },
+                bgcolor: theme => alpha(theme.palette.primary.main, 0.04),
+                borderColor: 'primary.main',
             },
             '&:focus-visible': {
-                outline: theme => `2px solid ${theme.palette.text.secondary}`,
+                outline: theme => `2px solid ${theme.palette.primary.main}`,
                 outlineOffset: 1,
             },
             userSelect: 'none',
@@ -100,7 +98,7 @@ const ActionRow: React.FC<ActionRowProps> = ({ icon, label, hint, onClick }) => 
             <Typography
                 className="placeholder-hint"
                 sx={{
-                    fontSize: 10.5, mt: 0.125, color: 'text.disabled', wordBreak: 'break-word',
+                    fontSize: 10.5, mt: 0.125, color: 'primary.main', opacity: 0.6, wordBreak: 'break-word',
                 }}
             >
                 {hint}
@@ -389,7 +387,7 @@ export const KnowledgePanel: React.FC = () => {
                 <ActionRow
                     icon={updateMode
                         ? <RefreshIcon sx={{ fontSize: 18, mt: 0.125 }} />
-                        : <MenuBookIcon sx={{ fontSize: 18, mt: 0.125 }} />}
+                        : <AddIcon sx={{ fontSize: 18, mt: 0.125 }} />}
                     label={updateMode
                         ? t('knowledge.updateFromSession', { defaultValue: 'Update from this session' })
                         : t('knowledge.distillFromSession', { defaultValue: 'Distill from this session' })}

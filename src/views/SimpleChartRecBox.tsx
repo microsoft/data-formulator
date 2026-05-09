@@ -28,7 +28,7 @@ import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from 
 import { streamRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
 import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
-import { normalizeClarifyEvent } from '../app/clarification';
+import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
@@ -54,10 +54,11 @@ import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
 import { ClarificationPanel } from './ClarificationPanel';
 
-const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void }> = ({ message, elapsed, theme, onCancel }) => {
+const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning' }> = ({ message, elapsed, theme, onCancel, color = 'primary' }) => {
     const { t } = useTranslation();
     const latestMessage = message || t('dataThread.thinking');
     const elapsedSuffix = elapsed != null && elapsed > 0 ? ` (${elapsed}s)` : '';
+    const progressColor = color === 'warning' ? theme.palette.warning.main : theme.palette.primary.main;
     return (
         <Box sx={{
             position: 'absolute',
@@ -102,12 +103,16 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
             }}>
                 {latestMessage}{elapsedSuffix}
             </Typography>
-            <LinearProgress sx={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: '0 0 8px 8px' }} />
+            <LinearProgress sx={{
+                position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: '0 0 8px 8px',
+                backgroundColor: alpha(progressColor, 0.15),
+                '& .MuiLinearProgress-bar': { backgroundColor: progressColor },
+            }} />
         </Box>
     );
 };
 
-export const SimpleChartRecBox: FC = function () {
+export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ onInputFocus }) {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
@@ -122,6 +127,19 @@ export const SimpleChartRecBox: FC = function () {
     const dispatch = useDispatch<AppDispatch>();
 
     const [chatPrompt, setChatPrompt] = useState("");
+    // ── Clarification accumulated answers ────────────────────────────
+    // When the agent asks one or more clarification questions, clicking an
+    // option does NOT submit immediately and does NOT mutate the chat box.
+    // We just track the selections here. The agent is invoked when the LAST
+    // question is answered via clicks, OR when the user explicitly hits
+    // Send / Enter (at which point the selections are formatted into a
+    // "Selected answers: ..." prefix and prepended to the typed message).
+    const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, ClarificationResponse>>({});
+    // Guards against double-submit when the user rapidly clicks the last
+    // option twice (state updates are async, so a second click can re-enter
+    // handleSelectAnswer with a stale closure before pendingClarification
+    // clears). Tracks the draftId we've already auto-submitted for.
+    const clarifySubmittedRef = useRef<string | null>(null);
     const [isChatFormulating, setIsChatFormulating] = useState(false);
     const [ideas, setIdeas] = useState<{text: string, goal: string, tag: string}[]>([]);
     const [isLoadingIdeas, setIsLoadingIdeas] = useState(false);
@@ -446,7 +464,7 @@ export const SimpleChartRecBox: FC = function () {
         completedStepCount: number;
         actionId: string;
         lastCreatedTableId: string | null;
-    }, clarificationResponses?: ClarificationResponse[]) => {
+    }) => {
         if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
 
         const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
@@ -604,11 +622,11 @@ export const SimpleChartRecBox: FC = function () {
         };
 
         if (isResume) {
-            // Stateless resume: send back trajectory + structured user answers.
+            // Resume: just send the assembled prompt as user_question. The
+            // backend appends it to the trajectory as a normal user message.
+            // No special clarification payload needed.
             requestBody.trajectory = clarificationContext!.trajectory;
-            requestBody.clarification_responses = clarificationResponses && clarificationResponses.length > 0
-                ? clarificationResponses
-                : [{ question_id: '__freeform__', answer: prompt, source: 'freeform' }];
+            requestBody.user_question = prompt;
             requestBody.completed_step_count = clarificationContext!.completedStepCount;
         } else {
             requestBody.user_question = prompt;
@@ -978,10 +996,6 @@ export const SimpleChartRecBox: FC = function () {
                         trajectory: result.trajectory || [],
                         completedStepCount: result.completed_step_count || 0,
                         lastCreatedTableId,
-                        autoSelect: !!normalizedClarification.autoSelect,
-                        autoSelectQuestionId: normalizedClarification.autoSelect?.question_id,
-                        autoSelectOptionId: normalizedClarification.autoSelect?.option_id,
-                        autoSelectTimeoutMs: normalizedClarification.autoSelect?.timeout_ms,
                     }}));
                     // Don't change the user's focus — they may have been looking
                     // at a chart and the clarify/explain pause shouldn't yank
@@ -1243,25 +1257,81 @@ export const SimpleChartRecBox: FC = function () {
     const submitChat = useCallback((prompt: string, clarificationCtx?: any) => {
         if (selectedAgent === 'report') {
             reportFromChat(prompt);
-        } else if (clarificationCtx) {
-            exploreFromChat(prompt, clarificationCtx, [{
-                question_id: '__freeform__',
-                answer: prompt,
-                source: 'freeform',
-            }]);
-        } else {
-            exploreFromChat(prompt);
+            return;
         }
-    }, [reportFromChat, exploreFromChat, selectedAgent]);
+        if (clarificationCtx) {
+            // Build the structured response payload. The backend assembles
+            // the final LLM-facing text ("Selected answers: 1. xxx; 2. yyy\n
+            // User instructions: <typed>") from this array — we no longer
+            // build that string here. Selections live only in the panel UI.
+            const questions = clarificationQuestions?.questions || [];
+            const responses: ClarificationResponse[] = [];
+            questions.forEach((_q, idx) => {
+                const ans = clarifyAnswers[idx];
+                if (ans) responses.push(ans);
+            });
+            const typed = prompt.trim();
+            if (typed) {
+                responses.push({ question_index: -1, answer: typed, source: 'freeform' });
+            }
+            // Build the user-bubble display string from the structured
+            // selections + any typed instructions. We send this same string
+            // as `prompt` — it powers both the timeline bubble and the
+            // user message appended to the trajectory on the backend.
+            const displayPrompt = formatClarificationResponses(responses);
+            exploreFromChat(displayPrompt, clarificationCtx);
+            return;
+        }
+        exploreFromChat(prompt);
+    }, [reportFromChat, exploreFromChat, selectedAgent, clarificationQuestions, clarifyAnswers]);
 
     const resumeFromClarification = useCallback((responses: ClarificationResponse[]) => {
         if (!pendingClarification) return;
-        // Both clarify and explain pauses now treat the user's reply (a clicked
-        // option or freeform text) as the next prompt on its own. We no longer
-        // prepend the agent's question — the trajectory already contains it.
-        const prompt = responses.map(r => r.answer).filter(Boolean).join('\n');
-        exploreFromChat(prompt, pendingClarification, responses);
+        // Pass the formatted display string as `prompt` — it powers both the
+        // timeline bubble and the user message appended to the trajectory.
+        const displayPrompt = formatClarificationResponses(responses);
+        exploreFromChat(displayPrompt, pendingClarification);
     }, [exploreFromChat, pendingClarification]);
+
+    // Reset accumulated clarification answers whenever the active
+    // clarification draft changes (a new clarify/explain pause appeared,
+    // the previous one was resumed, or the user dismissed it).
+    useEffect(() => {
+        setClarifyAnswers({});
+        clarifySubmittedRef.current = null;
+    }, [pendingClarification?.draftId]);
+
+    // Send is allowed only when the user has typed actual instructions.
+    // Selections live in the ClarificationPanel UI only — they never
+    // appear in the chat box. So having only selections (no typed text)
+    // means there's nothing to send beyond clicks; the user must either
+    // click the remaining options (which auto-submits) or type something.
+    const canSend = React.useMemo(() => {
+        if (!focusedTableId) return false;
+        return chatPrompt.trim().length > 0;
+    }, [chatPrompt, focusedTableId]);
+
+    // Handle a single clicked option (or free-text Enter) inside the
+    // ClarificationPanel. We just record the selection by question index
+    // — the chat box is NOT mutated. Auto-submit fires only when EVERY
+    // question is answered.
+    const handleSelectAnswer = useCallback((questionIndex: number, response: ClarificationResponse) => {
+        const questions = clarificationQuestions?.questions;
+        if (!questions || !pendingClarification) return;
+        if (clarifySubmittedRef.current === pendingClarification.draftId) return;
+
+        const newAnswers = { ...clarifyAnswers, [questionIndex]: response };
+        setClarifyAnswers(newAnswers);
+
+        // Auto-submit only when ALL questions are answered. Otherwise we
+        // wait for the user to either answer the rest or hit Send manually.
+        const allAnswered = questions.every((_q, idx) => !!newAnswers[idx]);
+        if (allAnswered) {
+            clarifySubmittedRef.current = pendingClarification.draftId;
+            const responses: ClarificationResponse[] = questions.map((_q, idx) => newAnswers[idx]);
+            resumeFromClarification(responses);
+        }
+    }, [clarificationQuestions, pendingClarification, clarifyAnswers, resumeFromClarification]);
 
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
@@ -1327,9 +1397,8 @@ export const SimpleChartRecBox: FC = function () {
                 <ClarificationPanel
                     questions={clarificationQuestions.questions}
                     variant={clarificationQuestions.variant}
-                    autoSelectQuestionId={pendingClarification.autoSelectQuestionId}
-                    autoSelectOptionId={pendingClarification.autoSelectOptionId}
-                    autoSelectTimeoutMs={pendingClarification.autoSelectTimeoutMs}
+                    selectedAnswers={clarifyAnswers}
+                    onSelectAnswer={handleSelectAnswer}
                     onSubmit={resumeFromClarification}
                     onCancel={cancelAgent}
                 />
@@ -1536,7 +1605,7 @@ export const SimpleChartRecBox: FC = function () {
                     }
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
-                        if (chatPrompt.trim().length > 0 && !isChatFormulating) {
+                        if (canSend && !isChatFormulating) {
                             if (pendingClarification) {
                                 submitChat(chatPrompt, pendingClarification);
                             } else {
@@ -1547,27 +1616,10 @@ export const SimpleChartRecBox: FC = function () {
                 }}
                 onPaste={handlePaste}
                 onFocus={() => {
-                    // Scroll to the focused table card, positioning it near the bottom of the visible area
-                    const el = document.querySelector('.data-thread-card.selected-card') as HTMLElement | null;
-                    if (el) {
-                        // Find nearest scrollable ancestor
-                        let scrollContainer: HTMLElement | null = el.parentElement;
-                        while (scrollContainer) {
-                            const ov = getComputedStyle(scrollContainer).overflowY;
-                            if (ov === 'auto' || ov === 'scroll') break;
-                            scrollContainer = scrollContainer.parentElement;
-                        }
-                        if (scrollContainer) {
-                            const containerRect = scrollContainer.getBoundingClientRect();
-                            const elRect = el.getBoundingClientRect();
-                            // Place the element so its bottom sits ~80px above the container's bottom edge
-                            const targetBottom = containerRect.bottom - 80;
-                            const offset = elRect.bottom - targetBottom;
-                            scrollContainer.scrollBy({ top: offset, behavior: 'smooth' });
-                        } else {
-                            el.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                        }
-                    }
+                    // Notify the parent (DataThread) that the chat input was
+                    // focused.  The parent's scroll-to-target effect handles
+                    // the actual scroll based on focusedId / clarify state.
+                    onInputFocus?.();
                 }}
                 slotProps={{ 
                     inputLabel: { shrink: true },
@@ -1660,7 +1712,7 @@ export const SimpleChartRecBox: FC = function () {
                                     size="small"
                                     color="primary"
                                     sx={{ p: 0.5 }}
-                                    disabled={chatPrompt.trim().length === 0 || !focusedTableId}
+                                    disabled={!canSend}
                                     onClick={() => {
                                         if (pendingClarification) {
                                             submitChat(chatPrompt, pendingClarification);
@@ -1685,6 +1737,7 @@ export const SimpleChartRecBox: FC = function () {
                            : t('chartRec.generatingIdeas')}
                     elapsed={ideaElapsed}
                     theme={theme}
+                    color={isReportMode ? 'warning' : 'primary'}
                     onCancel={() => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); }}
                 />
             )}
@@ -1695,6 +1748,7 @@ export const SimpleChartRecBox: FC = function () {
                     message={draftNodes.find(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId))
                             ?.derive?.runningPlan}
                     theme={theme}
+                    color={isReportMode ? 'warning' : 'primary'}
                     onCancel={cancelAgent}
                 />
             )}

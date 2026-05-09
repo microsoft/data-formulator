@@ -261,15 +261,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 color = resolved ? theme.palette.text.secondary : theme.palette.info.main;
                 if (resolved) {
                     collapsedLabel = t('interaction.gaveExplanation');
-                } else {
-                    // Active explain: cap the inline preview so it doesn't dominate
-                    // the timeline. Full text is one click away (Collapse expands).
-                    const PREVIEW_LIMIT = 140;
-                    const raw = (entry.content || '').trim();
-                    if (raw.length > PREVIEW_LIMIT) {
-                        collapsedLabel = raw.slice(0, PREVIEW_LIMIT).trimEnd() + '…';
-                    }
                 }
+                // Active explain renders inline in the info color (same
+                // treatment as an active clarify) so it reads as primary
+                // content, not a disabled preview.
                 break;
             }
             case 'summary':
@@ -363,6 +358,16 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         color,
                         py: '1px',
                     }}>
+                        {entry.role === 'clarify' && !resolved && (
+                            <Box component="span" sx={{
+                                display: 'inline',
+                                fontWeight: 600,
+                                fontSize: '9px',
+                                mr: '4px',
+                            }}>
+                                ({t('interaction.clarificationNeeded')})
+                            </Box>
+                        )}
                         {entry.role === 'instruction' || entry.role === 'explain'
                             ? renderFieldHighlights(displayText, fieldBg)
                             : displayText}

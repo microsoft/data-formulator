@@ -40,32 +40,22 @@ export interface Trigger {
 export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-agent';
 
 export interface ClarificationOption {
-    id?: string;
     label: string;
-    label_code?: string;
 }
 
 export interface ClarificationQuestion {
-    id: string;
     text: string;
-    text_code?: string;
-    text_params?: Record<string, string>;
     responseType?: 'single_choice' | 'free_text';
-    required?: boolean;
     options?: ClarificationOption[];
 }
 
 export interface ClarificationResponse {
-    question_id: string;
+    /** Position of the answered question in the agent's `questions[]` (0-based).
+     *  For pure freeform replies (user typed without selecting any option),
+     *  use a negative value (e.g. -1) or set `source: 'freeform'`. */
+    question_index: number;
     answer: string;
-    option_id?: string;
     source: 'option' | 'free_text' | 'freeform';
-}
-
-export interface ClarificationAutoSelect {
-    question_id: string;
-    option_id: string;
-    timeout_ms?: number;
 }
 
 export interface InteractionEntry {
@@ -86,10 +76,6 @@ export interface PendingClarification {
     trajectory: any[];
     completedStepCount: number;
     lastCreatedTableId: string | null;
-    autoSelect?: boolean;
-    autoSelectQuestionId?: string;
-    autoSelectOptionId?: string;
-    autoSelectTimeoutMs?: number;
 }
 
 export interface DraftNode {

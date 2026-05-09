@@ -78,7 +78,6 @@ import { useDataRefresh } from '../app/useDataRefresh';
 import { buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
-import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
@@ -448,9 +447,8 @@ const RenameTablePopup = memo<{
 const WorkspacePanel: FC<{
     tables: DictTable[],
     chartElements: { tableId: string, chartId: string, element: any }[],
-    suppressScrollRef?: React.MutableRefObject<boolean>,
     sx?: SxProps,
-}> = function ({ tables, chartElements, suppressScrollRef, sx }) {
+}> = function ({ tables, chartElements, sx }) {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch();
@@ -605,7 +603,6 @@ const WorkspacePanel: FC<{
                         const isLastTable = tableIndex === tables.length - 1;
 
                         const handleTableClick = () => {
-                            if (suppressScrollRef) suppressScrollRef.current = true;
                             dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
                         };
 
@@ -687,7 +684,6 @@ const WorkspacePanel: FC<{
                                             const isLast = idx === tableCharts.length - 1;
 
                                             const handleChartClick = () => {
-                                                if (suppressScrollRef) suppressScrollRef.current = true;
                                                 dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
                                             };
 
@@ -760,7 +756,6 @@ const WorkspacePanel: FC<{
 };
 
 let SingleThreadGroupView: FC<{
-    scrollRef: any,
     threadIdx: number,
     threadLabel?: string, // Custom label; absent on continuation segments
     isSplitThread?: boolean, // When true, this is a continuation: truncate used tables to immediate parent + render "↑ continued" header
@@ -771,10 +766,8 @@ let SingleThreadGroupView: FC<{
     usedIntermediateTableIds: string[],
     globalHighlightedTableIds: string[],
     focusedThreadLeafId?: string, // The leaf table ID of the thread containing the focused table
-    chatboxFocused?: boolean, // Whether the chatbox input is focused
     sx?: SxProps
 }> = function ({
-    scrollRef,
     threadIdx,
     threadLabel,
     isSplitThread = false,
@@ -785,7 +778,6 @@ let SingleThreadGroupView: FC<{
     usedIntermediateTableIds,
     globalHighlightedTableIds,
     focusedThreadLeafId,
-    chatboxFocused = false,
     sx
 }) {
 
@@ -1110,7 +1102,7 @@ let SingleThreadGroupView: FC<{
     let tableCardProps: Omit<BuildTableCardProps, 'tableId'> = {
         tables, charts, chartElements, usedIntermediateTableIds,
         highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
-        parentTable, tableIdList, collapsed, scrollRef, dispatch,
+        parentTable, tableIdList, collapsed, dispatch,
         handleOpenTableMenu, primaryBgColor: theme.palette.primary.bgcolor,
         t,
         showOriginalName: threadIdx === -1,
@@ -1560,6 +1552,24 @@ let SingleThreadGroupView: FC<{
         backgroundPosition: 'top center',
     } as const;
 
+    // Gutter icon for clarify/explain pause entries.
+    // Both share the SmartToy bouncing pulse to call attention; only the
+    // color differs (clarify = warning, explain = info) so they match the
+    // entry card's palette.
+    const getClarifyIcon = (item: typeof timelineItems[0]) => {
+        const role = item.interactionEntry?.role;
+        const color = role === 'explain' ? theme.palette.info.main : theme.palette.warning.main;
+        return <SmartToyOutlinedIcon sx={{
+            width: 14, height: 14, color,
+            animation: 'df-clarify-bounce 1.4s ease-in-out infinite',
+            '@keyframes df-clarify-bounce': {
+                '0%, 100%': { transform: 'scale(1) translateY(0)' },
+                '30%':      { transform: 'scale(1.25) translateY(-2px)' },
+                '60%':      { transform: 'scale(0.95) translateY(1px)' },
+            },
+        }} />;
+    };
+
     const getTimelineDot = (item: typeof timelineItems[0]) => {
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const color = item.highlighted 
@@ -1580,9 +1590,9 @@ let SingleThreadGroupView: FC<{
             return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />;
         }
 
-        // For clarification items, show an hourglass icon
+        // For clarification / explanation items, show an attention icon
         if (item.isClarifying) {
-            return <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main, animation: 'spin 2s ease-in-out infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />;
+            return getClarifyIcon(item);
         }
 
         // For completed items, show a checkmark icon
@@ -1687,20 +1697,34 @@ let SingleThreadGroupView: FC<{
             const gutterIcon = item.isRunning
                 ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
                 : item.isClarifying
-                    ? <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main, animation: 'spin 2s ease-in-out infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
+                    ? getClarifyIcon(item)
                     : item.isCompleted && item.stepLabel
                         ? getStepIcon(item.stepLabel, iconColor)
                         : entry
                             ? getEntryGutterIcon(entry, iconColor)
                             : getDefaultGutterIcon(iconColor);
 
-            // Clarification items are clickable to focus on the associated table
+            // Clarification rows are clickable to bring the agent's pause
+            // back into focus. Prefer the latest chart on the associated
+            // table (so users keep seeing the chart they were working on);
+            // fall back to focusing the table itself if no chart exists.
             const clarifyClickHandler = (item.isClarifying && item.tableId)
-                ? () => dispatch(dfActions.setFocused({ type: 'table', tableId: item.tableId! }))
+                ? () => {
+                    const tableId = item.tableId!;
+                    const chartsForTable = charts.filter(c => c.tableRef === tableId);
+                    const lastChart = chartsForTable[chartsForTable.length - 1];
+                    if (lastChart) {
+                        dispatch(dfActions.setFocused({ type: 'chart', chartId: lastChart.id }));
+                    } else {
+                        dispatch(dfActions.setFocused({ type: 'table', tableId }));
+                    }
+                }
                 : undefined;
 
             return (
-                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx,
+                <Box key={`timeline-row-${item.key}`}
+                    {...(item.isClarifying ? { 'data-clarifying': 'true' } : {})}
+                    sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx,
                     ...(clarifyClickHandler ? { cursor: 'pointer', '&:hover': { backgroundColor: 'rgba(0,0,0,0.02)' } } : {}),
                 }} onClick={clarifyClickHandler}>
                     <Box sx={{ 
@@ -1808,7 +1832,6 @@ let SingleThreadGroupView: FC<{
                 margin: '1px 0',
             },
             padding: '6px',
-            ...(chatboxFocused && focusedThreadLeafId && !shouldHighlightThread ? { opacity: 0.35 } : {}),
         }}
         >
         <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
@@ -1819,7 +1842,7 @@ let SingleThreadGroupView: FC<{
                 const connWidth = '2px';
                 const connStyle = 'solid';
                 return (
-                <Box sx={{ display: 'flex', flexDirection: 'row', ...(chatboxFocused && hasHighlighting && !headerHL ? { opacity: 0.35 } : {}) }}>
+                <Box sx={{ display: 'flex', flexDirection: 'row' }}>
                     <Box sx={{ 
                         width: TIMELINE_WIDTH, flexShrink: 0, 
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -2277,53 +2300,77 @@ function computeSplitExtraLeaves(
  *     of view.
  *
  * Order is preserved.
+ *
+ * `maxColumns` is a soft upper bound: if the natural packing at
+ * `viewportHeight × SCROLL_TOLERANCE` would produce more columns, the target
+ * height is grown progressively until the result fits.  Locks may force the
+ * result to exceed `maxColumns` (e.g. N distinct locks always need ≥ N
+ * columns); in that case we return the best (smallest column-count) layout
+ * we found.
  */
 function packColumnsWithLocks(
     heights: number[],
     lockKeys: (string | undefined)[],
     viewportHeight: number,
+    maxColumns: number = Infinity,
 ): number[][] {
-    const target = viewportHeight * SCROLL_TOLERANCE;
-    const cols: number[][] = [];
-    let cur: number[] = [];
-    let curH = 0;
-    let curLock: string | undefined = undefined;
+    const baseTarget = viewportHeight * SCROLL_TOLERANCE;
 
-    const flush = () => {
-        if (cur.length > 0) { cols.push(cur); cur = []; curH = 0; curLock = undefined; }
+    const packAt = (target: number): number[][] => {
+        const cols: number[][] = [];
+        let cur: number[] = [];
+        let curH = 0;
+        let curLock: string | undefined = undefined;
+        const flush = () => {
+            if (cur.length > 0) { cols.push(cur); cur = []; curH = 0; curLock = undefined; }
+        };
+        for (let i = 0; i < heights.length; i++) {
+            const h = heights[i];
+            const lock = lockKeys[i];
+            // Once the current column has a lock, it's sealed — anything new
+            // (free or locked) starts a fresh column.
+            if (curLock !== undefined) {
+                flush();
+                cur.push(i); curH = h; curLock = lock;
+                continue;
+            }
+            // Empty column: just start it.
+            if (cur.length === 0) {
+                cur.push(i); curH = h; curLock = lock;
+                continue;
+            }
+            // Try to append.  A locked entry can join an unlocked column as
+            // long as the combined height still fits — lets a small source-
+            // tables block share a column with the next thread's head.
+            const projected = curH + LAYOUT_THREAD_GAP + h;
+            if (projected <= target) {
+                cur.push(i); curH = projected; curLock = lock;
+            } else {
+                flush();
+                cur.push(i); curH = h; curLock = lock;
+            }
+        }
+        flush();
+        return cols;
     };
 
-    for (let i = 0; i < heights.length; i++) {
-        const h = heights[i];
-        const lock = lockKeys[i];
+    let layout = packAt(baseTarget);
+    if (layout.length <= maxColumns) return layout;
 
-        // Once the current column has a lock, it's sealed — anything new
-        // (free or locked) starts a fresh column.
-        if (curLock !== undefined) {
-            flush();
-            cur.push(i); curH = h; curLock = lock;
-            continue;
-        }
-
-        // Empty column: just start it.
-        if (cur.length === 0) {
-            cur.push(i); curH = h; curLock = lock;
-            continue;
-        }
-
-        // Try to append.  A locked entry can join an unlocked column as long
-        // as the combined height still fits — this is what lets a small
-        // source-tables block share a column with the next thread's head.
-        const projected = curH + LAYOUT_THREAD_GAP + h;
-        if (projected <= target) {
-            cur.push(i); curH = projected; curLock = lock;
-        } else {
-            flush();
-            cur.push(i); curH = h; curLock = lock;
-        }
+    // Overflow: grow the target until the packing fits within maxColumns.
+    // Cap the search to avoid pathological cases — if locks force more
+    // columns than maxColumns, return the smallest-column layout we found.
+    const totalH = heights.reduce((s, h) => s + h, 0)
+        + Math.max(0, heights.length - 1) * LAYOUT_THREAD_GAP;
+    let best = layout;
+    let target = baseTarget;
+    while (target < totalH) {
+        target = target * 1.25;
+        const candidate = packAt(target);
+        if (candidate.length < best.length) best = candidate;
+        if (candidate.length <= maxColumns) return candidate;
     }
-    flush();
-    return cols;
+    return best;
 }
 
 /**
@@ -2511,12 +2558,27 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    const scrollRef = useRef<null | HTMLDivElement>(null)
+    // Subscribe to draftNodes so the scroll-to-target effect re-runs when an
+    // active clarify/explain entry appears or resolves.
+    const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+
     const containerRef = useRef<null | HTMLDivElement>(null)
-    const suppressScrollRef = useRef(false);
+    // Outer wrapper containing both the thread area and the chatbox.
+    // Its height is governed by the parent Allotment pane and stays constant
+    // when the chatbox grows/shrinks during clarification or explanation.
+    // Used to derive a stable viewportHeight for split decisions so that
+    // chatbox resizing doesn't trigger re-splitting of long threads.
+    const outerRef = useRef<null | HTMLDivElement>(null)
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
-    const [chatboxFocused, setChatboxFocused] = useState(false);
+    // Track container height so we can detect when the chatbox grows/shrinks
+    // (which compresses/expands containerRef as a flex sibling).  Used to
+    // trigger the scroll-to-target effect below.
+    const [containerHeight, setContainerHeight] = useState(0);
+    // Increments every time the chat input is focused.  Used to retrigger the
+    // scroll-to-target effect even when neither focusedId nor containerHeight
+    // changes (e.g. user just clicks into the input without typing).
+    const [chatboxFocusTick, setChatboxFocusTick] = useState(0);
     const [isDragOver, setIsDragOver] = useState(false);
 
     // ── Drop handler for catalog table items from DataSourceSidebar ──────
@@ -2583,6 +2645,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         const ro = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 setContainerWidth(entry.contentRect.width);
+                setContainerHeight(entry.contentRect.height);
             }
         });
         ro.observe(el);
@@ -2591,51 +2654,88 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     const theme = useTheme();
 
-    const executeScroll = (smooth: boolean = true, block: ScrollLogicalPosition = 'center') => { 
-        if (scrollRef.current != null) {
-            scrollRef.current.scrollIntoView({ 
-                behavior: smooth ? 'smooth' : 'auto', 
-                block
-            }) 
-        }
-    }
-
-    // Track previous table/chart counts to detect agent additions
-    const prevCountsRef = useRef({ tables: tables.length, charts: charts.length });
-
+    // Keep the relevant element fully visible above the chatbox.
+    //
+    // Triggered whenever:
+    //   - focusedId changes (user clicked a different chart/table)
+    //   - containerHeight changes (chatbox grew/shrank, e.g. when an
+    //     explain/clarify panel appears or the input expands)
+    //
+    // Three target priorities:
+    //   1. Active clarify/explain inline block (data-clarifying="true")
+    //   2. Focused chart card (data-chart-id)
+    //   3. Focused table card (data-table-id)
+    //
+    // "Fully visible" means the target's top..bottom fits within
+    // containerRef's rect (which already shrinks as the chatbox grows below
+    // it).  If already in view, don't scroll.  If too tall, align top.
     useEffect(() => {
-        // Only auto-scroll when new tables or charts are added (e.g., by the agent),
-        // not when the user simply changes focus by clicking.
-        const prevCounts = prevCountsRef.current;
-        const isNewItem = tables.length > prevCounts.tables || charts.length > prevCounts.charts;
-        prevCountsRef.current = { tables: tables.length, charts: charts.length };
+        if (!containerRef.current) return;
+        const t = setTimeout(() => {
+            const container = containerRef.current;
+            if (!container) return;
+            const scroller = container.firstElementChild as HTMLElement | null;
+            if (!scroller) return;
 
-        if (focusedTableId && isNewItem) {
-            executeScroll(true);
-        }
-    }, [focusedTableId]);
+            // Find the target element in priority order.
+            let target: HTMLElement | null = null;
 
-    // When the chatbox panel expands, scroll the focused table above the overlay if needed
-    useEffect(() => {
-        if (chatboxFocused && focusedTableId && scrollRef.current && containerRef.current) {
-            setTimeout(() => {
-                if (!scrollRef.current || !containerRef.current) return;
-                const container = containerRef.current;
-                const el = scrollRef.current;
-                const containerRect = container.getBoundingClientRect();
-                const elRect = el.getBoundingClientRect();
-                // The overlay panel is ~220px from bottom; ensure the focused element's bottom
-                // is at least 240px above the container's bottom
-                const safeZone = 400;
-                const elBottomInContainer = elRect.bottom - containerRect.top;
-                const visibleHeight = containerRect.height - safeZone;
-                if (elBottomInContainer > visibleHeight) {
-                    // Scroll so the element top is near the top of the container
-                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            }, 100);
-        }
-    }, [chatboxFocused]);
+            // 1. Active clarify/explain inline block (most recent)
+            const clarifyEls = container.querySelectorAll<HTMLElement>('[data-clarifying="true"]');
+            if (clarifyEls.length > 0) {
+                target = clarifyEls[clarifyEls.length - 1];
+            }
+
+            // 2. Focused chart
+            if (!target && focusedId?.type === 'chart') {
+                target = container.querySelector<HTMLElement>(`[data-chart-id="${focusedId.chartId}"]`);
+            }
+
+            // 3. Focused table
+            if (!target && focusedId?.type === 'table') {
+                target = container.querySelector<HTMLElement>(`[data-table-id="${focusedId.tableId}"]`);
+            }
+
+            if (!target) return;
+
+            const containerRect = container.getBoundingClientRect();
+            const scrollerRect = scroller.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            const TOP_MARGIN = 16;
+            const BOTTOM_MARGIN = 16;
+            const visibleTop = containerRect.top + TOP_MARGIN;
+            const visibleBottom = containerRect.bottom - BOTTOM_MARGIN;
+            const visibleHeight = visibleBottom - visibleTop;
+
+            // Already fully visible? Don't scroll — don't bother the user.
+            if (targetRect.top >= visibleTop && targetRect.bottom <= visibleBottom) return;
+
+            // When we do need to scroll, leave generous breathing room above
+            // the target so the user has context (the prior thread items
+            // remain visible).  We aim to place the target's top about 60%
+            // of the way down the visible area — this feels natural since
+            // the user is usually interacting at the bottom and the target
+            // is most often a leaf chart/table near the end.  Clamped so
+            // the target's bottom never gets pushed below the visible area.
+            //
+            // If the target is taller than the visible area, just align its
+            // top with TOP_MARGIN so the start is in view (bottom may be
+            // cut off — preferable to hiding the start).
+            const targetTopInScroller = targetRect.top - scrollerRect.top + scroller.scrollTop;
+            const targetHeight = targetRect.height;
+            const tooTall = targetHeight + TOP_MARGIN + BOTTOM_MARGIN > visibleHeight + TOP_MARGIN + BOTTOM_MARGIN;
+            const desiredOffsetFromTop = tooTall
+                ? TOP_MARGIN
+                : Math.max(TOP_MARGIN, Math.min(visibleHeight * 0.6, visibleHeight - targetHeight - BOTTOM_MARGIN));
+            const newScrollTop = targetTopInScroller - desiredOffsetFromTop;
+
+            // Only scroll if it would meaningfully change position.
+            if (Math.abs(newScrollTop - scroller.scrollTop) > 4) {
+                scroller.scrollTo({ top: Math.max(0, newScrollTop), behavior: 'smooth' });
+            }
+        }, 100);
+        return () => clearTimeout(t);
+    }, [containerHeight, focusedId, draftNodes, chatboxFocusTick]);
 
     // O(1) table lookup by ID
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
@@ -2679,13 +2779,17 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     }
     let leafTables = [ ...tables.filter(t => isLeafTable(t)) ];
 
-    // Use a stable viewport estimate for cut decisions: prefer the actual
-    // container height, fall back to window or a sensible default.  This is
-    // computed at render time but is not influenced by streaming content,
-    // so cuts are deterministic for a given viewport.
-    const viewportHeight = containerRef.current?.clientHeight
-        || (typeof window !== 'undefined' ? window.innerHeight : 800);
-
+    // Stable viewport estimate for split decisions.  We measure the OUTER
+    // wrapper (thread area + chatbox) and subtract a fixed baseline for the
+    // collapsed chatbox footprint.  This keeps the split threshold stable
+    // when the chatbox expands during clarification/explanation, avoiding
+    // re-splitting of threads as the chatbox grows or shrinks.
+    const CHATBOX_BASELINE_HEIGHT = 120; // approximate collapsed-chatbox footprint in px
+    const outerHeight = outerRef.current?.clientHeight ?? 0;
+    const viewportHeight = outerHeight > CHATBOX_BASELINE_HEIGHT
+        ? outerHeight - CHATBOX_BASELINE_HEIGHT
+        : (containerRef.current?.clientHeight
+            || (typeof window !== 'undefined' ? window.innerHeight : 800));
     // Determine how many columns can fit in the current container width.  When
     // only one column fits, splitting a long thread into segments adds visual
     // overhead (continuation headers + ghost parents) without any layout
@@ -2933,7 +3037,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     }
 
     // Pick the best column layout: dynamically based on container width.
-    const availableHeight = containerRef.current?.clientHeight ?? 600;
+    // Use the same stable viewportHeight (derived from the outer wrapper) for
+    // packing as we do for split decisions — so the column count doesn't shift
+    // when the chatbox grows during clarification/explanation.
+    const availableHeight = viewportHeight;
     const hasMultipleThreads = allThreadEntries.length > 1;
 
     const MAX_COLUMNS = fittableColumns;
@@ -2945,6 +3052,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             allThreadHeights,
             allThreadEntries.map(e => e.lockKey),
             availableHeight,
+            MAX_COLUMNS,
         )
         : chooseBestColumnLayout(
             allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
@@ -2956,7 +3064,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
         return <SingleThreadGroupView
             key={entry.key}
-            scrollRef={scrollRef}
             threadIdx={entry.threadIdx}
             threadLabel={entry.threadLabel}
             isSplitThread={entry.isSplitThread}
@@ -2967,7 +3074,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             usedIntermediateTableIds={usedTableIds}
             globalHighlightedTableIds={globalHighlightedTableIds}
             focusedThreadLeafId={focusedThreadLeafId}
-            chatboxFocused={chatboxFocused}
             sx={{
                 backgroundColor: 'white',
                 borderRadius: radius.md,
@@ -3001,7 +3107,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 justifyContent: 'center',
                 gap: `${CARD_GAP}px`,
                 py: 1,
-                pb: chatboxFocused ? '180px' : 1,
+                // Bottom padding leaves room so the scroll handler can position
+                // the focused element above the chatbox even when it expands.
+                pb: '180px',
                 pl: `${PANEL_PADDING / 2}px`,
                 pr: 0,
             }}>
@@ -3041,6 +3149,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
 
     return (
         <Box
+            ref={outerRef}
             className="data-thread"
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -3067,7 +3176,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 }}>
                 {view}
             </Box>
-            <SimpleChartRecBox />
+            <SimpleChartRecBox onInputFocus={() => setChatboxFocusTick(t => t + 1)} />
         </Box>
     );
 }

@@ -9,18 +9,11 @@ import {
   CircularProgress,
   Checkbox,
   FormControlLabel,
-  useTheme,
 } from '@mui/material';
 
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { apiRequest, type ApiError } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
-import { extractErrorMessage } from '../app/errorHandler';
-import { borderColor } from '../app/tokens';
-import { CustomReactTable } from './ReactTable';
-import { DataFrameTable } from './DataFrameTable';
-import { ConnectorTablePreview } from '../components/ConnectorTablePreview';
-import { DictTable } from '../components/ComponentType';
 import Markdown from 'markdown-to-jsx';
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -69,7 +62,6 @@ export const DataLoaderForm: React.FC<{
 }> = ({dataLoaderType, loaderType, paramDefs, authInstructions, connectorId, autoConnect, ssoAutoConnect, delegatedLogin, authMode, onImport, onFinish, onConnected, onDelete, onBeforeConnect, hasStoredCredentials}) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
-    const theme = useTheme();
     const loaderTypeKey = loaderType || dataLoaderType;
     const getParamPlaceholder = (paramDef: {name: string; default?: string; description?: string}) => {
         // Sensitive fields whose stored credentials we have on the server
@@ -257,9 +249,10 @@ export const DataLoaderForm: React.FC<{
 
 
     // Auto-connect on mount from vault credentials or SSO token passthrough.
+    // Catalog browsing happens in the sidebar after onConnected fires.
     const autoConnectTriggered = useRef(false);
     useEffect(() => {
-        const shouldAutoConnect = (autoConnect || ssoAutoConnect) && connectorIdRef.current && !autoConnectTriggered.current && Object.keys(tableMetadata).length === 0;
+        const shouldAutoConnect = (autoConnect || ssoAutoConnect) && connectorIdRef.current && !autoConnectTriggered.current;
         if (!shouldAutoConnect) return;
         autoConnectTriggered.current = true;
         (async () => {
@@ -271,7 +264,7 @@ export const DataLoaderForm: React.FC<{
                     body: JSON.stringify({ connector_id: connectorIdRef.current }),
                 });
                 if (statusData.connected) {
-                    await fetchCatalogNodes();
+                    onConnected?.();
                 } else if (statusData.has_stored_credentials || statusData.sso_available) {
                     // Vault creds or SSO token available — attempt auto-connect.
                     // Backend _inject_sso_token handles SSO token passthrough transparently.
@@ -281,7 +274,6 @@ export const DataLoaderForm: React.FC<{
                         body: JSON.stringify({ connector_id: connectorIdRef.current, params: {}, persist: !statusData.sso_available }),
                     });
                     if (connectData.status === 'connected') {
-                        await fetchCatalogNodes();
                         onConnected?.();
                     }
                 }
@@ -292,249 +284,6 @@ export const DataLoaderForm: React.FC<{
             }
         })();
     }, [autoConnect, ssoAutoConnect, connectorId]);
-
-    // Auto-select first table for preview when metadata loads
-    useEffect(() => {
-        const tableNames = Object.keys(tableMetadata);
-        if (tableNames.length > 0 && (!selectedPreviewTable || !tableMetadata[selectedPreviewTable])) {
-            setSelectedPreviewTable(tableNames[0]);
-        }
-    }, [tableMetadata]);
-
-    // Reset load config when switching tables — always use a safe default
-    // (sort/limit config is now managed inside ConnectorTablePreview)
-
-    const getSourceTableRef = useCallback((pathKey: string): SourceTableRef => {
-        const meta = tableMetadata[pathKey];
-        const name = meta?._source_name || meta?._catalogName || pathKey.split('/').pop() || pathKey;
-        const id = meta?.dataset_id != null ? String(meta.dataset_id) : name;
-        return { id, name };
-    }, [tableMetadata]);
-
-    // Fetch sample rows on demand when a table is selected but has no sample_rows.
-    // Debounced to avoid rapid-fire requests when clicking through many files.
-    useEffect(() => {
-        if (!selectedPreviewTable || !connectorIdRef.current) return;
-        const meta = tableMetadata[selectedPreviewTable];
-        if (!meta || meta.sample_rows) return; // already has sample rows
-
-        const controller = new AbortController();
-        const timerId = setTimeout(() => {
-            const ref = getSourceTableRef(selectedPreviewTable);
-            apiRequest<any>(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    connector_id: connectorIdRef.current,
-                    source_table: ref,
-                    limit: 10,
-                }),
-                signal: controller.signal,
-            })
-                .then(({ data }) => {
-                    if (data.rows && data.columns) {
-                        setTableMetadata(prev => ({
-                            ...prev,
-                            [selectedPreviewTable]: {
-                                ...prev[selectedPreviewTable],
-                                sample_rows: data.rows,
-                                columns: data.columns,
-                                row_count: data.total_row_count ?? prev[selectedPreviewTable]?.row_count,
-                            },
-                        }));
-                    }
-                })
-                .catch(() => { /* preview fetch is best-effort; debounced and abortable */ });
-        }, 300); // 300ms debounce
-
-        return () => { clearTimeout(timerId); controller.abort(); };
-    }, [selectedPreviewTable, getSourceTableRef]);
-
-    // Build preview DictTable for the selected table
-    const previewTable: DictTable | null = useMemo(() => {
-        if (!selectedPreviewTable || !tableMetadata[selectedPreviewTable]) return null;
-        const metadata = tableMetadata[selectedPreviewTable];
-        const sampleRows = metadata.sample_rows || [];
-        const columns = metadata.columns || [];
-        const names = columns.map((c: any) => c.name);
-        return {
-            kind: 'table' as const,
-            id: selectedPreviewTable,
-            displayId: selectedPreviewTable,
-            names,
-            rows: sampleRows,
-            metadata: names.reduce((acc: Record<string, any>, name: string) => ({
-                ...acc,
-                [name]: { type: 'string' as any, semanticType: '', levels: [] }
-            }), {}),
-            virtual: { tableId: selectedPreviewTable, rowCount: metadata.row_count || sampleRows.length },
-            anchored: true,
-            attachedMetadata: '',
-        };
-    }, [selectedPreviewTable, tableMetadata]);
-
-    const tableNames = Object.keys(tableMetadata);
-
-    // Handler for selecting a table node from the catalog tree
-    const handleTreeTableSelect = useCallback((node: CatalogTreeNode) => {
-        setSelectedTreeNode(node);
-        const pathKey = node.path.join('/');
-        setSelectedPreviewTable(pathKey);
-    }, []);
-
-    /** Shared helper: build DictTable + dispatch loadTable */
-    const doLoadTable = useCallback((importOptions: Record<string, any>, label?: string) => {
-        const pathKey = selectedPreviewTable;
-        if (!pathKey) return;
-        const meta = tableMetadata[pathKey];
-        if (!meta) return;
-
-        const ref = getSourceTableRef(pathKey);
-        const sampleRows = meta.sample_rows || [];
-        const columns = meta.columns || [];
-        const tableObj: DictTable = {
-            kind: 'table' as const,
-            id: ref.name.split('.').pop() || ref.name,
-            displayId: ref.name,
-            names: columns.map((c: any) => c.name),
-            metadata: columns.reduce((acc: Record<string, any>, col: any) => ({
-                ...acc,
-                [col.name]: { type: 'string' as any, semanticType: '', levels: [] }
-            }), {}),
-            rows: sampleRows,
-            virtual: { tableId: ref.name.split('.').pop() || ref.name, rowCount: meta.row_count || sampleRows.length },
-            anchored: true,
-            attachedMetadata: '',
-            source: {
-                type: 'database' as const,
-                databaseTable: pathKey,
-                canRefresh: true,
-                lastRefreshed: Date.now(),
-                connectorId: connectorIdRef.current,
-            },
-        };
-
-        onImport();
-        dispatch(loadTable({
-            table: tableObj,
-            connectorId: connectorIdRef.current,
-            sourceTableRef: ref,
-            importOptions,
-        })).unwrap()
-            .then((result) => {
-                setLoadedTables(prev => ({ ...prev, [pathKey]: label || 'loaded' }));
-                if (result.truncated) {
-                    const count = (result.originalRowCount ?? 0).toLocaleString();
-                    onFinish("warning", t('sidebar.loadedTableTruncated', { name: ref.name, count }), [result.table.id]);
-                } else {
-                    onFinish("success", `Loaded table "${ref.name}"`, [result.table.id]);
-                }
-            })
-            .catch((error) => {
-                console.error('Failed to load data:', error);
-                onFinish("error", `Failed to load "${ref.name}": ${extractErrorMessage(error)}`);
-            });
-    }, [selectedPreviewTable, tableMetadata, getSourceTableRef, onImport, onFinish, dispatch]);
-
-
-    const isConnected = catalogTree.length > 0 || Object.keys(tableMetadata).length > 0;
-
-    const handleCatalogSearchChange = useCallback((filterValue: string) => {
-        setCatalogSearch(filterValue);
-        if (serverSearchActive) {
-            setServerSearchActive(false);
-            setSearchCatalogTree([]);
-            setExpandedItems([]);
-        }
-    }, [serverSearchActive]);
-
-    const clearCatalogSearch = useCallback(() => {
-        setCatalogSearch('');
-        setServerSearchActive(false);
-        setSearchCatalogTree([]);
-        setExpandedItems([]);
-    }, []);
-
-    const runCatalogSearch = useCallback(async (filterValue: string) => {
-        const query = filterValue.trim();
-        setCatalogSearch(filterValue);
-        dispatch(dfActions.updateDataLoaderConnectParam({
-            dataLoaderType,
-            paramName: 'table_filter',
-            paramValue: filterValue,
-        }));
-        if (!query) {
-            clearCatalogSearch();
-            return;
-        }
-        setIsCatalogSearching(true);
-        setServerSearchActive(true);
-        setSearchCatalogTree([]);
-        setSelectedPreviewTable(null);
-        setSelectedTreeNode(null);
-        try {
-            const { data } = await apiRequest<any>(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: connectorIdRef.current, query, limit: 100 }),
-            });
-            const tree = (data.tree || []) as CatalogTreeNode[];
-            setSearchCatalogTree(tree);
-            setTableMetadata(prev => ({ ...prev, ...collectTreeMetadata(tree) }));
-            setExpandedItems(collectNamespaceIds(tree));
-        } catch (error: any) {
-            onFinish("error", error.message || 'Failed to load catalog');
-        } finally {
-            setIsCatalogSearching(false);
-        }
-    }, [clearCatalogSearch, collectTreeMetadata, dataLoaderType, dispatch, onFinish]);
-
-    const handleDisconnect = useCallback(async () => {
-        const cid = connectorIdRef.current;
-        if (cid) {
-            await apiRequest(CONNECTOR_ACTION_URLS.DISCONNECT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connector_id: cid }),
-            }).catch(() => {});
-        }
-        setCatalogTree([]);
-        setSearchCatalogTree([]);
-        setCatalogSearch('');
-        setServerSearchActive(false);
-        setIsCatalogSearching(false);
-        setTableMetadata({});
-        setSelectedPreviewTable(null);
-        setSelectedTreeNode(null);
-        setExpandedItems([]);
-    }, []);
-
-    // Split catalog tree into dataset vs dashboard subsets for tabbed view
-    const displayedCatalogTree = serverSearchActive ? searchCatalogTree : catalogTree;
-    const datasetNodes = useMemo(() => displayedCatalogTree.filter(n => n.node_type !== 'table_group'), [displayedCatalogTree]);
-    const dashboardNodes = useMemo(() => displayedCatalogTree.filter(n => n.node_type === 'table_group'), [displayedCatalogTree]);
-    const hasBothTabs = datasetNodes.length > 0 && dashboardNodes.length > 0;
-    const [catalogTab, setCatalogTab] = useState(0);
-
-    const filterTreeByName = useCallback((nodes: CatalogTreeNode[], keyword: string): CatalogTreeNode[] => {
-        if (!keyword) return nodes;
-        const lc = keyword.toLowerCase();
-        return nodes.reduce<CatalogTreeNode[]>((acc, node) => {
-            if (node.node_type === 'namespace') {
-                const filteredChildren = filterTreeByName(node.children || [], keyword);
-                if (filteredChildren.length > 0) {
-                    acc.push({ ...node, children: filteredChildren });
-                }
-            } else if (node.node_type === 'load_more') {
-                acc.push(node);
-            } else {
-                if (node.name.toLowerCase().includes(lc)) {
-                    acc.push(node);
-                }
-            }
-            return acc;
-        }, []);
-    }, []);
 
     return (
         <Box sx={{p: 0, pb: 2, display: 'flex', flexDirection: 'column' }}>

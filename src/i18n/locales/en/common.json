@@ -535,9 +535,12 @@
     "agentLost": "The agent got lost in the data.",
     "couldYouClarify": "Could you clarify?",
     "clarificationTitle": "Clarify",
+    "minimizeClarification": "Minimize",
+    "expandClarification": "Expand",
     "clarificationQuestionLabel": "{{index}}.",
     "optionalClarification": "(optional)",
     "freeTextClarificationPlaceholder": "Type your answer...",
+    "freeTextClarificationHint": "Type your answer in the chat box below.",
     "directClarificationLabel": "Or explain your choice directly:",
     "directClarificationPlaceholder": "Describe what you want the agent to do...",
     "submitClarification": "Continue",
@@ -556,8 +559,7 @@
     "switchToReport": "Switch to Report mode",
     "switchToExplore": "Switch to Explore mode",
     "modeExplore": "Explore",
-    "modeReport": "Report",
-    "autoContinueCountdown": "{{seconds}}s"
+    "modeReport": "Report"
   },
   "dataGrid": {
     "loading": "Loading ...",
@@ -689,7 +691,8 @@
   },
   "interaction": {
     "askedForClarification": "asked for clarification",
-    "gaveExplanation": "shared an explanation"
+    "gaveExplanation": "shared an explanation",
+    "clarificationNeeded": "Awaiting clarification"
   },
   "concepts": {
     "showFewer": "Show fewer concepts",

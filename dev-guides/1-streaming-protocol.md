@@ -38,20 +38,16 @@
 | （跨端点通用） | `"thinking_text"` | Agent 推理/思考过程文本（参见 2.4） |
 
 `data-agent-streaming` 的 `result.type === "clarify"` 使用结构化多问题格式。后端和前端都以
-`questions[]` 为唯一澄清问题结构，不再新增顶层 `message/options/option_codes` 协议。
+`questions[]` 为唯一澄清问题结构。问题与选项均不带 ID —— 通过它们在数组中的位置来对应。
 
 ```json
 {
   "type": "clarify",
   "questions": [
     {
-      "id": "metric",
       "text": "Which metric should I use?",
       "responseType": "single_choice",
-      "required": true,
-      "options": [
-        {"id": "revenue", "label": "Revenue"}
-      ]
+      "options": ["Revenue", "Orders"]
     }
   ],
   "trajectory": [],
@@ -64,64 +60,27 @@
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `questions` | array | 是 | 本轮所有需要用户澄清的问题，最多 3 个 |
-| `questions[].id` | string | 是 | 问题 ID，用于绑定回答 |
 | `questions[].text` | string | 是 | 英文 fallback 或 LLM 生成的问题文本 |
 | `questions[].text_code` | string | 否 | 固定后端问题文案的 i18n key，例如 `agent.clarifyExhausted` |
 | `questions[].text_params` | object | 否 | `text_code` 的插值参数 |
-| `questions[].responseType` | `"single_choice"` / `"free_text"` | 否 | 默认由前端按是否有 options 推断；后端建议显式发送 |
-| `questions[].required` | boolean | 否 | 默认 `true` |
-| `questions[].options` | array | 否 | 单选选项；每个问题的选项只属于该问题 |
-| `questions[].options[].id` | string | 否 | 选项 ID；缺失时前端可生成，但后端建议提供 |
+| `questions[].responseType` | `"single_choice"` / `"free_text"` | 否 | 默认按是否有 options 推断 |
+| `questions[].options` | array | 否 | 单选选项；可以是字符串数组或 `{label, label_code?}` 对象数组 |
 | `questions[].options[].label` | string | 是 | 英文 fallback 或 LLM 生成的选项文本 |
 | `questions[].options[].label_code` | string | 否 | 固定后端选项文案的 i18n key |
-| `auto_select` | object | 否 | 单题自动选择配置，用于工具轮数耗尽后的倒计时继续 |
 
-工具轮数耗尽的继续提示必须保持为单题澄清，并额外带：
-
-```json
-{
-  "auto_select": {
-    "question_id": "continue_after_tool_rounds",
-    "option_id": "continue",
-    "timeout_ms": 60000
-  }
-}
-```
-
-前端据此显示倒计时并自动选择继续选项。多问题澄清不得自动提交。
-
-恢复请求发送结构化回答：
+恢复请求只需把已经组装好的用户回复作为普通的 `user_question` 字段传回，前端负责把
+点选 + 自由输入合并成形如 `1. <a1>; 2. <a2>\n<freeform>` 的字符串：
 
 ```json
 {
   "trajectory": [],
-  "clarification_responses": [
-    {
-      "question_id": "metric",
-      "answer": "Revenue",
-      "option_id": "revenue",
-      "source": "option"
-    },
-    {
-      "question_id": "__freeform__",
-      "answer": "Use revenue for the last 12 months.",
-      "source": "freeform"
-    }
-  ],
+  "user_question": "1. Revenue; 2. Last 12 months\nFocus on growth rate.",
   "completed_step_count": 2
 }
 ```
 
-`source` 可为：
-
-| source | 说明 |
-|--------|------|
-| `option` | 用户选择了某个问题下的选项 |
-| `free_text` | 用户填写了某个 `responseType: "free_text"` 问题 |
-| `freeform` | 用户跳过选项，在澄清面板底部直接用自然语言说明；此时 `question_id` 使用 `__freeform__` |
-
-Route 层负责把 `clarification_responses[]` 格式化成 LLM 可读的 `[USER CLARIFICATION]`
-文本并追加到 trajectory。前端不发送旧的 `clarification_response` 字符串字段。
+后端把 `user_question` 作为普通的 user 消息追加到 trajectory，再交给 LLM 继续推理。
+不再有专用的 `clarification_responses` / `auto_select` / `[USER CLARIFICATION]` 包装层。
 
 ### 2.2 错误事件（统一格式）
 

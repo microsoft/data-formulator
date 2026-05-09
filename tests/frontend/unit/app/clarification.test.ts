@@ -9,7 +9,7 @@ vi.mock('../../../../src/app/utils', () => ({
 }));
 
 import {
-  formatClarificationResponsesForDisplay,
+  formatClarificationResponses,
   normalizeClarifyEvent,
 } from '../../../../src/app/clarification';
 
@@ -18,46 +18,83 @@ describe('clarification helpers', () => {
     const normalized = normalizeClarifyEvent({
       type: 'clarify',
       questions: [{
-        id: 'continue_after_tool_rounds',
         text: 'Fallback prompt',
         text_code: 'agent.clarifyExhausted',
         responseType: 'single_choice',
         options: [{
-          id: 'continue',
           label: 'Continue exploring',
           label_code: 'agent.clarifyOptionContinue',
         }],
       }],
-      auto_select: {
-        question_id: 'continue_after_tool_rounds',
-        option_id: 'continue',
-        timeout_ms: 60000,
-      },
     });
 
     expect(normalized.questions[0].text).toBe('Translated exhausted prompt');
     expect(normalized.questions[0].options?.[0].label).toBe('Translated continue');
+    // *_code / text_params / required are i18n inputs only — they should not
+    // be carried on the normalized output.
+    expect((normalized.questions[0] as any).text_code).toBeUndefined();
+    expect((normalized.questions[0] as any).text_params).toBeUndefined();
+    expect((normalized.questions[0] as any).required).toBeUndefined();
+    expect((normalized.questions[0].options?.[0] as any).label_code).toBeUndefined();
     expect(normalized.summary).toBe('Translated exhausted prompt');
-    expect(normalized.autoSelect).toEqual({
-      question_id: 'continue_after_tool_rounds',
-      option_id: 'continue',
-      timeout_ms: 60000,
+  });
+
+  it('defaults responseType to free_text when no options are provided', () => {
+    const normalized = normalizeClarifyEvent({
+      type: 'clarify',
+      questions: [{ text: 'Anything else?' }],
     });
+    expect(normalized.questions[0].responseType).toBe('free_text');
+    expect(normalized.questions[0].options).toBeUndefined();
+  });
+
+  it('defaults responseType to single_choice when options are provided', () => {
+    const normalized = normalizeClarifyEvent({
+      type: 'clarify',
+      questions: [{ text: 'Pick', options: ['A', 'B'] }],
+    });
+    expect(normalized.questions[0].responseType).toBe('single_choice');
+  });
+
+  it('accepts bare-string options', () => {
+    const normalized = normalizeClarifyEvent({
+      type: 'clarify',
+      questions: [{
+        text: 'Pick one',
+        options: ['A', 'B', 'C'],
+      }],
+    });
+
+    expect(normalized.questions[0].options).toEqual([
+      { label: 'A' }, { label: 'B' }, { label: 'C' },
+    ]);
   });
 
   it('rejects clarify events without questions', () => {
     expect(() => normalizeClarifyEvent({ type: 'clarify' })).toThrow(/questions/);
   });
 
-  it('formats structured answers for interaction history', () => {
-    const text = formatClarificationResponsesForDisplay([
-      { question_id: 'metric', answer: 'Revenue', option_id: 'revenue', source: 'option' },
-      { question_id: '__freeform__', answer: 'Focus on 2024.', source: 'freeform' },
-    ], [
-      { id: 'metric', text: 'Which metric?', responseType: 'single_choice' },
+  it('formats single response as just the answer', () => {
+    const text = formatClarificationResponses([
+      { question_index: 0, answer: 'Revenue', source: 'option' },
     ]);
+    expect(text).toBe('Revenue');
+  });
 
-    expect(text).toContain('Which metric?: Revenue');
-    expect(text).toContain('Focus on 2024.');
+  it('formats multiple selections with 1-based indices', () => {
+    const text = formatClarificationResponses([
+      { question_index: 0, answer: 'Revenue', source: 'option' },
+      { question_index: 1, answer: 'Last 12 months', source: 'option' },
+    ]);
+    expect(text).toBe('1. Revenue; 2. Last 12 months');
+  });
+
+  it('appends freeform text on its own line after selections', () => {
+    const text = formatClarificationResponses([
+      { question_index: 0, answer: 'Revenue', source: 'option' },
+      { question_index: 1, answer: 'Last 12 months', source: 'option' },
+      { question_index: -1, answer: 'Focus on 2024.', source: 'freeform' },
+    ]);
+    expect(text).toBe('1. Revenue; 2. Last 12 months\nFocus on 2024.');
   });
 });

@@ -52,6 +52,7 @@ import ExploreOutlinedIcon from '@mui/icons-material/ExploreOutlined';
 import ContentPasteOutlinedIcon from '@mui/icons-material/ContentPasteOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
+import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
@@ -1046,6 +1047,42 @@ const DataSourceSidebarPanel: React.FC<{
         }
     }, [clearConnectorUiState, deleteTarget, dispatch, t]);
 
+    // ── Disconnect connector ──────────────────────────────────────────────
+    // For admin (non-deletable) connectors the user can't remove the
+    // definition itself, but they *can* clear stored credentials and the
+    // active loader so they (or the next user on this identity) can
+    // re-authenticate via "Edit connection".
+
+    const handleDisconnectConnector = useCallback(async (connector: ConnectorInstance) => {
+        try {
+            await apiRequest(CONNECTOR_ACTION_URLS.DISCONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connector.id }),
+            });
+            // Catalog cache is intentionally preserved server-side so Agent
+            // search keeps working offline; clear local UI state so the row
+            // collapses and any in-flight preview is dismissed.
+            setConnectors(prev => prev.map(c => c.id === connector.id
+                ? { ...c, connected: false, has_stored_credentials: false }
+                : c));
+            clearConnectorUiState(connector.id);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorDisconnected', { name: connector.display_name }),
+            }));
+        } catch (e: any) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: e?.apiError?.message || t('sidebar.failedDisconnectConnector'),
+            }));
+        }
+    }, [clearConnectorUiState, dispatch, t]);
+
     // ── Render ───────────────────────────────────────────────────────────────
 
     return (
@@ -1291,22 +1328,24 @@ const DataSourceSidebarPanel: React.FC<{
                                         </IconButton>
                                     </Tooltip>
                                 )}
-                                {connector.deletable && (
-                                    <Tooltip title={t('sidebar.configureConnector', { defaultValue: 'Edit connection' })}>
-                                        <IconButton
-                                            size="small"
-                                            className="connector-row-action"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onOpenUploadDialog?.(`connector:${connector.id}`);
-                                            }}
-                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
-                                        >
-                                            <SettingsOutlinedIcon sx={{ fontSize: 14 }} />
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
-                                {connector.deletable && (
+                                {/* Edit connection — available for both user and admin
+                                    connectors. Admin connectors can't be deleted, but
+                                    the user still needs a way to (re)enter credentials
+                                    or trigger a fresh login after disconnecting. */}
+                                <Tooltip title={t('sidebar.configureConnector', { defaultValue: 'Edit connection' })}>
+                                    <IconButton
+                                        size="small"
+                                        className="connector-row-action"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onOpenUploadDialog?.(`connector:${connector.id}`);
+                                        }}
+                                        sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
+                                    >
+                                        <SettingsOutlinedIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </Tooltip>
+                                {connector.deletable ? (
                                     <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
                                         <IconButton
                                             size="small"
@@ -1318,6 +1357,24 @@ const DataSourceSidebarPanel: React.FC<{
                                             sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
                                         >
                                             <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                ) : connector.connected && (
+                                    /* Admin connector: surface Disconnect in place of Delete.
+                                       Only meaningful when there's an active session/credentials
+                                       to clear; if already disconnected, "Edit connection" is
+                                       the path to re-authenticate. */
+                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect connector' })}>
+                                        <IconButton
+                                            size="small"
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                void handleDisconnectConnector(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'warning.main' } }}
+                                        >
+                                            <LinkOffOutlinedIcon sx={{ fontSize: 14 }} />
                                         </IconButton>
                                     </Tooltip>
                                 )}

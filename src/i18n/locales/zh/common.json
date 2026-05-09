@@ -556,9 +556,12 @@
     "agentLost": "Agent 在数据中迷失了。",
     "couldYouClarify": "能否进一步说明？",
     "clarificationTitle": "Clarify",
+    "minimizeClarification": "收起",
+    "expandClarification": "展开",
     "clarificationQuestionLabel": "{{index}}.",
     "optionalClarification": "（可选）",
     "freeTextClarificationPlaceholder": "输入你的回答...",
+    "freeTextClarificationHint": "请在下方聊天框中输入你的回答。",
     "directClarificationLabel": "或直接说明你的选择：",
     "directClarificationPlaceholder": "描述你希望 Agent 怎么做...",
     "submitClarification": "继续",
@@ -577,8 +580,7 @@
     "switchToReport": "切换到报告模式",
     "switchToExplore": "切换到探索模式",
     "modeExplore": "探索",
-    "modeReport": "报告",
-    "autoContinueCountdown": "{{seconds}} 秒"
+    "modeReport": "报告"
   },
   "auth": {
     "loginTitle": "登录 Data Formulator",
@@ -689,7 +691,8 @@
   },
   "interaction": {
     "askedForClarification": "请求澄清",
-    "gaveExplanation": "做了说明"
+    "gaveExplanation": "做了说明",
+    "clarificationNeeded": "等待澄清"
   },
   "concepts": {
     "showFewer": "收起概念",

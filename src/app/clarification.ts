@@ -1,5 +1,4 @@
 import {
-    ClarificationAutoSelect,
     ClarificationOption,
     ClarificationQuestion,
     ClarificationResponse,
@@ -9,26 +8,32 @@ import { translateBackend } from './utils';
 export interface NormalizedClarification {
     questions: ClarificationQuestion[];
     summary: string;
-    autoSelect?: ClarificationAutoSelect;
 }
 
-function normalizeOption(raw: any, index: number): ClarificationOption | null {
+/** Resolve an option's user-visible label.
+ *  Accepts a bare string or a `{label, label_code?}` dict; returns null
+ *  if no usable label can be produced. The `label_code` is a backend i18n
+ *  key consumed by `translateBackend`; we don't keep it on the normalized
+ *  output because nothing downstream reads it. */
+function normalizeOption(raw: any): ClarificationOption | null {
+    if (typeof raw === 'string') {
+        const label = raw.trim();
+        return label ? { label } : null;
+    }
     if (!raw || typeof raw !== 'object') return null;
 
     const label = translateBackend(
         String(raw.label || ''),
         typeof raw.label_code === 'string' ? raw.label_code : undefined,
     ).trim();
-    if (!label) return null;
-
-    return {
-        id: String(raw.id || `option_${index + 1}`),
-        label,
-        ...(typeof raw.label_code === 'string' ? { label_code: raw.label_code } : {}),
-    };
+    return label ? { label } : null;
 }
 
-function normalizeQuestion(raw: any, index: number): ClarificationQuestion | null {
+/** Resolve a question's translated text + its options. The `*_code` /
+ *  `text_params` keys are i18n inputs only — they're not preserved on the
+ *  normalized output. `responseType` defaults to `single_choice` when
+ *  options exist, else `free_text` (mirrors the backend default). */
+function normalizeQuestion(raw: any): ClarificationQuestion | null {
     if (!raw || typeof raw !== 'object') return null;
 
     const text = translateBackend(
@@ -40,66 +45,71 @@ function normalizeQuestion(raw: any, index: number): ClarificationQuestion | nul
 
     const rawOptions = Array.isArray(raw.options) ? raw.options : [];
     const options = rawOptions
-        .map((option: any, optionIndex: number) => normalizeOption(option, optionIndex))
+        .map((option: any) => normalizeOption(option))
         .filter((option: ClarificationOption | null): option is ClarificationOption => option !== null);
-    const responseType = raw.responseType === 'free_text' ? 'free_text' : 'single_choice';
+
+    const responseType = raw.responseType === 'free_text' || raw.responseType === 'single_choice'
+        ? raw.responseType
+        : (options.length > 0 ? 'single_choice' : 'free_text');
 
     return {
-        id: String(raw.id || `question_${index + 1}`),
         text,
-        ...(typeof raw.text_code === 'string' ? { text_code: raw.text_code } : {}),
-        ...(raw.text_params && typeof raw.text_params === 'object' ? { text_params: raw.text_params } : {}),
         responseType,
-        required: raw.required !== false,
         ...(options.length > 0 ? { options } : {}),
     };
-}
-
-export function buildClarificationSummary(questions: ClarificationQuestion[]): string {
-    if (questions.length === 1) return questions[0].text;
-    return questions.map((question, index) => `${index + 1}. ${question.text}`).join('\n');
 }
 
 export function normalizeClarifyEvent(result: any): NormalizedClarification {
     const rawQuestions = Array.isArray(result?.questions) ? result.questions : [];
     const questions = rawQuestions
-        .map((question: any, index: number) => normalizeQuestion(question, index))
+        .map((question: any) => normalizeQuestion(question))
         .filter((question: ClarificationQuestion | null): question is ClarificationQuestion => question !== null);
 
     if (questions.length === 0) {
         throw new Error('Clarify event requires non-empty questions[]');
     }
 
-    const rawAutoSelect = result?.auto_select;
-    const autoSelect = rawAutoSelect && typeof rawAutoSelect === 'object'
-        ? {
-            question_id: String(rawAutoSelect.question_id || ''),
-            option_id: String(rawAutoSelect.option_id || ''),
-            timeout_ms: Number(rawAutoSelect.timeout_ms || 0) || undefined,
-        }
-        : undefined;
+    // Summary feeds the agent's clarify InteractionEntry content (shown
+    // when the user expands the timeline entry).
+    const summary = questions.length === 1
+        ? questions[0].text
+        : questions.map((q: ClarificationQuestion, i: number) => `${i + 1}. ${q.text}`).join('\n');
 
-    return {
-        questions,
-        summary: buildClarificationSummary(questions),
-        ...(autoSelect?.question_id && autoSelect?.option_id ? { autoSelect } : {}),
-    };
+    return { questions, summary };
 }
 
-export function formatClarificationResponsesForDisplay(
+/**
+ * Build the user's reply string from a list of clarification responses.
+ * Used for both the timeline bubble and the user message sent to the agent
+ * (the same string powers both surfaces).
+ *
+ *   - single response (any source) → just the answer
+ *   - multiple selections          → "1. <a1>; 2. <a2>"
+ *   - selections + freeform text   → "1. <a1>; 2. <a2>\n<freeform>"
+ *
+ * The 1-based index is the user's `question_index + 1` from the agent's
+ * `questions[]` order, so the LLM can correlate responses back to the
+ * questions in the immediately preceding assistant message.
+ */
+export function formatClarificationResponses(
     responses: ClarificationResponse[],
-    questions: ClarificationQuestion[],
 ): string {
-    const questionTextById = new Map(questions.map(question => [question.id, question.text]));
-    if (responses.length === 1 && responses[0].source === 'freeform') {
-        return responses[0].answer;
-    }
+    if (responses.length === 0) return '';
+    if (responses.length === 1) return responses[0].answer;
 
-    return responses
-        .map(response => {
-            if (response.question_id === '__freeform__') return response.answer;
-            const label = questionTextById.get(response.question_id) || response.question_id;
-            return `${label}: ${response.answer}`;
-        })
-        .join('\n');
+    const selections: string[] = [];
+    const freeformChunks: string[] = [];
+    for (const r of responses) {
+        const answer = r.answer.trim();
+        if (!answer) continue;
+        if (r.source === 'freeform' || r.question_index < 0) {
+            freeformChunks.push(answer);
+        } else {
+            selections.push(`${r.question_index + 1}. ${answer}`);
+        }
+    }
+    const parts: string[] = [];
+    if (selections.length > 0) parts.push(selections.join('; '));
+    if (freeformChunks.length > 0) parts.push(freeformChunks.join(' '));
+    return parts.join('\n');
 }
