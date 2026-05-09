@@ -14,6 +14,7 @@ Row-Level Security (RLS).
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 import pyarrow as pa
@@ -806,7 +807,8 @@ class SupersetLoader(ExternalDataLoader):
             result = self._client.post_chart_data(token, dataset_id, [query])
 
             queries_result = result.get("result", [])
-            rows = queries_result[0].get("data", []) if queries_result else []
+            query_result = queries_result[0] if queries_result else {}
+            rows = query_result.get("data", []) or []
             has_more = len(rows) > safe_limit
             rows = rows[:safe_limit]
 
@@ -895,7 +897,82 @@ class SupersetLoader(ExternalDataLoader):
 
         columns = list(rows[0].keys())
         col_data = {col: [row.get(col) for row in rows] for col in columns}
+
+        # Detect temporal columns from Chart Data API response metadata
+        # coltypes: 0=STRING, 1=NUMERIC, 2=TEMPORAL, 3=BOOLEAN
+        colnames = query_result.get("colnames") or columns
+        coltypes = query_result.get("coltypes") or []
+        temporal_cols = {
+            colnames[i]
+            for i, ct in enumerate(coltypes)
+            if ct == 2 and i < len(colnames)
+        }
+
+        if temporal_cols:
+            col_data = self._convert_temporal_columns(
+                col_data, temporal_cols, token, dataset_id,
+            )
+
         return pa.table(col_data)
+
+    def _convert_temporal_columns(
+        self,
+        col_data: dict[str, list],
+        temporal_cols: set[str],
+        token: str,
+        dataset_id: int,
+    ) -> dict[str, list | pa.Array]:
+        """Convert epoch-ms temporal columns to proper Arrow date/timestamp types.
+
+        Classification strategy:
+        1. Dataset detail raw type: explicit DATE → date32
+        2. Value heuristic: all non-null epoch values are exact midnight → date32
+        3. Otherwise → timestamp[ms]
+        """
+        date_cols: set[str] = set()
+        try:
+            detail = self._client.get_dataset_detail(token, dataset_id)
+            for c in (detail.get("columns") or []):
+                col_name = c.get("column_name", "")
+                if col_name not in temporal_cols:
+                    continue
+                raw_type = (c.get("type") or "").upper()
+                if "DATE" in raw_type and "DATETIME" not in raw_type and "TIMESTAMP" not in raw_type:
+                    date_cols.add(col_name)
+        except Exception:
+            logger.debug("Dataset detail unavailable for temporal type refinement", exc_info=True)
+
+        # Heuristic: if all values are exact midnight, treat as date-only
+        MS_PER_DAY = 86_400_000
+        for col_name in temporal_cols:
+            if col_name in date_cols or col_name not in col_data:
+                continue
+            values = col_data[col_name]
+            if all(
+                v is None or (isinstance(v, (int, float)) and int(v) % MS_PER_DAY == 0)
+                for v in values
+            ):
+                date_cols.add(col_name)
+
+        for col_name in temporal_cols:
+            if col_name not in col_data:
+                continue
+            raw_values = col_data[col_name]
+            if col_name in date_cols:
+                col_data[col_name] = pa.array(
+                    [datetime.fromtimestamp(v / 1000, tz=timezone.utc).date()
+                     if isinstance(v, (int, float)) else v
+                     for v in raw_values],
+                    type=pa.date32(),
+                )
+            else:
+                col_data[col_name] = pa.array(
+                    [int(v) if isinstance(v, (int, float)) else None
+                     for v in raw_values],
+                    type=pa.timestamp('ms'),
+                )
+
+        return col_data
 
     def _empty_arrow_table(self, token: str, dataset_id: int) -> pa.Table:
         """Build a 0-row Arrow table preserving column names from metadata."""
