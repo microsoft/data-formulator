@@ -35,6 +35,7 @@ import { batch, useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { extractErrorMessage } from '../app/errorHandler';
 import { Chart, DictTable, Trigger, InteractionEntry } from "../components/ComponentType";
 import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
 import type { CatalogTableDragItem } from '../components/DndTypes';
@@ -2360,7 +2361,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 .catch((err) => {
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(), type: 'error',
-                        component: 'data thread', value: `Failed to load "${item.tableName}": ${err}`,
+                        component: 'data thread', value: `Failed to load "${item.tableName}": ${extractErrorMessage(err)}`,
                     }));
                 });
         } catch { /* ignore bad data */ }

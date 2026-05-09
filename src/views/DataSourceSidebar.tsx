@@ -67,6 +67,7 @@ import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
 import { fetchWithIdentity, CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { extractErrorMessage } from '../app/errorHandler';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, DatabaseIcon } from '../icons';
 import { loadTable, buildDictTableFromWorkspace } from '../app/tableThunks';
@@ -802,7 +803,7 @@ const DataSourceSidebarPanel: React.FC<{
                     timestamp: Date.now(),
                     type: 'error',
                     component: 'data source sidebar',
-                    value: t('sidebar.failedLoadTable', { name: ref.name, error: String(error) }),
+                    value: t('sidebar.failedLoadTable', { name: ref.name, error: extractErrorMessage(error) }),
                 }));
             })
             .finally(() => setImporting(false));

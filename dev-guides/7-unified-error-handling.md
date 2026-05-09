@@ -335,7 +335,39 @@ try {
 | RTK thunk rejected | 必须有 `.rejected` handler，按 `error.name` 区分 `AbortError`（静默）、`TimeoutError`（超时提示）和业务错误（通用提示），参见 `fetchChartInsight` |
 | `AbortError` | 可直接忽略 |
 
-### 4.5 API 加载状态必须显式建模
+### 4.5 RTK `createAsyncThunk` 序列化边界
+
+**重要**：RTK `createAsyncThunk` 内部 `throw` 的错误会经过 `miniSerializeError()` 序列化
+为**普通 JS 对象** `{name, message, stack}`，丢失 class 类型和自定义属性（如 `apiError`）。
+
+调用 `.unwrap()` 时 `.catch(error)` 拿到的是这个普通对象，不是 `Error` 实例。
+因此 `String(error)` 或模板字符串 `` `${error}` `` 会输出 `[object Object]`。
+
+**规范做法**：
+
+```typescript
+import { extractErrorMessage } from '../app/errorHandler';
+
+// ✅ GOOD — 正确提取 message
+dispatch(loadTable(...)).unwrap()
+    .catch((error) => {
+        const msg = extractErrorMessage(error);
+        // 用 msg 展示给用户
+    });
+
+// ✅ GOOD — 使用 handleApiError() 统一处理
+dispatch(loadTable(...)).unwrap()
+    .catch((error) => handleApiError(error, 'my-component'));
+
+// ❌ BAD — 普通对象无法正确 String()
+.catch((error) => `Failed: ${error}`)       // → "Failed: [object Object]"
+.catch((error) => String(error))             // → "[object Object]"
+```
+
+`extractErrorMessage()` 和 `handleApiError()` 都已处理 RTK 序列化对象，
+会正确提取 `.message` 属性。
+
+### 4.6 API 加载状态必须显式建模
 
 新增或重构前端 API 调用时，不要用 `!data` / `data == null` 推断 loading。
 请求状态必须显式区分 `idle`、`loading`、`success`、`empty`、`error`，避免失败后
@@ -377,7 +409,7 @@ UI 渲染必须基于 `state.status`：
 - `empty` → 空状态文案
 - `success` → 正常数据
 
-### 4.6 特例边界
+### 4.7 特例边界
 
 以下路径不能简单套普通 JSON API 规范，评审时先确认具体协议：
 
@@ -390,7 +422,7 @@ UI 渲染必须基于 `state.status`：
 | 已建立的流式响应 | 流运行中出错只能通过 NDJSON `type: "error"` 事件传递，不能再修改 HTTP 状态码 |
 | 流预检错误 | `stream_preflight_error()` 始终返回 HTTP 200 + `application/json` |
 
-### 4.7 LLM / Agent 前端 timeout 策略
+### 4.8 LLM / Agent 前端 timeout 策略
 
 LLM / Agent 请求不要硬编码短 timeout。timeout 来源必须可解释：
 

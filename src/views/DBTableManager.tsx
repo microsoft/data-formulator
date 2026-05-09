@@ -26,6 +26,7 @@ import ClearIcon from '@mui/icons-material/Clear';
 import { getUrls, CONNECTOR_ACTION_URLS, fetchWithIdentity, SourceTableRef } from '../app/utils';
 import { apiRequest, assertDownloadResponseOk, type ApiError } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
+import { extractErrorMessage } from '../app/errorHandler';
 import { borderColor } from '../app/tokens';
 import { CustomReactTable } from './ReactTable';
 import { DataFrameTable } from './DataFrameTable';
@@ -1065,7 +1066,7 @@ export const DataLoaderForm: React.FC<{
             })
             .catch((error) => {
                 console.error('Failed to load data:', error);
-                onFinish("error", `Failed to load "${ref.name}": ${error}`);
+                onFinish("error", `Failed to load "${ref.name}": ${extractErrorMessage(error)}`);
             });
     }, [selectedPreviewTable, tableMetadata, getSourceTableRef, onImport, onFinish, dispatch]);
 
