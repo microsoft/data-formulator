@@ -128,6 +128,7 @@ export const getConnectorIcon = (sourceType: string, props?: SvgIconProps): Reac
 };
 
 export { GenericDBIcon as DatabaseIcon };
+export { RelationalDBIcon };
 
 // ── Custom SVG domain icons ─────────────────────────────────────────────
 

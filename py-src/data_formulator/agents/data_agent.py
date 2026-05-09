@@ -7,8 +7,8 @@ Architecture:
   - **Tools** (explore, inspect_source_data): Called via OpenAI tool-calling
     API within a single LLM turn.  The agent gathers data silently — these
     are internal to the agent and not surfaced to the user.
-  - **Actions** (visualize, clarify, present): Structured JSON output in
-    the LLM's text response.  These are externalized to the user — each
+  - **Actions** (visualize, clarify, explain, present): Structured JSON output
+    in the LLM's text response.  These are externalized to the user — each
     one ends the current turn and produces visible output.
 
 The server-side while loop handles one action per iteration:
@@ -57,13 +57,14 @@ from data_formulator.workflows.create_vl_plots import (
 logger = logging.getLogger(__name__)
 
 # ── Weak-model rescue helpers ─────────────────────────────────────────────
-# When a weaker LLM calls visualize/clarify/present as a tool instead of
-# outputting JSON in text, these helpers validate and normalise the args
+# When a weaker LLM calls visualize/clarify/explain/present as a tool instead
+# of outputting JSON in text, these helpers validate and normalise the args
 # so the action can be rescued without wasting rounds.
 
 _ACTION_REQUIRED_FIELDS: dict[str, list[str]] = {
     "visualize": ["code", "output_variable", "chart"],
     "clarify": ["questions"],
+    "explain": ["explanation"],
     "present": ["summary"],
 }
 
@@ -74,7 +75,7 @@ def _rescue_unpack_json_strings(data: dict) -> None:
     Weak models sometimes double-serialise nested fields, e.g.
     ``"chart": "{\\"chart_type\\": \\"Scatter Plot\\"}"`` instead of a dict.
     """
-    for key in ("chart", "input_tables", "questions", "field_metadata", "field_display_names"):
+    for key in ("chart", "input_tables", "questions", "options", "followups", "field_metadata", "field_display_names"):
         val = data.get(key)
         if isinstance(val, str) and val.strip()[:1] in ("{", "["):
             try:
@@ -320,10 +321,10 @@ After gathering data (or immediately if the data is clear), output
 **exactly one action** as a JSON object in your text response.  Actions
 are shown to the user and end the current turn.
 
-⚠ **CRITICAL**: `visualize`, `clarify`, and `present` are **actions**,
-NOT tools.  Never call them via function/tool calling — they MUST appear
-as a JSON object in your **text reply**.  Only the items listed in the
-Tools section above (`explore`, `inspect_source_data`,
+⚠ **CRITICAL**: `visualize`, `clarify`, `explain`, and `present` are
+**actions**, NOT tools.  Never call them via function/tool calling — they
+MUST appear as a JSON object in your **text reply**.  Only the items
+listed in the Tools section above (`explore`, `inspect_source_data`,
 `search_data_tables`, `read_catalog_metadata`, `search_knowledge`,
 `read_knowledge`, `think`) may be invoked as tool calls.
 
@@ -369,6 +370,25 @@ multiple questions. Each question must own its own options; never put options
 for different questions into one shared array. Use `"responseType": "free_text"`
 only when the user needs to type a custom answer. Ask at most 3 questions.
 
+### `explain`
+```json
+{{
+    "action": "explain",
+    "explanation": "<a short, friendly answer in 1–3 sentences. Bold **column names**. Stay grounded in what the data actually shows; admit when something is unknown. Avoid long lectures.>",
+    "followups": [
+        "<a short visualization question the user might click next, phrased as something the user would say. Each followup should be a chart-producing question that naturally builds on the explanation, e.g. 'Plot **revenue** by **region**', 'Show monthly trend of **sign_ups**'.>"
+    ]
+}}
+```
+
+Use `explain` when the user is asking a conceptual / clarifying question
+about the data, the schema, the meaning of a field, or any informational
+exchange that does **not** require producing a chart right now. Keep the
+explanation concise (1–3 sentences). Followups are optional (≤4 items,
+≤8 words each) and must be visualization-oriented prompts — clicking one
+should lead to a `visualize` action on the next turn. Omit `followups`
+entirely if no useful chart-producing follow-ups exist.
+
 ### `present`
 ```json
 {{
@@ -384,11 +404,14 @@ only when the user needs to type a custom answer. Ask at most 3 questions.
 ## Decision guidelines
 
 - **Start** by understanding the question and data.  Use tools if needed,
-  then `visualize`.  If ambiguous, `clarify`.
+  then `visualize`.  If ambiguous, `clarify`. If the user is asking a
+  conceptual / informational question that does not call for a new chart,
+  `explain`.
 - **After a visualization**, review the observation (data + chart) and:
   - `visualize` again to go deeper (drill-down, breakdown, comparison).
   - `present` if findings are sufficient.
   - `clarify` if the question needs scoping.
+  - `explain` if the user is just asking about meaning / context.
 - **Build a narrative**: overview → drill-down → comparison.
 - **Never** repeat a visualization already in the trajectory.
 - Present after at most {max_iterations} visualization steps.
@@ -480,6 +503,7 @@ class DataAgent:
             ``"result"``      – a visualization result (data + chart)
             ``"explore_result"`` – explore code output
             ``"clarify"``     – clarification question (loop pauses)
+            ``"explain"``     – conversational explanation (loop pauses)
             ``"completion"``  – final summary (loop terminates)
             ``"error"``       – error information
         """
@@ -635,7 +659,8 @@ class DataAgent:
                                 "[SYSTEM] Your previous response could not be parsed. "
                                 "Here is what was already completed:\n"
                                 f"{steps_summary}\n\n"
-                                "Please output a JSON action object (visualize / clarify / present) "
+                                "Please output a JSON action object "
+                                "(visualize / clarify / explain / present) "
                                 "to continue."
                             ),
                         })
@@ -673,6 +698,32 @@ class DataAgent:
                         "iteration": iteration,
                         "thought": action.get("thought", ""),
                         **clarify_payload,
+                        "trajectory": self._strip_images(trajectory),
+                        "completed_step_count": len(completed_steps),
+                    }
+                    self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                    return
+
+                elif action_type == "explain":
+                    rlog.log("action_execution", action="explain", status="ok",
+                             iteration=iteration)
+                    final_status = "explain"
+                    try:
+                        explain_payload = self._normalize_explain_action(action)
+                    except ValueError:
+                        final_status = "parse_failed"
+                        yield self._error_event(
+                            iteration,
+                            "Explain action requires a non-empty explanation.",
+                            message_code="agent.parseActionFailed",
+                        )
+                        self._log_session_end(rlog, final_status, iteration, total_llm_calls, session_start_time)
+                        return
+                    yield {
+                        "type": "explain",
+                        "iteration": iteration,
+                        "thought": action.get("thought", ""),
+                        **explain_payload,
                         "trajectory": self._strip_images(trajectory),
                         "completed_step_count": len(completed_steps),
                     }
@@ -774,7 +825,7 @@ class DataAgent:
                         "role": "user",
                         "content": (
                             f"[ERROR] Unknown action '{action_type}'. "
-                            "Please choose one of: visualize, clarify, present."
+                            "Please choose one of: visualize, clarify, explain, present."
                         ),
                     })
                     yield self._error_event(iteration, f"Unknown action: {action_type}", message_code="agent.unknownAction")
@@ -882,46 +933,34 @@ class DataAgent:
             raise ValueError("clarify action requires non-empty questions[]")
         return {"questions": questions}
 
+    @classmethod
+    def _normalize_explain_action(cls, action: dict[str, Any]) -> dict[str, Any]:
+        """Normalize an explain action into the same shape as clarify.
+
+        The frontend reuses the clarify pipeline (one question whose ``text``
+        is the explanation and whose ``options`` are clickable followups), so
+        we emit a ``questions[]`` payload here. The followups are optional
+        visualization-leading prompts; clicking one is equivalent to typing
+        that prompt as the next user message.
+        """
+        explanation = str(action.get("explanation", "")).strip()
+        if not explanation:
+            raise ValueError("explain action requires a non-empty 'explanation'")
+
+        options = cls._sanitize_clarification_options(action.get("followups"))
+        question: dict[str, Any] = {
+            "id": "explanation",
+            "text": explanation,
+            "responseType": "single_choice",
+            "required": False,
+        }
+        if options:
+            question["options"] = options
+        return {"questions": [question]}
+
     # ------------------------------------------------------------------
     # Visualize execution (with repair)
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _summarize_execution_code(code: Any) -> str:
-        """Summarize generated code shape without storing source text."""
-        text = "" if code is None else str(code)
-        lines = [
-            line.strip()
-            for line in text.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
-        checks = (
-            ("groupby", "groupby"),
-            ("agg(", "aggregate"),
-            (".sum(", "sum"),
-            ("merge(", "merge/join"),
-            (".join(", "merge/join"),
-            ("pivot", "pivot"),
-            ("melt(", "reshape"),
-            ("query(", "filter"),
-            (".loc[", "filter"),
-            ("sort_values", "sort"),
-            ("reset_index", "reset-index"),
-            ("assign(", "derive-column"),
-            ("value_counts", "count"),
-            ("to_datetime", "datetime-conversion"),
-            ("fillna", "missing-value handling"),
-            ("dropna", "missing-value handling"),
-        )
-        operations = [label for needle, label in checks if needle in text]
-        unique_operations = list(dict.fromkeys(operations))
-
-        if unique_operations:
-            return (
-                f"{len(lines)} non-empty lines; operations="
-                f"{', '.join(unique_operations)}"
-            )
-        return f"{len(lines)} non-empty lines; operations=unspecified"
 
     def _execute_visualize(
         self,
@@ -955,27 +994,16 @@ class DataAgent:
         rlog = self._reasoning_log
         repair_llm_calls = 0
         attempt = 0
-        initial_code_summary = self._summarize_execution_code(code)
-        initial_attempt: dict[str, Any] = {
-            "kind": "visualize",
-            "attempt": attempt,
-            "status": viz_result["status"],
-            "summary": display_instruction,
-            "code_summary": initial_code_summary,
-            "error": (viz_result.get("error_message") or "")[:500],
-        }
-        last_failed_code_summary = ""
-        if viz_result["status"] != "ok":
-            initial_attempt["failed_code_summary"] = initial_code_summary
-            last_failed_code_summary = initial_code_summary
-        execution_attempts: list[dict[str, Any]] = [initial_attempt]
         while viz_result["status"] != "ok" and attempt < self.max_repair_attempts:
             attempt += 1
             error_msg = viz_result.get("error_message", "Unknown error")
             logger.warning(f"[DataAgent] Repair attempt {attempt}/{self.max_repair_attempts}: {error_msg}")
 
-            repair_messages = list(messages)
-            repair_messages.append({
+            # Mutate the canonical `messages` list so the dialog snapshot
+            # captures the repair turn just like any other tool round.
+            # The agent therefore sees one continuous conversation across
+            # the original visualize and any repairs, not a forked copy.
+            messages.append({
                 "role": "user",
                 "content": (
                     f"[CODE ERROR]\n\n{error_msg}\n\n"
@@ -984,17 +1012,15 @@ class DataAgent:
             })
             repair_action = None
             for evt in self._get_next_action(
-                repair_messages, input_tables,
+                messages, input_tables,
                 outer_iteration=outer_iteration,
             ):
                 if evt.get("type") == "agent_action":
                     repair_action = evt.get("action_data")
                     repair_llm_calls += evt.get("llm_calls", 0)
             if repair_action and repair_action.get("action") == "visualize":
-                repair_code = repair_action.get("code", code)
-                repair_code_summary = self._summarize_execution_code(repair_code)
                 viz_result = self._run_visualize_code(
-                    code=repair_code,
+                    code=repair_action.get("code", code),
                     output_variable=repair_action.get("output_variable", output_variable),
                     chart_spec=repair_action.get("chart", chart_spec),
                     field_metadata=repair_action.get("field_metadata", field_metadata),
@@ -1002,41 +1028,16 @@ class DataAgent:
                     display_instruction=display_instruction,
                     messages=messages,
                 )
-                repair_attempt: dict[str, Any] = {
-                    "kind": "repair",
-                    "attempt": attempt,
-                    "status": viz_result["status"],
-                    "summary": repair_action.get("display_instruction", display_instruction),
-                    "code_summary": repair_code_summary,
-                    "repair_code_summary": repair_code_summary,
-                    "error": (viz_result.get("error_message") or "")[:500],
-                }
-                if viz_result["status"] != "ok":
-                    repair_attempt["failed_code_summary"] = repair_code_summary
-                    last_failed_code_summary = repair_code_summary
-                execution_attempts.append(repair_attempt)
                 rlog.log("repair_attempt", attempt=attempt,
                          original_error=error_msg[:200],
                          status=viz_result["status"])
             else:
-                execution_attempts.append({
-                    "kind": "repair",
-                    "attempt": attempt,
-                    "status": "error",
-                    "summary": "repair action not produced",
-                    "failed_code_summary": last_failed_code_summary,
-                    "error": error_msg[:500],
-                })
                 rlog.log("repair_attempt", attempt=attempt,
                          original_error=error_msg[:200],
                          status="repair_failed")
                 break
 
         viz_result["repair_llm_calls"] = repair_llm_calls
-        if viz_result.get("status") == "ok" and isinstance(viz_result.get("transform_result"), dict):
-            viz_result["transform_result"]["execution_attempts"] = execution_attempts
-        else:
-            viz_result["execution_attempts"] = execution_attempts
         return viz_result
 
     def _run_explore_code(
@@ -1380,6 +1381,18 @@ class DataAgent:
         # Search and inject relevant knowledge (experiences + non-alwaysApply rules)
         table_names = [t.get("name", "") for t in input_tables if t.get("name")]
         relevant_knowledge = self._search_relevant_knowledge(user_question, table_names)
+
+        # Always include the experience distilled from the active workspace
+        # (design-docs/24 §3.6) so the session has stable working memory
+        # across turns regardless of search relevance.
+        session_exp = self._load_active_session_experience()
+        if session_exp:
+            existing_paths = {
+                (item["category"], item["path"]) for item in relevant_knowledge
+            }
+            if (session_exp["category"], session_exp["path"]) not in existing_paths:
+                relevant_knowledge = [session_exp] + relevant_knowledge
+
         if relevant_knowledge:
             knowledge_block = "[RELEVANT KNOWLEDGE]\n"
             for item in relevant_knowledge:
@@ -1709,7 +1722,7 @@ class DataAgent:
                             "status": "ok",
                             "stdout": tool_content,
                         }
-                    elif tool_name in ("visualize", "clarify", "present", "action"):
+                    elif tool_name in ("visualize", "clarify", "explain", "present", "action"):
                         action_data = dict(tool_args)
                         if "action" not in action_data:
                             real_name = tool_name if tool_name != "action" else action_data.get("type", "present")
@@ -1787,7 +1800,7 @@ class DataAgent:
                     "content": (
                         "[FORMAT ERROR] Your previous response did not contain a valid JSON action. "
                         "Please output ONLY a JSON object with one of these actions: "
-                        "visualize, clarify, or present. Do NOT repeat your analysis — "
+                        "visualize, clarify, explain, or present. Do NOT repeat your analysis — "
                         "just reformat your conclusion as JSON."
                     ),
                 })
@@ -1962,6 +1975,49 @@ class DataAgent:
         except Exception:
             logger.warning("Failed to search knowledge", exc_info=True)
             return []
+
+    def _load_active_session_experience(self) -> dict[str, Any] | None:
+        """Return the experience distilled from the active workspace, if any.
+
+        The session-scoped distillation flow (design-docs/24) writes one
+        experience per workspace, stamped with ``source_workspace_id``.
+        We always inject that file into the agent's context so the agent
+        has stable working memory for the active session in addition to
+        whatever the relevance search picked.
+        """
+        if not self._knowledge_store:
+            return None
+        try:
+            from data_formulator.workspace_factory import get_active_workspace_id
+            ws_id = get_active_workspace_id()
+        except Exception:
+            ws_id = None
+        if not ws_id:
+            return None
+        try:
+            entry = self._knowledge_store.find_experience_by_workspace_id(ws_id)
+        except Exception:
+            logger.warning("find_experience_by_workspace_id failed", exc_info=True)
+            return None
+        if not entry:
+            return None
+        try:
+            content = self._knowledge_store.read("experiences", entry["path"])
+        except Exception:
+            return None
+        from data_formulator.knowledge.store import parse_front_matter
+        _, body = parse_front_matter(content)
+        snippet = body[:500].strip()
+        if not snippet:
+            return None
+        return {
+            "category": "experiences",
+            "title": entry.get("title", entry.get("path", "")),
+            "tags": entry.get("tags", []),
+            "path": entry["path"],
+            "snippet": snippet,
+            "source": entry.get("source", "distill"),
+        }
 
     def _handle_search_knowledge(self, tool_args: dict) -> str:
         """Handle the ``search_knowledge`` tool call."""

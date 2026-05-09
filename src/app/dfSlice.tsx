@@ -184,6 +184,13 @@ export interface DataFormulatorState {
 
     /** Whether the data source sidebar is expanded (true) or collapsed to rail (false) */
     dataSourceSidebarOpen: boolean;
+
+    /**
+     * One-shot signal asking the sidebar to focus a specific connector
+     * (open the sidebar, switch to sources tab, expand + scroll-into-view
+     * + briefly highlight). Cleared by the sidebar after consumption.
+     */
+    focusedConnectorId?: string;
 }
 
 // Define the initial state using that type
@@ -249,6 +256,8 @@ const initialState: DataFormulatorState = {
     activeWorkspace: null,
 
     dataSourceSidebarOpen: false,
+
+    focusedConnectorId: undefined,
 }
 
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
@@ -371,8 +380,7 @@ export const fetchCodeExpl = createAsyncThunk(
                                 .map(tId => state.tables.find(t => t.id == tId) as DictTable)
                                 .map(t => ({ 
                                     name: t.id, 
-                                    rows: t.rows, 
-                                    attached_metadata: t.attachedMetadata
+                                    rows: t.rows,
                                 })),
                 code: derivedTable.derive?.code,
                 model: dfSelectors.getActiveModel(state)
@@ -421,7 +429,6 @@ export const fetchChartInsight = createAsyncThunk(
             .map(t => ({
                 name: t.id,
                 rows: t.rows,
-                attached_metadata: t.attachedMetadata,
             }));
 
         // Use unified timeout from user config
@@ -581,6 +588,19 @@ export const dataFormulatorSlice = createSlice({
         setDataSourceSidebarOpen: (state, action: PayloadAction<boolean>) => {
             state.dataSourceSidebarOpen = action.payload;
         },
+        /**
+         * Ask the data-source sidebar to focus a specific connector.
+         * Opens the sidebar (if collapsed) and stores the target id; the
+         * sidebar consumes the signal and clears it.
+         */
+        focusConnector: (state, action: PayloadAction<string>) => {
+            state.dataSourceSidebarOpen = true;
+            state.focusedConnectorId = action.payload;
+        },
+        /** Sidebar calls this once it has consumed a focus request. */
+        clearFocusedConnector: (state) => {
+            state.focusedConnectorId = undefined;
+        },
         loadState: (state, action: PayloadAction<any>) => {
             const saved = action.payload;
 
@@ -596,11 +616,20 @@ export const dataFormulatorSlice = createSlice({
                 dataLoaderConnectParams: state.dataLoaderConnectParams || {},
                 serverConfig: state.serverConfig,
 
-                // Restore from saved payload (backfill virtual for old states)
-                tables: (saved.tables || []).map((t: any) => ({
-                    ...t,
-                    virtual: t.virtual || { tableId: t.id, rowCount: t.rows?.length || 0 },
-                })),
+                // Restore from saved payload (backfill virtual for old states).
+                // Strip the legacy `attachedMetadata` field on the way in
+                // (see design-docs/23-table-description-unification.md): the
+                // value was session-only and often agent-fabricated. We don't
+                // migrate it to `description`, which is reserved for
+                // loader-supplied source descriptions.
+                tables: (saved.tables || []).map((t: any) => {
+                    const { attachedMetadata: _legacyAttachedMetadata, ...rest } = t;
+                    return {
+                        ...rest,
+                        description: typeof rest.description === 'string' ? rest.description : '',
+                        virtual: rest.virtual || { tableId: rest.id, rowCount: rest.rows?.length || 0 },
+                    };
+                }),
                 draftNodes: (saved.draftNodes || []).map((node: DraftNode) => {
                     // Mark any running/clarifying drafts as interrupted (SSE connection lost)
                     if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
@@ -729,11 +758,6 @@ export const dataFormulatorSlice = createSlice({
             let tableId = action.payload.tableId;
             let displayId = action.payload.displayId;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, displayId} : t);
-        },
-        updateTableAttachedMetadata: (state, action: PayloadAction<{tableId: string, attachedMetadata: string}>) => {
-            let tableId = action.payload.tableId;
-            let attachedMetadata = action.payload.attachedMetadata;
-            state.tables = state.tables.map(t => t.id == tableId ? {...t, attachedMetadata} : t);
         },
         updateTableRows: (state, action: PayloadAction<{tableId: string, rows: any[], contentHash?: string}>) => {
             // Update the rows of a table while preserving all other table properties
@@ -1206,8 +1230,8 @@ export const dataFormulatorSlice = createSlice({
                 draft.derive.pendingClarification = action.payload.pendingClarification;
             }
         },
-        promoteDraft: (state, action: PayloadAction<{ draftId: string; rows: any[]; names: string[]; metadata: any; code: string; codeSignature?: string; outputVariable?: string; dialog?: any[]; explanation?: any; virtual: { tableId: string; rowCount: number }; attachedMetadata?: string; source?: DataSourceConfig }>) => {
-            const { draftId, rows, names, metadata, code, codeSignature, outputVariable, dialog, explanation, virtual, attachedMetadata, source } = action.payload;
+        promoteDraft: (state, action: PayloadAction<{ draftId: string; rows: any[]; names: string[]; metadata: any; code: string; codeSignature?: string; outputVariable?: string; dialog?: any[]; explanation?: any; virtual: { tableId: string; rowCount: number }; description?: string; source?: DataSourceConfig }>) => {
+            const { draftId, rows, names, metadata, code, codeSignature, outputVariable, dialog, explanation, virtual, description, source } = action.payload;
             const draft = state.draftNodes.find(d => d.id === draftId);
             if (!draft) return;
             const table: DictTable = {
@@ -1228,7 +1252,7 @@ export const dataFormulatorSlice = createSlice({
                 names,
                 metadata,
                 virtual: virtual,
-                attachedMetadata: attachedMetadata || '',
+                description: description || '',
                 source,
             };
             state.tables = [...state.tables, table];
@@ -1479,12 +1503,6 @@ export const dataFormulatorSlice = createSlice({
                         suffix = `-${suffixId}`;
                     }
                     table.displayId = displayId;
-                }
-
-                // Store data summary as attached metadata if not already set (e.g., from extraction context)
-                let dataSummary = data["result"][0]["data_summary"] || data["result"][0]["data summary"];
-                if (dataSummary && !table.attachedMetadata) {
-                    table.attachedMetadata = dataSummary;
                 }
             }
         })

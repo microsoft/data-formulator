@@ -36,7 +36,7 @@ export const loadTextDataWrapper = (title: string, text: string, fileType: strin
     return table;
 };
 
-export const createTableFromText = (title: string, text: string, context?: string): DictTable | undefined => {
+export const createTableFromText = (title: string, text: string): DictTable | undefined => {
     // Check for empty strings, bad data, anything else?
     if (!text || text.trim() === '') {
         console.log('Invalid text provided for data. Could not load.');
@@ -89,16 +89,15 @@ export const createTableFromText = (title: string, text: string, context?: strin
         return record;
     });
 
-    return createTableFromFromObjectArray(title, records, true, undefined, context);
+    return createTableFromFromObjectArray(title, records, true, undefined);
 };
 
-export const createTableFromFromObjectArray = (title: string, values: any[], anchored: boolean, derive?: any, context?: string): DictTable => {
+export const createTableFromFromObjectArray = (title: string, values: any[], anchored: boolean, derive?: any): DictTable => {
     /*
     * title: the title of the table
     * values: the values of the table
     * anchored: whether the table is anchored
     * derive: the derive of the table
-    * context: the context of the table that will be attached to table metadata
     */
 
     const len = values.length;
@@ -155,7 +154,7 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
         derive: derive,
         virtual: { tableId: title, rowCount: len },
         anchored: anchored,
-        attachedMetadata: context || ''
+        description: ''
     }
 };
 

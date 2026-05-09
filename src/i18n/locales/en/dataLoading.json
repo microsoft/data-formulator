@@ -26,8 +26,6 @@
     "metadataStatusPartial": "Partial",
     "metadataStatusUnavailable": "Unavailable",
     "metadataStatusNotSynced": "Not synced",
-    "annotationSaved": "Annotation saved",
-    "annotationConflict": "Annotation was modified by another session — please reload and try again",
     "loadPlan": {
       "title": "Agent recommends loading",
       "filters": "Filters",

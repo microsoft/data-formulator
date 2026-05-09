@@ -26,8 +26,6 @@
     "metadataStatusPartial": "部分同步",
     "metadataStatusUnavailable": "不可用",
     "metadataStatusNotSynced": "未同步",
-    "annotationSaved": "标注已保存",
-    "annotationConflict": "标注已被其他会话修改，请刷新后重试",
     "loadPlan": {
       "title": "Agent 建议载入以下数据",
       "filters": "筛选条件",

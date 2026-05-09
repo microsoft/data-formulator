@@ -136,7 +136,7 @@ def build_lightweight_table_context(
             df = workspace.read_data_as_df(table_name)
             data_file_path = workspace.get_relative_data_file_path(table_name)
             num_rows = len(df)
-            description = table.get("attached_metadata", "") or table_desc_cache.get(table_name, "")
+            description = table_desc_cache.get(table_name, "")
             column_descriptions = col_desc_cache.get(table_name, {})
 
             col_metas = col_meta_cache.get(table_name, {})
@@ -176,8 +176,6 @@ def build_lightweight_table_context(
                         column_description=column_descriptions.get(col),
                         verbose_name=col_metas.get(col, {}).get("verbose_name"),
                         expression=col_metas.get(col, {}).get("expression"),
-                        source_description=col_metas.get(col, {}).get("source_description"),
-                        user_description=col_metas.get(col, {}).get("user_description"),
                     )
                     for col in df.columns
                 ]
@@ -329,17 +327,7 @@ def handle_search_data_tables(
     # ── Layer 2: disk catalog cache search ───────────────────────────
     if scope in ("connected", "all") and user_home:
         try:
-            from data_formulator.datalake.catalog_cache import (
-                search_catalog_cache, list_cached_sources,
-            )
-            from data_formulator.datalake.catalog_annotations import load_annotations
-            from pathlib import Path
-
-            ann_by_source: dict[str, Any] = {}
-            for sid in list_cached_sources(user_home):
-                ann = load_annotations(Path(user_home), sid)
-                if ann:
-                    ann_by_source[sid] = ann
+            from data_formulator.datalake.catalog_cache import search_catalog_cache
 
             imported_names = {r["name"] for r in results}
             cache_hits = search_catalog_cache(
@@ -347,7 +335,6 @@ def handle_search_data_tables(
                 query,
                 limit_per_source=20,
                 exclude_tables=imported_names,
-                annotations_by_source=ann_by_source or None,
             )
             for hit in cache_hits:
                 results.append({
@@ -404,8 +391,6 @@ def handle_read_catalog_metadata(
 
     from pathlib import Path
     from data_formulator.datalake.catalog_cache import load_catalog
-    from data_formulator.datalake.catalog_annotations import load_annotations
-    from data_formulator.datalake.catalog_merge import merge_table_metadata
 
     catalog = load_catalog(Path(user_home), source_id)
     if not catalog:
@@ -420,18 +405,15 @@ def handle_read_catalog_metadata(
     if target is None:
         return f"Table with key '{table_key}' not found in source '{source_id}'."
 
-    annotations = load_annotations(Path(user_home), source_id)
-    ann_entry = (annotations or {}).get("tables", {}).get(table_key)
-    merged = merge_table_metadata(target, ann_entry)
-    meta = merged.get("metadata", {})
+    meta = target.get("metadata") or {}
 
     # Build LLM-friendly text output with field whitelist
-    lines = [f"## {merged.get('name', table_key)}"]
+    lines = [f"## {target.get('name', table_key)}"]
     lines.append(f"Source: {source_id}")
     lines.append(f"Table key: {table_key}")
 
-    if merged.get("path"):
-        lines.append(f"Path: {' > '.join(merged['path'])}")
+    if target.get("path"):
+        lines.append(f"Path: {' > '.join(target['path'])}")
 
     status = meta.get("source_metadata_status", "not_synced")
     lines.append(f"Metadata status: {status}")
@@ -441,23 +423,9 @@ def handle_read_catalog_metadata(
         if val:
             lines.append(f"{field}: {val}")
 
-    display_desc = meta.get("display_description", "")
-    if display_desc:
-        lines.append(f"\nDescription: {display_desc}")
-
-    src_desc = meta.get("source_description", "")
-    usr_desc = meta.get("user_description", "")
-    if src_desc and usr_desc and src_desc != usr_desc:
-        lines.append(f"Source description: {src_desc}")
-        lines.append(f"User annotation: {usr_desc}")
-
-    notes = meta.get("notes", "")
-    if notes:
-        lines.append(f"Notes: {notes}")
-
-    tags = meta.get("tags")
-    if tags:
-        lines.append(f"Tags: {', '.join(tags)}")
+    table_desc = meta.get("description", "") or meta.get("source_description", "")
+    if table_desc:
+        lines.append(f"\nDescription: {table_desc}")
 
     columns = meta.get("columns", [])
     if columns:
@@ -465,9 +433,7 @@ def handle_read_catalog_metadata(
         for col in columns[:50]:
             cname = col.get("name", "?")
             ctype = col.get("type", "")
-            src_cdesc = col.get("source_description", "")
-            usr_cdesc = col.get("user_description", "")
-            cdesc = col.get("display_description", col.get("description", ""))
+            cdesc = col.get("description", "") or col.get("source_description", "")
             vname = col.get("verbose_name", "")
             expr = col.get("expression", "")
             line = f"  - {cname}"
@@ -475,9 +441,7 @@ def handle_read_catalog_metadata(
                 line += f" [{vname}]"
             if ctype:
                 line += f" ({ctype})"
-            if src_cdesc and usr_cdesc and src_cdesc != usr_cdesc:
-                line += f": source: {src_cdesc} | user: {usr_cdesc}"
-            elif cdesc:
+            if cdesc:
                 line += f": {cdesc}"
             if expr:
                 line += f"  [calc: {expr}]"

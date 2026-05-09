@@ -120,7 +120,7 @@ export const PlanStepsView: React.FC<{
 };
 
 /** Compact Markdown for summary entries — inherits parent font-size (10px). */
-const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ content, color }) => (
+export const CompactMarkdown: React.FC<{ content: string; color: string }> = ({ content, color }) => (
     <Box sx={{
         wordBreak: 'break-word',
         '& > :first-child': { mt: 0 },
@@ -244,7 +244,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     // ── Agent entries (instruction, clarify, summary, error, etc.) ──
     // Unified collapsible rendering: collapsed shows short text, expand shows 💭 thinking + full text
     if (entry.from !== 'user') {
-        const fieldBg = alpha(theme.palette.primary.main, 0.08);
+        const fieldBg = alpha(theme.palette.primary.main, 0.05);
 
         // Role-specific color: secondary for content, semantic colors for status
         let color: string;
@@ -257,6 +257,21 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 color = resolved ? theme.palette.text.secondary : theme.palette.warning.main;
                 if (resolved) collapsedLabel = t('interaction.askedForClarification');
                 break;
+            case 'explain': {
+                color = resolved ? theme.palette.text.secondary : theme.palette.info.main;
+                if (resolved) {
+                    collapsedLabel = t('interaction.gaveExplanation');
+                } else {
+                    // Active explain: cap the inline preview so it doesn't dominate
+                    // the timeline. Full text is one click away (Collapse expands).
+                    const PREVIEW_LIMIT = 140;
+                    const raw = (entry.content || '').trim();
+                    if (raw.length > PREVIEW_LIMIT) {
+                        collapsedLabel = raw.slice(0, PREVIEW_LIMIT).trimEnd() + '…';
+                    }
+                }
+                break;
+            }
             case 'summary':
                 color = theme.palette.text.secondary;
                 break;
@@ -320,7 +335,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                             color,
                             py: '1px',
                         }}>
-                            {entry.role === 'instruction'
+                            {entry.role === 'instruction' || entry.role === 'explain'
                                 ? renderFieldHighlights(displayText, fieldBg)
                                 : displayText}
                         </Typography>
@@ -348,7 +363,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         color,
                         py: '1px',
                     }}>
-                        {entry.role === 'instruction'
+                        {entry.role === 'instruction' || entry.role === 'explain'
                             ? renderFieldHighlights(displayText, fieldBg)
                             : displayText}
                     </Typography>

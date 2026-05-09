@@ -62,6 +62,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { alpha } from '@mui/material/styles';
@@ -300,42 +302,23 @@ const StreamingSettingsPopup = memo<{
     );
 });
 
-// Metadata Popup Component
+// Table Metadata Viewer (read-only)
+// Renders the source-supplied table description for connector/upload
+// tables, or the agent-produced code explanation for derived tables.
+// Per-column metadata is exposed elsewhere as header tooltips on the
+// data preview, not here. Strictly read-only and strictly textual.
+// See design-docs/23-table-description-unification.md.
 const MetadataPopup = memo<{
     open: boolean;
     anchorEl: HTMLElement | null;
     onClose: () => void;
-    onSave: (metadata: string) => void;
-    initialValue: string;
-    tableName: string;
-    systemDescription?: string;
-}>(({ open, anchorEl, onClose, onSave, initialValue, tableName, systemDescription }) => {
-    const [metadata, setMetadata] = useState(initialValue);
+    table: DictTable | null;
+}>(({ open, anchorEl, onClose, table }) => {
     const { t } = useTranslation();
 
-    let hasChanges = metadata !== initialValue;
-
-    useEffect(() => {
-        setMetadata(initialValue);
-    }, [initialValue, open]);
-
-    const handleSave = () => {
-        onSave(metadata);
-        onClose();
-    };
-
-    const handleCancel = () => {
-        setMetadata(initialValue);
-        onClose();
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Escape') {
-            handleCancel();
-        } else if (e.key === 'Enter' && e.ctrlKey) {
-            handleSave();
-        }
-    };
+    const tableName = table?.displayId || table?.id || '';
+    const description = (table?.description || '').trim();
+    const codeExplanation = (table?.derive?.explanation?.code || '').trim();
 
     return (
         <Popper
@@ -344,11 +327,13 @@ const MetadataPopup = memo<{
             placement="bottom-start"
             style={{ zIndex: 1300 }}
         >
-            <ClickAwayListener onClickAway={handleCancel}>
+            <ClickAwayListener onClickAway={onClose}>
                 <Paper
                     elevation={8}
                     sx={{
                         width: 480,
+                        maxHeight: '70vh',
+                        overflow: 'auto',
                         fontSize: 12,
                         p: 2,
                         mt: 1,
@@ -356,39 +341,34 @@ const MetadataPopup = memo<{
                     }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                        {t('dataThread.attachMetadataTo', { table: tableName })}
+                        {t('dataThread.metadataFor', { table: tableName, defaultValue: `Metadata for ${tableName}` })}
                     </Typography>
-                    {systemDescription && (
-                        <Box sx={{ mb: 1.5, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
-                                {t('dataThread.sourceDescription')}
+
+                    {description && (
+                        <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {description}
+                        </Typography>
+                    )}
+
+                    {!description && codeExplanation && (
+                        <Box>
+                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                                {t('dataThread.derivationSummary', { defaultValue: 'Derivation summary' })}
                             </Typography>
-                            <Typography variant="body2" sx={{ fontSize: 12, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
-                                {systemDescription}
+                            <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                                {codeExplanation}
                             </Typography>
                         </Box>
                     )}
-                    <TextField
-                        autoFocus
-                        label={t('dataThread.metadata')}
-                        placeholder={t('dataThread.metadataPlaceholder')}
-                        fullWidth
-                        multiline
-                        slotProps={{
-                            inputLabel: {shrink: true},
-                        }}
-                        minRows={3}
-                        maxRows={20}
-                        variant="outlined"
-                        size="small"
-                        value={metadata}
-                        onChange={(e) => setMetadata(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        sx={{ my: 1, '& .MuiInputBase-input': { fontSize: 12 } }}
-                    />
-                    <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <Button size="small" sx={{ml: 'auto'}} onClick={handleCancel} color="primary">{t('app.cancel')}</Button>
-                        <Button size="small" onClick={handleSave} color="primary" disabled={!hasChanges}>{t('app.save')}</Button>
+
+                    {!description && !codeExplanation && (
+                        <Typography sx={{ fontSize: 11.5, color: 'text.disabled', fontStyle: 'italic' }}>
+                            {t('dataThread.noMetadata', { defaultValue: 'No description available for this table.' })}
+                        </Typography>
+                    )}
+
+                    <Box sx={{ mt: 1.5, display: 'flex' }}>
+                        <Button size="small" sx={{ ml: 'auto' }} onClick={onClose} color="primary">{t('app.close', { defaultValue: 'Close' })}</Button>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -686,7 +666,7 @@ const WorkspacePanel: FC<{
                                                 </Typography>
                                             )}
                                         </Box>
-                                        {table.attachedMetadata && (
+                                        {table.description && (
                                             <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
                                         )}
                                     </Box>
@@ -782,8 +762,9 @@ const WorkspacePanel: FC<{
 let SingleThreadGroupView: FC<{
     scrollRef: any,
     threadIdx: number,
-    threadLabel?: string, // Custom label like "thread 1.1" for split sub-threads
-    isSplitThread?: boolean, // When true, truncate used tables to immediate parent + "..."
+    threadLabel?: string, // Custom label; absent on continuation segments
+    isSplitThread?: boolean, // When true, this is a continuation: truncate used tables to immediate parent + render "↑ continued" header
+    hasContinuationBelow?: boolean, // When true, render "↓ continues below" footer
     hideLabel?: boolean, // When true, hide the thread label divider
     leafTables: DictTable[];
     chartElements: { tableId: string, chartId: string, element: any }[];
@@ -797,10 +778,11 @@ let SingleThreadGroupView: FC<{
     threadIdx,
     threadLabel,
     isSplitThread = false,
+    hasContinuationBelow = false,
     hideLabel = false,
     leafTables,
     chartElements,
-    usedIntermediateTableIds, // tables that have been used
+    usedIntermediateTableIds,
     globalHighlightedTableIds,
     focusedThreadLeafId,
     chatboxFocused = false,
@@ -873,8 +855,11 @@ let SingleThreadGroupView: FC<{
         const ids = new Map<string, { question: string }>();
         for (const d of draftNodes) {
             if (d.derive?.status === 'clarifying') {
-                const clarifyEntry = d.derive.trigger.interaction?.filter(e => e.role === 'clarify').pop();
-                ids.set(d.derive.trigger.tableId, { question: clarifyEntry?.content || '' });
+                // The pause entry is either 'clarify' or 'explain'; both shape
+                // the timeline the same way.
+                const pauseEntry = d.derive.trigger.interaction
+                    ?.filter(e => e.role === 'clarify' || e.role === 'explain').pop();
+                ids.set(d.derive.trigger.tableId, { question: pauseEntry?.content || '' });
             }
         }
         return ids;
@@ -939,15 +924,6 @@ let SingleThreadGroupView: FC<{
         setMetadataPopupOpen(false);
         setSelectedTableForMetadata(null);
         setMetadataAnchorEl(null);
-    };
-
-    const handleSaveMetadata = (metadata: string) => {
-        if (selectedTableForMetadata) {
-            dispatch(dfActions.updateTableAttachedMetadata({
-                tableId: selectedTableForMetadata.id,
-                attachedMetadata: metadata
-            }));
-        }
     };
 
     // Table menu handlers
@@ -1140,8 +1116,8 @@ let SingleThreadGroupView: FC<{
         showOriginalName: threadIdx === -1,
     };
 
-    let _buildTableCard = (tableId: string) => {
-        return buildTableCard({ tableId, ...tableCardProps });
+    let _buildTableCard = (tableId: string, opts?: { ghost?: boolean }) => {
+        return buildTableCard({ tableId, ...tableCardProps, ...(opts || {}) });
     }
 
     let tableElementList = newTableIds.map((tableId, i) => _buildTableCard(tableId));
@@ -1197,7 +1173,8 @@ let SingleThreadGroupView: FC<{
                 ? { ...entry, inputTableNames: deriveSourceNames }
                 : entry;
 
-            const isResolved = entry.role === 'clarify' && entries.slice(ei + 1).some(e => e.from === 'user');
+            const isResolved = (entry.role === 'clarify' || entry.role === 'explain')
+                && entries.slice(ei + 1).some(e => e.from === 'user');
             timelineItems.push({
                 key: `${keyPrefix}-${entry.role}-${tableId}-${ei}`,
                 type: triggerType,
@@ -1218,13 +1195,13 @@ let SingleThreadGroupView: FC<{
         ];
     };
 
-    /** Append timeline items for a running or clarifying agent draft.
+    /** Append timeline items for a running, clarifying, or explaining agent draft.
      *
-     *  When the interaction contains a clarify entry (with a `plan` snapshot
-     *  of the first-round thinking steps), the rendering is split:
-     *    1. Entries before clarify (user prompt)
-     *    2. ThinkingStepsBanner for first-round steps (from clarify.plan)
-     *    3. Clarify entry + user response entries
+     *  When the interaction contains a clarify/explain entry (with a `plan`
+     *  snapshot of the first-round thinking steps), the rendering is split:
+     *    1. Entries before the pause (user prompt)
+     *    2. ThinkingStepsBanner for first-round steps (from pause entry's plan)
+     *    3. Pause entry + user response entries
      *    4. ThinkingStepsBanner for second-round steps (from runningPlan)
      */
     const pushAgentDraftItems = (
@@ -1238,9 +1215,9 @@ let SingleThreadGroupView: FC<{
             isRunning: boolean,
             keyPrefix: string,
         ) => {
-            const clarifyIdx = interaction.findIndex(e => e.role === 'clarify');
-            if (clarifyIdx < 0) {
-                // No clarify — render all entries then ThinkingStepsBanner
+            const pauseIdx = interaction.findIndex(e => e.role === 'clarify' || e.role === 'explain');
+            if (pauseIdx < 0) {
+                // No pause — render all entries then ThinkingStepsBanner
                 pushInteractionEntries(interaction, tableId, triggerType, highlighted, keyPrefix);
                 const planLines = (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
                 timelineItems.push({
@@ -1253,19 +1230,19 @@ let SingleThreadGroupView: FC<{
                 return;
             }
 
-            // Split at the clarify entry
-            const beforeClarify = interaction.slice(0, clarifyIdx);
-            const clarifyAndAfter = interaction.slice(clarifyIdx);
-            const clarifyEntry = interaction[clarifyIdx];
+            // Split at the pause entry
+            const beforePause = interaction.slice(0, pauseIdx);
+            const pauseAndAfter = interaction.slice(pauseIdx);
+            const pauseEntry = interaction[pauseIdx];
 
-            // 1. Entries before clarify (user prompt etc.)
-            if (beforeClarify.length > 0) {
-                pushInteractionEntries(beforeClarify, tableId, triggerType, highlighted, `${keyPrefix}-pre`);
+            // 1. Entries before the pause (user prompt etc.)
+            if (beforePause.length > 0) {
+                pushInteractionEntries(beforePause, tableId, triggerType, highlighted, `${keyPrefix}-pre`);
             }
 
-            // 2. First-round thinking steps (snapshotted in clarify entry's plan)
-            if (clarifyEntry.plan) {
-                const priorLines = (clarifyEntry.plan.includes('\x1E') ? clarifyEntry.plan.split('\x1E') : clarifyEntry.plan.split('\n')).filter((l: string) => l.trim());
+            // 2. First-round thinking steps (snapshotted in pause entry's plan)
+            if (pauseEntry.plan) {
+                const priorLines = (pauseEntry.plan.includes('\x1E') ? pauseEntry.plan.split('\x1E') : pauseEntry.plan.split('\n')).filter((l: string) => l.trim());
                 if (priorLines.length > 0) {
                     timelineItems.push({
                         key: `agent-thinking-prior-${tableId}`,
@@ -1277,8 +1254,8 @@ let SingleThreadGroupView: FC<{
                 }
             }
 
-            // 3. Clarify + response entries
-            pushInteractionEntries(clarifyAndAfter, tableId, triggerType, highlighted, `${keyPrefix}-post`, { isClarifying: false, tableId });
+            // 3. Pause + response entries
+            pushInteractionEntries(pauseAndAfter, tableId, triggerType, highlighted, `${keyPrefix}-post`, { isClarifying: false, tableId });
 
             // 4. Second-round thinking steps (current runningPlan)
             if (isRunning) {
@@ -1325,7 +1302,9 @@ let SingleThreadGroupView: FC<{
                     'agent-clarify-entry',
                 );
                 const lastItem = timelineItems[timelineItems.length - 1];
-                if (lastItem?.interactionEntry?.role === 'clarify') lastItem.isClarifying = true;
+                if (lastItem?.interactionEntry?.role === 'clarify' || lastItem?.interactionEntry?.role === 'explain') {
+                    lastItem.isClarifying = true;
+                }
             } else {
                 timelineItems.push({
                     key: `agent-clarify-${tableId}`,
@@ -1448,25 +1427,37 @@ let SingleThreadGroupView: FC<{
     };
 
     // Add used (shared) tables at the top
-    // Show the immediate parent as a full table card, with "..." for further ancestors
+    // Show the immediate parent as a full table card, with "..." for further ancestors.
+    // On a continuation segment (isSplitThread), suppress the "..." — the
+    // continuation header already signals carry-over and the ghost table card
+    // names the parent explicitly.
     let displayedUsedTableIds = usedTableIdsInThread;
     if (usedTableIdsInThread.length > 1) {
-        // Keep only the last (immediate parent), prepend "..." placeholder
         displayedUsedTableIds = usedTableIdsInThread.slice(-1);
-        timelineItems.push({
-            key: 'used-table-ellipsis',
-            type: 'used-table',
-            highlighted: false,
-            element: (
-                <Typography sx={{ fontSize: '10px', color: 'text.disabled' }}>
-                    …
-                </Typography>
-            ),
-        });
+        if (!isSplitThread) {
+            timelineItems.push({
+                key: 'used-table-ellipsis',
+                type: 'used-table',
+                highlighted: false,
+                element: (
+                    <Typography sx={{ fontSize: '10px', color: 'text.disabled' }}>
+                        …
+                    </Typography>
+                ),
+            });
+        }
     }
     displayedUsedTableIds.forEach((tableId, i) => {
         const isHighlighted = highlightedTableIds.includes(tableId);
-        pushTableAndChartItems(tableId, _buildTableCard(tableId), 'table', isHighlighted);
+        // On a continuation segment, render the carry-over parent as a
+        // non-interactive "ghost" so it's clearly an orientation aid, not a
+        // fresh table — no background color, dashed border, no actions.
+        pushTableAndChartItems(
+            tableId,
+            _buildTableCard(tableId, { ghost: isSplitThread }),
+            'table',
+            isHighlighted,
+        );
     });
 
     // Interleave triggers and tables for the main thread body
@@ -1554,6 +1545,20 @@ let SingleThreadGroupView: FC<{
     const TIMELINE_GAP = '4px'; // gap between timeline and card content
     const DOT_SIZE = 6;
     const CARD_PY = '6px'; // vertical padding for each timeline row
+
+    // CSS `border-style: dashed` stretches dashes to fit each element's
+    // height, so stacked segments end up with mismatched dash lengths.  A
+    // fixed-size background pattern keeps every dash the same regardless of
+    // the segment's height — the line reads as one continuous stroke even
+    // when split across multiple boxes.
+    const DASH_COLOR = 'rgba(0,0,0,0.22)';
+    const dashedLineSx = {
+        width: '2px',
+        backgroundImage: `linear-gradient(to bottom, ${DASH_COLOR} 50%, transparent 50%)`,
+        backgroundSize: '2px 6px',
+        backgroundRepeat: 'repeat-y',
+        backgroundPosition: 'top center',
+    } as const;
 
     const getTimelineDot = (item: typeof timelineItems[0]) => {
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
@@ -1707,7 +1712,8 @@ let SingleThreadGroupView: FC<{
                             {gutterIcon}
                         </Box>
                         {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
-                        {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
+                        {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
+                        {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
                         {item.element}
@@ -1729,7 +1735,8 @@ let SingleThreadGroupView: FC<{
                             {getTimelineDot(item)}
                         </Box>
                         {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
-                        {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
+                        {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
+                        {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
                         {item.element}
@@ -1755,14 +1762,29 @@ let SingleThreadGroupView: FC<{
                         const topStyle = 'solid';
                         return <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${topWidth} ${topStyle} ${topColor}` }} />;
                     })()}
-                    {index === 0 && hideLabel && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
-                    <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {index === 0 && hideLabel && isSplitThread && (
+                        // Continuation segment: extend the dashed gutter from the
+                        // "↑ continued" header above down through the ghost row
+                        // so the timeline reads as a single unbroken path.
+                        <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
+                    )}
+                    {index === 0 && hideLabel && !isSplitThread && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
+                    <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        // Ghost row: dim the gutter icon to match the muted card.
+                        ...(item.type === 'used-table' && isSplitThread ? { opacity: 0.45 } : {}),
+                    }}>
                         {getTimelineDot(item)}
                     </Box>
                     {!isLast && (
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />
                     )}
-                    {isLast && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
+                    {isLast && hasContinuationBelow && (
+                        // Continuation segment tail: extend the dashed gutter
+                        // down into the "↓ continues below" footer so the
+                        // timeline reads as a single unbroken path.
+                        <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
+                    )}
+                    {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0, py: item.type === 'used-table' ? '1px' : CARD_PY, pl: TIMELINE_GAP,
                     ...(item.type === 'used-table' && { display: 'flex', alignItems: 'center' }),
@@ -1811,7 +1833,7 @@ let SingleThreadGroupView: FC<{
                         }} />
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: `${connWidth} ${connStyle} ${connColor}` }} />
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5 }}>
+                    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5, gap: 0.5 }}>
                         <Typography sx={{ 
                             fontSize: '11px', fontWeight: 700, 
                             textTransform: 'uppercase', letterSpacing: '0.02em',
@@ -1823,16 +1845,63 @@ let SingleThreadGroupView: FC<{
                 </Box>
                 );
             })()}
+            {isSplitThread && (() => {
+                // Continuation header: a small "↑ continued" chip on a dashed
+                // gutter.  The ghost parent table card immediately below
+                // identifies the carry-over table, and the segment's first
+                // real content is the next instruction — so we don't echo the
+                // previous instruction here (it would duplicate either the
+                // ghost's name or the upcoming instruction card).
+                return (
+                    <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                        <Box sx={{
+                            width: TIMELINE_WIDTH, flexShrink: 0,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        }}>
+                            <Box sx={{ flex: '1 1 0', minHeight: 4 }} />
+                            <KeyboardArrowUpIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+                            <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, py: 0.25, display: 'flex', alignItems: 'center' }}>
+                            <Typography sx={{
+                                fontSize: '10px', color: 'text.disabled',
+                                textTransform: 'uppercase', letterSpacing: '0.04em',
+                            }}>
+                                {t('dataThread.continuedFromAbove')}
+                            </Typography>
+                        </Box>
+                    </Box>
+                );
+            })()}
             {timelineItems.map((item, index) => renderTimelineItem(item, index, index === timelineItems.length - 1, timelineItems[index + 1]?.highlighted ?? false))}
+            {hasContinuationBelow && (() => {
+                return (
+                    <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                        <Box sx={{
+                            width: TIMELINE_WIDTH, flexShrink: 0,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        }}>
+                            <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
+                            <KeyboardArrowDownIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+                            <Box sx={{ flex: '1 1 0', minHeight: 4 }} />
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, py: 0.25, display: 'flex', alignItems: 'center' }}>
+                            <Typography sx={{
+                                fontSize: '10px', color: 'text.disabled',
+                                textTransform: 'uppercase', letterSpacing: '0.04em',
+                            }}>
+                                {t('dataThread.continuesBelow')}
+                            </Typography>
+                        </Box>
+                    </Box>
+                );
+            })()}
         </div>
         <MetadataPopup
             open={metadataPopupOpen}
             anchorEl={metadataAnchorEl}
             onClose={handleCloseMetadataPopup}
-            onSave={handleSaveMetadata}
-            initialValue={selectedTableForMetadata?.attachedMetadata || ''}
-            tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
-            systemDescription={selectedTableForMetadata?.systemDescription}
+            table={selectedTableForMetadata}
         />
         <RenameTablePopup
             open={renamePopupOpen}
@@ -1879,8 +1948,9 @@ let SingleThreadGroupView: FC<{
                     {selectedTableForMenu?.anchored ? t('dataThread.unpinTable') : t('dataThread.pinTable')}
                 </MenuItem>
             )}
-            {/* Non-derived table options */}
-            {selectedTableForMenu?.derive == undefined && (
+            {/* View metadata - available for every table; read-only viewer of
+                source description + per-column descriptions (or derivation summary) */}
+            {selectedTableForMenu && (
                 <MenuItem 
                     onClick={(e) => {
                         e.stopPropagation();
@@ -1893,9 +1963,9 @@ let SingleThreadGroupView: FC<{
                 >
                     <AttachFileIcon sx={{ 
                         fontSize: 16,
-                        color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                        color: selectedTableForMenu?.description ? 'secondary.main' : 'text.secondary',
                     }}/>
-                    {selectedTableForMenu?.attachedMetadata ? t('dataThread.editMetadata') : t('dataThread.attachMetadata')}
+                    {t('dataThread.viewMetadata', { defaultValue: 'View metadata' })}
                 </MenuItem>
             )}
             {/* Refresh settings - shown for stream/database sources to configure auto-refresh interval */}
@@ -2101,10 +2171,11 @@ const ChartThumbnail: FC<{
 
 // Height estimation constants (px) – per-type heights + py:4px (8px) gap per row
 const LAYOUT_TABLE_HEIGHT = 28 + 8;     // table card + row padding
-const LAYOUT_ENTRY_HEIGHT = 55 + 8;     // interaction entry (plan/summary text typically wraps 2-4 lines) + row padding
+const LAYOUT_ENTRY_HEIGHT = 38;         // interaction entry — empirical ~1.5-line average incl. row padding
 const LAYOUT_CHART_HEIGHT = 90 + 8;     // chart card (~70-110) + row padding
 const LAYOUT_THREAD_OVERHEAD = 52;      // header divider + thread padding
 const LAYOUT_THREAD_GAP = 8;            // my: 0.5 = 4px top + 4px bottom between threads
+const SCROLL_TOLERANCE = 1.5;           // a column / segment may extend up to 1.5 × vh before we add another
 
 function estimateThreadHeight(
     tableCount: number, entryCount: number, chartCount: number
@@ -2113,6 +2184,146 @@ function estimateThreadHeight(
         + tableCount * LAYOUT_TABLE_HEIGHT
         + entryCount * LAYOUT_ENTRY_HEIGHT
         + chartCount * LAYOUT_CHART_HEIGHT;
+}
+
+/** Effective rendered row count for an interaction list: data-agent
+ *  `summary` entries that are immediately followed by an `instruction` get
+ *  folded into that instruction (see `pushInteractionEntries`), so they
+ *  shouldn't be double-counted in height estimation. */
+function effectiveEntryCount(interaction: InteractionEntry[] | undefined): number {
+    if (!interaction || interaction.length === 0) return 1;
+    let n = 0;
+    for (let i = 0; i < interaction.length; i++) {
+        const e = interaction[i];
+        const next = interaction[i + 1];
+        if (e.role === 'summary' && e.from === 'data-agent' && next?.role === 'instruction') continue;
+        n++;
+    }
+    return Math.max(1, n);
+}
+
+/** Estimated height of one trigger block: interaction entries + result table + its charts. */
+function estimateTriggerBlockHeight(
+    tableId: string,
+    interaction: InteractionEntry[] | undefined,
+    chartElements: { tableId: string }[],
+): number {
+    const charts = chartElements.filter(ce => ce.tableId === tableId).length;
+    return effectiveEntryCount(interaction) * LAYOUT_ENTRY_HEIGHT
+        + LAYOUT_TABLE_HEIGHT
+        + charts * LAYOUT_CHART_HEIGHT;
+}
+
+/**
+ * For each long thread, identify intermediate tables to "promote" as extra
+ * leaves so the thread renders as multiple stacked segments.
+ *
+ * Walk the chain accumulating estimated height; whenever the running total
+ * would exceed `SCROLL_TOLERANCE × vh` (≈ 1.5 × viewport), cut at the
+ * previous trigger boundary.  The promoted table is two steps back so the
+ * new segment opens on an instruction (with the carry-over table shown only
+ * as a dimmed ghost).  Pure / deterministic for given inputs — new content
+ * lands in the trailing segment without shifting earlier cuts.
+ */
+function computeSplitExtraLeaves(
+    leafTables: DictTable[],
+    allTables: DictTable[],
+    chartElements: { tableId: string }[],
+    viewportHeight: number,
+): DictTable[] {
+    const tableById = new Map(allTables.map(t => [t.id, t]));
+    const target = viewportHeight * SCROLL_TOLERANCE;
+    const extras: DictTable[] = [];
+
+    for (const lt of leafTables) {
+        if (!lt.derive) continue;
+        const triggers = getTriggers(lt, allTables);
+        if (triggers.length < 3) continue; // need ≥ 1 trigger on each side of the cut + the promoted middle
+
+        const triggerH = triggers.map(tp =>
+            estimateTriggerBlockHeight(tp.resultTableId, tp.interaction, chartElements));
+
+        let acc = LAYOUT_THREAD_OVERHEAD;
+        let segmentStart = 0;
+
+        for (let i = 0; i < triggers.length; i++) {
+            // Cut just before trigger i: promote triggers[i-2] as a ghost so
+            // the new segment opens on triggers[i-1]'s instruction.  Requires
+            // the current segment to contain ≥ 2 triggers (segmentStart ≤ i-2).
+            if (acc + triggerH[i] > target && i - 1 > segmentStart) {
+                const promoted = tableById.get(triggers[i - 2].resultTableId);
+                if (promoted) extras.push(promoted);
+                acc = LAYOUT_THREAD_OVERHEAD + LAYOUT_TABLE_HEIGHT + triggerH[i - 1] + triggerH[i];
+                segmentStart = i - 1;
+            } else {
+                acc += triggerH[i];
+            }
+        }
+    }
+    return extras;
+}
+
+/**
+ * Pack thread entries into columns while respecting "lock keys".  Lock semantics:
+ *
+ *   - Free entries (no lock) pack greedily up to `1.5 × vh`.
+ *   - A locked entry *may* join the current column if (a) the column has no
+ *     lock yet and (b) the combined height still fits within tolerance.  This
+ *     lets a small "thread 0" / source-tables block tag along with the head
+ *     of a locked thread instead of wasting a whole column on it.
+ *   - Once a column has a lock set, no further entries (free or locked) can
+ *     join — sibling segments with the same lock would visually duplicate the
+ *     header, and free entries appended below would push the locked head out
+ *     of view.
+ *
+ * Order is preserved.
+ */
+function packColumnsWithLocks(
+    heights: number[],
+    lockKeys: (string | undefined)[],
+    viewportHeight: number,
+): number[][] {
+    const target = viewportHeight * SCROLL_TOLERANCE;
+    const cols: number[][] = [];
+    let cur: number[] = [];
+    let curH = 0;
+    let curLock: string | undefined = undefined;
+
+    const flush = () => {
+        if (cur.length > 0) { cols.push(cur); cur = []; curH = 0; curLock = undefined; }
+    };
+
+    for (let i = 0; i < heights.length; i++) {
+        const h = heights[i];
+        const lock = lockKeys[i];
+
+        // Once the current column has a lock, it's sealed — anything new
+        // (free or locked) starts a fresh column.
+        if (curLock !== undefined) {
+            flush();
+            cur.push(i); curH = h; curLock = lock;
+            continue;
+        }
+
+        // Empty column: just start it.
+        if (cur.length === 0) {
+            cur.push(i); curH = h; curLock = lock;
+            continue;
+        }
+
+        // Try to append.  A locked entry can join an unlocked column as long
+        // as the combined height still fits — this is what lets a small
+        // source-tables block share a column with the next thread's head.
+        const projected = curH + LAYOUT_THREAD_GAP + h;
+        if (projected <= target) {
+            cur.push(i); curH = projected; curLock = lock;
+        } else {
+            flush();
+            cur.push(i); curH = h; curLock = lock;
+        }
+    }
+    flush();
+    return cols;
 }
 
 /**
@@ -2225,7 +2436,6 @@ function layoutPreserveOrder(heights: number[], numColumns: number): number[][] 
  * 3. If nothing eliminates scrolling, pick the layout that minimises the
  *    tallest column (least scrolling).
  */
-const SCROLL_TOLERANCE = 1.5; // allow up to 50% overflow before adding columns
 
 function chooseBestColumnLayout(
     heights: number[],
@@ -2336,7 +2546,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 rows: [],
                 virtual: { tableId: item.tableName, rowCount: 0 },
                 anchored: true,
-                attachedMetadata: '',
+                description: '',
                 source: {
                     type: 'database' as const,
                     databaseTable: item.tablePath.join('/'),
@@ -2469,42 +2679,41 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     }
     let leafTables = [ ...tables.filter(t => isLeafTable(t)) ];
 
-    // Split long derivation chains by promoting intermediate tables as additional "leaves".
-    // Compute effective max chain length from container height using per-table height estimates.
-    const containerH = containerRef.current?.clientHeight ?? 600;
-    const maxChainHeight = containerH; // split before exceeding the viewport
+    // Use a stable viewport estimate for cut decisions: prefer the actual
+    // container height, fall back to window or a sensible default.  This is
+    // computed at render time but is not influenced by streaming content,
+    // so cuts are deterministic for a given viewport.
+    const viewportHeight = containerRef.current?.clientHeight
+        || (typeof window !== 'undefined' ? window.innerHeight : 800);
 
-    // Estimate height for a single table node (its entries + table card + charts)
-    const estimateSingleTableH = (tableId: string): number => {
-        const table = tableById.get(tableId);
-        const entryCount = table?.derive?.trigger?.interaction?.length || 1;
-        const chartCount = chartElements.filter(ce => ce.tableId === tableId).length;
-        return LAYOUT_TABLE_HEIGHT + entryCount * LAYOUT_ENTRY_HEIGHT + Math.max(1, chartCount) * LAYOUT_CHART_HEIGHT;
-    };
+    // Determine how many columns can fit in the current container width.  When
+    // only one column fits, splitting a long thread into segments adds visual
+    // overhead (continuation headers + ghost parents) without any layout
+    // benefit, since the segments would just stack in the same single column.
+    const CARD_GAP = 12; // padding + spacing between cards in a column
+    const PANEL_PADDING = 16;
+    const CARD_WIDTH = 220;
+    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
+    // n columns need: n*CARD_WIDTH + (n-1)*CARD_GAP + PANEL_PADDING
+    // Solving for n: n <= (containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH
+    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH)));
 
-    const claimedForSplit = new Set<string>();
-    const extraLeaves: DictTable[] = [];
-    for (const lt of leafTables) {
-        const triggers = getCachedTriggers(lt);
-        const allChainIds = [lt.id, ...triggers.map(t => t.resultTableId)];
-        const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.resultTableId));
-
-        // Walk owned triggers, accumulating height and inserting split points
-        let accHeight = 0;
-        for (const tp of ownedTriggers) {
-            accHeight += estimateSingleTableH(tp.resultTableId);
-            if (accHeight >= maxChainHeight) {
-                const midTable = tableById.get(tp.resultTableId);
-                if (midTable && !leafTables.includes(midTable) && !extraLeaves.includes(midTable)) {
-                    extraLeaves.push(midTable);
-                }
-                accHeight = 0;
-            }
-        }
-        allChainIds.forEach(id => claimedForSplit.add(id));
-    }
+    // Split long derivation chains at trigger boundaries so each segment ≈ 1.5×vh.
+    // Promoted intermediate tables become "extra leaves"; the existing thread-
+    // grouping logic below renders them as the heads of split sub-threads, while
+    // the real leaf becomes a continuation segment with a ghost parent + a
+    // "↑ continued" header.  Skip splitting in single-column mode — segments
+    // would only stack in the same column and the continuation chrome is wasted.
+    const computedExtras = fittableColumns <= 1
+        ? []
+        : computeSplitExtraLeaves(
+            leafTables, tables, chartElements, viewportHeight,
+        );
+    // Avoid duplicating tables that are already leaves (e.g. anchored mids).
+    const existingLeafIds = new Set(leafTables.map(t => t.id));
+    const extraLeaves: DictTable[] = computedExtras.filter(t => !existingLeafIds.has(t.id));
     if (extraLeaves.length > 0) {
-        leafTables.push(...extraLeaves);
+        leafTables = [...leafTables, ...extraLeaves];
     }
 
     // we want to sort the leaf tables by the order of their ancestors
@@ -2589,8 +2798,21 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return triggers.length + 1 > 1;
     });
 
-    // Build thread entries and their estimated heights for layout
-    type ThreadEntry = { key: string; groupId: string; leafTables: DictTable[]; threadIdx: number; threadLabel?: string; isSplitThread?: boolean; usedTableIds?: string[]; hideLabel?: boolean };
+    // Build thread entries and their estimated heights for layout.
+    // `lockKey` (when set) forces this entry to occupy its own column, no
+    // co-packing with other threads — used for split-thread continuation segments.
+    type ThreadEntry = {
+        key: string;
+        groupId: string;
+        leafTables: DictTable[];
+        threadIdx: number;
+        threadLabel?: string;
+        isSplitThread?: boolean;          // true → render "↑ continued from above" header + ghost parent
+        hasContinuationBelow?: boolean;   // true → render "↓ continues below" footer
+        usedTableIds?: string[];
+        hideLabel?: boolean;
+        lockKey?: string;                 // entries sharing a lockKey can't share a column
+    };
     let allThreadEntries: ThreadEntry[] = [];
     let allThreadHeights: number[] = [];
 
@@ -2615,91 +2837,69 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         allThreadHeights.push(estimateThreadHeight(sourceTables.length, 0, sourceChartCount));
     }
 
-    // Regular threads: one per threaded leaf table
-    // Assign sub-thread numbering: split (promoted) threads get the main index (1, 2, ...),
-    // real leaf tables whose chain was split get a sub-index (1.1, 1.2, ...)
-    let realThreadIdx = 0; // counter for main threads
-    // Pre-scan: find which real leaf each extra leaf belongs to
+    // Pre-scan: group every threaded leaf (extras + real leaves) by the *real
+    // leaf* whose chain it belongs to.  Extras inherit their real leaf's id.
     let extraLeafToRealLeaf = new Map<string, string>();
-    // Also build reverse: real leaf -> list of extra leaves in its chain
-    let realLeafToExtraLeaves = new Map<string, string[]>();
     for (const lt of threadedTables) {
-        if (!extraLeafIds.has(lt.id)) {
-            // This is a real leaf — find all extra leaves that are ancestors of it
-            const triggers = getCachedTriggers(lt);
-            const chainIds = triggers.map(t => t.resultTableId);
-            const myExtras: string[] = [];
-            for (const extraId of extraLeafIds) {
-                if (chainIds.includes(extraId)) {
-                    if (!extraLeafToRealLeaf.has(extraId)) {
-                        extraLeafToRealLeaf.set(extraId, lt.id);
-                    }
-                    myExtras.push(extraId);
-                }
-            }
-            if (myExtras.length > 0) {
-                realLeafToExtraLeaves.set(lt.id, myExtras);
+        if (extraLeafIds.has(lt.id)) continue;
+        const triggers = getCachedTriggers(lt);
+        const chainIds = new Set(triggers.map(t => t.resultTableId));
+        for (const extraId of extraLeafIds) {
+            if (chainIds.has(extraId) && !extraLeafToRealLeaf.has(extraId)) {
+                extraLeafToRealLeaf.set(extraId, lt.id);
             }
         }
     }
-    // Map from extra leaf id -> its assigned main thread index
-    let extraLeafToThreadIdx = new Map<string, number>();
-    // Track sub-index counters per chain (keyed by first extra leaf's thread idx)
-    let subThreadCounters = new Map<number, number>();
+    const groupIdOf = (lt: DictTable) =>
+        extraLeafIds.has(lt.id) ? (extraLeafToRealLeaf.get(lt.id) || lt.id) : lt.id;
+
+    // For each group, capture the ordered list of segments (using current
+    // threadedTables iteration order, which has already been ancestor-sorted).
+    const segmentsByGroup = new Map<string, string[]>();
+    for (const lt of threadedTables) {
+        const gid = groupIdOf(lt);
+        const arr = segmentsByGroup.get(gid) || [];
+        arr.push(lt.id);
+        segmentsByGroup.set(gid, arr);
+    }
+
+    // Numbering: only the *first* segment of each group bumps the counter and
+    // gets a visible label.  Continuation segments are unlabelled — they rely
+    // on the "↑ continued" header chip + ghost parent for visual continuity.
+    let realThreadIdx = 0;
 
     threadedTables.forEach((lt, i) => {
         const triggers = getCachedTriggers(lt);
 
-        // Collect all table IDs in this thread's chain
         let threadTableIds = new Set<string>();
         triggers.forEach(t => threadTableIds.add(t.resultTableId));
         threadTableIds.add(lt.id);
 
-        // Only new (unclaimed) tables contribute to this thread's height
         let newTableIds = [...threadTableIds].filter(id => !claimedTableIds.has(id));
-
         let newTriggerPairs = triggers.filter(tp => newTableIds.includes(tp.resultTableId));
         let chartCount = newTableIds.reduce((sum, tid) => sum + chartElements.filter(ce => ce.tableId === tid).length, 0);
-
-        // Count actual interaction entries across all triggers (for height estimation)
         let entryCount = newTriggerPairs.reduce((sum, tp) => sum + (tp.interaction?.length || 1), 0);
-        // +1 for the leaf table's own trigger
         entryCount += lt.derive?.trigger?.interaction?.length || 1;
-
-        // +1 table for the leaf table itself
         let totalTables = newTableIds.length + 1;
 
-        // Claim this thread's tables for subsequent threads
         threadTableIds.forEach(id => claimedTableIds.add(id));
 
-        // Determine thread label and whether this is a split sub-thread
-        const isSplit = extraLeafIds.has(lt.id);
-        // A real leaf is a "continuation" if it has extra leaves in its chain
-        const isContinuation = !isSplit && realLeafToExtraLeaves.has(lt.id);
-        let threadLabel: string;
-        let threadIdxForEntry: number;
+        const gid = groupIdOf(lt);
+        const groupSegs = segmentsByGroup.get(gid)!;
+        const posInGroup = groupSegs.indexOf(lt.id);
+        const isFirst = posInGroup === 0;
+        const isLast = posInGroup === groupSegs.length - 1;
+        const isMultiSegment = groupSegs.length > 1;
 
-        if (isSplit) {
-            // Promoted intermediate — gets a main thread index
+        let threadLabel: string | undefined;
+        let threadIdxForEntry: number;
+        if (isFirst) {
             realThreadIdx++;
-            extraLeafToThreadIdx.set(lt.id, realThreadIdx);
             threadLabel = t('dataThread.threadIndex', { index: String(realThreadIdx) });
             threadIdxForEntry = realThreadIdx - 1;
-        } else if (isContinuation) {
-            // Real leaf whose chain was split — gets sub-index under the last extra leaf's index
-            const myExtras = realLeafToExtraLeaves.get(lt.id) || [];
-            // Use the last extra leaf's thread index (the one closest to this leaf in the chain)
-            const lastExtra = myExtras[myExtras.length - 1];
-            const parentIdx = extraLeafToThreadIdx.get(lastExtra) ?? realThreadIdx;
-            const subIdx = (subThreadCounters.get(parentIdx) || 0) + 1;
-            subThreadCounters.set(parentIdx, subIdx);
-            threadLabel = t('dataThread.threadIndex', { index: `${parentIdx}.${subIdx}` });
-            threadIdxForEntry = i;
         } else {
-            // Normal thread (no splitting involved)
-            realThreadIdx++;
-            threadLabel = t('dataThread.threadIndex', { index: String(realThreadIdx) });
-            threadIdxForEntry = realThreadIdx - 1;
+            threadLabel = undefined;
+            threadIdxForEntry = realThreadIdx - 1; // inherit head's idx
         }
 
         allThreadEntries.push({
@@ -2708,8 +2908,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             leafTables: [lt],
             threadIdx: threadIdxForEntry,
             threadLabel,
-            isSplitThread: isContinuation,
-            hideLabel: isContinuation,
+            isSplitThread: !isFirst,             // continuation → ghost parent + header
+            hideLabel: !isFirst,                 // continuation → no own label divider
+            hasContinuationBelow: !isLast,       // not the tail → "↓ continues below" footer
+            lockKey: isMultiSegment ? gid : undefined,
         });
         allThreadHeights.push(estimateThreadHeight(totalTables, entryCount, chartCount));
     });
@@ -2734,19 +2936,20 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const availableHeight = containerRef.current?.clientHeight ?? 600;
     const hasMultipleThreads = allThreadEntries.length > 1;
 
-    const CARD_GAP = 12; // padding + spacing between cards in a column
-    const PANEL_PADDING = 16;
-    const CARD_WIDTH = 220;
-    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-
-    // n columns need: n*CARD_WIDTH + (n-1)*CARD_GAP + PANEL_PADDING
-    // Solving for n: n <= (containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH
-    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH)));
     const MAX_COLUMNS = fittableColumns;
-    const columnLayout: number[][] = chooseBestColumnLayout(
-        allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
-        /* minColumns */ fittableColumns
-    );
+    // Use the lock-aware packer when any thread has been split into segments;
+    // otherwise fall back to the height-balanced multi-column packer.
+    const hasLockedEntries = allThreadEntries.some(e => !!e.lockKey);
+    const columnLayout: number[][] = hasLockedEntries
+        ? packColumnsWithLocks(
+            allThreadHeights,
+            allThreadEntries.map(e => e.lockKey),
+            availableHeight,
+        )
+        : chooseBestColumnLayout(
+            allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
+            /* minColumns */ fittableColumns
+        );
 
     let renderThreadEntry = (entry: ThreadEntry) => {
         let usedTableIds = entry.usedTableIds || [];
@@ -2757,6 +2960,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             threadIdx={entry.threadIdx}
             threadLabel={entry.threadLabel}
             isSplitThread={entry.isSplitThread}
+            hasContinuationBelow={entry.hasContinuationBelow}
             hideLabel={entry.hideLabel}
             leafTables={entry.leafTables}
             chartElements={chartElements}

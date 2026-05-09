@@ -71,7 +71,7 @@ export interface ClarificationAutoSelect {
 export interface InteractionEntry {
     from: Actor;
     to: Actor;
-    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error';
+    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error' | 'explain';
     plan?: string; // agent's reasoning / thought for this action
     content: string;
     displayContent?: string;
@@ -277,16 +277,6 @@ export interface DictTable {
             }[]
         },
         dialog: any[], // the log of how the data is derived with LLM (the LLM conversation log)
-        executionAttempts?: {
-            kind: string;
-            attempt?: number;
-            status: string;
-            summary: string;
-            code_summary?: string;
-            failed_code_summary?: string;
-            repair_code_summary?: string;
-            error?: string;
-        }[],
         trigger: Trigger,
         status?: DeriveStatus, // lifecycle state (new — completed tables may omit for backward compat)
     };
@@ -295,10 +285,8 @@ export interface DictTable {
         rowCount: number; // total number of rows (rows.length may be a sample)
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
-    attachedMetadata: string; // a string of attached metadata explaining what the table is about (used for prompt)
-    /** Read-only description from the source system (e.g. database COMMENT). */
-    systemDescription?: string;
-    
+    description: string; // table-level description sourced from the loader (read-only). Empty string when none.
+
     source?: DataSourceConfig;
     
     // Content hash for detecting data changes during refresh
@@ -315,21 +303,11 @@ export function createDictTable(
             concepts: {field: string, explanation: string}[]}, 
             source: string[], 
             dialog: any[], 
-            executionAttempts?: {
-                kind: string;
-                attempt?: number;
-                status: string;
-                summary: string;
-                code_summary?: string;
-                failed_code_summary?: string;
-                repair_code_summary?: string;
-                error?: string;
-            }[],
             trigger: Trigger
         } | undefined = undefined,
     virtual: {tableId: string, rowCount: number} = { tableId: id, rowCount: rows.length },
     anchored: boolean = false,
-    attachedMetadata: string = '',
+    description: string = '',
     source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
     
@@ -352,7 +330,7 @@ export function createDictTable(
         derive,
         virtual,
         anchored,
-        attachedMetadata,
+        description,
         source,
     }
 }
@@ -437,6 +415,10 @@ export interface ConnectorInstance {
     display_name: string;
     icon: string;
     connected: boolean;
+    /** Backend signals that the vault has stored credentials for this
+     *  connector + identity. Used by the connect form to render a placeholder
+     *  hint (••••••••) on sensitive fields whose values aren't returned. */
+    has_stored_credentials?: boolean;
     /** Backend signals that SSO token exchange can auto-connect this source. */
     sso_auto_connect?: boolean;
     deletable?: boolean;

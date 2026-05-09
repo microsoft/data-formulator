@@ -202,25 +202,53 @@ class TestKnowledgeSearch:
         assert len(data["data"]["results"]) == 0
 
 
-EXPERIENCE_CONTEXT = {
-    "context_id": "table-123",
-    "source_table_id": "source-1",
-    "user_question": "Analyze monthly sales",
-    "dialog": [{"role": "user", "content": "Analyze monthly sales"}],
-    "interaction": [
-        {"from": "user", "role": "prompt", "content": "Analyze monthly sales"},
-        {"from": "data-agent", "role": "summary", "content": "Sales increased"},
-    ],
-    "result_summary": {
-        "display_instruction": "Monthly sales trend",
-        "output_fields": ["month", "sales"],
-        "output_rows": 12,
-        "code": "result_df = df.groupby('month').sum()",
-    },
-    "execution_attempts": [
-        {"kind": "visualize", "status": "ok", "summary": "Monthly sales trend"},
+SESSION_EXPERIENCE_CONTEXT = {
+    "context_id": "ws-1",
+    "workspace_id": "ws-1",
+    "workspace_name": "Gasoline prices 2024",
+    "threads": [
+        {
+            "thread_id": "leaf-a",
+            "events": [
+                {"type": "message", "from": "user", "to": "data-agent", "role": "prompt",
+                 "content": "load gasoline prices"},
+                {"type": "create_table", "table_id": "df_1",
+                 "source_tables": ["gas"], "columns": ["price"],
+                 "row_count": 1000, "sample_rows": [{"price": 3.5}]},
+            ],
+        },
+        {
+            "thread_id": "leaf-b",
+            "events": [
+                {"type": "message", "from": "user", "to": "data-agent", "role": "prompt",
+                 "content": "filter to 2024"},
+                {"type": "create_table", "table_id": "df_2",
+                 "source_tables": ["df_1"], "columns": ["price"],
+                 "row_count": 365, "sample_rows": [{"price": 3.6}]},
+            ],
+        },
     ],
 }
+
+DISTILLED_MD = """\
+---
+subtitle: monthly sales aggregation
+tags: [sales, time-series]
+created: 2026-05-06
+updated: 2026-05-06
+source: distill
+source_context: ws-1
+---
+
+## When to Use
+When analysing monthly sales trends.
+
+## Method
+Group by month, sum sales, plot as line.
+
+## Pitfalls & Tips
+Beware of timezone-induced bucket drift.
+"""
 
 
 class TestDistillExperience:
@@ -229,11 +257,11 @@ class TestDistillExperience:
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
              patch(
                  "data_formulator.agents.agent_experience_distill."
-                 "ExperienceDistillAgent.run_from_context",
-                 return_value=SAMPLE_MD,
-             ) as run_from_context:
+                 "ExperienceDistillAgent.run",
+                 return_value=DISTILLED_MD,
+             ) as run:
             resp = client.post("/api/knowledge/distill-experience", json={
-                "experience_context": EXPERIENCE_CONTEXT,
+                "experience_context": SESSION_EXPERIENCE_CONTEXT,
                 "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
             })
 
@@ -242,18 +270,18 @@ class TestDistillExperience:
         assert data["data"]["category"] == "experiences"
         assert (tmp_path / "knowledge" / "experiences" / data["data"]["path"]).exists()
         assert not (tmp_path / "agent-logs").exists()
-        run_from_context.assert_called_once()
+        run.assert_called_once()
 
     def test_distill_experience_llm_timeout_returns_structured_error(self, client):
         with patch("data_formulator.routes.agents.get_client", return_value=object()), \
              patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
              patch(
                  "data_formulator.agents.agent_experience_distill."
-                 "ExperienceDistillAgent.run_from_context",
+                 "ExperienceDistillAgent.run",
                  side_effect=TimeoutError("request timed out"),
              ):
             resp = client.post("/api/knowledge/distill-experience", json={
-                "experience_context": EXPERIENCE_CONTEXT,
+                "experience_context": SESSION_EXPERIENCE_CONTEXT,
                 "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
             })
 
@@ -270,12 +298,111 @@ class TestDistillExperience:
         data = resp.get_json()
         assert data["status"] == "error"
 
-    def test_distill_experience_missing_required_context_field(self, client):
-        bad_context = {**EXPERIENCE_CONTEXT}
-        bad_context.pop("result_summary")
+    def test_distill_experience_missing_threads(self, client):
+        bad_context = {k: v for k, v in SESSION_EXPERIENCE_CONTEXT.items() if k != "threads"}
         resp = client.post("/api/knowledge/distill-experience", json={
             "experience_context": bad_context,
             "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
         })
         data = resp.get_json()
         assert data["status"] == "error"
+
+    def test_distill_experience_missing_workspace(self, client):
+        bad_context = {k: v for k, v in SESSION_EXPERIENCE_CONTEXT.items()
+                       if k not in ("workspace_id", "workspace_name")}
+        resp = client.post("/api/knowledge/distill-experience", json={
+            "experience_context": bad_context,
+            "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
+        })
+        data = resp.get_json()
+        assert data["status"] == "error"
+
+    def test_distill_session_overrides_title_with_workspace_name(self, client, tmp_path):
+        """Session-scoped distillation composes 'Experience from <name>: <subtitle>'."""
+        with patch("data_formulator.routes.agents.get_client", return_value=object()), \
+             patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
+             patch(
+                 "data_formulator.agents.agent_experience_distill."
+                 "ExperienceDistillAgent.run",
+                 return_value=DISTILLED_MD,
+             ):
+            resp = client.post("/api/knowledge/distill-experience", json={
+                "experience_context": SESSION_EXPERIENCE_CONTEXT,
+                "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
+            })
+
+        data = resp.get_json()
+        assert data["status"] == "success"
+        path = data["data"]["path"]
+        # Filename is derived from the workspace name, not the LLM subtitle.
+        assert path == "gasoline-prices-2024.md"
+        saved = (tmp_path / "knowledge" / "experiences" / path).read_text(encoding="utf-8")
+        assert "title: 'Experience from Gasoline prices 2024: monthly sales aggregation'" in saved \
+            or "title: \"Experience from Gasoline prices 2024: monthly sales aggregation\"" in saved \
+            or "title: Experience from Gasoline prices 2024: monthly sales aggregation" in saved
+        # Workspace stamps are present so the file can be looked up later.
+        assert "source_workspace_id: ws-1" in saved
+        assert "source_workspace_name: Gasoline prices 2024" in saved
+        # Body is preserved verbatim.
+        assert "## Method" in saved
+
+    def test_distill_session_upserts_existing_workspace_file(self, client, tmp_path):
+        """Re-distilling the same workspace overwrites the same file."""
+        with patch("data_formulator.routes.agents.get_client", return_value=object()), \
+             patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
+             patch(
+                 "data_formulator.agents.agent_experience_distill."
+                 "ExperienceDistillAgent.run",
+                 return_value=DISTILLED_MD,
+             ):
+            client.post("/api/knowledge/distill-experience", json={
+                "experience_context": SESSION_EXPERIENCE_CONTEXT,
+                "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
+            })
+            # Re-distill: workspace renamed, so the slug changes — old file
+            # should be removed in favour of the new one.
+            renamed = {**SESSION_EXPERIENCE_CONTEXT, "workspace_name": "Diesel 2024"}
+            resp = client.post("/api/knowledge/distill-experience", json={
+                "experience_context": renamed,
+                "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
+            })
+
+        data = resp.get_json()
+        assert data["status"] == "success"
+        new_path = data["data"]["path"]
+        exp_dir = tmp_path / "knowledge" / "experiences"
+        # Stale slug deleted, new slug present.
+        assert not (exp_dir / "gasoline-prices-2024.md").exists()
+        assert (exp_dir / new_path).exists()
+        assert new_path == "diesel-2024.md"
+
+    def test_distill_session_skips_subtitle_double_prefix(self, client, tmp_path):
+        """Update-mode runs that re-emit a prefixed title don't double-prefix."""
+        # Simulate a prior run where the LLM echoed an Experience-prefixed title
+        # without a subtitle.
+        prior_md = (
+            "---\n"
+            "title: 'Experience from Gasoline prices 2024: prior insight'\n"
+            "tags: [a]\n"
+            "created: 2026-05-06\n"
+            "updated: 2026-05-06\n"
+            "source: distill\n"
+            "---\n\n## Method\nbody\n"
+        )
+        with patch("data_formulator.routes.agents.get_client", return_value=object()), \
+             patch("data_formulator.routes.agents.get_language_instruction", return_value=""), \
+             patch(
+                 "data_formulator.agents.agent_experience_distill."
+                 "ExperienceDistillAgent.run",
+                 return_value=prior_md,
+             ):
+            resp = client.post("/api/knowledge/distill-experience", json={
+                "experience_context": SESSION_EXPERIENCE_CONTEXT,
+                "model": {"endpoint": "openai", "key": "x", "model": "gpt"},
+            })
+
+        data = resp.get_json()
+        assert data["status"] == "success"
+        saved = (tmp_path / "knowledge" / "experiences" / data["data"]["path"]).read_text(encoding="utf-8")
+        # The "Experience from ..." prefix is stripped before re-prefixing.
+        assert saved.count("Experience from") == 1

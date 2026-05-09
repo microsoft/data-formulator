@@ -28,7 +28,7 @@ import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from 
 import { streamRequest } from '../app/apiClient';
 import { getErrorMessage } from '../app/errorCodes';
 import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
-import { formatClarificationResponsesForDisplay, normalizeClarifyEvent } from '../app/clarification';
+import { normalizeClarifyEvent } from '../app/clarification';
 
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
@@ -322,13 +322,24 @@ export const SimpleChartRecBox: FC = function () {
         return null;
     }, [draftNodes, threadTableIds]);
 
-    // Extract the active structured clarification from DraftNode interaction log.
+    // Extract the active structured clarification (or explanation) from
+    // DraftNode interaction log. Both are stored as ClarificationQuestion[]
+    // — the entry's role ('clarify' vs 'explain') is what differs.
     const clarificationQuestions = React.useMemo(() => {
         if (!pendingClarification?.draftId) return null;
         const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
-        const clarifyEntries = draft?.derive?.trigger?.interaction?.filter(e => e.role === 'clarify');
-        const lastEntry = clarifyEntries && clarifyEntries.length > 0 ? clarifyEntries[clarifyEntries.length - 1] : null;
-        return lastEntry?.clarificationQuestions || null;
+        const interaction = draft?.derive?.trigger?.interaction || [];
+        // Find the most recent clarify or explain entry.
+        for (let i = interaction.length - 1; i >= 0; i--) {
+            const entry = interaction[i];
+            if (entry.role === 'clarify' || entry.role === 'explain') {
+                return {
+                    questions: entry.clarificationQuestions || null,
+                    variant: entry.role === 'explain' ? 'explain' as const : 'clarify' as const,
+                };
+            }
+        }
+        return null;
     }, [pendingClarification, draftNodes]);
 
     const getIdeasFromAgent = useCallback(async () => {
@@ -362,7 +373,6 @@ export const SimpleChartRecBox: FC = function () {
                 input_tables: sourceTables.map(t => ({
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
                     rows: t.rows,
-                    attached_metadata: t.attachedMetadata
                 })),
                 exploration_thread: explorationThread,
             });
@@ -457,7 +467,9 @@ export const SimpleChartRecBox: FC = function () {
         setIsChatFormulating(true);
 
         // DraftNode handles status
-        // If resuming from clarification, reuse the old draft (append reply, clear clarification)
+        // If resuming from a clarify or explain pause, reuse the old draft
+        // (append reply, clear pause state). Both pause types share the
+        // 'clarifying' status and pendingClarification storage.
         if (isResume && pendingClarification?.draftId) {
             dispatch(dfActions.appendDraftInteraction({ draftId: pendingClarification.draftId, entry: {
                 from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now()
@@ -584,7 +596,6 @@ export const SimpleChartRecBox: FC = function () {
         const requestBody: any = {
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                attached_metadata: t.attachedMetadata
             })),
             primary_tables: primaryTableNames,
             ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
@@ -640,7 +651,7 @@ export const SimpleChartRecBox: FC = function () {
             return draftId;
         };
 
-        // Create the initial draft (or reuse existing for clarification resume)
+        // Create the initial draft (or reuse existing for clarification / explanation resume)
         if (isResume && pendingClarification?.draftId) {
             currentDraftId = pendingClarification.draftId;
             // Seed local accumulator from the existing draft's interaction (fresh at this point)
@@ -818,7 +829,6 @@ export const SimpleChartRecBox: FC = function () {
                     outputVariable: refinedGoal?.output_variable || 'result_df',
                     source: resolvedSourceIds.length > 0 ? resolvedSourceIds : selectedTableIds,
                     dialog: dialog || [],
-                    executionAttempts: transformResult.execution_attempts || [],
                     trigger: {
                         tableId: triggerTableId,
                         resultTableId: candidateTableId,
@@ -921,13 +931,17 @@ export const SimpleChartRecBox: FC = function () {
                 }
             }
 
-            // ── clarify: pause and let user respond ──
-            if (result.type === "clarify") {
+            // ── clarify / explain: pause and let user respond ──
+            // Both events share the same shape (questions[]) and the same
+            // pause storage; the only difference is the InteractionEntry role,
+            // which the panel uses to switch palette/labels.
+            if (result.type === "clarify" || result.type === "explain") {
+                const isExplainEvent = result.type === "explain";
                 let normalizedClarification;
                 try {
                     normalizedClarification = normalizeClarifyEvent(result);
                 } catch {
-                    const errMsg = t('chartRec.invalidClarification');
+                    const errMsg = t(isExplainEvent ? 'chartRec.invalidExplanation' : 'chartRec.invalidClarification');
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(), type: 'error',
                         component: 'data-agent', value: errMsg,
@@ -942,22 +956,23 @@ export const SimpleChartRecBox: FC = function () {
                     return;
                 }
                 if (currentDraftId) {
-                    // Snapshot thinking steps into the clarify entry so they render
-                    // inline (as 二级) between the user prompt and the clarify question.
+                    // Snapshot thinking steps into the pause entry so they render
+                    // inline (as 二级) between the user prompt and the pause.
                     const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
                     thinkingSteps = [];
                     pendingThought = '';
                     dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
 
-                    const clarifyEntry: InteractionEntry = {
-                        from: 'data-agent', to: 'user', role: 'clarify',
+                    const pauseEntry: InteractionEntry = {
+                        from: 'data-agent', to: 'user',
+                        role: isExplainEvent ? 'explain' : 'clarify',
                         plan: priorSteps || result.thought || undefined,
                         content: normalizedClarification.summary,
                         clarificationQuestions: normalizedClarification.questions,
                         timestamp: Date.now(),
                     };
-                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: clarifyEntry }));
-                    currentDraftInteraction.push(clarifyEntry);
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
+                    currentDraftInteraction.push(pauseEntry);
                     dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
                     dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
                         trajectory: result.trajectory || [],
@@ -968,9 +983,9 @@ export const SimpleChartRecBox: FC = function () {
                         autoSelectOptionId: normalizedClarification.autoSelect?.option_id,
                         autoSelectTimeoutMs: normalizedClarification.autoSelect?.timeout_ms,
                     }}));
-                    if (currentDraftParentTableId) {
-                        dispatch(dfActions.setFocused({ type: 'table', tableId: currentDraftParentTableId }));
-                    }
+                    // Don't change the user's focus — they may have been looking
+                    // at a chart and the clarify/explain pause shouldn't yank
+                    // their attention back to the parent table.
                 }
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
@@ -1061,7 +1076,7 @@ export const SimpleChartRecBox: FC = function () {
 
                     allResults.push(data);
                     processStreamingResult(data);
-                    if (data.type === "completion" || data.type === "clarify") {
+                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain") {
                         handleCompletion();
                         return;
                     }
@@ -1241,9 +1256,12 @@ export const SimpleChartRecBox: FC = function () {
 
     const resumeFromClarification = useCallback((responses: ClarificationResponse[]) => {
         if (!pendingClarification) return;
-        const prompt = formatClarificationResponsesForDisplay(responses, clarificationQuestions || []);
+        // Both clarify and explain pauses now treat the user's reply (a clicked
+        // option or freeform text) as the next prompt on its own. We no longer
+        // prepend the agent's question — the trajectory already contains it.
+        const prompt = responses.map(r => r.answer).filter(Boolean).join('\n');
         exploreFromChat(prompt, pendingClarification, responses);
-    }, [clarificationQuestions, exploreFromChat, pendingClarification]);
+    }, [exploreFromChat, pendingClarification]);
 
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
@@ -1253,7 +1271,7 @@ export const SimpleChartRecBox: FC = function () {
         // Always clear busy state — the async finally blocks also clear this,
         // but a direct cancel should guarantee the UI unblocks immediately.
         setIsChatFormulating(false);
-        // Also dismiss any pending clarification draft
+        // Also dismiss any pending pause draft (clarify or explain)
         if (pendingClarification?.draftId) {
             dispatch(dfActions.removeDraftNode(pendingClarification.draftId));
         }
@@ -1305,9 +1323,10 @@ export const SimpleChartRecBox: FC = function () {
             },
         }}
         >
-            {clarificationQuestions && pendingClarification && !isChatFormulating && (
+            {clarificationQuestions?.questions && pendingClarification && !isChatFormulating && (
                 <ClarificationPanel
-                    questions={clarificationQuestions}
+                    questions={clarificationQuestions.questions}
+                    variant={clarificationQuestions.variant}
                     autoSelectQuestionId={pendingClarification.autoSelectQuestionId}
                     autoSelectOptionId={pendingClarification.autoSelectOptionId}
                     autoSelectTimeoutMs={pendingClarification.autoSelectTimeoutMs}
@@ -1442,7 +1461,6 @@ export const SimpleChartRecBox: FC = function () {
                     </MenuList>
                 </Paper>
             </Popper>
-            {!pendingClarification && (
             <TextField
                 variant="standard"
                 sx={{
@@ -1560,7 +1578,6 @@ export const SimpleChartRecBox: FC = function () {
                 minRows={2}
                 maxRows={4}
             />
-            )}
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
                 {/* Action buttons */}
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.5, overflow: 'hidden', flex: 1 }}>
@@ -1629,18 +1646,6 @@ export const SimpleChartRecBox: FC = function () {
                             </span>
                         </Tooltip>
                         )}
-                        {pendingClarification && !isChatFormulating && (
-                            <Tooltip title={t('chartRec.endConversation')}>
-                                <IconButton
-                                    size="small"
-                                    sx={{ p: 0.5, color: theme.palette.warning.main }}
-                                    onClick={() => cancelAgent()}
-                                >
-                                    <StopCircleOutlinedIcon sx={{ fontSize: 18 }} />
-                                </IconButton>
-                            </Tooltip>
-                        )}
-                        {!pendingClarification && (
                         <Tooltip title={t('chartRec.explore')}>
                             <span>
                                 <IconButton
@@ -1660,7 +1665,6 @@ export const SimpleChartRecBox: FC = function () {
                                 </IconButton>
                             </span>
                         </Tooltip>
-                        )}
                     </>
                 )}
                 </Box>

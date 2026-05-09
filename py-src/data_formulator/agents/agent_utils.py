@@ -32,7 +32,7 @@ def _source_table_matches_catalog_entry(
 def build_catalog_metadata_lookups(
     workspace,
 ) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, list[str]], dict[str, dict[str, dict]]]:
-    """Build table/column metadata overlays from catalog cache + annotations.
+    """Build table/column metadata overlays from catalog cache (loader-only).
 
     Returns
     -------
@@ -53,15 +53,16 @@ def build_catalog_metadata_lookups(
         if not ws_meta:
             return table_desc_cache, col_desc_cache, table_extra_cache, col_meta_cache
 
-        from data_formulator.datalake.catalog_annotations import load_annotations
         from data_formulator.datalake.catalog_cache import list_cached_sources, load_catalog
-        from data_formulator.datalake.catalog_merge import merge_catalog
 
-        merged_catalogs: list[dict[str, Any]] = []
+        # Source-only catalog: no user annotation merge. The agent now only
+        # sees descriptions that came from the source system (SQL comments,
+        # Glue parameters, BigQuery field descriptions, …). User-authored
+        # guidance lives in Knowledge → Rules instead.
+        catalogs: list[dict[str, Any]] = []
         for source_id in list_cached_sources(user_home):
             catalog = load_catalog(Path(user_home), source_id) or []
-            annotations = load_annotations(Path(user_home), source_id)
-            merged_catalogs.extend(merge_catalog(catalog, annotations))
+            catalogs.extend(catalog)
 
         for table_name, table_meta in ws_meta.tables.items():
             source_table = getattr(table_meta, "source_table", None)
@@ -69,7 +70,7 @@ def build_catalog_metadata_lookups(
                 continue
             match = next(
                 (
-                    entry for entry in merged_catalogs
+                    entry for entry in catalogs
                     if _source_table_matches_catalog_entry(str(source_table), entry)
                 ),
                 None,
@@ -78,22 +79,19 @@ def build_catalog_metadata_lookups(
                 continue
 
             meta = match.get("metadata") or {}
-            display_desc = meta.get("display_description") or meta.get("description")
-            if display_desc:
-                table_desc_cache[table_name] = str(display_desc)
+            table_desc = meta.get("source_description") or meta.get("description")
+            if table_desc:
+                table_desc_cache[table_name] = str(table_desc)
 
-            column_descs = {
-                str(col.get("name")): str(col.get("display_description"))
-                for col in meta.get("columns", [])
-                if isinstance(col, dict) and col.get("name") and col.get("display_description")
-            }
-            if column_descs:
-                col_desc_cache[table_name] = column_descs
-
+            column_descs: dict[str, str] = {}
             col_metas: dict[str, dict] = {}
             for col in meta.get("columns", []):
                 if not isinstance(col, dict) or not col.get("name"):
                     continue
+                col_name = str(col["name"])
+                col_desc = col.get("source_description") or col.get("description")
+                if col_desc:
+                    column_descs[col_name] = str(col_desc)
                 cm: dict[str, str] = {}
                 vn = col.get("verbose_name")
                 if vn:
@@ -101,33 +99,14 @@ def build_catalog_metadata_lookups(
                 expr = col.get("expression")
                 if expr:
                     cm["expression"] = expr
-                src_cdesc = col.get("source_description", "")
-                usr_cdesc = col.get("user_description", "")
-                if src_cdesc:
-                    cm["source_description"] = src_cdesc
-                if usr_cdesc:
-                    cm["user_description"] = usr_cdesc
+                if col_desc:
+                    cm["source_description"] = str(col_desc)
                 if cm:
-                    col_metas[str(col["name"])] = cm
+                    col_metas[col_name] = cm
+            if column_descs:
+                col_desc_cache[table_name] = column_descs
             if col_metas:
                 col_meta_cache[table_name] = col_metas
-
-            extras: list[str] = []
-            source_desc = meta.get("source_description")
-            user_desc = meta.get("user_description")
-            if source_desc and user_desc and source_desc != user_desc:
-                extras.append(f"Source description: {source_desc}")
-                extras.append(f"User annotation: {user_desc}")
-            elif source_desc and user_desc and source_desc == user_desc:
-                pass  # identical — display_description already covers it
-            notes = meta.get("notes")
-            if notes:
-                extras.append(f"Notes: {notes}")
-            tags = meta.get("tags")
-            if tags:
-                extras.append(f"Tags: {', '.join(str(tag) for tag in tags)}")
-            if extras:
-                table_extra_cache[table_name] = extras
     except Exception:
         _logger.debug("Failed to build catalog metadata lookups", exc_info=True)
 
@@ -419,8 +398,7 @@ def supplement_missing_block(client, messages, assistant_content,
 
 
 def get_field_summary(field_name, df, field_sample_size, max_val_chars=100,
-                      column_description=None, verbose_name=None, expression=None,
-                      source_description=None, user_description=None):
+                      column_description=None, verbose_name=None, expression=None):
     def make_hashable(val):
         if val is None:
             return None
@@ -459,9 +437,7 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100,
     if verbose_name:
         line += f" [{verbose_name}]"
     line += f" -- type: {df[field_name].dtype}, values: {val_str}"
-    if source_description and user_description and source_description != user_description:
-        line += f"  (source: {source_description} | user: {user_description})"
-    elif column_description:
+    if column_description:
         line += f"  ({column_description})"
     if expression:
         line += f"  [calc: {expression}]"
@@ -560,11 +536,7 @@ def generate_data_summary(
 
     def assemble_table_summary(table, idx):
         table_name = table['name']
-        description = table.get("attached_metadata", "")
-
-        # Fall back to source system description from workspace metadata
-        if not description:
-            description = table_desc_cache.get(table_name, "")
+        description = table_desc_cache.get(table_name, "")
 
         try:
             df = workspace.read_data_as_df(table_name)
@@ -617,8 +589,6 @@ def generate_data_summary(
                 column_description=col_descs.get(fname),
                 verbose_name=col_metas.get(fname, {}).get("verbose_name"),
                 expression=col_metas.get(fname, {}).get("expression"),
-                source_description=col_metas.get(fname, {}).get("source_description"),
-                user_description=col_metas.get(fname, {}).get("user_description"),
             )
             for fname in df.columns
         ])

@@ -134,9 +134,3 @@ class TestCatalogErrorCodes:
 
     def test_catalog_not_found(self):
         assert ErrorCode.CATALOG_NOT_FOUND == "CATALOG_NOT_FOUND"
-
-    def test_annotation_conflict(self):
-        assert ErrorCode.ANNOTATION_CONFLICT == "ANNOTATION_CONFLICT"
-
-    def test_annotation_invalid_patch(self):
-        assert ErrorCode.ANNOTATION_INVALID_PATCH == "ANNOTATION_INVALID_PATCH"

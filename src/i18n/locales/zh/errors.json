@@ -30,8 +30,6 @@
 
     "catalogSyncTimeout": "目录同步超时，请重试",
     "catalogNotFound": "未找到连接器或连接器未连接",
-    "annotationConflict": "标注已被修改，请重新加载后再试",
-    "annotationInvalidPatch": "标注数据格式无效",
 
     "internalError": "服务器内部错误",
     "serviceUnavailable": "服务暂时不可用",

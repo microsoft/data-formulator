@@ -399,6 +399,14 @@ function getConnectorTypeDescription(sourceType: string, connected: boolean, t: 
 // Reusable Data Load Menu Component
 export interface DataLoadMenuProps {
     onSelectTab: (tab: UploadTabType) => void;
+    /**
+     * Optional override for connector-card clicks. When provided, clicking a
+     * `connector:${id}` card calls this with the full `ConnectorInstance`
+     * instead of routing through `onSelectTab`. Used by the dialog/page so
+     * already-connected connectors hand off to the data-source sidebar
+     * instead of opening an in-dialog catalog tab.
+     */
+    onSelectConnector?: (connector: ConnectorInstance) => void;
     serverConfig?: { WORKSPACE_BACKEND?: string; IS_LOCAL_MODE?: boolean };
     variant?: 'dialog' | 'page'; // 'dialog' uses smaller cards, 'page' uses larger cards
     hideSampleDatasets?: boolean;
@@ -407,6 +415,7 @@ export interface DataLoadMenuProps {
 
 export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({ 
     onSelectTab, 
+    onSelectConnector,
     serverConfig = { WORKSPACE_BACKEND: 'local' },
     variant = 'dialog',
     hideSampleDatasets = false,
@@ -496,6 +505,22 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         },
     ];
 
+    // Route connector-card clicks to onSelectConnector when provided so the
+    // dialog/page can hand off to the data-source sidebar instead of opening
+    // an in-dialog catalog tab. Non-connector cards always go through
+    // onSelectTab.
+    const handleConnectionClick = (sourceValue: UploadTabType) => {
+        if (typeof sourceValue === 'string' && sourceValue.startsWith('connector:') && onSelectConnector) {
+            const connId = sourceValue.slice('connector:'.length);
+            const conn = connectors.find(c => c.id === connId);
+            if (conn) {
+                onSelectConnector(conn);
+                return;
+            }
+        }
+        onSelectTab(sourceValue);
+    };
+
     if (variant === 'page') {
         // Page variant: two sections stacked, local data in 3 columns, live sources in 2 columns with wrap
         return (
@@ -573,7 +598,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             icon={source.icon}
                             title={source.title}
                             description={source.description}
-                            onClick={() => onSelectTab(source.value)}
+                            onClick={() => handleConnectionClick(source.value)}
                             disabled={source.disabled}
                             dashed={source.dashed}
                         />
@@ -663,7 +688,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         icon={source.icon}
                         title={source.title}
                         description={source.description}
-                        onClick={() => onSelectTab(source.value)}
+                        onClick={() => handleConnectionClick(source.value)}
                         disabled={source.disabled}
                         dashed={source.dashed}
                     />
@@ -987,6 +1012,26 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             setActiveTab(initialTab === 'menu' ? 'menu' : initialTab);
         }
     }, [initialTab, open]);
+
+    // When entering a connector tab, seed Redux's connect-params for that
+    // connector from its saved `pinned_params` so the form shows the
+    // existing connection details (host/db/etc) instead of an empty form.
+    // Sensitive fields (password, tokens) are never returned by the backend
+    // so they stay empty for re-entry.
+    useEffect(() => {
+        if (!open || !activeTab.startsWith('connector:')) return;
+        const connId = activeTab.slice('connector:'.length);
+        const conn = connectorInstances.find(c => c.id === connId);
+        if (!conn) return;
+        if (Object.keys(conn.pinned_params || {}).length === 0) return;
+        dispatch(dfActions.updateDataLoaderConnectParams({
+            dataLoaderType: connId,
+            params: { ...conn.pinned_params },
+        }));
+        // We deliberately seed only on tab entry — subsequent edits stay in
+        // Redux as the user types.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, activeTab, connectorInstances]);
 
 
     // Load sample datasets
@@ -1614,6 +1659,17 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     <Box sx={{ p: 2, boxSizing: 'border-box', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <DataLoadMenu 
                             onSelectTab={(tab) => setActiveTab(tab)}
+                            onSelectConnector={(conn) => {
+                                // Already-authed connector → close dialog and
+                                // hand off to the data-source sidebar. Otherwise
+                                // fall through to the in-dialog auth/connect form.
+                                if (conn.connected || conn.sso_auto_connect) {
+                                    handleClose();
+                                    dispatch(dfActions.focusConnector(conn.id));
+                                } else {
+                                    setActiveTab(`connector:${conn.id}` as UploadTabType);
+                                }
+                            }}
                             serverConfig={serverConfig}
                             variant="dialog"
                             hideSampleDatasets={hideSampleDatasets}
@@ -2075,10 +2131,17 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 paramDefs={conn.params_form}
                                 authInstructions={conn.auth_instructions || ''}
                                 connectorId={conn.id}
-                                autoConnect={conn.connected || conn.sso_auto_connect}
-                                ssoAutoConnect={conn.sso_auto_connect}
+                                // Dialog never auto-connects: it's a
+                                // view/edit/re-auth surface for an existing
+                                // connector. Catalog browsing lives in the
+                                // data-source sidebar. Auto-connecting here
+                                // would close the dialog before the user
+                                // sees the form.
+                                autoConnect={false}
+                                ssoAutoConnect={false}
                                 delegatedLogin={conn.delegated_login}
                                 authMode={conn.auth_mode}
+                                hasStoredCredentials={conn.has_stored_credentials}
                                 onImport={() => {}}
                                 onFinish={(status, message) => {
                                     dispatch(dfActions.addMessages({
@@ -2093,6 +2156,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         prev.map(c => c.id === conn.id ? { ...c, connected: true } : c)
                                     );
                                     onConnectorsChanged?.();
+                                    // Hand off to the data-source sidebar — the
+                                    // dialog no longer owns catalog browsing.
+                                    handleClose();
+                                    dispatch(dfActions.focusConnector(conn.id));
                                 }}
                                 onDelete={conn.deletable ? async (cid) => {
                                     try {
@@ -2129,8 +2196,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 return [...prev, newConnector];
                             });
                             onConnectorsChanged?.();
-                            // Jump to the new connector's tab
-                            setActiveTab(`connector:${newConnector.id}` as UploadTabType);
+                            // Hand off to the data-source sidebar — the dialog
+                            // no longer owns catalog browsing.
+                            handleClose();
+                            dispatch(dfActions.focusConnector(newConnector.id));
                         }}
                     />
                 </TabPanel>
@@ -2151,7 +2220,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     return [...prev, newConn];
                                 });
                                 onConnectorsChanged?.();
-                                setActiveTab(`connector:${newConn.id}` as UploadTabType);
+                                // Hand off to the data-source sidebar.
+                                handleClose();
+                                dispatch(dfActions.focusConnector(newConn.id));
                             }}
                         />
                     </TabPanel>

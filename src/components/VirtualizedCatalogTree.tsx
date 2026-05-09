@@ -22,7 +22,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { TableIcon } from '../icons';
 import type { CatalogTreeNode } from './CatalogTree';
-import { countBadgeSx } from './CatalogTree';
+import { CountBadge } from './CatalogTree';
 
 // ─── Flattened row representation ────────────────────────────────────────────
 
@@ -145,11 +145,8 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
     const childCount = isNamespace ? (node.children?.length ?? 0) : 0;
     const tableCount = isGroup ? (node.metadata?.tables?.length ?? 0) : 0;
     const nodeDescription = (isTable || isGroup)
-        ? (node.metadata?.display_description || node.metadata?.description || '')
+        ? (node.metadata?.description || node.metadata?.source_description || '')
         : '';
-    const hasUserAnnotation = Boolean(
-        node.metadata?.user_description || node.metadata?.notes || node.metadata?.tags?.length,
-    );
     const metaStatus = node.metadata?.source_metadata_status;
     const isSelected = selectedItemId === itemId;
 
@@ -180,8 +177,12 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                 <Box
                     onClick={handleClick}
                     sx={{
-                        pl: `${depth * 16 + 4}px`, pr: 0.5,
-                        display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0,
+                        // Indent: leaves render at their parent's depth so the
+                        // leaf icon lines up under the parent namespace icon
+                        // (the reserved-but-empty chevron slot supplies the
+                        // visual padding). Expandable rows use their own depth.
+                        pl: `${(isExpandable ? depth : Math.max(0, depth - 1)) * 8 + 4}px`, pr: 0.5,
+                        display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0,
                         height: '100%',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -214,12 +215,6 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                     </Typography>
                     {/* Loaded check */}
                     {(loaded || groupLoaded) && <CheckIcon sx={{ fontSize: 13, color: 'success.main', flexShrink: 0 }} />}
-                    {/* User annotation hint */}
-                    {isTable && hasUserAnnotation && (
-                        <Tooltip title={t('sidebar.userAnnotationAvailable')} placement="top">
-                            <InfoOutlinedIcon sx={{ fontSize: 12, color: 'primary.main', flexShrink: 0, opacity: 0.75 }} />
-                        </Tooltip>
-                    )}
                     {/* Metadata status hint */}
                     {isTable && metaStatus && metaStatus !== 'ok' && metaStatus !== 'synced' && (
                         <Tooltip title={metaStatus === 'partial' ? t('sidebar.metadataPartial') : t('sidebar.metadataUnavailable')} placement="top">
@@ -234,10 +229,10 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                     )}
                     {/* Count badges */}
                     {isGroup && tableCount > 0 && (
-                        <Box component="span" sx={countBadgeSx}>{tableCount}</Box>
+                        <CountBadge count={tableCount} />
                     )}
                     {childCount > 0 && !isExpanded && (
-                        <Box component="span" sx={countBadgeSx}>{childCount}</Box>
+                        <CountBadge count={childCount} />
                     )}
                     {/* Table actions */}
                     {isTable && renderTableActions?.(node)}
@@ -249,7 +244,7 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-const ROW_HEIGHT = 28;
+const ROW_HEIGHT = 24;
 const VIRTUALIZE_THRESHOLD = 100;
 
 export const VirtualizedCatalogTree: React.FC<VirtualizedCatalogTreeProps> = ({

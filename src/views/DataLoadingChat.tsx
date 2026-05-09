@@ -487,7 +487,7 @@ const ChatBubble: React.FC<{
                                     rows: [] as any[],
                                     virtual: { tableId: item.displayName, rowCount: 0 },
                                     anchored: true,
-                                    attachedMetadata: '',
+                                    description: '',
                                     source: {
                                         type: 'database' as const,
                                         databaseTable: sourceTableName,

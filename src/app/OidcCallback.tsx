@@ -9,7 +9,7 @@
  * which exchanges it for tokens, then navigate to the app root.
  */
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
     Box,
     CircularProgress,

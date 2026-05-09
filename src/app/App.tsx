@@ -59,7 +59,7 @@ import {
 import MuiAppBar from '@mui/material/AppBar';
 import { alpha, createTheme, styled, ThemeProvider, useTheme } from '@mui/material/styles';
 
-import AddIcon from '@mui/icons-material/Add';
+import LogoutIcon from '@mui/icons-material/Logout';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ClearIcon from '@mui/icons-material/Clear';
 
@@ -449,29 +449,29 @@ const WorkspaceMenu: React.FC = () => {
     );
 };
 
-const NewSessionButton: React.FC = () => {
+// Exit the current session and return to the front-page (no workspace).
+// Saves work first so the session is recoverable from the workspace picker.
+const ExitSessionButton: React.FC = () => {
     const dispatch = useDispatch();
     const state = useSelector((s: DataFormulatorState) => s);
     const { t } = useTranslation();
 
-    const handleNewSession = async () => {
+    const handleExit = async () => {
         try { await saveWorkspaceState(getSerializableState(state)); } catch { /* best effort */ }
-        const now = new Date();
-        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-        const short = generateUUID().slice(0, 4);
-        const wsId = `session_${date}_${time}_${short}`;
-        dispatch(dfActions.loadState({
-            tables: [], charts: [], draftNodes: [], conceptShelfItems: [],
-            activeWorkspace: { id: wsId, displayName: 'Untitled Session' },
-        }));
+        dispatch(dfActions.resetState());
     };
 
     return (
-        <Tooltip title={t('workspace.newSessionTooltip')} placement="bottom">
-            <IconButton size="small" onClick={handleNewSession} sx={{ color: 'text.secondary', ml: 0.5 }}>
-                <AddIcon sx={{ fontSize: 18 }} />
-            </IconButton>
+        <Tooltip title={t('workspace.exitSessionTooltip', { defaultValue: 'Exit session and return to the workspace picker' })} placement="bottom">
+            <Button
+                size="small"
+                variant="text"
+                onClick={handleExit}
+                startIcon={<LogoutIcon sx={{ fontSize: 18 }} />}
+                sx={{ textTransform: 'none', color: 'text.secondary' }}
+            >
+                {t('workspace.exit', { defaultValue: 'Exit' })}
+            </Button>
         </Tooltip>
     );
 };
@@ -832,15 +832,20 @@ const AppShell: FC = () => {
                         {activeWorkspace && isAppPage && (
                             <Box sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center' }}>
                                 <WorkspaceMenu />
-                                <NewSessionButton />
                             </Box>
                         )}
                         {isAppPage && (
-                            <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14 }}>
+                            <Box sx={{ display: 'flex', ml: 'auto', fontSize: 14, alignItems: 'center' }}>
                                 <LanguageSwitcher />
                                 <ConfigDialog />
                                 <Divider orientation="vertical" variant="middle" flexItem />
                                 <ModelSelectionButton />
+                                {activeWorkspace && (
+                                    <>
+                                        <Divider orientation="vertical" variant="middle" flexItem />
+                                        <ExitSessionButton />
+                                    </>
+                                )}
                             </Box>
                         )}
                         {isGalleryPage && (
