@@ -35,6 +35,7 @@ vi.mock('../../../../src/app/errorCodes', () => ({
 }));
 
 import { handleApiError } from '../../../../src/app/errorHandler';
+import { extractErrorMessage } from '../../../../src/app/errorHandler';
 import { ApiRequestError, type ApiError } from '../../../../src/app/apiClient';
 import { dfActions } from '../../../../src/app/dfSlice';
 
@@ -172,5 +173,60 @@ describe('handleApiError', () => {
 
             expect(dfActions.addMessages).toHaveBeenCalledOnce();
         });
+    });
+
+    describe('RTK serialized error handling', () => {
+
+        it('should extract message from RTK serialized error object', () => {
+            // RTK miniSerializeError produces plain objects like this
+            const serializedError = { name: 'ApiRequestError', message: 'Connection timeout', stack: 'at ...' };
+
+            handleApiError(serializedError, 'data source sidebar');
+
+            expect(dfActions.addMessages).toHaveBeenCalledOnce();
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.value).toBe('Connection timeout');
+            expect(msg.component).toBe('data source sidebar');
+        });
+
+        it('should not produce [object Object] for serialized errors', () => {
+            const serializedError = { name: 'Error', message: 'Something failed' };
+
+            handleApiError(serializedError, 'ctx');
+
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.value).not.toBe('[object Object]');
+            expect(msg.value).toBe('Something failed');
+        });
+    });
+});
+
+describe('extractErrorMessage', () => {
+
+    it('should extract message from ApiRequestError', () => {
+        const apiError: ApiError = { code: 'DATA_LOAD_ERROR', message: 'Load failed', retry: false };
+        const err = new ApiRequestError(apiError, 200);
+
+        expect(extractErrorMessage(err)).toBe('Load failed');
+    });
+
+    it('should extract message from plain Error', () => {
+        expect(extractErrorMessage(new Error('boom'))).toBe('boom');
+    });
+
+    it('should extract message from RTK serialized error (plain object with .message)', () => {
+        const serialized = { name: 'ApiRequestError', message: 'Table not found', stack: '...' };
+        expect(extractErrorMessage(serialized)).toBe('Table not found');
+    });
+
+    it('should fallback to String() for unknown values', () => {
+        expect(extractErrorMessage(42)).toBe('42');
+        expect(extractErrorMessage(null)).toBe('null');
+    });
+
+    it('should not return [object Object] for objects with message', () => {
+        const obj = { message: 'real error' };
+        expect(extractErrorMessage(obj)).not.toBe('[object Object]');
+        expect(extractErrorMessage(obj)).toBe('real error');
     });
 });

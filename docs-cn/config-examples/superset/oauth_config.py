@@ -26,17 +26,14 @@ class ExampleSsoHandler:
     """
     handler_name = '生产环境SSO'
     # TODO: 替换为您的 SSO 系统 userinfo 端点
-    userinfo_url = 'https://sso.your-company.com/api/v1/oauth2/userinfo'
-    # TODO: 根据实际 SSO 角色代码配置映射
-    #
-    # ⚠️ DF 通过 Superset SQL Lab API（POST /api/v1/sqllab/execute/）拉取数据，
-    # 用户角色必须包含以下权限才能正常使用：
-    #   - can execute on SqlLab          （核心：执行 SQL 查询）
-    #   - all database access on all_database_access （访问所有数据库）
-    #     或者针对特定数据库的 database access 权限
-    #
-    # Superset 内置角色中：Admin 和 Alpha 默认有以上权限，Gamma 没有。
-    # 如需给 Gamma 用户开放 DF 数据拉取能力，请在角色编辑页手动添加上述权限。
+    userinfo_url = '<YOUR_SSO_USERINFO_URL>'
+
+    # SSO 角色 → Superset 角色映射
+    # DF 通过 Chart Data API 拉取数据，仅需 datasource access 权限。
+    # - Admin / Alpha：自动拥有所有数据集的访问权限
+    # - Gamma：需要管理员在 Superset 中授予具体数据集的 datasource access
+    # 不需要 SQL Lab 相关权限（can execute on SqlLab 等）。
+
     role_mapping = {
         'role_admin': 'Admin',
         'role_analyst': 'Alpha',

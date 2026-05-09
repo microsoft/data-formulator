@@ -5,10 +5,10 @@
 
 Covers:
 - _normalize_column_type classification
-- _build_source_filter_clauses SQL generation
+- _build_chart_data_filters / _build_chart_data_orderby conversion
 - get_column_types (with mocked SupersetClient)
 - get_column_values three-tier fallback (with mocked SupersetClient)
-- SQL helper functions (_detect_quote_char, _sql_literal, etc.)
+- fetch_data_as_arrow via Chart Data API
 - URL resolution (params → env fallback)
 - Unified validate_params / ConnectorParamError
 """
@@ -21,13 +21,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import pytest
 
 from data_formulator.data_connector import classify_and_raise_connector_error
-from data_formulator.data_loader.superset_data_loader import (
-    SupersetLoader,
-    _detect_quote_char,
-    _quote_identifier,
-    _column_ref,
-    _sql_literal,
-)
+from data_formulator.data_loader.superset_data_loader import SupersetLoader
 
 pytestmark = [pytest.mark.backend, pytest.mark.plugin]
 
@@ -69,162 +63,129 @@ class TestNormalizeColumnType:
 
 
 # ==================================================================
-# _build_source_filter_clauses
+# _build_chart_data_filters
 # ==================================================================
 
-class TestBuildSourceFilterClauses:
+class TestBuildChartDataFilters:
 
     def test_empty_filters(self):
-        assert SupersetLoader._build_source_filter_clauses(None) == []
-        assert SupersetLoader._build_source_filter_clauses([]) == []
+        assert SupersetLoader._build_chart_data_filters(None) == []
+        assert SupersetLoader._build_chart_data_filters([]) == []
 
     def test_eq_filter(self):
         filters = [{"column": "status", "operator": "EQ", "value": "active"}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert len(clauses) == 1
-        assert "status = 'active'" in clauses[0]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert result == [{"col": "status", "op": "==", "val": "active"}]
+
+    def test_neq_filter(self):
+        filters = [{"column": "status", "operator": "NEQ", "value": "deleted"}]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert result == [{"col": "status", "op": "!=", "val": "deleted"}]
+
+    def test_comparison_operators(self):
+        for df_op, api_op in [("GT", ">"), ("GTE", ">="), ("LT", "<"), ("LTE", "<=")]:
+            filters = [{"column": "age", "operator": df_op, "value": 18}]
+            result = SupersetLoader._build_chart_data_filters(filters)
+            assert result == [{"col": "age", "op": api_op, "val": 18}]
 
     def test_in_filter(self):
         filters = [{"column": "id", "operator": "IN", "value": [1, 2, 3]}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert "IN (1, 2, 3)" in clauses[0]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert result == [{"col": "id", "op": "IN", "val": [1, 2, 3]}]
 
     def test_not_in_filter(self):
         filters = [{"column": "id", "operator": "NOT_IN", "value": [4, 5]}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert "NOT IN" in clauses[0]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert result == [{"col": "id", "op": "NOT IN", "val": [4, 5]}]
 
-    def test_between_filter(self):
+    def test_between_splits_into_two(self):
         filters = [{"column": "age", "operator": "BETWEEN", "value": [18, 65]}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert "BETWEEN 18 AND 65" in clauses[0]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert len(result) == 2
+        assert result[0] == {"col": "age", "op": ">=", "val": 18}
+        assert result[1] == {"col": "age", "op": "<=", "val": 65}
 
     def test_is_null_filter(self):
         filters = [{"column": "email", "operator": "IS_NULL", "value": None}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert "IS NULL" in clauses[0]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert result == [{"col": "email", "op": "IS NULL", "val": None}]
 
     def test_is_not_null_filter(self):
         filters = [{"column": "email", "operator": "IS_NOT_NULL", "value": None}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert "IS NOT NULL" in clauses[0]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert result == [{"col": "email", "op": "IS NOT NULL", "val": None}]
 
     def test_like_filter(self):
         filters = [{"column": "name", "operator": "LIKE", "value": "%alice%"}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert "LIKE" in clauses[0]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert result == [{"col": "name", "op": "LIKE", "val": "%alice%"}]
+
+    def test_ilike_filter(self):
+        filters = [{"column": "name", "operator": "ILIKE", "value": "%alice%"}]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert result == [{"col": "name", "op": "ILIKE", "val": "%alice%"}]
 
     def test_invalid_operator_skipped(self):
         filters = [{"column": "x", "operator": "DROP TABLE", "value": "1"}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert clauses == []
+        assert SupersetLoader._build_chart_data_filters(filters) == []
 
     def test_missing_column_skipped(self):
         filters = [{"operator": "EQ", "value": "1"}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert clauses == []
+        assert SupersetLoader._build_chart_data_filters(filters) == []
 
     def test_in_with_empty_list_skipped(self):
         filters = [{"column": "x", "operator": "IN", "value": []}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert clauses == []
+        assert SupersetLoader._build_chart_data_filters(filters) == []
 
     def test_between_with_wrong_length_skipped(self):
         filters = [{"column": "x", "operator": "BETWEEN", "value": [1]}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert clauses == []
+        assert SupersetLoader._build_chart_data_filters(filters) == []
 
-    def test_multiple_filters_combined(self):
+    def test_multiple_filters(self):
         filters = [
             {"column": "status", "operator": "EQ", "value": "active"},
             {"column": "age", "operator": "GTE", "value": 18},
         ]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert len(clauses) == 2
-
-    def test_backtick_quote_char(self):
-        filters = [{"column": "my col", "operator": "EQ", "value": "x"}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters, quote_char="`")
-        assert "`my col`" in clauses[0]
-
-    def test_boolean_value_literal(self):
-        filters = [{"column": "active", "operator": "EQ", "value": True}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert "TRUE" in clauses[0]
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert len(result) == 2
+        assert result[0]["col"] == "status"
+        assert result[1]["col"] == "age"
 
     def test_non_dict_filter_skipped(self):
         filters = ["not-a-dict", {"column": "x", "operator": "EQ", "value": 1}]
-        clauses = SupersetLoader._build_source_filter_clauses(filters)
-        assert len(clauses) == 1
+        result = SupersetLoader._build_chart_data_filters(filters)
+        assert len(result) == 1
 
 
 # ==================================================================
-# _build_sort_clause
+# _build_chart_data_orderby
 # ==================================================================
 
-class TestBuildSortClause:
+class TestBuildChartDataOrderby:
 
     def test_empty_sort_columns(self):
-        assert SupersetLoader._build_sort_clause(None) == ""
-        assert SupersetLoader._build_sort_clause([]) == ""
+        assert SupersetLoader._build_chart_data_orderby(None) == []
+        assert SupersetLoader._build_chart_data_orderby([]) == []
 
-    def test_desc_sort_clause(self):
-        clause = SupersetLoader._build_sort_clause(["id"], "desc")
-        assert clause == "ORDER BY id DESC"
+    def test_ascending(self):
+        result = SupersetLoader._build_chart_data_orderby(["id"], "asc")
+        assert result == [["id", True]]
 
-    def test_defaults_to_ascending_for_unknown_order(self):
-        clause = SupersetLoader._build_sort_clause(["id"], "DROP TABLE")
-        assert clause == "ORDER BY id ASC"
+    def test_descending(self):
+        result = SupersetLoader._build_chart_data_orderby(["id"], "desc")
+        assert result == [["id", False]]
 
-    def test_quotes_special_column_names(self):
-        clause = SupersetLoader._build_sort_clause(["order amount"], "asc", quote_char="`")
-        assert clause == "ORDER BY `order amount` ASC"
+    def test_defaults_to_ascending(self):
+        result = SupersetLoader._build_chart_data_orderby(["id"], "UNKNOWN")
+        assert result == [["id", True]]
+
+    def test_multiple_columns(self):
+        result = SupersetLoader._build_chart_data_orderby(["name", "age"], "desc")
+        assert result == [["name", False], ["age", False]]
 
     def test_skips_invalid_columns(self):
-        clause = SupersetLoader._build_sort_clause(["", None, "id"], "asc")
-        assert clause == "ORDER BY id ASC"
-
-
-# ==================================================================
-# SQL helpers
-# ==================================================================
-
-class TestSQLHelpers:
-
-    def test_detect_quote_char_mysql(self):
-        assert _detect_quote_char({"database": {"backend": "mysql"}}) == "`"
-        assert _detect_quote_char({"database": {"backend": "MariaDB"}}) == "`"
-
-    def test_detect_quote_char_postgres(self):
-        assert _detect_quote_char({"database": {"backend": "postgresql"}}) == '"'
-
-    def test_detect_quote_char_missing_backend(self):
-        assert _detect_quote_char({}) == '"'
-
-    def test_quote_identifier(self):
-        assert _quote_identifier("users") == '"users"'
-        assert _quote_identifier('col"name') == '"col""name"'
-
-    def test_column_ref_simple(self):
-        assert _column_ref("status") == "status"
-
-    def test_column_ref_with_spaces(self):
-        assert _column_ref("my column") == '"my column"'
-
-    def test_sql_literal_string(self):
-        assert _sql_literal("hello") == "'hello'"
-        assert _sql_literal("it's") == "'it''s'"
-
-    def test_sql_literal_number(self):
-        assert _sql_literal(42) == "42"
-        assert _sql_literal(3.14) == "3.14"
-
-    def test_sql_literal_bool(self):
-        assert _sql_literal(True) == "TRUE"
-        assert _sql_literal(False) == "FALSE"
-
-    def test_sql_literal_none(self):
-        assert _sql_literal(None) == "NULL"
+        result = SupersetLoader._build_chart_data_orderby(["", None, "id"], "asc")
+        assert result == [["id", True]]
 
 
 # ==================================================================
@@ -309,23 +270,20 @@ class TestGetColumnValues:
         result = loader.get_column_values("42", "status", limit=10)
         assert len(result["options"]) == 2
 
-    def test_tier3_sql_fallback(self, loader):
-        """Third tier: SQL SELECT DISTINCT via SQL Lab"""
+    def test_tier3_chart_data_fallback(self, loader):
+        """Third tier: Chart Data API with columns aggregation (GROUP BY)"""
         loader._client.get_datasource_column_values.side_effect = Exception("404")
         loader._client.get_dataset_distinct_values.side_effect = Exception("404")
-        loader._client.get_dataset_detail.return_value = {
-            "table_name": "users",
-            "database": {"id": 1, "backend": "postgresql"},
-            "schema": "public",
-        }
-        mock_session = MagicMock()
-        loader._client.create_sql_session.return_value = mock_session
-        loader._client.execute_sql_with_session.return_value = {
-            "data": [{"name": "alice"}, {"name": "bob"}],
-            "columns": [{"column_name": "name"}],
+        loader._client.post_chart_data.return_value = {
+            "result": [{
+                "data": [{"name": "alice"}, {"name": "bob"}],
+                "colnames": ["name"],
+            }],
         }
         result = loader.get_column_values("42", "name", limit=10)
         assert len(result["options"]) == 2
+        assert result["options"][0]["value"] == "alice"
+        assert result["options"][1]["value"] == "bob"
 
     def test_invalid_source_table(self, loader):
         result = loader.get_column_values("not-a-number", "col")
@@ -367,14 +325,14 @@ class TestGetColumnValues:
     def test_all_tiers_fail_returns_empty(self, loader):
         loader._client.get_datasource_column_values.side_effect = Exception("err")
         loader._client.get_dataset_distinct_values.side_effect = Exception("err")
-        loader._client.get_dataset_detail.side_effect = Exception("err")
+        loader._client.post_chart_data.side_effect = Exception("err")
         result = loader.get_column_values("42", "col")
         assert result["options"] == []
         assert result["has_more"] is False
 
 
 # ==================================================================
-# fetch_data_as_arrow SQL generation
+# fetch_data_as_arrow (Chart Data API)
 # ==================================================================
 
 class TestFetchDataAsArrow:
@@ -383,17 +341,12 @@ class TestFetchDataAsArrow:
     def loader(self):
         return _make_mock_loader()
 
-    def test_applies_sort_options_to_sql(self, loader):
-        loader._client.get_dataset_detail.return_value = {
-            "table_name": "orders",
-            "database": {"id": 1, "backend": "postgresql"},
-            "schema": "public",
-        }
-        loader._client.create_sql_session.return_value = MagicMock()
-        loader._client.execute_sql_with_session.return_value = {
-            "data": [{"id": 2}, {"id": 1}],
-            "columns": [{"column_name": "id"}],
-            "status": "success",
+    def test_passes_sort_to_chart_data_api(self, loader):
+        loader._client.post_chart_data.return_value = {
+            "result": [{
+                "data": [{"id": 2}, {"id": 1}],
+                "colnames": ["id"],
+            }],
         }
 
         loader.fetch_data_as_arrow(
@@ -401,20 +354,17 @@ class TestFetchDataAsArrow:
             {"size": 10, "sort_columns": ["id"], "sort_order": "desc"},
         )
 
-        sql = loader._client.execute_sql_with_session.call_args.args[2]
-        assert "ORDER BY id DESC LIMIT 10" in sql
+        call_args = loader._client.post_chart_data.call_args
+        query = call_args.args[2][0]
+        assert query["row_limit"] == 10
+        assert query["orderby"] == [["id", False]]
 
-    def test_applies_filters_before_sort(self, loader):
-        loader._client.get_dataset_detail.return_value = {
-            "table_name": "orders",
-            "database": {"id": 1, "backend": "postgresql"},
-            "schema": "public",
-        }
-        loader._client.create_sql_session.return_value = MagicMock()
-        loader._client.execute_sql_with_session.return_value = {
-            "data": [{"id": 2, "status": "active"}],
-            "columns": [{"column_name": "id"}, {"column_name": "status"}],
-            "status": "success",
+    def test_passes_filters_and_sort(self, loader):
+        loader._client.post_chart_data.return_value = {
+            "result": [{
+                "data": [{"id": 2, "status": "active"}],
+                "colnames": ["id", "status"],
+            }],
         }
 
         loader.fetch_data_as_arrow(
@@ -427,8 +377,38 @@ class TestFetchDataAsArrow:
             },
         )
 
-        sql = loader._client.execute_sql_with_session.call_args.args[2]
-        assert "WHERE status = 'active' ORDER BY id DESC LIMIT 10" in sql
+        call_args = loader._client.post_chart_data.call_args
+        query = call_args.args[2][0]
+        assert query["filters"] == [{"col": "status", "op": "==", "val": "active"}]
+        assert query["orderby"] == [["id", False]]
+        assert query["row_limit"] == 10
+
+    def test_empty_result_returns_column_schema(self, loader):
+        loader._client.post_chart_data.return_value = {
+            "result": [{
+                "data": [],
+                "colnames": ["id", "name"],
+            }],
+        }
+        table = loader.fetch_data_as_arrow("42")
+        assert table.num_rows == 0
+        assert table.column_names == ["id", "name"]
+
+    def test_empty_result_fallback_to_metadata(self, loader):
+        loader._client.post_chart_data.return_value = {"result": []}
+        loader._client.get_dataset_detail.return_value = {
+            "columns": [
+                {"column_name": "id"},
+                {"column_name": "name"},
+            ],
+        }
+        table = loader.fetch_data_as_arrow("42")
+        assert table.num_rows == 0
+        assert table.column_names == ["id", "name"]
+
+    def test_invalid_source_table_raises(self, loader):
+        with pytest.raises(ValueError, match="numeric dataset ID"):
+            loader.fetch_data_as_arrow("not-a-number")
 
 
 # ==================================================================
