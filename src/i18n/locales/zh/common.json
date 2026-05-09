@@ -410,6 +410,8 @@
     "autoRefreshTooltip": "每 {{interval}} 自动刷新 - 点击修改间隔或停止监听",
     "threadZero": "线程0",
     "threadIndex": "线程 - {{index}}",
+    "continuedFromAbove": "续上",
+    "continuesBelow": "续下",
     "hmm": "嗯...",
     "oops": "出错了...",
     "completed": "已完成",

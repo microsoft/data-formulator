@@ -410,6 +410,8 @@
     "autoRefreshTooltip": "Auto-refresh every {{interval}} - Click to change interval or stop watching",
     "threadZero": "thread0",
     "threadIndex": "thread - {{index}}",
+    "continuedFromAbove": "continued",
+    "continuesBelow": "continues",
     "hmm": "hmm...",
     "oops": "oops...",
     "completed": "completed",

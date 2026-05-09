@@ -880,6 +880,17 @@ const DataSourceSidebarPanel: React.FC<{
     const handleImportTable = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
         if (node.node_type !== 'table') return;
 
+        // Empty/home state has no active workspace; the backend requires one,
+        // so spin up a fresh session before loading.
+        if (!activeWorkspace) {
+            const now = new Date();
+            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+            const short = generateUUID().slice(0, 4);
+            const wsId = `session_${date}_${time}_${short}`;
+            dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
+        }
+
         const ref = buildSourceTableRef(node);
         const pathKey = node.path.join('/');
 
@@ -939,7 +950,7 @@ const DataSourceSidebarPanel: React.FC<{
                 }));
             })
             .finally(() => setImporting(false));
-    }, [dispatch, closePreview, buildSourceTableRef]);
+    }, [dispatch, closePreview, buildSourceTableRef, activeWorkspace]);
 
     // Import a table into a fresh workspace session. Reuses the same load
     // path; the only difference is we reset workspace state first so the
@@ -1563,7 +1574,7 @@ const DataSourceSidebarPanel: React.FC<{
                                 alreadyLoaded={alreadyLoaded}
                                 enableFilters
                                 onLoad={(opts) => handleImportTable(preview.connectorId, preview.node, opts)}
-                                onLoadInNewSession={(opts) => handleImportTableInNewSession(preview.connectorId, preview.node, opts)}
+                                onLoadInNewSession={activeWorkspace ? (opts) => handleImportTableInNewSession(preview.connectorId, preview.node, opts) : undefined}
                                 onRefreshPreview={(rows, cols, rc) => {
                                     setPreview(prev => {
                                         if (!prev) return null;

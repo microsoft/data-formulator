@@ -98,8 +98,12 @@ export interface BuildTableCardProps {
     t: (key: string, options?: Record<string, unknown>) => string;
     /** Whether to show the original file name under the table name (default: true) */
     showOriginalName?: boolean;
-    /** Whether this card should appear dimmed (unfocused, not highlighted) */
-    dimmed?: boolean;
+    /**
+     * Render this card as a muted "ghost" — used on continuation segments
+     * to hint at the carry-over parent.  Still a real, clickable table card,
+     * just gray + reduced opacity so it reads as an orientation aid.
+     */
+    ghost?: boolean;
 }
 
 export let buildTableCard = (props: BuildTableCardProps) => {
@@ -108,7 +112,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
         parentTable, tableIdList, collapsed, scrollRef, dispatch,
         handleOpenTableMenu, primaryBgColor, t, showOriginalName = true,
-        dimmed = false,
+        ghost = false,
     } = props;
 
     const getOriginalName = (tbl: DictTable | undefined): string | null => {
@@ -244,10 +248,21 @@ export let buildTableCard = (props: BuildTableCardProps) => {
         sx={{ padding: '0px', display: 'flex', alignItems: 'center', gap: '2px' }}>
         <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
             sx={{ width: '100%', 
-                backgroundColor: primaryBgColor,
-                ...(dimmed ? { opacity: 0.45 } : {}),
-                ...ComponentBorderStyle,
-                ...(isHighlighted ? { borderLeft: '2px solid', borderLeftColor: 'primary.main' } : {}),
+                ...(ghost
+                    ? {
+                        // Ghost: still a real, clickable table card so users
+                        // can jump to the carry-over parent — just visually
+                        // muted (gray bg + reduced opacity) so it reads as an
+                        // orientation aid rather than a fresh node.
+                        backgroundColor: 'rgba(0,0,0,0.04)',
+                        opacity: 0.4,
+                        ...ComponentBorderStyle,
+                    }
+                    : {
+                        backgroundColor: primaryBgColor,
+                        ...ComponentBorderStyle,
+                        ...(isHighlighted ? { borderLeft: '2px solid', borderLeftColor: 'primary.main' } : {}),
+                    }),
                 borderRadius: '6px',
                 }}
             onClick={() => {
@@ -262,7 +277,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                         ? <Tooltip title={sourceTooltip} placement="top" arrow><span style={{ minWidth: 0, flex: 1 }}>{tableNameBlock}</span></Tooltip>
                         : tableNameBlock}
                 </Stack>
-                {!table?.derive && (
+                {!ghost && !table?.derive && (
                     <ButtonGroup aria-label={t('dataThread.tableCardActionsAria')} variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto", flexShrink: 0 }}>
                         <Tooltip key="more-options-btn-tooltip" title={t('dataThread.moreOptions')}>
                             <IconButton className="more-options-btn" color="primary" aria-label={t('dataThread.moreOptions')} size="small" sx={{ padding: 0.25, '&:hover': {
@@ -279,7 +294,7 @@ export let buildTableCard = (props: BuildTableCardProps) => {
                         </Tooltip>
                     </ButtonGroup>
                 )}
-                {table?.derive && (
+                {!ghost && table?.derive && (
                     <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         <Tooltip title={t('dataThread.deleteTable')}>
                             <IconButton className="delete-table-btn" aria-label={t('dataThread.deleteTable')} size="small" color="error" sx={{ 
