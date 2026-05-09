@@ -2241,136 +2241,213 @@ function estimateTriggerBlockHeight(
  * For each long thread, identify intermediate tables to "promote" as extra
  * leaves so the thread renders as multiple stacked segments.
  *
- * Walk the chain accumulating estimated height; whenever the running total
- * would exceed `SCROLL_TOLERANCE × vh` (≈ 1.5 × viewport), cut at the
- * previous trigger boundary.  The promoted table is two steps back so the
- * new segment opens on an instruction (with the carry-over table shown only
- * as a dimmed ghost).  Pure / deterministic for given inputs — new content
- * lands in the trailing segment without shifting earlier cuts.
+ * Item-count strategy (no pixel estimates):
+ *
+ *   1. Count "items" per thread: each trigger contributes 1 + #effective
+ *      interaction entries + #charts on its result table.  This is a much
+ *      more stable proxy for visual content than height estimates, which
+ *      vary wildly with text wrapping and chart sizes.
+ *
+ *   2. Sum across threads → totalItems.  Per-column budget = totalItems / N.
+ *
+ *   3. For each thread: K = max(1, round(threadItems / budget)) segments.
+ *      Round (not ceil) → "prefer not to break" — threads only marginally
+ *      larger than budget stay whole.
+ *
+ *   4. Split into K segments by accumulating items as evenly as possible
+ *      across triggers, honouring the ≥2-triggers-per-segment constraint.
+ *
+ * Each cut at trigger index `j` (j ≥ 2, segment starts at trigger j-1)
+ * promotes `triggers[j-2].resultTableId` as a leaf, so the previous segment
+ * ends on that table and the new segment opens on `triggers[j-1]`'s
+ * instruction with the promoted table shown as a dimmed ghost.
  */
 function computeSplitExtraLeaves(
     leafTables: DictTable[],
     allTables: DictTable[],
     chartElements: { tableId: string }[],
-    viewportHeight: number,
+    fittableColumns: number,
 ): DictTable[] {
+    if (fittableColumns <= 1) return [];
     const tableById = new Map(allTables.map(t => [t.id, t]));
-    const target = viewportHeight * SCROLL_TOLERANCE;
-    const extras: DictTable[] = [];
 
+    // Per-trigger item count = 1 (table) + interaction entries + charts.
+    const itemsForTrigger = (resultTableId: string, interaction: InteractionEntry[] | undefined): number => {
+        const charts = chartElements.filter(ce => ce.tableId === resultTableId).length;
+        return 1 + effectiveEntryCount(interaction) + charts;
+    };
+
+    // Compute per-thread totals up front so we can pick the budget.
+    const triggersByLeaf: Trigger[][] = [];
+    const threadItems: number[] = [];
     for (const lt of leafTables) {
-        if (!lt.derive) continue;
         const triggers = getTriggers(lt, allTables);
-        if (triggers.length < 3) continue; // need ≥ 1 trigger on each side of the cut + the promoted middle
+        triggersByLeaf.push(triggers);
+        let items = 0;
+        for (const tp of triggers) items += itemsForTrigger(tp.resultTableId, tp.interaction);
+        // Leaf trigger contributes its own row count + leaf table + leaf charts.
+        items += itemsForTrigger(lt.id, lt.derive?.trigger?.interaction);
+        threadItems.push(items);
+    }
+    const totalItems = threadItems.reduce((s, v) => s + v, 0);
+    if (totalItems === 0) return [];
 
-        const triggerH = triggers.map(tp =>
-            estimateTriggerBlockHeight(tp.resultTableId, tp.interaction, chartElements));
+    const budget = totalItems / fittableColumns;
 
-        let acc = LAYOUT_THREAD_OVERHEAD;
-        let segmentStart = 0;
+    const extras: DictTable[] = [];
+    for (let li = 0; li < leafTables.length; li++) {
+        const lt = leafTables[li];
+        if (!lt.derive) continue;
+        const triggers = triggersByLeaf[li];
+        if (triggers.length < 3) continue;
 
-        for (let i = 0; i < triggers.length; i++) {
-            // Cut just before trigger i: promote triggers[i-2] as a ghost so
-            // the new segment opens on triggers[i-1]'s instruction.  Requires
-            // the current segment to contain ≥ 2 triggers (segmentStart ≤ i-2).
-            if (acc + triggerH[i] > target && i - 1 > segmentStart) {
-                const promoted = tableById.get(triggers[i - 2].resultTableId);
-                if (promoted) extras.push(promoted);
-                acc = LAYOUT_THREAD_OVERHEAD + LAYOUT_TABLE_HEIGHT + triggerH[i - 1] + triggerH[i];
-                segmentStart = i - 1;
-            } else {
-                acc += triggerH[i];
+        const K = Math.max(1, Math.round(threadItems[li] / budget));
+        if (K <= 1) continue;
+
+        // Per-trigger items, with the leaf weight folded into the LAST entry
+        // (the leaf step renders inside the trailing segment but isn't part
+        // of the `triggers` array).
+        const triggerItems = triggers.map(tp => itemsForTrigger(tp.resultTableId, tp.interaction));
+        triggerItems[triggerItems.length - 1] += itemsForTrigger(lt.id, lt.derive.trigger?.interaction);
+
+        // Stability strategy: prefer greedy cuts (which only shift when
+        // earlier content changes) over balanced ones (which redistribute
+        // on every new trigger).  Only re-balance when the trailing segment
+        // grows past 1.5× the previous segment — i.e. greedy has produced
+        // a noticeably lopsided layout that warrants a reshuffle.
+        let cuts = greedyPartitionCuts(triggerItems, K, budget);
+        if (cuts.length === 0) {
+            // Greedy couldn't find K segments at this budget — fall back to
+            // balanced (which uses binary search and always finds a valid
+            // partition when one exists).
+            cuts = balancedPartitionCuts(triggerItems, K);
+        } else {
+            const segItems = segmentSums(triggerItems, cuts);
+            const tail = segItems[segItems.length - 1];
+            const prior = segItems[segItems.length - 2];
+            if (tail > 1.5 * prior) {
+                const rebalanced = balancedPartitionCuts(triggerItems, K);
+                if (rebalanced.length > 0) cuts = rebalanced;
             }
+        }
+        if (cuts.length === 0) continue;
+
+        for (const j of cuts) {
+            if (j < 2) continue;
+            const promoted = tableById.get(triggers[j - 2].resultTableId);
+            if (promoted) extras.push(promoted);
         }
     }
     return extras;
 }
 
 /**
- * Pack thread entries into columns while respecting "lock keys".  Lock semantics:
- *
- *   - Free entries (no lock) pack greedily up to `1.5 × vh`.
- *   - A locked entry *may* join the current column if (a) the column has no
- *     lock yet and (b) the combined height still fits within tolerance.  This
- *     lets a small "thread 0" / source-tables block tag along with the head
- *     of a locked thread instead of wasting a whole column on it.
- *   - Once a column has a lock set, no further entries (free or locked) can
- *     join — sibling segments with the same lock would visually duplicate the
- *     header, and free entries appended below would push the locked head out
- *     of view.
- *
- * Order is preserved.
- *
- * `maxColumns` is a soft upper bound: if the natural packing at
- * `viewportHeight × SCROLL_TOLERANCE` would produce more columns, the target
- * height is grown progressively until the result fits.  Locks may force the
- * result to exceed `maxColumns` (e.g. N distinct locks always need ≥ N
- * columns); in that case we return the best (smallest column-count) layout
- * we found.
+ * Greedy K-segment partition: walk left-to-right, cut whenever the running
+ * sum would exceed `budget`.  Stable under incremental growth — existing
+ * cuts only move if content before them changes.  Each segment must contain
+ * ≥ 2 triggers.  Returns [] if fewer than K segments could be produced.
  */
-function packColumnsWithLocks(
-    heights: number[],
-    lockKeys: (string | undefined)[],
-    viewportHeight: number,
-    maxColumns: number = Infinity,
-): number[][] {
-    const baseTarget = viewportHeight * SCROLL_TOLERANCE;
+function greedyPartitionCuts(
+    triggerItems: number[],
+    K: number,
+    budget: number,
+): number[] {
+    const N = triggerItems.length;
+    if (K <= 1 || N < 2 * K) return [];
+    const cuts: number[] = [];
+    let acc = 0;
+    let segStart = 0;
+    for (let i = 0; i < N; i++) {
+        const inSeg = i - segStart;
+        const remainingSegs = (K - 1) - cuts.length;
+        const remainingTriggers = N - i;
+        const mustCut = remainingSegs > 0 && remainingTriggers <= 2 * remainingSegs && inSeg >= 2;
+        const wantCut = inSeg >= 2 && acc + triggerItems[i] > budget && cuts.length < K - 1;
+        if (mustCut || wantCut) {
+            cuts.push(i + 1);
+            segStart = i;
+            acc = triggerItems[i];
+        } else {
+            acc += triggerItems[i];
+        }
+    }
+    return cuts.length === K - 1 ? cuts : [];
+}
 
-    const packAt = (target: number): number[][] => {
-        const cols: number[][] = [];
-        let cur: number[] = [];
-        let curH = 0;
-        let curLock: string | undefined = undefined;
-        const flush = () => {
-            if (cur.length > 0) { cols.push(cur); cur = []; curH = 0; curLock = undefined; }
-        };
-        for (let i = 0; i < heights.length; i++) {
-            const h = heights[i];
-            const lock = lockKeys[i];
-            // Once the current column has a lock, it's sealed — anything new
-            // (free or locked) starts a fresh column.
-            if (curLock !== undefined) {
-                flush();
-                cur.push(i); curH = h; curLock = lock;
-                continue;
-            }
-            // Empty column: just start it.
-            if (cur.length === 0) {
-                cur.push(i); curH = h; curLock = lock;
-                continue;
-            }
-            // Try to append.  A locked entry can join an unlocked column as
-            // long as the combined height still fits — lets a small source-
-            // tables block share a column with the next thread's head.
-            const projected = curH + LAYOUT_THREAD_GAP + h;
-            if (projected <= target) {
-                cur.push(i); curH = projected; curLock = lock;
+/** Sum items per segment given cut indices (cut at i ⇒ segment starts at i-1). */
+function segmentSums(triggerItems: number[], cuts: number[]): number[] {
+    const breakpoints = [0, ...cuts.map(c => c - 1), triggerItems.length];
+    const sums: number[] = [];
+    for (let s = 0; s < breakpoints.length - 1; s++) {
+        let h = 0;
+        for (let k = breakpoints[s]; k < breakpoints[s + 1]; k++) h += triggerItems[k];
+        sums.push(h);
+    }
+    return sums;
+}
+
+/**
+ * Partition `triggerH` into K contiguous segments minimising the maximum
+ * segment height, with each segment containing ≥ 2 triggers.  Returns K-1
+ * cut indices using the same convention as greedy cuts (cut at i ⇒ new
+ * segment starts at trigger i-1).  Returns [] if no valid partition exists
+ * (e.g. fewer than 2K triggers).
+ */
+function balancedPartitionCuts(triggerH: number[], K: number): number[] {
+    const N = triggerH.length;
+    if (K <= 1 || N < 2 * K) return [];
+
+    const maxH = Math.max(...triggerH);
+    const totalH = triggerH.reduce((s, h) => s + h, 0);
+
+    // Greedy partition with a maximum-segment-height target, honouring the
+    // ≥2-triggers-per-segment constraint.  Returns cut indices if K segments
+    // can fit within `limit`, else null.  All K segments — including the
+    // trailing one — must fit; otherwise the binary search would converge
+    // to an absurdly low limit and produce wildly unbalanced cuts.
+    const tryPartition = (limit: number): number[] | null => {
+        const cuts: number[] = [];
+        let acc = 0;
+        let segStart = 0;
+        let segCount = 1;
+        for (let i = 0; i < N; i++) {
+            const inSeg = i - segStart;
+            const remainingTriggers = N - i;
+            const remainingSegs = K - segCount;
+            // Force a cut if we'd otherwise run out of room for remaining segments.
+            const mustCut = remainingSegs > 0 && remainingTriggers <= 2 * remainingSegs && inSeg >= 2;
+            const wantCut = inSeg >= 2 && acc + triggerH[i] > limit && segCount < K;
+            if (mustCut || wantCut) {
+                // Cut here: new segment starts at trigger i.  Encode as i+1 so
+                // the promotion picks triggers[(i+1)-2] = triggers[i-1].
+                cuts.push(i + 1);
+                segCount++;
+                segStart = i;
+                acc = triggerH[i];
+                // The single trigger that opens this segment must itself fit.
+                if (acc > limit) return null;
             } else {
-                flush();
-                cur.push(i); curH = h; curLock = lock;
+                acc += triggerH[i];
+                // No cut available (we're in the last segment, or the
+                // ≥2-trigger guard blocks).  If we exceed limit, infeasible.
+                if (acc > limit) return null;
             }
         }
-        flush();
-        return cols;
+        // Final segment must contain ≥ 2 triggers.
+        if (segCount !== K) return null;
+        if (N - segStart < 2) return null;
+        return cuts;
     };
 
-    let layout = packAt(baseTarget);
-    if (layout.length <= maxColumns) return layout;
-
-    // Overflow: grow the target until the packing fits within maxColumns.
-    // Cap the search to avoid pathological cases — if locks force more
-    // columns than maxColumns, return the smallest-column layout we found.
-    const totalH = heights.reduce((s, h) => s + h, 0)
-        + Math.max(0, heights.length - 1) * LAYOUT_THREAD_GAP;
-    let best = layout;
-    let target = baseTarget;
-    while (target < totalH) {
-        target = target * 1.25;
-        const candidate = packAt(target);
-        if (candidate.length < best.length) best = candidate;
-        if (candidate.length <= maxColumns) return candidate;
+    let lo = maxH;
+    let hi = totalH;
+    let best: number[] | null = null;
+    while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const r = tryPartition(mid);
+        if (r !== null) { best = r; hi = mid; } else { lo = mid + 1; }
     }
-    return best;
+    return best ?? [];
 }
 
 /**
@@ -2802,16 +2879,14 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // Solving for n: n <= (containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH
     const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH)));
 
-    // Split long derivation chains at trigger boundaries so each segment ≈ 1.5×vh.
-    // Promoted intermediate tables become "extra leaves"; the existing thread-
-    // grouping logic below renders them as the heads of split sub-threads, while
-    // the real leaf becomes a continuation segment with a ghost parent + a
-    // "↑ continued" header.  Skip splitting in single-column mode — segments
-    // would only stack in the same column and the continuation chrome is wasted.
+    // Adaptively split long derivation chains so the resulting segments fill
+    // the available columns evenly.  See `computeSplitExtraLeaves` for the
+    // target/K logic.  Skip in single-column mode — the continuation chrome
+    // adds no layout benefit when segments would just stack vertically.
     const computedExtras = fittableColumns <= 1
         ? []
         : computeSplitExtraLeaves(
-            leafTables, tables, chartElements, viewportHeight,
+            leafTables, tables, chartElements, fittableColumns,
         );
     // Avoid duplicating tables that are already leaves (e.g. anchored mids).
     const existingLeafIds = new Set(leafTables.map(t => t.id));
@@ -2903,8 +2978,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     });
 
     // Build thread entries and their estimated heights for layout.
-    // `lockKey` (when set) forces this entry to occupy its own column, no
-    // co-packing with other threads — used for split-thread continuation segments.
     type ThreadEntry = {
         key: string;
         groupId: string;
@@ -2915,7 +2988,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         hasContinuationBelow?: boolean;   // true → render "↓ continues below" footer
         usedTableIds?: string[];
         hideLabel?: boolean;
-        lockKey?: string;                 // entries sharing a lockKey can't share a column
     };
     let allThreadEntries: ThreadEntry[] = [];
     let allThreadHeights: number[] = [];
@@ -2993,7 +3065,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         const posInGroup = groupSegs.indexOf(lt.id);
         const isFirst = posInGroup === 0;
         const isLast = posInGroup === groupSegs.length - 1;
-        const isMultiSegment = groupSegs.length > 1;
 
         let threadLabel: string | undefined;
         let threadIdxForEntry: number;
@@ -3015,7 +3086,6 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             isSplitThread: !isFirst,             // continuation → ghost parent + header
             hideLabel: !isFirst,                 // continuation → no own label divider
             hasContinuationBelow: !isLast,       // not the tail → "↓ continues below" footer
-            lockKey: isMultiSegment ? gid : undefined,
         });
         allThreadHeights.push(estimateThreadHeight(totalTables, entryCount, chartCount));
     });
@@ -3044,20 +3114,10 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     const hasMultipleThreads = allThreadEntries.length > 1;
 
     const MAX_COLUMNS = fittableColumns;
-    // Use the lock-aware packer when any thread has been split into segments;
-    // otherwise fall back to the height-balanced multi-column packer.
-    const hasLockedEntries = allThreadEntries.some(e => !!e.lockKey);
-    const columnLayout: number[][] = hasLockedEntries
-        ? packColumnsWithLocks(
-            allThreadHeights,
-            allThreadEntries.map(e => e.lockKey),
-            availableHeight,
-            MAX_COLUMNS,
-        )
-        : chooseBestColumnLayout(
-            allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
-            /* minColumns */ fittableColumns
-        );
+    const columnLayout: number[][] = chooseBestColumnLayout(
+        allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
+        /* minColumns */ fittableColumns,
+    );
 
     let renderThreadEntry = (entry: ThreadEntry) => {
         let usedTableIds = entry.usedTableIds || [];
