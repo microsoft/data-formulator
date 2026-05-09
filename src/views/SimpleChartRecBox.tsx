@@ -1397,10 +1397,12 @@ export const SimpleChartRecBox: FC = function () {
             )}
             {/* Input area wrapper — ideas-loading overlay is scoped to this region */}
             <Box sx={{ position: 'relative' }}>
-            {/* @-mention table chips and image attachments */}
-            {(primaryTableIds.length > 0 || attachedImages.length > 0) && !isChatFormulating && (
+            {/* @-mention table chips and image attachments.
+                Skip the table-chip row entirely when there's only one root table —
+                there's nothing else the user could @-mention, so the chip is noise. */}
+            {((primaryTableIds.length > 0 && rootTables.length > 1) || attachedImages.length > 0) && !isChatFormulating && (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', px: 0.5, pb: '2px' }}>
-                    {primaryTableIds.map(id => {
+                    {rootTables.length > 1 && primaryTableIds.map(id => {
                         const tbl = tables.find(t => t.id === id);
                         const isDefault = defaultPrimaryTableIds.includes(id);
                         return (
@@ -1572,7 +1574,13 @@ export const SimpleChartRecBox: FC = function () {
                     input: { readOnly: isChatFormulating },
                 }}
                 value={chatPrompt}
-                placeholder={pendingClarification ? t('chartRec.replyPlaceholder') : isReportMode ? t('chartRec.reportPlaceholder') : t('chartRec.explorePlaceholder')}
+                placeholder={
+                    pendingClarification
+                        ? t('chartRec.replyPlaceholder')
+                        : isReportMode
+                            ? t(rootTables.length <= 1 ? 'chartRec.reportPlaceholderSingleTable' : 'chartRec.reportPlaceholder')
+                            : t(rootTables.length <= 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
+                }
                 fullWidth
                 multiline
                 minRows={2}
