@@ -102,6 +102,68 @@ const renderJsonAction = (message: string): React.ReactNode | null => {
         }
     }
 
+    // clarify action: render the list of questions, response type, and options
+    if (action.questions && Array.isArray(action.questions)) {
+        sections.push(
+            <Box key="questions" sx={{ mb: 0.5, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                {action.questions.map((q: any, i: number) => {
+                    const text = typeof q === 'string' ? q : (q?.text ?? '');
+                    const responseType = typeof q === 'object' ? q?.responseType : undefined;
+                    const opts = typeof q === 'object' && Array.isArray(q?.options) ? q.options : [];
+                    return (
+                        <Box key={`q-${i}`}>
+                            <Typography sx={{ fontSize: 12, fontWeight: 500, lineHeight: 1.4 }}>
+                                {i + 1}. {text}
+                                {responseType && (
+                                    <Typography component="span" sx={{ fontSize: 10, color: 'text.disabled', ml: 0.5 }}>
+                                        ({responseType})
+                                    </Typography>
+                                )}
+                            </Typography>
+                            {opts.length > 0 && (
+                                <Box sx={{ pl: 2 }}>
+                                    {opts.map((opt: any, j: number) => {
+                                        const optLabel = typeof opt === 'string' ? opt : (opt?.label ?? JSON.stringify(opt));
+                                        return (
+                                            <Typography key={`opt-${i}-${j}`} sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.5 }}>
+                                                • {optLabel}
+                                            </Typography>
+                                        );
+                                    })}
+                                </Box>
+                            )}
+                        </Box>
+                    );
+                })}
+            </Box>
+        );
+    }
+
+    // explain action: render the explanation text and any followup prompts
+    if (action.explanation) {
+        sections.push(
+            <Typography key="explanation" sx={{ fontSize: 12, mb: 0.5, lineHeight: 1.4 }}>
+                {action.explanation}
+            </Typography>
+        );
+    }
+    if (action.followups && Array.isArray(action.followups) && action.followups.length > 0) {
+        sections.push(
+            <Box key="followups" sx={{ mb: 0.5 }}>
+                <Typography sx={{ fontSize: 11, color: 'text.secondary', fontWeight: 500, lineHeight: 1.4 }}>
+                    Followups:
+                </Typography>
+                <Box sx={{ pl: 2 }}>
+                    {action.followups.map((f: string, i: number) => (
+                        <Typography key={`fu-${i}`} sx={{ fontSize: 11, color: 'text.secondary', lineHeight: 1.5 }}>
+                            • {f}
+                        </Typography>
+                    ))}
+                </Box>
+            </Box>
+        );
+    }
+
     if (action.summary) {
         sections.push(
             <Typography key="summary" sx={{ fontSize: 12, fontWeight: 500, mb: 0.5, lineHeight: 1.4 }}>
