@@ -634,21 +634,57 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const w: any = (a: any[], b: any[]) => a.length ? [a[0], ...w(b, a.slice(1))] : b;
 
     let formulateInputBox = <Card key='text-input-boxes' variant='outlined' sx={{
+        position: 'relative',
         display: 'flex', flexDirection: 'column',
         px: 1, pt: 0.5, pb: 0.25,
+        ml: '8px', // leave room for the speech-bubble tail on the left
         borderWidth: 1,
         borderColor: alpha(theme.palette.text.primary, 0.2),
         borderRadius: '8px',
         overflow: 'visible',
         flexShrink: 0,
         transition: transition.fast,
+        // Speech-bubble tail: outer triangle (border)
+        '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 12,
+            left: -8,
+            width: 0,
+            height: 0,
+            borderTop: '7px solid transparent',
+            borderBottom: '7px solid transparent',
+            borderRight: `8px solid ${alpha(theme.palette.text.primary, 0.2)}`,
+            transition: transition.fast,
+            pointerEvents: 'none',
+        },
+        // Speech-bubble tail: inner triangle (fill, masks the border edge)
+        '&::after': {
+            content: '""',
+            position: 'absolute',
+            top: 13,
+            left: -6,
+            width: 0,
+            height: 0,
+            borderTop: '6px solid transparent',
+            borderBottom: '6px solid transparent',
+            borderRight: `7px solid ${theme.palette.background.paper}`,
+            transition: transition.fast,
+            pointerEvents: 'none',
+        },
         '&:hover': {
             borderWidth: 1,
             borderColor: alpha(theme.palette.primary.main, 0.6),
         },
+        '&:hover::before': {
+            borderRightColor: alpha(theme.palette.primary.main, 0.6),
+        },
         '&:focus-within': {
             borderWidth: 1,
             borderColor: alpha(theme.palette.primary.main, 0.8),
+        },
+        '&:focus-within::before': {
+            borderRightColor: alpha(theme.palette.primary.main, 0.8),
         },
     }}>
         <TextField
@@ -737,7 +773,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     let channelComponent = (
         <Box sx={{ width: "100%", minWidth: "256px", height: '100%', display: "flex", flexDirection: "column", gap: '4px' }}>
-            <Box key='mark-selector-box' sx={{ flex: '0 0 auto', display: 'flex', alignItems: 'center' }}>
+            <Box key='mark-selector-box' sx={{ ml: 1, flex: '0 0 auto', display: 'flex', alignItems: 'center' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, flex: 1, margin: "0px 0"}} size="small">
                     <Select
                         variant="standard"
@@ -835,7 +871,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 </FormControl>
             </Box>
             {/* Template-driven config property selectors */}
-            <Box key='encoding-and-config' sx={{ 
+            <Box key='encoding-and-config' sx={{
+                    ml: 1,
                     flex: '1 1 auto',
                 }} style={{ height: "calc(100% - 100px)" }} className="encoding-list"
                 onMouseEnter={() => setEncodingHovered(true)}
@@ -985,21 +1022,31 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             {/* Ideas chips shown inline below the formulate box */}
             {(currentChartIdeas.length > 0 || (isLoadingIdeas && thinkingBuffer)) && (
                 <Box sx={{
-                    display: 'flex', 
-                    flexWrap: 'wrap', 
+                    display: 'flex',
+                    flexDirection: 'column',
                     gap: 0.5,
                     pt: 0.5,
                 }}>
-                    {currentChartIdeas.map((idea, index) => (
-                        <IdeaChip
-                            mini={true}
-                            key={index}
-                            idea={idea}
-                            theme={theme}
-                            onClick={() => handleIdeaClick(idea.text)}
-                        />
-                    ))}
-                    {isLoadingIdeas && thinkingBuffer && <ThinkingBufferEffect text={thinkingBuffer.slice(-40)} sx={{ width: '100%' }} />}
+                    {currentChartIdeas.length > 0 && (
+                        <Typography sx={{
+                            fontSize: 11,
+                            color: 'text.secondary',
+                        }}>
+                            {t('encoding.ideasHeading')}
+                        </Typography>
+                    )}
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {currentChartIdeas.map((idea, index) => (
+                            <IdeaChip
+                                mini={true}
+                                key={index}
+                                idea={idea}
+                                theme={theme}
+                                onClick={() => handleIdeaClick(idea.text)}
+                            />
+                        ))}
+                        {isLoadingIdeas && thinkingBuffer && <ThinkingBufferEffect text={thinkingBuffer.slice(-40)} sx={{ width: '100%' }} />}
+                    </Box>
                 </Box>
             )}
             {isLoadingIdeas && !thinkingBuffer && (

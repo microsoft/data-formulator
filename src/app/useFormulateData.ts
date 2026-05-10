@@ -82,7 +82,32 @@ export function useFormulateData() {
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const charts = useSelector(dfSelectors.getAllCharts);
     const activeModel = useSelector(dfSelectors.getActiveModel);
+
+    /**
+     * Resolve the actual chart that's rendered for a derived table. The
+     * `trigger.chart` saved on the table is just an "Auto" stub generated
+     * during the agent run — the chart the user actually sees lives in the
+     * Redux `charts` slice. Mirrors the lookup in `SimpleChartRecBox`.
+     */
+    function resolveChartForTable(tableId: string) {
+        return charts.find(c => c.tableRef === tableId && c.source === 'trigger')
+            || charts.find(c => c.tableRef === tableId);
+    }
+
+    /** Map a chart's encodingMap to `{ channel: fieldName }` (skips empties). */
+    function chartEncodingsByName(chart: Chart | undefined): Record<string, string> {
+        if (!chart?.encodingMap) return {};
+        return Object.fromEntries(
+            Object.entries(chart.encodingMap)
+                .filter(([, v]: [string, any]) => v?.fieldID)
+                .map(([k, v]: [string, any]) => {
+                    const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                    return [k, field?.name || v.fieldID];
+                })
+        );
+    }
 
     /**
      * Build a rich focused thread from the current table's derivation chain.
@@ -94,22 +119,23 @@ export function useFormulateData() {
         const triggers = getTriggers(currentTable, tables);
         return triggers.map(trigger => {
             const resultTable = tables.find(t2 => t2.id === trigger.resultTableId);
-            const instruction = trigger.interaction?.find(e => e.role === 'instruction');
-            const summary = trigger.interaction?.find(e => e.role === 'summary');
-            const chart = trigger.chart;
+            const interaction = trigger.interaction || [];
+            const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
+            const instruction = interaction.find(e => e.role === 'instruction');
+            const summary = interaction.find(e => e.role === 'summary');
+            // Resolve the actual rendered chart (not the trigger's "Auto" stub)
+            // so chart_type + encodings reflect what the user is looking at.
+            const resolvedChart = resolveChartForTable(trigger.resultTableId);
             return {
-                user_question: instruction?.content,
-                display_instruction: instruction?.displayContent || instruction?.content,
+                user_question: userPrompt || instruction?.content || '',
+                display_instruction: instruction?.displayContent || instruction?.content || '',
                 agent_thinking: instruction?.plan,
                 agent_summary: summary?.content,
-                table_name: trigger.resultTableId,
+                table_name: resultTable?.virtual?.tableId || trigger.resultTableId,
                 columns: resultTable?.names || [],
-                row_count: resultTable?.rows?.length || 0,
-                chart_type: chart?.chartType,
-                encodings: chart?.encodingMap ? Object.fromEntries(
-                    Object.entries(chart.encodingMap).filter(([, v]) => v != null && v.fieldID)
-                        .map(([k, v]) => [k, v.fieldID])
-                ) : {},
+                row_count: resultTable?.virtual?.rowCount ?? resultTable?.rows?.length ?? 0,
+                chart_type: resolvedChart?.chartType || '',
+                encodings: chartEncodingsByName(resolvedChart),
             };
         });
     }
@@ -128,21 +154,13 @@ export function useFormulateData() {
     }
 
     /**
-     * Build peripheral thread summaries — sibling threads from the same source tables.
-     * Each thread is summarized as: source → leaf, step count, and one-line per step.
+     * Build peripheral thread summaries — leaf tables in the workspace that
+     * are NOT part of the focused chain. Mirrors the data agent's Tier 3
+     * context (`SimpleChartRecBox.exploreFromChat`): all leaves except the
+     * focused one, with per-step `display → chart_type (encodings)` lines
+     * using resolved field names.
      */
     function buildOtherThreads(currentTable: DictTable): any[] {
-        // Find the root source table(s) for the current thread
-        const rootIds = new Set<string>();
-        if (currentTable.derive && !currentTable.anchored) {
-            const triggers = getTriggers(currentTable, tables);
-            if (triggers.length > 0) {
-                rootIds.add(triggers[0].tableId);
-            }
-        } else {
-            rootIds.add(currentTable.id);
-        }
-
         // Collect all table IDs in the focused thread
         const focusedIds = new Set<string>();
         if (currentTable.derive && !currentTable.anchored) {
@@ -153,34 +171,36 @@ export function useFormulateData() {
         }
         focusedIds.add(currentTable.id);
 
-        // Find leaf tables that share the same root but are not in the focused thread
+        // Find every leaf table (no children, or all children anchored) that
+        // is derived from somewhere and NOT part of the focused chain.
         const otherThreads: any[] = [];
         for (const table of tables) {
             if (focusedIds.has(table.id)) continue;
-            if (!table.derive || table.anchored) continue;
-            // Check if this table's chain leads back to the same root
+            if (!table.derive) continue;
+            const children = tables.filter(c => c.derive?.trigger?.tableId === table.id);
+            const isLeaf = children.length === 0 || children.every(c => c.anchored);
+            if (!isLeaf) continue;
+
             const triggers = getTriggers(table, tables);
             if (triggers.length === 0) continue;
-            const thisRoot = triggers[0].tableId;
-            if (!rootIds.has(thisRoot)) continue;
-
-            // Check this is a leaf (no other table derives from it)
-            const isLeaf = !tables.some(t2 => t2.derive?.trigger?.tableId === table.id && !t2.anchored);
-            if (!isLeaf) continue;
 
             const steps = triggers.map(trigger => {
                 const instr = trigger.interaction?.find(e => e.role === 'instruction');
-                const chart = trigger.chart;
-                let line = instr?.displayContent || instr?.content || trigger.resultTableId;
-                if (chart?.chartType && chart.chartType !== 'Auto') {
-                    line += ` (${chart.chartType})`;
-                }
-                return line;
+                const label = instr?.displayContent || instr?.content || trigger.resultTableId;
+                // Use the actual rendered chart, not the trigger's "Auto" stub.
+                const chart = resolveChartForTable(trigger.resultTableId);
+                const chartType = chart?.chartType && chart.chartType !== 'Auto' ? chart.chartType : '';
+                const encStr = Object.entries(chartEncodingsByName(chart))
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join(', ');
+                return `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
             });
 
+            const sourceTableId = triggers[0].tableId;
+            const sourceTable = tables.find(t => t.id === sourceTableId);
             otherThreads.push({
-                source_table: thisRoot,
-                leaf_table: table.id,
+                source_table: sourceTable?.virtual?.tableId || sourceTableId,
+                leaf_table: table.virtual?.tableId || table.id,
                 step_count: triggers.length,
                 steps,
             });

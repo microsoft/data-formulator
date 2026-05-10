@@ -1063,8 +1063,11 @@ class DataAgent:
                         capture_code, allowed_objects, workspace_path
                     )
 
-            if raw["status"] == "ok":
-                pack = raw["allowed_objects"].get("_pack", {})
+            if raw.get("status") == "ok":
+                allowed = raw.get("allowed_objects") or {}
+                if not isinstance(allowed, dict):
+                    allowed = {}
+                pack = allowed.get("_pack", {})
                 stdout = pack.get("stdout", "") if isinstance(pack, dict) else ""
                 if not isinstance(stdout, str):
                     stdout = str(stdout)

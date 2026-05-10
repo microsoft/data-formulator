@@ -35,11 +35,6 @@ import { useFormulateData } from '../app/useFormulateData';
 
 import { AgentIcon as PrecisionManufacturing } from '../icons';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
-import SyncAltIcon from '@mui/icons-material/SyncAlt';
-import OpenInFullIcon from '@mui/icons-material/OpenInFull';
-import CallMergeIcon from '@mui/icons-material/CallMerge';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import { renderTextWithEmphasis } from './EncodingShelfCard';
 import { ThinkingBufferEffect } from '../components/FunComponents';
 
@@ -61,56 +56,62 @@ export const IdeaChip: FC<{
     disabled?: boolean,
 }> = function ({mini, idea, theme, onClick, sx, disabled}) {
 
-    const tagConfig: Record<string, { color: string; icon: React.ReactNode }> = {
-        'deep-dive': { color: theme.palette.primary.main, icon: <KeyboardDoubleArrowDownIcon sx={{ fontSize: 12 }} /> },
-        'pivot': { color: theme.palette.info.main, icon: <SyncAltIcon sx={{ fontSize: 12 }} /> },
-        'broaden': { color: theme.palette.success.main, icon: <OpenInFullIcon sx={{ fontSize: 12 }} /> },
-        'cross-data': { color: theme.palette.warning.main, icon: <CallMergeIcon sx={{ fontSize: 12, transform: 'rotate(180deg)' }} /> },
-        'statistical': { color: theme.palette.secondary.main, icon: <TrendingUpIcon sx={{ fontSize: 12 }} /> },
-    };
-    const cfg = tagConfig[idea.tag || 'deep-dive'] || tagConfig['deep-dive'];
-    let styleColor = cfg.color;
+    const accentColor = theme.palette.text.primary;
+    const tagLabel = idea.tag ? `(${idea.tag})` : '';
+    const ideaText = idea.goal;
 
-    let ideaText = idea.goal;
-
-    let ideaTextComponent = renderTextWithEmphasis(ideaText, {
+    const ideaTextComponent = renderTextWithEmphasis(ideaText, {
         borderRadius: '0px',
-        borderBottom: `1px solid`,
-        borderColor: alpha(styleColor, 0.4),
         fontSize: '11px',
         lineHeight: 1.4,
-        backgroundColor: alpha(styleColor, 0.05),
+        backgroundColor: alpha(accentColor, 0.04),
     });
 
     return (
         <Box
+            component="button"
+            type="button"
+            onClick={disabled ? undefined : onClick}
+            disabled={disabled}
             sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '4px 6px',
-                fontSize: '11px',
-                minHeight: '24px',
-                height: 'auto',
-                borderRadius: 2,
-                border: `1px solid ${alpha(styleColor, 0.2)}`,
-                transition: transition.fast,
-                backgroundColor: alpha(theme.palette.background.paper, 0.9),
+                position: 'relative',
+                display: 'inline-block',
+                textAlign: 'left',
+                px: '8px',
+                py: '4px',
+                fontSize: 11,
+                lineHeight: 1.4,
+                color: accentColor,
+                fontFamily: theme.typography.fontFamily,
+                borderRadius: '6px',
+                border: `1px solid ${alpha(accentColor, 0.12)}`,
+                backgroundColor: theme.palette.background.paper,
                 cursor: disabled ? 'default' : 'pointer',
                 opacity: disabled ? 0.6 : 1,
-                '&:hover': disabled ? 'none' : {
-                    borderColor: alpha(styleColor, 0.7),
-                    transform: 'translateY(-1px)',
+                whiteSpace: 'normal',
+                wordBreak: 'break-word',
+                transition: transition.fast,
+                '&:hover': disabled ? undefined : {
+                    backgroundColor: alpha(accentColor, 0.06),
                 },
                 ...sx
             }}
-            onClick={disabled ? undefined : onClick}
         >
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '4px', color: styleColor }}>
-                <Box sx={{ mt: '1px', flexShrink: 0 }}>{cfg.icon}</Box>
-                <Typography component="div" sx={{ fontSize: '11px', color: styleColor }}>
-                    {ideaTextComponent}
+            {tagLabel && (
+                <Typography
+                    component="span"
+                    sx={{
+                        fontSize: 11,
+                        color: theme.palette.text.secondary,
+                        mr: '4px',
+                    }}
+                >
+                    {tagLabel}
                 </Typography>
-            </Box>
+            )}
+            <Typography component="span" sx={{ fontSize: 11, color: accentColor }}>
+                {ideaTextComponent}
+            </Typography>
         </Box>
     );
 };

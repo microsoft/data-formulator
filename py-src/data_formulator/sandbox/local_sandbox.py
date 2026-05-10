@@ -358,7 +358,13 @@ class SandboxSession:
             self._conn.send("__clear_ns__")
             if self._conn.poll(timeout=5):
                 self._conn.recv()
-            _worker_pool.release(self._proc, self._conn)
+                _worker_pool.release(self._proc, self._conn)
+            else:
+                # Ack didn't arrive in time -- worker may still be busy or
+                # the pipe has stale data.  Discard rather than returning a
+                # contaminated worker to the pool (otherwise the next
+                # session's recv() would pick up the leftover ack).
+                _worker_pool.discard(self._proc, self._conn)
         except Exception:
             _worker_pool.discard(self._proc, self._conn)
 
