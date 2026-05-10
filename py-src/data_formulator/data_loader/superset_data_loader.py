@@ -215,19 +215,87 @@ class SupersetLoader(ExternalDataLoader):
 
     # -- sync_catalog_metadata (full metadata sync) -------------------------
 
-    def sync_catalog_metadata(
-        self, table_filter: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Enrich list_tables with per-dataset column details.
+    # -- list_tables (includes column metadata via parallel fetch) ---------
 
-        Uses ``/api/v1/dataset/{pk}/column`` (faster than full detail
-        endpoint).  UUID and description already come from ``list_datasets()``
-        default response.
+    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
+        """List datasets grouped under dashboards **and** under "All Datasets".
+
+        Includes per-dataset column metadata fetched in parallel via
+        ``/api/v1/dataset/{pk}/column``.  This ensures that catalog cache
+        written on connect already contains full column info for agent
+        search and metadata display.
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        tables = self.list_tables(table_filter)
         token = self._ensure_token()
+
+        all_datasets = self._fetch_all_datasets(token)
+        ds_by_id: dict[int, dict] = {ds["id"]: ds for ds in all_datasets}
+
+        def _make_meta(ds: dict) -> dict:
+            meta: dict[str, Any] = {
+                "dataset_id": ds["id"],
+                "row_count": ds.get("row_count"),
+                "schema": ds.get("schema", ""),
+                "database": (ds.get("database") or {}).get("database_name", ""),
+            }
+            if ds.get("uuid"):
+                meta["uuid"] = ds["uuid"]
+            desc = (ds.get("description") or "").strip()
+            if desc:
+                meta["description"] = desc
+            return meta
+
+        def _make_entry(ds: dict, folder: str, ds_name: str) -> dict:
+            return {
+                "name": f"{ds['id']}:{ds_name}",
+                "path": [folder, ds_name],
+                "metadata": _make_meta(ds),
+            }
+
+        results: list[dict[str, Any]] = []
+
+        # Walk dashboards → datasets
+        raw = self._client.list_dashboards(token, page=0, page_size=500)
+        dashboards = raw.get("result", [])
+        for dash in dashboards:
+            dash_title = dash.get("dashboard_title", f"Dashboard {dash['id']}")
+            try:
+                ds_raw = self._client.get_dashboard_datasets(token, dash["id"])
+                dash_datasets = ds_raw.get("result", [])
+            except Exception:
+                logger.debug("Failed to fetch datasets for dashboard %s", dash.get("id"))
+                continue
+
+            for ds in dash_datasets:
+                ds_name = ds.get("table_name") or ds.get("name") or f"dataset_{ds.get('id', '?')}"
+                if table_filter and table_filter.lower() not in ds_name.lower():
+                    continue
+                full_ds = ds_by_id.get(ds["id"], ds)
+                results.append(_make_entry(full_ds, dash_title, ds_name))
+
+        # All datasets under "All Datasets"
+        for ds in all_datasets:
+            ds_name = ds.get("table_name") or ""
+            if table_filter and table_filter.lower() not in ds_name.lower():
+                continue
+            results.append(_make_entry(ds, "All Datasets", ds_name))
+
+        # Enrich with per-dataset column metadata in parallel
+        self._enrich_columns(results, token)
+
+        return results
+
+    def _enrich_columns(
+        self, tables: list[dict[str, Any]], token: str,
+    ) -> None:
+        """Fetch column metadata for all tables in parallel.
+
+        Populates ``metadata["columns"]`` and ``metadata["source_metadata_status"]``
+        on each table entry in-place.  Also sets ``table_key`` from uuid when
+        available.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         for t in tables:
             meta = t.get("metadata") or {}
@@ -267,74 +335,6 @@ class SupersetLoader(ExternalDataLoader):
                         exc_info=True,
                     )
                     table_entry.setdefault("metadata", {})["source_metadata_status"] = "unavailable"
-
-        self.ensure_table_keys(tables)
-        return tables
-
-    # -- list_tables (lightweight, for catalog tree building) ----------------
-
-    def list_tables(self, table_filter: str | None = None) -> list[dict[str, Any]]:
-        """List datasets grouped under dashboards **and** under "All Datasets".
-
-        Returns only lightweight metadata (id, name, row_count, schema,
-        database).  Column definitions and sample rows are fetched lazily
-        via ``preview-data`` when the user clicks a specific dataset.
-        """
-        token = self._ensure_token()
-
-        all_datasets = self._fetch_all_datasets(token)
-        ds_by_id: dict[int, dict] = {ds["id"]: ds for ds in all_datasets}
-
-        def _make_lightweight_meta(ds: dict) -> dict:
-            meta: dict[str, Any] = {
-                "dataset_id": ds["id"],
-                "row_count": ds.get("row_count"),
-                "schema": ds.get("schema", ""),
-                "database": (ds.get("database") or {}).get("database_name", ""),
-            }
-            if ds.get("uuid"):
-                meta["uuid"] = ds["uuid"]
-            desc = (ds.get("description") or "").strip()
-            if desc:
-                meta["description"] = desc
-            return meta
-
-        def _make_entry(ds: dict, folder: str, ds_name: str) -> dict:
-            return {
-                "name": f"{ds['id']}:{ds_name}",
-                "path": [folder, ds_name],
-                "metadata": _make_lightweight_meta(ds),
-            }
-
-        results: list[dict[str, Any]] = []
-
-        # Walk dashboards → datasets
-        raw = self._client.list_dashboards(token, page=0, page_size=500)
-        dashboards = raw.get("result", [])
-        for dash in dashboards:
-            dash_title = dash.get("dashboard_title", f"Dashboard {dash['id']}")
-            try:
-                ds_raw = self._client.get_dashboard_datasets(token, dash["id"])
-                dash_datasets = ds_raw.get("result", [])
-            except Exception:
-                logger.debug("Failed to fetch datasets for dashboard %s", dash.get("id"))
-                continue
-
-            for ds in dash_datasets:
-                ds_name = ds.get("table_name") or ds.get("name") or f"dataset_{ds.get('id', '?')}"
-                if table_filter and table_filter.lower() not in ds_name.lower():
-                    continue
-                full_ds = ds_by_id.get(ds["id"], ds)
-                results.append(_make_entry(full_ds, dash_title, ds_name))
-
-        # All datasets under "All Datasets"
-        for ds in all_datasets:
-            ds_name = ds.get("table_name") or ""
-            if table_filter and table_filter.lower() not in ds_name.lower():
-                continue
-            results.append(_make_entry(ds, "All Datasets", ds_name))
-
-        return results
 
     def search_catalog(self, query: str, limit: int = 100) -> dict:
         """Search Superset datasets and dashboards as a lightweight tree."""
@@ -665,10 +665,10 @@ class SupersetLoader(ExternalDataLoader):
     def _build_column_entry(cls, c: dict[str, Any]) -> dict[str, Any]:
         """Build a standardised column metadata dict from a Superset column record.
 
-        Merges ``verbose_name``, ``description``, and ``expression`` into a
-        single ``description`` field so that catalog search can match on any
-        of these dimensions.  Individual fields are also preserved for
-        consumers that need them separately.
+        Merges ``verbose_name``, ``description``, ``expression``, and the
+        ``extra`` JSON blob into a single ``description`` field so that
+        catalog search can match on any of these dimensions.  Individual
+        fields are also preserved for consumers that need them separately.
         """
         entry: dict[str, Any] = {
             "name": c.get("column_name", ""),
@@ -691,6 +691,24 @@ class SupersetLoader(ExternalDataLoader):
             parts.append(desc)
         if expr:
             parts.append(f"expr: {expr}")
+
+        extra_raw = (c.get("extra") or "").strip()
+        if extra_raw:
+            try:
+                extra_obj = json.loads(extra_raw)
+                if isinstance(extra_obj, dict):
+                    for k, v in extra_obj.items():
+                        if isinstance(v, dict):
+                            inner = ", ".join(
+                                f"{ik}: {iv}" for ik, iv in v.items() if iv
+                            )
+                            if inner:
+                                parts.append(f"{k}({inner})")
+                        elif isinstance(v, str) and v.strip():
+                            parts.append(f"{k}: {v.strip()}")
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
         entry["description"] = " | ".join(parts) if parts else None
         return entry
 

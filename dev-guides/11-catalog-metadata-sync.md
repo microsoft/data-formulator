@@ -29,7 +29,7 @@ catalog_merge.py                — 运行时合并（双来源均保留，Agent
 4. 前端将轻量树存入 React state
 
 **首次连接（connect）：**
-1. 后端调用 `loader.list_tables()` 获取轻量表信息
+1. 后端调用 `loader.list_tables()` 获取表信息（Superset 的 `list_tables()` 已包含并行列信息拉取，其他 SQL loader 通过 `information_schema` 自带列信息）
 2. 以 `mode="seed_if_missing"` 写入 cache — **仅在无 cache 时写入**，不覆盖已有富数据
 
 **Agent 数据发现：**
@@ -50,7 +50,7 @@ catalog_merge.py                — 运行时合并（双来源均保留，Agent
 | 文件 | 职责 |
 |------|------|
 | `py-src/.../external_data_loader.py` | 基类 `sync_catalog_metadata()` + `ensure_table_keys()` |
-| `py-src/.../superset_data_loader.py` | Superset override，并发拉取列信息 |
+| `py-src/.../superset_data_loader.py` | Superset loader，`list_tables()` 包含并行列信息拉取 + `extra` JSON 铺平 |
 | `py-src/.../superset_client.py` | `get_dataset_columns()`，含 fallback 到完整详情接口 |
 | `py-src/.../datalake/catalog_cache.py` | 磁盘缓存，含 `synced_at`、DuckDB/Python 双路径搜索 |
 | `py-src/.../datalake/catalog_annotations.py` | 用户标注，文件锁 + 乐观版本控制 |
@@ -72,8 +72,9 @@ catalog_merge.py                — 运行时合并（双来源均保留，Agent
 | `"seed_if_missing"` | 仅在文件不存在时写入 | `connect`（首次连接时种子 cache） |
 
 **核心原则：** `GET_CATALOG_TREE`（浏览接口）**不写 cache**。只有 sync（刷新）和
-connect（首次种子）才写入。这防止轻量 `list_tables()` 的结果覆盖 sync 拉到的富
-metadata（columns、source_metadata_status 等）。
+connect（首次种子）才写入。对于 `list_tables()` 已包含完整列信息的 Loader（如
+Superset），connect 写入的种子 cache 即为富 metadata；对于其他 Loader，
+`seed_if_missing` 防止轻量结果覆盖后续 sync 拉到的富 metadata。
 
 ## API 端点
 
@@ -168,7 +169,7 @@ metadata（columns、source_metadata_status 等）。
 | `"synced"` | 已完整同步（表描述 + 列信息） | SQL loader 从 info_schema 拿到列；Superset 列 API 返回数据 |
 | `"partial"` | 部分成功（有描述但列信息为空或缺失） | Superset 列 API 返回空列表；SQL 表存在但无列 |
 | `"unavailable"` | metadata 获取完全失败（API 错误） | 网络超时、认证失败 |
-| `"not_synced"` | 从未执行过全量同步（仅有轻量 `list_tables` 结果） | 初始连接后未点刷新 |
+| `"not_synced"` | 从未执行过全量同步（仅有轻量结果） | 非 Superset 类 loader 初始连接后未点刷新（Superset 的 `list_tables()` 已包含列信息，不会出现此状态） |
 
 ## table_key 契约
 
@@ -252,15 +253,17 @@ def sync_catalog_metadata(self, table_filter=None):
 | MSSQL | 是（单库） | **需要** | 同 PostgreSQL |
 | BigQuery | 是 | **不需要** | — |
 | S3/AzureBlob | 否（无列描述） | **不需要** | 无更多 metadata 可获取 |
-| Superset | 否（仅 id/name/row_count） | **需要** | 需并发调用 `get_dataset_columns` |
+| Superset | 是（`list_tables()` 内含并行列拉取） | **不需要** | `list_tables()` 已通过 `_enrich_columns()` 并行拉取列信息 |
 
 ### Superset 同步细节
 
+- `list_tables()` 包含完整列信息拉取，无需单独的 `sync_catalog_metadata()` override。
 - `list_datasets()` 默认响应已包含 `uuid` 和 `description`，无需修改请求参数。
-- 列信息通过 `/api/v1/dataset/{pk}/column` 获取（轻量接口，避免完整详情接口的笛卡尔积）。
+- 列信息通过 `_enrich_columns()` 并行获取，调用 `/api/v1/dataset/{pk}/column`（轻量接口，避免完整详情接口的笛卡尔积）。
 - `superset_client.get_dataset_columns()` 在专用列端点不可用时自动回退到完整详情接口。
 - `ThreadPoolExecutor(max_workers=5)`，全局超时 120s。
 - 单个 dataset 列拉取失败 → 标记 `source_metadata_status: "unavailable"`，不阻断其他。
+- `_build_column_entry()` 通用铺平 Superset 列的 `extra` JSON 字段（如 `certification`、`warning_markdown`），追加到 `description` 供 Agent 消费。
 
 ## Annotation 写入策略
 
@@ -499,10 +502,10 @@ Agent 在构建数据摘要时会自动读取该字段并生成人类可读的 p
 创建新的 `ExternalDataLoader` 子类时：
 
 - [ ] 确保 `list_tables()` 在每条记录上设置 `table_key`（或依赖 `ensure_table_keys()` fallback）
-- [ ] 若 `list_tables()` 缺少列详情，override `sync_catalog_metadata()`
+- [ ] 若 `list_tables()` 缺少列详情，在 `list_tables()` 内添加并行列拉取（参考 `SupersetLoader._enrich_columns()`），或 override `sync_catalog_metadata()`
 - [ ] 逐表详情拉取使用 `ThreadPoolExecutor` 并限制并发数
 - [ ] 为每张表设置 `source_metadata_status`：`"synced"`、`"partial"` 或 `"unavailable"`
-- [ ] 在 `sync_catalog_metadata()` 返回前调用 `self.ensure_table_keys(tables)`
+- [ ] 在 `list_tables()` 或 `sync_catalog_metadata()` 返回前调用 `self.ensure_table_keys(tables)`
 - [ ] 对于 info_schema 按库隔离的 SQL loader，在 `sync_catalog_metadata()` 中遍历所有可访问数据库
 
 ## Agent 元数据传递审计表
@@ -518,6 +521,7 @@ Agent 在构建数据摘要时会自动读取该字段并生成人类可读的 p
 | `user_description` | annotations | 用户手工添加的注释（**补充**而非覆盖源描述）|
 | `verbose_name` | Loader（如 Superset） | 列的显示别名（如中文名） |
 | `expression` | Loader（如 Superset） | 计算列公式（如 `SUM(line_items.amount)`） |
+| `extra` | Loader（Superset） | Superset 列的 `extra` JSON 字段，包含 `certification`、`warning_markdown` 等信息。`_build_column_entry()` 自动铺平到 `description` |
 | `notes` / `tags` | annotations | 用户标注的备注和标签 |
 | `import_options` | 数据导入/刷新 | 用户选择的过滤/排序/行限制条件（与本次分析相关） |
 

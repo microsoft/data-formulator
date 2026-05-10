@@ -2,10 +2,10 @@
 
 Background
 ----
-The catalog metadata sync feature adds:
 - SupersetClient.get_dataset_columns() for fast column-only metadata fetch
-- SupersetLoader.sync_catalog_metadata() for full metadata enrichment
-- list_tables now passes uuid and description from list_datasets response
+- SupersetLoader.list_tables() now includes full column metadata via parallel fetch
+- _build_column_entry() flattens Superset column metadata (including extra JSON)
+  into a standardised dict for catalog cache / agent consumption
 """
 from __future__ import annotations
 
@@ -246,3 +246,116 @@ class TestSupersetSyncCatalogMetadata:
         no_uuid = [t for t in result if "no_uuid" in t.get("name", "")]
         assert len(no_uuid) >= 1
         assert no_uuid[0]["table_key"]  # should have a fallback key
+
+
+# ── list_tables now includes column metadata ──────────────────────────
+
+class TestListTablesIncludesColumns:
+    """list_tables() should return column metadata directly (no separate sync step)."""
+
+    def test_list_tables_includes_columns(self):
+        datasets = [
+            {"id": 1, "table_name": "sales", "uuid": "uuid-1",
+             "database": {"database_name": "db"}},
+        ]
+        columns_by_id = {
+            1: [
+                {"column_name": "amount", "type": "FLOAT", "is_dttm": False},
+                {"column_name": "date", "type": "DATE", "is_dttm": True},
+            ],
+        }
+        loader = _make_mock_loader(datasets=datasets, columns_by_id=columns_by_id)
+        tables = loader.list_tables()
+        entry = [t for t in tables if t.get("table_key") == "uuid-1"][0]
+        assert entry["metadata"]["source_metadata_status"] == "synced"
+        assert len(entry["metadata"]["columns"]) == 2
+        assert entry["metadata"]["columns"][0]["name"] == "amount"
+
+    def test_list_tables_column_failure_marks_unavailable(self):
+        datasets = [
+            {"id": 2, "table_name": "broken", "uuid": "uuid-2",
+             "database": {"database_name": "db"}},
+        ]
+        loader = _make_mock_loader(datasets=datasets)
+        loader._client.get_dataset_columns.side_effect = Exception("timeout")
+        tables = loader.list_tables()
+        entry = [t for t in tables if t.get("table_key") == "uuid-2"][0]
+        assert entry["metadata"]["source_metadata_status"] == "unavailable"
+
+
+# ── _build_column_entry: extra JSON flattening ────────────────────────
+
+class TestBuildColumnEntryExtra:
+    """_build_column_entry should flatten the extra JSON blob into description."""
+
+    def test_certification_extra(self):
+        col = {
+            "column_name": "revenue",
+            "type": "FLOAT",
+            "is_dttm": False,
+            "verbose_name": "Revenue",
+            "extra": '{"certification": {"certified_by": "Data Team", "details": "Single source of truth"}}',
+        }
+        entry = SupersetLoader._build_column_entry(col)
+        assert "certification" in entry["description"]
+        assert "certified_by: Data Team" in entry["description"]
+        assert "details: Single source of truth" in entry["description"]
+
+    def test_warning_markdown_extra(self):
+        col = {
+            "column_name": "status",
+            "type": "VARCHAR",
+            "is_dttm": False,
+            "extra": '{"warning_markdown": "Data has 24h delay"}',
+        }
+        entry = SupersetLoader._build_column_entry(col)
+        assert "warning_markdown: Data has 24h delay" in entry["description"]
+
+    def test_empty_extra_no_effect(self):
+        col = {
+            "column_name": "id",
+            "type": "INTEGER",
+            "is_dttm": False,
+            "verbose_name": "ID",
+        }
+        entry = SupersetLoader._build_column_entry(col)
+        assert entry["description"] == "ID"
+
+    def test_null_extra_no_effect(self):
+        col = {
+            "column_name": "id",
+            "type": "INTEGER",
+            "is_dttm": False,
+            "extra": None,
+        }
+        entry = SupersetLoader._build_column_entry(col)
+        assert entry["description"] is None
+
+    def test_invalid_json_extra_no_crash(self):
+        col = {
+            "column_name": "name",
+            "type": "VARCHAR",
+            "is_dttm": False,
+            "verbose_name": "Name",
+            "extra": "{broken json",
+        }
+        entry = SupersetLoader._build_column_entry(col)
+        assert entry["description"] == "Name"
+        assert entry["name"] == "name"
+
+    def test_extra_combined_with_other_fields(self):
+        col = {
+            "column_name": "amount",
+            "type": "FLOAT",
+            "is_dttm": False,
+            "verbose_name": "Total Amount",
+            "description": "Sum of line items",
+            "expression": "SUM(line_total)",
+            "extra": '{"certification": {"details": "Verified metric"}}',
+        }
+        entry = SupersetLoader._build_column_entry(col)
+        desc = entry["description"]
+        assert "Total Amount" in desc
+        assert "Sum of line items" in desc
+        assert "expr: SUM(line_total)" in desc
+        assert "Verified metric" in desc
