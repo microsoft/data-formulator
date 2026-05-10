@@ -198,14 +198,26 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', pb: '8px' }}>
                 {questions.map((question, questionIndex) => (
                 <Box key={questionIndex} sx={{ display: 'flex', flexDirection: 'column', gap: '4px', pl: '20px' }}>
-                    <Typography component="div" sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.5 }}>
-                        {!isExplain && questions.length > 1 && (
-                            <>
-                                {t('chartRec.clarificationQuestionLabel', { index: questionIndex + 1 })}{' '}
-                            </>
-                        )}
-                        {renderFieldHighlights(question.text, alpha(accentColor, 0.06))}
-                    </Typography>
+                    {/* Text portion is height-bounded and scrollable so very
+                        long explanations don't push options off-screen.
+                        Options remain fixed below the scrolling region.
+                        Bounds adapt to viewport: ~8 lines min, ~16 max,
+                        scaling with viewport height in between (1 line ≈ 18px
+                        at 12px / 1.5 line-height). */}
+                    <Box sx={{
+                        maxHeight: 'clamp(144px, 28vh, 288px)',
+                        overflowY: 'auto',
+                        pr: '4px',
+                    }}>
+                        <Typography component="div" sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.5 }}>
+                            {!isExplain && questions.length > 1 && (
+                                <>
+                                    {t('chartRec.clarificationQuestionLabel', { index: questionIndex + 1 })}{' '}
+                                </>
+                            )}
+                            {renderFieldHighlights(question.text, alpha(accentColor, 0.06))}
+                        </Typography>
+                    </Box>
 
                     {question.responseType === 'free_text' ? (
                         // Free-text questions don't render their own input.

@@ -281,7 +281,26 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
             ? (entry.displayContent || entry.content)
             : text;
         const hasPlan = !!entry.plan && entry.plan !== displayText;
-        const isCollapsible = hasPlan || !!collapsedLabel;
+
+        // Active clarify/explain entries are read in the ClarificationPanel
+        // at the bottom (the outer timeline row already refocuses there on
+        // click). Their truncated preview here should always stay clamped —
+        // no in-place expand, to avoid duplicating the panel content.
+        const isActiveAgentPause = !resolved
+            && (entry.role === 'clarify' || entry.role === 'explain');
+
+        // Auto-clamp very long agent text bubbles. Tied to the same
+        // `expanded` state as thinking — one parent click reveals both —
+        // except for active clarify/explain, which clamp permanently.
+        const TEXT_CLAMP_LINES = 8;
+        const TEXT_CLAMP_CHAR_THRESHOLD = 600;
+        const canClampText = !collapsedLabel
+            && !isActiveAgentPause
+            && (displayText?.length ?? 0) > TEXT_CLAMP_CHAR_THRESHOLD;
+        const forceClampText = isActiveAgentPause
+            && (displayText?.length ?? 0) > TEXT_CLAMP_CHAR_THRESHOLD;
+
+        const isCollapsible = hasPlan || !!collapsedLabel || canClampText;
         const [expanded, setExpanded] = useState(false);
 
         // Render input table names suffix if available
@@ -304,7 +323,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         return (
             <Box
                 sx={{
-                    cursor: isCollapsible ? 'pointer' : 'default',
+                    // Active clarify/explain entries don't expand in place,
+                    // but the surrounding timeline row is clickable to
+                    // refocus — show pointer here too so the affordance
+                    // reads consistently across icon, gutter, and text.
+                    cursor: (isCollapsible || isActiveAgentPause) ? 'pointer' : 'default',
                     ...(isCollapsible ? {
                         borderRadius: '4px',
                         px: '2px',
@@ -357,8 +380,14 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         fontSize: '10px',
                         color,
                         py: '1px',
+                        ...((forceClampText || (canClampText && !expanded)) ? {
+                            display: '-webkit-box',
+                            WebkitLineClamp: TEXT_CLAMP_LINES,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                        } : {}),
                     }}>
-                        {entry.role === 'clarify' && !resolved && (
+                        {(entry.role === 'clarify' || entry.role === 'explain') && !resolved && (
                             <Box component="span" sx={{
                                 display: 'inline',
                                 fontWeight: 600,

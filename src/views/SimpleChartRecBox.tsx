@@ -38,16 +38,8 @@ import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 
-import RefreshIcon from '@mui/icons-material/Refresh';
-import ClearIcon from '@mui/icons-material/Clear';
-import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
-import SyncAltIcon from '@mui/icons-material/SyncAlt';
-import OpenInFullIcon from '@mui/icons-material/OpenInFull';
-import CallMergeIcon from '@mui/icons-material/CallMerge';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import { renderTextWithEmphasis } from './EncodingShelfCard';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
@@ -141,11 +133,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     // clears). Tracks the draftId we've already auto-submitted for.
     const clarifySubmittedRef = useRef<string | null>(null);
     const [isChatFormulating, setIsChatFormulating] = useState(false);
-    const [ideas, setIdeas] = useState<{text: string, goal: string, tag: string}[]>([]);
-    const [isLoadingIdeas, setIsLoadingIdeas] = useState(false);
-    const [thinkingBuffer, setThinkingBuffer] = useState('');
-    const [ideaPhase, setIdeaPhase] = useState<string>('');
-    const [ideaElapsed, setIdeaElapsed] = useState(0);
     const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
     const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
     const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
@@ -153,15 +140,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const [attachedImages, setAttachedImages] = useState<string[]>([]);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const agentAbortRef = useRef<AbortController | null>(null);
-    const ideasAbortRef = useRef<AbortController | null>(null);
     const userChartFocusLockedRef = useRef(false);
     const lastAutoFocusedChartIdRef = useRef<string | null>(null);
-
-    useEffect(() => {
-        if (!isLoadingIdeas) { setIdeaElapsed(0); setIdeaPhase(''); return; }
-        const timer = setInterval(() => setIdeaElapsed(e => e + 1), 1000);
-        return () => clearInterval(timer);
-    }, [isLoadingIdeas]);
 
     useEffect(() => {
         if (!isChatFormulating) {
@@ -200,12 +180,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         }
         return undefined;
     }, [focusedId, charts, generatedReports])();
-
-    // Clear ideas when focused table changes — ideas are scoped per table
-    useEffect(() => {
-        setIdeas([]);
-        setIsLoadingIdeas(false);
-    }, [focusedTableId]);
 
     // Root tables and priority ordering for API calls
     const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
@@ -360,111 +334,12 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         return null;
     }, [pendingClarification, draftNodes]);
 
-    const getIdeasFromAgent = useCallback(async () => {
-        if (!currentTable || isLoadingIdeas) return;
-        setIsLoadingIdeas(true);
-        setIdeas([]);
-        setThinkingBuffer('');
-        let timedOut = false;
-
-        try {
-            let explorationThread: any[] = [];
-            const sourceTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
-
-            if (currentTable.derive && !currentTable.anchored) {
-                const triggers = getTriggers(currentTable, tables);
-                explorationThread = triggers.map((trigger) => {
-                    const tt = tables.find(t2 => t2.id === trigger.resultTableId);
-                    return {
-                        name: trigger.resultTableId,
-                        rows: tt?.rows,
-                        description: t('chartRec.explorationThreadDeriveDescription', {
-                            source: String(tt?.derive?.source ?? ''),
-                            instruction: trigger.interaction?.find((e: any) => e.role === 'instruction')?.content || '',
-                        }),
-                    };
-                });
-            }
-
-            const messageBody = JSON.stringify({
-                model: activeModel,
-                input_tables: sourceTables.map(t => ({
-                    name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                    rows: t.rows,
-                })),
-                exploration_thread: explorationThread,
-            });
-
-            const controller = new AbortController();
-            ideasAbortRef.current = controller;
-            const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
-
-            let lines: { text: string; goal: string; tag?: string }[] = [];
-            for await (const event of streamRequest(getUrls().GET_RECOMMENDATION_QUESTIONS, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: messageBody,
-            }, controller.signal)) {
-                if (event.type === 'error') {
-                    const msg = event.error ? getErrorMessage(event.error) : t('messages.error');
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(), type: 'error',
-                        component: 'exploration', value: msg,
-                        diagnostics: event.error,
-                    }));
-                    continue;
-                }
-                if (event.type === 'warning') {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(), type: 'warning',
-                        component: 'exploration',
-                        value: (event as any).warning?.message ?? 'Warning from server',
-                    }));
-                    continue;
-                }
-                if (event.type === 'progress') {
-                    setIdeaPhase((event as any).phase);
-                    continue;
-                }
-                if (event.type === 'question' && (event as any).text) {
-                    lines.push(event as any);
-                    setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
-                    continue;
-                }
-                if ((event as any).text) setThinkingBuffer((event as any).text);
-            }
-            clearTimeout(timeoutId);
-            setIdeas([...lines].map(b => ({ text: b.text, goal: b.goal, tag: b.tag || 'deep-dive' })));
-        } catch (error) {
-            if (error instanceof DOMException && error.name === 'AbortError') {
-                if (timedOut) {
-                    dispatch(dfActions.addMessages({
-                        timestamp: Date.now(), type: 'warning',
-                        component: 'exploration',
-                        value: t('messages.agent.suggestionsTimedOut', { seconds: config.formulateTimeoutSeconds }),
-                    }));
-                }
-            } else {
-                dispatch(dfActions.addMessages({
-                    timestamp: Date.now(), type: 'error',
-                    component: 'exploration',
-                    value: t('messages.agent.unexpectedError'),
-                    detail: error instanceof Error ? error.message : String(error),
-                }));
-            }
-        } finally {
-            setIsLoadingIdeas(false);
-            setThinkingBuffer('');
-            ideasAbortRef.current = null;
-        }
-    }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, config, dispatch, t]);
-
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         trajectory: any[];
         completedStepCount: number;
         actionId: string;
         lastCreatedTableId: string | null;
-    }) => {
+    }, displayPrompt?: string) => {
         if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
 
         const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
@@ -490,7 +365,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         // 'clarifying' status and pendingClarification storage.
         if (isResume && pendingClarification?.draftId) {
             dispatch(dfActions.appendDraftInteraction({ draftId: pendingClarification.draftId, entry: {
-                from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now()
+                from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
+                ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                timestamp: Date.now()
             }}));
             dispatch(dfActions.updateDraftClarification({ draftId: pendingClarification.draftId, pendingClarification: null }));
             dispatch(dfActions.updateDeriveStatus({ nodeId: pendingClarification.draftId, status: 'running' }));
@@ -677,10 +554,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             currentDraftParentTableId = existingDraft?.derive?.trigger?.tableId || null;
             currentDraftInteraction = [...(existingDraft?.derive?.trigger?.interaction || [])];
             // The user reply was already appended above, add to local accumulator too
-            currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now() });
+            currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
+                ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                timestamp: Date.now() });
         } else {
             const initialEntries: InteractionEntry[] = [
-                { from: 'user', to: 'data-agent', role: 'prompt', content: prompt, timestamp: Date.now() }
+                { from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
+                    ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                    timestamp: Date.now() }
             ];
             createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
         }
@@ -708,22 +589,23 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
         const processStreamingResult = (result: any) => {
             // ── context_info: show injected rules/knowledge at the top ──
+            // Rendered as already-completed tool-style steps (✓ prefix) so they
+            // visually match the rest of the agent's tool-call timeline.
             if (result.type === "context_info") {
-                const parts: string[] = [];
                 const rules: string[] = result.rules_injected || [];
                 const knowledge: Array<{category: string; title: string}> = result.knowledge_injected || [];
+                let added = false;
                 if (rules.length > 0) {
-                    parts.push(t('dataThread.rulesLoaded', { rules: rules.join(', ') }));
+                    thinkingSteps.push('✓ ' + t('dataThread.rulesLoaded', { rules: rules.join(', ') }));
+                    added = true;
                 }
                 if (knowledge.length > 0) {
                     const titles = knowledge.map(k => k.title).join(', ');
-                    parts.push(t('dataThread.knowledgeLoaded', { knowledge: titles }));
+                    thinkingSteps.push('✓ ' + t('dataThread.knowledgeLoaded', { knowledge: titles }));
+                    added = true;
                 }
-                if (parts.length > 0) {
-                    thinkingSteps.push('📋 ' + parts.join(' | '));
-                    if (currentDraftId) {
-                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
-                    }
+                if (added && currentDraftId) {
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
                 }
             }
 
@@ -1254,7 +1136,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     }, [focusedTableId, charts, tables, selectedTableIds, primaryTableIds, conceptShelfItems, activeModel, dispatch]);
 
     // ── Unified submit handler ───────────────────────────────────────
-    const submitChat = useCallback((prompt: string, clarificationCtx?: any) => {
+    const submitChat = useCallback((prompt: string, clarificationCtx?: any, displayPrompt?: string) => {
         if (selectedAgent === 'report') {
             reportFromChat(prompt);
             return;
@@ -1282,7 +1164,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             exploreFromChat(displayPrompt, clarificationCtx);
             return;
         }
-        exploreFromChat(prompt);
+        exploreFromChat(prompt, undefined, displayPrompt);
     }, [reportFromChat, exploreFromChat, selectedAgent, clarificationQuestions, clarifyAnswers]);
 
     const resumeFromClarification = useCallback((responses: ClarificationResponse[]) => {
@@ -1403,68 +1285,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                     onCancel={cancelAgent}
                 />
             )}
-            {/* Idea chips inline */}
-            {ideas.length > 0 && !isChatFormulating && (
-                <Box sx={{
-                    display: 'flex', flexDirection: 'column', gap: '4px',
-                    borderBottom: `1px solid ${alpha(theme.palette.secondary.main, 0.15)}`,
-                    backgroundColor: alpha(theme.palette.secondary.main, 0.03),
-                    borderRadius: clarificationQuestions ? 0 : '8px 8px 0 0',
-                    mx: '-8px', mt: clarificationQuestions ? 0 : '-4px', mb: '4px', px: '10px', pt: '6px', pb: '6px',
-                }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', mb: '2px' }}>
-                        <TipsAndUpdatesIcon sx={{ fontSize: 12, color: theme.palette.secondary.main }} />
-                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: theme.palette.secondary.main, flex: 1 }}>{t('chartRec.ideas')}</Typography>
-                        <Tooltip title={t('chartRec.regenerateIdeas')}>
-                            <IconButton size="small" onClick={() => getIdeasFromAgent()}
-                                sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.primary.main } }}>
-                                <RefreshIcon sx={{ fontSize: 12 }} />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title={t('chartRec.clearIdeas')}>
-                            <IconButton size="small" onClick={() => setIdeas([])}
-                                sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.error.main } }}>
-                                <ClearIcon sx={{ fontSize: 12 }} />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {ideas.map((idea, idx) => {
-                            const tagConfig: Record<string, { color: string; icon: React.ReactNode }> = {
-                                'deep-dive': { color: theme.palette.primary.main, icon: <KeyboardDoubleArrowDownIcon sx={{ fontSize: 10 }} /> },
-                                'pivot': { color: theme.palette.info.main, icon: <SyncAltIcon sx={{ fontSize: 10 }} /> },
-                                'broaden': { color: theme.palette.success.main, icon: <OpenInFullIcon sx={{ fontSize: 10 }} /> },
-                                'cross-data': { color: theme.palette.warning.main, icon: <CallMergeIcon sx={{ fontSize: 10, transform: 'rotate(180deg)' }} /> },
-                                'statistical': { color: theme.palette.secondary.main, icon: <TrendingUpIcon sx={{ fontSize: 10 }} /> },
-                            };
-                            const cfg = tagConfig[idea.tag] || tagConfig['deep-dive'];
-                            const color = cfg.color;
-                            return (
-                                <Box key={idx} sx={{
-                                    px: '6px', py: '3px',
-                                    borderRadius: '4px',
-                                    border: `1px solid ${alpha(color, 0.2)}`,
-                                    backgroundColor: alpha(color, 0.04),
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                    display: 'flex', alignItems: 'flex-start', gap: '3px',
-                                    '&:hover': { borderColor: alpha(color, 0.6), backgroundColor: alpha(color, 0.08) },
-                                }} onClick={() => { setChatPrompt(idea.text); exploreFromChat(idea.text); }}>
-                                    <Box sx={{ color, mt: '1px', flexShrink: 0 }}>{cfg.icon}</Box>
-                                    <Typography component="div" sx={{ fontSize: 10, lineHeight: 1.3, color }}>
-                                        {renderTextWithEmphasis(idea.goal, {
-                                            borderRadius: '0px', borderBottom: '1px solid',
-                                            borderColor: alpha(color, 0.4), fontSize: '10px', lineHeight: 1.3,
-                                            backgroundColor: alpha(color, 0.05),
-                                        })}
-                                    </Typography>
-                                </Box>
-                            );
-                        })}
-                    </Box>
-                </Box>
-            )}
-            {/* Input area wrapper — ideas-loading overlay is scoped to this region */}
+            {/* Input area wrapper */}
             <Box sx={{ position: 'relative' }}>
             {/* @-mention table chips and image attachments.
                 Skip the table-chip row entirely when there's only one root table —
@@ -1690,18 +1511,10 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                 <IconButton
                                     size="small"
                                     sx={{ p: 0.5, color: theme.palette.secondary.main }}
-                                    disabled={!focusedTableId || isLoadingIdeas}
-                                    onClick={() => { 
-                                        if (ideas.length > 0) {
-                                            setIdeas([]);
-                                        } else {
-                                            getIdeasFromAgent(); 
-                                        }
-                                    }}
+                                    disabled={!focusedTableId || isChatFormulating || !!pendingClarification}
+                                    onClick={() => submitChat(t('chartRec.exploreIdeasPrompt'), undefined, t('chartRec.askedForRecommendations'))}
                                 >
-                                    {isLoadingIdeas
-                                        ? <CircularProgress size={18} sx={{ color: theme.palette.warning.main }} />
-                                        : <TipsAndUpdatesIcon sx={{ fontSize: 18 }} />}
+                                    <TipsAndUpdatesIcon sx={{ fontSize: 18 }} />
                                 </IconButton>
                             </span>
                         </Tooltip>
@@ -1729,18 +1542,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 )}
                 </Box>
             </Box>
-            {/* Ideas-loading overlay — scoped to input area only, keeps idea chips visible */}
-            {isLoadingIdeas && !isChatFormulating && (
-                <AgentWorkingOverlay 
-                    message={ideaPhase === 'building_context' ? t('chartRec.progressBuildingContext')
-                           : ideaPhase === 'generating' ? t('chartRec.progressGenerating')
-                           : t('chartRec.generatingIdeas')}
-                    elapsed={ideaElapsed}
-                    theme={theme}
-                    color={isReportMode ? 'warning' : 'primary'}
-                    onCancel={() => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); }}
-                />
-            )}
             </Box>
             {/* Agent working overlay — covers entire card during chat formulation */}
             {isChatFormulating && (
