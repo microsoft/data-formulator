@@ -29,6 +29,7 @@ import {
     InputAdornment,
     Menu,
     MenuItem,
+    Select,
     ListItemIcon,
     ListItemText,
 } from '@mui/material';
@@ -54,11 +55,13 @@ import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 
 import { KnowledgePanel } from './KnowledgePanel';
+import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
 
 import { DataFormulatorState, dfActions } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
@@ -68,7 +71,7 @@ import { extractErrorMessage } from '../app/errorHandler';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
 import { loadTable } from '../app/tableThunks';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, updateWorkspaceMeta, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import { borderColor } from '../app/tokens';
 
@@ -91,6 +94,32 @@ const MIN_PANEL_WIDTH = 200;
 const MAX_PANEL_WIDTH = 450;
 
 const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
+
+// Compact relative time for sidebar rows: "2m", "3h", "yesterday",
+// "May 5", "May 5, 24". Designed to stay <= ~10 chars so it fits in
+// the narrow sidebar without truncating session names.
+function formatCompactTime(iso: string | null | undefined): string {
+    if (!iso) return '';
+    const then = new Date(iso);
+    const t = then.getTime();
+    if (Number.isNaN(t)) return '';
+    const now = Date.now();
+    const diffSec = Math.max(0, Math.round((now - t) / 1000));
+    if (diffSec < 60) return 'just now';
+    const diffMin = Math.round(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m`;
+    const diffHr = Math.round(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h`;
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+    const diffDays = Math.floor((startOfToday.getTime() - then.getTime()) / 86400000) + 1;
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7) return `${diffDays}d`;
+    const sameYear = then.getFullYear() === new Date().getFullYear();
+    return then.toLocaleDateString(undefined, sameYear
+        ? { month: 'short', day: 'numeric' }
+        : { month: 'short', day: 'numeric', year: '2-digit' });
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface CatalogCache {
@@ -123,11 +152,15 @@ export const DataSourceSidebar: React.FC<{
     const disableConnectors = useSelector((state: DataFormulatorState) => state.serverConfig.DISABLE_DATA_CONNECTORS);
     const focusedConnectorId = useSelector((state: DataFormulatorState) => state.focusedConnectorId);
 
-    if (disableConnectors) return null;
-
     const toggle = () => dispatch(dfActions.setDataSourceSidebarOpen(!isOpen));
 
-    const [initialTab, setInitialTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>('sources');
+    // When connectors are disabled (browser-only / hosted mode) we land
+    // users on 'upload' instead of 'sources' so they don't open the panel
+    // straight onto an upgrade message — but the sources tab remains
+    // available so users can learn what local install unlocks.
+    const [initialTab, setInitialTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>(
+        disableConnectors ? 'upload' : 'sources',
+    );
 
     // External callers (e.g. SaveExperienceButton on success) can ask the
     // sidebar to open and switch to a specific tab.
@@ -245,13 +278,13 @@ export const DataSourceSidebar: React.FC<{
                 pt: 1,
                 gap: 0.5,
             }}>
-                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Add data' })} placement="right">
-                    <IconButton size="small" onClick={() => { setInitialTab('upload'); if (!isOpen) toggle(); else if (initialTab !== 'upload') setInitialTab('upload'); else toggle(); }} sx={{
-                        color: isOpen && initialTab === 'upload' ? 'primary.main' : 'text.secondary',
-                        bgcolor: isOpen && initialTab === 'upload' ? 'action.selected' : 'transparent',
+                <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
+                    <IconButton size="small" onClick={() => { setInitialTab('sessions'); if (!isOpen) toggle(); else if (initialTab !== 'sessions') setInitialTab('sessions'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'sessions' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'sessions' ? 'action.selected' : 'transparent',
                         borderRadius: 1,
                     }}>
-                        <FileUploadOutlinedIcon fontSize="small" />
+                        <FolderOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
                 <Tooltip title={t('sidebar.openDataConnectors', { defaultValue: 'Data connectors' })} placement="right">
@@ -263,13 +296,13 @@ export const DataSourceSidebar: React.FC<{
                         <RelationalDBIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
-                    <IconButton size="small" onClick={() => { setInitialTab('sessions'); if (!isOpen) toggle(); else if (initialTab !== 'sessions') setInitialTab('sessions'); else toggle(); }} sx={{
-                        color: isOpen && initialTab === 'sessions' ? 'primary.main' : 'text.secondary',
-                        bgcolor: isOpen && initialTab === 'sessions' ? 'action.selected' : 'transparent',
+                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Add data' })} placement="right">
+                    <IconButton size="small" onClick={() => { setInitialTab('upload'); if (!isOpen) toggle(); else if (initialTab !== 'upload') setInitialTab('upload'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'upload' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'upload' ? 'action.selected' : 'transparent',
                         borderRadius: 1,
                     }}>
-                        <FolderOutlinedIcon fontSize="small" />
+                        <FileUploadOutlinedIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
                 <Tooltip title={t('sidebar.knowledge', { defaultValue: 'Agent knowledge' })} placement="right">
@@ -293,6 +326,7 @@ export const DataSourceSidebar: React.FC<{
                     onCollapse={toggle}
                     initialTab={initialTab}
                     connectorRefreshKey={connectorRefreshKey}
+                    disableConnectors={disableConnectors}
                 />
             )}
 
@@ -316,7 +350,8 @@ const DataSourceSidebarPanel: React.FC<{
     onCollapse: () => void;
     initialTab?: 'upload' | 'sources' | 'sessions' | 'knowledge';
     connectorRefreshKey?: number;
-}> = ({ panelWidth, onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0 }) => {
+    disableConnectors?: boolean;
+}> = ({ panelWidth, onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0, disableConnectors = false }) => {
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
@@ -396,11 +431,79 @@ const DataSourceSidebarPanel: React.FC<{
 
     const [sessions, setSessions] = useState<WorkspaceSummary[]>([]);
 
+    // Sort key for the sessions list. Default to creation time so the
+    // chronological order doesn't shuffle every time a workspace is touched.
+    type SessionSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
+    const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
+
+    const sortedSessions = useMemo(() => {
+        const cmpDate = (a: string | null | undefined, b: string | null | undefined): number => {
+            if (!a && !b) return 0;
+            if (!a) return 1;
+            if (!b) return -1;
+            return a.localeCompare(b);
+        };
+        const copy = [...sessions];
+        switch (sessionSort) {
+            case 'created_desc':
+                return copy.sort((a, b) => cmpDate(b.created_at, a.created_at));
+            case 'created_asc':
+                return copy.sort((a, b) => cmpDate(a.created_at, b.created_at));
+            case 'updated_desc':
+                return copy.sort((a, b) => cmpDate(b.saved_at, a.saved_at));
+            case 'name_asc':
+                return copy.sort((a, b) =>
+                    (a.display_name || '').localeCompare(b.display_name || ''),
+                );
+            default:
+                return copy;
+        }
+    }, [sessions, sessionSort]);
+
     const refreshSessions = useCallback(() => {
         listWorkspaces()
             .then(list => setSessions(list))
             .catch(() => { /* session list is best-effort */ });
     }, []);
+
+    // Inline rename state for sidebar session rows.
+    const [renamingSession, setRenamingSession] = useState<string | null>(null);
+    const [renameSessionDraft, setRenameSessionDraft] = useState('');
+
+    const startRenameSession = useCallback((id: string, currentName: string) => {
+        setRenamingSession(id);
+        setRenameSessionDraft(currentName);
+    }, []);
+
+    const cancelRenameSession = useCallback(() => {
+        setRenamingSession(null);
+        setRenameSessionDraft('');
+    }, []);
+
+    const commitRenameSession = useCallback(async () => {
+        const id = renamingSession;
+        if (!id) return;
+        const next = renameSessionDraft.trim();
+        const current = sessions.find(s => s.id === id);
+        if (!current || !next || next === current.display_name) {
+            cancelRenameSession();
+            return;
+        }
+        setSessions(prev =>
+            prev.map(s => (s.id === id ? { ...s, display_name: next } : s)),
+        );
+        cancelRenameSession();
+        try {
+            await updateWorkspaceMeta(id, next);
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'data-source-sidebar',
+                value: 'Failed to rename session',
+            }));
+            refreshSessions();
+        }
+    }, [renamingSession, renameSessionDraft, sessions, cancelRenameSession, dispatch, refreshSessions]);
 
     useEffect(() => {
         refreshSessions();
@@ -482,6 +585,7 @@ const DataSourceSidebarPanel: React.FC<{
     // ── Connector list ───────────────────────────────────────────────────────
 
     const fetchConnectors = useCallback(() => {
+        if (disableConnectors) return;
         setLoadingConnectors(true);
         apiRequest(CONNECTOR_URLS.LIST, { method: 'GET' })
             .then(({ data }) => {
@@ -490,7 +594,7 @@ const DataSourceSidebarPanel: React.FC<{
             })
             .catch(() => { /* connector list is best-effort */ })
             .finally(() => setLoadingConnectors(false));
-    }, []);
+    }, [disableConnectors]);
 
     // Fetch on mount and whenever identity changes.
     useEffect(() => {
@@ -1134,7 +1238,28 @@ const DataSourceSidebarPanel: React.FC<{
             )}
 
             {/* ── Data Connectors tab ── */}
-            {activeTab === 'sources' && (
+            {activeTab === 'sources' && disableConnectors && (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                >
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                        {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
+                    </Typography>
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+                <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+                    <LocalInstallUpgradePanel compact />
+                </Box>
+            </Box>
+            )}
+
+            {/* ── Data Connectors tab ── */}
+            {activeTab === 'sources' && !disableConnectors && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Box
                     sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
@@ -1469,11 +1594,53 @@ const DataSourceSidebarPanel: React.FC<{
             {activeTab === 'sessions' && (
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Box
-                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
                 >
-                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary' }}>
                         {t('sidebar.sessions', { defaultValue: 'Sessions' })}
                     </Typography>
+                    {/* Sort selector — sits next to the title so it reads
+                        as a modifier of the section, not an aside. The
+                        chevron is sized to match the 11px label rather
+                        than the default 24px MUI icon. */}
+                    <Select
+                        size="small"
+                        variant="standard"
+                        value={sessionSort}
+                        onChange={(e) => setSessionSort(e.target.value as SessionSortKey)}
+                        disableUnderline
+                        IconComponent={(props) => (
+                            <ExpandMoreIcon {...props} sx={{ fontSize: 14, color: 'text.disabled', right: 0 }} />
+                        )}
+                        sx={{
+                            fontSize: 11,
+                            color: 'text.disabled',
+                            cursor: 'pointer',
+                            '& .MuiSelect-select': {
+                                py: 0,
+                                pl: 0,
+                                pr: '14px !important',
+                                minHeight: 0,
+                            },
+                            '&:hover': { color: 'text.secondary' },
+                            '&:hover .MuiSelect-icon': { color: 'text.secondary' },
+                        }}
+                        renderValue={(v) => {
+                            const labels: Record<SessionSortKey, string> = {
+                                created_desc: 'newest',
+                                created_asc: 'oldest',
+                                updated_desc: 'recently modified',
+                                name_asc: 'name',
+                            };
+                            return labels[v as SessionSortKey];
+                        }}
+                    >
+                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>newest first</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>oldest first</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>recently modified</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>name (a–z)</MenuItem>
+                    </Select>
+                    <Box sx={{ flex: 1 }} />
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
                         <IconButton size="small" onClick={onCollapse} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
                             <ChevronLeftIcon sx={{ fontSize: 16 }} />
@@ -1514,10 +1681,12 @@ const DataSourceSidebarPanel: React.FC<{
                         </Typography>
                     </Box>
                 ) : (
-                    sessions.map((s) => (
+                    sortedSessions.map((s) => {
+                        const isRenaming = renamingSession === s.id;
+                        return (
                         <Tooltip
                             key={s.id}
-                            title={(() => {
+                            title={isRenaming ? '' : (() => {
                                 const date = s.saved_at ? new Date(s.saved_at).toLocaleDateString() : '';
                                 if (activeWorkspace?.id === s.id) return date ? t('sidebar.currentSessionWithDate', { date }) : t('sidebar.currentSession');
                                 const base = buildSessionTooltip(s);
@@ -1527,39 +1696,111 @@ const DataSourceSidebarPanel: React.FC<{
                             enterDelay={400}
                         >
                         <Box
-                            onClick={() => { if (activeWorkspace?.id !== s.id) handleOpenSession(s.id); }}
+                            onClick={() => { if (!isRenaming && activeWorkspace?.id !== s.id) handleOpenSession(s.id); }}
                             sx={{
+                                position: 'relative',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 0.75,
                                 px: 1.5,
                                 py: 0.5,
-                                cursor: activeWorkspace?.id === s.id ? 'default' : 'pointer',
+                                cursor: isRenaming ? 'default' : (activeWorkspace?.id === s.id ? 'default' : 'pointer'),
                                 '&:hover': { bgcolor: 'action.hover' },
-                                '&:hover .delete-btn': { visibility: 'visible' },
+                                '&:hover .row-actions': { display: 'flex' },
+                                '&:hover .row-timestamp': { visibility: 'hidden' },
                                 userSelect: 'none',
                             }}
                         >
                             {activeWorkspace?.id === s.id && (
                                 <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', flexShrink: 0 }} />
                             )}
-                            <Typography noWrap sx={{
-                                fontSize: 12, flex: 1, fontWeight: 500,
-                                color: activeWorkspace?.id === s.id ? 'primary.main' : 'text.primary',
-                            }}>
-                                {s.display_name}
-                            </Typography>
-                            <IconButton
-                                className="delete-btn"
-                                size="small"
-                                onClick={(e) => handleDeleteSession(s.id, e)}
-                                sx={{ p: 0.25, visibility: 'hidden', color: 'text.disabled', '&:hover': { color: 'error.main' } }}
-                            >
-                                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                            </IconButton>
+                            {isRenaming ? (
+                                <TextField
+                                    autoFocus
+                                    value={renameSessionDraft}
+                                    onChange={(e) => setRenameSessionDraft(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onBlur={commitRenameSession}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            commitRenameSession();
+                                        } else if (e.key === 'Escape') {
+                                            e.preventDefault();
+                                            cancelRenameSession();
+                                        }
+                                    }}
+                                    variant="standard"
+                                    sx={{ flex: 1 }}
+                                    slotProps={{
+                                        input: {
+                                            sx: { fontSize: 12, fontWeight: 500, py: 0 },
+                                        },
+                                    }}
+                                />
+                            ) : (
+                                <Typography noWrap sx={{
+                                    fontSize: 12, flex: 1, fontWeight: 500,
+                                    color: activeWorkspace?.id === s.id ? 'primary.main' : 'text.primary',
+                                }}>
+                                    {s.display_name}
+                                </Typography>
+                            )}
+                            {!isRenaming && (() => {
+                                // Show the timestamp that matches the active sort so the
+                                // visual order is self-explanatory: created time when
+                                // sorted by creation, last-saved otherwise.
+                                const useCreated = sessionSort === 'created_desc' || sessionSort === 'created_asc';
+                                const stamp = formatCompactTime(useCreated ? s.created_at : s.saved_at);
+                                if (!stamp) return null;
+                                return (
+                                    <Typography
+                                        className="row-timestamp"
+                                        sx={{
+                                            fontSize: 10,
+                                            color: 'text.disabled',
+                                            flexShrink: 0,
+                                            ml: 0.5,
+                                        }}
+                                    >
+                                        {stamp}
+                                    </Typography>
+                                );
+                            })()}
+                            {!isRenaming && (
+                                <Box
+                                    className="row-actions"
+                                    sx={{
+                                        position: 'absolute',
+                                        top: '50%',
+                                        right: 8,
+                                        transform: 'translateY(-50%)',
+                                        display: 'none',
+                                        gap: 0.25,
+                                    }}
+                                >
+                                    <Tooltip title="Rename">
+                                        <IconButton
+                                            size="small"
+                                            onClick={(e) => { e.stopPropagation(); startRenameSession(s.id, s.display_name); }}
+                                            sx={{ p: 0.25, color: 'primary.main' }}
+                                        >
+                                            <EditOutlinedIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <IconButton
+                                        size="small"
+                                        onClick={(e) => handleDeleteSession(s.id, e)}
+                                        sx={{ p: 0.25, color: 'warning.main' }}
+                                    >
+                                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </Box>
+                            )}
                         </Box>
                         </Tooltip>
-                    ))
+                        );
+                    })
                 )}
             </Box>
             </Box>

@@ -42,8 +42,8 @@
     "loadLocalData": "加载本地数据",
     "localData": "本地数据",
     "orConnectToDataSource": "或连接数据源（支持自动刷新）",
-    "addConnection": "添加连接",
-    "addConnectionDesc": "连接到新的数据库或数据服务",
+    "addConnection": "连接数据库",
+    "addConnectionDesc": "创建持久数据库连接",
     "connectorConnected": "已连接",
     "connectorDisconnected": "点击连接",
     "pickDataSourceType": "选择数据源类型以创建新连接。",
@@ -89,7 +89,7 @@
     "dataSourceTypes": "数据源",
     "folderPathPlaceholder": "/你的数据文件夹路径",
     "includeSubfolders": "包含子文件夹",
-    "localFolder": "本地文件夹",
+    "localFolder": "链接本地文件夹",
     "localFolderConnected": "本地文件夹",
     "localFolderDesc": "连接本地文件夹快速导入",
     "localFolderHint": "选择电脑上的文件夹以浏览和导入数据文件。",
@@ -131,6 +131,21 @@
     "messages": {
       "connectedTo": "已连接到「{{name}}」",
       "deletedConnector": "已删除连接器「{{name}}」"
+    },
+    "upgrade": {
+      "title": "数据连接器需要本地安装",
+      "subtitle": "浏览器模式下数据库连接器已禁用。在本地安装以使用完整功能。",
+      "featureDb": "连接实时数据库",
+      "featureDbDesc": "支持 MySQL、Postgres、Kusto、BigQuery、MongoDB、S3 等。",
+      "featureLocalFolder": "浏览本地文件夹及大文件",
+      "featureWorkspaces": "持久化工作区与代理知识",
+      "featureCredentials": "使用自己的模型密钥",
+      "pythonHint": "需要 Python 3.11 或更高版本。",
+      "installHeading": "安装与启动",
+      "copy": "复制",
+      "copied": "已复制",
+      "viewOnGithub": "在 GitHub 查看",
+      "viewOnPypi": "PyPI 包"
     }
   }
 }

@@ -26,8 +26,12 @@ import {
     alpha,
     CircularProgress,
     Backdrop,
+    Link,
+    Select,
+    MenuItem,
+    TextField,
 } from '@mui/material';
-import { borderColor, shadow, radius, transition } from '../app/tokens';
+import { borderColor, radius } from '../app/tokens';
 
 
 import { VisualizationViewFC } from './VisualizationView';
@@ -44,14 +48,14 @@ import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu, ConnectorInstance
 import { ReportView } from './ReportView';
 import { DataSourceSidebar } from './DataSourceSidebar';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import YouTubeIcon from '@mui/icons-material/YouTube';
 import { ExampleSession, exampleSessions, ExampleSessionCard, fetchExampleSessions } from './ExampleSessions';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 import type { DictTable } from '../components/ComponentType';
 import { useTranslation } from 'react-i18next';
 import { fetchWithIdentity, getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged } from '../app/workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, onWorkspaceListChanged, updateWorkspaceMeta } from '../app/workspaceService';
+import type { WorkspaceSummary } from '../app/workspaceService';
 import { AppDispatch } from '../app/store';
 import { generateUUID } from '../app/identity';
 import Card from '@mui/material/Card';
@@ -60,6 +64,8 @@ import IconButton from '@mui/material/IconButton';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -122,8 +128,20 @@ export const DataFormulatorFC = ({ }) => {
     }, []);
 
     // ── Workspace list (shown on landing page) ────────────────────
-    const [savedWorkspaces, setSavedWorkspaces] = useState<{id: string, display_name: string, saved_at: string | null}[]>([]);
+    const [savedWorkspaces, setSavedWorkspaces] = useState<WorkspaceSummary[]>([]);
     const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null);
+
+    // Inline rename: which card's title is currently being edited, and
+    // its draft text. Persisted via updateWorkspaceMeta on Enter / blur;
+    // reverted on Escape.
+    const [renamingWs, setRenamingWs] = useState<string | null>(null);
+    const [renameDraft, setRenameDraft] = useState<string>('');
+
+    // Sort key for the saved-workspaces grid. Default is creation time
+    // so the user's chronological list of work doesn't shuffle every
+    // time a workspace is touched.
+    type WsSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
+    const [wsSort, setWsSort] = useState<WsSortKey>('created_desc');
 
     const fetchWorkspaces = useCallback(async () => {
         try {
@@ -170,6 +188,44 @@ export const DataFormulatorFC = ({ }) => {
         setConfirmDeleteWs(null);
     }, [dispatch]);
 
+    const startRenameWorkspace = useCallback((id: string, currentName: string) => {
+        setRenamingWs(id);
+        setRenameDraft(currentName);
+    }, []);
+
+    const cancelRenameWorkspace = useCallback(() => {
+        setRenamingWs(null);
+        setRenameDraft('');
+    }, []);
+
+    const commitRenameWorkspace = useCallback(async () => {
+        const id = renamingWs;
+        if (!id) return;
+        const next = renameDraft.trim();
+        const current = savedWorkspaces.find(w => w.id === id);
+        // Bail without writing if nothing changed or the new name is empty.
+        if (!current || !next || next === current.display_name) {
+            cancelRenameWorkspace();
+            return;
+        }
+        // Optimistic update first so the UI reflects the change instantly;
+        // the next list refresh (via onWorkspaceListChanged) will reconcile.
+        setSavedWorkspaces(prev =>
+            prev.map(w => (w.id === id ? { ...w, display_name: next } : w)),
+        );
+        cancelRenameWorkspace();
+        try {
+            await updateWorkspaceMeta(id, next);
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'workspace', value: 'Failed to rename workspace',
+            }));
+            // On failure, refetch so the UI returns to the server's truth.
+            fetchWorkspaces();
+        }
+    }, [renamingWs, renameDraft, savedWorkspaces, cancelRenameWorkspace, dispatch, fetchWorkspaces]);
+
     const handleExportWorkspace = useCallback(async (name: string) => {
         try {
             const blob = await exportWorkspace(name);
@@ -199,6 +255,35 @@ export const DataFormulatorFC = ({ }) => {
         dispatch(dfActions.setSessionLoading({ loading: false }));
         if (importRef.current) importRef.current.value = '';
     }, [dispatch]);
+
+    // Sorted view of saved workspaces. We don't mutate the underlying
+    // list (the backend's response is the source of truth); we just
+    // produce a re-ordered copy for rendering.
+    const sortedSavedWorkspaces = useMemo(() => {
+        const cmpDate = (a: string | null | undefined, b: string | null | undefined): number => {
+            // Missing timestamps sort last regardless of direction so
+            // legacy entries don't dominate either end of the list.
+            if (!a && !b) return 0;
+            if (!a) return 1;
+            if (!b) return -1;
+            return a.localeCompare(b);
+        };
+        const copy = [...savedWorkspaces];
+        switch (wsSort) {
+            case 'created_desc':
+                return copy.sort((a, b) => cmpDate(b.created_at, a.created_at));
+            case 'created_asc':
+                return copy.sort((a, b) => cmpDate(a.created_at, b.created_at));
+            case 'updated_desc':
+                return copy.sort((a, b) => cmpDate(b.saved_at, a.saved_at));
+            case 'name_asc':
+                return copy.sort((a, b) =>
+                    (a.display_name || '').localeCompare(b.display_name || ''),
+                );
+            default:
+                return copy;
+        }
+    }, [savedWorkspaces, wsSort]);
     
     // Set up automatic refresh of derived tables when source data changes
     useDerivedTableRefresh();
@@ -516,29 +601,94 @@ export const DataFormulatorFC = ({ }) => {
                 textAlign: 'center', mb: 2}}>
                 {t('landing.tagline')}
             </Typography>
-            {serverConfig.PROJECT_FRONT_PAGE && (
-            <Box component="nav" aria-label="Resources" sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 3, flexWrap: 'wrap' }}>
-                <Button size="small" variant="text" color="primary"
-                    sx={{ textTransform: 'none', fontSize: 13 }}
-                    startIcon={<Box component="img" sx={{ width: 15, height: 15 }} alt="" aria-hidden="true" src="/pip-logo.svg" />}
-                    target="_blank" rel="noopener noreferrer"
-                    href="https://pypi.org/project/data-formulator/"
-                >{t('about.installLocally')}</Button>
-                <Button size="small" variant="text" color="primary"
-                    sx={{ textTransform: 'none', fontSize: 13 }}
-                    startIcon={<YouTubeIcon sx={{ color: '#FF0000', fontSize: 17 }} aria-hidden="true" />}
-                    target="_blank" rel="noopener noreferrer"
-                    href="https://www.youtube.com/watch?v=GfTE2FLyMrs"
-                >{t('about.video')}</Button>
-                <Button size="small" variant="text" color="primary"
-                    sx={{ textTransform: 'none', fontSize: 13 }}
-                    startIcon={<GitHubIcon aria-hidden="true" sx={{ fontSize: 17 }} />}
-                    target="_blank" rel="noopener noreferrer"
-                    href="https://github.com/microsoft/data-formulator"
-                >{t('about.github')}</Button>
-            </Box>
+
+            {/* Hosted-demo notice — borderless strip (it's prose, not a
+                button) placed before the Import Data section. The rocket
+                gets a quiet lift to add a touch of life. */}
+            {serverConfig.DISABLE_DATA_CONNECTORS && (
+                <Box
+                    sx={{
+                        mt: 2,
+                        mx: 'auto',
+                        maxWidth: 760,
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1.25,
+                        px: 0.5,
+                        py: 0.5,
+                        // Sparkle emoji twinkle. Modern browsers' filter:
+                        // drop-shadow honours the emoji's alpha channel,
+                        // so a small-radius shadow hugs the actual glyph
+                        // outline rather than a square box. We keep the
+                        // radius tight (1–2px) and the alpha modest so
+                        // the halo reads as a glow on the sparkle, not
+                        // a rectangle behind it.
+                        '& .df-sparkle': {
+                            display: 'inline-block',
+                            fontSize: 18,
+                            lineHeight: 1,
+                            animation: 'df-sparkle-twinkle 3.6s ease-in-out infinite',
+                            transformOrigin: 'center',
+                        },
+                        '@keyframes df-sparkle-twinkle': {
+                            '0%, 100%': {
+                                transform: 'scale(1) rotate(0deg)',
+                                filter: 'drop-shadow(0 0 0 rgba(255,200,80,0))',
+                            },
+                            '40%': {
+                                transform: 'scale(1.2) rotate(20deg)',
+                                filter: 'drop-shadow(0 0 2px rgba(255,200,80,0.85)) drop-shadow(0 0 1px rgba(255,180,40,0.6))',
+                            },
+                            '60%': {
+                                transform: 'scale(1.05) rotate(-10deg)',
+                                filter: 'drop-shadow(0 0 1px rgba(255,200,80,0.5))',
+                            },
+                        },
+                    }}
+                >
+                    <Box
+                        component="span"
+                        className="df-sparkle"
+                        role="img"
+                        aria-label="sparkles"
+                        sx={{ flexShrink: 0 }}
+                    >
+                        ✨
+                    </Box>
+                    <Typography
+                        variant="caption"
+                        sx={{ color: 'text.secondary', fontSize: 12.5, lineHeight: 1.5, flex: 1 }}
+                    >
+                        {t('landing.demoBannerBody', {
+                            defaultValue:
+                                'This is a demo site! Try the examples below or upload files. To work with large datasets, connect to databases, link local folders, create persisted analysis sessions, use custom models, and manage users, check the ',
+                        })}
+                        <Link
+                            href="https://github.com/microsoft/data-formulator"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            underline="hover"
+                            sx={{
+                                color: 'primary.main',
+                                '&:hover': { color: 'primary.dark' },
+                            }}
+                        >
+                            <GitHubIcon
+                                sx={{
+                                    fontSize: '1em',
+                                    verticalAlign: '-0.15em',
+                                    mr: 0.4,
+                                }}
+                            />
+                            {t('landing.demoBannerCta', { defaultValue: 'installation guide' })}
+                        </Link>
+                        {t('landing.demoBannerSuffix', { defaultValue: '.' })}
+                    </Typography>
+                </Box>
             )}
-            <Box sx={{my: 4}}>
+
+            <Box sx={{mt: 4}}>
                 <DataLoadMenu 
                     onSelectTab={(tab) => openUploadDialog(tab)}
                     onSelectConnector={(conn) => {
@@ -556,11 +706,14 @@ export const DataFormulatorFC = ({ }) => {
                     connectors={pageConnectors}
                 />
             </Box>
-            {/* ── Saved workspaces section ──────────────────────────── */}
+
+            {/* Demos — promoted ahead of "Your Sessions" on the hosted
+                demo, since first-time visitors won't have any sessions
+                yet and demos are the most engaging entry point. */}
             <Box sx={{mt: 4}}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
                     <Typography sx={{ color: 'text.secondary' }}>
-                        Your Sessions
+                        {t('landing.demos')}
                     </Typography>
                 </Divider>
                 <Box sx={{
@@ -568,17 +721,99 @@ export const DataFormulatorFC = ({ }) => {
                     gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
                     gap: 2,
                 }}>
-                    {savedWorkspaces.map(w => (
-                        <Card key={w.id} variant="outlined" onClick={() => handleOpenWorkspace(w.id)} sx={{
-                            position: 'relative', textAlign: 'left',
+                    {demoSessions.map((session) => (
+                        <ExampleSessionCard
+                            key={session.id}
+                            session={session}
+                            onClick={() => handleLoadExampleSession(session)}
+                        />
+                    ))}
+                </Box>
+            </Box>
+
+            {/* ── Saved workspaces section ──────────────────────────── */}
+            <Box sx={{mt: 4}}>
+                <Divider sx={{width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem'}}>
+                    <Typography sx={{ color: 'text.secondary' }}>
+                        Your Sessions
+                    </Typography>
+                </Divider>
+                {/* Sort control — placed in the upper-right of the section
+                    so it's visible without competing with the divider title. */}
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+                    <Select
+                        size="small"
+                        variant="standard"
+                        value={wsSort}
+                        onChange={(e) => setWsSort(e.target.value as typeof wsSort)}
+                        disableUnderline
+                        IconComponent={(props) => (
+                            <ExpandMoreIcon {...props} sx={{ fontSize: 16, color: 'text.disabled', right: 0 }} />
+                        )}
+                        sx={{
+                            fontSize: 12,
+                            color: 'text.disabled',
                             cursor: 'pointer',
-                            '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
+                            '& .MuiSelect-select': { py: 0.25, pl: 0, pr: '16px !important', minHeight: 0 },
+                            '&:hover': { color: 'text.secondary' },
+                            '&:hover .MuiSelect-icon': { color: 'text.secondary' },
+                        }}
+                        renderValue={(v) => {
+                            const labels: Record<typeof wsSort, string> = {
+                                created_desc: 'newest',
+                                created_asc: 'oldest',
+                                updated_desc: 'recently modified',
+                                name_asc: 'name',
+                            };
+                            return labels[v as typeof wsSort];
+                        }}
+                    >
+                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>newest first</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>oldest first</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>recently modified</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>name (a–z)</MenuItem>
+                    </Select>
+                </Box>
+                <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                    gap: 2,
+                }}>
+                    {sortedSavedWorkspaces.map(w => {
+                        const isRenaming = renamingWs === w.id;
+                        return (
+                        <Card key={w.id} variant="outlined" onClick={isRenaming ? undefined : () => handleOpenWorkspace(w.id)} sx={{
+                            position: 'relative', textAlign: 'left',
+                            cursor: isRenaming ? 'default' : 'pointer',
+                            '&:hover': isRenaming ? {} : { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
                             '&:hover .ws-actions': { opacity: 1 },
                         }}>
                             <CardContent sx={{ py: 1.5, px: 2 }}>
-                                <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
-                                    {w.display_name}
-                                </Typography>
+                                {isRenaming ? (
+                                    <TextField
+                                        autoFocus
+                                        fullWidth
+                                        variant="standard"
+                                        value={renameDraft}
+                                        onChange={(e) => setRenameDraft(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onBlur={commitRenameWorkspace}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                commitRenameWorkspace();
+                                            } else if (e.key === 'Escape') {
+                                                e.preventDefault();
+                                                cancelRenameWorkspace();
+                                            }
+                                        }}
+                                        slotProps={{ input: { sx: { fontSize: 14, fontWeight: 500 } } }}
+                                    />
+                                ) : (
+                                    <Typography variant="body2" fontWeight={500} noWrap sx={{ color: 'text.primary' }}>
+                                        {w.display_name}
+                                    </Typography>
+                                )}
                                 {w.saved_at && (
                                     <Typography variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
                                         {new Date(w.saved_at).toLocaleString()}
@@ -587,9 +822,17 @@ export const DataFormulatorFC = ({ }) => {
                             </CardContent>
                             <Box className="ws-actions" sx={{
                                 position: 'absolute', top: 4, right: 4,
-                                display: 'flex', gap: 0.25,
-                                opacity: 0, transition: 'opacity 0.15s',
+                                display: isRenaming ? 'none' : 'flex',
+                                gap: 0.25,
+                                opacity: 0,
+                                transition: 'opacity 0.15s',
                             }}>
+                                <Tooltip title="Rename">
+                                    <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
+                                        onClick={(e) => { e.stopPropagation(); startRenameWorkspace(w.id, w.display_name); }}>
+                                        <EditOutlinedIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
                                 <Tooltip title="Export">
                                     <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
                                         onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
@@ -604,7 +847,8 @@ export const DataFormulatorFC = ({ }) => {
                                 </Tooltip>
                             </Box>
                         </Card>
-                    ))}
+                        );
+                    })}
                     {/* Import workspace card */}
                     <Card variant="outlined" onClick={() => importRef.current?.click()} sx={{
                         textAlign: 'center', borderStyle: 'dashed',
@@ -635,26 +879,6 @@ export const DataFormulatorFC = ({ }) => {
                     </Button>
                 </DialogActions>
             </Dialog>
-            <Box sx={{mt: 4}}>
-                <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
-                    <Typography sx={{ color: 'text.secondary' }}>
-                        {t('landing.demos')}
-                    </Typography>
-                </Divider>
-                <Box sx={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                    gap: 2,
-                }}>
-                    {demoSessions.map((session) => (
-                        <ExampleSessionCard
-                            key={session.id}
-                            session={session}
-                            onClick={() => handleLoadExampleSession(session)}
-                        />
-                    ))}
-                </Box>
-            </Box>
         </Box>
         {footer}
     </Box>;

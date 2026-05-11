@@ -121,17 +121,38 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
         table_count: Optional[int] = None,
         chart_count: Optional[int] = None,
     ) -> None:
-        """Upload a lightweight ``workspace_meta.json`` blob for fast listing."""
+        """Upload a lightweight ``workspace_meta.json`` blob for fast listing.
+
+        ``createdAt`` is preserved across uploads — only set on the first
+        upload (or backfilled to the current ``updatedAt`` if missing for
+        a legacy workspace).
+        """
+        now_iso = datetime.now(tz=timezone.utc).isoformat()
+        blob_name = self._blob_name(workspace_id, WORKSPACE_META_FILENAME)
+
+        # Preserve createdAt if the meta blob already exists.
+        created_at = now_iso
+        if self._blob_exists(blob_name):
+            try:
+                existing = json.loads(self._download_blob(blob_name))
+                if existing.get("createdAt"):
+                    created_at = existing["createdAt"]
+                elif existing.get("updatedAt"):
+                    # Legacy meta without createdAt — backfill from updatedAt.
+                    created_at = existing["updatedAt"]
+            except Exception:
+                pass
+
         meta: dict = {
             "id": self._safe_id(workspace_id),
             "displayName": display_name,
-            "updatedAt": datetime.now(tz=timezone.utc).isoformat(),
+            "createdAt": created_at,
+            "updatedAt": now_iso,
         }
         if table_count is not None:
             meta["tableCount"] = table_count
         if chart_count is not None:
             meta["chartCount"] = chart_count
-        blob_name = self._blob_name(workspace_id, WORKSPACE_META_FILENAME)
         self._upload_blob(blob_name, json.dumps(meta, ensure_ascii=False))
 
     def _ensure_meta(self, workspace_id: str) -> dict:
@@ -183,6 +204,7 @@ class AzureBlobWorkspaceManager(WorkspaceManager):
             workspaces.append({
                 "id": ws_id,
                 "display_name": meta.get("displayName", ws_id),
+                "created_at": meta.get("createdAt") or meta.get("updatedAt"),
                 "updated_at": meta.get("updatedAt"),
                 "table_count": meta.get("tableCount"),
                 "chart_count": meta.get("chartCount"),

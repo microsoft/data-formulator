@@ -42,8 +42,8 @@
     "loadLocalData": "Load local data",
     "localData": "Local data",
     "orConnectToDataSource": "Or connect to a data source (with optional auto-refresh)",
-    "addConnection": "Add Connection",
-    "addConnectionDesc": "Connect to a new database or data service",
+    "addConnection": "Connect databases",
+    "addConnectionDesc": "Create a persistent database connection",
     "connectorConnected": "Connected",
     "connectorDisconnected": "Click to connect",
     "pickDataSourceType": "Choose a data source type to create a new connection.",
@@ -89,7 +89,7 @@
     "dataSourceTypes": "Data Sources",
     "folderPathPlaceholder": "/path/to/your/data/folder",
     "includeSubfolders": "Include subfolders",
-    "localFolder": "Local Folder",
+    "localFolder": "Link local folder",
     "localFolderConnected": "Local folder",
     "localFolderDesc": "Connect to a local folder for fast imports",
     "localFolderHint": "Select a folder on your computer to browse and import data files.",
@@ -131,6 +131,21 @@
     "messages": {
       "connectedTo": "Connected to \"{{name}}\"",
       "deletedConnector": "Deleted connector \"{{name}}\""
+    },
+    "upgrade": {
+      "title": "Data connectors require a local install",
+      "subtitle": "Database connectors are disabled in browser-only mode. Install locally for the full experience.",
+      "featureDb": "Connect to live databases",
+      "featureDbDesc": "MySQL, Postgres, Kusto, BigQuery, MongoDB, S3, and more.",
+      "featureLocalFolder": "Browse local folders & large files",
+      "featureWorkspaces": "Persistent workspaces & agent knowledge",
+      "featureCredentials": "Bring your own model keys",
+      "pythonHint": "Requires Python 3.11 or newer.",
+      "installHeading": "Install & launch",
+      "copy": "Copy",
+      "copied": "Copied",
+      "viewOnGithub": "View on GitHub",
+      "viewOnPypi": "PyPI package"
     }
   }
 }

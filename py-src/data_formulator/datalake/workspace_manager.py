@@ -88,13 +88,35 @@ class WorkspaceManager:
         table_count: Optional[int] = None,
         chart_count: Optional[int] = None,
     ) -> None:
-        """Write a lightweight ``workspace_meta.json`` used by list_workspaces."""
+        """Write a lightweight ``workspace_meta.json`` used by list_workspaces.
+
+        ``createdAt`` is preserved across writes — only set on the first
+        write (or backfilled to the current ``updatedAt`` if missing for a
+        legacy workspace).
+        """
         safe = self._safe_id(workspace_id)
         meta_file = self._root / safe / WORKSPACE_META_FILENAME
+        now_iso = datetime.now(tz=timezone.utc).isoformat()
+
+        # Preserve createdAt if the meta file already exists.
+        created_at = now_iso
+        if meta_file.exists():
+            try:
+                existing = json.loads(meta_file.read_text(encoding="utf-8"))
+                if existing.get("createdAt"):
+                    created_at = existing["createdAt"]
+                elif existing.get("updatedAt"):
+                    # Legacy meta without createdAt — backfill from updatedAt
+                    # so existing workspaces don't all jump to "just now".
+                    created_at = existing["updatedAt"]
+            except Exception:
+                pass
+
         meta: dict = {
             "id": safe,
             "displayName": display_name,
-            "updatedAt": datetime.now(tz=timezone.utc).isoformat(),
+            "createdAt": created_at,
+            "updatedAt": now_iso,
         }
         if table_count is not None:
             meta["tableCount"] = table_count
@@ -165,6 +187,7 @@ class WorkspaceManager:
             workspaces.append({
                 "id": child.name,
                 "display_name": meta.get("displayName", child.name),
+                "created_at": meta.get("createdAt") or meta.get("updatedAt"),
                 "updated_at": meta.get("updatedAt"),
                 "table_count": meta.get("tableCount"),
                 "chart_count": meta.get("chartCount"),

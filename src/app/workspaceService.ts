@@ -32,6 +32,7 @@ async function _getBackend(): Promise<'local' | 'azure_blob' | 'ephemeral'> {
 export interface WorkspaceSummary {
     id: string;
     display_name: string;
+    created_at: string | null;
     saved_at: string | null;
     table_count?: number | null;
     chart_count?: number | null;
@@ -62,6 +63,7 @@ export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
         return entries.map(e => ({
             id: e.id,
             display_name: e.displayName,
+            created_at: e.createdAt,
             saved_at: e.updatedAt,
         }));
     }

@@ -133,6 +133,7 @@ def list_sessions():
         entry: dict = {
             "id": w["id"],
             "display_name": w.get("display_name", w["id"]),
+            "created_at": w.get("created_at") or w.get("updated_at"),
             "saved_at": w.get("updated_at"),
         }
         if w.get("table_count") is not None:

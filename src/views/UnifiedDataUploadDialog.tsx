@@ -57,6 +57,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CloudIcon from '@mui/icons-material/Cloud';
 import LanguageIcon from '@mui/icons-material/Language';
 import { useTranslation } from 'react-i18next';
+import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
 
 export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore' | 'local-folder' | 'add-connection' | `connector:${string}`;
 
@@ -90,7 +91,12 @@ interface DataSourceCardProps {
     description: string;
     onClick: () => void;
     disabled?: boolean;
-    dashed?: boolean;
+    /**
+     *  - 'data'   (default) renders the standard data-source tile.
+     *  - 'action' renders a CTA-style card used by meta entries that
+     *    create a new connection (Add Connection, Link local folder).
+     */
+    variant?: 'data' | 'action';
     badge?: React.ReactNode;
 }
 
@@ -100,11 +106,12 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
     description, 
     onClick, 
     disabled = false,
-    dashed = false,
+    variant = 'data',
     badge,
 }) => {
     const theme = useTheme();
-    
+    const isAction = variant === 'action';
+
     const card = (
         <Paper
             elevation={0}
@@ -112,7 +119,11 @@ const DataSourceCard: React.FC<DataSourceCardProps> = ({
             sx={{
                 p: 1.5,
                 cursor: disabled ? 'not-allowed' : 'pointer',
-                border: `1px ${dashed ? 'dashed' : 'solid'} ${borderColor.divider}`,
+                // 'action' cards (e.g. Add Connection, Link local folder)
+                // create new connectors. A dashed outline reads as "empty
+                // slot to fill" — a clearer affordance than another solid
+                // tile sitting next to real data sources.
+                border: `1px ${isAction ? 'dashed' : 'solid'} ${borderColor.divider}`,
                 borderRadius: radius.sm,
                 opacity: disabled ? 0.5 : 1,
                 display: 'flex',
@@ -468,7 +479,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     ].filter(source => !(hideSampleDatasets && source.value === 'explore'));
 
     // Data connections — persistent configured sources (databases, services, etc.)
-    const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; dashed?: boolean }> = [
+    const connectionSources: Array<{ value: UploadTabType; title: string; description: string; icon: React.ReactNode; disabled: boolean; variant?: 'data' | 'action' }> = [
         // Per-connector cards — all instances
         ...connectors.map((conn) => {
             const isLocalFolder = conn.source_type === 'LocalFolderDataLoader' || conn.id.startsWith('local_folder');
@@ -485,23 +496,23 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 disabled: false,
             };
         }),
-        // "Local Folder" card (dashed, local mode only)
+        // "Local Folder" card (action variant, local mode only)
         ...(serverConfig?.IS_LOCAL_MODE ? [{
             value: 'local-folder' as UploadTabType,
-            title: t('upload.localFolder', { defaultValue: 'Connect Local Folder' }),
+            title: t('upload.localFolder', { defaultValue: 'Link local folder' }),
             description: t('upload.localFolderDesc', { defaultValue: 'Connect to a local folder for fast imports' }),
             icon: <AddIcon />,
             disabled: false,
-            dashed: true,
+            variant: 'action' as const,
         }] : []),
-        // "Add Connection" card (dashed style)
+        // "Add Connection" card (action variant)
         {
             value: 'add-connection' as UploadTabType,
-            title: t('upload.addConnection', { defaultValue: 'Add Connection' }),
-            description: t('upload.addConnectionDesc', { defaultValue: 'Connect to a new database or data service' }),
+            title: t('upload.addConnection', { defaultValue: 'Connect databases' }),
+            description: t('upload.addConnectionDesc', { defaultValue: 'Create a persistent database connection' }),
             icon: <AddIcon />,
             disabled: false,
-            dashed: true,
+            variant: 'action' as const,
         },
     ];
 
@@ -600,7 +611,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                             description={source.description}
                             onClick={() => handleConnectionClick(source.value)}
                             disabled={source.disabled}
-                            dashed={source.dashed}
+                            variant={source.variant}
                         />
                     ))}
                 </Box>
@@ -690,7 +701,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         description={source.description}
                         onClick={() => handleConnectionClick(source.value)}
                         disabled={source.disabled}
-                        dashed={source.dashed}
+                        variant={source.variant}
                     />
                 ))}
             </Box>
@@ -716,6 +727,9 @@ const AddConnectionPanel: React.FC<{
     onCreated: (connector: ConnectorInstance) => void;
 }> = ({ onCreated }) => {
     const { t } = useTranslation();
+    const disableConnectors = useSelector(
+        (state: DataFormulatorState) => state.serverConfig.DISABLE_DATA_CONNECTORS,
+    );
     const [loaderTypes, setLoaderTypes] = useState<LoaderType[]>([]);
     const [disabledLoaders, setDisabledLoaders] = useState<Record<string, {install_hint: string}>>({});
     const [selectedType, setSelectedType] = useState<string>('');
@@ -731,6 +745,7 @@ const AddConnectionPanel: React.FC<{
 
     // Fetch available loader types
     useEffect(() => {
+        if (disableConnectors) return;
         apiRequest<any>(CONNECTOR_URLS.DATA_LOADERS, { method: 'GET' })
             .then(({ data }) => {
                 setLoaderTypes(data.loaders || []);
@@ -741,7 +756,7 @@ const AddConnectionPanel: React.FC<{
                 }
             })
             .catch(() => { /* loader types unavailable — form will be empty */ });
-    }, []);
+    }, [disableConnectors]);
 
     const selectedLoader = loaderTypes.find(l => l.type === selectedType);
 
@@ -814,6 +829,13 @@ const AddConnectionPanel: React.FC<{
         borderRight: selectedType === typeKey ? 2 : 0,
         borderColor: 'primary.main',
     });
+
+    // Hosted/anonymous deployments disable connectors entirely. Replace the
+    // loader picker with an upgrade panel so visitors learn what they get
+    // by installing Data Formulator locally.
+    if (disableConnectors) {
+        return <LocalInstallUpgradePanel />;
+    }
 
     return (
         <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -1557,7 +1579,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             return found?.display_name || connId;
         }
         if (activeTab === 'add-connection') {
-            return t('upload.addConnection', { defaultValue: 'Add Connection' });
+            return t('upload.addConnection', { defaultValue: 'Connect databases' });
         }
         const tabTitles: Record<string, string> = {
             'menu': t('upload.title'),
@@ -1567,7 +1589,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             'extract': t('upload.dataAssistant'),
             'url': t('upload.loadFromUrl'),
             'database': t('upload.database'),
-            'local-folder': t('upload.localFolder', { defaultValue: 'Local Folder' }),
+            'local-folder': t('upload.localFolder', { defaultValue: 'Link local folder' }),
         };
         return tabTitles[activeTab] || t('upload.addData');
     };
@@ -1590,7 +1612,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             }}
         >
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 1 }}>
-                {activeTab !== 'menu' && (
+                {activeTab !== 'menu' && !(activeTab === 'add-connection' && serverConfig.DISABLE_DATA_CONNECTORS) && (
                     <IconButton
                         size="small"
                         onClick={() => setActiveTab('menu')}
