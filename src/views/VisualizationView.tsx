@@ -271,19 +271,37 @@ const VegaChartRenderer: FC<{
             return;
         }
 
-        const spec = assembleVegaChart(
-            chart.chartType,
-            chart.encodingMap,
-            conceptShelfItems,
-            visTableRows,
-            tableMetadata,
-            chartWidth,
-            chartHeight,
-            true,
-            chart.config,
-            scaleFactor,
-            maxStretchFactor,
-        );
+        // If a style variant is active, render its stored Vega-Lite spec instead of
+        // re-assembling from the encodingMap. Variants are user-authored "skins" of
+        // the chart (see ChartStyleVariant in components/ComponentType.tsx and
+        // design-docs/28-chart-style-refinement-agent.md). The variant spec was
+        // stored with the data block stripped — we re-attach live rows + override
+        // width/height here so the same variant works at any panel size.
+        const activeVariant = chart.activeVariantId
+            ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
+            : undefined;
+
+        let spec: any;
+        if (activeVariant) {
+            spec = JSON.parse(JSON.stringify(activeVariant.vlSpec));
+            spec.data = { values: visTableRows };
+            spec.width = chartWidth;
+            spec.height = chartHeight;
+        } else {
+            spec = assembleVegaChart(
+                chart.chartType,
+                chart.encodingMap,
+                conceptShelfItems,
+                visTableRows,
+                tableMetadata,
+                chartWidth,
+                chartHeight,
+                true,
+                chart.config,
+                scaleFactor,
+                maxStretchFactor,
+            );
+        }
 
         if (!spec || spec === "Table") {
             onSpecReady?.(null);
@@ -292,7 +310,8 @@ const VegaChartRenderer: FC<{
 
         // Seed chart config with heuristic-computed defaults for properties
         // the user hasn't explicitly set (e.g. independentYAxis toggle).
-        if (spec._computedConfig) {
+        // Variants don't carry computed config — the agent's spec is final.
+        if (!activeVariant && spec._computedConfig) {
             for (const [key, value] of Object.entries(spec._computedConfig)) {
                 if (chart.config?.[key] === undefined) {
                     dispatch(dfActions.updateChartConfig({ chartId: chart.id, key, value }));
@@ -331,7 +350,7 @@ const VegaChartRenderer: FC<{
             el.innerHTML = '';
         };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady, elementId]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady, elementId]);
 
     if (chart.chartType === "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>

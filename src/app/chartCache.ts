@@ -109,6 +109,8 @@ export function computeCacheKey(
     tableContentHash: string | undefined,
     tableId: string,
     tableMetadata?: any,
+    activeVariantId?: string,
+    activeVariantSpec?: any,
 ): string {
     return JSON.stringify({
         chartType,
@@ -117,5 +119,9 @@ export function computeCacheKey(
         tableRowCount,
         tableContentHash: tableContentHash || tableId,
         tableMetadata: tableMetadata || {},
+        // Variant fields are intentionally last so default-chart cache keys
+        // are stable across versions that didn't track variants.
+        activeVariantId: activeVariantId || null,
+        activeVariantSpec: activeVariantSpec || null,
     });
 }

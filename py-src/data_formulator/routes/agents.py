@@ -1112,6 +1112,111 @@ def nl_to_filter():
         raise classify_and_wrap_llm_error(e) from e
 
 
+@agent_bp.route('/classify-chart-intent', methods=['POST'])
+def classify_chart_intent():
+    """Classify a chart-prompt as STYLE or DATA.
+
+    Used by the encoding-shelf input on Enter to route the prompt to either
+    the chart-restyle agent (visual changes) or the data agent (data shape /
+    chart-type changes). Multilingual by design — keyword heuristics are too
+    brittle for non-English prompts. See agent_simple.classify_chart_intent
+    and the chat discussion in design history.
+
+    Request body:
+        model: model config object
+        instruction: str — the user's NL prompt
+
+    Response:
+        {status: "success", data: {intent: "style" | "data"}}
+        On any failure the agent itself defaults to 'data' (the safe choice);
+        only transport / model-config errors return non-2xx here.
+    """
+    try:
+        content = request.get_json() or {}
+        instruction = (content.get("instruction") or "").strip()
+        model_config = content.get("model")
+
+        if not instruction:
+            return json_ok({"intent": "data"})
+
+        if not model_config:
+            raise AppError(ErrorCode.INVALID_REQUEST, "No model configured")
+
+        client = get_client(model_config)
+        agent = SimpleAgents(client=client)
+        intent = agent.classify_chart_intent(instruction=instruction)
+        return json_ok({"intent": intent})
+
+    except AppError:
+        raise
+    except Exception as e:
+        logger.warning(f"classify-chart-intent failed: {e}")
+        raise classify_and_wrap_llm_error(e) from e
+
+
+# ---------------------------------------------------------------------------
+# Chart style refinement (restyle agent)
+# ---------------------------------------------------------------------------
+
+@agent_bp.route('/chart-restyle', methods=['POST'])
+def chart_restyle():
+    """Apply a natural-language STYLE instruction to a Vega-Lite spec.
+
+    Request body:
+        model: model config object (same shape as other agent routes)
+        instruction: str — the user's NL style instruction
+        vlSpec: dict — current Vega-Lite spec (data block already stripped client-side)
+        chartType: str — chart template label (e.g. "Bar Chart")
+        dataSample: list[dict] (optional) — first ~10 rows of the underlying table
+        columnDtypes: dict[str, str] (optional) — column name → dtype map
+
+    Response:
+        On success: {status: "success", data: {vlSpec: <new spec>, rationale: str}}
+        On out-of-scope (data change): {status: "success", data: {out_of_scope: True, rationale: str}}
+
+    See design-docs/28-chart-style-refinement-agent.md.
+    """
+    from data_formulator.agents.agent_chart_restyle import ChartRestyleAgent
+
+    if not request.is_json:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Invalid request format")
+
+    content = request.get_json() or {}
+    instruction = (content.get("instruction") or "").strip()
+    vl_spec = content.get("vlSpec")
+    chart_type = (content.get("chartType") or "").strip()
+    data_sample = content.get("dataSample") or []
+    column_dtypes = content.get("columnDtypes") or {}
+    style_reference_spec = content.get("styleReferenceSpec")
+    model_config = content.get("model")
+
+    if not instruction:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "Instruction is required")
+    if not isinstance(vl_spec, dict):
+        raise AppError(ErrorCode.VALIDATION_ERROR, "vlSpec must be a JSON object")
+    if not model_config:
+        raise AppError(ErrorCode.INVALID_REQUEST, "Model configuration is required")
+
+    client = get_client(model_config)
+
+    try:
+        agent = ChartRestyleAgent(client=client, language_instruction=get_language_instruction())
+        result = agent.run(
+            vl_spec=vl_spec,
+            instruction=instruction,
+            chart_type=chart_type,
+            data_sample=data_sample if isinstance(data_sample, list) else [],
+            column_dtypes=column_dtypes if isinstance(column_dtypes, dict) else {},
+            style_reference_spec=style_reference_spec if isinstance(style_reference_spec, dict) else None,
+        )
+        return json_ok(result)
+    except AppError:
+        raise
+    except Exception as e:
+        logger.warning("chart-restyle failed", exc_info=e)
+        raise classify_and_wrap_llm_error(e) from e
+
+
 # ---------------------------------------------------------------------------
 # Scratch folder APIs (for conversational data loading)
 # ---------------------------------------------------------------------------

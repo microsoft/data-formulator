@@ -9,6 +9,7 @@ from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_simple import SimpleAgents
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_chart_insight import ChartInsightAgent
+from data_formulator.agents.agent_chart_restyle import ChartRestyleAgent
 
 __all__ = [
     "DataTransformationAgent",
@@ -17,4 +18,5 @@ __all__ = [
     "SortDataAgent",
     "InteractiveExploreAgent",
     "ChartInsightAgent",
+    "ChartRestyleAgent",
 ]

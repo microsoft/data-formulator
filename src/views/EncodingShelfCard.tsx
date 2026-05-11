@@ -44,7 +44,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import React from 'react';
 import { useDragLayer } from 'react-dnd';
 import { ThinkingBufferEffect } from '../components/FunComponents';
-import { Channel, Chart, FieldItem, Trigger, duplicateChart } from "../components/ComponentType";
+import { Channel, Chart, FieldItem, Trigger, duplicateChart, ChartStyleVariant, computeEncodingFingerprint, isVariantStale } from "../components/ComponentType";
 
 import _ from 'lodash';
 
@@ -84,6 +84,8 @@ import '../scss/EncodingShelf.scss';
 import { DictTable } from "../components/ComponentType";
 
 import { resolveChartFields, assembleVegaChart, resolveRecommendedChart } from '../app/utils';
+import { buildSpecForRestyle, buildDataContext, callRestyleAgent, makeVariant } from '../app/restyle';
+import { classifyChartIntent } from '../app/intentClassifier';
 import { downscaleImageForAgent } from '../app/chartCache';
 import { EncodingBox } from './EncodingBox';
 
@@ -322,6 +324,37 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const triggerPrompt = trigger?.interaction?.find(e => e.role === 'instruction')?.content || '';
     let [prompt, setPrompt] = useState<string>(triggerPrompt);
 
+    // Restyle (chart style refinement agent) — see design-docs/28-chart-style-refinement-agent.md
+    const [isRestyling, setIsRestyling] = useState<boolean>(false);
+    // Per-variant refresh in progress (variantId being refreshed, or null).
+    const [refreshingVariantId, setRefreshingVariantId] = useState<string | null>(null);
+    // Intent-classifier round-trip in progress. Distinct from isRestyling so
+    // the UI can show a single "thinking" state on the submit button covering
+    // classify → route → execute. See submitPrompt() and the discussion in
+    // chat about routing on Enter.
+    const [isClassifying, setIsClassifying] = useState<boolean>(false);
+    // Phase shown in the inline status banner below the prompt input. Covers
+    // the whole submit pipeline so the user always knows what's happening:
+    //   classifying → restyling | formulating → idle.
+    // Set explicitly inside submitPrompt() and cleared by the effect below
+    // that watches chartSynthesisInProgress for the data-agent path.
+    const [submitPhase, setSubmitPhase] = useState<
+        'idle' | 'classifying' | 'restyling' | 'formulating'
+    >('idle');
+    const chartSynthesisInProgress = useSelector(
+        (state: DataFormulatorState) => state.chartSynthesisInProgress,
+    );
+    const isDataAgentRunning = chartSynthesisInProgress.includes(chartId);
+    // While we're in 'formulating' phase, watch the redux flag and clear the
+    // banner once the data agent finishes (success or error). The data agent
+    // is fire-and-forget from this card's perspective, so we can't rely on
+    // an explicit callback to mark completion.
+    useEffect(() => {
+        if (submitPhase === 'formulating' && !isDataAgentRunning) {
+            setSubmitPhase('idle');
+        }
+    }, [submitPhase, isDataAgentRunning]);
+
     useEffect(() => {
         setPrompt(triggerPrompt);
     }, [chartId]);
@@ -354,6 +387,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     }
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const activeModel = useSelector(dfSelectors.getActiveModel);
 
     let currentTable = getDataTable(chart, tables, allCharts, conceptShelfItems);
 
@@ -596,6 +630,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         newChart.id = `chart-${Date.now() - Math.floor(Math.random() * 10000)}`;
                         newChart.saved = false;
                         newChart.tableRef = candidateTable.id;
+                        // Style variants belong to the chart they were authored
+                        // against — don't carry them over to a follow-up chart.
+                        // (See design-docs/28-chart-style-refinement-agent.md.)
+                        newChart.styleVariants = undefined;
+                        newChart.activeVariantId = undefined;
                         let chartEncodings = refinedGoal['chart']?.['encodings'] || refinedGoal['chart_encodings'] || {};
                         newChart = resolveChartFields(newChart, currentConcepts, chartEncodings, candidateTable);
                     }
@@ -628,6 +667,426 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             },
         });
     }
+
+    // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
+    // Chip strip for navigating user-authored "skins" of the current chart's
+    // Vega-Lite spec. The active variant is rendered both in the focused
+    // canvas (VisualizationView) and in the data-thread thumbnail
+    // (ChartRenderService) so the preview matches what the user is editing.
+    // This UI is the only surface that manages variants for now.
+    const variants: ChartStyleVariant[] = chart.styleVariants ?? [];
+    const activeVariantId = chart.activeVariantId;
+
+    /**
+     * Build the spec to send to the restyle agent.
+     *
+     * If a style variant is currently active, we use ITS stored vlSpec as the
+     * starting point — that's the "stacking edits" path (e.g. `v2 = v1 + new
+     * tweak`). Otherwise we assemble the default spec from the chart's
+     * encodingMap. In both cases we strip the data block before sending; the
+     * agent never sees row content (we re-attach live data on render).
+     */
+
+    /**
+     * Choose a chip label for a new variant.
+     *
+     * The agent is asked to return a concise two-word label (e.g. "dark
+     * theme", "rotated labels"). We prefer that, falling back to a sequential
+     * `v1`, `v2`, ... if the agent didn't supply one. If the suggested label
+     * collides with an existing variant on the same chart, append a small
+     * suffix to keep chips unique.
+     */
+    const pickVariantLabel = (
+        suggested: string | undefined,
+        existing: ChartStyleVariant[],
+    ): string => {
+        const taken = new Set(existing.map(v => (v.label || v.id).toLowerCase()));
+        const cleaned = (suggested || '').trim().replace(/^["']+|["']+$/g, '').slice(0, 24);
+        const base = cleaned || `v${existing.length + 1}`;
+        if (!taken.has(base.toLowerCase())) return base;
+        for (let i = 2; i < 100; i++) {
+            const candidate = `${base} ${i}`;
+            if (!taken.has(candidate.toLowerCase())) return candidate;
+        }
+        return base;
+    };
+
+    /**
+     * Send the prompt to the chart restyle agent.
+     *
+     * Returns:
+     *   - 'success'      → variant added & activated
+     *   - 'out_of_scope' → restyle agent refused (data change in disguise);
+     *                      caller may chain to deriveNewData()
+     *   - 'error'        → infra failure (model not configured, transport, etc.)
+     *
+     * Either way the appropriate user-facing message is dispatched here, so
+     * the caller usually doesn't need to add its own. Exception: callers
+     * doing automatic style→data fallback typically want to *suppress* the
+     * out_of_scope toast since the system is already escalating.
+     */
+    const handleRestyleSubmit = async (
+        opts: { suppressOutOfScopeMessage?: boolean } = {},
+    ): Promise<'success' | 'out_of_scope' | 'error'> => {
+        const text = prompt.trim();
+        if (!text || isRestyling) return 'error';
+        if (!activeModel) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                component: 'chart restyle',
+                type: 'error',
+                value: 'No model is configured. Please select a model before restyling.',
+            }));
+            return 'error';
+        }
+        const activeVariant = activeVariantId
+            ? variants.find(v => v.id === activeVariantId)
+            : undefined;
+        const prepared = buildSpecForRestyle(chart, currentTable, conceptShelfItems, activeVariant);
+        if (!prepared) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                component: 'chart restyle',
+                type: 'error',
+                value: 'Cannot restyle this chart yet — make sure all required fields are encoded first.',
+            }));
+            return 'error';
+        }
+
+        const { dataSample, columnDtypes } = buildDataContext(currentTable);
+
+        setIsRestyling(true);
+        // Standard "chart agent working" signal — the visualization panel
+        // overlays a progress bar, the data thread shows a running indicator,
+        // and any duplicate triggers are blocked.
+        dispatch(dfActions.changeChartRunningStatus({ chartId, status: true }));
+        try {
+            const result = await callRestyleAgent({
+                instruction: text,
+                vlSpec: prepared.spec,
+                chartType: chart.chartType,
+                dataSample,
+                columnDtypes,
+                model: activeModel,
+            });
+
+            if (result.kind === 'out_of_scope') {
+                if (!opts.suppressOutOfScopeMessage) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        component: 'chart restyle',
+                        type: 'info',
+                        value: result.rationale
+                            ? `Style agent: "${result.rationale}" — try the formulate button instead for data changes.`
+                            : 'This looks like a data change. Use the formulate button instead.',
+                    }));
+                }
+                return 'out_of_scope';
+            }
+
+            const variant = makeVariant({
+                chart,
+                prompt: text,
+                vlSpec: result.vlSpec,
+                rationale: result.rationale,
+                // Prefer the agent-suggested two-word label; fall back to a
+                // sequential vN if the agent didn't supply one or it's empty.
+                // Disambiguate against existing labels so chips never collide.
+                label: pickVariantLabel(result.label, variants),
+                basedOnVariantId: prepared.basedOnVariantId,
+            });
+            dispatch(dfActions.addStyleVariant({ chartId, variant, activate: true }));
+            setPrompt('');
+            return 'success';
+        } catch (err: any) {
+            console.warn('[chart-restyle] failed', err);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                component: 'chart restyle',
+                type: 'error',
+                value: `Restyle failed: ${err?.message || String(err)}`,
+            }));
+            return 'error';
+        } finally {
+            setIsRestyling(false);
+            dispatch(dfActions.changeChartRunningStatus({ chartId, status: false }));
+        }
+    };
+
+    /**
+     * Single entry point for the input bubble's primary submit (Enter or the
+     * primary button). Routes the prompt to either the chart restyle agent
+     * (visual changes) or the data agent (data shape / chart-type changes)
+     * via a tiny LLM intent classifier.
+     *
+     * Style → data fallback: if the restyle agent comes back with
+     * out_of_scope (i.e. it decided this was actually a data change), we
+     * automatically retry with the data agent so the user doesn't have to
+     * re-press anything. The original out_of_scope toast is suppressed in
+     * that case to avoid the misleading "click formulate instead" hint.
+     *
+     * Heuristics-free: see src/app/intentClassifier.ts for the rationale
+     * behind a tiny LLM call vs. a keyword list (multilingual support).
+     */
+    const submitPrompt = async () => {
+        const text = prompt.trim();
+        if (!text) return;
+        if (isRestyling || isClassifying) return;
+        if (!activeModel) {
+            // Both agents need a model; the data agent path will surface its
+            // own error too, but failing fast here saves a classifier call.
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                component: 'chart builder',
+                type: 'error',
+                value: 'No model is configured. Please select a model before submitting.',
+            }));
+            return;
+        }
+
+        // If the chart isn't rendered yet there's nothing for the style
+        // agent to refine; just go straight to the data agent.
+        if (!isChartAvailable) {
+            setSubmitPhase('formulating');
+            deriveNewData(text, 'formulate');
+            return;
+        }
+
+        setIsClassifying(true);
+        setSubmitPhase('classifying');
+        let intent: 'style' | 'data' = 'data';
+        try {
+            intent = await classifyChartIntent(text, activeModel);
+        } finally {
+            setIsClassifying(false);
+        }
+
+        if (intent === 'data') {
+            setSubmitPhase('formulating');
+            deriveNewData(text, 'formulate');
+            return;
+        }
+
+        // intent === 'style' — try restyle first, fall back to data on out_of_scope
+        setSubmitPhase('restyling');
+        const result = await handleRestyleSubmit({ suppressOutOfScopeMessage: true });
+        if (result === 'out_of_scope') {
+            // The restyle agent decided this was actually a data change.
+            // Hand off to the data agent. The banner switches from
+            // "restyling…" to "formulating data…" so the user sees the route
+            // change without an extra click.
+            setSubmitPhase('formulating');
+            deriveNewData(text, 'formulate');
+            // submitPhase will flip to 'idle' once the data agent finishes
+            // (see the chartSynthesisInProgress effect above).
+        } else {
+            // success or error — restyle path is fully done, clear banner.
+            setSubmitPhase('idle');
+        }
+    };
+
+    /**
+     * Refresh a stale variant: re-run its stored prompt against the
+     * freshly-assembled current default spec, then replace the variant in
+    /**
+     * Refresh a stale variant: re-run its stored prompt against the
+     * freshly-assembled current default spec, then replace the variant in
+     * place (same id, new vlSpec, fresh fingerprint). The OLD variant spec
+     * is sent as a `styleReferenceSpec` so the agent preserves the visual
+     * choices the user originally made — refresh should feel like
+     * "re-apply this style with the new encoding", not "re-roll from
+     * scratch".
+     *
+     * Triggered automatically by clicking a stale chip.
+     */
+    const handleRefreshVariant = async (variant: ChartStyleVariant) => {
+        if (refreshingVariantId) return;
+        if (!activeModel) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                component: 'chart restyle',
+                type: 'error',
+                value: 'No model is configured. Please select a model before refreshing.',
+            }));
+            return;
+        }
+        // Refresh always starts from the current default spec (NOT the stale
+        // variant's spec) so we don't compound staleness. We re-run the
+        // variant's original prompt against the freshly-assembled spec, with
+        // the previous variant spec as a STYLE REFERENCE so visual choices
+        // carry forward.
+        const prepared = buildSpecForRestyle(chart, currentTable, conceptShelfItems);
+        if (!prepared) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                component: 'chart restyle',
+                type: 'error',
+                value: 'Cannot refresh — chart is not currently renderable.',
+            }));
+            return;
+        }
+        const { dataSample, columnDtypes } = buildDataContext(currentTable);
+
+        setRefreshingVariantId(variant.id);
+        // Surface the standard "chart agent working" signal in the canvas
+        // (LinearProgress overlay) while the refresh request is in flight.
+        dispatch(dfActions.changeChartRunningStatus({ chartId, status: true }));
+        try {
+            const result = await callRestyleAgent({
+                instruction: variant.prompt,
+                vlSpec: prepared.spec,
+                chartType: chart.chartType,
+                dataSample,
+                columnDtypes,
+                model: activeModel,
+                styleReferenceSpec: variant.vlSpec,
+            });
+            if (result.kind === 'out_of_scope') {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    component: 'chart restyle',
+                    type: 'info',
+                    value: result.rationale
+                        ? `Style agent: "${result.rationale}"`
+                        : 'Could not refresh this variant against the current encoding.',
+                }));
+                return;
+            }
+            dispatch(dfActions.updateStyleVariant({
+                chartId,
+                variantId: variant.id,
+                vlSpec: result.vlSpec,
+                rationale: result.rationale,
+                encodingFingerprint: computeEncodingFingerprint(chart),
+            }));
+        } catch (err: any) {
+            console.warn('[chart-restyle] refresh failed', err);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                component: 'chart restyle',
+                type: 'error',
+                value: `Refresh failed: ${err?.message || String(err)}`,
+            }));
+        } finally {
+            setRefreshingVariantId(null);
+            dispatch(dfActions.changeChartRunningStatus({ chartId, status: false }));
+        }
+    };
+
+    const renderVariantChip = (label: string, opts: {
+        active: boolean,
+        stale?: boolean,
+        refreshing?: boolean,
+        tooltip?: string,
+        onClick: () => void,
+        onDelete?: () => void,
+    }) => {
+        // Match the project's quiet-pill idiom (see IdeaChip in ChartRecBox.tsx):
+        // outlined, low-alpha border, neutral text color, very subtle hover.
+        // Active state is conveyed by a slightly stronger border + bg, not a
+        // saturated primary fill.
+        const accent = theme.palette.text.primary;
+        return (
+            <Box
+                key={label}
+                component="span"
+                onClick={opts.onClick}
+                title={opts.tooltip}
+                sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    height: 20,
+                    px: '6px',
+                    fontSize: 11,
+                    fontWeight: 400,
+                    lineHeight: 1.4,
+                    color: accent,
+                    fontFamily: theme.typography.fontFamily,
+                    borderRadius: '6px',
+                    border: `1px solid ${alpha(accent, opts.active ? 0.45 : 0.12)}`,
+                    borderStyle: opts.stale ? 'dashed' : 'solid',
+                    backgroundColor: opts.active ? alpha(accent, 0.1) : theme.palette.background.paper,
+                    cursor: 'pointer',
+                    opacity: opts.stale ? 0.65 : 1,
+                    transition: transition.fast,
+                    '&:hover': {
+                        backgroundColor: alpha(accent, opts.active ? 0.13 : 0.04),
+                    },
+                }}
+            >
+                {opts.refreshing && (
+                    <CircularProgress size={10} sx={{ color: alpha(accent, 0.5), mr: '-1px' }} />
+                )}
+                <span>{label}</span>
+                {opts.onDelete && (
+                    <Box
+                        component="span"
+                        role="button"
+                        aria-label="delete variant"
+                        onClick={(e) => { e.stopPropagation(); opts.onDelete?.(); }}
+                        sx={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 12,
+                            height: 12,
+                            borderRadius: '50%',
+                            color: alpha(accent, 0.4),
+                            cursor: 'pointer',
+                            '&:hover': {
+                                color: accent,
+                                backgroundColor: alpha(accent, 0.08),
+                            },
+                        }}
+                    >
+                        <CloseIcon sx={{ fontSize: 11 }} />
+                    </Box>
+                )}
+            </Box>
+        );
+    };
+
+    let variantChipStrip = (variants.length > 0) ? (
+        <Box key='variant-chip-strip' sx={{
+            display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5,
+            px: 0.5, mb: 0.5,
+        }}>
+            <Typography sx={{ fontSize: 10, color: 'text.secondary', mr: 0.25 }}>
+                style:
+            </Typography>
+            {renderVariantChip('default', {
+                active: !activeVariantId,
+                tooltip: 'Render the chart from its current encoding (no style refinement applied).',
+                onClick: () => dispatch(dfActions.setActiveVariant({ chartId, variantId: undefined })),
+            })}
+            {variants.map(v => {
+                const stale = isVariantStale(chart, v);
+                const refreshing = refreshingVariantId === v.id;
+                return renderVariantChip(v.label || v.id, {
+                    active: v.id === activeVariantId,
+                    stale,
+                    refreshing,
+                    tooltip: stale
+                        ? `Encoding has changed since this variant was created. Clicking will re-run the style agent against the current encoding.\n\nPrompt: ${v.prompt}`
+                        : (v.rationale ? `${v.rationale}\n\nPrompt: ${v.prompt}` : `Prompt: ${v.prompt}`),
+                    onClick: () => {
+                        // Activate immediately so the canvas shows what's
+                        // being refreshed; the spinner on the chip indicates
+                        // the agent call is in flight. On success the variant
+                        // is replaced in place and re-renders fresh.
+                        if (v.id !== activeVariantId) {
+                            dispatch(dfActions.setActiveVariant({ chartId, variantId: v.id }));
+                        }
+                        if (stale && !refreshing) {
+                            handleRefreshVariant(v);
+                        }
+                    },
+                    onDelete: () => dispatch(dfActions.deleteStyleVariant({ chartId, variantId: v.id })),
+                });
+            })}
+        </Box>
+    ) : null;
 
 
     // zip multiple components together
@@ -703,7 +1162,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
                     if (prompt.trim().length > 0) {
-                        deriveNewData(prompt, 'formulate');
+                        // submitPrompt routes via the intent classifier:
+                        // style requests go to the restyle agent; data /
+                        // chart-type requests go to deriveNewData.
+                        submitPrompt();
                     }
                 }
             }}
@@ -734,6 +1196,15 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     </IconButton>
                 </span>
             </Tooltip>
+            {/* Primary submit. The Enter key and this button both go through
+                submitPrompt(), which uses an LLM intent classifier to route
+                between the restyle agent and the data agent. The brush /
+                style-only button was removed in favor of this unified entry
+                point — if the classifier (or the user) is wrong, the restyle
+                agent's out_of_scope signal triggers an automatic data-agent
+                fallback. The trigger-override button below is kept because
+                it does something neither path does (re-derive into the same
+                table). See src/app/intentClassifier.ts. */}
             {trigger ? (() => {
                 const overrideTableId = tables.find(t => t.derive?.trigger === trigger)?.id;
                 return overrideTableId ? (
@@ -750,18 +1221,31 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 : 
                 <Tooltip title={t('encoding.formulate')}>
                     <span>
-                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }} disabled={!prompt.trim() && activeCustomFields.length === 0} onClick={() => { deriveNewData(prompt, 'formulate'); }}>
-                            <PrecisionManufacturing sx={{
-                                fontSize: 20,
-                                ...(isChartAvailable ? {} : {
-                                    animation: 'pulseAttention 3s ease-in-out infinite',
-                                    '@keyframes pulseAttention': {
-                                        '0%, 90%': { scale: 1 },
-                                        '95%': { scale: 1.2 },
-                                        '100%': { scale: 1 },
-                                    },
-                                }),
-                            }} />
+                        <IconButton size="small" color={"primary"} sx={{ p: 0.5 }}
+                            disabled={(!prompt.trim() && activeCustomFields.length === 0) || isClassifying || isRestyling}
+                            onClick={() => {
+                                if (prompt.trim()) {
+                                    submitPrompt();
+                                } else {
+                                    // No text — only the field shelf has
+                                    // changes. Skip the classifier and run
+                                    // the data agent directly.
+                                    deriveNewData(prompt, 'formulate');
+                                }
+                            }}>
+                            {(isClassifying || isRestyling)
+                                ? <CircularProgress size={18} sx={{ color: theme.palette.primary.main }} />
+                                : <PrecisionManufacturing sx={{
+                                    fontSize: 20,
+                                    ...(isChartAvailable ? {} : {
+                                        animation: 'pulseAttention 3s ease-in-out infinite',
+                                        '@keyframes pulseAttention': {
+                                            '0%, 90%': { scale: 1 },
+                                            '95%': { scale: 1.2 },
+                                            '100%': { scale: 1 },
+                                        },
+                                    }),
+                                }} />}
                         </IconButton>
                     </span>
                 </Tooltip>
@@ -1006,7 +1490,24 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 })()}
                 {encodingBoxGroups}
             </Box>
+            {variantChipStrip}
             {formulateInputBox}
+            {/* Inline status banner — shown right under the input bubble so
+                the user always knows what stage the agent is in. Covers the
+                three submit phases (classify → restyle/formulate). The data
+                agent has its own progress indicators elsewhere (running spinner
+                on the chart, status messages in the data thread); we keep this
+                line short and focused on telling the user *which* path was
+                chosen so the routing decision feels visible. */}
+            {submitPhase !== 'idle' && (
+                <Box sx={{ px: 1, py: 0.25, ml: '8px' }}>
+                    {ThinkingBanner(
+                        submitPhase === 'classifying' ? 'thinking…'
+                          : submitPhase === 'restyling' ? 'updating the chart…'
+                          : 'preparing data for the chart…'
+                    )}
+                </Box>
+            )}
         </Box>);
 
     const encodingShelfCard = (

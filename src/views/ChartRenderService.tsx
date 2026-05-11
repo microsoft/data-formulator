@@ -139,23 +139,36 @@ export const ChartRenderService: FC = () => {
             // Pre-aggregate for the encoding map
             visTableRows = prepVisTable(visTableRows, items, chart.encodingMap);
 
-            // --- Assemble full-size spec (with tooltips) ---
-            // We render at the default full size and scale down for the thumbnail,
-            // so the chart looks like a miniature of the real thing instead of a
-            // completely different chart due to Vega-Lite layout optimizations.
-            const fullSpec = assembleVegaChart(
-                chart.chartType,
-                chart.encodingMap,
-                items,
-                visTableRows,
-                table.metadata,
-                FULL_WIDTH,
-                FULL_HEIGHT,
-                true,   // add tooltips
-                chart.config,
-                1,
-                maxStretchFactor,
-            );
+            // --- Resolve the spec to render ---
+            // If a style variant is active, render its stored Vega-Lite spec so
+            // the thumbnail matches what the user sees in the focused canvas.
+            // Otherwise assemble the default spec from the encoding map.
+            // (See design-docs/28-chart-style-refinement-agent.md.)
+            const activeVariant = chart.activeVariantId
+                ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
+                : undefined;
+
+            let fullSpec: any;
+            if (activeVariant) {
+                fullSpec = JSON.parse(JSON.stringify(activeVariant.vlSpec));
+                fullSpec.data = { values: visTableRows };
+                fullSpec.width = FULL_WIDTH;
+                fullSpec.height = FULL_HEIGHT;
+            } else {
+                fullSpec = assembleVegaChart(
+                    chart.chartType,
+                    chart.encodingMap,
+                    items,
+                    visTableRows,
+                    table.metadata,
+                    FULL_WIDTH,
+                    FULL_HEIGHT,
+                    true,   // add tooltips
+                    chart.config,
+                    1,
+                    maxStretchFactor,
+                );
+            }
 
             if (!fullSpec || fullSpec === "Table") return;
             fullSpec['background'] = 'white';
@@ -221,6 +234,9 @@ export const ChartRenderService: FC = () => {
             if (!checkChartAvailability(chart, conceptShelfItems, table.rows)) continue;
 
             // Compute cache key and check if rendering is needed
+            const activeVariant = chart.activeVariantId
+                ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
+                : undefined;
             const cacheKey = computeCacheKey(
                 chart.chartType,
                 chart.encodingMap,
@@ -229,6 +245,8 @@ export const ChartRenderService: FC = () => {
                 table.contentHash,
                 table.id,
                 table.metadata,
+                activeVariant?.id,
+                activeVariant?.vlSpec,
             );
 
             const cached = getCachedChart(chart.id);

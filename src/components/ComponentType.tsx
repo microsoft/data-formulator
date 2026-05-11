@@ -327,6 +327,26 @@ export interface ChartInsight {
     key: string;  // "chartType|sortedFieldIds" — used to detect staleness
 }
 
+/**
+ * A user-authored "skin" of a chart: a Vega-Lite spec edited via the
+ * style/restyle agent. Variants share the chart's encoding and data — they
+ * only change visual presentation. See design-docs/28-chart-style-refinement-agent.md.
+ *
+ * Stored on `Chart` so they persist with the chart and don't pollute the data thread.
+ * Currently rendered ONLY in the focused chart canvas (VisualizationView);
+ * thumbnails and exports continue to use the assembled default spec.
+ */
+export interface ChartStyleVariant {
+    id: string,                   // stable id, e.g. "v-<timestamp>"
+    label?: string,               // user-editable; defaults to "v1", "v2"…
+    prompt: string,               // the natural-language instruction that produced this spec
+    vlSpec: any,                  // full Vega-Lite spec (data block stripped — re-attached at render)
+    basedOnVariantId?: string,    // lineage for "edit v2 → v3"; undefined = derived from default
+    encodingFingerprint: string,  // see computeEncodingFingerprint(); used to detect staleness
+    createdAt: number,
+    rationale?: string,           // optional one-line explanation from the agent
+}
+
 export type Chart = { 
     id: string, 
     chartType: string, 
@@ -337,6 +357,8 @@ export type Chart = {
     config?: Record<string, any>,  // additional chart properties defined by the chart template
     thumbnail?: string,  // PNG data URL for thumbnail display (managed by ChartRenderService, not persisted)
     insight?: ChartInsight,  // AI-generated insight about the visualization
+    styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
+    activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
 }
 
 /** Compute a string key for insight invalidation: chartType|sortedFieldIds */
@@ -348,6 +370,24 @@ export function computeInsightKey(chart: Chart): string {
     return `${chart.chartType}|${fieldIds.join(',')}`;
 }
 
+/**
+ * Fingerprint of the chart's structural identity for variant staleness detection.
+ * A variant is "stale" iff its stored encodingFingerprint != fingerprintOf(currentChart).
+ * Includes chartType + sorted (channel, fieldID, aggregate) tuples — anything that
+ * meaningfully changes what the chart depicts. Excludes config (purely cosmetic).
+ */
+export function computeEncodingFingerprint(chart: Pick<Chart, 'chartType' | 'encodingMap'>): string {
+    const tuples = Object.entries(chart.encodingMap)
+        .map(([ch, enc]) => `${ch}:${enc?.fieldID ?? ''}:${enc?.aggregate ?? ''}`)
+        .sort();
+    return `${chart.chartType}|${tuples.join('|')}`;
+}
+
+/** True iff the variant was authored against an encoding that no longer matches the chart. */
+export function isVariantStale(chart: Chart, variant: ChartStyleVariant): boolean {
+    return variant.encodingFingerprint !== computeEncodingFingerprint(chart);
+}
+
 export let duplicateChart = (chart: Chart) : Chart => {
     return {
         id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`,
@@ -357,6 +397,9 @@ export let duplicateChart = (chart: Chart) : Chart => {
         saved: false,
         source: chart.source,
         config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
+        // styleVariants are intentionally NOT copied: they are user-authored
+        // refinements tied to the chart they were created on. A duplicate is a
+        // fresh canvas. (See design-docs/28-chart-style-refinement-agent.md.)
     }
 }
 

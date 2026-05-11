@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger, computeInsightKey, ChartInsight, ChartStyleVariant, DraftNode, InteractionEntry, DeriveStatus, ChatMessage, PendingTableLoad, PendingClarification } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
@@ -1024,7 +1024,12 @@ export const dataFormulatorSlice = createSlice({
                         }
                     }
                 }
-                
+
+                // Chart type changed — any active variant was authored against
+                // the old structure, so step out of it. The variants stay in
+                // the chip strip (marked stale) for the user to revisit.
+                chart.activeVariantId = undefined;
+
                 dfSelectors.replaceChart(state, chart);
             }
         },
@@ -1068,6 +1073,57 @@ export const dataFormulatorSlice = createSlice({
                 chart.insight = action.payload.insight;
             }
         },
+        // --- Style variants (see design-docs/28-chart-style-refinement-agent.md) ---
+        // Variants are user-authored "skins" of a chart's Vega-Lite spec. They live
+        // on Chart, persist with the session, and drive both the focused canvas
+        // (VisualizationView) and the thread thumbnail (ChartRenderService) so
+        // the preview reflects whichever variant the user has active.
+        addStyleVariant: (state, action: PayloadAction<{chartId: string, variant: ChartStyleVariant, activate?: boolean}>) => {
+            const { chartId, variant, activate } = action.payload;
+            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            if (!chart) return;
+            if (!chart.styleVariants) chart.styleVariants = [];
+            chart.styleVariants.push(variant);
+            if (activate !== false) {
+                chart.activeVariantId = variant.id;
+            }
+        },
+        setActiveVariant: (state, action: PayloadAction<{chartId: string, variantId: string | undefined}>) => {
+            const { chartId, variantId } = action.payload;
+            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            if (!chart) return;
+            chart.activeVariantId = variantId;
+        },
+        deleteStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string}>) => {
+            const { chartId, variantId } = action.payload;
+            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            if (!chart || !chart.styleVariants) return;
+            chart.styleVariants = chart.styleVariants.filter(v => v.id !== variantId);
+            if (chart.activeVariantId === variantId) {
+                chart.activeVariantId = undefined;
+            }
+            if (chart.styleVariants.length === 0) {
+                chart.styleVariants = undefined;
+            }
+        },
+        renameStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, label: string}>) => {
+            const { chartId, variantId, label } = action.payload;
+            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            const v = chart?.styleVariants?.find(v => v.id === variantId);
+            if (v) v.label = label;
+        },
+        // Replace a variant's spec in place — used by the "refresh stale variant"
+        // flow (overlay in VisualizationView). The variant id stays the same so
+        // the chip doesn't visibly disappear and re-appear.
+        updateStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, vlSpec: any, rationale?: string, encodingFingerprint?: string}>) => {
+            const { chartId, variantId, vlSpec, rationale, encodingFingerprint } = action.payload;
+            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            const v = chart?.styleVariants?.find(v => v.id === variantId);
+            if (!v) return;
+            v.vlSpec = vlSpec;
+            if (rationale !== undefined) v.rationale = rationale;
+            if (encodingFingerprint !== undefined) v.encodingFingerprint = encodingFingerprint;
+        },
         updateChartEncoding: (state, action: PayloadAction<{chartId: string, channel: Channel, encoding: EncodingItem}>) => {
             let chartId = action.payload.chartId;
             let channel = action.payload.channel;
@@ -1075,6 +1131,11 @@ export const dataFormulatorSlice = createSlice({
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
             if (chart) {
                 chart.encodingMap[channel] = encoding;
+                // Auto-revert to default whenever the user edits the encoding so
+                // the canvas reflects what they're editing. Existing variants
+                // stay in the chip strip (now stale). See
+                // design-docs/28-chart-style-refinement-agent.md §4.7.
+                if (chart.activeVariantId) chart.activeVariantId = undefined;
             }
         },
         updateChartEncodingProp: (state, action: PayloadAction<{chartId: string, channel: Channel, prop: string, value: any}>) => {
@@ -1088,25 +1149,44 @@ export const dataFormulatorSlice = createSlice({
             if (chart) {
                 //TODO: check this, finding reference and directly update??
                 let encoding = chart.encodingMap[channel];
+                // Track whether the prop value actually changed so we only
+                // invalidate the active variant on real edits. Without this
+                // check, no-op dispatches (e.g. EncodingBox's auto-sort
+                // useEffect re-firing on chart switch) silently reset
+                // chart.activeVariantId back to "default".
+                let changed = false;
                 if (prop == 'fieldID') {
+                    if (encoding.fieldID !== value) changed = true;
                     encoding.fieldID = value;
 
                     // automatcially fetch the auto-sort order from the field
                     let field = state.conceptShelfItems.find(f => f.id == value);
                     if (table && field && table.metadata[field.name] && table.metadata[field.name].levels && table.metadata[field.name].levels.length > 0) {
-                        encoding.sortBy = JSON.stringify(table.metadata[field.name].levels);
+                        const nextSortBy = JSON.stringify(table.metadata[field.name].levels);
+                        if (encoding.sortBy !== nextSortBy) changed = true;
+                        encoding.sortBy = nextSortBy;
                     }
                 } else if (prop == 'aggregate') {
+                    if (encoding.aggregate !== value) changed = true;
                     encoding.aggregate = value;
                 } else if (prop == "sortOrder") {
-                    encoding.sortOrder = value == "auto" ? undefined : value;
+                    const next = value == "auto" ? undefined : value;
+                    if (encoding.sortOrder !== next) changed = true;
+                    encoding.sortOrder = next;
                 } else if (prop == "sortBy") {
-                    encoding.sortBy = value == "auto" ? undefined : value;
+                    const next = value == "auto" ? undefined : value;
+                    if (encoding.sortBy !== next) changed = true;
+                    encoding.sortBy = next;
                 } else if (prop == "scheme") {
+                    if (encoding.scheme !== value) changed = true;
                     encoding.scheme = value;
                 } else if (prop == "dtype") {
+                    if (encoding.dtype !== value) changed = true;
                     encoding.dtype = value;
                 }
+                // Auto-revert to default when the encoding actually changes
+                // (see above). No-op updates must NOT clear the variant.
+                if (changed && chart.activeVariantId) chart.activeVariantId = undefined;
             }
         },
         swapChartEncoding: (state, action: PayloadAction<{chartId: string, channel1: Channel, channel2: Channel}>) => {
@@ -1121,6 +1201,8 @@ export const dataFormulatorSlice = createSlice({
 
                 chart.encodingMap[channel1] = { fieldID: enc2.fieldID, aggregate: enc2.aggregate, sortBy: enc2.sortBy, sortOrder: enc2.sortOrder };
                 chart.encodingMap[channel2] = { fieldID: enc1.fieldID, aggregate: enc1.aggregate, sortBy: enc1.sortBy, sortOrder: enc1.sortOrder };
+                // Auto-revert to default when the encoding changes (see above).
+                if (chart.activeVariantId) chart.activeVariantId = undefined;
             }
         },
         addConceptItems: (state, action: PayloadAction<FieldItem[]>) => {

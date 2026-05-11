@@ -64,6 +64,23 @@ _WORKSPACE_NAME_SYSTEM_PROMPT = (
 )
 
 
+_CHART_INTENT_SYSTEM_PROMPT = (
+    "Route a chart edit request to one of two agents.\n"
+    "\n"
+    "  STYLE — restyling and presentation tweaks: colors, themes, fonts, axis\n"
+    "    labels, legends, sort order, scale type, swapping or hiding existing\n"
+    "    encodings. The chart's data stays as-is.\n"
+    "\n"
+    "  DATA — anything that needs new data: filter rows, compute a new column,\n"
+    "    re-aggregate, join another table, change to a chart that needs a\n"
+    "    column the table doesn't have.\n"
+    "\n"
+    "Mixed requests count as DATA. When in doubt, prefer DATA.\n"
+    "\n"
+    "Requests may be in any language. Reply with one word: STYLE or DATA."
+)
+
+
 # ---------------------------------------------------------------------------
 # Class
 # ---------------------------------------------------------------------------
@@ -164,3 +181,44 @@ class SimpleAgents:
 
         logger.info(f"[SimpleAgents.workspace_name] done | \"{display_name}\"")
         return display_name
+
+    # -- Chart prompt intent classifier -------------------------------------
+
+    def classify_chart_intent(self, instruction: str) -> str:
+        """Classify a chart-prompt as STYLE or DATA.
+
+        Used by the encoding-shelf input on Enter to decide whether to send
+        the prompt to the chart-restyle agent (cheap, single LLM call,
+        modifies vlSpec only) or to the full data agent (data shape changes,
+        new fields, chart-type changes, etc.).
+
+        Multilingual by design — keyword heuristics are too brittle for
+        non-English prompts. Returns 'style' or 'data' (always lowercase).
+
+        On any failure, returns 'data' as the safe default — the data agent
+        can handle anything; mistakenly sending a style request there is
+        slower but produces a usable result.
+        """
+        text = (instruction or "").strip()
+        if not text:
+            return "data"
+
+        messages = [
+            {"role": "system", "content": _CHART_INTENT_SYSTEM_PROMPT},
+            {"role": "user", "content": text},
+        ]
+
+        try:
+            response = self.client.get_completion(messages=messages)
+            raw = (response.choices[0].message.content or "").strip().upper()
+        except Exception as e:
+            logger.warning("[SimpleAgents.classify_chart_intent] LLM call failed: %s", e)
+            return "data"
+
+        # The model may add stray punctuation/quotes despite the prompt; be lenient.
+        if "STYLE" in raw and "DATA" not in raw:
+            verdict = "style"
+        else:
+            verdict = "data"
+        logger.info("[SimpleAgents.classify_chart_intent] %r -> %s", text[:80], verdict)
+        return verdict
