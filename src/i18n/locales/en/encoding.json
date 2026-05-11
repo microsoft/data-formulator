@@ -77,7 +77,7 @@
     "refreshIdeas": "Refresh ideas",
     "stylePresetsTooltip": "Restyle chart as…",
     "stylePresetsHeader": "Restyle chart as",
-    "stylePresetsHint": "Or describe your own style above.",
+    "stylePresetsHint": "Or describe a style in the input box — e.g. \"use a teal palette\", \"bold the title\", \"rotate axis labels\", \"annotate the peak\".",
     "formulationSucceeded": "Data formulation for {{fields}} succeeded.",
     "formulationFailed": "Data formulation failed."
   }

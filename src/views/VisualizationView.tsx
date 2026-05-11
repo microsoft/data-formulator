@@ -46,6 +46,7 @@ import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchChartInsight } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
+import { buildEmbeddedDataForChart } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
 import { Chart, EncodingItem, EncodingMap, FieldItem, computeInsightKey } from '../components/ComponentType';
@@ -284,7 +285,15 @@ const VegaChartRenderer: FC<{
         let spec: any;
         if (activeVariant) {
             spec = JSON.parse(JSON.stringify(activeVariant.vlSpec));
-            spec.data = { values: visTableRows };
+            // Re-attach data using the same conversion the assemble pipeline
+            // would apply (e.g. Year 1980 → "1980"). Variants store axis
+            // formats and timeUnit choices that were chosen against the
+            // converted data; plugging in raw rows here would mismatch
+            // those formats. See buildEmbeddedDataForChart.
+            const variantValues = buildEmbeddedDataForChart(
+                chart, visTableRows, tableMetadata, conceptShelfItems,
+            );
+            spec.data = { values: variantValues };
             spec.width = chartWidth;
             spec.height = chartHeight;
         } else {

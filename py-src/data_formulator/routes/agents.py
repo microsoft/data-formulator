@@ -1168,7 +1168,6 @@ def chart_restyle():
         vlSpec: dict — current Vega-Lite spec (data block already stripped client-side)
         chartType: str — chart template label (e.g. "Bar Chart")
         dataSample: list[dict] (optional) — first ~10 rows of the underlying table
-        columnDtypes: dict[str, str] (optional) — column name → dtype map
 
     Response:
         On success: {status: "success", data: {vlSpec: <new spec>, rationale: str}}
@@ -1186,7 +1185,6 @@ def chart_restyle():
     vl_spec = content.get("vlSpec")
     chart_type = (content.get("chartType") or "").strip()
     data_sample = content.get("dataSample") or []
-    column_dtypes = content.get("columnDtypes") or {}
     style_reference_spec = content.get("styleReferenceSpec")
     model_config = content.get("model")
 
@@ -1206,7 +1204,6 @@ def chart_restyle():
             instruction=instruction,
             chart_type=chart_type,
             data_sample=data_sample if isinstance(data_sample, list) else [],
-            column_dtypes=column_dtypes if isinstance(column_dtypes, dict) else {},
             style_reference_spec=style_reference_spec if isinstance(style_reference_spec, dict) else None,
         )
         return json_ok(result)

@@ -77,7 +77,7 @@
     "refreshIdeas": "刷新想法",
     "stylePresetsTooltip": "重新设置图表样式为…",
     "stylePresetsHeader": "重新设置图表样式为",
-    "stylePresetsHint": "或在上方描述你想要的样式。",
+    "stylePresetsHint": "或在输入框中描述样式 — 例如 \"使用青色配色\"、\"加粗标题\"、\"旋转坐标轴标签\"、\"标注峰值\"。",
     "formulationSucceeded": "{{fields}} 的数据构建成功。",
     "formulationFailed": "数据构建失败。"
   }

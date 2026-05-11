@@ -17,6 +17,43 @@ import { apiRequest } from './apiClient';
 import { checkChartAvailability } from '../views/ChartUtils';
 
 /**
+ * Compute the data values that the assemble pipeline embeds into a chart's
+ * Vega-Lite spec for this (chart, table) pair.
+ *
+ * Why this exists: `assembleVegaChart` runs `convertTemporalData` and other
+ * format normalizations (e.g. Year 1980 → "1980") on the rows before
+ * embedding them. Style variants are stored with their `data` block stripped,
+ * so naively re-attaching `table.rows` at render time skips those
+ * conversions — the variant's baked-in axis formats and date encodings then
+ * mismatch the data and the chart looks wrong (e.g. years rendered as
+ * sub-year ticks). Use this helper as the single source of truth for the
+ * data that should be plugged into a variant spec, and for the data sample
+ * shown to the restyle agent (so the sample matches what is actually
+ * rendered).
+ *
+ * Returns the unmodified rows if assembly fails, so callers always get
+ * something back.
+ */
+export function buildEmbeddedDataForChart(
+    chart: Chart,
+    rows: any[],
+    tableMetadata: any,
+    conceptShelfItems: FieldItem[],
+): any[] {
+    const fullSpec = assembleVegaChart(
+        chart.chartType,
+        chart.encodingMap,
+        conceptShelfItems,
+        rows,
+        tableMetadata,
+        300, 300, false, chart.config,
+    );
+    if (!fullSpec || fullSpec === 'Table') return rows;
+    const values = (fullSpec as any)?.data?.values;
+    return Array.isArray(values) ? values : rows;
+}
+
+/**
  * Build the Vega-Lite spec to send to the restyle agent.
  *
  * - If `basedOnVariant` is provided (stacking edits or refreshing a stale
@@ -25,51 +62,63 @@ import { checkChartAvailability } from '../views/ChartUtils';
  *
  * In both cases the `data` block is stripped before sending — the agent
  * never sees row content; the renderer re-attaches live data on output.
+ *
+ * `embeddedData` is the post-conversion data values the assemble pipeline
+ * would embed for this chart (see `buildEmbeddedDataForChart`). Callers use
+ * it both as the source for the agent's data sample and as the values to
+ * re-attach when rendering the returned variant spec, so the sample seen by
+ * the agent and the rows actually rendered stay aligned.
  */
 export function buildSpecForRestyle(
     chart: Chart,
     table: DictTable,
     conceptShelfItems: FieldItem[],
     basedOnVariant?: ChartStyleVariant,
-): { spec: any; basedOnVariantId?: string } | null {
+): { spec: any; basedOnVariantId?: string; embeddedData: any[] } | null {
     if (!table) return null;
     if (!checkChartAvailability(chart, conceptShelfItems, table.rows)) return null;
+
+    const fullSpec = assembleVegaChart(
+        chart.chartType,
+        chart.encodingMap,
+        conceptShelfItems,
+        table.rows,
+        table.metadata,
+        300, 300, true, chart.config,
+    );
+    if (!fullSpec || fullSpec === 'Table') return null;
+    const embeddedValues = (fullSpec as any)?.data?.values;
+    const embeddedData: any[] = Array.isArray(embeddedValues) ? embeddedValues : table.rows;
 
     let spec: any;
     if (basedOnVariant) {
         spec = JSON.parse(JSON.stringify(basedOnVariant.vlSpec));
     } else {
-        const fullSpec = assembleVegaChart(
-            chart.chartType,
-            chart.encodingMap,
-            conceptShelfItems,
-            table.rows,
-            table.metadata,
-            300, 300, true, chart.config,
-        );
-        if (!fullSpec || fullSpec === 'Table') return null;
         spec = JSON.parse(JSON.stringify(fullSpec));
         delete spec._computedConfig;
     }
     delete spec.data;
-    return { spec, basedOnVariantId: basedOnVariant?.id };
+    return { spec, basedOnVariantId: basedOnVariant?.id, embeddedData };
 }
 
 /**
- * Build the small data-sample + dtype-map payload the agent uses to reason
- * about ranges and label sizes without seeing the whole table.
+ * Build the small data sample the agent uses to reason about value ranges,
+ * label sizes, and formatting without seeing the whole table.
+ *
+ * `embeddedData` (when provided) should be the post-conversion values that
+ * `assembleVegaChart` would embed in the spec — see
+ * `buildEmbeddedDataForChart`. Sampling from it (instead of `table.rows`)
+ * lets the agent see the same string forms it will see in the spec (e.g.
+ * Year as `"1980"` not `1980`), which keeps any axis formats it suggests
+ * consistent with the data the renderer actually plugs in.
  */
-export function buildDataContext(table: DictTable): {
-    dataSample: any[];
-    columnDtypes: Record<string, string>;
-} {
-    const dataSample = table.rows.slice(0, 10);
-    const columnDtypes: Record<string, string> = {};
-    for (const [name, meta] of Object.entries(table.metadata || {})) {
-        const dtype = (meta as any)?.type ?? (meta as any)?.dtype;
-        if (dtype) columnDtypes[name] = String(dtype);
-    }
-    return { dataSample, columnDtypes };
+export function buildDataContext(
+    table: DictTable,
+    embeddedData?: any[],
+): { dataSample: any[] } {
+    const source = embeddedData && embeddedData.length > 0 ? embeddedData : table.rows;
+    const dataSample = source.slice(0, 10);
+    return { dataSample };
 }
 
 export type RestyleResult =
@@ -88,7 +137,6 @@ export async function callRestyleAgent(args: {
     vlSpec: any;
     chartType: string;
     dataSample: any[];
-    columnDtypes: Record<string, string>;
     model: any;
     /** Optional. When refreshing a stale variant, pass the old variant's
      *  vlSpec here so the agent preserves its visual choices. */
@@ -102,7 +150,6 @@ export async function callRestyleAgent(args: {
             vlSpec: args.vlSpec,
             chartType: args.chartType,
             dataSample: args.dataSample,
-            columnDtypes: args.columnDtypes,
             styleReferenceSpec: args.styleReferenceSpec,
             model: args.model,
         }),

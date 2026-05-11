@@ -836,7 +836,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             return 'error';
         }
 
-        const { dataSample, columnDtypes } = buildDataContext(currentTable);
+        // Sample from the spec-embedded data (already converted by
+        // assembleVegaChart) instead of raw table rows so the agent sees the
+        // same string forms the renderer will plug back in.
+        const { dataSample } = buildDataContext(currentTable, prepared.embeddedData);
 
         setIsRestyling(true);
         // Standard "chart agent working" signal — the visualization panel
@@ -849,7 +852,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 vlSpec: prepared.spec,
                 chartType: chart.chartType,
                 dataSample,
-                columnDtypes,
                 model: activeModel,
             });
 
@@ -1010,7 +1012,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             }));
             return;
         }
-        const { dataSample, columnDtypes } = buildDataContext(currentTable);
+        const { dataSample } = buildDataContext(currentTable, prepared.embeddedData);
 
         setRefreshingVariantId(variant.id);
         // Surface the standard "chart agent working" signal in the canvas
@@ -1022,7 +1024,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 vlSpec: prepared.spec,
                 chartType: chart.chartType,
                 dataSample,
-                columnDtypes,
                 model: activeModel,
                 styleReferenceSpec: variant.vlSpec,
             });
@@ -1300,7 +1301,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 transformOrigin={{ vertical: 'top', horizontal: 'left' }}
                 slotProps={{
                     paper: {
-                        sx: { minWidth: 180, mt: 0.5 },
+                        sx: { minWidth: 220, maxWidth: 260, mt: 0.5 },
                     },
                 }}
             >
@@ -1331,8 +1332,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         </Typography>
                     </MenuItem>
                 ))}
-                <Box sx={{ px: 1.5, py: 0.5 }}>
-                    <Typography sx={{ fontSize: 10.5, color: alpha(theme.palette.text.primary, 0.4), fontStyle: 'italic', lineHeight: 1.35 }}>
+                <Box sx={{ px: 1.5, py: 0.75, mt: 0.25 }}>
+                    <Typography sx={{ fontSize: 10.5, color: alpha(theme.palette.text.primary, 0.4), fontStyle: 'italic', lineHeight: 1.4, whiteSpace: 'normal' }}>
                         {t('encoding.stylePresetsHint')}
                     </Typography>
                 </Box>

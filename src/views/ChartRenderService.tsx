@@ -22,6 +22,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { Chart, DictTable, FieldItem } from '../components/ComponentType';
 import { assembleVegaChart, prepVisTable } from '../app/utils';
+import { buildEmbeddedDataForChart } from '../app/restyle';
 import { getDataTable, checkChartAvailability } from './ChartUtils';
 import { getCachedChart, setCachedChart, computeCacheKey, invalidateChart, ChartCacheEntry } from '../app/chartCache';
 import { compile } from 'vega-lite';
@@ -151,7 +152,14 @@ export const ChartRenderService: FC = () => {
             let fullSpec: any;
             if (activeVariant) {
                 fullSpec = JSON.parse(JSON.stringify(activeVariant.vlSpec));
-                fullSpec.data = { values: visTableRows };
+                // Plug data using the same conversion the assemble pipeline
+                // applies (e.g. Year 1980 → "1980"). Variants embed axis
+                // formats / timeUnit chosen against the converted shape, so
+                // re-attaching raw rows would mismatch those formats.
+                const variantValues = buildEmbeddedDataForChart(
+                    chart, visTableRows, table.metadata, items,
+                );
+                fullSpec.data = { values: variantValues };
                 fullSpec.width = FULL_WIDTH;
                 fullSpec.height = FULL_HEIGHT;
             } else {

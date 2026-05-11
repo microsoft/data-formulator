@@ -32,7 +32,7 @@ SYSTEM_PROMPT = r'''You are a Vega-Lite chart-edit assistant.
 
 You will be given:
 - A Vega-Lite spec for the chart the user is currently looking at (the `data` block has been stripped — assume real rows are attached at render time)
-- A small sample of the underlying data (head rows + column dtypes)
+- A small sample of the underlying data (head rows)
 - A natural-language instruction describing the change the user wants
 - The chart type label (e.g. "Bar Chart")
 - Optionally, a STYLE REFERENCE spec from a previous version of this chart that captures the visual style the user wants preserved
@@ -72,7 +72,6 @@ class ChartRestyleAgent(object):
         instruction: str,
         chart_type: str,
         data_sample: list[dict] | None = None,
-        column_dtypes: dict[str, str] | None = None,
         style_reference_spec: dict | None = None,
     ) -> dict:
         """Generate a restyled spec.
@@ -83,7 +82,6 @@ class ChartRestyleAgent(object):
             chart_type: The chart template label (e.g. "Bar Chart").
             data_sample: A few sample rows so the agent can reason about
                 value ranges and label lengths. Optional.
-            column_dtypes: { column_name: dtype } map. Optional.
             style_reference_spec: An older Vega-Lite spec whose visual style
                 the agent should follow closely. Used by the "refresh stale
                 variant" flow so the new spec preserves the look the user
@@ -95,10 +93,6 @@ class ChartRestyleAgent(object):
         """
         # Build the user message.
         parts: list[str] = [f"[CHART TYPE]\n{chart_type}\n"]
-
-        if column_dtypes:
-            dtype_lines = [f"- {name}: {dt}" for name, dt in column_dtypes.items()]
-            parts.append("[COLUMN DTYPES]\n" + "\n".join(dtype_lines) + "\n")
 
         if data_sample:
             try:
