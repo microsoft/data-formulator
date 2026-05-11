@@ -41,8 +41,13 @@ class Client(object):
                 self.params["azure_ad_token_provider"] = token_provider
             self.params["custom_llm_provider"] = "azure"
         elif self.endpoint == "ollama":
-            self.params["api_base"] = api_base if api_base else "http://localhost:11434"
-            self.params["max_tokens"] = self.params["max_completion_tokens"]
+            ollama_base = api_base if api_base else "http://localhost:11434"
+            # LiteLLM appends "/api/generate" itself, so strip a user-supplied
+            # trailing "/api" (and any trailing slashes) to avoid "/api/api/generate".
+            ollama_base = ollama_base.rstrip("/")
+            if ollama_base.endswith("/api"):
+                ollama_base = ollama_base[: -len("/api")]
+            self.params["api_base"] = ollama_base
             if model.startswith("ollama/"):
                 self.model = model
             else:

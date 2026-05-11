@@ -362,7 +362,8 @@ export const ModelSelectionButton: React.FC<{}> = ({ }) => {
                 <TableRow
                     sx={{
                         cursor: selectable ? 'pointer' : 'default',
-                        opacity: selectable ? 1 : 0.5,
+                        // Don't dim error rows so the Retest button and error message remain clearly clickable.
+                        opacity: selectable || status === 'error' ? 1 : 0.5,
                         backgroundColor: isSelected ? alpha(theme.palette.primary.main, 0.04) : 'transparent',
                         outline: isSelected ? `2px solid ${theme.palette.primary.main}` : 'none',
                         outlineOffset: -2,
