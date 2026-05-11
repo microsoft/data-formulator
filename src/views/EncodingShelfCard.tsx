@@ -129,6 +129,7 @@ import CloseIcon from '@mui/icons-material/Close';
 
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import { IdeaChip } from './ChartRecBox';
 import { useFormulateData } from '../app/useFormulateData';
 
@@ -288,6 +289,71 @@ export const TriggerCard: FC<{
 }
 
 
+/**
+ * One-click style presets surfaced in the bottom-left palette menu of the
+ * follow-up speech bubble. Each entry maps to a detailed natural-language
+ * instruction that is fed directly to the chart restyle agent (bypassing the
+ * intent classifier — we already know this is a style change).
+ *
+ * Labels are short so the menu stays compact; descriptions are one-liners
+ * shown as secondary text. Keep the instructions self-contained (they replace
+ * whatever the user has typed) and concrete enough that the agent can map
+ * them to specific Vega-Lite config blocks (typography, color, gridlines,
+ * background, title alignment, etc.).
+ */
+interface StylePreset {
+    key: string;
+    label: string;
+    description: string;
+    instruction: string;
+}
+
+const STYLE_PRESETS: StylePreset[] = [
+    {
+        key: 'nyt',
+        label: 'New York Times',
+        description: 'Editorial newsroom look',
+        instruction:
+            'Restyle this chart in the New York Times editorial style.',
+    },
+    {
+        key: 'economist',
+        label: 'The Economist',
+        description: 'Magazine print look',
+        instruction:
+            'Restyle this chart in The Economist style.',
+    },
+    {
+        key: 'fivethirtyeight',
+        label: 'FiveThirtyEight',
+        description: 'Analytical blog look',
+        instruction:
+            'Restyle this chart in the FiveThirtyEight (538) blog style.',
+    },
+    {
+        key: 'minimal',
+        label: 'Minimal',
+        description: 'Clean and pared-back',
+        instruction:
+            'Restyle this chart in a minimal, pared-back modernist style.',
+    },
+    {
+        key: 'dark',
+        label: 'Dark Mode',
+        description: 'Dark theme',
+        instruction:
+            'Restyle this chart for a dark theme.',
+    },
+    {
+        key: 'presentation',
+        label: 'Presentation',
+        description: 'Optimized for slides',
+        instruction:
+            'Restyle this chart for a slide-deck presentation, optimized for being viewed at a distance.',
+    },
+];
+
+
 export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId }) {
     const { t } = useTranslation();
     const theme = useTheme();
@@ -366,6 +432,12 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     const [chartTypeMenuOpen, setChartTypeMenuOpen] = useState<boolean>(false);
     const [encodingHovered, setEncodingHovered] = useState<boolean>(false);
+
+    // Anchor for the bottom-left "style presets" menu in the follow-up
+    // speech bubble. A preset click sends a detailed style instruction
+    // straight to the restyle agent (no intent classification needed —
+    // these are guaranteed style-only changes by construction).
+    const [stylePresetAnchor, setStylePresetAnchor] = useState<HTMLElement | null>(null);
 
     // Auto-expand encoding shelf when dragging a concept or operator card
     const { isDraggingField } = useDragLayer((monitor) => ({
@@ -726,9 +798,20 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
      * out_of_scope toast since the system is already escalating.
      */
     const handleRestyleSubmit = async (
-        opts: { suppressOutOfScopeMessage?: boolean } = {},
+        opts: {
+            suppressOutOfScopeMessage?: boolean;
+            instructionOverride?: string;
+        } = {},
     ): Promise<'success' | 'out_of_scope' | 'error'> => {
-        const text = prompt.trim();
+        // When `instructionOverride` is provided (e.g. a one-click style
+        // preset from the bottom-left menu) we use that as the instruction
+        // instead of the textbox, and we leave the textbox untouched on
+        // success so the user's draft isn't destroyed.
+        const usingOverride = typeof opts.instructionOverride === 'string'
+            && opts.instructionOverride.trim().length > 0;
+        const text = usingOverride
+            ? (opts.instructionOverride as string).trim()
+            : prompt.trim();
         if (!text || isRestyling) return 'error';
         if (!activeModel) {
             dispatch(dfActions.addMessages({
@@ -796,7 +879,9 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 basedOnVariantId: prepared.basedOnVariantId,
             });
             dispatch(dfActions.addStyleVariant({ chartId, variant, activate: true }));
-            setPrompt('');
+            if (!usingOverride) {
+                setPrompt('');
+            }
             return 'success';
         } catch (err: any) {
             console.warn('[chart-restyle] failed', err);
@@ -1181,8 +1266,80 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         />
         <Box sx={{
             display: 'flex', flexDirection: 'row', alignItems: 'center',
-            justifyContent: 'flex-end',
+            justifyContent: 'space-between',
         }}>
+            {/* Left group: one-click style presets. Clicking the palette
+                icon opens a menu of curated "style sheets" (NYT, Economist,
+                FiveThirtyEight, minimal, dark mode, presentation). Each
+                preset sends a detailed style instruction straight to the
+                restyle agent — bypassing the intent classifier since these
+                are guaranteed style-only changes. The user can still type
+                freeform instructions in the textbox above; the menu's
+                footer hint reminds them of that. */}
+            <Tooltip title={t('encoding.stylePresetsTooltip')}>
+                <span>
+                    <IconButton
+                        size="small"
+                        disabled={!isChartAvailable || isClassifying || isRestyling}
+                        sx={{
+                            p: 0.5,
+                            color: alpha(theme.palette.text.primary, 0.55),
+                            '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.08) },
+                        }}
+                        onClick={(e) => setStylePresetAnchor(e.currentTarget)}
+                    >
+                        <PaletteOutlinedIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                </span>
+            </Tooltip>
+            <Menu
+                anchorEl={stylePresetAnchor}
+                open={Boolean(stylePresetAnchor)}
+                onClose={() => setStylePresetAnchor(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                slotProps={{
+                    paper: {
+                        sx: { minWidth: 180, mt: 0.5 },
+                    },
+                }}
+            >
+                <Box sx={{ px: 1.5, pt: 0.75, pb: 0.25 }}>
+                    <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        {t('encoding.stylePresetsHeader')}
+                    </Typography>
+                </Box>
+                {STYLE_PRESETS.map((preset) => (
+                    <MenuItem
+                        key={preset.key}
+                        dense
+                        onClick={() => {
+                            setStylePresetAnchor(null);
+                            // Style presets are unambiguous style changes —
+                            // skip the intent classifier and send the
+                            // detailed instruction straight to the restyle
+                            // agent. We also drive submitPhase so the inline
+                            // status banner above shows "restyling…".
+                            setSubmitPhase('restyling');
+                            handleRestyleSubmit({ instructionOverride: preset.instruction })
+                                .finally(() => setSubmitPhase('idle'));
+                        }}
+                        sx={{ py: 0.5 }}
+                    >
+                        <Typography sx={{ fontSize: 12, lineHeight: 1.3 }}>
+                            {preset.label}
+                        </Typography>
+                    </MenuItem>
+                ))}
+                <Box sx={{ px: 1.5, py: 0.5 }}>
+                    <Typography sx={{ fontSize: 10.5, color: alpha(theme.palette.text.primary, 0.4), fontStyle: 'italic', lineHeight: 1.35 }}>
+                        {t('encoding.stylePresetsHint')}
+                    </Typography>
+                </Box>
+            </Menu>
+
+            {/* Right group: tips/ideas + primary submit. */}
+            <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
             <Tooltip title={currentChartIdeas.length > 0 ? t('encoding.refreshIdeas') : t('encoding.getIdeas')}>
                 <span>
                     <IconButton size="small"
@@ -1250,6 +1407,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     </span>
                 </Tooltip>
             }           
+            </Box>
         </Box>
     </Card>
 

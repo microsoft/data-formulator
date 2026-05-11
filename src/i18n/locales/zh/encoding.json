@@ -73,8 +73,11 @@
     "sortOrderLabel": "排序顺序：",
     "autoSortFailed": "无法执行自动排序。",
     "autoSortServerError": "服务器问题导致无法执行自动排序。",
-    "followUpChartPlaceholder": "基于此图表快速跟进",
+    "followUpChartPlaceholder": "调整图表样式或继续分析",
     "refreshIdeas": "刷新想法",
+    "stylePresetsTooltip": "重新设置图表样式为…",
+    "stylePresetsHeader": "重新设置图表样式为",
+    "stylePresetsHint": "或在上方描述你想要的样式。",
     "formulationSucceeded": "{{fields}} 的数据构建成功。",
     "formulationFailed": "数据构建失败。"
   }

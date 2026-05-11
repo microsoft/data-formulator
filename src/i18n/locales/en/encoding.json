@@ -73,8 +73,11 @@
     "sortOrderLabel": "Sort Order:",
     "autoSortFailed": "unable to perform auto-sort.",
     "autoSortServerError": "unable to perform auto-sort due to server issue.",
-    "followUpChartPlaceholder": "quick follow-up from this chart",
+    "followUpChartPlaceholder": "update chart style or follow-up analysis",
     "refreshIdeas": "Refresh ideas",
+    "stylePresetsTooltip": "Restyle chart as…",
+    "stylePresetsHeader": "Restyle chart as",
+    "stylePresetsHint": "Or describe your own style above.",
     "formulationSucceeded": "Data formulation for {{fields}} succeeded.",
     "formulationFailed": "Data formulation failed."
   }
