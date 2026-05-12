@@ -33,14 +33,14 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 
 ## News 🔥🔥🔥
 
-[03-18-2026] **Data Formulator 0.7 (alpha)** — More charts, new experience, enterprise-ready
--  📊 **30 chart types** with a new semantic chart engine (area, streamgraph, candlestick, pie, radar, maps, and more).
--  💬 **Hybrid chat + data thread** — chat woven into the exploration timeline with lineage, previews, and reasoning.
--  🤖 **Unified `DataAgent`** replacing four separate agents, plus new recommendation and insight agents.
--  🏗️ **Workspace / Data Lake** — persistent, identity-based data management with local and Azure Blob backends.
--  🔒 **Security hardening** — code signing, sandboxed execution, authentication, and rate limiting.
--  📦 **UV-first build** — reproducible builds via `uv.lock`; `uv sync` + `uv run data_formulator`.
--  📝 Detailed writeup on the new architecture coming soon — stay tuned!
+[05-11-2026] **Data Formulator 0.7 (alpha 2)** — A new chapter for AI-powered data exploration
+-  🔌 **Data connectors** — first-class persistent connection to Superset, Kusto, Cosmos DB, MySQL, PostgreSQL, MSSQL, S3, Azure Blob, BigQuery, and more, with SSO, lazy catalog loading, search, and smart filters.
+-  💬 **Conversational agent with thread memory** — a unified `DataAgent` that weaves explanation, exploration, visualization, and recommendation into one fluid conversation, carrying context across turns so the agent stays in sync with your train of thought.
+-  🗂️ **Persistent session & workspace management** — identity-isolated workspaces with local and Azure Blob backends; sessions persist across restarts with timestamps and sort.
+-  📊 **Expressive visualization** — 30+ chart types via a new semantic chart engine (area, streamgraph, candlestick, pie, radar, maps, …), plus a chart style-refinement agent that turns rough charts into presentation-ready visuals: restyle in one click, refine typography, color, layout, and annotations through natural language.
+-  📚 **Knowledge distillation (experimental)** — agents distill reusable skills and experiences from your sessions into a shared knowledge library that informs future sessions.
+
+> Install the pre-release with `pip install --pre data-formulator` or pin `==0.7.0a2`.
 
 > [!TIP]
 > **Are you a developer?** Join us to shape the future of AI-powered data exploration!
