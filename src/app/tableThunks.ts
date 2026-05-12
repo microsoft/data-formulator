@@ -14,29 +14,44 @@
 
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import { DataSourceConfig, DictTable } from '../components/ComponentType';
-import { Type } from '../data/types';
+import { Type, mapApiTypeToAppType } from '../data/types';
 import { inferTypeFromValueArray } from '../data/utils';
-import { fetchWithIdentity, getUrls, computeContentHash } from './utils';
+import { getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
+import { apiRequest } from './apiClient';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
+import { tableDataDB } from './workspaceDB';
+import i18n from '../i18n';
+
+/** Gzip-compress a string into a Blob using the browser's CompressionStream API. */
+async function compressBlob(data: string): Promise<Blob> {
+    const blob = new Blob([new TextEncoder().encode(data)]);
+    const cs = new CompressionStream('gzip');
+    const compressedStream = blob.stream().pipeThrough(cs);
+    return new Response(compressedStream).blob();
+}
 
 export interface LoadTablePayload {
     // The table data (already parsed into rows/names/metadata on the frontend)
     table: DictTable;
     
-    // Whether to store on the server workspace (true) or keep local-only (false)
-    storeOnServer: boolean;
-    
     // For file uploads to server: the raw File object
     file?: File;
     
-    // For database sources loaded via external data loader:
-    dataLoaderType?: string;
-    dataLoaderParams?: Record<string, string>;
-    sourceTableName?: string;
+    // When true, the backend deletes all existing tables from the same source
+    // file before creating the new table.  Used by "Load All" to clean up
+    // orphaned sheets when re-uploading a file.
+    replaceSource?: boolean;
+
+    // For database sources loaded via data connector:
+    sourceTableRef?: SourceTableRef;
+    connectorId?: string;
     importOptions?: {
-        rowLimit?: number;
         sortColumns?: string[];
+        sort_columns?: string[];
         sortOrder?: 'asc' | 'desc';
+        sort_order?: 'asc' | 'desc';
+        conditions?: { column: string; operator: string; value?: any }[];
+        source_filters?: Record<string, any>[];
     };
 }
 
@@ -50,12 +65,9 @@ export interface LoadTableResult {
 /**
  * Unified thunk to load a table from any source.
  * 
- * Routes:
- * - storeOnServer=true + file/paste/url/example/extract: POST to /api/tables/create-table
- * - storeOnServer=true + database: use existing /api/tables/data-loader/ingest-data 
- *   (caller should have already ingested; table comes from workspace list)
- * - storeOnServer=false + database: call /api/tables/data-loader/fetch-data (new endpoint)
- * - storeOnServer=false + other: keep data local, apply frontendRowLimit
+ * Storage is determined by the server config:
+ * - local / azure_blob: store on server (workspace parquet)
+ * - ephemeral: keep data local (frontend-owned, sent with each request)
  * 
  * In all cases: adds table to Redux state + fetches semantic types
  */
@@ -66,145 +78,147 @@ export const loadTable = createAsyncThunk<
 >(
     'dataFormulator/loadTable',
     async (payload, { dispatch, getState }) => {
-        const { table, storeOnServer, file, dataLoaderType, dataLoaderParams, sourceTableName, importOptions } = payload;
+        const { table, file, replaceSource, sourceTableRef, connectorId, importOptions } = payload;
         const state = getState();
-        const frontendRowLimit = state.config?.frontendRowLimit ?? 50000;
+        const frontendRowLimit = state.config?.frontendRowLimit ?? 2_000_000;
         const existingTables = state.tables;
 
+        // Storage determined by backend config
+        const storeOnServer = state.serverConfig?.WORKSPACE_BACKEND !== 'ephemeral';
+
         // === DUPLICATE CHECK ===
-        // Check if a table with the same id already exists locally
-        const existingById = existingTables.find(t => t.id === table.id);
-        if (existingById) {
-            // Table with same id already loaded — just focus it
-            dispatch(dfActions.setFocused({ type: 'table', tableId: existingById.id }));
-            return { table: existingById, duplicate: true };
-        }
+        // Skip when replaceSource is true — the user explicitly wants to
+        // refresh / replace data, so we must reach the server to trigger
+        // the source-file cleanup even if hashes match.
+        if (!replaceSource) {
+            const existingById = existingTables.find(t => t.id === table.id);
+            if (existingById) {
+                dispatch(dfActions.setFocused({ type: 'table', tableId: existingById.id }));
+                return { table: existingById, duplicate: true };
+            }
 
-        // Check by content hash — avoid loading identical data under a different name
-        const incomingHash = table.contentHash || computeContentHash(table.rows, table.names);
-        const existingByContent = existingTables.find(t => {
-            if (!t.contentHash) return false;
-            return t.contentHash === incomingHash;
-        });
-        if (existingByContent) {
-            dispatch(dfActions.setFocused({ type: 'table', tableId: existingByContent.id }));
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'warning',
-                component: 'data loader',
-                value: `This data is identical to the already-loaded table "${existingByContent.displayId}". Skipped duplicate load.`,
-            }));
-            return { table: existingByContent, duplicate: true };
-        }
+            const incomingHash = table.contentHash || computeContentHash(table.rows, table.names);
+            const existingByContent = existingTables.find(t => {
+                if (!t.contentHash) return false;
+                return t.contentHash === incomingHash;
+            });
+            if (existingByContent) {
+                dispatch(dfActions.setFocused({ type: 'table', tableId: existingByContent.id }));
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'warning',
+                    component: 'data loader',
+                    value: `This data is identical to the already-loaded table "${existingByContent.displayId}". Skipped duplicate load.`,
+                }));
+                return { table: existingByContent, duplicate: true };
+            }
 
-        // For workspace / virtual tables loaded from the DB manager, also check if the
-        // same workspace table (by virtual tableId) is already in the frontend.
-        if (table.virtual) {
-            const existingByVirtual = existingTables.find(t => t.virtual?.tableId === table.virtual?.tableId);
-            if (existingByVirtual) {
-                dispatch(dfActions.setFocused({ type: 'table', tableId: existingByVirtual.id }));
-                return { table: existingByVirtual, duplicate: true };
+            if (table.virtual) {
+                const existingByVirtual = existingTables.find(t => t.virtual?.tableId === table.virtual?.tableId);
+                if (existingByVirtual) {
+                    dispatch(dfActions.setFocused({ type: 'table', tableId: existingByVirtual.id }));
+                    return { table: existingByVirtual, duplicate: true };
+                }
             }
         }
         
-        let finalTable: DictTable = { ...table };
         let truncated = false;
         let originalRowCount = 0;
 
         const sourceType = table.source?.type;
+        const enrichedSource: DataSourceConfig | undefined = table.source
+            ? { ...table.source, originalTableName: table.source.originalTableName || table.displayId || table.id }
+            : undefined;
+        let finalTable: DictTable = { ...table, source: enrichedSource || table.source };
 
         if (storeOnServer) {
             // === STORE ON SERVER PATH ===
-            if (sourceType === 'database' && dataLoaderType && sourceTableName) {
-                // Database source: ingest to workspace via data loader
+            if (sourceType === 'database' && sourceTableRef && connectorId) {
+                // Database source: ingest to workspace via data connector
                 try {
-                    const response = await fetchWithIdentity(getUrls().DATA_LOADER_INGEST_DATA, {
+                    const ingestUrl = CONNECTOR_ACTION_URLS.IMPORT_DATA;
+                    const ingestBody = {
+                        connector_id: connectorId,
+                        source_table: sourceTableRef,
+                        table_name: sourceTableRef.name,
+                        import_options: {
+                            ...importOptions,
+                            size: frontendRowLimit,
+                        },
+                    };
+                    const { data } = await apiRequest(ingestUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            data_loader_type: dataLoaderType,
-                            data_loader_params: dataLoaderParams,
-                            table_name: sourceTableName,
-                            import_options: importOptions || {},
-                        }),
+                        body: JSON.stringify(ingestBody),
                     });
-                    const data = await response.json();
-                    if (data.status === 'success') {
-                        // Now fetch the table info from workspace to get sample rows
-                        const listResp = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
-                        const listData = await listResp.json();
-                        if (listData.status === 'success') {
-                            const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
-                            if (wsTable) {
-                                finalTable = buildDictTableFromWorkspace(wsTable, table.source);
-                            }
-                        }
-                    } else {
-                        throw new Error(data.message || 'Failed to ingest data');
+                    const { data: listData } = await apiRequest(getUrls().LIST_TABLES, { method: 'GET' });
+                    const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
+                    if (wsTable) {
+                        finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
+                    }
+                    const loadedRowCount = Number(data.row_count);
+                    if (
+                        Number.isFinite(frontendRowLimit) && frontendRowLimit > 0 &&
+                        Number.isFinite(loadedRowCount) && loadedRowCount >= frontendRowLimit
+                    ) {
+                        truncated = true;
+                        originalRowCount = loadedRowCount;
                     }
                 } catch (err) {
                     console.error('Failed to ingest database table to workspace:', err);
                     throw err;
                 }
             } else if (file) {
-                // File upload to workspace
+                // File upload to workspace — backend converts to parquet
                 try {
                     const formData = new FormData();
                     formData.append('file', file);
                     formData.append('table_name', table.id);
+                    if (replaceSource) {
+                        formData.append('replace_source', 'true');
+                    }
+                    // Sheet hint for multi-sheet Excel: backend validates against real sheets
+                    const srcName = table.source?.fileName || file.name;
+                    if (srcName && table.id.length > srcName.length + 1
+                        && table.id.startsWith(srcName + '-')) {
+                        formData.append('sheet_name', table.id.slice(srcName.length + 1));
+                    }
                     
-                    const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {
+                    const { data } = await apiRequest(getUrls().CREATE_TABLE, {
                         method: 'POST',
                         body: formData,
                     });
-                    const data = await response.json();
-                    if (data.status === 'success') {
-                        // Fetch back from workspace to get proper virtual info
-                        const listResp = await fetchWithIdentity(getUrls().LIST_TABLES, { method: 'GET' });
-                        const listData = await listResp.json();
-                        if (listData.status === 'success') {
-                            const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
-                            if (wsTable) {
-                                finalTable = buildDictTableFromWorkspace(wsTable, table.source);
-                            }
-                        }
-                    } else {
-                        throw new Error(data.message || 'Failed to upload file');
+                    const { data: listData } = await apiRequest(getUrls().LIST_TABLES, { method: 'GET' });
+                    const wsTable = listData.tables.find((t: any) => t.name === data.table_name);
+                    if (wsTable) {
+                        finalTable = buildDictTableFromWorkspace(wsTable, enrichedSource);
                     }
                 } catch (err) {
                     console.error('Failed to upload file to workspace:', err);
                     throw err;
                 }
-            } else if (table.virtual) {
-                // Table already exists in workspace (e.g., loaded from DB table manager)
-                finalTable = { ...table };
             } else {
                 // Other sources (paste/url/example/extract): upload raw data to workspace
                 try {
                     const formData = new FormData();
-                    const jsonBlob = new Blob([JSON.stringify(table.rows)], { type: 'application/json' });
-                    formData.append('raw_data', jsonBlob, 'data.json');
+                    const compressedBlob = await compressBlob(JSON.stringify(table.rows));
+                    formData.append('raw_data', compressedBlob, 'data.json.gz');
                     formData.append('table_name', table.id);
                     
-                    const response = await fetchWithIdentity(getUrls().CREATE_TABLE, {
+                    const { data } = await apiRequest(getUrls().CREATE_TABLE, {
                         method: 'POST',
                         body: formData,
                     });
-                    const data = await response.json();
-                    if (data.status === 'success') {
-                        // Set virtual info from the response — virtual indicates server storage
-                        finalTable = {
-                            ...table,
-                            virtual: {
-                                tableId: data.table_name,
-                                rowCount: data.row_count,
-                            },
-                            id: data.table_name, // use the sanitized name from server
-                            displayId: table.displayId || data.table_name,
-                        };
-                    } else {
-                        throw new Error(data.message || 'Failed to save data to workspace');
-                    }
+                    finalTable = {
+                        ...table,
+                        source: enrichedSource || table.source,
+                        virtual: {
+                            tableId: data.table_name,
+                            rowCount: data.row_count,
+                        },
+                        id: data.table_name,
+                        displayId: table.displayId || data.table_name,
+                    };
                 } catch (err) {
                     console.error('Failed to save data to workspace:', err);
                     throw err;
@@ -212,49 +226,46 @@ export const loadTable = createAsyncThunk<
             }
         } else {
             // === LOCAL ONLY PATH (storeOnServer = false) ===
-            if (sourceType === 'database' && dataLoaderType && dataLoaderParams && sourceTableName) {
-                // Database source: fetch data without saving to workspace
+            if (sourceType === 'database' && connectorId && sourceTableRef) {
+                // Database source: fetch data via data connector preview (no workspace save)
                 try {
-                    const response = await fetchWithIdentity(getUrls().DATA_LOADER_FETCH_DATA, {
+                    const { data } = await apiRequest(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            data_loader_type: dataLoaderType,
-                            data_loader_params: dataLoaderParams,
-                            table_name: sourceTableName,
-                            row_limit: frontendRowLimit,
-                            sort_columns: importOptions?.sortColumns,
-                            sort_order: importOptions?.sortOrder,
+                            connector_id: connectorId,
+                            source_table: sourceTableRef,
+                            import_options: {
+                                size: frontendRowLimit,
+                                sort_columns: importOptions?.sortColumns,
+                                sort_order: importOptions?.sortOrder,
+                                source_filters: importOptions?.source_filters,
+                            },
                         }),
                     });
-                    const data = await response.json();
-                    if (data.status === 'success') {
-                        const rows = data.rows;
-                        const names = rows.length > 0 ? Object.keys(rows[0]) : [];
-                        const totalCount: number = data.total_row_count ?? rows.length;
-                        originalRowCount = totalCount;
-                        truncated = rows.length < totalCount;
-                        
-                        finalTable = {
-                            ...table,
-                            id: table.id,
-                            displayId: table.displayId || table.id,
-                            names,
-                            rows,
-                            metadata: names.reduce((acc: Record<string, any>, name: string) => ({
-                                ...acc,
-                                [name]: {
-                                    type: inferTypeFromValueArray(rows.map((r: any) => r[name])),
-                                    semanticType: "",
-                                    levels: []
-                                }
-                            }), {}),
-                            // No virtual field = local-only (not stored on server)
-                            anchored: true,
-                        };
-                    } else {
-                        throw new Error(data.message || 'Failed to fetch data from external source');
-                    }
+                    const rows = data.rows;
+                    const names = rows.length > 0 ? Object.keys(rows[0]) : [];
+                    const totalCount: number = data.total_row_count ?? table.virtual?.rowCount ?? rows.length;
+                    originalRowCount = totalCount;
+                    truncated = rows.length < totalCount;
+                    
+                    finalTable = {
+                        ...table,
+                        source: enrichedSource || table.source,
+                        id: table.id,
+                        displayId: table.displayId || table.id,
+                        names,
+                        rows,
+                        metadata: names.reduce((acc: Record<string, any>, name: string) => ({
+                            ...acc,
+                            [name]: {
+                                type: inferTypeFromValueArray(rows.map((r: any) => r[name])),
+                                semanticType: "",
+                                levels: []
+                            }
+                        }), {}),
+                        anchored: true,
+                    };
                 } catch (err) {
                     console.error('Failed to fetch data from external source:', err);
                     throw err;
@@ -266,11 +277,34 @@ export const loadTable = createAsyncThunk<
                     truncated = true;
                     finalTable = {
                         ...table,
+                        source: enrichedSource || table.source,
                         rows: table.rows.slice(0, frontendRowLimit),
                     };
                 } else {
-                    finalTable = { ...table };
+                    finalTable = { ...table, source: enrichedSource || table.source };
                 }
+            }
+        }
+
+        // Ephemeral mode: store full rows in IndexedDB, keep only samples in Redux
+        const isEphemeral = state.serverConfig?.WORKSPACE_BACKEND === 'ephemeral';
+        if (isEphemeral && finalTable.rows.length > 0) {
+            const wsId = state.activeWorkspace?.id;
+            if (wsId) {
+                const tableId = finalTable.virtual?.tableId || finalTable.id;
+                const fullRows = finalTable.rows;
+                const fullRowCount = fullRows.length;
+
+                // Store full data in IndexedDB
+                await tableDataDB.save(wsId, tableId, fullRows);
+
+                // Keep only sample rows in Redux + set virtual
+                const sampleSize = Math.min(1000, fullRowCount);
+                finalTable = {
+                    ...finalTable,
+                    rows: fullRows.slice(0, sampleSize),
+                    virtual: { tableId, rowCount: fullRowCount },
+                };
             }
         }
 
@@ -278,15 +312,15 @@ export const loadTable = createAsyncThunk<
         dispatch(dfActions.addTableToStore(finalTable));
         dispatch(fetchFieldSemanticType(finalTable));
 
-        // Notify user about truncation
-        if (truncated && originalRowCount) {
-            const diskDisabled = state.serverConfig?.DISABLE_DATABASE;
+        // Notify user about local (browser) truncation only.
+        // Database-side truncation (row limit from import options) is
+        // reported by the caller (e.g. DataSourceSidebar) via the returned
+        // LoadTableResult.truncated flag to avoid duplicate/misordered messages.
+        if (truncated && originalRowCount && !connectorId) {
             const workspaceBackend = state.serverConfig?.WORKSPACE_BACKEND;
             const storageLabel = workspaceBackend === 'azure_blob' ? 'Azure' : 'Disk';
             const baseMsg = `Table "${finalTable.displayId || finalTable.id}" was truncated from ${originalRowCount.toLocaleString()} to ${frontendRowLimit.toLocaleString()} rows (browser limit).`;
-            const installHint = diskDisabled
-                ? ` To load the full dataset, install Data Formulator locally and use disk storage.`
-                : ` To load the full dataset, switch to "${storageLabel}" storage mode.`;
+            const installHint = ` To load the full dataset, switch to "${storageLabel}" storage mode.`;
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'warning',
@@ -302,35 +336,60 @@ export const loadTable = createAsyncThunk<
 /**
  * Helper: Build a DictTable from a workspace table listing (as returned by /api/tables/list-tables).
  */
-function buildDictTableFromWorkspace(
+export function buildDictTableFromWorkspace(
     wsTable: any,
     source: DataSourceConfig | undefined,
 ): DictTable {
     const convertSqlTypeToAppType = (sqlType: string): Type => {
-        sqlType = sqlType.toUpperCase();
-        if (sqlType.includes('INT') || sqlType === 'BIGINT' || sqlType === 'SMALLINT' || sqlType === 'TINYINT') {
+        const upper = sqlType.toUpperCase();
+        if (upper.includes('INT') || upper === 'BIGINT' || upper === 'SMALLINT' || upper === 'TINYINT') {
             return Type.Integer;
-        } else if (sqlType.includes('FLOAT') || sqlType.includes('DOUBLE') || sqlType.includes('DECIMAL') || sqlType.includes('NUMERIC') || sqlType.includes('REAL')) {
+        } else if (upper.includes('FLOAT') || upper.includes('DOUBLE') || upper.includes('DECIMAL') || upper.includes('NUMERIC') || upper.includes('REAL')) {
             return Type.Number;
-        } else if (sqlType.includes('BOOL')) {
+        } else if (upper.includes('BOOL')) {
             return Type.Boolean;
-        } else if (sqlType.includes('DATE') || sqlType.includes('TIME') || sqlType.includes('TIMESTAMP')) {
+        } else if (upper.includes('TIMESTAMP') || upper === 'DATETIME') {
+            return Type.DateTime;
+        } else if (upper.includes('DATE')) {
             return Type.Date;
+        } else if (upper === 'TIME' || upper.startsWith('TIME ') || upper.startsWith('TIME(')) {
+            return Type.Time;
+        } else if (upper.includes('INTERVAL')) {
+            return Type.Duration;
         } else {
-            return Type.String;
+            // Fall back to the generic API-type mapper for standardized labels
+            return mapApiTypeToAppType(sqlType);
         }
     };
 
-    // Build source config for database tables
     const sourceMeta = wsTable.source_metadata;
-    const sourceConfig: DataSourceConfig = source || {
-        type: 'database',
-        databaseTable: wsTable.name,
-        canRefresh: sourceMeta != null,
-        lastRefreshed: Date.now(),
-    };
+    const backendOriginalName: string | undefined = wsTable.original_name || undefined;
+    let sourceConfig: DataSourceConfig;
+    if (source) {
+        sourceConfig = {
+            ...source,
+            originalTableName: source.originalTableName || backendOriginalName,
+        };
+    } else if (wsTable.source_type === 'upload' && wsTable.source_filename) {
+        const fn = wsTable.source_filename;
+        const dotIdx = fn.lastIndexOf('.');
+        sourceConfig = {
+            type: 'file',
+            fileName: fn,
+            originalTableName: backendOriginalName || (dotIdx > 0 ? fn.substring(0, dotIdx) : fn),
+        };
+    } else {
+        sourceConfig = {
+            type: 'database',
+            databaseTable: wsTable.name,
+            canRefresh: sourceMeta != null,
+            lastRefreshed: Date.now(),
+            originalTableName: backendOriginalName,
+        };
+    }
 
-    return {
+    const result: DictTable = {
+        kind: 'table' as const,
         id: wsTable.name,
         displayId: wsTable.name,
         names: wsTable.columns.map((col: any) => col.name),
@@ -339,7 +398,8 @@ function buildDictTableFromWorkspace(
             [col.name]: {
                 type: convertSqlTypeToAppType(col.type),
                 semanticType: "",
-                levels: []
+                levels: [],
+                ...(col.description ? { description: col.description } : {}),
             }
         }), {}),
         rows: wsTable.sample_rows,
@@ -348,10 +408,15 @@ function buildDictTableFromWorkspace(
             rowCount: wsTable.row_count,
         },
         anchored: true,
-        createdBy: 'user',
-        attachedMetadata: '',
+        // Loader-supplied table description, surfaced read-only in the
+        // table-card metadata viewer and used directly by the agent's
+        // prompt builders (server-side, via TableMetadata.description).
+        // For tables without a source description (uploads, paste, sample)
+        // this stays empty.
+        description: wsTable.description || '',
         source: sourceConfig,
     };
+    return result;
 }
 
 /**

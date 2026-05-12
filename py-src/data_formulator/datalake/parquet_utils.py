@@ -11,14 +11,16 @@ are consumed by Workspace methods that handle metadata bookkeeping.
 
 import hashlib
 import logging
+import re
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from werkzeug.utils import secure_filename
 
-from data_formulator.datalake.metadata import ColumnInfo, make_json_safe
+from data_formulator.datalake.workspace_metadata import ColumnInfo, make_json_safe
+from data_formulator.datalake.table_names import sanitize_workspace_parquet_table_name
 
 logger = logging.getLogger(__name__)
 
@@ -37,47 +39,40 @@ DEFAULT_METADATA_SAMPLE_ROWS = 50
 # Name helpers
 # ---------------------------------------------------------------------------
 
-def sanitize_table_name(name: str) -> str:
-    """
-    Sanitize a string to be a valid table/file name.
+def safe_data_filename(filename: str) -> str:
+    """Unicode-safe filename sanitisation for data files.
 
-    Uses ``werkzeug.utils.secure_filename`` as the first pass to strip
-    path separators, leading dots, and other dangerous components (this
-    is the sanitiser recognised by CodeQL / static-analysis tools).
-    Additional rules are then applied to guarantee the result is a valid,
-    lowercase, Python-identifier-style name.
+    Prevents path traversal by extracting the basename while preserving
+    Unicode characters (Chinese, Japanese, Korean, etc.) that
+    ``werkzeug.secure_filename`` would strip.
+
+    Use this instead of ``secure_filename`` for any path that stores or
+    reads user data files (parquet, csv, xlsx, …).
 
     Args:
-        name: Original name
+        filename: Input filename (may contain path components)
 
     Returns:
-        Sanitized name
+        Sanitised basename (Unicode preserved, no directory components)
+
+    Raises:
+        ValueError: If the result is empty or unsafe
     """
-    # First pass: werkzeug's secure_filename neutralises path-traversal
-    # components ("../", leading dots, etc.) and keeps only ASCII
-    # alphanumerics plus ".", "_", and "-".
-    name = secure_filename(name)
+    basename = Path(filename).name if filename else ""
+    # Strip control characters (U+0000–U+001F) but keep all Unicode
+    basename = re.sub(r"[\x00-\x1f]", "", basename).strip()
+    if not basename or basename in (".", ".."):
+        raise ValueError(f"Invalid filename: {filename!r}")
+    return basename
 
-    # Second pass: replace any remaining chars that are not alphanumeric
-    # or underscore (e.g. dots and hyphens kept by secure_filename).
-    sanitized = []
-    for char in name:
-        if char.isalnum() or char == '_':
-            sanitized.append(char)
-        else:
-            sanitized.append('_')
 
-    result = ''.join(sanitized)
+def sanitize_table_name(name: str) -> str:
+    """
+    Sanitize a string to be a valid workspace / parquet logical table name.
 
-    # Ensure it starts with a letter or underscore
-    if result and not (result[0].isalpha() or result[0] == '_'):
-        result = '_' + result
-
-    # Ensure it's not empty
-    if not result:
-        result = '_unnamed'
-
-    return result.lower()
+    Delegates to :func:`data_formulator.datalake.table_names.sanitize_workspace_parquet_table_name`.
+    """
+    return sanitize_workspace_parquet_table_name(name)
 
 
 # ---------------------------------------------------------------------------
@@ -94,14 +89,41 @@ def get_sample_rows_from_arrow(
     return make_json_safe(sample.to_pylist())
 
 
+def normalize_dtype_to_app_type(dtype_str: str) -> str:
+    """Map a pandas/Arrow dtype string to a standardized App Type label.
+
+    The labels are consumed by the frontend ``mapApiTypeToAppType()`` and must
+    stay in sync with the ``Type`` enum in ``src/data/types.ts``.
+
+    Returns one of: 'datetime', 'date', 'time', 'duration',
+                     'integer', 'number', 'boolean', 'string'.
+    """
+    t = dtype_str.lower()
+    if 'datetime' in t or 'timestamp' in t:
+        return 'datetime'
+    if t == 'date' or t.startswith('date32') or t.startswith('date64'):
+        return 'date'
+    if t == 'time' or t.startswith('time32') or t.startswith('time64'):
+        return 'time'
+    if 'timedelta' in t or 'duration' in t:
+        return 'duration'
+    if 'int' in t:
+        return 'integer'
+    if 'float' in t or 'double' in t:
+        return 'number'
+    if 'bool' in t:
+        return 'boolean'
+    return 'string'
+
+
 def get_arrow_column_info(table: pa.Table) -> list[ColumnInfo]:
     """Extract column information from a PyArrow Table."""
-    return [ColumnInfo(name=field.name, dtype=str(field.type)) for field in table.schema]
+    return [ColumnInfo(name=field.name, dtype=normalize_dtype_to_app_type(str(field.type))) for field in table.schema]
 
 
 def get_column_info(df: pd.DataFrame) -> list[ColumnInfo]:
     """Extract column information from a pandas DataFrame."""
-    return [ColumnInfo(name=str(col), dtype=str(df[col].dtype)) for col in df.columns]
+    return [ColumnInfo(name=str(col), dtype=normalize_dtype_to_app_type(str(df[col].dtype))) for col in df.columns]
 
 
 # ---------------------------------------------------------------------------

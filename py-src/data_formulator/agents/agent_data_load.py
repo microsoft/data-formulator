@@ -4,6 +4,7 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.agents.semantic_types import (
     generate_semantic_types_prompt,
 )
@@ -17,13 +18,15 @@ SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based 
 Given a dataset provided by the user, 
 1. suggest a descriptive name for the table if the table name is a generic name like table-6, the suggested name should best capture meaning of the table but also very concise.
     - if the table already have a descriptive name provided in the bracket (...), use it; if the provided name is not descriptive, suggest a new name.
-    - format table name using '-' when it contains multiple words (e.g., "income", "weather-seattle-atlanta")
-    - the suggested table name should be similar to variable names that are very descriptive and concise, no more than 5 words.
-    - the suggested name should best be within 24 characters, be smart with abbreviations (yet still descriptive and follow common practices), when in doubt, use less words but less abbreviation.
+    - use Title Case with spaces, like naming a sheet in Excel or Tableau (e.g., "Income", "Seattle Weather", "US Trade Balance")
+    - think like a data analyst: name the table by what it contains, not how it was made.
+    - good names: "Monthly Sales", "Stock Prices", "Survey Responses", "US GDP Quarterly"
+    - bad names: "data", "result", "table1", "d_weekly_fuel_prices", "raw-data-filtered"
+    - aim for 2-4 words, no more than 24 characters. Be smart with abbreviations but keep it readable.
 2. identify their type and semantic type
 3. provide a very short summary of the dataset.
 
-Types to consider include: string, number, date
+Types to consider include: string, number, date, datetime, time, duration
 
 ''' + generate_semantic_types_prompt() + '''
 
@@ -33,7 +36,7 @@ Enriched annotation fields (optional — provide when applicable):
     - Infer from data values and context: e.g., if a "rating" column has values 1-10, the domain is [1, 10]; if it's clearly a 5-star system, use [1, 5].
     - For Percentage: [0, 100] if values are whole-number percentages, [0, 1] if fractional.
     - For Correlation: always [-1, 1].
-    - Do NOT provide for open-ended measures like Revenue, Count, Quantity, Temperature, etc.
+    - Do NOT provide for open-ended measures like Amount, Count, Quantity, Temperature, etc.
     - Only provide when the scale bounds are clear from the data or domain knowledge.
 - "unit": a short unit string for physical/monetary quantities.
     - Temperature: "°C", "°F", "K"
@@ -158,9 +161,22 @@ table_0 (weather_seattle_atlanta) sample:
 
 class DataLoadAgent(object):
 
-    def __init__(self, client, workspace):
+    def __init__(self, client, workspace, language_instruction="", model_info=None):
         self.client = client
         self.workspace = workspace
+        self.language_instruction = language_instruction
+
+        self.system_prompt = SYSTEM_PROMPT
+        if language_instruction:
+            self.system_prompt = self.system_prompt + "\n\n" + language_instruction
+
+        self._diag = AgentDiagnostics(
+            agent_name="DataLoadAgent",
+            model_info=model_info or {},
+            base_system_prompt=SYSTEM_PROMPT,
+            language_instruction=language_instruction,
+            assembled_system_prompt=self.system_prompt,
+        )
 
     def run(self, input_data, n=1):
 
@@ -170,7 +186,9 @@ class DataLoadAgent(object):
             [input_data],
             workspace=self.workspace,
             include_data_samples=True,
-            field_sample_size=30
+            field_sample_size=15,
+            row_sample_size=5,
+            sample_char_limit=4000,
         )
 
         user_query = f"[DATA]\n\n{data_summary}\n\n[OUTPUT]"
@@ -178,7 +196,7 @@ class DataLoadAgent(object):
         logger.debug(user_query)
         logger.info(f"[DataLoadAgent] run start")
 
-        messages = [{"role":"system", "content": SYSTEM_PROMPT},
+        messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
         response = self.client.get_completion(messages = messages)
@@ -198,12 +216,17 @@ class DataLoadAgent(object):
                 try:
                     json_block = json.loads(choice.message.content + "\n")
                     result = {'status': 'ok', 'content': json_block}
-                except:
-                    result = {'status': 'other error', 'content': 'unable to extract VegaLite script from response'}
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    result = {'status': 'other error', 'content': 'unable to extract script from response', 'content_code': 'agent.unableExtractScript'}
             
             # individual dialog for the agent
             result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
             result['agent'] = 'DataLoadAgent'
+            result['diagnostics'] = self._diag.for_json_only(
+                messages,
+                raw_content=choice.message.content,
+                finish_reason=getattr(choice, 'finish_reason', None),
+            )
 
             candidates.append(result)
 

@@ -11,8 +11,15 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import {
-    extractCategories, groupBy, detectAxes, buildCategoryAlignedData,
-    DEFAULT_COLORS, DEFAULT_BG_COLORS,
+    extractCategories,
+    groupBy,
+    detectAxes,
+    buildCategoryAlignedData,
+    DEFAULT_COLORS,
+    DEFAULT_BG_COLORS,
+    getChartJsPalette,
+    getSeriesBorderColor,
+    getSeriesBackgroundColor,
 } from './utils';
 import {
     detectBandedAxisFromSemantics, detectBandedAxisForceDiscrete,
@@ -52,6 +59,8 @@ export const cjsBarChartDef: ChartTemplateDef = {
 
         const isHorizontal = categoryAxis === 'y';
 
+        const palette = getChartJsPalette(ctx);
+
         const config: any = {
             type: 'bar',
             data: {
@@ -59,8 +68,8 @@ export const cjsBarChartDef: ChartTemplateDef = {
                 datasets: [{
                     label: valField,
                     data: values,
-                    backgroundColor: DEFAULT_BG_COLORS[0],
-                    borderColor: DEFAULT_COLORS[0],
+                    backgroundColor: getSeriesBackgroundColor(palette, 0),
+                    borderColor: getSeriesBorderColor(palette, 0),
                     borderWidth: 1,
                     borderRadius: chartProperties?.cornerRadius ?? 0,
                 }],
@@ -132,6 +141,8 @@ export const cjsStackedBarChartDef: ChartTemplateDef = {
         const categories = extractCategories(table, catField, catCS?.ordinalSortOrder);
         const isHorizontal = categoryAxis === 'y';
 
+        const palette = getChartJsPalette(ctx, 'color');
+
         const config: any = {
             type: 'bar',
             data: {
@@ -167,8 +178,8 @@ export const cjsStackedBarChartDef: ChartTemplateDef = {
                 config.data.datasets.push({
                     label: name,
                     data: values,
-                    backgroundColor: DEFAULT_BG_COLORS[colorIdx % DEFAULT_BG_COLORS.length],
-                    borderColor: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length],
+                    backgroundColor: getSeriesBackgroundColor(palette, colorIdx),
+                    borderColor: getSeriesBorderColor(palette, colorIdx),
                     borderWidth: 1,
                 });
                 colorIdx++;
@@ -178,8 +189,8 @@ export const cjsStackedBarChartDef: ChartTemplateDef = {
             config.data.datasets.push({
                 label: valField,
                 data: values,
-                backgroundColor: DEFAULT_BG_COLORS[0],
-                borderColor: DEFAULT_COLORS[0],
+                backgroundColor: getSeriesBackgroundColor(palette, 0),
+                borderColor: getSeriesBorderColor(palette, 0),
                 borderWidth: 1,
             });
         }
@@ -204,7 +215,7 @@ export const cjsStackedBarChartDef: ChartTemplateDef = {
 export const cjsGroupedBarChartDef: ChartTemplateDef = {
     chart: 'Grouped Bar Chart',
     template: { mark: 'bar', encoding: {} },
-    channels: ['x', 'y', 'group', 'column', 'row'],
+    channels: ['x', 'y', 'group', 'color', 'column', 'row'],
     markCognitiveChannel: 'length',
     declareLayoutMode: (cs, table) => {
         const result = detectBandedAxisForceDiscrete(cs, table, { preferAxis: 'x' });
@@ -226,6 +237,8 @@ export const cjsGroupedBarChartDef: ChartTemplateDef = {
         const catCS = channelSemantics[categoryAxis];
         const categories = extractCategories(table, catField, catCS?.ordinalSortOrder);
         const isHorizontal = categoryAxis === 'y';
+
+        const palette = getChartJsPalette(ctx, 'group');
 
         const config: any = {
             type: 'bar',
@@ -260,8 +273,8 @@ export const cjsGroupedBarChartDef: ChartTemplateDef = {
                 config.data.datasets.push({
                     label: name,
                     data: values,
-                    backgroundColor: DEFAULT_BG_COLORS[colorIdx % DEFAULT_BG_COLORS.length],
-                    borderColor: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length],
+                    backgroundColor: getSeriesBackgroundColor(palette, colorIdx),
+                    borderColor: getSeriesBorderColor(palette, colorIdx),
                     borderWidth: 1,
                 });
                 colorIdx++;
@@ -271,8 +284,8 @@ export const cjsGroupedBarChartDef: ChartTemplateDef = {
             config.data.datasets.push({
                 label: valField,
                 data: values,
-                backgroundColor: DEFAULT_BG_COLORS[0],
-                borderColor: DEFAULT_COLORS[0],
+                backgroundColor: getSeriesBackgroundColor(palette, 0),
+                borderColor: getSeriesBorderColor(palette, 0),
                 borderWidth: 1,
             });
         }

@@ -49,7 +49,7 @@ export type { TypeRegistryEntry } from './type-registry';
  * Enriched semantic annotation from LLM or user.
  */
 export interface SemanticAnnotation {
-    /** The T2 semantic type string (e.g., "Revenue", "Rating", "Month") */
+    /** The T2 semantic type string (e.g., "Amount", "Score", "Month") */
     semanticType: string;
 
     /**
@@ -140,8 +140,8 @@ export interface FieldSemantics {
     defaultVisType: VisCategory;
 
     // --- Formatting ---
-    /** Number format derived from data type and unit */
-    format: FormatSpec;
+    /** Number format derived from data type and unit (only set when confident) */
+    format?: FormatSpec;
     /** Tooltip format (typically higher precision than axis format) */
     tooltipFormat?: FormatSpec;
 
@@ -195,8 +195,8 @@ export function toTypeString(input: string | SemanticAnnotation | undefined): st
  * consistent SemanticAnnotation.
  *
  * Accepts:
- *   "Revenue"                                          → { semanticType: "Revenue" }
- *   { semanticType: "Rating", intrinsicDomain: [1,5] } → as-is
+ *   "Amount"                                          → { semanticType: "Amount" }
+ *   { semanticType: "Score", intrinsicDomain: [1,5] }  → as-is
  *   undefined / ""                                     → { semanticType: "Unknown" }
  */
 export function normalizeAnnotation(
@@ -306,7 +306,7 @@ export function resolveFormat(
     semanticType: string,
     annotation: SemanticAnnotation,
     values: any[],
-): { format: FormatSpec; tooltipFormat?: FormatSpec } {
+): { format?: FormatSpec; tooltipFormat?: FormatSpec } {
     const entry = getRegistryEntry(semanticType);
     const unit = annotation.unit;
 
@@ -319,116 +319,73 @@ export function resolveFormat(
 
     const nums = values.filter((v: any) => typeof v === 'number' && !isNaN(v));
 
+    // ─── Policy: only override axis format when the raw number would be
+    // genuinely misleading.  Two cases qualify:
+    //   1. Percent with 0–1 data + intrinsicDomain → representation transform
+    //   2. Currency with a known unit → add currency symbol
+    // Everything else: let VL handle axis formatting natively.
+    // Tooltip format is lower-stakes (transient hover) so we're more liberal.
+
     switch (entry.formatClass) {
         case 'currency': {
-            const pfx = currencyPrefix ?? '$';
-            // Price always shows cents; other currency uses data precision (min 0 for axis)
-            const axisPattern = semanticType === 'Price' ? ',.2f' : precisionFormat(nums);
-            return {
-                format:  { pattern: axisPattern, prefix: pfx, abbreviate: true },
-                tooltipFormat: { pattern: ',.2f', prefix: pfx },
-            };
-        }
-
-        case 'signed-currency': {
-            const pfx = currencyPrefix ?? '$';
-            return {
-                format:  { pattern: precisionFormat(nums, true, '+'), prefix: pfx, abbreviate: true },
-                tooltipFormat: { pattern: '+,.2f', prefix: pfx },
-            };
+            const pfx = currencyPrefix;
+            // Only override axis when we have a known currency symbol;
+            // without it the axis is better left to VL defaults.
+            if (pfx) {
+                const axisPattern = semanticType === 'Price' ? ',.2f' : precisionFormat(nums);
+                return {
+                    format: { pattern: axisPattern, prefix: pfx },
+                    tooltipFormat: { pattern: ',.2f', prefix: pfx },
+                };
+            }
+            return { tooltipFormat: { pattern: ',.2f' } };
         }
 
         case 'percent': {
-            // Without an explicit intrinsicDomain we cannot reliably tell
-            // whether values are fractional 0-1 or whole-number 0-100, so
-            // fall back to plain formatting to avoid misinterpretation.
+            // Without intrinsicDomain we can't reliably distinguish 0–1
+            // from 0–100, so defer to VL.
             if (!annotation.intrinsicDomain) {
-                return {
-                    format:  {},
-                    tooltipFormat: { pattern: precisionFormat(nums) },
-                };
+                return { tooltipFormat: { pattern: precisionFormat(nums) } };
             }
             const rep = detectPercentageRepresentation(nums);
             if (rep === '0-1') {
-                // d3's .% format multiplies by 100 automatically
+                // 0–1 fractional → axis must transform (0.45 → "45%")
                 const p = detectPrecision(nums);
-                // After ×100 we still need (p-2) decimals, minimum 0
                 const axisP = Math.max(0, p - 2);
                 const tipP  = Math.min(axisP + 1, 4);
                 return {
-                    format:  { pattern: `.${axisP}%` },
+                    format: { pattern: `.${axisP}~%` },
                     tooltipFormat: { pattern: `.${tipP}%` },
                 };
             }
-            // Whole-number percentage (0–100): use data precision
+            // Whole-number 0–100: raw numbers are readable as-is.
+            // Axis title conveys "percentage"; tooltip adds suffix for clarity.
             return {
-                format:  { pattern: precisionFormat(nums, false), suffix: '%' },
                 tooltipFormat: { pattern: precisionFormat(nums, false), suffix: '%' },
             };
         }
 
-        case 'signed-percent': {
-            // Without an explicit intrinsicDomain we cannot reliably tell
-            // whether values are fractional 0-1 or whole-number 0-100, so
-            // fall back to plain signed formatting to avoid misinterpretation.
-            if (!annotation.intrinsicDomain) {
-                return {
-                    format:  { pattern: precisionFormat(nums, true, '+') },
-                    tooltipFormat: { pattern: precisionFormat(nums, true, '+') },
-                };
-            }
-            const rep = detectPercentageRepresentation(nums);
-            if (rep === '0-1') {
-                const p = detectPrecision(nums);
-                const axisP = Math.max(0, p - 2);
-                const tipP  = Math.min(axisP + 1, 4);
-                return {
-                    format:  { pattern: `+.${axisP}%` },
-                    tooltipFormat: { pattern: `+.${tipP}%` },
-                };
-            }
+        case 'unit-suffix':
             return {
-                format:  { pattern: precisionFormat(nums, false, '+'), suffix: '%' },
-                tooltipFormat: { pattern: precisionFormat(nums, false, '+'), suffix: '%' },
+                tooltipFormat: unitSuffix
+                    ? { pattern: precisionFormat(nums), suffix: unitSuffix }
+                    : { pattern: precisionFormat(nums) },
             };
-        }
-
-        case 'signed-decimal':
-            return {
-                format:  { pattern: precisionFormat(nums, false, '+') },
-                tooltipFormat: { pattern: precisionFormat(nums, false, '+') },
-            };
-
-        case 'unit-suffix': {
-            const sfx = unitSuffix ?? '';
-            return {
-                format:  { pattern: precisionFormat(nums), suffix: sfx, abbreviate: true },
-                tooltipFormat: { pattern: precisionFormat(nums), suffix: sfx },
-            };
-        }
 
         case 'integer':
-            if (semanticType === 'Year') {
-                return { format: { pattern: 'd' } };
+            // Year/Decade: no comma — '2,024' is wrong for a year.
+            // Other integers (Count, Rank, Hour): comma separator aids readability.
+            if (semanticType === 'Year' || semanticType === 'Decade') {
+                return {};
             }
-            return {
-                format:  { pattern: ',d' },
-                tooltipFormat: { pattern: ',d' },
-            };
+            return { tooltipFormat: { pattern: ',d' } };
 
         case 'decimal':
-            // Don't override axis format — VL's native formatting is superior
-            // for generic decimals (it adapts precision and uses ~s notation
-            // for large values). We only keep a tooltipFormat so tooltip
-            // pop-ups show clean precision rather than raw floats.
-            return {
-                format:  {},
-                tooltipFormat: { pattern: precisionFormat(nums) },
-            };
+            return { tooltipFormat: { pattern: precisionFormat(nums) } };
 
         case 'plain':
         default:
-            return { format: {} };
+            return {};
     }
 }
 
@@ -789,17 +746,22 @@ export function resolveTickConstraint(
         return tc;
     }
 
-    // Score/Rating with bounded domain → integer ticks
-    if ((semanticType === 'Score' || semanticType === 'Rating') && domain) {
+    // Score with bounded domain → integer ticks ONLY when domain span
+    // indicates meaningful integer steps.  For small spans like [0, 1],
+    // the values are continuous (e.g., outlier_score 0–1) and forcing
+    // integer ticks would remove all intermediate tick marks.
+    if (semanticType === 'Score' && domain) {
         const span = domain[1] - domain[0];
-        const tc: TickConstraint = { integersOnly: true, minStep: 1 };
-        if (span <= 20 && span > 0) {
-            tc.exactTicks = [];
-            for (let i = domain[0]; i <= domain[1]; i++) {
-                tc.exactTicks.push(i);
+        if (span >= 2) {
+            const tc: TickConstraint = { integersOnly: true, minStep: 1 };
+            if (span <= 20) {
+                tc.exactTicks = [];
+                for (let i = domain[0]; i <= domain[1]; i++) {
+                    tc.exactTicks.push(i);
+                }
             }
+            return tc;
         }
-        return tc;
     }
 
     return undefined;
@@ -1008,8 +970,8 @@ export function resolveBinningSuggested(
     // Small bounded domains have too few values to bin
     if (domain && (domain[1] - domain[0]) <= 20) return false;
 
-    // Rating/Score with known small range
-    if (semanticType === 'Rating' && !domain) return false;
+    // Score with known small range
+    if (semanticType === 'Score' && !domain) return false;
 
     return true;
 }

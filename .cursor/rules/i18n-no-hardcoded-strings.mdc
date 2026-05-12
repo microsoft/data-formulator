@@ -1,0 +1,74 @@
+---
+description: No hardcoded UI strings — use i18n translation keys
+globs: src/**/*.{ts,tsx}
+alwaysApply: true
+---
+
+# i18n: No Hardcoded UI Strings
+
+All user-visible text in the frontend MUST go through the i18n system. Never hardcode Chinese, English, or any other language string directly in components.
+
+## How to Use
+
+```tsx
+import { useTranslation } from 'react-i18next';
+
+const { t } = useTranslation();
+
+// ✅ GOOD
+<Button>{t('common.save')}</Button>
+<Tooltip content={t('chart.noData')} />
+
+// ❌ BAD
+<Button>保存</Button>
+<Button>Save</Button>
+<Tooltip content="No data available" />
+```
+
+## Non-Component Contexts (thunks, utilities, helpers)
+
+When you cannot use hooks (Redux thunks, plain `.ts` utilities, store helpers), import the i18n instance directly:
+
+```ts
+import i18n from '../i18n';
+
+// ✅ GOOD — works outside React components
+i18n.t('messages.rowLimitReached', { count: 20000 })
+
+// ❌ BAD — hooks only work inside React function components
+const { t } = useTranslation();  // will crash in a thunk
+```
+
+The same rule applies: every user-visible string must use `i18n.t()` with a translation key, never a hardcoded literal.
+
+## Translation Files
+
+- English: `src/i18n/locales/en/<namespace>.json`
+- Chinese: `src/i18n/locales/zh/<namespace>.json`
+- Namespaces: `common`, `upload`, `chart`, `model`, `encoding`, `messages`, `navigation`, `dataLoading`, `errors`
+
+When adding a new key, add it to **both** `en` and `zh` locale files. Pick the namespace that fits; create a new namespace only if none applies.
+
+## What Counts as User-Visible
+
+Must use `t()`: button labels, tooltips, placeholders, error messages, dialog titles, tab names, toast notifications, table headers, empty-state text.
+
+May stay hardcoded: log messages (`console.log`), error messages thrown but never displayed, internal constants, CSS class names, test IDs.
+
+**Cross-stack sentinel values** — strings shared between frontend and backend as identity markers (e.g. `UNTITLED_SESSION` in `dfSlice.ts` used by both Redux state and backend workspace API) must NOT be translated. They are internal constants, not display text. Translate them only at the UI rendering layer by mapping the sentinel to `t('...')`.
+
+## Backend Messages with message_code
+
+When the backend returns a user-visible message with a `message_code` (or `content_code`, `error_code`), use `translateBackend()` from `src/app/utils.tsx` to translate it:
+
+```tsx
+import { translateBackend } from '../app/utils';
+
+// Translate a backend error message
+const msg = translateBackend(event.message, event.message_code, event.message_params);
+
+// Translate options with parallel code arrays
+const options = translateBackendOptions(rawOptions, event.option_codes);
+```
+
+The translation keys live in `messages.json` under the `agent` section. Always add **both** `en` and `zh` entries.

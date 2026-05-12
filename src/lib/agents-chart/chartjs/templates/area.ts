@@ -9,8 +9,15 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import {
-    extractCategories, groupBy, buildCategoryAlignedData,
-    DEFAULT_COLORS, DEFAULT_BG_COLORS,
+    extractCategories,
+    groupBy,
+    buildCategoryAlignedData,
+    DEFAULT_COLORS,
+    DEFAULT_BG_COLORS,
+    getChartJsPalette,
+    getSeriesBorderColor,
+    getSeriesBackgroundColor,
+    coerceUnixMsForChartJs,
 } from './utils';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
@@ -21,7 +28,7 @@ export const cjsAreaChartDef: ChartTemplateDef = {
     channels: ['x', 'y', 'color', 'opacity', 'column', 'row'],
     markCognitiveChannel: 'area',
     declareLayoutMode: () => ({
-        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' } },
+        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' }, facetAspectRatioResistance: 0.5 },
     }),
     instantiate: (spec, ctx) => {
         const { channelSemantics, table, chartProperties } = ctx;
@@ -34,6 +41,10 @@ export const cjsAreaChartDef: ChartTemplateDef = {
         const yField = yCS.field;
 
         const xIsDiscrete = isDiscrete(xCS.type);
+        const xIsTemporal = xCS.type === 'temporal';
+        const mapContinuousX = (raw: unknown) =>
+            (xIsTemporal ? coerceUnixMsForChartJs(raw) : raw);
+
         const categories = xIsDiscrete
             ? extractCategories(table, xField, xCS.ordinalSortOrder)
             : undefined;
@@ -50,6 +61,8 @@ export const cjsAreaChartDef: ChartTemplateDef = {
                          interpolate === 'cardinal' || interpolate === 'catmull-rom')
             ? 0.4 : 0;
 
+        const palette = getChartJsPalette(ctx, 'color');
+
         const config: any = {
             type: 'line',
             data: {
@@ -63,11 +76,29 @@ export const cjsAreaChartDef: ChartTemplateDef = {
                     x: {
                         type: xIsDiscrete ? 'category' : 'linear',
                         title: { display: true, text: xField },
+                        ticks: {
+                            font: { size: 10 },
+                            ...(xIsTemporal
+                                ? {
+                                    maxTicksLimit: 8,
+                                    callback(v: number | string) {
+                                        const n = typeof v === 'number' ? v : Number(v);
+                                        if (!Number.isFinite(n)) return String(v);
+                                        return new Date(n).toLocaleDateString(undefined, {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                        });
+                                    },
+                                }
+                                : {}),
+                        },
                     },
                     y: {
                         type: 'linear',
                         title: { display: true, text: yField },
                         stacked,
+                        ticks: { font: { size: 10 } },
                     },
                 },
                 plugins: {
@@ -91,15 +122,17 @@ export const cjsAreaChartDef: ChartTemplateDef = {
             for (const [name, rows] of groups) {
                 const data = xIsDiscrete
                     ? buildCategoryAlignedData(rows, xField, yField, categories!)
-                    : rows.map(r => ({ x: r[xField], y: r[yField] }));
+                    : rows
+                        .map(r => ({ x: mapContinuousX(r[xField]), y: r[yField] }))
+                        .filter(p => p.y != null && (xIsTemporal ? Number.isFinite(p.x as number) : true));
 
-                const bgColor = DEFAULT_BG_COLORS[colorIdx % DEFAULT_BG_COLORS.length]
-                    .replace(/[\d.]+\)$/, `${opacity})`);
+                const borderColor = getSeriesBorderColor(palette, colorIdx);
+                const bgColor = getSeriesBackgroundColor(palette, colorIdx, opacity);
 
                 config.data.datasets.push({
                     label: name,
                     data,
-                    borderColor: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length],
+                    borderColor,
                     backgroundColor: bgColor,
                     tension,
                     fill: stacked ? 'stack' : 'origin',
@@ -113,13 +146,15 @@ export const cjsAreaChartDef: ChartTemplateDef = {
                     const row = table.find(r => String(r[xField]) === cat);
                     return row ? row[yField] : null;
                 })
-                : table.map(r => ({ x: r[xField], y: r[yField] }));
+                : table
+                    .map(r => ({ x: mapContinuousX(r[xField]), y: r[yField] }))
+                    .filter(p => p.y != null && (xIsTemporal ? Number.isFinite(p.x as number) : true));
 
             config.data.datasets.push({
                 label: yField,
                 data,
-                borderColor: DEFAULT_COLORS[0],
-                backgroundColor: `rgba(54, 162, 235, ${opacity})`,
+                borderColor: getSeriesBorderColor(palette, 0),
+                backgroundColor: getSeriesBackgroundColor(palette, 0, opacity),
                 tension,
                 fill: 'origin',
                 pointRadius: 2,

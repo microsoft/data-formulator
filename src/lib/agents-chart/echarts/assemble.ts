@@ -68,6 +68,8 @@ import { ecApplyLayoutToSpec, ecApplyTooltips } from './instantiate-spec';
 import { ecCombineFacetPanels } from './facet';
 import { DEFAULT_COLORS } from './templates/utils';
 import { inferVisCategory, computeZeroDecision } from '../core/semantic-types';
+import { decideColorMaps } from '../core/color-decisions';
+import { getPaletteForScheme } from './colormap';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -141,6 +143,10 @@ export function assembleECharts(input: ChartAssemblyInput): any {
 
     // Merge paramOverrides into effective options
     const effectiveOptions: AssembleOptions = {
+        // ECharts uses step × itemCount for discrete canvas sizing (like VL),
+        // but adds ~120-160px grid margins on top.  A 24px base band gives
+        // bars close to ECharts's native auto-sizing at typical category counts.
+        defaultBandSize: 24,
         ...options,
         ...(declaration.paramOverrides || {}),
     };
@@ -213,6 +219,14 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         chartTemplate,
     );
 
+    const colorDecisions = decideColorMaps({
+        chartType,
+        encodings,
+        channelSemantics,
+        table: values,
+        background: 'light',
+    });
+
     // --- Template instantiate ---
 
     const instantiateContext: InstantiateContext = {
@@ -226,6 +240,7 @@ export function assembleECharts(input: ChartAssemblyInput): any {
         semanticTypes,
         chartType,
         assembleOptions: effectiveOptions,
+        colorDecisions,
     };
 
     // --- Detect faceting (column / row channels) ---
@@ -345,16 +360,20 @@ export function assembleECharts(input: ChartAssemblyInput): any {
                 if (chartTemplate.postProcess) chartTemplate.postProcess(panelOption, panelCtx);
 
                 // Extract pure plot-area dimensions for facet.ts.
-                // ecApplyLayoutToSpec set: _width = plotArea + margins (with
-                // CANVAS_BUFFER).  facet.ts needs only the plot area so it
-                // can set grid.width/height exactly — not derived from
-                // panelW − margins, which would inflate when margins are
-                // scaled down for non-edge panels.
+                // Always anchor faceted panel sizing to shared core layout
+                // (same source used by Vega-Lite), instead of per-panel
+                // standalone canvas dimensions (which may include legend space).
                 const g = panelOption.grid || {};
-                panelOption._plotWidth = Math.max(20,
-                    (panelOption._width || 200) - (g.left || 0) - (g.right || 0));
-                panelOption._plotHeight = Math.max(20,
-                    (panelOption._height || 150) - (g.top || 0) - (g.bottom || 0));
+                panelOption._plotWidth = Math.max(
+                    20,
+                    facetLayout.subplotWidth
+                    || ((panelOption._width || 200) - (g.left || 0) - (g.right || 0)),
+                );
+                panelOption._plotHeight = Math.max(
+                    20,
+                    facetLayout.subplotHeight
+                    || ((panelOption._height || 150) - (g.top || 0) - (g.bottom || 0)),
+                );
 
                 // Attach facet header labels for the combiner
                 if (colField) panelOption._colHeader = cv;
@@ -469,50 +488,8 @@ interface ECResolvedChannelEncoding {
     offsetChannel?: 'xOffset' | 'yOffset';
 }
 
-const TABLEAU10 = [
-    '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
-    '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac',
-];
-const TABLEAU20 = [
-    '#4e79a7', '#a0cbe8', '#f28e2b', '#ffbe7d', '#59a14f', '#8cd17d',
-    '#b6992d', '#f1ce63', '#499894', '#86bcb6', '#e15759', '#ff9d9a',
-    '#79706e', '#bab0ac', '#d37295', '#fabfd2', '#b07aa1', '#d4a6c8',
-    '#9d7660', '#cee0b4',
-];
-const SET1 = [
-    '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
-    '#ffff33', '#a65628', '#f781bf', '#999999',
-];
-const SET2 = [
-    '#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854',
-    '#ffd92f', '#e5c494', '#b3b3b3',
-];
-const CATEGORY10 = [
-    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-];
-
-const SCHEME_TO_PALETTE: Record<string, string[]> = {
-    tableau10: TABLEAU10,
-    tableau20: TABLEAU20,
-    set1: SET1,
-    set2: SET2,
-    set3: SET2.concat(SET1),
-    category10: CATEGORY10,
-    category20: TABLEAU20,
-    pastel1: SET2,
-    accent: SET1,
-    paired: TABLEAU20,
-    default: DEFAULT_COLORS,
-};
-
-function schemeToPalette(schemeName: string): string[] {
-    const key = schemeName.toLowerCase().replace(/[- ]/g, '');
-    for (const [name, palette] of Object.entries(SCHEME_TO_PALETTE)) {
-        if (key === name.toLowerCase()) return palette;
-    }
-    return DEFAULT_COLORS;
-}
+// 颜色 palette 现在从 core/color-decisions 的统一注册表获取；
+// 这里保留 DEFAULT_COLORS 作为找不到注册表项时的兜底。
 
 /**
  * Translate Phase 0 channel semantics + declaration overrides into
@@ -640,18 +617,9 @@ function buildECEncodings(
             }
         }
 
-        // --- Color / group: palette + diverging domainMid (mirror VL) ---
-        if (channel === 'color' || channel === 'group') {
-            const schemeSource = encoding.scheme && encoding.scheme !== 'default'
-                ? encoding.scheme
-                : (fieldName && cs?.colorScheme?.scheme) ? cs.colorScheme.scheme : undefined;
-            if (schemeSource) {
-                entry.colorPalette = schemeToPalette(schemeSource);
-            }
-            if (fieldName && cs?.colorScheme?.type === 'diverging' && cs.colorScheme.domainMid !== undefined) {
-                entry.colorDomainMid = cs.colorScheme.domainMid;
-            }
-        }
+        // Color / group palettes are now sourced from backend-agnostic
+        // colorDecisions in InstantiateContext, so we no longer derive
+        // a palette directly from encoding.scheme or cs.colorScheme here.
 
         if (Object.keys(entry).length > 0) {
             resolved[channel] = entry;
@@ -678,10 +646,13 @@ function buildECEncodings(
         resolved.group.groupAxis = groupAxis;
         resolved.group.offsetChannel = offsetChannel;
         if (!resolved.color) {
+            const palette = groupCS.colorScheme?.scheme
+                ? (getPaletteForScheme(groupCS.colorScheme.scheme) ?? DEFAULT_COLORS)
+                : DEFAULT_COLORS;
             resolved.color = {
                 field: groupCS.field,
                 type: (groupCS.type ?? 'nominal') as ECResolvedChannelEncoding['type'],
-                colorPalette: resolved.group.colorPalette ?? (groupCS.colorScheme?.scheme ? schemeToPalette(groupCS.colorScheme.scheme) : undefined),
+                colorPalette: palette,
                 colorDomainMid: resolved.group.colorDomainMid,
                 ordinalSortOrder: resolved.group.ordinalSortOrder,
                 sortOrder: resolved.group.sortOrder,
@@ -692,7 +663,8 @@ function buildECEncodings(
                 legendLabelFontSize: resolved.group.legendLabelFontSize,
             };
         } else if (!resolved.color.colorPalette && groupCS.colorScheme?.scheme) {
-            resolved.color.colorPalette = schemeToPalette(groupCS.colorScheme.scheme);
+            resolved.color.colorPalette =
+                getPaletteForScheme(groupCS.colorScheme.scheme) ?? DEFAULT_COLORS;
         }
     }
 

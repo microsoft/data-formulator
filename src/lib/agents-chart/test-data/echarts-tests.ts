@@ -188,7 +188,7 @@ export function genEChartsLineTests(): TestCase[] {
             fields: [makeField('Month'), makeField('Revenue')],
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: ['Jan','Feb','Mar','Apr','May','Jun'] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Revenue') },
         });
@@ -206,7 +206,7 @@ export function genEChartsLineTests(): TestCase[] {
             fields: [makeField('Month'), makeField('Sales'), makeField('Product')],
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'] },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Product: { type: Type.String, semanticType: 'Category', levels: ['ProductA','ProductB','ProductC'] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Sales'), color: makeEncodingItem('Product') },
@@ -258,7 +258,7 @@ export function genEChartsBarTests(): TestCase[] {
             fields: [makeField('Product'), makeField('Sales')],
             metadata: {
                 Product: { type: Type.String, semanticType: 'Product', levels: ['Apples','Bananas','Cherries','Dates','Elderberries'] },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Sales') },
         });
@@ -302,7 +302,7 @@ export function genEChartsStackedBarTests(): TestCase[] {
             fields: [makeField('Quarter'), makeField('Revenue'), makeField('Region')],
             metadata: {
                 Quarter: { type: Type.String, semanticType: 'Category', levels: ['Q1','Q2','Q3','Q4'] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Region: { type: Type.String, semanticType: 'Category', levels: ['North','South','East','West'] },
             },
             encodingMap: { x: makeEncodingItem('Quarter'), y: makeEncodingItem('Revenue'), color: makeEncodingItem('Region') },
@@ -426,7 +426,7 @@ export function genEChartsStressTests(): TestCase[] {
             fields: [makeField('Product'), makeField('Sales'), makeField('Channel')],
             metadata: {
                 Product: { type: Type.String, semanticType: 'Category', levels: products },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Channel: { type: Type.String, semanticType: 'Category', levels: channels },
             },
             encodingMap: {
@@ -457,7 +457,7 @@ export function genEChartsStressTests(): TestCase[] {
             fields: [makeField('Quarter'), makeField('Revenue'), makeField('Region')],
             metadata: {
                 Quarter: { type: Type.String, semanticType: 'Category', levels: quarters },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Region: { type: Type.String, semanticType: 'Category', levels: regions },
             },
             encodingMap: {
@@ -545,7 +545,7 @@ export function genEChartsStressTests(): TestCase[] {
             fields: [makeField('Week'), makeField('Sales'), makeField('Product')],
             metadata: {
                 Week: { type: Type.String, semanticType: 'Category', levels: weeks },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Product: { type: Type.String, semanticType: 'Category', levels: products },
             },
             encodingMap: { x: makeEncodingItem('Week'), y: makeEncodingItem('Sales'), color: makeEncodingItem('Product') },
@@ -603,7 +603,7 @@ export function genEChartsAreaTests(): TestCase[] {
             fields: [makeField('Month'), makeField('Revenue')],
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: months },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Revenue') },
         });
@@ -629,7 +629,7 @@ export function genEChartsAreaTests(): TestCase[] {
             fields: [makeField('Month'), makeField('Sales'), makeField('Product')],
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: months },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Product: { type: Type.String, semanticType: 'Category', levels: products },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Sales'), color: makeEncodingItem('Product') },
@@ -664,7 +664,7 @@ export function genEChartsPieTests(): TestCase[] {
             fields: [makeField('Category'), makeField('Revenue')],
             metadata: {
                 Category: { type: Type.String, semanticType: 'Category', levels: ['Electronics','Clothing','Food','Books','Sports'] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { color: makeEncodingItem('Category'), size: makeEncodingItem('Revenue') },
         });
@@ -748,7 +748,7 @@ export function genEChartsHeatmapTests(): TestCase[] {
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: months },
                 Region: { type: Type.String, semanticType: 'Category', levels: regions },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Region'), color: makeEncodingItem('Sales') },
         });
@@ -1197,7 +1197,7 @@ function buildEChartsFacetTest(opts: {
         encodingMap.y = makeEncodingItem('Value');
         fields.push(makeField('Category'), makeField('Value'));
         metadata['Category'] = { type: Type.String, semanticType: 'Category', levels: xCategories };
-        metadata['Value'] = { type: Type.Number, semanticType: 'Revenue', levels: [] };
+        metadata['Value'] = { type: Type.Number, semanticType: 'Amount', levels: [] };
     }
 
     if (colVals) {
@@ -1598,7 +1598,7 @@ export function genEChartsTreemapTests(): TestCase[] {
             metadata: {
                 Region: { type: Type.String, semanticType: 'Category', levels: Object.keys(hierarchy) },
                 Country: { type: Type.String, semanticType: 'Country', levels: [] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: {
                 color: makeEncodingItem('Region'),
@@ -1694,7 +1694,7 @@ export function genEChartsSunburstTests(): TestCase[] {
             },
             encodingMap: {
                 color: makeEncodingItem('Department'),
-                detail: makeEncodingItem('Team'),
+                group: makeEncodingItem('Team'),
                 size: makeEncodingItem('Headcount'),
             },
         });
@@ -1732,7 +1732,7 @@ export function genEChartsSunburstTests(): TestCase[] {
             },
             encodingMap: {
                 color: makeEncodingItem('Continent'),
-                detail: makeEncodingItem('Country'),
+                group: makeEncodingItem('Country'),
                 size: makeEncodingItem('Population'),
             },
         });
@@ -2006,7 +2006,7 @@ export function genEChartsUniqueStressTests(): TestCase[] {
             metadata: {
                 Region: { type: Type.String, semanticType: 'Category', levels: regions },
                 Product: { type: Type.String, semanticType: 'Category', levels: products },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: {
                 color: makeEncodingItem('Region'),
@@ -2073,7 +2073,7 @@ export function genEChartsUniqueStressTests(): TestCase[] {
             },
             encodingMap: {
                 color: makeEncodingItem('Continent'),
-                detail: makeEncodingItem('Country'),
+                group: makeEncodingItem('Country'),
                 size: makeEncodingItem('GDP'),
             },
         });

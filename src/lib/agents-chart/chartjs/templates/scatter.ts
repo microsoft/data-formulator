@@ -10,7 +10,13 @@
  */
 
 import { ChartTemplateDef } from '../../core/types';
-import { DEFAULT_COLORS, DEFAULT_BG_COLORS } from './utils';
+import {
+    DEFAULT_COLORS,
+    DEFAULT_BG_COLORS,
+    getChartJsPalette,
+    getSeriesBorderColor,
+    getSeriesBackgroundColor,
+} from './utils';
 
 /** Compute a reasonable point radius based on canvas area and point count. */
 function computePointRadius(width: number, height: number, pointCount: number): number {
@@ -34,6 +40,8 @@ export const cjsScatterPlotDef: ChartTemplateDef = {
         if (!xField || !yField) return;
 
         const opacity = chartProperties?.opacity ?? 1;
+
+        const palette = getChartJsPalette(ctx, 'color');
 
         const config: any = {
             type: 'scatter',
@@ -81,8 +89,8 @@ export const cjsScatterPlotDef: ChartTemplateDef = {
                 config.data.datasets.push({
                     label: name,
                     data,
-                    backgroundColor: DEFAULT_BG_COLORS[colorIdx % DEFAULT_BG_COLORS.length],
-                    borderColor: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length],
+                    backgroundColor: getSeriesBackgroundColor(palette, colorIdx, opacity),
+                    borderColor: getSeriesBorderColor(palette, colorIdx),
                     borderWidth: 1,
                     pointRadius: 4,
                 });
@@ -93,8 +101,8 @@ export const cjsScatterPlotDef: ChartTemplateDef = {
             const data = table.map(row => ({ x: row[xField], y: row[yField] }));
             config.data.datasets.push({
                 data,
-                backgroundColor: `rgba(54, 162, 235, ${opacity})`,
-                borderColor: 'rgba(54, 162, 235, 1)',
+                backgroundColor: getSeriesBackgroundColor(palette, 0, opacity),
+                borderColor: getSeriesBorderColor(palette, 0),
                 borderWidth: 1,
                 pointRadius: 4,
             });

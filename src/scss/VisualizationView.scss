@@ -1,6 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+// .vis-scroll — scrollbar styling now handled by the global thin scrollbar in App.scss
+.vis-scroll {
+    transition: linear 0.1s;
+}
+
 .visualization-gallery {
     padding: 0; //0px 10px 10px 10px;
     overflow: hidden;
@@ -203,7 +208,6 @@ $accelerate-ease: cubic-bezier(0.4, 0.0, 1, 1);
 
 .data-thread {
     
-
     .thread-view-animation {
         transform-origin: bottom left;
         animation: appear 0.5s ease-out

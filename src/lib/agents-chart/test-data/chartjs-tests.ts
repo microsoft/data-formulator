@@ -236,7 +236,7 @@ export function genChartJsLineTests(): TestCase[] {
             fields: [makeField('Month'), makeField('Revenue')],
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: ['Jan','Feb','Mar','Apr','May','Jun'] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Revenue') },
         });
@@ -254,7 +254,7 @@ export function genChartJsLineTests(): TestCase[] {
             fields: [makeField('Month'), makeField('Sales'), makeField('Product')],
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'] },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Product: { type: Type.String, semanticType: 'Category', levels: ['ProductA','ProductB','ProductC'] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Sales'), color: makeEncodingItem('Product') },
@@ -279,7 +279,7 @@ export function genChartJsBarTests(): TestCase[] {
             fields: [makeField('Product'), makeField('Sales')],
             metadata: {
                 Product: { type: Type.String, semanticType: 'Category', levels: ['Apples','Bananas','Cherries','Dates','Elderberries'] },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Sales') },
         });
@@ -325,7 +325,7 @@ export function genChartJsStackedBarTests(): TestCase[] {
             fields: [makeField('Quarter'), makeField('Revenue'), makeField('Region')],
             metadata: {
                 Quarter: { type: Type.String, semanticType: 'Category', levels: ['Q1','Q2','Q3','Q4'] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Region: { type: Type.String, semanticType: 'Category', levels: ['North','South','East','West'] },
             },
             encodingMap: { x: makeEncodingItem('Quarter'), y: makeEncodingItem('Revenue'), color: makeEncodingItem('Region') },
@@ -349,7 +349,7 @@ export function genChartJsGroupedBarTests(): TestCase[] {
             fields: [makeField('Year'), makeField('Budget'), makeField('Department')],
             metadata: {
                 Year: { type: Type.String, semanticType: 'Category', levels: ['2022','2023','2024'] },
-                Budget: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Budget: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Department: { type: Type.String, semanticType: 'Category', levels: ['Sales','Engineering','Marketing'] },
             },
             encodingMap: { x: makeEncodingItem('Year'), y: makeEncodingItem('Budget'), group: makeEncodingItem('Department') },
@@ -392,7 +392,7 @@ export function genChartJsAreaTests(): TestCase[] {
             fields: [makeField('Month'), makeField('Revenue')],
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: ['Jan','Feb','Mar','Apr','May','Jun'] },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Revenue') },
         });

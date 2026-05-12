@@ -9,6 +9,19 @@ import { DictTable } from '../components/ComponentType';
 import { CoerceType, TestType, Type } from './types';
 import { ColumnTable } from './table';
 
+/**
+ * Read a File as text, trying UTF-8 first and falling back to GBK.
+ * Handles CSV/TSV files saved by Chinese-locale Excel (GBK) and similar cases.
+ */
+export const readFileText = async (file: File): Promise<string> => {
+    const buffer = await file.arrayBuffer();
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    } catch {
+        return new TextDecoder('gbk').decode(buffer);
+    }
+};
+
 export const loadTextDataWrapper = (title: string, text: string, fileType: string): DictTable | undefined => {
     
     let tableName = title;
@@ -23,7 +36,7 @@ export const loadTextDataWrapper = (title: string, text: string, fileType: strin
     return table;
 };
 
-export const createTableFromText = (title: string, text: string, context?: string): DictTable | undefined => {
+export const createTableFromText = (title: string, text: string): DictTable | undefined => {
     // Check for empty strings, bad data, anything else?
     if (!text || text.trim() === '') {
         console.log('Invalid text provided for data. Could not load.');
@@ -76,16 +89,15 @@ export const createTableFromText = (title: string, text: string, context?: strin
         return record;
     });
 
-    return createTableFromFromObjectArray(title, records, true, undefined, context);
+    return createTableFromFromObjectArray(title, records, true, undefined);
 };
 
-export const createTableFromFromObjectArray = (title: string, values: any[], anchored: boolean, derive?: any, context?: string): DictTable => {
+export const createTableFromFromObjectArray = (title: string, values: any[], anchored: boolean, derive?: any): DictTable => {
     /*
     * title: the title of the table
     * values: the values of the table
     * anchored: whether the table is anchored
     * derive: the derive of the table
-    * context: the context of the table that will be attached to table metadata
     */
 
     const len = values.length;
@@ -126,6 +138,7 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
     let columnTable = new ColumnTable(columns, cleanNames);
 
     return  {
+        kind: 'table' as const,
         id: title,
         displayId: `${title}`,
         names: columnTable.names(),
@@ -139,20 +152,26 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
         }), {}),
         rows: columnTable.objects(),
         derive: derive,
+        virtual: { tableId: title, rowCount: len },
         anchored: anchored,
-        createdBy: "user",
-        attachedMetadata: context || ''
+        description: ''
     }
 };
 
 export const inferTypeFromValueArray = (values: any[]): Type => {
-    let types: Type[] = [Type.Boolean, Type.Integer, Type.Date, Type.Number, Type.String];
+    // More specific types first; the first surviving candidate wins.
+    let types: Type[] = [
+        Type.Boolean, Type.Integer,
+        Type.DateTime, Type.Date, Type.Time, Type.Duration,
+        Type.Number, Type.String,
+    ];
 
     for (let i = 0; i < values.length; i++) {
         const v = values[i];
+        if (v == null || v === '') continue;
 
         for (let t = 0; t < types.length; t++) {
-            if (v != null && !TestType[types[t]](v)) {
+            if (!TestType[types[t]](v)) {
                 types.splice(t, 1);
                 t -= 1;
             }
@@ -163,13 +182,20 @@ export const inferTypeFromValueArray = (values: any[]): Type => {
 };
 
 export const convertTypeToDtype = (type: Type | undefined): string => {
-    return type === Type.Integer || type === Type.Number
-        ? 'quantitative'
-        : type === Type.Boolean
-        ? 'boolean'
-        : type === Type.Date
-        ? 'date'
-        : 'nominal';
+    switch (type) {
+        case Type.Integer:
+        case Type.Number:
+        case Type.Duration:
+            return 'quantitative';
+        case Type.Boolean:
+            return 'boolean';
+        case Type.Date:
+        case Type.DateTime:
+        case Type.Time:
+            return 'date';
+        default:
+            return 'nominal';
+    }
 };
 
 export const coerceValueArrayFromTypes = (values: any[], type: Type): any[] => {
@@ -195,6 +221,25 @@ export function tupleEqual(a: any[], b: any[]) {
     return true;
 }
 
+export const resolveExcelCellValue = (value: any): string | number | boolean | null => {
+    if (value == null) return null;
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'object') {
+        if (value.richText) {
+            return value.richText.map((rt: any) => rt.text ?? '').join('');
+        }
+        if (value.hyperlink != null) {
+            return value.text || value.hyperlink;
+        }
+        if (value.formula !== undefined) {
+            return resolveExcelCellValue(value.result);
+        }
+        if (value.error) return null;
+        return String(value);
+    }
+    return value;
+};
+
 export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuffer): Promise<DictTable[]> => {
     try {
         // Read the Excel file
@@ -212,7 +257,7 @@ export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuf
                 const headerRow = worksheet.getRow(1);
                 const headers: string[] = [];
                 headerRow.eachCell((cell, colNumber) => {
-                    headers[colNumber - 1] = cell.value?.toString() || `Column${colNumber}`;
+                    headers[colNumber - 1] = resolveExcelCellValue(cell.value)?.toString() || `Column${colNumber}`;
                 });
 
                 if (headers.length === 0) {
@@ -226,7 +271,7 @@ export const loadBinaryDataWrapper = async (title: string, arrayBuffer: ArrayBuf
                     const rowData: any = {};
                     row.eachCell((cell, colNumber) => {
                         const header = headers[colNumber - 1] || `Column${colNumber}`;
-                        rowData[header] = cell.value;
+                        rowData[header] = resolveExcelCellValue(cell.value);
                     });
 
                     // Only add row if it has data

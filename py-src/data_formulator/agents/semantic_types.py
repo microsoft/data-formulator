@@ -50,8 +50,6 @@ DURATION = "Duration"       # Time span: "2 hours", "3 days", milliseconds
 # MEASURE — Amount
 AMOUNT = "Amount"           # Monetary or general amounts (additive)
 PRICE = "Price"             # Unit price (intensive — avg, not sum)
-REVENUE = "Revenue"         # Total revenue/sales (additive)
-COST = "Cost"               # Expenses/costs (additive)
 
 # MEASURE — Physical
 QUANTITY = "Quantity"        # Generic continuous measure (additive)
@@ -73,8 +71,6 @@ NUMBER = "Number"           # Generic number (measure fallback)
 # DISCRETE
 RANK = "Rank"               # Position in ordered list: 1st, 2nd, 3rd
 SCORE = "Score"             # Rating score: 1-5, 1-10, 0-100
-RATING = "Rating"           # Star rating, letter grade
-INDEX = "Index"             # Row number, sequence number
 
 # IDENTIFIER
 ID = "ID"                   # Unique identifier (not for aggregation!)
@@ -88,28 +84,22 @@ COUNTRY = "Country"         # Country name or code
 STATE = "State"             # State/Province
 CITY = "City"               # City name
 REGION = "Region"           # Geographic region
-ADDRESS = "Address"         # Street address
-ZIP_CODE = "ZipCode"        # Postal code
+ADDRESS = "Address"         # Street address (geo lookup)
+ZIP_CODE = "ZipCode"        # Postal code (geo lookup)
 
 # CATEGORICAL — Entity
-PERSON_NAME = "PersonName"  # Full name, first/last name
-COMPANY = "Company"         # Company/Organization name
-PRODUCT = "Product"         # Product name
-CATEGORY = "Category"       # Product/item category
-NAME = "Name"               # Generic named entity (fallback)
+CATEGORY = "Category"       # Discrete category / product / entity class
+NAME = "Name"               # Generic named entity (person, company, product, etc.)
 
 # CATEGORICAL — Coded
 STATUS = "Status"           # State: "Active", "Pending", "Closed"
-TYPE = "Type"               # Type classification
 BOOLEAN = "Boolean"         # True/False, Yes/No
 DIRECTION = "Direction"     # N, S, E, W — cyclic ordinal
 
 # CATEGORICAL — Binned
-RANGE = "Range"             # Numeric range: "10000-20000", "<50", "50+"
-AGE_GROUP = "AgeGroup"      # Age range: "18-24", "25-34"
+RANGE = "Range"             # Numeric range, age group, binned values
 
 # FALLBACKS
-STRING = "String"           # Generic string (categorical fallback)
 UNKNOWN = "Unknown"         # Cannot determine type
 
 
@@ -126,7 +116,7 @@ ALL_SEMANTIC_TYPES: List[str] = [
     # Temporal — Duration
     DURATION,
     # Measure — Amount
-    AMOUNT, PRICE, REVENUE, COST,
+    AMOUNT, PRICE,
     # Measure — Physical
     QUANTITY, TEMPERATURE,
     # Measure — Proportion
@@ -136,7 +126,7 @@ ALL_SEMANTIC_TYPES: List[str] = [
     # Measure — GenericMeasure
     COUNT, NUMBER,
     # Discrete
-    RANK, SCORE, RATING, INDEX,
+    RANK, SCORE,
     # Identifier
     ID,
     # Geographic — GeoCoordinate
@@ -144,13 +134,13 @@ ALL_SEMANTIC_TYPES: List[str] = [
     # Geographic — GeoPlace
     COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE,
     # Categorical — Entity
-    PERSON_NAME, COMPANY, PRODUCT, CATEGORY, NAME,
+    CATEGORY, NAME,
     # Categorical — Coded
-    STATUS, TYPE, BOOLEAN, DIRECTION,
+    STATUS, BOOLEAN, DIRECTION,
     # Categorical — Binned
-    RANGE, AGE_GROUP,
+    RANGE,
     # Fallbacks
-    STRING, UNKNOWN,
+    UNKNOWN,
 ]
 
 
@@ -165,7 +155,7 @@ TIMESERIES_X_TYPES: Set[str] = {
 }
 
 MEASURE_TYPES: Set[str] = {
-    AMOUNT, PRICE, REVENUE, COST,
+    AMOUNT, PRICE,
     QUANTITY, TEMPERATURE,
     PERCENTAGE,
     PROFIT, PERCENTAGE_CHANGE, SENTIMENT, CORRELATION,
@@ -174,23 +164,22 @@ MEASURE_TYPES: Set[str] = {
 }
 
 NON_MEASURE_NUMERIC_TYPES: Set[str] = {
-    RANK, INDEX, SCORE, RATING,
+    RANK, SCORE,
     YEAR, MONTH, DAY, HOUR,
     LATITUDE, LONGITUDE,
 }
 
 CATEGORICAL_TYPES: Set[str] = {
-    NAME, PERSON_NAME, COMPANY, PRODUCT, CATEGORY,
-    STATUS, TYPE, BOOLEAN, DIRECTION,
-    COUNTRY, STATE, CITY, REGION,
-    RANGE, AGE_GROUP,
-    STRING,
+    NAME, CATEGORY,
+    STATUS, BOOLEAN, DIRECTION,
+    COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE,
+    RANGE,
 }
 
 ORDINAL_TYPES: Set[str] = {
     YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, DECADE,
-    RANK, SCORE, RATING,
-    RANGE, AGE_GROUP,
+    RANK, SCORE,
+    RANGE,
     DIRECTION,
 }
 
@@ -213,19 +202,19 @@ SEMANTIC_TYPE_CATEGORIES: Dict[str, List[str]] = {
     "Temporal (granules)": [YEAR, QUARTER, MONTH, WEEK, DAY, HOUR],
     "Temporal (combined)": [YEAR_MONTH, YEAR_QUARTER, YEAR_WEEK, DECADE],
     "Temporal (duration)": [DURATION],
-    "Numeric measures (monetary)": [AMOUNT, PRICE, REVENUE, COST],
+    "Numeric measures (monetary)": [AMOUNT, PRICE],
     "Numeric measures (physical)": [QUANTITY, TEMPERATURE],
     "Numeric measures (proportion)": [PERCENTAGE],
     "Numeric measures (signed/diverging)": [PROFIT, PERCENTAGE_CHANGE, SENTIMENT, CORRELATION],
     "Numeric measures (generic)": [COUNT, NUMBER],
-    "Numeric discrete": [RANK, INDEX, SCORE, RATING],
+    "Numeric discrete": [RANK, SCORE],
     "Identifier": [ID],
     "Geographic coordinates": [LATITUDE, LONGITUDE],
     "Geographic locations": [COUNTRY, STATE, CITY, REGION, ADDRESS, ZIP_CODE],
-    "Entity names": [PERSON_NAME, COMPANY, PRODUCT, CATEGORY, NAME],
-    "Categorical codes": [STATUS, TYPE, BOOLEAN, DIRECTION],
-    "Binned ranges": [RANGE, AGE_GROUP],
-    "Fallback": [STRING, UNKNOWN],
+    "Entity names": [CATEGORY, NAME],
+    "Categorical codes": [STATUS, BOOLEAN, DIRECTION],
+    "Binned ranges": [RANGE],
+    "Fallback": [UNKNOWN],
 }
 
 
@@ -320,10 +309,9 @@ def generate_semantic_types_prompt() -> str:
     lines.append("")
     lines.append("6. GEOGRAPHIC types:")
     lines.append("   - Use Latitude/Longitude for coordinates")
-    lines.append("   - Use Country, State, City for named locations")
+    lines.append("   - Use Country, State, City for named locations; Address and ZipCode for street-level geo lookup")
     lines.append("")
     lines.append("7. CATEGORICAL types:")
-    lines.append("   - Use specific entity types (PersonName, Company, Product) when applicable")
     lines.append("   - Use Category for classification fields")
     lines.append("   - Use Status for state/status fields ('Active', 'Pending')")
     lines.append("   - Use Boolean for true/false, yes/no fields")
@@ -344,7 +332,7 @@ def generate_semantic_types_prompt() -> str:
 LEGACY_SEMANTIC_TYPES = [
     "Location", "Decade", "Year", "Month", "YearMonth", "Day",
     "Date", "Time", "DateTime", "TimeRange", "Range", "Duration",
-    "Name", "Percentage", "String", "Number"
+    "Name", "Percentage", "Number"
 ]
 
 
@@ -366,7 +354,7 @@ VL_TYPE_MAP: Dict[str, str] = {
     "Duration": "quantitative",
 
     # Measures → quantitative
-    "Amount": "quantitative", "Price": "quantitative", "Revenue": "quantitative", "Cost": "quantitative",
+    "Amount": "quantitative", "Price": "quantitative",
     "Quantity": "quantitative", "Temperature": "quantitative",
     "Percentage": "quantitative",
     "Profit": "quantitative", "PercentageChange": "quantitative",
@@ -374,8 +362,8 @@ VL_TYPE_MAP: Dict[str, str] = {
     "Count": "quantitative", "Number": "quantitative",
 
     # Discrete numerics
-    "Rank": "ordinal", "Index": "ordinal",
-    "Score": "quantitative", "Rating": "quantitative",
+    "Rank": "ordinal",
+    "Score": "quantitative",
     "ID": "nominal",
 
     # Geographic coordinates → quantitative
@@ -386,18 +374,17 @@ VL_TYPE_MAP: Dict[str, str] = {
     "Region": "nominal", "Address": "nominal", "ZipCode": "nominal",
 
     # Entity names → nominal
-    "Name": "nominal", "PersonName": "nominal",
-    "Company": "nominal", "Product": "nominal", "Category": "nominal",
+    "Name": "nominal", "Category": "nominal",
 
     # Coded → nominal (Direction can be ordinal but defaults nominal for VL)
-    "Status": "nominal", "Type": "nominal", "Boolean": "nominal",
+    "Status": "nominal", "Boolean": "nominal",
     "Direction": "nominal",
 
     # Ranges → ordinal
-    "Range": "ordinal", "AgeGroup": "ordinal",
+    "Range": "ordinal",
 
     # Fallbacks
-    "String": "nominal", "Unknown": "nominal",
+    "Unknown": "nominal",
 }
 
 

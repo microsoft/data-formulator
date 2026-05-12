@@ -37,6 +37,8 @@ import {
 } from '../core/semantic-types';
 import { toTypeString, snapToBoundHeuristic } from '../core/field-semantics';
 
+const DEFAULT_QUANTITATIVE_AXIS_FORMAT = ',.12~g';
+
 // ---------------------------------------------------------------------------
 // Public API: instantiateSpec
 // ---------------------------------------------------------------------------
@@ -106,6 +108,9 @@ export function vlApplyLayoutToSpec(
             // Skip binned encodings — the bin axis represents data values,
             // not bar length, so zero-baseline is inappropriate (e.g. histograms).
             if (enc.bin) continue;
+            // Skip encodings using a private/synthetic field distinct from
+            // the channel's semantic field (e.g. Radar's `__y` polar coord).
+            if (cs.field && enc.field && enc.field !== cs.field) continue;
             if (!enc.scale) enc.scale = {};
             if (enc.scale.zero !== undefined) continue;
             if (enc.scale.domain && Array.isArray(enc.scale.domain)) continue;
@@ -122,6 +127,9 @@ export function vlApplyLayoutToSpec(
 
     // --- Apply field-context semantic decisions (format, domain, ticks, etc.) ---
     vlApplyFieldContext(vgObj, channelSemantics, collectEncodingTargets, context);
+
+    // --- Apply safe default formatting to quantitative axes ---
+    vlApplyDefaultQuantitativeAxisFormat(collectEncodingTargets);
 
     // --- Apply temporal formatting ---
     // For positional temporal axes (x/y), do NOT set axis.format — VL's
@@ -150,6 +158,11 @@ export function vlApplyLayoutToSpec(
         if (stCategory !== 'temporal') return;
 
         const fieldVals = context.table.map((r: any) => r[enc.field]).filter((v: any) => v != null);
+
+        // Single unique value → no temporal formatting (would lose precision, e.g. "2007-12" → "2007")
+        const uniqueVals = new Set(fieldVals.map(String));
+        if (uniqueVals.size <= 1) return;
+
         const datelikeCnt = fieldVals.filter((v: any) =>
             typeof v !== 'string' || looksLikeDateString(String(v))
         ).length;
@@ -169,6 +182,7 @@ export function vlApplyLayoutToSpec(
 
         const expr = `isValid(toDate(datum.label)) ? timeFormat(toDate(datum.label), '${fmt}') : datum.label`;
         if (channel === 'x' || channel === 'y') {
+            if (enc.axis === null) return; // preserve axis suppression
             if (!enc.axis) enc.axis = {};
             enc.axis.labelExpr = expr;
         } else if (channel === 'color') {
@@ -297,15 +311,18 @@ export function vlApplyLayoutToSpec(
             : { step: layout.yStep };
     }
 
-    // Facet header sizing
+    // Facet header sizing — constrain labels to subplot width
     const totalFacets = (layout.facet?.columns ?? 1) * (layout.facet?.rows ?? 1);
-    if (totalFacets > 6) {
-        vgObj.config.header = { labelLimit: 120, labelFontSize: 9 };
-    }
-
-    // In faceted charts, use lighter axis title styling to reduce clutter
     const facetRows = layout.facet?.rows ?? 1;
     const facetCols = layout.facet?.columns ?? 1;
+    if (facetRows > 1 || facetCols > 1) {
+        const limit = Math.max(80, layout.subplotWidth + 20);
+        const headerCfg: Record<string, any> = { labelLimit: limit };
+        if (totalFacets > 6) {
+            headerCfg.labelFontSize = 9;
+        }
+        vgObj.config.header = { ...(vgObj.config.header || {}), ...headerCfg };
+    }
     const encTarget = vgObj.spec?.encoding || vgObj.encoding;
 
     if (facetRows > 1 || facetCols > 1) {
@@ -436,6 +453,7 @@ export function vlApplyLayoutToSpec(
 
             // Axis/legend label color: grey for placeholder
             if (ch === 'x' || ch === 'y') {
+                if (enc.axis === null) continue; // preserve axis suppression
                 if (!enc.axis) enc.axis = {};
                 enc.axis.labelColor = {
                     condition: {
@@ -647,6 +665,13 @@ function vlApplyFieldContext(
         for (const enc of targets) {
             if (!enc.field) continue;
 
+            // Skip encodings whose field differs from the channel's semantic
+            // field. Templates (e.g. Radar) may inject private computed fields
+            // (e.g. `__x`, `__y` for polar coordinates) on the same VL channel;
+            // applying the user field's semantic context (domain, format, etc.)
+            // to those synthetic fields produces wrong scales.
+            if (cs.field && enc.field !== cs.field) continue;
+
             // ── 0. Temporal + bin incompatibility guard ──
             // VL's `bin` operates on numeric values. Setting `type: "temporal"`
             // with `bin` causes VL to parse values (e.g., year 2004) as dates
@@ -656,8 +681,10 @@ function vlApplyFieldContext(
             if (enc.bin && enc.type === 'temporal') {
                 enc.type = 'quantitative';
                 // Year/Decade values should show as plain integers, not "2,004"
-                if (!enc.axis) enc.axis = {};
-                if (!enc.axis.format) enc.axis.format = 'd';
+                if (enc.axis !== null) {
+                    if (!enc.axis) enc.axis = {};
+                    if (!enc.axis.format) enc.axis.format = 'd';
+                }
             }
 
             // ── 1. Number format (axis.format / axis.labelExpr) ──
@@ -668,7 +695,8 @@ function vlApplyFieldContext(
             // Without this: axes show raw numbers like "1000000" instead of "$1,000,000".
             if ((cs.format?.pattern || cs.format?.abbreviate) && (ch === 'x' || ch === 'y') && enc.type === 'quantitative' && !enc.bin) {
                 // Skip if the encoding already has an explicit format
-                if (!enc.axis?.format && !enc.axis?.labelExpr) {
+                if (enc.axis === null) { /* preserve axis suppression */ }
+                else if (!enc.axis?.format && !enc.axis?.labelExpr) {
                     if (!enc.axis) enc.axis = {};
                     const expr = formatSpecToLabelExpr(cs.format);
                     if (expr) {
@@ -844,6 +872,8 @@ function vlApplyFieldContext(
             // Without this: Rating 1-5 and Count axes show fractional ticks
             // like 1.5, 2.5, 3.5 that have no physical meaning.
             if (cs.tickConstraint && (ch === 'x' || ch === 'y') && enc.type === 'quantitative' && !enc.bin) {
+                if (enc.axis === null) { /* preserve axis suppression */ }
+                else {
                 if (!enc.axis) enc.axis = {};
                 if (cs.tickConstraint.integersOnly && enc.axis.tickMinStep === undefined) {
                     enc.axis.tickMinStep = cs.tickConstraint.minStep ?? 1;
@@ -874,6 +904,7 @@ function vlApplyFieldContext(
                         "format(datum.value, '$1d')",
                     );
                 }
+                } // close else (axis !== null)
             }
 
             // ── 5. Reversed axis (scale.reverse) ──
@@ -920,9 +951,12 @@ function vlApplyFieldContext(
                         // decade).  Make them very light so they convey the
                         // log-scale structure without competing with data.
                         if (ch === 'x' || ch === 'y') {
-                            if (!enc.axis) enc.axis = {};
-                            enc.axis.gridColor = '#e8e8e8';
-                            enc.axis.gridOpacity = 0.5;
+                            if (enc.axis === null) { /* preserve axis suppression */ }
+                            else {
+                                if (!enc.axis) enc.axis = {};
+                                enc.axis.gridColor = '#e8e8e8';
+                                enc.axis.gridOpacity = 0.5;
+                            }
                         }
                     }
                 }
@@ -931,8 +965,26 @@ function vlApplyFieldContext(
     }
 }
 
+function vlApplyDefaultQuantitativeAxisFormat(
+    collectEncodingTargets: (ch: string) => any[],
+): void {
+    for (const ch of ['x', 'y'] as const) {
+        for (const enc of collectEncodingTargets(ch)) {
+            if (!enc || enc.type !== 'quantitative' || enc.bin || enc.axis === null) continue;
+            if (enc.axis?.format || enc.axis?.labelExpr) continue;
+
+            if (!enc.axis) enc.axis = {};
+            enc.axis.format = DEFAULT_QUANTITATIVE_AXIS_FORMAT;
+        }
+    }
+}
+
 /**
  * Apply tooltip configuration to a VL spec.
+ *
+ * Keep tooltip activation separate from axis/legend number formatting. Global
+ * numberFormat also affects axes and can force small tick values into scientific
+ * notation, so axis defaults are applied explicitly in vlApplyLayoutToSpec.
  */
 export function vlApplyTooltips(vgObj: any): void {
     if (!vgObj.config) vgObj.config = {};

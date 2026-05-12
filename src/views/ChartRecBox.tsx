@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { FC, useEffect, useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next';
 import { transition } from '../app/tokens';
 import { useSelector, useDispatch } from 'react-redux'
 import { DataFormulatorState, dfActions, generateFreshChart } from '../app/dfSlice';
@@ -48,63 +49,67 @@ export interface ChartRecBoxProps {
 
 export const IdeaChip: FC<{
     mini?: boolean,
-    idea: {text?: string, questions?: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', type?: 'branch' | 'deep_dive'} 
+    idea: {text?: string, goal: string, tag?: string, type?: 'branch' | 'deep_dive'} 
     theme: Theme, 
     onClick: () => void, 
     sx?: SxProps,
     disabled?: boolean,
 }> = function ({mini, idea, theme, onClick, sx, disabled}) {
 
-    const getDifficultyColor = (difficulty: 'easy' | 'medium' | 'hard') => {
-        switch (difficulty) {
-            case 'easy':
-                return theme.palette.success.main;
-            case 'medium':
-                return theme.palette.primary.main;
-            case 'hard':
-                return theme.palette.warning.main;
-            default:
-                return theme.palette.text.secondary;
-        }
-    };
+    const accentColor = theme.palette.text.primary;
+    const tagLabel = idea.tag ? `(${idea.tag})` : '';
+    const ideaText = idea.goal;
 
-    let styleColor = getDifficultyColor(idea.difficulty || 'medium');
-
-    let ideaText = idea.goal;
-
-    let ideaTextComponent = renderTextWithEmphasis(ideaText, {
+    const ideaTextComponent = renderTextWithEmphasis(ideaText, {
         borderRadius: '0px',
-        borderBottom: `1px solid`,
-        borderColor: alpha(styleColor, 0.4),
         fontSize: '11px',
         lineHeight: 1.4,
-        backgroundColor: alpha(styleColor, 0.05),
+        backgroundColor: alpha(accentColor, 0.04),
     });
 
     return (
         <Box
+            component="button"
+            type="button"
+            onClick={disabled ? undefined : onClick}
+            disabled={disabled}
             sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '4px 6px',
-                fontSize: '11px',
-                minHeight: '24px',
-                height: 'auto',
-                borderRadius: 2,
-                border: `1px solid ${alpha(styleColor, 0.2)}`,
-                transition: transition.fast,
-                backgroundColor: alpha(theme.palette.background.paper, 0.9),
+                position: 'relative',
+                display: 'inline-block',
+                textAlign: 'left',
+                px: '8px',
+                py: '4px',
+                fontSize: 11,
+                lineHeight: 1.4,
+                color: accentColor,
+                fontFamily: theme.typography.fontFamily,
+                borderRadius: '6px',
+                border: `1px solid ${alpha(accentColor, 0.12)}`,
+                backgroundColor: theme.palette.background.paper,
                 cursor: disabled ? 'default' : 'pointer',
                 opacity: disabled ? 0.6 : 1,
-                '&:hover': disabled ? 'none' : {
-                    borderColor: alpha(styleColor, 0.7),
-                    transform: 'translateY(-1px)',
+                whiteSpace: 'normal',
+                wordBreak: 'break-word',
+                transition: transition.fast,
+                '&:hover': disabled ? undefined : {
+                    backgroundColor: alpha(accentColor, 0.06),
                 },
                 ...sx
             }}
-            onClick={disabled ? undefined : onClick}
         >
-            <Typography component="div" sx={{ fontSize: '11px', color: getDifficultyColor(idea.difficulty || 'medium') }}>
+            {tagLabel && (
+                <Typography
+                    component="span"
+                    sx={{
+                        fontSize: 11,
+                        color: theme.palette.text.secondary,
+                        mr: '4px',
+                    }}
+                >
+                    {tagLabel}
+                </Typography>
+            )}
+            <Typography component="span" sx={{ fontSize: 11, color: accentColor }}>
                 {ideaTextComponent}
             </Typography>
         </Box>
@@ -113,6 +118,7 @@ export const IdeaChip: FC<{
 
 export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolderChartId, sx }) {
     const dispatch = useDispatch<AppDispatch>();
+    const { t } = useTranslation();
     const theme = useTheme();
 
     // reference to states
@@ -125,7 +131,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     
     const [prompt, setPrompt] = useState<string>("");
     const [isFormulating, setIsFormulating] = useState<boolean>(false);
-    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
+    const [ideas, setIdeas] = useState<{text: string, goal: string, tag: string}[]>([]);
 
     const [thinkingBuffer, setThinkingBuffer] = useState<string>("");
 
@@ -133,6 +139,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     
     // Add state for loading ideas
     const [isLoadingIdeas, setIsLoadingIdeas] = useState<boolean>(false);
+    const [ideaPhase, setIdeaPhase] = useState<string>('');
+    const [ideaElapsed, setIdeaElapsed] = useState(0);
+
+    useEffect(() => {
+        if (!isLoadingIdeas) { setIdeaElapsed(0); setIdeaPhase(''); return; }
+        const timer = setInterval(() => setIdeaElapsed(e => e + 1), 1000);
+        return () => clearInterval(timer);
+    }, [isLoadingIdeas]);
 
     // Use the provided tableId and find additional available tables for multi-table operations
     const currentTable = tables.find(t => t.id === tableId);
@@ -147,9 +161,12 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
     ];
     
-    // Function to get a question from the list with cycling
-    const getQuestion = (): string => {
+    const getDefaultPrompt = (): string => {
         return "show something interesting about the data";
+    };
+
+    const getQuestionPlaceholder = (): string => {
+        return t('chartRec.defaultInterestingPromptPlaceholder');
     };
 
     // Function to get ideas from the interactive explore agent
@@ -162,6 +179,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
             onIdeas: setIdeas,
             onThinkingBuffer: setThinkingBuffer,
             onLoadingChange: setIsLoadingIdeas,
+            onProgress: setIdeaPhase,
             startQuestion,
         });
         setThinkingBuffer("");
@@ -176,7 +194,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         if (event.key === 'Tab' && !event.shiftKey) {
             event.preventDefault();
             if (prompt.trim() === "") {
-                setPrompt(getQuestion());
+                setPrompt(getDefaultPrompt());
             }
         } else if (event.key === 'Enter' && prompt.trim() !== "") {
             event.preventDefault();
@@ -196,8 +214,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
         }
 
         const actionId = `deriveDataFromNL_${String(Date.now())}`;
-        dispatch(dfActions.updateAgentWorkInProgress({actionId: actionId, originTableId: tableId, description: instruction, status: 'running', hidden: false,
-            message: { content: instruction, role: 'user', observeTableId: tableId }}));
 
         // Validate table selection
         const firstTableId = selectedTableIds[0];
@@ -239,17 +255,9 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     "type": "success",
                     "value": `Data formulation: "${displayInstruction}"`
                 }));
-                dispatch(dfActions.updateAgentWorkInProgress({
-                    actionId, description: displayInstruction || instruction, status: 'completed', hidden: false,
-                    message: { content: displayInstruction || instruction, role: 'action', resultTableId: candidateTable.id }
-                }));
                 setPrompt("");
             },
             onError: () => {
-                dispatch(dfActions.updateAgentWorkInProgress({
-                    actionId, description: instruction, status: 'failed', hidden: false,
-                    message: { content: 'Data formulation failed.', role: 'error' }
-                }));
             },
             onFinally: () => {
                 setIsFormulating(false);
@@ -321,7 +329,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             inputLabel: { shrink: true },
                             input: {
                                 endAdornment: <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
-                                    <Tooltip title="Generate chart from description">
+                                    <Tooltip title={t('chartRec.generateFromDescription')}>
                                         <span>
                                             <IconButton 
                                                 size="medium"
@@ -347,7 +355,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             }
                         }}
                         value={prompt}
-                        placeholder={`${getQuestion()}`}
+                        placeholder={getQuestionPlaceholder()}
                         fullWidth
                         multiline
                         maxRows={4}
@@ -355,7 +363,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     />
                 </Box>
             </Card>
-            <Tooltip title={ideas.length > 0 ? "Refresh ideas" : "Get ideas"}>
+            <Tooltip title={ideas.length > 0 ? t('chartRec.regenerateIdeas') : t('chartRec.getIdeas')}>
                 <span>
                     <IconButton 
                         size="medium"
@@ -383,7 +391,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 </span>
             </Tooltip>
             </Box>
-            {(ideas.length > 0 || thinkingBuffer) && (
+            {(ideas.length > 0 || thinkingBuffer || (isLoadingIdeas && ideaPhase)) && (
                 <Box sx={{
                     display: 'flex', 
                     flexWrap: 'wrap', 
@@ -408,6 +416,14 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         />
                     ))}
                     {isLoadingIdeas && thinkingBuffer && thinkingBufferEffect}
+                    {isLoadingIdeas && !thinkingBuffer && ideaPhase && (
+                        <Typography sx={{ fontSize: 10, color: 'text.disabled', width: '100%', textAlign: 'center' }}>
+                            {ideaPhase === 'building_context' ? t('chartRec.progressBuildingContext')
+                               : ideaPhase === 'generating' ? t('chartRec.progressGenerating')
+                               : t('chartRec.generatingIdeas')}
+                            {ideaElapsed > 0 ? ` (${ideaElapsed}s)` : ''}
+                        </Typography>
+                    )}
                 </Box>
             )}
         </Box>

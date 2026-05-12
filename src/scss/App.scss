@@ -75,78 +75,35 @@ h2.view-title {
     padding: 0;
 }
 
-// Custom scrollbar styling with hover effects
+// Thin, hover-reveal scrollbar — global default
 * {
-    // Webkit browsers (Chrome, Safari, Edge)
     &::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
     }
-
     &::-webkit-scrollbar-track {
-        background: #f1f1f1;
-        border-radius: 4px;
+        background: transparent;
     }
-
     &::-webkit-scrollbar-thumb {
-        background: #c1c1c1;
-        border-radius: 4px;
-        transition: background-color 0.3s ease;
+        background: transparent;
+        border-radius: 3px;
+        transition: background-color 0.2s ease;
     }
-
-    &::-webkit-scrollbar-thumb:hover {
-        background: #a8a8a8;
+    &:hover::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.15);
     }
-
+    &:hover::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 0, 0, 0.3);
+    }
     &::-webkit-scrollbar-corner {
-        background: #f1f1f1;
+        background: transparent;
     }
 
-    // Firefox
-    scrollbar-width: auto;
-    scrollbar-color: lightgray transparent;
-
-    // Firefox hover effect (limited support)
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
     &:hover {
-        scrollbar-color: #c6c6c6 transparent;
+        scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
     }
-}
-
-// Specific styling for main scrollable containers
-.encoding-shelf,
-.vega-container,
-.data-fields-group {
-    &::-webkit-scrollbar-thumb {
-        background: #d1d1d1;
-        border-radius: 4px;
-        transition: background-color 0.3s ease;
-    }
-
-    &::-webkit-scrollbar-thumb:hover {
-        background: #b8b8b8;
-    }
-}
-
-// Pencil writing animation
-@keyframes writing-pencil {
-    0%, 100% { 
-        transform: rotate(-12deg) translateY(0px); 
-    }
-    25% { 
-        transform: rotate(-8deg) translateY(-1px); 
-    }
-    50% { 
-        transform: rotate(-12deg) translateY(0px); 
-    }
-    75% { 
-        transform: rotate(-15deg) translateY(1px); 
-    }
-}
-
-.pencil {
-    display: inline-block;
-    transform-origin: bottom right;
-    animation: writing-pencil 0.8s ease-in-out infinite;
 }
 
 // Fix MUI Dialog bottom scrolling issues

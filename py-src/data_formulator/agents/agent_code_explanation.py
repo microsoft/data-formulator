@@ -140,20 +140,29 @@ def transform_data(df_movies):
 
 class CodeExplanationAgent(object):
 
-    def __init__(self, client, workspace):
+    def __init__(self, client, workspace, language_instruction=""):
         self.client = client
         self.workspace = workspace
+        self.language_instruction = language_instruction
 
     def run(self, input_tables, code, n=1):
 
-        data_summary = generate_data_summary(input_tables, workspace=self.workspace, include_data_samples=True)
+        data_summary = generate_data_summary(
+            input_tables,
+            workspace=self.workspace,
+            include_data_samples=True,
+        )
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[CODE]\n\nhere is the transformation code: {code}\n\n[EXPLANATION]\n"
 
         logger.debug(user_query)
         logger.info(f"[CodeExplanationAgent] run start")
 
-        messages = [{"role":"system", "content": SYSTEM_PROMPT},
+        system_prompt = SYSTEM_PROMPT
+        if self.language_instruction:
+            system_prompt = system_prompt + "\n\n" + self.language_instruction
+
+        messages = [{"role":"system", "content": system_prompt},
                     {"role":"user","content": user_query}]
         
         response = self.client.get_completion(messages = messages)

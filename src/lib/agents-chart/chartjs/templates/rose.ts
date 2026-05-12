@@ -19,7 +19,15 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, groupBy, DEFAULT_COLORS, DEFAULT_BG_COLORS } from './utils';
+import {
+    extractCategories,
+    groupBy,
+    DEFAULT_COLORS,
+    DEFAULT_BG_COLORS,
+    getChartJsPalette,
+    getSeriesBorderColor,
+    getSeriesBackgroundColor,
+} from './utils';
 
 export const cjsRoseChartDef: ChartTemplateDef = {
     chart: 'Rose Chart',
@@ -33,6 +41,8 @@ export const cjsRoseChartDef: ChartTemplateDef = {
         const colorField = channelSemantics.color?.field; // optional grouping
 
         if (!catField || !valField) return;
+
+        const palette = getChartJsPalette(ctx, 'color');
 
         // Extract unique angular categories
         const categories = extractCategories(table, catField, channelSemantics.x?.ordinalSortOrder);
@@ -66,8 +76,8 @@ export const cjsRoseChartDef: ChartTemplateDef = {
             values = categories.map(c => catTotals.get(c) ?? 0);
 
             // Assign distinct colors per wedge (category)
-            bgColors = DEFAULT_BG_COLORS.slice(0, categories.length);
-            borderColors = DEFAULT_COLORS.slice(0, categories.length);
+            bgColors = categories.map((_, i) => getSeriesBackgroundColor(palette, i, 0.6));
+            borderColors = categories.map((_, i) => getSeriesBorderColor(palette, i));
         } else {
             // Simple: one value per category
             const catAgg = new Map<string, number>();
@@ -79,8 +89,8 @@ export const cjsRoseChartDef: ChartTemplateDef = {
 
             labels = categories;
             values = categories.map(c => catAgg.get(c) ?? 0);
-            bgColors = DEFAULT_BG_COLORS.slice(0, categories.length);
-            borderColors = DEFAULT_COLORS.slice(0, categories.length);
+            bgColors = categories.map((_, i) => getSeriesBackgroundColor(palette, i, 0.6));
+            borderColors = categories.map((_, i) => getSeriesBorderColor(palette, i));
         }
 
         // Alignment: 'center' puts wedge center at 12 o'clock,

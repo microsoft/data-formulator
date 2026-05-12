@@ -1,0 +1,38 @@
+{
+  "errors": {
+    "authRequired": "Authentication required",
+    "authExpired": "Session expired — please log in again",
+    "accessDenied": "Access denied",
+
+    "invalidRequest": "Invalid request",
+    "tableNotFound": "Table not found",
+    "fileParseError": "Failed to parse the uploaded file",
+    "fileTooLarge": "File too large",
+    "validationError": "Validation error",
+
+    "llmAuthFailed": "Authentication failed — please check your API key",
+    "llmRateLimit": "Rate limit exceeded — please wait and try again",
+    "llmContextTooLong": "Input too long — please reduce the data size or prompt length",
+    "llmModelNotFound": "Model not found — please check the model name",
+    "llmTimeout": "Request timed out — please check connectivity and try again",
+    "llmServiceError": "The model service returned an error — please try again later",
+    "llmContentFiltered": "The request was blocked by the content safety filter",
+    "llmUnknownError": "Model request failed",
+
+    "connectorAuthFailed": "Data source authentication failed",
+    "dbConnectionFailed": "Data source connection failed",
+    "dbQueryError": "Database query error",
+    "dataLoadError": "Failed to load data",
+    "connectorError": "Data connector error",
+
+    "codeExecutionError": "An error occurred during code execution",
+    "agentError": "Agent encountered an error",
+
+    "catalogSyncTimeout": "Catalog sync timed out — please try again",
+    "catalogNotFound": "Connector not found or not connected",
+
+    "internalError": "An unexpected error occurred",
+    "serviceUnavailable": "Service temporarily unavailable",
+    "storageFull": "Workspace storage is full. Free disk space and try again."
+  }
+}

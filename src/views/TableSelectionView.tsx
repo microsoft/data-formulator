@@ -3,6 +3,7 @@
 
 import * as React from 'react';
 import { useEffect, useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
@@ -32,11 +33,13 @@ export interface DatasetMetadata {
 export interface DatasetSelectionViewProps {
     datasets: DatasetMetadata[];
     handleSelectDataset: (datasetMetadata: DatasetMetadata) => void;
+    handleSelectDatasetNewSession?: (datasetMetadata: DatasetMetadata) => void;
     hideRowNum?: boolean;
 }
 
-export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = function DatasetSelectionView({ datasets, handleSelectDataset, hideRowNum  }) {
+export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = function DatasetSelectionView({ datasets, handleSelectDataset, handleSelectDatasetNewSession, hideRowNum  }) {
 
+    const { t } = useTranslation();
     const [selectedDatasetName, setSelectedDatasetName] = useState<string | undefined>(undefined);
     const [tableActiveIndex, setTableActiveIndex] = useState<number>(0);
 
@@ -144,13 +147,13 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                         <Box>
                             <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center", flexWrap: "wrap"}}>
                                 <Typography sx={{fontSize: 12, flex: 1, minWidth: 200}}>
-                                    {selectedDataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {selectedDataset.source}]</Typography>
+                                    {selectedDataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>{t('tableSelection.fromSource', { source: selectedDataset.source })}</Typography>
                                 </Typography>
                             </Box>
                             <Box sx={{ maxWidth: 800 }}>
                                 <MultiTablePreview
                                     tables={previewTables}
-                                    emptyLabel="No tables available."
+                                    emptyLabel={t('tableSelection.noTables')}
                                     activeIndex={tableActiveIndex}
                                     onActiveIndexChange={setTableActiveIndex}
                                     maxHeight={280}
@@ -160,13 +163,21 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                                     hideRowCount={hideRowNum}
                                 />
                             </Box>
-                            <Box sx={{display: 'flex', justifyContent: 'center', mt: 2}} >
-                                <Button variant="contained" sx={{ width: 240 }}
+                            <Box sx={{display: 'flex', justifyContent: 'center', mt: 2, gap: 1}} >
+                                <Button variant="contained" sx={{ width: 240, textTransform: 'none' }}
                                         onClick={(event: React.MouseEvent<HTMLElement>) => {
                                             handleSelectDataset(selectedDataset);
                                         }}>
-                                    load dataset
+                                    {t('tableSelection.loadDataset')}
                                 </Button>
+                                {handleSelectDatasetNewSession && (
+                                    <Button variant="outlined" sx={{ width: 240, textTransform: 'none', color: 'text.secondary', borderColor: 'divider' }}
+                                            onClick={(event: React.MouseEvent<HTMLElement>) => {
+                                                handleSelectDatasetNewSession(selectedDataset);
+                                            }}>
+                                        {t('tableSelection.loadInNewSession')}
+                                    </Button>
+                                )}
                             </Box>
                         </Box>
                     )}

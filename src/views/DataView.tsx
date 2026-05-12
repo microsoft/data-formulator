@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useMemo } from 'react';
+import React, { FC, useEffect, useMemo, useCallback } from 'react';
 
 import _ from 'lodash';
 
@@ -15,6 +15,7 @@ import { DataFormulatorState, dfActions, dfSelectors, FocusedId } from '../app/d
 import { useDispatch, useSelector } from 'react-redux';
 import { Type } from '../data/types';
 import { SelectableDataGrid } from './SelectableDataGrid';
+import { formatCellValue, getColumnAlign } from './ViewUtils';
 
 export interface FreeDataViewProps {
 }
@@ -22,109 +23,105 @@ export interface FreeDataViewProps {
 export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
 
     const dispatch = useDispatch();
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    
+
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const allCharts = useSelector(dfSelectors.getAllCharts);
 
     // Derive the table to display based on focusedId
-    const focusedTableId = React.useMemo(() => {
+    const focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        // Chart focused: show the chart's backing table
         const chartId = focusedId.chartId;
         const chart = allCharts.find(c => c.id === chartId);
         return chart?.tableRef;
     }, [focusedId, allCharts]);
 
+    // Only subscribe to the focused table and table count — NOT the full tables array.
+    // This prevents re-rendering the entire data grid when the agent adds unrelated tables.
+    const targetTable = useSelector(
+        (state: DataFormulatorState) => state.tables.find(t => t.id === focusedTableId),
+    );
+    const tableCount = useSelector((state: DataFormulatorState) => state.tables.length);
+    const firstTableId = useSelector((state: DataFormulatorState) => state.tables[0]?.id);
+
     useEffect(() => {
-        if(focusedId == undefined && tables.length > 0) {
-            dispatch(dfActions.setFocused({ type: 'table', tableId: tables[0].id }))
+        if (focusedId == undefined && tableCount > 0 && firstTableId) {
+            dispatch(dfActions.setFocused({ type: 'table', tableId: firstTableId }));
         }
-    }, [tables])
+    }, [tableCount, firstTableId]);
 
-    // given a table render the table
-    let renderTableBody = (targetTable: DictTable | undefined) => {
+    // Memoize row data — only recompute when the table object itself changes
+    const rowData = useMemo(() => {
+        if (!targetTable) return [];
+        return targetTable.rows.map((r: any, i: number) => ({ ...r, "#rowId": i + 1 }));
+    }, [targetTable]);
 
-        let rowData = [];
-        if (targetTable) {
-            if (targetTable.virtual) {
-                rowData = targetTable.rows;
-            } else {
-                rowData = targetTable.rows;
-                rowData = rowData.map((r: any, i: number) => ({ ...r, "#rowId": i }));
-            }
-        }
+    // Memoize column definitions
+    const colDefs = useMemo(() => {
+        if (!targetTable) return [];
 
-        // Randomly sample up to 29 rows for column width calculation
         const sampleSize = Math.min(29, rowData.length);
-        const sampledRows = _.sampleSize(rowData, sampleSize);
-        
-        // Calculate appropriate column widths based on content
+        const step = rowData.length > sampleSize ? rowData.length / sampleSize : 1;
+        const sampledRows = Array.from({ length: sampleSize }, (_, i) => rowData[Math.floor(i * step)]);
+
         const calculateColumnWidth = (name: string) => {
-            if (name === "#rowId") return { minWidth: 10, width: 40 }; // Default for row ID column
-            
-            // Get all values for this column from sampled rows
+            if (name === "#rowId") return { minWidth: 56, width: 56 };
             const values = sampledRows.map(row => String(row[name] || ''));
-            
-            // Estimate width based on content length (simple approach)
-            const avgLength = values.length > 0 
-                ? values.reduce((sum, val) => sum + val.length, 0) / values.length 
+            const avgLength = values.length > 0
+                ? values.reduce((sum, val) => sum + val.length, 0) / values.length
                 : 0;
-                
-            // Adjust width based on average content length and column name length
-            const nameSegments = name.split(/[\s-]+/); // Split by whitespace or hyphen
-            const maxNameSegmentLength = nameSegments.length > 0 
+            const nameSegments = name.split(/[\s-]+/);
+            const maxNameSegmentLength = nameSegments.length > 0
                 ? nameSegments.reduce((max, segment) => Math.max(max, segment.length), 0)
                 : name.length;
             const contentLength = Math.max(maxNameSegmentLength, avgLength);
-            const minWidth = Math.max(60, contentLength * 8 > 240 ? 240 : contentLength * 8) + 50; // 8px per character with 50px padding
-            const width = minWidth;
-            
-            return { minWidth, width };
+            const minWidth = Math.max(60, contentLength * 8 > 240 ? 240 : contentLength * 8) + 50;
+            return { minWidth, width: minWidth };
         };
 
-        let colDefs = targetTable ? targetTable.names.map((name, i) => {
+        const cols = targetTable.names.map((name) => {
             const { minWidth, width } = calculateColumnWidth(name);
+            const dataType = targetTable.metadata[name].type as Type;
+            const semanticType = targetTable.metadata[name].semanticType;
             return {
-                id: name, 
-                label: name, 
-                minWidth, 
-                width, 
-                align: undefined, 
-                format: (value: any) => <Typography fontSize="inherit">{`${value}`}</Typography>, 
-                dataType: targetTable?.metadata[name].type as Type,
-                source: conceptShelfItems.find(f => f.name == name)?.source || "original", 
+                id: name,
+                label: targetTable.metadata[name]?.displayName || name,
+                description: targetTable.metadata[name]?.description,
+                minWidth,
+                width,
+                align: getColumnAlign(dataType),
+                format: (value: any) => <Typography fontSize="inherit">{formatCellValue(value, dataType, semanticType)}</Typography>,
+                dataType,
+                source: conceptShelfItems.find(f => f.name == name)?.source || "original",
             };
-        }) : [];
+        });
 
-        if (colDefs && !targetTable?.virtual) {
-            colDefs = [{
-                id: "#rowId", label: "#", minWidth: 10, align: undefined, width: 40,
-                format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.65)">{value}</Typography>, 
+        return [
+            {
+                id: "#rowId", label: "#", minWidth: 56, align: undefined as any, width: 56,
+                format: (value: any) => <Typography fontSize="inherit" color="rgba(0,0,0,0.65)">{value}</Typography>,
                 dataType: Type.Number,
-                source: "original", 
-            }, ...colDefs]
-        }
-
-        return  <Fade in={true} timeout={600} key={targetTable?.id}>
-            <Box sx={{height: '100%'}}>
-                <SelectableDataGrid
-                    tableId={targetTable?.id || ""}
-                    tableName={targetTable?.displayId || targetTable?.id || "table"} 
-                    rows={rowData} 
-                    columnDefs={colDefs}
-                    rowCount={targetTable?.virtual?.rowCount || targetTable?.rows.length || 0}
-                    virtual={targetTable?.virtual ? true : false}
-                />
-            </Box>
-        </Fade>
-    }
+                source: "original" as const,
+            },
+            ...cols,
+        ];
+    }, [targetTable, rowData, conceptShelfItems]);
 
     return (
         <Box sx={{height: "100%", display: "flex", flexDirection: "column", background: "rgba(0,0,0,0.02)"}}>
-            {renderTableBody(tables.find(t => t.id == focusedTableId))}
+            <Fade in={true} timeout={600} key={targetTable?.id}>
+                <Box sx={{height: '100%'}}>
+                    <SelectableDataGrid
+                        tableId={targetTable?.id || ""}
+                        tableName={targetTable?.displayId || targetTable?.id || "table"}
+                        rows={rowData}
+                        columnDefs={colDefs}
+                        rowCount={targetTable?.virtual?.rowCount || targetTable?.rows.length || 0}
+                        virtual={targetTable?.virtual ? true : false}
+                    />
+                </Box>
+            </Fade>
         </Box>
     );
 }

@@ -22,7 +22,8 @@ import { useSelector, useDispatch } from 'react-redux';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
 import { Chart, DictTable, FieldItem } from '../components/ComponentType';
 import { assembleVegaChart, prepVisTable } from '../app/utils';
-import { getDataTable, checkChartAvailability } from './VisualizationView';
+import { buildEmbeddedDataForChart } from '../app/restyle';
+import { getDataTable, checkChartAvailability } from './ChartUtils';
 import { getCachedChart, setCachedChart, computeCacheKey, invalidateChart, ChartCacheEntry } from '../app/chartCache';
 import { compile } from 'vega-lite';
 import { parse, View } from 'vega';
@@ -139,23 +140,43 @@ export const ChartRenderService: FC = () => {
             // Pre-aggregate for the encoding map
             visTableRows = prepVisTable(visTableRows, items, chart.encodingMap);
 
-            // --- Assemble full-size spec (with tooltips) ---
-            // We render at the default full size and scale down for the thumbnail,
-            // so the chart looks like a miniature of the real thing instead of a
-            // completely different chart due to Vega-Lite layout optimizations.
-            const fullSpec = assembleVegaChart(
-                chart.chartType,
-                chart.encodingMap,
-                items,
-                visTableRows,
-                table.metadata,
-                FULL_WIDTH,
-                FULL_HEIGHT,
-                true,   // add tooltips
-                chart.config,
-                1,
-                maxStretchFactor,
-            );
+            // --- Resolve the spec to render ---
+            // If a style variant is active, render its stored Vega-Lite spec so
+            // the thumbnail matches what the user sees in the focused canvas.
+            // Otherwise assemble the default spec from the encoding map.
+            // (See design-docs/28-chart-style-refinement-agent.md.)
+            const activeVariant = chart.activeVariantId
+                ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
+                : undefined;
+
+            let fullSpec: any;
+            if (activeVariant) {
+                fullSpec = JSON.parse(JSON.stringify(activeVariant.vlSpec));
+                // Plug data using the same conversion the assemble pipeline
+                // applies (e.g. Year 1980 → "1980"). Variants embed axis
+                // formats / timeUnit chosen against the converted shape, so
+                // re-attaching raw rows would mismatch those formats.
+                const variantValues = buildEmbeddedDataForChart(
+                    chart, visTableRows, table.metadata, items,
+                );
+                fullSpec.data = { values: variantValues };
+                fullSpec.width = FULL_WIDTH;
+                fullSpec.height = FULL_HEIGHT;
+            } else {
+                fullSpec = assembleVegaChart(
+                    chart.chartType,
+                    chart.encodingMap,
+                    items,
+                    visTableRows,
+                    table.metadata,
+                    FULL_WIDTH,
+                    FULL_HEIGHT,
+                    true,   // add tooltips
+                    chart.config,
+                    1,
+                    maxStretchFactor,
+                );
+            }
 
             if (!fullSpec || fullSpec === "Table") return;
             fullSpec['background'] = 'white';
@@ -174,6 +195,7 @@ export const ChartRenderService: FC = () => {
             const entry: ChartCacheEntry = {
                 svg: fullResult.svg,
                 thumbnailDataUrl: thumbnailPng,
+                fullPngDataUrl: fullResult.pngDataUrl,
                 specKey: cacheKey,
             };
             setCachedChart(chart.id, entry);
@@ -220,6 +242,9 @@ export const ChartRenderService: FC = () => {
             if (!checkChartAvailability(chart, conceptShelfItems, table.rows)) continue;
 
             // Compute cache key and check if rendering is needed
+            const activeVariant = chart.activeVariantId
+                ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
+                : undefined;
             const cacheKey = computeCacheKey(
                 chart.chartType,
                 chart.encodingMap,
@@ -228,6 +253,8 @@ export const ChartRenderService: FC = () => {
                 table.contentHash,
                 table.id,
                 table.metadata,
+                activeVariant?.id,
+                activeVariant?.vlSpec,
             );
 
             const cached = getCachedChart(chart.id);

@@ -378,5 +378,64 @@ export function genLineAreaStretchTests(): TestCase[] {
         });
     }
 
+    // -----------------------------------------------------------------------
+    // Faceted dense line: 150 dates × 8 series × 3 column facets
+    //
+    // Exercises the ideal-then-compress approach (§2.8):
+    //   Phase 1: uncapped gas pressure → ideal dimensions
+    //   Phase 2: compress into budget (canvasW × maxStretch / facets)
+    //   Phase 3: AR-aware adjustment using ideal AR as target
+    //
+    // Math (base 400×300, β=2.0, σ_x=100, σ_y=20, seriesCountAxis='auto'→Y):
+    //   Phase 1 — Ideal (uncapped, against base 400×300):
+    //     X positional: ~150 unique, σ1d=10 → p=3.75 → raw 3.75^0.3=1.53
+    //     Y series: 8 series, σ=20 → p=0.53 → raw 1.0
+    //     idealW=400×1.53=612, idealH=300×1.0=300, idealAR=2.04
+    //
+    //   Phase 2 — Compress (budget 400×2=800 total):
+    //     availW = 800/3 ≈ 267, availH = 600 (no row faceting)
+    //     finalW = min(612, 267) = 267, finalH = min(300, 600) = 300
+    //
+    //   Phase 3 — AR correction (R=0.5):
+    //     currentAR=267/300=0.89, arDrift=0.89/2.04=0.44
+    //     finalH = 300 × 0.44^0.5 = 300 × 0.66 = 199
+    //     → subplot 267×199, AR=1.34  ✓ landscape preserved, total=800
+    // -----------------------------------------------------------------------
+    {
+        const FACETS_3 = ['Clothing', 'Electronics', 'Food'];
+        const SERIES_8 = ['Laptop', 'Phone', 'Tablet', 'Desktop', 'Monitor', 'Keyboard', 'Mouse', 'Headphones'];
+        const dates = genDates(150, 2008);
+        const data: any[] = [];
+        for (const facet of FACETS_3) {
+            for (const s of SERIES_8) {
+                const base = Math.round(rand() * 200 - 100);  // range roughly -100..100
+                const vals = walk(150, base, 30);
+                for (let i = 0; i < dates.length; i++) {
+                    data.push({ Date: dates[i], Facet: facet, Series: s, Value: vals[i] });
+                }
+            }
+        }
+        tests.push({
+            title: 'Faceted Line: 150 dates × 8 series × 3 columns',
+            description: 'Dense faceted line — ideal-then-squeeze AR preservation',
+            tags: ['temporal', 'quantitative', 'color', 'stretch-test', 'faceted'],
+            chartType: 'Line Chart',
+            data,
+            fields: [makeField('Date'), makeField('Value'), makeField('Series'), makeField('Facet')],
+            metadata: {
+                Date: { type: Type.Date, semanticType: 'Date', levels: [] },
+                Value: { type: Type.Number, semanticType: 'Quantity', levels: [] },
+                Series: { type: Type.String, semanticType: 'Category', levels: SERIES_8 },
+                Facet: { type: Type.String, semanticType: 'Category', levels: FACETS_3 },
+            },
+            encodingMap: {
+                x: makeEncodingItem('Date'),
+                y: makeEncodingItem('Value'),
+                color: makeEncodingItem('Series'),
+                column: makeEncodingItem('Facet'),
+            },
+        });
+    }
+
     return tests;
 }

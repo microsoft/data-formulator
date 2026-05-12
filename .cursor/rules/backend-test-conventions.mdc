@@ -1,0 +1,123 @@
+---
+description: Backend Python test conventions (pytest)
+globs: tests/backend/**/*.py
+alwaysApply: false
+---
+
+# Backend Test Conventions
+
+## File Location & Naming
+
+- Place tests under `tests/backend/unit/`, `tests/backend/integration/`, `tests/backend/contract/`, or by domain: `tests/backend/routes/`, `tests/backend/errors/`, `tests/backend/agents/`, `tests/backend/data/`, `tests/backend/security/`, `tests/backend/auth/`, `tests/backend/knowledge/`.
+- Name files `test_<feature_or_module>.py` with descriptive snake_case names.
+- Shared test data goes in `tests/backend/fixtures/`.
+
+## File Structure
+
+```python
+"""One-paragraph summary of what is being tested and why.
+
+Background
+----------
+Brief context about the feature or bug fix these tests validate.
+"""
+from __future__ import annotations
+
+import pytest
+
+pytestmark = [pytest.mark.backend]
+```
+
+## Conventions
+
+- Always add `pytestmark = [pytest.mark.backend]` at module level.
+- Group related tests in classes prefixed with `Test` (e.g. `TestStripImageBlocks`).
+- Use `pytest.mark.parametrize` for data-driven tests instead of writing repetitive cases.
+- Use `pytest.fixture()` for shared setup; keep fixtures close to where they are used.
+- Unit tests must **not** depend on Flask, network, or external services.
+- Mock external calls with `unittest.mock.patch` / `MagicMock`; never make real API calls.
+- Each test function should verify **one** behavior and have a clear name: `test_<what>_<condition>`.
+
+## Running Tests
+
+- When running pytest, use `-q` (quiet mode) instead of `-v` (verbose mode) for cleaner output.
+- **Preferred:** `python -m pytest tests/backend/ -q`
+- **Avoid:** `python -m pytest tests/backend/ -v 2>&1`
+
+## Error Handling Test Requirements
+
+Application errors return **HTTP 200** with `status: "error"` in the body.
+Only auth errors (`AUTH_REQUIRED`/`AUTH_EXPIRED` → 401, `ACCESS_DENIED` → 403) and
+uncontrolled transport failures (404/413/500) use non-200.
+
+When adding a new route or modifying error handling, include tests for:
+
+1. **AppError scenarios** — verify HTTP 200 + correct `ErrorCode` in body:
+   ```python
+   def test_missing_table_returns_error():
+       with app.test_client() as client:
+           resp = client.get('/api/tables/nonexistent')
+           assert resp.status_code == 200  # application error → always 200
+           data = resp.get_json()
+           assert data["status"] == "error"
+           assert data["error"]["code"] == "TABLE_NOT_FOUND"
+   ```
+
+2. **Auth errors** — verify non-200 for authentication/authorization failures:
+   ```python
+   def test_access_denied_returns_403():
+       resp = client.get('/api/protected-resource')
+       assert resp.status_code == 403
+       assert resp.get_json()["error"]["code"] == "ACCESS_DENIED"
+   ```
+
+3. **Unexpected exceptions** — verify the global handler catches them (unhandled = 500):
+   ```python
+   def test_unexpected_error_returns_500():
+       with patch('module.function', side_effect=RuntimeError("boom")):
+           resp = client.get('/api/endpoint')
+           assert resp.status_code == 500
+           assert resp.get_json()["error"]["code"] == "INTERNAL_ERROR"
+   ```
+
+4. **Streaming endpoints** — verify error events in the NDJSON stream:
+   ```python
+   def test_stream_error_yields_ndjson_event():
+       resp = client.post('/api/my-stream', ...)
+       lines = [json.loads(l) for l in resp.data.decode().strip().split('\n') if l]
+       error_lines = [l for l in lines if l.get('type') == 'error']
+       assert len(error_lines) >= 1
+       assert error_lines[0]['error']['code'] == 'LLM_TIMEOUT'
+   ```
+
+5. **Test fixture** — ensure `register_error_handlers(app)` is called in the test app fixture:
+   ```python
+   @pytest.fixture
+   def app():
+       from data_formulator.error_handler import register_error_handlers
+       _app = flask.Flask(__name__)
+       _app.config["TESTING"] = True
+       _app.register_blueprint(my_bp)
+       register_error_handlers(_app)
+       return _app
+   ```
+
+See `tests/backend/errors/test_errors.py` and `test_error_handler.py` for reference implementations.
+
+## Example
+
+```python
+# ❌ BAD – vague name, no parametrize, no marker
+def test_it_works():
+    assert sanitize("hello world") == "hello_world"
+
+# ✅ GOOD
+pytestmark = [pytest.mark.backend]
+
+@pytest.mark.parametrize("raw,expected", [
+    ("hello world", "hello_world"),
+    ("订单明细", "订单明细"),
+])
+def test_sanitize_preserves_unicode(raw: str, expected: str) -> None:
+    assert sanitize(raw) == expected
+```

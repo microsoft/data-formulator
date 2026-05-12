@@ -18,7 +18,7 @@ import '../scss/EncodingShelf.scss';
 import { Type } from '../data/types';
 
 import { getChartTemplate } from '../components/ChartTemplates';
-import { checkChartAvailability, generateChartSkeleton } from './VisualizationView';
+import { checkChartAvailability, generateChartSkeleton } from './ChartUtils';
 
 import { InsightIcon } from '../icons';
 
@@ -84,7 +84,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
 
     const encodingShelf = (
         <Box className="encoding-shelf-compact" sx={{height: '100%',
-            width: 236,
+            width: 280,
             overflowY: 'auto',
             transition: 'height 150ms cubic-bezier(0.4, 0, 0.2, 1) 0ms',
             display: 'flex',

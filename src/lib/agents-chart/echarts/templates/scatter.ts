@@ -12,6 +12,7 @@
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { formatTimestamp } from '../instantiate-spec';
 import { DEFAULT_COLORS, groupBy, getCategoryOrder, extractCategories } from './utils';
+import { getPaletteForScheme } from '../colormap';
 
 /** Compute a reasonable scatter symbolSize based on canvas area and point count. */
 function computeSymbolSize(width: number, height: number, pointCount: number): number {
@@ -31,7 +32,7 @@ export const ecScatterPlotDef: ChartTemplateDef = {
     channels: ['x', 'y', 'color', 'size', 'opacity', 'column', 'row'],
     markCognitiveChannel: 'position',
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table, chartProperties } = ctx;
+        const { channelSemantics, table, chartProperties, colorDecisions } = ctx;
         const xField = channelSemantics.x?.field;
         const yField = channelSemantics.y?.field;
         const colorField = channelSemantics.color?.field;
@@ -196,7 +197,18 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             const canvasH = ctx.canvasSize?.height ?? 300;
             const maxCircleR = Math.max(...sizeOrderForLegend!.map((name) => scaleSize(name) / 2));
             const legendWidth = ordLabelWidth + ordGap + 2 * maxCircleR;
-            const scatterColor = (ctx.resolvedEncodings as any)?.color?.colorPalette?.[0] ?? DEFAULT_COLORS[0];
+            // 当存在颜色编码（分类 color 图例）时：
+            // - Size 图例表示“通用大小规则”，不应看起来像属于某个具体类别
+            // - 按业界惯例使用中性灰色
+            // 否则（无 color 编码，全图单色）则跟随主色：
+            //   散点默认颜色来自 cat10[0]（在 ecApplyLayoutToSpec 中的统一逻辑），
+            //   因此这里也用 cat10[0]，保证 size 图例与图元颜色一致。
+            const hasColorEncoding = !!channelSemantics.color?.field;
+            const fallbackPalette = getPaletteForScheme('cat10') ?? DEFAULT_COLORS;
+            const fallbackColor = fallbackPalette[0];
+            const scatterColor = hasColorEncoding
+                ? '#cccccc'
+                : ((ctx.resolvedEncodings as any)?.color?.colorPalette?.[0] ?? fallbackColor);
             const rowHeights = sizeOrderForLegend!.map((name) => Math.max(scaleSize(name), 16) + ordRowGap);
             const totalLegendHeight = ordTitleHeight + rowHeights.reduce((a, b) => a + b, 0);
             const ordLegendTop = Math.max(10, (canvasH - totalLegendHeight) / 2);
@@ -261,7 +273,7 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             const SIZE_SPREAD_MIN = 20;
             const sizeMaxForMap = Math.max(rangeMaxClamped, rangeMin + SIZE_SPREAD_MIN);
             const fmtSize = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
-            const sizeVisualMap = {
+            const sizeVisualMap: any = {
                 type: 'continuous' as const,
                 show: true,
                 min: sizeDomainMin!,
@@ -279,6 +291,28 @@ export const ecScatterPlotDef: ChartTemplateDef = {
                 seriesIndex: 0,
                 name: sizeField,
             };
+            // controller 只影响图例 UI，不改变散点本身的颜色。
+            // - 有 color 编码时：size 图例表示“通用大小”，使用中性灰色。
+            // - 无 color 编码时：size 图例颜色应与图元一致，使用主色（cat10[0] 或 palette[0]）。
+            const hasColorEncoding = !!colorField;
+            if (hasColorEncoding) {
+                sizeVisualMap.controller = {
+                    inRange: {
+                        color: ['#888'],
+                    },
+                };
+            } else {
+                const basePalette =
+                    (ctx.resolvedEncodings as any)?.color?.colorPalette
+                    ?? getPaletteForScheme('cat10')
+                    ?? DEFAULT_COLORS;
+                const baseColor = basePalette[0];
+                sizeVisualMap.controller = {
+                    inRange: {
+                        color: [baseColor],
+                    },
+                };
+            }
             if (option.visualMap) {
                 (option.visualMap as any[]).push(sizeVisualMap);
             } else {
@@ -356,12 +390,16 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             // Default visualMap color bar: gray gradient (light → dark)
             const defaultGrayRange = ['#f5f5f5', '#e0e0e0', '#9e9e9e', '#616161', '#424242'];
             const greensRange = ['#f7fcf5', '#c7e9c0', '#41ab5d', '#006d2c', '#00441b'];
-            // Continuous colormap: default gray; optional scheme override (e.g. green) or palette.
-            const inRange = /green/i.test(scheme)
-                ? greensRange
-                : colorPalette.length >= 2
-                    ? [colorPalette[colorPalette.length - 1], colorPalette[0]]  // light → dark
-                    : defaultGrayRange;
+            // 优先使用 colordecisions 的 colormap；否则仍支持原来的 green scheme 或 palette/灰阶兜底。
+            const decisionSchemeId = colorDecisions?.color?.schemeId ?? colorDecisions?.group?.schemeId;
+            const paletteFromDecision = decisionSchemeId ? getPaletteForScheme(decisionSchemeId) : undefined;
+            const inRange = paletteFromDecision && paletteFromDecision.length > 0
+                ? paletteFromDecision
+                : (/green/i.test(scheme)
+                    ? greensRange
+                    : colorPalette.length >= 2
+                        ? [colorPalette[colorPalette.length - 1], colorPalette[0]]  // light → dark
+                        : defaultGrayRange);
             // Layout: when both size and color visualMap exist, place them side by side (size right, color left)
             const VM_BAR_RIGHT = 50;
             const VM_BAR_WIDTH = 70;
@@ -476,13 +514,13 @@ export const ecScatterPlotDef: ChartTemplateDef = {
             legendNames.forEach((name) => {
                 const data = groups.get(name) ?? [];
                 if (data.length === 0) return;
-                const colorIdx = colorOrder.indexOf(name);
                 const seriesOpt: any = {
                     name,
                     type: 'scatter',
                     data,
+                    // 不在模板中显式设置颜色，交由 ecApplyLayoutToSpec 使用
+                    // colorDecisions / colormap（通常是 cat10）统一分配。
                     itemStyle: {
-                        color: colorPalette[colorIdx % colorPalette.length],
                         opacity,
                     },
                 };
@@ -614,42 +652,63 @@ function linearRegression(data: number[][]): { slope: number; intercept: number;
 function polyRegression(data: number[][], order: number): { coeffs: number[]; xMin: number; xMax: number } {
     const n = data.length;
     if (n === 0) return { coeffs: [0], xMin: 0, xMax: 0 };
-    let xMin = data[0][0], xMax = data[0][0];
-    for (const [x] of data) { if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
+
+    let xMin = data[0][0];
+    let xMax = data[0][0];
+    for (const [x] of data) {
+        if (x < xMin) xMin = x;
+        if (x > xMax) xMax = x;
+    }
+
     const k = order + 1;
-    // Build normal equations: X^T X * a = X^T y
+    // Build normal equations: (XᵀX) · a = Xᵀy
+    // X has columns [1, x, x², ..., x^order].
     const xtx: number[][] = Array.from({ length: k }, () => new Array(k).fill(0));
     const xty: number[] = new Array(k).fill(0);
+
     for (const [x, y] of data) {
-        let xp = 1;
+        // Precompute powers x^0 .. x^(2*order) so that:
+        //   (XᵀX)[i,j] = Σ x^(i+j)
+        //   (Xᵀy)[i]   = Σ y * x^i
+        const xp: number[] = new Array(2 * order + 1);
+        xp[0] = 1;
+        for (let p = 1; p < xp.length; p++) {
+            xp[p] = xp[p - 1] * x;
+        }
         for (let i = 0; i < k; i++) {
-            xty[i] += xp * y;
-            let xp2 = xp;
-            for (let j = i; j < k; j++) {
-                xtx[i][j] += xp2;
-                if (i !== j) xtx[j][i] += xp2;
-                xp2 *= x;
+            xty[i] += y * xp[i];
+            for (let j = 0; j < k; j++) {
+                xtx[i][j] += xp[i + j];
             }
-            xp *= x;
         }
     }
+
     // Gaussian elimination with partial pivoting
-    const aug = xtx.map((row, i) => [...row, xty[i]]);
+    const aug: number[][] = xtx.map((row, i) => [...row, xty[i]]);
     for (let col = 0; col < k; col++) {
         let maxRow = col;
         for (let row = col + 1; row < k; row++) {
-            if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) maxRow = row;
+            if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) {
+                maxRow = row;
+            }
         }
-        [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+        if (maxRow !== col) {
+            [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+        }
         const pivot = aug[col][col];
         if (Math.abs(pivot) < 1e-12) continue;
-        for (let j = col; j <= k; j++) aug[col][j] /= pivot;
+        for (let j = col; j <= k; j++) {
+            aug[col][j] /= pivot;
+        }
         for (let row = 0; row < k; row++) {
             if (row === col) continue;
             const factor = aug[row][col];
-            for (let j = col; j <= k; j++) aug[row][j] -= factor * aug[col][j];
+            for (let j = col; j <= k; j++) {
+                aug[row][j] -= factor * aug[col][j];
+            }
         }
     }
+
     const coeffs = aug.map(row => row[k]);
     return { coeffs, xMin, xMax };
 }
@@ -672,7 +731,7 @@ function regressionCurvePoints(
     if (method === 'linear' || !method) {
         const reg = linearRegression(data);
         return [[reg.xMin, reg.slope * reg.xMin + reg.intercept],
-                [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
+        [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
     }
     // For non-linear methods, transform data, fit linear, then transform back
     if (method === 'log') {
@@ -741,7 +800,7 @@ function regressionCurvePoints(
     // Fallback to linear
     const reg = linearRegression(data);
     return [[reg.xMin, reg.slope * reg.xMin + reg.intercept],
-            [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
+    [reg.xMax, reg.slope * reg.xMax + reg.intercept]];
 }
 
 /**
@@ -765,8 +824,8 @@ export const ecRegressionDef: ChartTemplateDef = {
 
         const option: any = {
             tooltip: { trigger: 'item' },
-            xAxis: { type: 'value', name: xField, nameLocation: 'middle', nameGap: 30 },
-            yAxis: { type: 'value', name: yField, nameLocation: 'middle', nameGap: 40 },
+            xAxis: { type: 'value', name: xField, nameLocation: 'middle', nameGap: 30, axisTick: { show: true } },
+            yAxis: { type: 'value', name: yField, nameLocation: 'middle', nameGap: 40, axisTick: { show: true } },
             series: [],
         };
 
@@ -831,11 +890,11 @@ export const ecRegressionDef: ChartTemplateDef = {
             key: 'regressionMethod', label: 'Method', type: 'discrete',
             options: [
                 { value: 'linear', label: 'Linear' },
-                { value: 'log',    label: 'Logarithmic' },
-                { value: 'exp',    label: 'Exponential' },
-                { value: 'pow',    label: 'Power' },
-                { value: 'quad',   label: 'Quadratic' },
-                { value: 'poly',   label: 'Polynomial' },
+                { value: 'log', label: 'Logarithmic' },
+                { value: 'exp', label: 'Exponential' },
+                { value: 'pow', label: 'Power' },
+                { value: 'quad', label: 'Quadratic' },
+                { value: 'poly', label: 'Polynomial' },
             ],
             defaultValue: 'linear',
         } as ChartPropertyDef,

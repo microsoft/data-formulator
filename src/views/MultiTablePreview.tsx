@@ -3,6 +3,7 @@
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     Box,
     Chip,
@@ -11,11 +12,10 @@ import {
     Tooltip,
     LinearProgress,
     alpha,
-    Card,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { DictTable } from '../components/ComponentType';
-import { CustomReactTable } from './ReactTable';
+import { DataFrameTable } from './DataFrameTable';
 
 export interface MultiTablePreviewProps {
     /** Loading state indicator */
@@ -53,7 +53,7 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
     error = null,
     table,
     tables,
-    emptyLabel = 'No tables to preview.',
+    emptyLabel,
     meta,
     onRemoveTable,
     activeIndex: controlledActiveIndex,
@@ -63,10 +63,12 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
     compact = true,
     hideRowCount = false,
 }) => {
+    const { t } = useTranslation();
     const previewTables = tables ?? (table ? [table] : null);
     const [internalActiveIndex, setInternalActiveIndex] = useState(0);
     const activeIndex = controlledActiveIndex !== undefined ? controlledActiveIndex : internalActiveIndex;
     const setActiveIndex = onActiveIndexChange || setInternalActiveIndex;
+    const effectiveEmptyLabel = emptyLabel ?? t('preview.noTablesToPreview');
 
     useEffect(() => {
         if (!previewTables || previewTables.length === 0) {
@@ -109,7 +111,7 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
 
             {!loading && !error && (!previewTables || previewTables.length === 0) && (
                 <Typography variant="caption" color="text.secondary">
-                    {emptyLabel}
+                    {effectiveEmptyLabel}
                 </Typography>
             )}
 
@@ -127,7 +129,7 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
                         }}
                     >
                         <Typography variant="caption" sx={{ mx: 0.5 }}>
-                            Preview
+                            {t('preview.preview')}
                         </Typography>
                         {previewTables.map((t, idx) => {
                             const label = t.displayId || t.id;
@@ -179,13 +181,13 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
                             );
                         })}
                         {onRemoveTable && (
-                            <Tooltip title="Remove table" placement="top" arrow>    
+                            <Tooltip title={t('preview.removeTable')} placement="top" arrow>
                                 <IconButton
                                     size="small"
                                     color="error"
                                     onClick={() => onRemoveTable(activeIndex)}
                                     sx={{ ml: 'auto', flexShrink: 0 }}
-                                    aria-label="Remove table"
+                                    aria-label={t('preview.removeTable')}
                                 >
                                     <DeleteIcon fontSize="small" />
                                 </IconButton>
@@ -195,23 +197,23 @@ export const MultiTablePreview: React.FC<MultiTablePreviewProps> = ({
 
                     {activeTable && (
                         <Box>
-                            <Card variant="outlined" sx={{ pb: 0.5 }}>
-                                <CustomReactTable
-                                    rows={activeTable.rows.slice(0, maxRows)}
-                                    columnDefs={activeTable.names.map(name => ({
-                                        id: name,
-                                        label: name,
-                                        minWidth: 60,
-                                    }))}
-                                    rowsPerPageNum={-1}
-                                    compact={compact}
-                                    isIncompleteTable={activeTable.rows.length > maxRows}
-                                    maxHeight={maxHeight}
-                                />
-                            </Card>
+                            <DataFrameTable
+                                columns={activeTable.names}
+                                rows={activeTable.rows}
+                                totalRows={activeTable.virtual?.rowCount}
+                                maxRows={maxRows}
+                                columnDescriptions={activeTable.names.reduce<Record<string, string>>((acc, n) => {
+                                    const d = (activeTable.metadata?.[n]?.description as string | undefined) || '';
+                                    if (d) acc[n] = d;
+                                    return acc;
+                                }, {})}
+                            />
                             {!hideRowCount && (
                                 <Typography variant="caption" color="text.secondary">
-                                    {activeTable.rows.length} rows × {activeTable.names.length} columns
+                                    {t('preview.rowsColumns', {
+                                        rows: activeTable.rows.length,
+                                        columns: activeTable.names.length,
+                                    })}
                                 </Typography>
                             )}
                         </Box>

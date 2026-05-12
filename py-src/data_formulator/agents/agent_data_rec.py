@@ -4,9 +4,10 @@
 import json
 import time
 
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary, supplement_missing_block, ensure_output_variable_in_code
+from data_formulator.agents.agent_diagnostics import AgentDiagnostics
+from data_formulator.security.sanitize import sanitize_error_message
 
-import traceback
 import pandas as pd
 
 import logging
@@ -36,7 +37,7 @@ SHARED_ENVIRONMENT = '''**About the execution environment:**
 - Only use DuckDB when the dataset is very large and you need efficient SQL aggregations, filtering, joins, or window functions.
 - You can combine both: DuckDB for initial loading/filtering on large files, then pandas for complex operations.
 
-**Code structure:** standalone script (no function wrapper), imports at top, assign final result to a variable (specified in JSON).'''
+**Code structure:** standalone script (no function wrapper), imports at top. **CRITICAL:** The final result DataFrame MUST be assigned to the exact variable name you specified in `"output_variable"` in the JSON spec — the system uses this name to extract the result. For example, if your output_variable is `sales_by_region`, the script must contain `sales_by_region = ...`.'''
 
 
 SHARED_SEMANTIC_TYPE_REFERENCE = '''**[SEMANTIC TYPE REFERENCE]**
@@ -46,21 +47,21 @@ Choose the most specific type that fits. Only annotate fields used in chart enco
 | Category | Types |
 |---|---|
 | Temporal | DateTime, Date, Time, Timestamp, Year, Quarter, Month, Week, Day, Hour, YearMonth, YearQuarter, YearWeek, Decade, Duration |
-| Monetary measures | Amount, Price, Revenue, Cost |
+| Monetary measures | Amount, Price |
 | Physical measures | Quantity, Temperature |
 | Proportion | Percentage |
 | Signed/diverging | Profit, PercentageChange, Sentiment, Correlation |
 | Generic measures | Count, Number |
-| Discrete numeric | Rank, Score, Rating, Index |
+| Discrete numeric | Rank, Score |
 | Identifier | ID |
 | Geographic | Latitude, Longitude, Country, State, City, Region, Address, ZipCode |
-| Entity names | PersonName, Company, Product, Category, Name |
-| Coded categorical | Status, Type, Boolean, Direction |
-| Binned ranges | Range, AgeGroup |
-| Fallback | String, Unknown |
+| Entity names | Category, Name |
+| Coded categorical | Status, Boolean, Direction |
+| Binned ranges | Range |
+| Fallback | Unknown |
 
 Key guidelines:
-- Use **Revenue/Cost** for summed monetary totals, **Price** for per-unit prices, **Profit** for values that can be negative.
+- Use **Amount** for summed monetary totals, **Price** for per-unit prices, **Profit** for values that can be negative.
 - Use **Temperature** (not Quantity) for temperature — it has special diverging behavior.
 - Use **Year** (not Number) for columns like "year" with values 2020, 2021.'''
 
@@ -109,7 +110,11 @@ SHARED_DUCKDB_NOTES = '''**DuckDB notes:**
 - Escape single quotes with '' (not \\')
 - No Unicode escapes (\\u0400); use character ranges directly: [а-яА-Я]
 - Cast date columns explicitly: `CAST(col AS DATE)`, `CAST(col AS TIMESTAMP)`
-- For complex datetime operations, load data first then use pandas datetime functions'''
+- For complex datetime operations, load data first then use pandas datetime functions
+- Critical identifier quoting rule:
+  * If a table/column name contains non-ASCII characters (e.g., Chinese, Japanese, Korean, Cyrillic, etc.), spaces, or punctuation,
+    you MUST wrap it in double quotes, e.g. SELECT "金额" FROM "客户表".
+  * Never output placeholder identifiers like your_table_name, your_column, your_condition.'''
 
 
 # =============================================================================
@@ -128,7 +133,7 @@ You will produce two outputs: a JSON spec (```json```) and a Python script (```p
 ```json
 {{{{
     "display_instruction": "", // short verb phrase (<12 words) capturing computation intent. Bold **column names** (semantic matches count). For follow-ups, describe only the new part.
-    "input_tables": [...],   // table names from [CONTEXT] to use. Table 1 is the currently viewed table — prioritize it.
+    "input_tables": [...],   // table names from [CONTEXT] to use
     "output_fields": [...],  // desired output fields (include intermediate fields)
     "chart": {{{{
         "chart_type": "",    // from [CHART TYPE REFERENCE]
@@ -136,7 +141,7 @@ You will produce two outputs: a JSON spec (```json```) and a Python script (```p
         "config": {{{{}}}}       // optional styling
     }}}},
     "field_metadata": {{{{     // semantic type for each encoding field
-        "<field>": "Type"    // from [SEMANTIC TYPE REFERENCE]
+        "<field>": "Category"    // from [SEMANTIC TYPE REFERENCE]
     }}}},
     "output_variable": ""   // descriptive snake_case name (e.g. "sales_by_region"), not "result_df"
 }}}}
@@ -154,7 +159,7 @@ You will produce two outputs: a JSON spec (```json```) and a Python script (```p
 
 {SHARED_STATISTICAL_ANALYSIS}
 
-**Step 2: Python script** — transform input data to produce a DataFrame with all "output_fields". Keep it simple and readable.
+**Step 2: Python script** — transform input data to produce a DataFrame with all "output_fields". Keep it simple and readable. The script MUST assign the final result to the variable named in `"output_variable"` from Step 1.
 
 **Datetime handling:**
 - Year → number. Year-month / year-month-day → string ("2020-01" / "2020-01-01").
@@ -163,22 +168,63 @@ You will produce two outputs: a JSON spec (```json```) and a Python script (```p
 {SHARED_DUCKDB_NOTES}'''
 
 
+def _combine_rules(text_rules: str, knowledge_rules: list[dict]) -> str:
+    """Merge text rules and knowledge-file rules into a single string."""
+    parts = []
+    if text_rules and text_rules.strip():
+        parts.append(text_rules.strip())
+    for rule in knowledge_rules:
+        parts.append(f"### {rule['title']}\n{rule['body']}")
+    return "\n\n".join(parts)
+
+
 class DataRecAgent(object):
 
-    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", max_display_rows=10000):
+    def __init__(self, client, workspace, system_prompt=None, agent_coding_rules="", language_instruction="", max_display_rows=10000, model_info=None, knowledge_store=None):
         self.client = client
         self.workspace = workspace
         self.max_display_rows = max_display_rows
+        self._model_info = model_info or {}
+        self._agent_coding_rules = agent_coding_rules
+        self._language_instruction = language_instruction
 
-        # Incorporate agent coding rules into system prompt if provided
+        knowledge_rules = knowledge_store.load_always_apply_rules() if knowledge_store else []
+        combined_rules = _combine_rules(agent_coding_rules, knowledge_rules)
+
         if system_prompt is not None:
+            self._base_prompt = system_prompt
             self.system_prompt = system_prompt
         else:
+            self._base_prompt = SYSTEM_PROMPT
             base_prompt = SYSTEM_PROMPT
-            if agent_coding_rules and agent_coding_rules.strip():
-                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should prioritize user instructions.\n\n" + agent_coding_rules.strip()
+            if combined_rules:
+                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should prioritize user instructions.\n\n" + combined_rules
             else:
                 self.system_prompt = base_prompt
+
+        if language_instruction:
+            # Insert early (after role definition, before technical sections)
+            # so the LLM's "last impression" remains chart/code rules,
+            # reducing recency-bias interference on chart-type selection.
+            marker = "**About the execution environment:**"
+            idx = self.system_prompt.find(marker)
+            if idx > 0:
+                self.system_prompt = (
+                    self.system_prompt[:idx]
+                    + language_instruction + "\n\n"
+                    + self.system_prompt[idx:]
+                )
+            else:
+                self.system_prompt = self.system_prompt + "\n\n" + language_instruction
+
+        self._diag = AgentDiagnostics(
+            agent_name="DataRecAgent",
+            model_info=self._model_info,
+            base_system_prompt=self._base_prompt,
+            agent_coding_rules=self._agent_coding_rules,
+            language_instruction=self._language_instruction,
+            assembled_system_prompt=self.system_prompt,
+        )
 
     def process_gpt_response(self, input_tables, messages, response, t_llm=None):
         """Process GPT response to handle Python code execution"""
@@ -186,7 +232,10 @@ class DataRecAgent(object):
         t_exec_total = 0.0
 
         if isinstance(response, Exception):
-            result = {'status': 'other error', 'content': str(response.body)}
+            raw_error = str(getattr(response, "body", response))
+            safe_error = sanitize_error_message(raw_error)
+            result = {'status': 'other error', 'content': safe_error,
+                      'diagnostics': self._diag.for_error(messages, error=safe_error)}
             return [result]
 
         candidates = []
@@ -195,33 +244,70 @@ class DataRecAgent(object):
             logger.debug("\n=== Data recommendation result ===>\n")
             logger.debug(choice.message.content + "\n")
 
+            # --- Parse JSON spec and Python code ---
             json_blocks = extract_json_objects(choice.message.content + "\n")
-            # Find the first JSON dict (skip any arrays the model may have emitted)
             refined_goal = None
             for jb in json_blocks:
                 if isinstance(jb, dict):
                     refined_goal = jb
                     break
+            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
+
+            # If only one block was produced, request the missing one
+            refined_goal, code_blocks, _supplement_content, t_supplement = supplement_missing_block(
+                self.client, messages, choice.message.content,
+                refined_goal, code_blocks, prefix="[DataRecAgent]"
+            )
+
+            # Apply fallbacks for missing JSON
+            json_fallback_used = refined_goal is None
             if refined_goal is None:
                 refined_goal = {'output_fields': [], 'chart': {'chart_type': "", 'encodings': {}, 'config': {}}, 'output_variable': 'result_df'}
-            output_variable = refined_goal.get('output_variable', 'result_df')
+                logger.warning(
+                    "[DataRecAgent] JSON spec parsing failed — using fallback defaults. "
+                    f"Response snippet: {choice.message.content[:300]!r}"
+                )
+            output_variable = refined_goal.get('output_variable', 'result_df') or 'result_df'
+            logger.info(f"[DataRecAgent] extracted output_variable={output_variable!r}")
 
-            code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
+            # Diagnostics tracking
+            import re as _re
+            _diag_code = code_blocks[-1] if code_blocks else None
+            _diag_output_var_in_code = bool(
+                _diag_code and output_variable
+                and _re.search(rf'(?:^|\n)\s*{_re.escape(output_variable)}\s*=(?!=)', _diag_code)
+            )
+            _diag_sandbox_mode = None
+            _diag_exec = {"status": None}
+            _diag_code_patched = False
 
             if len(code_blocks) > 0:
                 code = code_blocks[-1]
 
+                if output_variable and not _diag_output_var_in_code:
+                    code, was_patched, detected_var = ensure_output_variable_in_code(code, output_variable)
+                    _diag_code_patched = was_patched
+                    if was_patched:
+                        logger.info(
+                            f"[DataRecAgent] output_variable {output_variable!r} not in code — "
+                            f"patched: appended `{output_variable} = {detected_var}`"
+                        )
+                    else:
+                        logger.warning(
+                            f"[DataRecAgent] output_variable {output_variable!r} not in code "
+                            f"and auto-patch found no candidate variable."
+                        )
+
                 try:
                     from data_formulator.sandbox import create_sandbox
 
-                    # Get sandbox setting (with fallback for non-Flask contexts like MCP server)
                     try:
                         from flask import current_app
                         sandbox_mode = current_app.config.get('CLI_ARGS', {}).get('sandbox', 'local')
                     except (ImportError, RuntimeError):
                         sandbox_mode = 'local'
+                    _diag_sandbox_mode = sandbox_mode
 
-                    # Execute the Python script in the appropriate sandbox
                     t_exec_start = time.time()
                     sandbox = create_sandbox(sandbox_mode)
                     execution_result = sandbox.run_python_code(
@@ -231,23 +317,32 @@ class DataRecAgent(object):
                     )
                     t_exec_total += time.time() - t_exec_start
 
+                    if execution_result['status'] != 'ok':
+                        diagnostics = execution_result.get("diagnostics", {})
+                        raw_exec_error = diagnostics.get(
+                            "safe_detail",
+                            execution_result.get('content', execution_result.get('error_message', 'Unknown error')),
+                        )
+                        safe_exec_error = sanitize_error_message(raw_exec_error)
+                    else:
+                        safe_exec_error = None
+                    _diag_exec = {
+                        "status": execution_result['status'],
+                        "error_message": safe_exec_error,
+                        "available_dataframes": execution_result.get('df_names', []),
+                    }
+
                     if execution_result['status'] == 'ok':
                         full_df = execution_result['content']
                         row_count = len(full_df)
 
-                        # Generate unique table name for workspace storage
                         output_table_name = self.workspace.get_fresh_name(f"d-{output_variable}")
-
-                        # Write full result to workspace as parquet
                         self.workspace.write_parquet(full_df, output_table_name)
 
-                        # Limit rows for response payload
                         if row_count > self.max_display_rows:
                             query_output = full_df.head(self.max_display_rows)
                         else:
                             query_output = full_df
-
-                        # Remove duplicate columns to avoid orient='records' error
                         query_output = query_output.loc[:, ~query_output.columns.duplicated()]
 
                         result = {
@@ -262,55 +357,95 @@ class DataRecAgent(object):
                             },
                         }
                     else:
-                        # Execution error
-                        error_message = execution_result.get('content', execution_result.get('error_message', 'Unknown error'))
                         result = {
                             'status': 'error',
                             'code': code,
-                            'content': error_message
+                            'content': safe_exec_error or 'Unknown error'
                         }
 
                 except Exception as e:
-                    logger.warning('Error occurred during code execution:')
-                    error_message = traceback.format_exc()
-                    logger.warning(error_message)
-                    result = {'status': 'other error', 'code': code, 'content': f"Unexpected error: {error_message}"}
+                    logger.exception('Error occurred during code execution')
+                    safe_error = sanitize_error_message(f"{type(e).__name__}: {e}")
+                    result = {
+                        'status': 'other error',
+                        'code': code,
+                        'content': "Unexpected error during code execution.",
+                        'content_code': 'agent.unexpectedError'
+                    }
+                    _diag_exec = {"status": "exception", "error_message": safe_error}
             else:
-                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task."}
+                result = {'status': 'error', 'code': "", 'content': "No code block found in the response. The model is unable to generate code to complete the task.", 'content_code': 'agent.noCodeBlock'}
 
-            result['dialog'] = [*messages, {"role": choice.message.role, "content": choice.message.content}]
+            _effective_content = choice.message.content
+            if _supplement_content:
+                _effective_content += "\n\n" + _supplement_content
+            result['dialog'] = [*messages, {"role": choice.message.role, "content": _effective_content}]
             result['agent'] = 'DataRecAgent'
             result['refined_goal'] = refined_goal
+
+            # --- Build diagnostics ---
+            usage = getattr(response, 'usage', None)
+            result['diagnostics'] = self._diag.for_response(
+                messages,
+                raw_content=choice.message.content,
+                finish_reason=getattr(choice, 'finish_reason', None),
+                json_spec=refined_goal,
+                json_fallback_used=json_fallback_used,
+                code_found=len(code_blocks) > 0,
+                code=_diag_code,
+                output_variable=output_variable,
+                output_variable_in_code=_diag_output_var_in_code,
+                code_patched=_diag_code_patched,
+                supplemented=_supplement_content is not None,
+                sandbox_mode=_diag_sandbox_mode,
+                exec_status=_diag_exec.get("status"),
+                exec_error=_diag_exec.get("error_message"),
+                exec_df_names=_diag_exec.get("available_dataframes"),
+                t_llm=t_llm or 0,
+                t_supplement=t_supplement,
+                t_exec=t_exec_total,
+                prompt_tokens=getattr(usage, 'prompt_tokens', None) if usage else None,
+                completion_tokens=getattr(usage, 'completion_tokens', None) if usage else None,
+            )
+
             candidates.append(result)
+
+        t_total = time.time() - t_start
+        t_llm_val = t_llm or 0.0
 
         logger.debug("=== Recommendation Candidates ===>")
         for candidate in candidates:
             for key, value in candidate.items():
-                if key in ['dialog', 'content']:
+                if key in ['dialog', 'content', 'diagnostics']:
                     logger.debug(f"##{key}:\n{str(value)[:1000]}...")
                 else:
                     logger.debug(f"## {key}:\n{value}")
 
-        t_total = time.time() - t_start
-        t_llm_val = t_llm or 0.0
-        t_misc = t_total - t_exec_total
-        logger.info(f"[DataRecAgent] timing: llm={t_llm_val:.3f}s, exec={t_exec_total:.3f}s, misc={t_misc:.3f}s, total={t_total + t_llm_val:.3f}s")
+        usage = getattr(response, 'usage', None)
+        usage_str = ""
+        if usage:
+            usage_str = f" | tokens: in={getattr(usage, 'prompt_tokens', None)}, out={getattr(usage, 'completion_tokens', None)}"
+        logger.info(f"[DataRecAgent] timing: llm={t_llm_val:.3f}s, supplement={t_supplement:.3f}s, exec={t_exec_total:.3f}s, total={t_total + t_llm_val:.3f}s{usage_str}")
         return candidates
 
-
-    def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):
+    def run(self, input_tables, description, n=1, prev_messages: list[dict] = [], primary_tables=None):
         """
         Args:
             input_tables: list[dict], each dict contains 'name' (table name in workspace) and 'rows'
             description: str, the description of what the user wants
             n: int, the number of candidates
             prev_messages: list[dict], the previous messages
+            primary_tables: list[str], names of the primary (focused) tables for context prioritization
         """
         table_names = [t.get('name', '?') for t in input_tables]
-        logger.info(f"[DataRecAgent] run start | tables={table_names}")
+        logger.info(f"[DataRecAgent] run start | tables={table_names} | primary={primary_tables}")
 
         # Generate data summary with file references
-        data_summary = generate_data_summary(input_tables, workspace=self.workspace)
+        data_summary = generate_data_summary(
+            input_tables,
+            workspace=self.workspace,
+            primary_tables=primary_tables,
+        )
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
         if len(prev_messages) > 0:

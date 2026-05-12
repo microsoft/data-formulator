@@ -17,6 +17,7 @@
 export interface ChartCacheEntry {
     svg: string;                // Full-size SVG string (for VisualizationView)
     thumbnailDataUrl: string;   // PNG data URL (for DataThread thumbnails)
+    fullPngDataUrl: string;     // Full-size PNG data URL (for agent/report use)
     specKey: string;            // Deterministic key of the inputs that produced this render
 }
 
@@ -56,31 +57,42 @@ export async function getChartPngDataUrl(
     const entry = cache.get(chartId);
     if (!entry) return undefined;
 
-    try {
-        const svgBlob = new Blob([entry.svg], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
-
-        const img = new Image();
-        await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve();
-            img.onerror = reject;
-            img.src = url;
-        });
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width * 2;   // 2x for clarity
-        canvas.height = height * 2;
-        const ctx = canvas.getContext('2d')!;
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-        URL.revokeObjectURL(url);
-        return canvas.toDataURL('image/png');
-    } catch (err) {
-        console.warn('getChartPngDataUrl: SVG render failed, falling back to thumbnail', err);
-        return entry.thumbnailDataUrl || undefined;
+    // Use the full-res PNG from Vega's canvas renderer (avoids fragile SVG→Image→Canvas pipeline)
+    if (entry.fullPngDataUrl) {
+        return entry.fullPngDataUrl;
     }
+
+    // Fallback to thumbnail if full PNG is not available
+    return entry.thumbnailDataUrl || undefined;
+}
+
+/**
+ * Downscale an image data URL for sending to an AI agent.
+ * Renders the original onto a smaller canvas to reduce payload size
+ * while preserving the original chart layout.
+ */
+export async function downscaleImageForAgent(
+    dataUrl: string,
+    maxDim: number = 200,
+    quality: number = 0.75,
+): Promise<string> {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = reject;
+        img.src = dataUrl;
+    });
+    const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', quality);
 }
 
 /**
@@ -97,6 +109,8 @@ export function computeCacheKey(
     tableContentHash: string | undefined,
     tableId: string,
     tableMetadata?: any,
+    activeVariantId?: string,
+    activeVariantSpec?: any,
 ): string {
     return JSON.stringify({
         chartType,
@@ -105,5 +119,9 @@ export function computeCacheKey(
         tableRowCount,
         tableContentHash: tableContentHash || tableId,
         tableMetadata: tableMetadata || {},
+        // Variant fields are intentionally last so default-chart cache keys
+        // are stable across versions that didn't track variants.
+        activeVariantId: activeVariantId || null,
+        activeVariantSpec: activeVariantSpec || null,
     });
 }

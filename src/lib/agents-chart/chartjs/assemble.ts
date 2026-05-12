@@ -37,6 +37,7 @@ import { resolveChannelSemantics, convertTemporalData } from '../core/resolve-se
 import { computeZeroDecision } from '../core/semantic-types';
 import { filterOverflow } from '../core/filter-overflow';
 import { computeLayout, computeChannelBudgets } from '../core/compute-layout';
+import { decideColorMaps } from '../core/color-decisions';
 import { cjsApplyLayoutToSpec, cjsApplyTooltips } from './instantiate-spec';
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,9 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
         : {};
 
     const effectiveOptions: AssembleOptions = {
+        // Chart.js fills its canvas natively — a wider default band size
+        // matches its generous category spacing behavior.
+        defaultBandSize: 30,
         ...options,
         ...(declaration.paramOverrides || {}),
     };
@@ -127,6 +131,7 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
     const budgets = computeChannelBudgets(
         channelSemantics, declaration, convertedData, canvasSize, effectiveOptions,
     );
+    const facetGridResult = budgets.facetGrid;
 
     const overflowResult = filterOverflow(
         channelSemantics, declaration, encodings, convertedData,
@@ -146,6 +151,7 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
         values,
         canvasSize,
         effectiveOptions,
+        facetGridResult,
     );
 
     layoutResult.truncations = overflowResult.truncations;
@@ -179,24 +185,107 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
         semanticTypes,
         chartType,
         assembleOptions: effectiveOptions,
+        colorDecisions: decideColorMaps({
+            chartType,
+            encodings,
+            channelSemantics,
+            table: values,
+            background: 'light',
+        }),
     };
 
-    // Standard single-panel rendering (no faceting for initial CJS backend)
-    const cjsConfig: any = structuredClone(chartTemplate.template);
+    const colField = channelSemantics.column?.field;
+    const rowField = channelSemantics.row?.field;
+    const hasFacet = !!(colField || rowField);
+    const hasAxes = chartTemplate.channels.includes('x') || chartTemplate.channels.includes('y');
 
-    chartTemplate.instantiate(cjsConfig, instantiateContext);
+    let cjsConfig: any;
+    if (hasFacet && hasAxes) {
+        const colValues = colField ? [...new Set(values.map((r: any) => String(r[colField])))] : [''];
+        const rowValues = rowField ? [...new Set(values.map((r: any) => String(r[rowField])))] : [''];
+        const facetLegend: Array<{ label: string; color: string }> = [];
 
-    // Apply layout decisions (CJS-specific)
-    cjsApplyLayoutToSpec(cjsConfig, instantiateContext, warnings);
+        const yField = channelSemantics.y?.field;
+        let sharedYDomain: { min: number; max: number } | undefined;
+        if (yField) {
+            const nums = values
+                .map((r: any) => r[yField])
+                .filter((v: any) => typeof v === 'number' && Number.isFinite(v)) as number[];
+            if (nums.length > 0) {
+                const rawMin = Math.min(...nums);
+                const rawMax = Math.max(...nums);
+                const forceZero = !!channelSemantics.y?.zero?.zero;
+                const min = forceZero ? Math.min(0, rawMin) : rawMin;
+                const max = forceZero ? Math.max(0, rawMax) : rawMax;
+                sharedYDomain = { min, max };
+            }
+        }
 
-    // Tooltips
-    if (addTooltipsOpt) {
-        cjsApplyTooltips(cjsConfig);
-    }
+        const panelRows: any[][] = [];
+        for (let ri = 0; ri < rowValues.length; ri++) {
+            const rowVal = rowValues[ri];
+            const rowPanels: any[] = [];
+            for (let ci = 0; ci < colValues.length; ci++) {
+                const colVal = colValues[ci];
+                const panelData = values.filter((r: any) => {
+                    if (colField && String(r[colField]) !== colVal) return false;
+                    if (rowField && String(r[rowField]) !== rowVal) return false;
+                    return true;
+                });
 
-    // Template-specific post-processing
-    if (chartTemplate.postProcess) {
-        chartTemplate.postProcess(cjsConfig, instantiateContext);
+                const panelConfig: any = structuredClone(chartTemplate.template);
+                const panelContext: InstantiateContext = {
+                    ...instantiateContext,
+                    table: panelData,
+                    layout: layoutResult,
+                };
+                chartTemplate.instantiate(panelConfig, panelContext);
+                // Keep all facet panels the same plot size: disable per-panel built-in legend.
+                // A shared legend is rendered by the gallery host.
+                if (!panelConfig.options) panelConfig.options = {};
+                if (!panelConfig.options.plugins) panelConfig.options.plugins = {};
+                panelConfig.options.plugins.legend = {
+                    ...(panelConfig.options.plugins.legend || {}),
+                    display: false,
+                    position: 'right',
+                };
+                cjsApplyLayoutToSpec(panelConfig, panelContext, []);
+                if (addTooltipsOpt) cjsApplyTooltips(panelConfig);
+                if (chartTemplate.postProcess) chartTemplate.postProcess(panelConfig, panelContext);
+                if (facetLegend.length === 0 && Array.isArray(panelConfig.data?.datasets)) {
+                    for (const ds of panelConfig.data.datasets) {
+                        const label = String(ds?.label ?? '').trim();
+                        if (!label) continue;
+                        const color = String(ds?.borderColor ?? ds?.backgroundColor ?? '#666');
+                        facetLegend.push({ label, color });
+                    }
+                }
+
+                rowPanels.push({
+                    key: `${ri}:${ci}`,
+                    rowIndex: ri,
+                    colIndex: ci,
+                    rowHeader: rowField ? rowVal : undefined,
+                    colHeader: colField ? colVal : undefined,
+                    config: panelConfig,
+                });
+            }
+            panelRows.push(rowPanels);
+        }
+
+        cjsConfig = cjsCombineFacetPanels(
+            panelRows,
+            !!colField,
+            !!rowField,
+            sharedYDomain,
+        );
+        cjsConfig._facetLegend = facetLegend;
+    } else {
+        cjsConfig = structuredClone(chartTemplate.template);
+        chartTemplate.instantiate(cjsConfig, instantiateContext);
+        cjsApplyLayoutToSpec(cjsConfig, instantiateContext, warnings);
+        if (addTooltipsOpt) cjsApplyTooltips(cjsConfig);
+        if (chartTemplate.postProcess) chartTemplate.postProcess(cjsConfig, instantiateContext);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -210,4 +299,30 @@ export function assembleChartjs(input: ChartAssemblyInput): any {
     cjsConfig._dataLength = values.length;
 
     return cjsConfig;
+}
+
+function cjsCombineFacetPanels(
+    panelRows: any[][],
+    hasColHeader: boolean,
+    hasRowHeader: boolean,
+    sharedYDomain?: { min: number; max: number },
+): any {
+    const rows = panelRows.length;
+    const cols = Math.max(1, ...panelRows.map(r => r.length));
+    const ref = panelRows[0]?.[0]?.config;
+    const panelW = ref?._width || 400;
+    const panelH = ref?._height || 300;
+    const gap = 16;
+    const colHeaderH = hasColHeader ? 22 : 0;
+    const rowHeaderW = hasRowHeader ? 28 : 0;
+
+    return {
+        _facet: true,
+        _facetPanels: panelRows,
+        _facetRows: rows,
+        _facetCols: cols,
+        _facetSharedYDomain: sharedYDomain,
+        _width: rowHeaderW + cols * panelW + (cols - 1) * gap,
+        _height: colHeaderH + rows * panelH + (rows - 1) * gap,
+    };
 }

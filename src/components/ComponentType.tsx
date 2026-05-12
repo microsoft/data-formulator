@@ -28,11 +28,76 @@ export interface Trigger {
     tableId: string, // on which table this action is triggered
 
     chart?: Chart, // what's the intented chart from the user when running formulation
-    instruction: string,
-    displayInstruction: string, // the short instruction that will be displayed to the user
 
-    resultTableId: string,
+    resultTableId: string, // the table produced by this trigger (=== owning table's id)
+
+    // Rich interaction log
+    interaction?: InteractionEntry[];
 }
+
+// ── New interaction types ────────────────────────────────────
+
+export type Actor = 'user' | 'data-agent' | 'datarec-agent' | 'datatransform-agent';
+
+export interface ClarificationOption {
+    label: string;
+}
+
+export interface ClarificationQuestion {
+    text: string;
+    responseType?: 'single_choice' | 'free_text';
+    options?: ClarificationOption[];
+}
+
+export interface ClarificationResponse {
+    /** Position of the answered question in the agent's `questions[]` (0-based).
+     *  For pure freeform replies (user typed without selecting any option),
+     *  use a negative value (e.g. -1) or set `source: 'freeform'`. */
+    question_index: number;
+    answer: string;
+    source: 'option' | 'free_text' | 'freeform';
+}
+
+export interface InteractionEntry {
+    from: Actor;
+    to: Actor;
+    role: 'prompt' | 'clarify' | 'instruction' | 'summary' | 'error' | 'explain';
+    plan?: string; // agent's reasoning / thought for this action
+    content: string;
+    displayContent?: string;
+    inputTableNames?: string[]; // table names actually used for this derivation step
+    clarificationQuestions?: ClarificationQuestion[];
+    timestamp?: number;
+}
+
+export type DeriveStatus = 'running' | 'clarifying' | 'completed' | 'error' | 'interrupted';
+
+export interface PendingClarification {
+    trajectory: any[];
+    completedStepCount: number;
+    lastCreatedTableId: string | null;
+}
+
+export interface DraftNode {
+    kind: 'draft';
+    id: string;
+    displayId: string;
+    anchored: boolean;
+    derive: {
+        source: string[];
+        trigger: Trigger;
+        status: DeriveStatus;
+        runningPlan?: string; // live agent thought text while running
+        code?: string;
+        codeSignature?: string;
+        outputVariable?: string;
+        dialog?: any[];
+        pendingClarification?: PendingClarification | null;
+    };
+    actionId?: string;
+}
+
+export type ThreadNode = DraftNode | DictTable;
 
 // Define data cleaning message types
 export type DataCleanTableOutput = {
@@ -58,6 +123,77 @@ export interface DataCleanBlock {
 
     // For output messages  
     dialogItem?: any; // Store the dialog item from the model response
+}
+
+// ── Conversational data loading chat types ────────────────────────────────
+
+export interface ChatAttachment {
+    type: 'image' | 'file' | 'text_file';
+    name: string;
+    url?: string;           // data URL or object URL for images
+    scratchPath?: string;   // path in workspace scratch folder (for large files)
+    preview?: string;       // first N lines for text files
+}
+
+export interface InlineTablePreview {
+    name: string;
+    columns: string[];
+    sampleRows: Record<string, any>[];  // first 5-10 rows
+    totalRows: number;
+    csvScratchPath?: string;
+}
+
+export interface CodeExecution {
+    code: string;
+    stdout?: string;
+    error?: string;
+    resultTable?: InlineTablePreview;
+}
+
+export interface PendingTableLoad {
+    name: string;
+    csvScratchPath: string;
+    preview: InlineTablePreview;
+    confirmed: boolean;
+    // For sample dataset loading
+    sampleDataset?: {
+        datasetName: string;
+        tables: Array<{
+            tableUrl: string;
+            format: string;
+        }>;
+        live?: boolean;
+        refreshIntervalSeconds?: number;
+    };
+}
+
+export interface LoadPlanCandidate {
+    sourceId: string;
+    tableKey: string;
+    displayName: string;
+    sourceTable: string;
+    sourceTableName?: string;
+    filters?: Array<{ column: string; operator: string; value?: any }>;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    selected?: boolean;
+}
+
+export interface LoadPlan {
+    candidates: LoadPlanCandidate[];
+    reasoning?: string;
+}
+
+export interface ChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;                    // markdown text
+    attachments?: ChatAttachment[];     // images, files attached by user
+    tables?: InlineTablePreview[];      // tables to show inline (assistant only)
+    codeBlocks?: CodeExecution[];       // executed code + results (assistant only)
+    pendingLoads?: PendingTableLoad[];  // tables awaiting user confirmation
+    loadPlan?: LoadPlan;                // Agent-proposed data loading plan
+    timestamp: number;
 }
 
 // Data source types for tracking where data originated
@@ -89,9 +225,16 @@ export interface DataSourceConfig {
     
     // Whether this table can be refreshed (backend has connection info)
     canRefresh?: boolean;
+
+    // Connector ID (for tables loaded via a DataConnector)
+    connectorId?: string;
+
+    // The original table name before backend sanitization (e.g. "Sales Report 2024")
+    originalTableName?: string;
 }
 
 export interface DictTable {
+    kind: 'table'; // discriminant for ThreadNode union
     id: string; // name/id of the table
     displayId: string; // display id of the table 
     
@@ -102,6 +245,8 @@ export interface DictTable {
         levels: any[],
         intrinsicDomain?: [number, number],
         unit?: string,
+        displayName?: string,
+        description?: string,
     }}; // metadata of the table
 
     rows: any[]; // table content, each entry is a row
@@ -118,21 +263,16 @@ export interface DictTable {
             }[]
         },
         dialog: any[], // the log of how the data is derived with LLM (the LLM conversation log)
-        // tracks how this derivation is triggered, as we as user instruction used to do the formulation,
-        // there is a subtle difference between trigger and source, trigger identifies the occasion when the derivision is called,
-        // source specifies how the deriviation is done from the source tables, they may be the same, but not necessarily
-        // in fact, right now dict tables are all triggered from charts
         trigger: Trigger,
+        status?: DeriveStatus, // lifecycle state (new — completed tables may omit for backward compat)
     };
-    virtual?: {
-        tableId: string; // the id of the virtual table in the database
-        rowCount: number; // total number of rows in the full table
+    virtual: {
+        tableId: string; // the canonical server-side table name (sanitized)
+        rowCount: number; // total number of rows (rows.length may be a sample)
     };
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
-    createdBy: 'user' | 'agent'; // whether this table is created by the user or the agent
-    attachedMetadata: string; // a string of attached metadata explaining what the table is about (used for prompt)
-    
-    // New field: tracks the source of the data and refresh configuration
+    description: string; // table-level description sourced from the loader (read-only). Empty string when none.
+
     source?: DataSourceConfig;
     
     // Content hash for detecting data changes during refresh
@@ -151,16 +291,16 @@ export function createDictTable(
             dialog: any[], 
             trigger: Trigger
         } | undefined = undefined,
-    virtual: {tableId: string, rowCount: number} | undefined = undefined,
+    virtual: {tableId: string, rowCount: number} = { tableId: id, rowCount: rows.length },
     anchored: boolean = false,
-    createdBy: 'user' | 'agent' = 'user', // by default, all tables are created by the user
-    attachedMetadata: string = '',
+    description: string = '',
     source: DataSourceConfig | undefined = undefined,
 ) : DictTable {
     
     let names = Object.keys(rows[0])
 
     return {
+        kind: 'table' as const,
         id,
         displayId: `${id}`,
         names, 
@@ -176,8 +316,7 @@ export function createDictTable(
         derive,
         virtual,
         anchored,
-        createdBy,
-        attachedMetadata,
+        description,
         source,
     }
 }
@@ -186,6 +325,26 @@ export interface ChartInsight {
     title: string;
     takeaways: string[];
     key: string;  // "chartType|sortedFieldIds" — used to detect staleness
+}
+
+/**
+ * A user-authored "skin" of a chart: a Vega-Lite spec edited via the
+ * style/restyle agent. Variants share the chart's encoding and data — they
+ * only change visual presentation. See design-docs/28-chart-style-refinement-agent.md.
+ *
+ * Stored on `Chart` so they persist with the chart and don't pollute the data thread.
+ * Currently rendered ONLY in the focused chart canvas (VisualizationView);
+ * thumbnails and exports continue to use the assembled default spec.
+ */
+export interface ChartStyleVariant {
+    id: string,                   // stable id, e.g. "v-<timestamp>"
+    label?: string,               // user-editable; defaults to "v1", "v2"…
+    prompt: string,               // the natural-language instruction that produced this spec
+    vlSpec: any,                  // full Vega-Lite spec (data block stripped — re-attached at render)
+    basedOnVariantId?: string,    // lineage for "edit v2 → v3"; undefined = derived from default
+    encodingFingerprint: string,  // see computeEncodingFingerprint(); used to detect staleness
+    createdAt: number,
+    rationale?: string,           // optional one-line explanation from the agent
 }
 
 export type Chart = { 
@@ -198,6 +357,8 @@ export type Chart = {
     config?: Record<string, any>,  // additional chart properties defined by the chart template
     thumbnail?: string,  // PNG data URL for thumbnail display (managed by ChartRenderService, not persisted)
     insight?: ChartInsight,  // AI-generated insight about the visualization
+    styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
+    activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
 }
 
 /** Compute a string key for insight invalidation: chartType|sortedFieldIds */
@@ -209,6 +370,24 @@ export function computeInsightKey(chart: Chart): string {
     return `${chart.chartType}|${fieldIds.join(',')}`;
 }
 
+/**
+ * Fingerprint of the chart's structural identity for variant staleness detection.
+ * A variant is "stale" iff its stored encodingFingerprint != fingerprintOf(currentChart).
+ * Includes chartType + sorted (channel, fieldID, aggregate) tuples — anything that
+ * meaningfully changes what the chart depicts. Excludes config (purely cosmetic).
+ */
+export function computeEncodingFingerprint(chart: Pick<Chart, 'chartType' | 'encodingMap'>): string {
+    const tuples = Object.entries(chart.encodingMap)
+        .map(([ch, enc]) => `${ch}:${enc?.fieldID ?? ''}:${enc?.aggregate ?? ''}`)
+        .sort();
+    return `${chart.chartType}|${tuples.join('|')}`;
+}
+
+/** True iff the variant was authored against an encoding that no longer matches the chart. */
+export function isVariantStale(chart: Chart, variant: ChartStyleVariant): boolean {
+    return variant.encodingFingerprint !== computeEncodingFingerprint(chart);
+}
+
 export let duplicateChart = (chart: Chart) : Chart => {
     return {
         id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`,
@@ -218,6 +397,9 @@ export let duplicateChart = (chart: Chart) : Chart => {
         saved: false,
         source: chart.source,
         config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
+        // styleVariants are intentionally NOT copied: they are user-authored
+        // refinements tied to the chart they were created on. A duplicate is a
+        // fresh canvas. (See design-docs/28-chart-style-refinement-agent.md.)
     }
 }
 
@@ -253,4 +435,27 @@ export type Channel = typeof channels[number];
 
 export interface EncodingDropResult {
     channel: Channel
+}
+
+/** A registered connector instance from GET /api/connectors */
+export interface ConnectorInstance {
+    id: string;
+    source_type: string;
+    display_name: string;
+    icon: string;
+    connected: boolean;
+    /** Backend signals that the vault has stored credentials for this
+     *  connector + identity. Used by the connect form to render a placeholder
+     *  hint (••••••••) on sensitive fields whose values aren't returned. */
+    has_stored_credentials?: boolean;
+    /** Backend signals that SSO token exchange can auto-connect this source. */
+    sso_auto_connect?: boolean;
+    deletable?: boolean;
+    params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+    pinned_params: Record<string, string>;
+    hierarchy: Array<{key: string; label: string}>;
+    effective_hierarchy: Array<{key: string; label: string}>;
+    auth_mode?: string;
+    auth_instructions?: string;
+    delegated_login?: { login_url: string; label?: string } | null;
 }

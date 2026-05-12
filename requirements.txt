@@ -1,7 +1,4 @@
-# Minimal top-level dependencies for deployment.
-# Generated from pyproject.toml [project.dependencies].
-# Use this instead of the full uv-exported requirements.txt for faster
-# App Service deployments (pip resolves transitive deps automatically).
+# Core dependencies
 jupyter
 pandas
 flask
@@ -17,17 +14,24 @@ vl-convert-python
 backoff
 beautifulsoup4
 scikit-learn
+pyyaml
+pyarrow>=13.0.0
+xlrd
+openpyxl>=3.1.0
+yfinance
+
+# Data-loader deps (all included; try/except at import time keeps things safe)
+pymongo
+azure-cosmos
+azure-storage-blob
 azure-identity
 azure-kusto-data
 azure-keyvault-secrets
-azure-storage-blob
+pymysql
+pyodbc
+psycopg2-binary
+boto3
 google-cloud-bigquery
 google-auth
 db-dtypes
-boto3
-pymysql
-pyodbc
-pymongo
-yfinance
-connectorx>=0.4.5
-pyarrow>=23.0.0
+-e .

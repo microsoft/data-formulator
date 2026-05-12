@@ -19,8 +19,9 @@ import tempfile
 import textwrap
 
 import pandas as pd
-from werkzeug.utils import secure_filename
 
+from data_formulator.datalake.parquet_utils import safe_data_filename
+from data_formulator.security.sanitize import sanitize_error_message
 from .base import Sandbox
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,15 @@ DEFAULT_DOCKER_IMAGE = os.environ.get(
     "DOCKER_SANDBOX_IMAGE", "data-formulator-sandbox"
 )
 DEFAULT_TIMEOUT = int(os.environ.get("DOCKER_SANDBOX_TIMEOUT", "120"))
+
+
+def _safe_error_response(content, detail=None):
+    response = {"status": "error", "content": content}
+    if detail:
+        safe_detail = sanitize_error_message(detail)
+        if safe_detail:
+            response["diagnostics"] = {"safe_detail": safe_detail}
+    return response
 
 
 class DockerSandbox(Sandbox):
@@ -104,9 +114,16 @@ class DockerSandbox(Sandbox):
                 import pandas as _pd
                 _out = {output_variable}
                 if not isinstance(_out, _pd.DataFrame):
+                    _df_vars = [
+                        _k for _k, _v in dict(locals()).items()
+                        if isinstance(_v, _pd.DataFrame) and not _k.startswith('_')
+                    ]
                     raise TypeError(
                         '{output_variable} is not a DataFrame '
-                        f'(type: {{type(_out).__name__}})'
+                        f'(type: {{type(_out).__name__}}). '
+                        f'Available DataFrame variables in code: {{_df_vars}}. '
+                        f'This usually means the JSON spec output_variable '
+                        f'does not match the variable name in the Python code.'
                     )
                 _out.to_parquet('{output_parquet}', index=False)
 
@@ -129,6 +146,16 @@ class DockerSandbox(Sandbox):
                 "--cpus", "1",
                 "--pids-limit", "256",
             ]
+
+            # Only set an explicit user on platforms that support os.getuid/os.getgid
+            user_flag: list[str] = []
+            if hasattr(os, "getuid") and hasattr(os, "getgid"):
+                try:
+                    user_flag = ["--user", f"{os.getuid()}:{os.getgid()}"]
+                except OSError:
+                    # Fall back to image's default user if UID/GID cannot be determined
+                    user_flag = []
+            docker_cmd += user_flag
 
             abs_ws = os.path.abspath(workspace_path)
             docker_cmd += ["-v", f"{abs_ws}:/sandbox/workdir:ro"]
@@ -162,11 +189,12 @@ class DockerSandbox(Sandbox):
                     ),
                 }
             except Exception as exc:
+                logger.exception("Failed to start Docker container")
                 self._cleanup(tmpdir)
-                return {
-                    "status": "error",
-                    "content": f"Failed to start Docker container: {exc}",
-                }
+                return _safe_error_response(
+                    "Failed to start Docker container.",
+                    f"{type(exc).__name__}: {exc}",
+                )
 
             stdout = proc.stdout or ""
             stderr = proc.stderr or ""
@@ -174,22 +202,33 @@ class DockerSandbox(Sandbox):
             if proc.returncode != 0 or "__DOCKER_SANDBOX_OK__" not in stdout:
                 self._cleanup(tmpdir)
                 err_detail = stderr.strip() or stdout.strip() or "Unknown error"
-                return {
-                    "status": "error",
-                    "content": f"Docker sandbox execution failed:\n{err_detail}",
-                }
+                logger.error("Docker sandbox execution failed: %s", err_detail)
+                safe_detail = sanitize_error_message(err_detail)
+                return _safe_error_response(
+                    safe_detail or "Docker sandbox execution failed.",
+                    safe_detail,
+                )
 
             # ---- read back output ---------------------------------------------
             # Defensive: ensure the filename stays inside output_dir even if
             # output_variable somehow contains path separators.
-            safe_name = secure_filename(output_variable)
-            if not safe_name:
+            try:
+                safe_name = safe_data_filename(output_variable)
+            except ValueError:
                 self._cleanup(tmpdir)
                 return {
                     "status": "error",
                     "content": "Invalid output_variable",
                 }
-            parquet_out = os.path.join(output_dir, f"{safe_name}.parquet")
+            parquet_out = os.path.realpath(
+                os.path.join(output_dir, f"{safe_name}.parquet")
+            )
+            if not parquet_out.startswith(os.path.realpath(output_dir) + os.sep):
+                self._cleanup(tmpdir)
+                return {
+                    "status": "error",
+                    "content": "Invalid output_variable",
+                }
             if not os.path.exists(parquet_out):
                 self._cleanup(tmpdir)
                 return {
@@ -200,11 +239,12 @@ class DockerSandbox(Sandbox):
             try:
                 output_df = pd.read_parquet(parquet_out)
             except Exception as exc:
+                logger.exception("Failed to read output parquet")
                 self._cleanup(tmpdir)
-                return {
-                    "status": "error",
-                    "content": f"Failed to read output parquet: {exc}",
-                }
+                return _safe_error_response(
+                    "Failed to read output parquet.",
+                    f"{type(exc).__name__}: {exc}",
+                )
 
             self._cleanup(tmpdir)
             return {"status": "ok", "content": output_df}

@@ -184,6 +184,9 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     if (effectiveOptions.facetGap == null) {
         effectiveOptions.facetGap = 10;
     }
+    if (effectiveOptions.targetBandAR == null) {
+        effectiveOptions.targetBandAR = 10;
+    }
     const facetFixW = effectiveOptions.facetFixedPadding.width;
     const facetFixH = effectiveOptions.facetFixedPadding.height;
 
@@ -240,9 +243,12 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
 
     // --- Build VL encodings (abstract semantics → VL encoding objects) ---
 
+    const fieldDisplayNames = input.field_display_names;
+
     const resolvedEncodings = buildVLEncodings(
         encodings, channelSemantics, declaration, data,
         canvasSize, semanticTypes, templateMarkType, chartTemplate,
+        fieldDisplayNames,
     );
 
     // --- Align sort/domain arrays to converted data types ---
@@ -362,36 +368,52 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         }
     }
 
-    // Independent y-axis scaling for faceted charts with vastly different ranges
+    // Independent y-axis scaling for faceted charts.
+    // For layered specs (e.g. Regression), y encoding lives inside layer items, not at the top.
     const effectiveEncoding = vgObj.spec?.encoding || vgObj.encoding;
+    const layerEncodings = (vgObj.spec?.layer || vgObj.layer || []).map((l: any) => l.encoding).filter(Boolean);
+    const yEnc = effectiveEncoding?.y || layerEncodings.find((e: any) => e.y)?.y;
     const effectiveFacet = vgObj.facet || vgObj.encoding?.facet;
-    if (effectiveFacet != undefined && effectiveEncoding?.y?.type === 'quantitative') {
-        const yField = effectiveEncoding.y.field;
-        const columnField = effectiveFacet.field;
+    const hasFacetedQuant = effectiveFacet != undefined && yEnc?.type === 'quantitative';
+    let computedIndependentYAxis = false;
+    if (hasFacetedQuant) {
+        const userChoice = chartProperties?.independentYAxis; // true | false | undefined
 
-        if (yField && columnField) {
-            const columnGroups = new Map<any, number>();
-            for (const row of data) {
-                const columnValue = row[columnField];
-                const yValue = row[yField];
-                if (yValue != null && !isNaN(yValue)) {
-                    const currentMax = columnGroups.get(columnValue) || 0;
-                    columnGroups.set(columnValue, Math.max(currentMax, Math.abs(yValue)));
+        if (userChoice === undefined) {
+            // Auto-heuristic: independent when value ranges differ by ≥100×
+            const yField = yEnc.field;
+            const columnField = effectiveFacet.field;
+
+            if (yField && columnField) {
+                const columnGroups = new Map<any, number>();
+                for (const row of data) {
+                    const columnValue = row[columnField];
+                    const yValue = row[yField];
+                    if (yValue != null && !isNaN(yValue)) {
+                        const currentMax = columnGroups.get(columnValue) || 0;
+                        columnGroups.set(columnValue, Math.max(currentMax, Math.abs(yValue)));
+                    }
+                }
+
+                const maxValues = Array.from(columnGroups.values()).filter(v => v > 0);
+                if (maxValues.length >= 2) {
+                    const maxValue = Math.max(...maxValues);
+                    const minValue = Math.min(...maxValues);
+                    const ratio = maxValue / minValue;
+                    const totalFacets = (layoutResult.facet?.columns ?? 1) * (layoutResult.facet?.rows ?? 1);
+                    if (ratio >= 100 && totalFacets < 6) {
+                        computedIndependentYAxis = true;
+                    }
                 }
             }
+        } else {
+            computedIndependentYAxis = !!userChoice;
+        }
 
-            const maxValues = Array.from(columnGroups.values()).filter(v => v > 0);
-            if (maxValues.length >= 2) {
-                const maxValue = Math.max(...maxValues);
-                const minValue = Math.min(...maxValues);
-                const ratio = maxValue / minValue;
-                const totalFacets = (layoutResult.facet?.columns ?? 1) * (layoutResult.facet?.rows ?? 1);
-                if (ratio >= 100 && totalFacets < 6) {
-                    if (!vgObj.resolve) vgObj.resolve = {};
-                    if (!vgObj.resolve.scale) vgObj.resolve.scale = {};
-                    vgObj.resolve.scale.y = "independent";
-                }
-            }
+        if (computedIndependentYAxis) {
+            if (!vgObj.resolve) vgObj.resolve = {};
+            if (!vgObj.resolve.scale) vgObj.resolve.scale = {};
+            vgObj.resolve.scale.y = "independent";
         }
     }
 
@@ -409,6 +431,13 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
     }
     result._width = layoutResult.subplotWidth;
     result._height = layoutResult.subplotHeight;
+    // Expose computed config so the UI can seed toggle defaults from heuristic results.
+    // Only include keys when the corresponding property is relevant (e.g. faceted).
+    const computedConfig: Record<string, any> = {};
+    if (hasFacetedQuant) {
+        computedConfig.independentYAxis = computedIndependentYAxis;
+    }
+    result._computedConfig = computedConfig;
     return result;
 }
 
@@ -430,6 +459,7 @@ function buildVLEncodings(
     semanticTypes: Record<string, string | SemanticAnnotation>,
     templateMarkType: string | undefined,
     chartTemplate: ChartTemplateDef,
+    fieldDisplayNames?: Record<string, string>,
 ): Record<string, any> {
     const resolvedEncodings: Record<string, any> = {};
 
@@ -559,24 +589,29 @@ function buildVLEncodings(
                     encodingObj.sort = `${encoding.sortOrder === "ascending" ? "" : "-"}${encoding.sortBy}`;
                 }
             } else {
-                try {
-                    if (fieldName) {
-                        const fieldSemType = toTypeString(semanticTypes[fieldName]);
-                        const fieldVisCat = inferVisCategory(data.map(r => r[fieldName]));
-                        let sortedValues = JSON.parse(encoding.sortBy);
+                // Temporal fields sort chronologically by default in VL; an explicit
+                // value array is redundant, pollutes the spec with potentially hundreds
+                // of date strings, and can break continuous temporal scales.
+                if (encodingObj.type !== 'temporal') {
+                    try {
+                        if (fieldName) {
+                            const fieldSemType = toTypeString(semanticTypes[fieldName]);
+                            const fieldVisCat = inferVisCategory(data.map(r => r[fieldName]));
+                            let sortedValues = JSON.parse(encoding.sortBy);
 
-                        if (fieldVisCat === 'temporal' || fieldSemType === "Year" || fieldSemType === "Decade") {
-                            sortedValues = sortedValues.map((v: any) => v.toString());
+                            if (fieldVisCat === 'temporal' || fieldSemType === "Year" || fieldSemType === "Decade") {
+                                sortedValues = sortedValues.map((v: any) => v.toString());
+                            }
+
+                            // Preserve numeric types for nominal fields with numeric data
+                            sortedValues = preserveDomainTypes(sortedValues);
+
+                            encodingObj.sort = (encoding.sortOrder === "ascending" || !encoding.sortOrder)
+                                ? sortedValues : sortedValues.reverse();
                         }
-
-                        // Preserve numeric types for nominal fields with numeric data
-                        sortedValues = preserveDomainTypes(sortedValues);
-
-                        encodingObj.sort = (encoding.sortOrder === "ascending" || !encoding.sortOrder)
-                            ? sortedValues : sortedValues.reverse();
+                    } catch {
+                        console.warn(`sort error > ${encoding.sortBy}`);
                     }
-                } catch {
-                    console.warn(`sort error > ${encoding.sortBy}`);
                 }
             }
         } else {
@@ -621,6 +656,11 @@ function buildVLEncodings(
             }
         }
 
+        // Apply localized display name as axis/legend title
+        if (fieldDisplayNames && fieldName && fieldDisplayNames[fieldName] && !encodingObj.title) {
+            encodingObj.title = fieldDisplayNames[fieldName];
+        }
+
         // --- Collect resolved encoding ---
         if (Object.keys(encodingObj).length !== 0) {
             resolvedEncodings[channel] = encodingObj;
@@ -654,9 +694,14 @@ function buildVLEncodings(
         }
         delete resolvedEncodings.group;
 
-        // Create offset encoding for position subdivision
+        // Create offset encoding for position subdivision.
+        // Coordinate sort with color so bar order matches legend order.
         if (!resolvedEncodings[offsetChannel]) {
-            resolvedEncodings[offsetChannel] = { field: groupCS.field, type: 'nominal' };
+            const offsetEnc: any = { field: groupCS.field, type: 'nominal' };
+            if (resolvedEncodings.color?.sort !== undefined) {
+                offsetEnc.sort = resolvedEncodings.color.sort;
+            }
+            resolvedEncodings[offsetChannel] = offsetEnc;
         }
     }
 

@@ -121,6 +121,45 @@ uv run data_formulator --dev   # Run backend only (for frontend development)
     Open [http://localhost:5567](http://localhost:5567) to view it in the browser.
 
 
+## Docker
+
+Docker is the easiest way to run Data Formulator without installing Python or Node.js locally.
+
+### Quick start
+
+1. **Copy the environment template and add your API keys:**
+
+    ```bash
+    cp .env.template .env
+    # Edit .env and set your OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
+    ```
+
+2. **Build and start the container:**
+
+    ```bash
+    docker compose up --build
+    ```
+
+3. Open [http://localhost:5567](http://localhost:5567) in your browser.
+
+To stop the container: `docker compose down`
+
+Workspace data (uploaded files, sessions) is persisted in a Docker volume (`data_formulator_home`) so it survives container restarts.
+
+### Build the image manually
+
+```bash
+docker build -t data-formulator .
+docker run --rm -p 5567:5567 --env-file .env data-formulator
+```
+
+### Docker sandbox (`SANDBOX=docker`) is not supported inside a container
+
+The Docker sandbox backend works by calling `docker run -v <host_path>:...` to bind-mount temporary workspace directories into child containers. When Data Formulator itself runs in a Docker container those paths refer to the *container* filesystem, not the host, so Docker daemon cannot mount them and the feature does not work.
+
+Use `SANDBOX=docker` only when running Data Formulator **directly on the host** (e.g. with `uv run data_formulator --sandbox docker` or `python -m data_formulator --sandbox docker`). When using the Docker image, keep the default `SANDBOX=local`.
+
+
 ## Sandbox
 
 AI-generated Python code runs inside a **sandbox** to isolate it from the main server process. Two backends are available:
@@ -278,62 +317,232 @@ data-formulator/                          ← container
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
-| `--workspace-backend` | `WORKSPACE_BACKEND` | `local` | `local` or `azure_blob` |
+| `--workspace-backend` | `WORKSPACE_BACKEND` | `local` | `local`, `azure_blob`, or `ephemeral` |
 | `--azure-blob-connection-string` | `AZURE_BLOB_CONNECTION_STRING` | — | Shared-key connection string |
 | `--azure-blob-account-url` | `AZURE_BLOB_ACCOUNT_URL` | — | Account URL for Entra ID auth |
 | `--azure-blob-container` | `AZURE_BLOB_CONTAINER` | `data-formulator` | Blob container name |
+
+
+## Deployment Profiles
+
+Data Formulator supports three deployment configurations. **All defaults are optimized for Profile 1 (single-user local)** — you only need to set flags when deploying as multi-user.
+
+### Profile 1: Single-User Local (default)
+
+A personal instance running on `localhost`. No login required, full feature access.
+
+```bash
+# Everything uses defaults — just run it:
+data_formulator
+
+# Or equivalently:
+data_formulator \
+  --workspace-backend local \
+  --sandbox local
+```
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `AUTH_PROVIDER` | *(unset)* | Single user, no login needed |
+| `WORKSPACE_BACKEND` | `local` | Persist workspaces to `~/.data_formulator/` |
+| `DISABLE_DATA_CONNECTORS` | `false` | Full access to MySQL, PostgreSQL, etc. |
+| `DISABLE_CUSTOM_MODELS` | `false` | User can add any LLM endpoint |
+| `DISABLE_DISPLAY_KEYS` | `false` | User can see/manage their own API keys |
+| Credential vault | auto-enabled | Remembers DB credentials across restarts |
+| Identity | `local:<os_username>` | Fixed, OS-derived — survives localStorage clear |
+
+**Security notes:** In single-user localhost mode, the server ignores the `X-Identity-Id` header entirely and uses a fixed identity derived from the OS username (e.g., `local:alice`). This means vault credentials and workspaces are tied to your OS account, not a random browser UUID — clearing localStorage won't orphan your data.
+
+### Profile 2: Multi-User Anonymous (demo / public hosting)
+
+A shared server (e.g., for demos, workshops, public access). No login, no server-side state, no sensitive features.
+
+```bash
+data_formulator \
+  --workspace-backend ephemeral \
+  --disable-data-connectors \
+  --disable-custom-models \
+  --disable-display-keys
+```
+
+> **Shortcut:** `--disable-database` (or `DISABLE_DATABASE=true`) bundles all of the above into a single flag.
+
+Or via environment variables:
+
+```env
+WORKSPACE_BACKEND=ephemeral
+DISABLE_DATA_CONNECTORS=true
+DISABLE_CUSTOM_MODELS=true
+DISABLE_DISPLAY_KEYS=true
+# Pre-configure the LLM models users can access:
+OPENAI_ENABLED=true
+OPENAI_API_KEY=sk-...
+OPENAI_MODELS=gpt-4.1
+```
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `AUTH_PROVIDER` | *(unset)* | Anonymous access for demos |
+| `WORKSPACE_BACKEND` | `ephemeral` | No server-side persistence — data lives only in browser IndexedDB |
+| `DISABLE_DATA_CONNECTORS` | `true` | **Critical** — prevents DB credential exposure via identity spoofing |
+| `DISABLE_CUSTOM_MODELS` | `true` | Prevents users from adding arbitrary LLM endpoints (SSRF risk) |
+| `DISABLE_DISPLAY_KEYS` | `true` | Hides server-configured API keys from UI |
+| Credential vault | N/A | No connectors → no credentials to store |
+| Identity | anonymous (`browser:<uuid>`) | Acceptable — no sensitive server-side state to protect |
+
+**Security notes:** With data connectors disabled, the anonymous identity spoofing risk is eliminated — there are no DB credentials or persistent workspaces on the server to access. Each user's data lives entirely in their browser. The only server-side resource is the LLM proxy, which is locked down by `DF_ALLOWED_API_BASES`.
+
+### Profile 3: Multi-User Authenticated (enterprise / team)
+
+A shared server with SSO login. Full features, proper identity isolation.
+
+```bash
+data_formulator \
+  --workspace-backend azure_blob \
+  --disable-display-keys
+```
+
+```env
+AUTH_PROVIDER=oidc
+OIDC_ISSUER_URL=https://your-idp.example.com/realms/main
+OIDC_CLIENT_ID=data-formulator
+ALLOW_ANONYMOUS=false
+WORKSPACE_BACKEND=azure_blob
+AZURE_BLOB_ACCOUNT_URL=https://<account>.blob.core.windows.net
+DISABLE_DISPLAY_KEYS=true
+DISABLE_CUSTOM_MODELS=true
+FLASK_SECRET_KEY=<generate-with-secrets-token-hex-32>
+```
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `AUTH_PROVIDER` | `oidc` / `github` / `azure_easyauth` | Verified identity from SSO |
+| `ALLOW_ANONYMOUS` | `false` | Login required — no anonymous fallback |
+| `WORKSPACE_BACKEND` | `azure_blob` or `local` | Persistent per-user workspaces |
+| `DISABLE_DATA_CONNECTORS` | `false` | Safe — identity comes from auth provider, not spoofable |
+| `DISABLE_CUSTOM_MODELS` | `true` | Users only use server-configured models |
+| `DISABLE_DISPLAY_KEYS` | `true` | Hide server keys; users add their own |
+| `FLASK_SECRET_KEY` | set explicitly | Required for stable sessions across server restarts |
+| Credential vault | auto-enabled | DB credentials scoped to verified `user:<id>` |
+| Identity | `user:<sub>` from auth provider | Server-verified, cannot be spoofed |
+
+**Security notes:** With an auth provider, `get_identity_id()` returns `user:<verified_id>` from the IdP token — the `X-Identity-Id` header is ignored entirely. Workspaces, vault credentials, and DB connections are all scoped to the verified identity. Set `ALLOW_ANONYMOUS=false` to prevent unauthenticated access.
+
+### Profile Comparison
+
+| Feature | Profile 1 (Local) | Profile 2 (Demo) | Profile 3 (Enterprise) |
+|---------|:-:|:-:|:-:|
+| Login required | No | No | Yes |
+| Data connectors (DB) | Yes | **No** | Yes |
+| Custom LLM endpoints | Yes | **No** | Operator choice |
+| Credential vault | Yes | N/A | Yes |
+| Workspace persistence | Local disk | Browser only | Cloud / disk |
+| Identity | `local:<os_user>` (fixed) | `browser:<uuid>` (client) | `user:<sub>` (SSO) |
+
+### CLI Flags Reference (complete)
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `--workspace-backend` | `WORKSPACE_BACKEND` | `local` | `local`, `azure_blob`, or `ephemeral` |
+| `--sandbox` | `SANDBOX` | `local` | Code execution backend: `local` or `docker` |
+| `--disable-database` | `DISABLE_DATABASE` | `false` | **Multi-user anonymous preset**: bundles ephemeral + no connectors + no custom models + hide keys |
+| `--disable-display-keys` | `DISABLE_DISPLAY_KEYS` | `false` | Hide API keys in frontend UI |
+| `--disable-data-connectors` | `DISABLE_DATA_CONNECTORS` | `false` | Disable external DB connectors |
+| `--disable-custom-models` | `DISABLE_CUSTOM_MODELS` | `false` | Prevent users from adding custom LLM endpoints |
+| `--max-display-rows` | `MAX_DISPLAY_ROWS` | `10000` | Max rows sent to frontend |
+| `--data-dir` | `DATA_FORMULATOR_HOME` | `~/.data_formulator` | Data directory |
+| `--host` | `HOST` | `127.0.0.1` | Network interface to bind |
+| `-p`, `--port` | — | `5567` | Port number |
+| `--dev` | `DEV_MODE` | `false` | Development mode (no auto-open browser) |
+| — | `AUTH_PROVIDER` | *(unset)* | `oidc`, `github`, `azure_easyauth`, or unset for anonymous |
+| — | `ALLOW_ANONYMOUS` | `true` | Allow unauthenticated access when auth provider is set |
+| — | `DF_ALLOWED_API_BASES` | *(unset, all allowed)* | Comma-separated URL globs for LLM endpoint allowlist |
+| — | `FLASK_SECRET_KEY` | auto-generated | Session signing key (set explicitly for production) |
+| `--azure-blob-connection-string` | `AZURE_BLOB_CONNECTION_STRING` | — | Azure Blob shared-key connection string |
+| `--azure-blob-account-url` | `AZURE_BLOB_ACCOUNT_URL` | — | Azure Blob account URL for Entra ID auth |
+| `--azure-blob-container` | `AZURE_BLOB_CONTAINER` | `data-formulator` | Azure Blob container name |
 
 
 ## Security Considerations for Production Deployment
 
 ⚠️ **IMPORTANT SECURITY WARNING FOR PRODUCTION DEPLOYMENT**
 
-When deploying Data Formulator to production, please be aware of the following security considerations:
+### Identity System
 
-### Database and Data Storage Security
+Data Formulator uses a **namespaced identity** system with three tiers:
+- **Local mode** (`127.0.0.1`, no auth provider): Identity is `local:<os_username>`, determined by the server. The `X-Identity-Id` header is ignored. Vault and workspaces are tied to the OS user.
+- **Anonymous mode** (multi-user, no auth provider): Identity is `browser:<uuid>` where the UUID is generated in the browser's `localStorage`. The server trusts the client-provided `X-Identity-Id` header, but always forces the `browser:` prefix.
+- **Authenticated mode** (auth provider configured): Identity is `user:<verified_id>` from the auth provider. The `X-Identity-Id` header is ignored entirely.
 
-1. **Workspace and table data**: Table data is stored in per-identity workspaces (e.g. parquet files). DuckDB is used only in-memory per request when needed (e.g. for SQL mode); no persistent DuckDB database files are created by the app.
+**Key security principle**: An attacker sending `X-Identity-Id: user:alice@...` gets `browser:alice@...` — completely separate from the real `user:alice@...` that only authenticated Alice can access.
 
-2. **Identity Management**: 
-   - Each user's data is isolated by a namespaced identity key (e.g., `user:alice@example.com` or `browser:550e8400-...`)
-   - Anonymous users get a browser-based UUID stored in localStorage
-   - Authenticated users get their verified user ID from the auth provider
+**Anonymous spoofing risk**: In anonymous mode, if an attacker knows another user's browser UUID, they can impersonate them via the `X-Identity-Id` header. This is why **Profile 2 disables data connectors** (no DB credentials to steal) and **Profile 3 requires authentication** (header is ignored).
 
-3. **Data persistence**: User data may be written to workspace storage (e.g. parquet) on the server. In multi-tenant deployments, ensure workspace directories are isolated and access-controlled.
+### Data Storage
+
+| Backend | Flag | Storage | Persistence |
+|---------|------|---------|-------------|
+| **local** (default) | `--workspace-backend local` | `~/.data_formulator/users/<identity>/workspaces/` | Server filesystem |
+| **azure_blob** | `--workspace-backend azure_blob` | Azure Blob container | Cloud |
+| **ephemeral** | `--workspace-backend ephemeral` | Browser IndexedDB (frontend) + temp dirs (backend) | Browser session only |
 
 ### Recommended Security Measures
 
-For production deployment, consider:
+1. **Multi-user anonymous (demos)**: Use Profile 2 — `--workspace-backend ephemeral --disable-data-connectors --disable-custom-models --disable-display-keys` (or `--disable-database` as shortcut)
+2. **Multi-user authenticated**: Use Profile 3 — set `AUTH_PROVIDER`, `ALLOW_ANONYMOUS=false`, and `DISABLE_CUSTOM_MODELS=true`
+3. **HTTPS**: Use a reverse proxy (nginx, Azure App Gateway) with TLS termination
+4. **`FLASK_SECRET_KEY`**: Set explicitly for production (auto-generated key changes on restart)
 
-1. **Use `--disable-database` flag** to disable table-connector routes when you do not need external or uploaded table support
-2. **Implement proper authentication, authorization, and other security measures** as needed for your specific use case, for example:
-   - User authentication (OAuth, JWT tokens, etc.)
-   - Role-based access control
-   - API rate limiting
-   - HTTPS/TLS encryption
-   - Input validation and sanitization 
+### Server Migration Checklist
 
-### Configuration for Production
+When migrating Data Formulator to a new server (or rebuilding a Docker container), the following secrets and data files **must** be carried over. Losing any of them will break the corresponding functionality.
+
+| Item | Location | What breaks if lost |
+|------|----------|---------------------|
+| `FLASK_SECRET_KEY` | `.env` (env var) | All user sessions invalidated (SSO login, plugin tokens). Agent code signatures fail verification — saved charts cannot refresh until re-executed. |
+| `.vault_key` | `DATA_FORMULATOR_HOME/.vault_key` | `credentials.db` becomes undecryptable — all stored database passwords / service credentials are lost. |
+| `credentials.db` | `DATA_FORMULATOR_HOME/credentials.db` | Same as above — the encrypted credential store itself. |
+| `DF_CODE_SIGNING_SECRET` | `.env` (env var, optional) | If set, overrides Flask-derived signing key. Must match the old value or all code signatures break. |
+| `CREDENTIAL_VAULT_KEY` | `.env` (env var, optional) | If set, overrides `.vault_key` file. Must match or vault data is unreadable. |
+| `users/` & `workspaces/` | `DATA_FORMULATOR_HOME/` | User workspace data (parquet files, session metadata). |
+
+**Minimum migration steps:**
 
 ```bash
-# For stateless deployment (recommended for public hosting)
-python -m data_formulator.app --disable-database
+# On the OLD server — back up secrets + data
+cp .env                             /backup/.env
+cp $DATA_FORMULATOR_HOME/.vault_key /backup/.vault_key
+cp $DATA_FORMULATOR_HOME/credentials.db /backup/credentials.db
+# Copy workspace data if using local backend
+cp -r $DATA_FORMULATOR_HOME/users   /backup/users
+cp -r $DATA_FORMULATOR_HOME/workspaces /backup/workspaces
+
+# On the NEW server — restore before first start
+cp /backup/.env .env
+cp /backup/.vault_key $DATA_FORMULATOR_HOME/.vault_key
+cp /backup/credentials.db $DATA_FORMULATOR_HOME/credentials.db
+cp -r /backup/users $DATA_FORMULATOR_HOME/users
+cp -r /backup/workspaces $DATA_FORMULATOR_HOME/workspaces
 ```
+
+> **Tip:** If you forgot to back up `FLASK_SECRET_KEY` and it was auto-generated, there is no way to recover it. Users will need to log in again, and any chart with a cached code signature will need to be re-executed by the Agent.
+
+> **中文版:** 详细的迁移操作指南见 [docs-cn/7-server-migration-guide.md](docs-cn/7-server-migration-guide.md)。
 
 ## Authentication Architecture
 
-Data Formulator supports a **hybrid identity system** that supports both anonymous and authenticated users.
+Data Formulator supports a **hybrid identity system** with anonymous and authenticated modes.
+See **Deployment Profiles** above for which mode to use in each scenario.
 
-### Identity Flow Overview
+### Identity Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         Frontend Request                             │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Headers:                                                            │
-│    X-Identity-Id: "browser:550e8400-..." (namespace sent by client) │
-│    Authorization: Bearer <jwt>  (if custom auth implemented)         │
-│    (Azure also adds X-MS-CLIENT-PRINCIPAL-ID automatically)          │
+│    X-Identity-Id: "local:alice" / "browser:550e8400-..." / ...      │
+│    Authorization: Bearer <jwt>  (if auth provider configured)        │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -341,69 +550,33 @@ Data Formulator supports a **hybrid identity system** that supports both anonymo
 │                    Backend Identity Resolution                       │
 │                       (auth.py: get_identity_id)                    │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Priority 1: Azure X-MS-CLIENT-PRINCIPAL-ID → "user:<azure_id>"     │
-│  Priority 2: JWT Bearer token (if implemented) → "user:<jwt_sub>"    │
-│  Priority 3: X-Identity-Id header → ALWAYS "browser:<id>"           │
-│              (client-provided namespace is IGNORED for security)     │
+│  Priority 1: Auth provider (OIDC/GitHub/EasyAuth) → "user:<id>"     │
+│  Priority 2: Localhost mode (127.0.0.1)           → "local:<user>"  │
+│              (ignores X-Identity-Id header)                          │
+│  Priority 3: X-Identity-Id header                 → "browser:<id>"  │
+│              (client-provided namespace prefix is IGNORED)           │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      Storage Isolation                               │
 ├─────────────────────────────────────────────────────────────────────┤
-│  "user:alice@example.com"  → alice's DuckDB file (ONLY via auth)     │
-│  "browser:550e8400-..."    → anonymous user's DuckDB file            │
+│  "user:alice@example.com"  → alice's workspace (ONLY via auth)       │
+│  "local:alice"             → localhost user's workspace (fixed)      │
+│  "browser:550e8400-..."    → anonymous user's workspace              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Security Model
+### Auth Provider Setup
 
-**Critical Security Rule:** The backend NEVER trusts the namespace prefix from the client-provided `X-Identity-Id` header. Even if a client sends `X-Identity-Id: "user:alice@..."`, the backend strips the prefix and forces `browser:alice@...`. Only verified authentication (Azure headers or JWT) can result in a `user:` prefixed identity.
+See the `AUTH_PROVIDER` section in `.env.template` for configuration details.
 
-The key security principle is **namespaced isolation with forced prefixing**:
-
-| Scenario | X-Identity-Id Sent | Backend Resolution | Storage Key |
-|----------|-------------------|-------------------|-------------|
-| Anonymous user | `browser:550e8400-...` | Strips prefix, forces `browser:` | `browser:550e8400-...` |
-| Azure logged-in user | `browser:550e8400-...` | Uses Azure header (priority 1) | `user:alice@...` |
-| Attacker spoofing | `user:alice@...` (forged) | No valid auth, strips & forces `browser:` | `browser:alice@...` |
-
-**Why this is secure:** An attacker sending `X-Identity-Id: user:alice@...` gets `browser:alice@...` as their storage key, which is completely separate from the real `user:alice@...` that only authenticated Alice can access.
-
-### Implementing Custom Authentication
-
-To add JWT-based authentication:
-
-1. **Backend** (`tables_routes.py`): Uncomment and configure the JWT verification code in `get_identity_id()`
-2. **Frontend** (`utils.tsx`): Implement `getAuthToken()` to retrieve the JWT from your auth context
-3. **Add JWT secret** to Flask config: `current_app.config['JWT_SECRET']`
-
-### Azure App Service Authentication
-
-When deployed to Azure with EasyAuth enabled:
-- Azure automatically adds `X-MS-CLIENT-PRINCIPAL-ID` header to authenticated requests
-- The backend reads this header first (highest priority)
-- No frontend changes needed - Azure handles the auth flow
-
-### Frontend Identity Management
-
-The frontend (`src/app/identity.ts`) manages identity as follows:
-
-```typescript
-// Identity is always initialized with browser ID
-identity: { type: 'browser', id: getBrowserId() }
-
-// If user logs in (e.g., via Azure), it's updated to:
-identity: { type: 'user', id: userInfo.userId }
-
-// All API requests send namespaced identity:
-// X-Identity-Id: "browser:550e8400-..." or "user:alice@..."
-```
-
-This ensures:
-1. **Anonymous users**: Work immediately with localStorage-based browser ID
-2. **Logged-in users**: Get their verified user ID from the auth provider
-3. **Cross-tab consistency**: Browser ID is shared via localStorage across all tabs
+| Provider | `AUTH_PROVIDER` | Setup |
+|----------|----------------|-------|
+| OIDC / OAuth2 | `oidc` | Set `OIDC_ISSUER_URL` + `OIDC_CLIENT_ID` |
+| GitHub | `github` | Set `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET` |
+| Azure EasyAuth | `azure_easyauth` | Enable in Azure App Service (no extra env vars) |
+| Anonymous only | *(unset)* | Default — no login, `browser:<uuid>` identity |
 
 ## Usage
 See the [Usage section on the README.md page](README.md#usage).

@@ -29,7 +29,7 @@ export interface TestCase {
     /**
      * Enriched semantic annotations that override the plain semanticType strings
      * in metadata. Use this when a field needs extra info like intrinsicDomain or unit.
-     * E.g., { rating: { semanticType: 'Rating', intrinsicDomain: [1, 5] } }
+     * E.g., { rating: { semanticType: 'Score', intrinsicDomain: [1, 5] } }
      */
     semanticAnnotations?: Record<string, SemanticAnnotation>;
 }
@@ -42,13 +42,6 @@ export interface DateFormat {
     fieldName: string;
     expectedType: Type;
     semanticType: string;
-}
-
-/** Gallery section definition */
-export interface GallerySection {
-    label: string;
-    description: string;
-    entries: string[];   // keys into TEST_GENERATORS
 }
 
 // ============================================================================
@@ -83,8 +76,8 @@ export function buildMetadata(data: Record<string, any>[]): Record<string, { typ
         const levels = [...new Set(values)];
         // Assign semantic types heuristically
         let semanticType = '';
-        if (type === Type.Date) semanticType = 'Date';
-        else if (type === Type.Number) semanticType = 'Quantity';
+        if (type === Type.Date || type === Type.DateTime || type === Type.Time) semanticType = 'Date';
+        else if (type === Type.Number || type === Type.Duration) semanticType = 'Quantity';
         else semanticType = 'Category';
         meta[key] = { type, semanticType, levels };
     }

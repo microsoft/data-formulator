@@ -1,0 +1,181 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+"""Thin wrapper around the Superset public REST API."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+from urllib.parse import quote
+
+import requests
+
+logger = logging.getLogger(__name__)
+
+
+class SupersetClient:
+    """Every Superset API call goes through this class so that upstream
+    changes only require edits in one place."""
+
+    def __init__(self, base_url: str, timeout: int = 60):
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+    def _headers(self, access_token: str | None) -> dict:
+        if access_token:
+            return {"Authorization": f"Bearer {access_token}"}
+        return {}
+
+    # -- datasets --------------------------------------------------------
+
+    def list_datasets(
+        self,
+        access_token: str,
+        page: int = 0,
+        page_size: int = 100,
+    ) -> dict:
+        """Return datasets the current user can see (DatasourceFilter)."""
+        resp = requests.get(
+            f"{self.base_url}/api/v1/dataset/",
+            headers=self._headers(access_token),
+            params={
+                "q": f"(page:{page},page_size:{page_size})",
+            },
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_dataset_detail(self, access_token: str, dataset_id: int) -> dict:
+        resp = requests.get(
+            f"{self.base_url}/api/v1/dataset/{dataset_id}",
+            headers=self._headers(access_token),
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json().get("result", {})
+
+    def get_dataset_columns(
+        self, access_token: str, dataset_id: int,
+    ) -> list[dict]:
+        """Fetch column metadata for a dataset.
+
+        Tries the lightweight ``/api/v1/dataset/{pk}/column`` first (Superset
+        4.1+).  Falls back to the full ``/api/v1/dataset/{pk}`` detail
+        endpoint and extracts ``columns`` from the response if the dedicated
+        endpoint is not available.
+        """
+        try:
+            resp = requests.get(
+                f"{self.base_url}/api/v1/dataset/{dataset_id}/column",
+                headers=self._headers(access_token),
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            return resp.json().get("result", [])
+        except requests.HTTPError:
+            detail = self.get_dataset_detail(access_token, dataset_id)
+            return detail.get("columns", [])
+
+    def get_dataset_distinct_values(self, access_token: str, column_name: str) -> dict:
+        resp = requests.get(
+            f"{self.base_url}/api/v1/dataset/distinct/{quote(column_name, safe='')}",
+            headers=self._headers(access_token),
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_datasource_column_values(
+        self,
+        access_token: str,
+        dataset_id: int,
+        column_name: str,
+    ) -> dict:
+        resp = requests.get(
+            f"{self.base_url}/api/v1/datasource/table/{dataset_id}/column/{quote(column_name, safe='')}/values/",
+            headers=self._headers(access_token),
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    # -- dashboards ------------------------------------------------------
+
+    def list_dashboards(
+        self,
+        access_token: str,
+        page: int = 0,
+        page_size: int = 100,
+    ) -> dict:
+        rison_q = (
+            f"(order_column:changed_on_delta_humanized,"
+            f"order_direction:desc,"
+            f"page:{page},page_size:{page_size})"
+        )
+        resp = requests.get(
+            f"{self.base_url}/api/v1/dashboard/?q={rison_q}",
+            headers=self._headers(access_token),
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_dashboard_datasets(self, access_token: str, dashboard_id: int) -> dict:
+        resp = requests.get(
+            f"{self.base_url}/api/v1/dashboard/{dashboard_id}/datasets",
+            headers=self._headers(access_token),
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_dashboard_detail(self, access_token: str, dashboard_id: int) -> dict:
+        resp = requests.get(
+            f"{self.base_url}/api/v1/dashboard/{dashboard_id}",
+            headers=self._headers(access_token),
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json().get("result", {})
+
+    # -- Chart Data API --------------------------------------------------
+
+    def post_chart_data(
+        self,
+        access_token: str,
+        dataset_id: int,
+        queries: list[dict],
+        result_format: str = "json",
+    ) -> dict:
+        """Execute a query via Chart Data API (dataset-level permission).
+
+        Unlike SQL Lab, this endpoint only requires ``datasource access``
+        permission on the target dataset and automatically applies
+        Row-Level Security (RLS) rules.
+        """
+        body: dict[str, Any] = {
+            "datasource": {"id": dataset_id, "type": "table"},
+            "queries": queries,
+            "result_format": result_format,
+        }
+        resp = requests.post(
+            f"{self.base_url}/api/v1/chart/data",
+            headers=self._headers(access_token),
+            json=body,
+            timeout=self.timeout,
+        )
+        if not resp.ok:
+            detail = ""
+            try:
+                payload = resp.json()
+                detail = payload.get("message") or payload.get("errors") or payload
+            except Exception:
+                detail = resp.text
+            raise requests.HTTPError(
+                f"{resp.status_code} Server Error for url: {resp.url} detail={detail}",
+                response=resp,
+            )
+        return resp.json()
+

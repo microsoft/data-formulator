@@ -84,6 +84,7 @@ export const ecCandlestickDef: ChartTemplateDef = {
                 nameGap: 30,
                 boundaryGap: true,
                 axisLine: { onZero: false },
+                axisTick: { show: true, alignWithLabel: true },
             },
             yAxis: {
                 type: 'value',
@@ -91,6 +92,8 @@ export const ecCandlestickDef: ChartTemplateDef = {
                 name: 'Price',
                 nameLocation: 'middle',
                 nameGap: 50,
+                axisTick: { show: true },
+                axisLabel: { rotate: 0 },
             },
             series: [{
                 type: 'candlestick',

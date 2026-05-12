@@ -14,32 +14,43 @@ import {
     Card,
     LinearProgress,
     Button,
+    Chip,
+    Popper,
+    Paper,
+    MenuList,
+    MenuItem,
 } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchFieldSemanticType, fetchChartInsight, generateFreshChart, GeneratedReport } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { resolveRecommendedChart, getUrls, fetchWithIdentity, getTriggers } from '../app/utils';
-import { Chart, DictTable, FieldItem, createDictTable } from "../components/ComponentType";
+import { resolveRecommendedChart, getUrls, getTriggers, translateBackend } from '../app/utils';
+import { streamRequest } from '../app/apiClient';
+import { getErrorMessage } from '../app/errorCodes';
+import { Chart, ClarificationResponse, DictTable, FieldItem, createDictTable, InteractionEntry } from "../components/ComponentType";
+import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clarification';
 
 import { alpha } from '@mui/material/styles';
+import { WritingPencil } from '../components/FunComponents';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 
-import RefreshIcon from '@mui/icons-material/Refresh';
-import ClearIcon from '@mui/icons-material/Clear';
-import { renderTextWithEmphasis } from './EncodingShelfCard';
+import AutoGraphIcon from '@mui/icons-material/AutoGraph';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { Theme } from '@mui/material/styles';
+import { useTranslation } from 'react-i18next';
+import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
+import { ClarificationPanel } from './ClarificationPanel';
 
-const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCancel?: () => void }> = ({ relevantAgentActions, theme, onCancel }) => {
-    const runningAction = relevantAgentActions.find(a => a.status === 'running');
-    const latestMessage = runningAction?.description || 'thinking...';
+const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme; onCancel?: () => void; color?: 'primary' | 'warning' }> = ({ message, elapsed, theme, onCancel, color = 'primary' }) => {
+    const { t } = useTranslation();
+    const latestMessage = message || t('dataThread.thinking');
+    const elapsedSuffix = elapsed != null && elapsed > 0 ? ` (${elapsed}s)` : '';
+    const progressColor = color === 'warning' ? theme.palette.warning.main : theme.palette.primary.main;
     return (
         <Box sx={{
             position: 'absolute',
@@ -57,21 +68,9 @@ const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCan
             overflow: 'hidden',
         }}>
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
-                <Typography sx={{
-                    fontSize: 10,
-                    animation: 'agentWriting 1.2s ease-in-out infinite',
-                    '@keyframes agentWriting': {
-                        '0%, 100%': { transform: 'rotate(-15deg) translate(0, 0)' },
-                        '25%': { transform: 'rotate(-8deg) translate(2px, 1px)' },
-                        '50%': { transform: 'rotate(-15deg) translate(0, 0)' },
-                        '75%': { transform: 'rotate(-20deg) translate(-2px, 1px)' },
-                    },
-                    transformOrigin: 'bottom right',
-                }}>
-                    ✏️
-                </Typography>
+                <WritingPencil size={10} />
                 <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 10 }}>
-                    Agent is working...
+                    {t('chartRec.agentWorking')}
                 </Typography>
             </Box>
             {onCancel && (
@@ -94,74 +93,93 @@ const AgentWorkingOverlay: FC<{ relevantAgentActions: any[]; theme: Theme; onCan
                 lineHeight: 1.3,
                 wordBreak: 'break-word',
             }}>
-                {latestMessage}
+                {latestMessage}{elapsedSuffix}
             </Typography>
-            <LinearProgress sx={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: '0 0 8px 8px' }} />
+            <LinearProgress sx={{
+                position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: '0 0 8px 8px',
+                backgroundColor: alpha(progressColor, 0.15),
+                '& .MuiLinearProgress-bar': { backgroundColor: progressColor },
+            }} />
         </Box>
     );
 };
 
-export const SimpleChartRecBox: FC = function () {
+export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ onInputFocus }) {
 
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const charts = useSelector(dfSelectors.getAllCharts);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const config = useSelector((state: DataFormulatorState) => state.config);
-    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const activeModel = useSelector(dfSelectors.getActiveModel);
-    const agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
+    const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
 
     const theme = useTheme();
+    const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
     const [chatPrompt, setChatPrompt] = useState("");
+    // ── Clarification accumulated answers ────────────────────────────
+    // When the agent asks one or more clarification questions, clicking an
+    // option does NOT submit immediately and does NOT mutate the chat box.
+    // We just track the selections here. The agent is invoked when the LAST
+    // question is answered via clicks, OR when the user explicitly hits
+    // Send / Enter (at which point the selections are formatted into a
+    // "Selected answers: ..." prefix and prepended to the typed message).
+    const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, ClarificationResponse>>({});
+    // Guards against double-submit when the user rapidly clicks the last
+    // option twice (state updates are async, so a second click can re-enter
+    // handleSelectAnswer with a stale closure before pendingClarification
+    // clears). Tracks the draftId we've already auto-submitted for.
+    const clarifySubmittedRef = useRef<string | null>(null);
     const [isChatFormulating, setIsChatFormulating] = useState(false);
-    const [ideas, setIdeas] = useState<{text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[]>([]);
-    const [isLoadingIdeas, setIsLoadingIdeas] = useState(false);
-    const [thinkingBuffer, setThinkingBuffer] = useState('');
+    const [mentionedTableIds, setMentionedTableIds] = useState<string[]>([]);
+    const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
+    const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0);
+    const [selectedAgent, setSelectedAgent] = useState<'explore' | 'report'>('explore');
+    const [attachedImages, setAttachedImages] = useState<string[]>([]);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const agentAbortRef = useRef<AbortController | null>(null);
-    const ideasAbortRef = useRef<AbortController | null>(null);
+    const userChartFocusLockedRef = useRef(false);
+    const lastAutoFocusedChartIdRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        if (!isChatFormulating) {
+            userChartFocusLockedRef.current = false;
+            lastAutoFocusedChartIdRef.current = null;
+            return;
+        }
+        if (focusedId?.type === 'chart') {
+            if (focusedId.chartId !== lastAutoFocusedChartIdRef.current) {
+                userChartFocusLockedRef.current = true;
+            }
+        } else {
+            userChartFocusLockedRef.current = false;
+        }
+    }, [focusedId, isChatFormulating]);
 
     // pendingClarification is now derived from Redux (stored on the agentAction itself)
     // so it persists when user clicks away and comes back.
 
-    // On mount, clean up any stale "running" agent actions left over from a page refresh.
-    // The streaming connection is lost on refresh, so these will never complete.
-    // Only mark actions whose lastUpdate predates the current page load as stale.
-    useEffect(() => {
-        const pageLoadTime = performance.timeOrigin; // ms timestamp of when the page was loaded
-        const staleRunning = agentActions.filter(a => a.status === 'running' && a.lastUpdate < pageLoadTime);
-        if (staleRunning.length === 0) return;
-        // The last stale action gets the visible message; others are silently marked warning
-        const lastStale = staleRunning[staleRunning.length - 1];
-        for (const action of staleRunning) {
-            dispatch(dfActions.updateAgentWorkInProgress({
-                actionId: action.actionId,
-                description: action === lastStale ? 'Interrupted by page refresh' : action.description,
-                status: 'warning',
-                hidden: false,
-                ...(action === lastStale ? { message: { content: 'Interrupted by page refresh', role: 'clarify' } } : {}),
-            }));
-        }
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Stale draft detection is handled by loadState in dfSlice (marks running/clarifying drafts as interrupted)
 
     const inputCardRef = useRef<HTMLDivElement>(null);
+
+    const generatedReports = useSelector((state: DataFormulatorState) => state.generatedReports);
 
     const focusedTableId = useCallback(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
-    }, [focusedId, charts])();
-
-    // Clear ideas when focused table changes — ideas are scoped per table
-    useEffect(() => {
-        setIdeas([]);
-        setIsLoadingIdeas(false);
-    }, [focusedTableId]);
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        if (focusedId.type === 'report') {
+            const report = generatedReports.find(r => r.id === focusedId.reportId);
+            return report?.triggerTableId;
+        }
+        return undefined;
+    }, [focusedId, charts, generatedReports])();
 
     // Root tables and priority ordering for API calls
     const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
@@ -173,6 +191,90 @@ export const SimpleChartRecBox: FC = function () {
         ...priorityIds.filter(id => rootTables.some(t => t.id === id)),
         ...rootTables.map(t => t.id).filter(id => !priorityIds.includes(id))
     ];
+
+    // Default primary tables: source tables the focused table uses (or the focused source table itself)
+    const defaultPrimaryTableIds = React.useMemo(() => {
+        if (!currentTable) return [];
+        if (currentTable.derive && !currentTable.anchored) {
+            // Derived table: all its source inputs that are root tables
+            return (currentTable.derive.source as string[]).filter(id => rootTables.some(t => t.id === id));
+        }
+        // Source table: just this table
+        return rootTables.some(t => t.id === currentTable.id) ? [currentTable.id] : [];
+    }, [currentTable, rootTables]);
+
+    // Combined primary table IDs: defaults + user @-mentioned (deduplicated, source tables only)
+    const primaryTableIds = React.useMemo(() => {
+        const ids = new Set(defaultPrimaryTableIds);
+        for (const id of mentionedTableIds) {
+            if (rootTables.some(t => t.id === id)) ids.add(id);
+        }
+        return [...ids];
+    }, [defaultPrimaryTableIds, mentionedTableIds, rootTables]);
+
+    // Extract the filter text from after the last @ in the prompt
+    const mentionFilter = React.useMemo(() => {
+        if (!mentionDropdownOpen) return "";
+        const lastAt = chatPrompt.lastIndexOf('@');
+        if (lastAt < 0) return "";
+        return chatPrompt.slice(lastAt + 1).toLowerCase();
+    }, [chatPrompt, mentionDropdownOpen]);
+
+    // Filtered available options for the @ dropdown (tables only)
+    const mentionAvailableTables = React.useMemo(() => {
+        return rootTables
+            .filter(t => !primaryTableIds.includes(t.id))
+            .filter(t => {
+                if (!mentionFilter) return true;
+                const name = (t.displayId || t.id).toLowerCase();
+                return name.includes(mentionFilter);
+            });
+    }, [rootTables, primaryTableIds, mentionFilter]);
+
+    // Reset highlight index when filter changes
+    React.useEffect(() => {
+        setMentionHighlightIdx(0);
+    }, [mentionFilter]);
+
+    // Helper: confirm selection of a mention (table only)
+    const confirmMention = (optionId: string) => {
+        const tbl = tables.find(t => t.id === optionId);
+        const tableName = tbl?.displayId || optionId;
+        setMentionedTableIds(prev => [...prev, optionId]);
+        setChatPrompt(prev => {
+            const lastAt = prev.lastIndexOf('@');
+            if (lastAt < 0) return prev + `@${tableName} `;
+            return prev.slice(0, lastAt) + `@${tableName} `;
+        });
+        setMentionDropdownOpen(false);
+        setMentionHighlightIdx(0);
+    };
+
+    // Reset @-mentions when focused table changes (keep images — user removes manually)
+    React.useEffect(() => {
+        setMentionedTableIds([]);
+        setMentionDropdownOpen(false);
+        setMentionHighlightIdx(0);
+    }, [focusedTableId]);
+
+    // Handle paste events to capture images
+    const handlePaste = React.useCallback((e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith('image/')) {
+                e.preventDefault();
+                const file = items[i].getAsFile();
+                if (!file) continue;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const dataUrl = reader.result as string;
+                    setAttachedImages(prev => [...prev, dataUrl]);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+    }, []);
 
     // Collect table IDs from root up to (and including) the focused table for agent action matching
     const threadTableIds = React.useMemo(() => {
@@ -198,138 +300,47 @@ export const SimpleChartRecBox: FC = function () {
     // Agent actions relevant to all tables in this thread, sorted by creation time
     // Agent actions relevant to the focused table's thread.
     // An action is relevant if:
-    //  - its originTableId is in the ancestor chain, AND
-    //  - it produced a table in the ancestor chain (resultTableId ∈ threadTableIds),
-    //    OR is still running, OR the focused table is the originTableId itself.
-    const relevantAgentActions = React.useMemo(() => {
-        if (threadTableIds.size === 0) return [];
-        return agentActions
-            .filter(a => {
-                if (a.hidden) return false;
-                if (!threadTableIds.has(a.originTableId)) return false;
-                // Include if still running or waiting for clarification (live progress)
-                if (a.status === 'running' || a.status === 'warning') return true;
-                // Include if any message produced a table in the ancestor chain
-                if (a.messages?.some(m => m.resultTableId && threadTableIds.has(m.resultTableId))) return true;
-                // Include if the focused table IS the origin (user is at the starting table)
-                if (focusedTableId === a.originTableId) return true;
-                return false;
-            })
-            .sort((a, b) => (a.messages?.[0]?.timestamp || a.lastUpdate) - (b.messages?.[0]?.timestamp || b.lastUpdate));
-    }, [agentActions, threadTableIds, focusedTableId]);
+    const hasRunningAgent = draftNodes.some(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId));
 
-    const hasRunningAgent = relevantAgentActions.some(a => a.status === 'running');
-
-    // Derive pending clarification from the current thread's relevant actions (stored in Redux)
+    // Derive pending clarification from DraftNodes
     const pendingClarification = React.useMemo(() => {
-        const action = relevantAgentActions.find(a => a.pendingClarification);
-        if (!action || !action.pendingClarification) return null;
-        return { ...action.pendingClarification, actionId: action.actionId };
-    }, [relevantAgentActions]);
-
-    // Extract the clarification question text from the last 'clarify' message
-    const clarificationQuestion = React.useMemo(() => {
-        if (!pendingClarification) return null;
-        const action = agentActions.find(a => a.actionId === pendingClarification.actionId);
-        if (!action?.messages) return null;
-        const clarifyMsgs = action.messages.filter(m => m.role === 'clarify');
-        return clarifyMsgs.length > 0 ? clarifyMsgs[clarifyMsgs.length - 1].content : null;
-    }, [pendingClarification, agentActions]);
-
-    const getIdeasFromAgent = useCallback(async () => {
-        if (!currentTable || isLoadingIdeas) return;
-        setIsLoadingIdeas(true);
-        setIdeas([]);
-        setThinkingBuffer('');
-
-        try {
-            let explorationThread: any[] = [];
-            const sourceTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
-
-            if (currentTable.derive && !currentTable.anchored) {
-                const triggers = getTriggers(currentTable, tables);
-                explorationThread = triggers.map(trigger => ({
-                    name: trigger.resultTableId,
-                    rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-                    description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
-                }));
-            }
-
-            const messageBody = JSON.stringify({
-                token: String(Date.now()),
-                model: activeModel,
-                mode: 'interactive',
-                input_tables: sourceTables.map(t => ({
-                    name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                    rows: t.rows,
-                    attached_metadata: t.attachedMetadata
-                })),
-                exploration_thread: explorationThread,
-                agent_exploration_rules: agentRules.exploration
-            });
-
-            const controller = new AbortController();
-            ideasAbortRef.current = controller;
-            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
-
-            const response = await fetchWithIdentity(getUrls().GET_RECOMMENDATION_QUESTIONS, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: messageBody,
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No response body reader available');
-
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let lines: string[] = [];
-
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const newLines = buffer.split('data: ').filter(l => l.trim() !== '');
-                    buffer = newLines.pop() || '';
-                    if (newLines.length > 0) {
-                        lines.push(...newLines);
-                        const parsed = lines
-                            .map(l => { try { return JSON.parse(l.trim()); } catch { return null; } })
-                            .filter(Boolean)
-                            .map(b => ({ text: b.text, goal: b.goal, difficulty: b.difficulty }));
-                        setIdeas(parsed);
-                    }
-                    setThinkingBuffer(buffer.replace(/^data: /, ''));
-                }
-            } finally {
-                reader.releaseLock();
-            }
-            lines.push(buffer);
-            const finalIdeas = lines
-                .map(l => { try { return JSON.parse(l.trim()); } catch { return null; } })
-                .filter(Boolean)
-                .map(b => ({ text: b.text, goal: b.goal, difficulty: b.difficulty }));
-            setIdeas(finalIdeas);
-        } catch (error) {
-            console.error('Error getting ideas:', error);
-        } finally {
-            setIsLoadingIdeas(false);
-            setThinkingBuffer('');
-            ideasAbortRef.current = null;
+        const clarifyingDraft = draftNodes.find(d =>
+            d.derive?.status === 'clarifying' && d.derive?.pendingClarification &&
+            threadTableIds.has(d.derive.trigger.tableId)
+        );
+        if (clarifyingDraft?.derive?.pendingClarification) {
+            return { ...clarifyingDraft.derive.pendingClarification, actionId: clarifyingDraft.actionId || '', draftId: clarifyingDraft.id };
         }
-    }, [currentTable, isLoadingIdeas, selectedTableIds, tables, activeModel, agentRules, config, dispatch]);
+        return null;
+    }, [draftNodes, threadTableIds]);
+
+    // Extract the active structured clarification (or explanation) from
+    // DraftNode interaction log. Both are stored as ClarificationQuestion[]
+    // — the entry's role ('clarify' vs 'explain') is what differs.
+    const clarificationQuestions = React.useMemo(() => {
+        if (!pendingClarification?.draftId) return null;
+        const draft = draftNodes.find(d => d.id === pendingClarification.draftId);
+        const interaction = draft?.derive?.trigger?.interaction || [];
+        // Find the most recent clarify or explain entry.
+        for (let i = interaction.length - 1; i >= 0; i--) {
+            const entry = interaction[i];
+            if (entry.role === 'clarify' || entry.role === 'explain') {
+                return {
+                    questions: entry.clarificationQuestions || null,
+                    variant: entry.role === 'explain' ? 'explain' as const : 'clarify' as const,
+                };
+            }
+        }
+        return null;
+    }, [pendingClarification, draftNodes]);
 
     const exploreFromChat = useCallback((prompt: string, clarificationContext?: {
         trajectory: any[];
         completedStepCount: number;
         actionId: string;
         lastCreatedTableId: string | null;
-    }) => {
-        if (!focusedTableId || prompt.trim() === "") return;
+    }, displayPrompt?: string) => {
+        if (!focusedTableId || (!clarificationContext && prompt.trim() === "")) return;
 
         const rootTables = tables.filter(t => t.derive === undefined || t.anchored);
         const currentTable = tables.find(t => t.id === focusedTableId);
@@ -348,63 +359,164 @@ export const SimpleChartRecBox: FC = function () {
 
         setIsChatFormulating(true);
 
-        if (isResume) {
-            // Show user's clarification reply in the thread; clear pendingClarification in Redux
-            dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: prompt, status: 'running', hidden: false,
-                    message: { content: prompt, role: 'user' }, pendingClarification: null }));
-        } else {
-            // User instruction with source table context
-            dispatch(dfActions.updateAgentWorkInProgress({ actionId, originTableId: focusedTableId, description: prompt, status: 'running', hidden: false,
-                message: { content: prompt, role: 'user' } }));
+        // DraftNode handles status
+        // If resuming from a clarify or explain pause, reuse the old draft
+        // (append reply, clear pause state). Both pause types share the
+        // 'clarifying' status and pendingClarification storage.
+        if (isResume && pendingClarification?.draftId) {
+            dispatch(dfActions.appendDraftInteraction({ draftId: pendingClarification.draftId, entry: {
+                from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
+                ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                timestamp: Date.now()
+            }}));
+            dispatch(dfActions.updateDraftClarification({ draftId: pendingClarification.draftId, pendingClarification: null }));
+            dispatch(dfActions.updateDeriveStatus({ nodeId: pendingClarification.draftId, status: 'running' }));
         }
 
-        // Collect previous conversation messages for context (only for fresh starts)
-        let conversationHistory: { role: string; content: string }[] | undefined = undefined;
+        // ── Build structured thread context (Tier 2 + Tier 3) ──
+        let focusedThread: any[] | undefined = undefined;
+        let otherThreads: any[] | undefined = undefined;
         if (!isResume) {
-            const history: { role: string; content: string }[] = [];
-            for (const action of relevantAgentActions) {
-                if (action.messages) {
-                    for (const m of action.messages) {
-                        if (m.role === 'user') {
-                            history.push({ role: 'user', content: m.content });
-                        } else if (m.role === 'thinking' || m.role === 'completion') {
-                            history.push({ role: 'assistant', content: m.content });
-                        }
-                    }
+            // Tier 2: Focused thread — detailed per-step info
+            const focusedSteps: any[] = [];
+            let walkTable = tables.find(t => t.id === focusedTableId);
+            const visited = new Set<string>();
+            const focusedChainIds = new Set<string>();
+            while (walkTable?.derive?.trigger) {
+                if (visited.has(walkTable.id)) break;
+                visited.add(walkTable.id);
+                focusedChainIds.add(walkTable.id);
+                const trigger = walkTable.derive.trigger;
+                const interaction = trigger.interaction || [];
+                const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
+                const instruction = interaction.find(e => e.role === 'instruction');
+                const summary = interaction.find(e => e.role === 'summary');
+
+                // Find the actual resolved chart (not the trigger's "Auto" stub)
+                const resolvedChart = charts.find(c => c.tableRef === walkTable!.id && c.source === 'trigger')
+                    || charts.find(c => c.tableRef === walkTable!.id);
+                const chartType = resolvedChart?.chartType || '';
+                // Map field IDs to field names for readable context
+                const encodings = resolvedChart?.encodingMap
+                    ? Object.fromEntries(
+                        Object.entries(resolvedChart.encodingMap)
+                            .filter(([, v]: [string, any]) => v?.fieldID)
+                            .map(([k, v]: [string, any]) => {
+                                const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                                return [k, field?.name || v.fieldID];
+                            })
+                      )
+                    : {};
+
+                const step: any = {
+                    table_name: walkTable.virtual?.tableId || walkTable.id,
+                    columns: walkTable.names,
+                    row_count: walkTable.virtual?.rowCount ?? walkTable.rows.length,
+                    user_question: userPrompt || '',
+                    agent_thinking: instruction?.plan || '',
+                    display_instruction: instruction?.displayContent || instruction?.content || '',
+                    chart_type: chartType,
+                    encodings,
+                    agent_summary: summary?.content || '',
+                };
+
+                // Include chart thumbnail for the focused leaf table (the one the user is looking at)
+                if (walkTable.id === focusedTableId && resolvedChart?.thumbnail) {
+                    step.chart_thumbnail = resolvedChart.thumbnail;
+                }
+
+                focusedSteps.unshift(step);
+
+                walkTable = tables.find(t => t.id === trigger.tableId);
+            }
+            if (focusedSteps.length > 0) focusedThread = focusedSteps;
+
+            // Tier 3: Peripheral threads — one-line summary per step
+            // Find all leaf tables (no children or all children are anchored)
+            const leafTables = tables.filter(t => {
+                const children = tables.filter(c => c.derive?.trigger.tableId === t.id);
+                return children.length === 0 || children.every(c => c.anchored);
+            });
+
+            const peripheralThreads: any[] = [];
+            for (const leaf of leafTables) {
+                // Skip the focused thread's leaf
+                if (focusedChainIds.has(leaf.id)) continue;
+                // Skip root/source tables
+                if (!leaf.derive) continue;
+
+                const triggers = getTriggers(leaf, tables);
+                if (triggers.length === 0) continue;
+
+                const steps: string[] = [];
+                for (const trig of triggers) {
+                    const tt = tables.find(t2 => t2.id === trig.resultTableId);
+                    const instr = trig.interaction?.find((e: InteractionEntry) => e.role === 'instruction');
+                    const label = instr?.displayContent || instr?.content || '';
+                    // Look up the actual resolved chart from state, not the trigger's "Auto" stub
+                    const chartForStep = charts.find(c => c.tableRef === trig.resultTableId && c.source === 'trigger')
+                        || charts.find(c => c.tableRef === trig.resultTableId);
+                    const chartType = chartForStep?.chartType || '';
+                    const encStr = chartForStep?.encodingMap
+                        ? Object.entries(chartForStep.encodingMap)
+                            .filter(([, v]: [string, any]) => v?.fieldID)
+                            .map(([k, v]: [string, any]) => {
+                                const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                                return `${k}: ${field?.name || v.fieldID}`;
+                            })
+                            .join(', ')
+                        : '';
+                    steps.push(`${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`);
+                }
+
+                if (steps.length > 0) {
+                    const sourceTableId = triggers[0].tableId;
+                    const sourceTable = tables.find(t => t.id === sourceTableId);
+                    peripheralThreads.push({
+                        source_table: sourceTable?.virtual?.tableId || sourceTableId,
+                        leaf_table: leaf.virtual?.tableId || leaf.id,
+                        step_count: steps.length,
+                        steps,
+                    });
                 }
             }
-            if (history.length > 0) conversationHistory = history;
+            if (peripheralThreads.length > 0) otherThreads = peripheralThreads;
         }
 
-        const token = String(Date.now());
+        // Resolve primary table names from primaryTableIds (includes defaults + @-mentioned)
+        const primaryTableNames = primaryTableIds.map(id => {
+            const t = tables.find(tbl => tbl.id === id);
+            return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+        });
         const requestBody: any = {
-            token,
             input_tables: actionTables.map(t => ({
                 name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                rows: t.rows,
-                attached_metadata: t.attachedMetadata
             })),
+            primary_tables: primaryTableNames,
+            ...(attachedImages.length > 0 ? { attached_images: attachedImages } : {}),
             model: activeModel,
-            max_iterations: 5,
-            agent_exploration_rules: agentRules.exploration,
-            agent_coding_rules: agentRules.coding
+            max_iterations: 10,
         };
 
         if (isResume) {
-            // Stateless resume: send back trajectory + user answer
+            // Resume: just send the assembled prompt as user_question. The
+            // backend appends it to the trajectory as a normal user message.
+            // No special clarification payload needed.
             requestBody.trajectory = clarificationContext!.trajectory;
-            requestBody.clarification_response = prompt;
+            requestBody.user_question = prompt;
             requestBody.completed_step_count = clarificationContext!.completedStepCount;
         } else {
             requestBody.user_question = prompt;
-            if (conversationHistory) requestBody.conversation_history = conversationHistory;
+            if (focusedThread) requestBody.focused_thread = focusedThread;
+            if (otherThreads) requestBody.other_threads = otherThreads;
         }
 
         const messageBody = JSON.stringify(requestBody);
 
         const controller = new AbortController();
         agentAbortRef.current = controller;
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 6 * 1000);
+        let timedOut = false;
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 6 * 1000);
 
         let allResults: any[] = [];
         let createdTables: DictTable[] = [];
@@ -413,25 +525,167 @@ export const SimpleChartRecBox: FC = function () {
         let isCompleted = false;
         let lastCreatedTableId: string | null = isResume ? clarificationContext!.lastCreatedTableId : null;
 
+        // ── DraftNode tracking ──
+        // Local accumulator mirrors the DraftNode's interaction (avoids stale closure reads)
+        let currentDraftInteraction: InteractionEntry[] = [];
+        let currentDraftId: string | null = null;
+        let currentDraftParentTableId: string | null = null;
+        const createNextDraft = (parentTableId: string, initialInteraction: InteractionEntry[]) => {
+            const draftId = `draft-${actionId}-${Date.now()}`;
+            dispatch(dfActions.createDraftNode({
+                id: draftId,
+                displayId: draftId,
+                parentTableId,
+                source: selectedTableIds,
+                interaction: initialInteraction,
+                actionId,
+            }));
+            currentDraftId = draftId;
+            currentDraftParentTableId = parentTableId;
+            currentDraftInteraction = [...initialInteraction];
+            return draftId;
+        };
+
+        // Create the initial draft (or reuse existing for clarification / explanation resume)
+        if (isResume && pendingClarification?.draftId) {
+            currentDraftId = pendingClarification.draftId;
+            // Seed local accumulator from the existing draft's interaction (fresh at this point)
+            const existingDraft = draftNodes.find(d => d.id === pendingClarification.draftId);
+            currentDraftParentTableId = existingDraft?.derive?.trigger?.tableId || null;
+            currentDraftInteraction = [...(existingDraft?.derive?.trigger?.interaction || [])];
+            // The user reply was already appended above, add to local accumulator too
+            currentDraftInteraction.push({ from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
+                ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                timestamp: Date.now() });
+        } else {
+            const initialEntries: InteractionEntry[] = [
+                { from: 'user', to: 'data-agent', role: 'prompt', content: prompt,
+                    ...(displayPrompt ? { displayContent: displayPrompt } : {}),
+                    timestamp: Date.now() }
+            ];
+            createNextDraft(lastCreatedTableId || focusedTableId!, initialEntries);
+        }
+
+        // Track the last agent thought and display_instruction (from "action" events)
+        let lastAgentThought: string | null = null;
+        let lastAgentDisplayInstruction: string | null = null;
+        let lastAgentInputTables: string[] = [];
+
         const genTableId = () => {
             let tableSuffix = Number.parseInt((Date.now() - Math.floor(Math.random() * 10000)).toString().slice(-6));
             let tId = `table-${tableSuffix}`;
-            while (tables.find(t => t.id === tId) !== undefined) {
+            while (tables.find(t => t.id === tId) !== undefined || createdTables.some(t => t.id === tId)) {
                 tableSuffix += 1;
                 tId = `table-${tableSuffix}`;
             }
             return tId;
         };
 
+        // Accumulate thinking phase steps for progressive display
+        // Steps are joined with \x1E (Record Separator) to avoid splitting multi-line content
+        const STEP_SEP = '\x1E';
+        let thinkingSteps: string[] = [];
+        let pendingThought: string = '';
+
         const processStreamingResult = (result: any) => {
-            // Agent thinking / choosing next action
-            if (result.type === "action" && result.action === "visualize") {
-                const thinkingMsg = result.thought || "Thinking...";
-                const currentObserveId = lastCreatedTableId || focusedTableId;
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: thinkingMsg, status: 'running', hidden: false,
-                    message: { content: thinkingMsg, role: 'thinking', observeTableId: currentObserveId } }));
+            // ── context_info: show injected rules/knowledge at the top ──
+            // Rendered as already-completed tool-style steps (✓ prefix) so they
+            // visually match the rest of the agent's tool-call timeline.
+            if (result.type === "context_info") {
+                const rules: string[] = result.rules_injected || [];
+                const knowledge: Array<{category: string; title: string}> = result.knowledge_injected || [];
+                let added = false;
+                if (rules.length > 0) {
+                    thinkingSteps.push('✓ ' + t('dataThread.rulesLoaded', { rules: rules.join(', ') }));
+                    added = true;
+                }
+                if (knowledge.length > 0) {
+                    const titles = knowledge.map(k => k.title).join(', ');
+                    thinkingSteps.push('✓ ' + t('dataThread.knowledgeLoaded', { knowledge: titles }));
+                    added = true;
+                }
+                if (added && currentDraftId) {
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                }
             }
-            // Visualization result (same shape as old data_transformation)
+
+            // ── thinking_text: LLM reasoning alongside tool calls ──
+            // Accumulate into pendingThought; don't create a visible step
+            if (result.type === "thinking_text") {
+                pendingThought += (pendingThought ? '\n' : '') + result.content;
+                // Only show as a step if there are no tool/action steps yet (initial thinking)
+                if (thinkingSteps.length === 0) {
+                    // Show a temporary "thinking..." indicator
+                    if (currentDraftId) {
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: t('dataThread.thinking') }));
+                    }
+                }
+            }
+
+            // ── tool_start: agent is calling a tool (explore/inspect) ──
+            // (think tool is handled via thinking_text event, not here)
+            if (result.type === "tool_start" && result.tool !== "think") {
+                // Show pending thought as a visible step before the tool step
+                if (pendingThought) {
+                    thinkingSteps.push(pendingThought);
+                    pendingThought = '';
+                }
+                if (result.tool === "explore") {
+                    const purpose = result.purpose || '';
+                    if (purpose) {
+                        thinkingSteps.push(t('dataThread.runningCode') + ' ' + purpose);
+                    } else {
+                        const codePreview = result.code || '';
+                        const meaningfulLine = codePreview.split('\n').find((l: string) => l.trim() && !l.trim().startsWith('import ') && !l.trim().startsWith('from ')) || codePreview.split('\n')[0] || '';
+                        thinkingSteps.push(t('dataThread.runningCode') + (meaningfulLine ? `: ${meaningfulLine.trim()}` : ''));
+                    }
+                } else if (result.tool === "inspect_source_data") {
+                    const tableNames = result.table_names?.join(', ') || '';
+                    thinkingSteps.push(t('dataThread.inspectingData') + (tableNames ? ` ${tableNames}` : ''));
+                } else if (result.tool === "search_data_tables" || result.tool === "search_knowledge") {
+                    const query = result.query || '';
+                    thinkingSteps.push(t('dataThread.searching') + (query ? ` "${query}"` : ''));
+                } else if (["visualize", "clarify", "present", "action"].includes(result.tool)) {
+                    thinkingSteps.push(t('dataThread.producingAction', { action: result.tool }));
+                }
+                if (currentDraftId) {
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                }
+            }
+
+            // ── tool_result: mark the last tool step as done ──
+            // (skip for think tool — it doesn't add steps)
+            if (result.type === "tool_result" && result.tool !== "think") {
+                const isError = result.status === "error" || !!result.error;
+                for (let i = thinkingSteps.length - 1; i >= 0; i--) {
+                    if (!thinkingSteps[i].startsWith('✓') && !thinkingSteps[i].startsWith('✗')) {
+                        thinkingSteps[i] = (isError ? '✗ ' : '✓ ') + thinkingSteps[i];
+                        break;
+                    }
+                }
+                if (isError && result.error) {
+                    const errPreview = String(result.error).split('\n').pop()?.trim() || String(result.error).slice(0, 120);
+                    thinkingSteps.push('⚠ ' + errPreview);
+                }
+                if (currentDraftId) {
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                }
+            }
+
+            // ── action: agent chose what to do ──
+            if (result.type === "action") {
+                lastAgentThought = result.thought || null;
+                lastAgentInputTables = result.input_tables || [];
+                if (result.action === "visualize") {
+                    lastAgentDisplayInstruction = result.display_instruction || null;
+                    thinkingSteps.push(t('dataThread.creatingChart') + (lastAgentDisplayInstruction ? ` ${lastAgentDisplayInstruction}` : ''));
+                    if (currentDraftId) {
+                        dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: thinkingSteps.join(STEP_SEP) }));
+                    }
+                }
+            }
+
+            // ── result: visualization checkpoint — create table + render chart ──
             if (result.type === "result" && result.status === "success") {
                 const transformResult = result.content.result;
                 if (!transformResult || transformResult.status !== 'ok') return;
@@ -444,61 +698,91 @@ export const SimpleChartRecBox: FC = function () {
                 if (!transformedData || !transformedData.rows || transformedData.rows.length === 0) return;
 
                 const rows = transformedData.rows;
-                const candidateTableId = transformedData.virtual?.table_name || genTableId();
-                const displayInstruction = refinedGoal?.display_instruction || `Exploration step ${createdTables.length + 1}: ${question}`;
+                const backendTableName = transformedData.virtual?.table_name;
+                // Use backend name as ID only if it doesn't conflict with existing tables
+                let candidateTableId = backendTableName || genTableId();
+                if (tables.find(t => t.id === candidateTableId) || createdTables.some(t => t.id === candidateTableId)) {
+                    candidateTableId = genTableId();
+                }
+                const displayInstruction = lastAgentDisplayInstruction || refinedGoal?.display_instruction || t('chartRec.explorationStep', { step: createdTables.length + 1, question });
 
-                // Chain from last created table, or focused table if first
                 const triggerTableId = lastCreatedTableId || focusedTableId!;
 
                 const candidateTable = createDictTable(candidateTableId, rows, undefined);
+                // Resolve source tables from agent's input_tables (names it chose to use)
+                const agentInputNames = lastAgentInputTables.length > 0 ? lastAgentInputTables : (refinedGoal?.input_tables || []);
+                const resolvedSourceIds = (agentInputNames as string[]).length > 0
+                    ? selectedTableIds.filter((id: string) => {
+                        const tbl = tables.find(t2 => t2.id === id);
+                        if (!tbl) return false;
+                        const name = tbl.virtual?.tableId || tbl.id.replace(/\.[^/.]+$/, "");
+                        return (agentInputNames as string[]).some((n: string) => n.replace(/\.[^/.]+$/, "") === name);
+                    })
+                    : selectedTableIds;
+                const resolvedSourceNames = (resolvedSourceIds.length > 0 ? resolvedSourceIds : selectedTableIds).map((id: string) => {
+                    const tbl = tables.find(t2 => t2.id === id);
+                    return tbl?.displayId || tbl?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+                });
                 candidateTable.derive = {
-                    code: code || `# Exploration step ${createdTables.length + 1}`,
+                    code: code || t('chartRec.explorationStepCodeComment', { step: createdTables.length + 1 }),
                     codeSignature: result.content?.result?.code_signature,
                     outputVariable: refinedGoal?.output_variable || 'result_df',
-                    source: selectedTableIds,
+                    source: resolvedSourceIds.length > 0 ? resolvedSourceIds : selectedTableIds,
                     dialog: dialog || [],
                     trigger: {
                         tableId: triggerTableId,
-                        instruction: question,
-                        displayInstruction,
+                        resultTableId: candidateTableId,
                         chart: undefined,
-                        resultTableId: candidateTableId
+                        interaction: [
+                            ...currentDraftInteraction,
+                            {
+                                from: 'data-agent' as const, to: 'datarec-agent' as const, role: 'instruction' as const,
+                                plan: [lastAgentThought, pendingThought, ...thinkingSteps.filter(s => s.trim())].filter(Boolean).join('\x1E') || undefined,
+                                content: question || displayInstruction,
+                                displayContent: displayInstruction,
+                                inputTableNames: resolvedSourceNames,
+                                timestamp: Date.now(),
+                            },
+                        ],
                     }
                 };
+                lastAgentThought = null;
+                lastAgentDisplayInstruction = null;
+                lastAgentInputTables = [];
+                thinkingSteps = []; // reset for next chart
+                pendingThought = ''; // reset for next chart
                 if (transformedData.virtual) {
                     candidateTable.virtual = { tableId: transformedData.virtual.table_name, rowCount: transformedData.virtual.row_count };
+                    // Use the backend name as display name even if ID was regenerated to avoid conflicts
+                    candidateTable.displayId = transformedData.virtual.table_name;
                 }
 
-                // Bootstrap metadata from agent field_metadata (temporary until fetchFieldSemanticType completes)
                 const fieldMetadata = refinedGoal?.['field_metadata'];
                 if (fieldMetadata && typeof fieldMetadata === 'object') {
                     for (const [fieldName, meta] of Object.entries(fieldMetadata)) {
                         if (!candidateTable.metadata[fieldName]) continue;
                         if (typeof meta === 'string') {
-                            // Plain string format: { "field": "SemanticType" }
                             candidateTable.metadata[fieldName].semanticType = meta;
                         } else if (typeof meta === 'object' && meta !== null) {
-                            // Dict format: { "field": { "semantic_type": "...", "unit": "...", ... } }
                             const m = meta as Record<string, any>;
-                            if (m['semantic_type']) {
-                                candidateTable.metadata[fieldName].semanticType = m['semantic_type'];
-                            }
-                            if (m['unit']) {
-                                candidateTable.metadata[fieldName].unit = m['unit'];
-                            }
-                            if (m['intrinsic_domain']) {
-                                candidateTable.metadata[fieldName].intrinsicDomain = m['intrinsic_domain'];
-                            }
+                            if (m['semantic_type']) candidateTable.metadata[fieldName].semanticType = m['semantic_type'];
+                            if (m['unit']) candidateTable.metadata[fieldName].unit = m['unit'];
+                            if (m['intrinsic_domain']) candidateTable.metadata[fieldName].intrinsicDomain = m['intrinsic_domain'];
+                        }
+                    }
+                }
+
+                const fieldDisplayNames = refinedGoal?.['field_display_names'];
+                if (fieldDisplayNames && typeof fieldDisplayNames === 'object') {
+                    for (const [fieldName, displayName] of Object.entries(fieldDisplayNames)) {
+                        if (candidateTable.metadata[fieldName] && typeof displayName === 'string') {
+                            candidateTable.metadata[fieldName].displayName = displayName;
                         }
                     }
                 }
 
                 createdTables.push(candidateTable);
-                const observedTableId = lastCreatedTableId || focusedTableId; // table the agent was looking at before this step
                 lastCreatedTableId = candidateTableId;
-
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: displayInstruction, status: 'running', hidden: false,
-                    message: { content: displayInstruction, role: 'action', observeTableId: observedTableId, resultTableId: candidateTableId } }));
 
                 const names = candidateTable.names;
                 const missingNames = names.filter(name =>
@@ -519,13 +803,14 @@ export const SimpleChartRecBox: FC = function () {
                     candidateTable.derive.trigger.chart = triggerChart;
                 }
 
-                // DataRecAgent always returns a refined_goal (with chart info),
-                // so we can rely on it to create the chart for every step.
                 const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
                 let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
                 createdCharts.push(newChart);
                 dispatch(dfActions.addChart(newChart));
-                dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
+                if (shouldAutoFocusGeneratedChart(userChartFocusLockedRef.current)) {
+                    lastAutoFocusedChartIdRef.current = newChart.id;
+                    dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
+                }
 
                 if (conceptsToAdd.length > 0) {
                     dispatch(dfActions.addConceptItems(conceptsToAdd));
@@ -534,29 +819,95 @@ export const SimpleChartRecBox: FC = function () {
                 dispatch(fetchFieldSemanticType(candidateTable));
                 dispatch(fetchCodeExpl(candidateTable));
 
+                if (currentDraftId) {
+                    dispatch(dfActions.removeDraftNode(currentDraftId));
+                    currentDraftId = null;
+                }
+                createNextDraft(candidateTableId, []);
+
                 if (createdCharts.length > 0) {
                     const lastChart = createdCharts[createdCharts.length - 1];
-                    setTimeout(() => {
-                        dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
-                    }, 1500);
+                    dispatch(fetchChartInsight({ chartId: lastChart.id, tableId: candidateTable.id }) as any);
                 }
             }
-            // Agent asks for clarification — pause and let user respond
-            if (result.type === "clarify") {
-                const clarifyMsg = result.message || "Could you clarify?";
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: clarifyMsg, status: 'warning', hidden: false,
-                    message: { content: clarifyMsg, role: 'clarify' },
-                    pendingClarification: {
+
+            // ── clarify / explain: pause and let user respond ──
+            // Both events share the same shape (questions[]) and the same
+            // pause storage; the only difference is the InteractionEntry role,
+            // which the panel uses to switch palette/labels.
+            if (result.type === "clarify" || result.type === "explain") {
+                const isExplainEvent = result.type === "explain";
+                let normalizedClarification;
+                try {
+                    normalizedClarification = normalizeClarifyEvent(result);
+                } catch {
+                    const errMsg = t(isExplainEvent ? 'chartRec.invalidExplanation' : 'chartRec.invalidClarification');
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'error',
+                        component: 'data-agent', value: errMsg,
+                    }));
+                    if (currentDraftId) {
+                        dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                    }
+                    setIsChatFormulating(false);
+                    agentAbortRef.current = null;
+                    clearTimeout(timeoutId);
+                    isCompleted = true;
+                    return;
+                }
+                if (currentDraftId) {
+                    // Snapshot thinking steps into the pause entry so they render
+                    // inline (as 二级) between the user prompt and the pause.
+                    const priorSteps = thinkingSteps.filter(s => s.trim()).join('\n');
+                    thinkingSteps = [];
+                    pendingThought = '';
+                    dispatch(dfActions.updateDraftRunningPlan({ draftId: currentDraftId, plan: '' }));
+
+                    const pauseEntry: InteractionEntry = {
+                        from: 'data-agent', to: 'user',
+                        role: isExplainEvent ? 'explain' : 'clarify',
+                        plan: priorSteps || result.thought || undefined,
+                        content: normalizedClarification.summary,
+                        clarificationQuestions: normalizedClarification.questions,
+                        timestamp: Date.now(),
+                    };
+                    dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: pauseEntry }));
+                    currentDraftInteraction.push(pauseEntry);
+                    dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'clarifying' }));
+                    dispatch(dfActions.updateDraftClarification({ draftId: currentDraftId, pendingClarification: {
                         trajectory: result.trajectory || [],
                         completedStepCount: result.completed_step_count || 0,
                         lastCreatedTableId,
-                    }
-                }));
+                    }}));
+                    // Don't change the user's focus — they may have been looking
+                    // at a chart and the clarify/explain pause shouldn't yank
+                    // their attention back to the parent table.
+                }
                 setIsChatFormulating(false);
                 agentAbortRef.current = null;
                 clearTimeout(timeoutId);
                 setChatPrompt("");
-                isCompleted = true; // prevent handleCompletion from firing
+                setAttachedImages([]);
+                isCompleted = true;
+            }
+
+            // ── completion: final summary ──
+            if (result.type === "completion") {
+                if (lastCreatedTableId) {
+                    const rawSummary = result.content?.summary || "";
+                    const summary = result.status === "max_iterations"
+                        ? translateBackend(rawSummary, result.content?.summary_code) || t('chartRec.maxIterationsReached')
+                        : rawSummary;
+                    if (summary) {
+                        const entry: InteractionEntry = {
+                            from: 'data-agent', to: 'user', role: 'summary',
+                            plan: result.content?.thought || undefined,
+                            content: summary,
+                            timestamp: Date.now(),
+                        };
+                        dispatch(dfActions.appendTriggerInteraction({ tableId: lastCreatedTableId, entries: [entry] }));
+                    }
+                }
             }
         };
 
@@ -567,99 +918,324 @@ export const SimpleChartRecBox: FC = function () {
             agentAbortRef.current = null;
             clearTimeout(timeoutId);
 
+            // Clean up any remaining draft (the last step created a new draft that was never filled)
+            if (currentDraftId) {
+                dispatch(dfActions.removeDraftNode(currentDraftId));
+                currentDraftId = null;
+            }
+
             const completionResult = allResults.find((r: any) => r.type === "completion");
             if (completionResult) {
-                const summary = completionResult.content.summary || completionResult.content.message || "";
-                const status: "completed" | "warning" = completionResult.status === "success" ? "completed" : "warning";
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: summary, status, hidden: false,
-                    message: { content: summary, role: 'completion' } }));
                 setChatPrompt("");
-            } else {
-                dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: "The agent got lost in the data.", status: 'warning', hidden: false,
-                    message: { content: "The agent got lost in the data.", role: 'clarify' } }));
+                setAttachedImages([]);
             }
         };
 
-        fetchWithIdentity(getUrls().DATA_AGENT_STREAMING, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: messageBody,
-            signal: controller.signal
-        })
-        .then(async (response) => {
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No response body reader available');
-
-            const decoder = new TextDecoder();
-            let buffer = '';
-
+        (async () => {
             try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) { handleCompletion(); break; }
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
+                for await (const data of streamRequest(getUrls().DATA_AGENT_STREAMING, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: messageBody,
+                }, controller.signal)) {
+                    if (data.type === "error") {
+                        const errMsg = data.error
+                            ? getErrorMessage(data.error)
+                            : data.message
+                                ? translateBackend(data.message, data.message_code, data.message_params)
+                                : t('chartRec.errorDuringExploration');
+                        setIsChatFormulating(false);
+                        clearTimeout(timeoutId);
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(), type: 'error',
+                            component: 'data-agent', value: errMsg,
+                        }));
+                        if (currentDraftId) {
+                            dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
+                                from: 'data-agent', to: 'user', role: 'error',
+                                content: errMsg, timestamp: Date.now(),
+                            }}));
+                            dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                            currentDraftId = null;
+                        }
+                        return;
+                    }
 
-                    for (let line of lines) {
-                        if (line.trim() !== "") {
-                            try {
-                                const data = JSON.parse(line);
-                                if (data.token === token) {
-                                    if (data.status === "ok" && data.result) {
-                                        allResults.push(data.result);
-                                        processStreamingResult(data.result);
-                                        if (data.result.type === "completion" || data.result.type === "clarify") { handleCompletion(); return; }
-                                    } else if (data.status === "error") {
-                                        setIsChatFormulating(false);
-                                        clearTimeout(timeoutId);
-                                        dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: data.error_message || "Error during exploration", status: 'failed', hidden: false,
-                                            message: { content: data.error_message || "Error during exploration", role: 'error' } }));
-                                        return;
-                                    }
-                                }
-                            } catch (parseError) {
-                                console.warn('Failed to parse streaming response:', parseError);
-                            }
+                    if (data.type === "warning") {
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(), type: 'warning',
+                            component: 'data-agent',
+                            value: (data as any).warning?.message ?? 'Warning from server',
+                        }));
+                        continue;
+                    }
+
+                    allResults.push(data);
+                    processStreamingResult(data);
+                    if (data.type === "completion" || data.type === "clarify" || data.type === "explain") {
+                        handleCompletion();
+                        return;
+                    }
+                }
+                handleCompletion();
+            } catch (error: any) {
+                setIsChatFormulating(false);
+                agentAbortRef.current = null;
+                clearTimeout(timeoutId);
+                const isAbort = error.name === 'AbortError';
+                const isCancelled = isAbort && !isCompleted && !timedOut;
+                const isTimeout = isAbort && timedOut;
+                const errorMessage = isCancelled
+                    ? t('chartRec.explorationCancelled')
+                    : isTimeout
+                        ? t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 })
+                        : t('chartRec.explorationFailed', { message: error.message });
+                if (isTimeout) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'data-agent',
+                        value: t('messages.agent.requestTimedOut', { seconds: config.formulateTimeoutSeconds * 6 }),
+                    }));
+                }
+                if (currentDraftId) {
+                    if (isCancelled) {
+                        dispatch(dfActions.removeDraftNode(currentDraftId));
+                    } else {
+                        dispatch(dfActions.appendDraftInteraction({ draftId: currentDraftId, entry: {
+                            from: 'data-agent', to: 'user', role: 'error', content: errorMessage, timestamp: Date.now(),
+                        }}));
+                        dispatch(dfActions.updateDeriveStatus({ nodeId: currentDraftId, status: 'error' }));
+                    }
+                    currentDraftId = null;
+                }
+            }
+        })();
+    }, [focusedTableId, tables, draftNodes, activeModel, config, conceptShelfItems, dispatch, t]);
+
+    // ── Report generation via report agent ──────────────────────────
+
+    const reportFromChat = useCallback(async (prompt: string) => {
+        if (!focusedTableId) return;
+
+        const cleanPrompt = prompt.trim() || 'Create a report summarizing the exploration.';
+
+        setChatPrompt('');
+        setIsChatFormulating(true);
+
+        // Build available charts list
+        const availableCharts = charts
+            .filter(c => c.chartType !== 'Table' && c.chartType !== 'Auto')
+            .filter(c => tables.some(t => t.id === c.tableRef))
+            .map(c => {
+                const tbl = tables.find(t => t.id === c.tableRef);
+                const encodings: Record<string, string> = {};
+                if (c.encodingMap) {
+                    for (const [ch, enc] of Object.entries(c.encodingMap)) {
+                        if ((enc as any)?.fieldID) {
+                            const field = conceptShelfItems.find(f => f.id === (enc as any).fieldID);
+                            if (field) encodings[ch] = field.name;
                         }
                     }
                 }
-            } finally {
-                reader.releaseLock();
-            }
-        })
-        .catch((error) => {
-            setIsChatFormulating(false);
-            agentAbortRef.current = null;
-            clearTimeout(timeoutId);
-            const isCancelled = error.name === 'AbortError' && !isCompleted;
-            const errorMessage = isCancelled ? "Exploration cancelled" : error.name === 'AbortError' ? "Exploration timed out" : `Exploration failed: ${error.message}`;
-            dispatch(dfActions.updateAgentWorkInProgress({ actionId, description: errorMessage, status: isCancelled ? 'warning' : 'failed', hidden: false,
-                    message: { content: errorMessage, role: isCancelled ? 'clarify' : 'error' } }));
+                return {
+                    chart_id: c.id,
+                    chart_type: c.chartType,
+                    encodings,
+                    table_ref: tbl?.virtual?.tableId || c.tableRef,
+                    code: tbl?.derive?.code || '',
+                    chart_data: tbl ? { name: tbl.virtual?.tableId || tbl.id, rows: tbl.rows.slice(0, 50) } : undefined,
+                };
+            });
+
+        const selectedChartIds = availableCharts.map(c => c.chart_id);
+
+        // Create a report entry and switch to report view
+        const reportId = `report-${Date.now()}`;
+        const inProgressReport: GeneratedReport = {
+            id: reportId,
+            content: '',
+            selectedChartIds,
+            createdAt: Date.now(),
+            status: 'generating',
+            prompt: cleanPrompt,
+            triggerTableId: focusedTableId,
+        };
+        dispatch(dfActions.saveGeneratedReport(inProgressReport));
+        dispatch(dfActions.setFocused({ type: 'report', reportId }));
+        dispatch(dfActions.setViewMode('report'));
+
+        const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable).filter(Boolean);
+
+        const body = JSON.stringify({
+            model: activeModel,
+            input_tables: actionTables.map(t => ({
+                name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ''),
+            })),
+            primary_tables: primaryTableIds.map(id => {
+                const t = tables.find(tbl => tbl.id === id);
+                return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, '');
+            }),
+            charts: availableCharts,
+            user_prompt: cleanPrompt,
         });
-    }, [focusedTableId, tables, activeModel, agentRules, config, conceptShelfItems, dispatch, relevantAgentActions]);
+
+        const controller = new AbortController();
+        agentAbortRef.current = controller;
+        let accumulatedMarkdown = '';
+
+        try {
+            for await (const event of streamRequest(getUrls().GENERATE_REPORT_CHAT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body,
+            }, controller.signal)) {
+                if (event.type === 'text_delta') {
+                    accumulatedMarkdown += (event as any).content;
+                } else if (event.type === 'error') {
+                    const errMsg = event.error ? getErrorMessage(event.error) : t('messages.error');
+                    accumulatedMarkdown += `\n\n**Error:** ${errMsg}`;
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'error',
+                        component: 'report-agent', value: errMsg,
+                    }));
+                } else if (event.type === 'warning') {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'report-agent',
+                        value: (event as any).warning?.message ?? 'Warning from server',
+                    }));
+                }
+                const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
+                dispatch(dfActions.updateGeneratedReportContent({
+                    id: reportId,
+                    content: accumulatedMarkdown,
+                    title: titleMatch ? titleMatch[1].trim() : undefined,
+                }));
+            }
+
+            // Final update with completed status
+            const titleMatch = accumulatedMarkdown.match(/^#\s+(.+)$/m);
+            dispatch(dfActions.updateGeneratedReportContent({
+                id: reportId,
+                content: accumulatedMarkdown,
+                status: 'completed',
+                title: titleMatch ? titleMatch[1].trim() : undefined,
+            }));
+        } catch (error: any) {
+            if (error.name !== 'AbortError') {
+                dispatch(dfActions.updateGeneratedReportContent({
+                    id: reportId,
+                    content: accumulatedMarkdown + `\n\n**Error:** ${error.message}`,
+                    status: 'error',
+                }));
+            }
+        } finally {
+            agentAbortRef.current = null;
+            setIsChatFormulating(false);
+        }
+    }, [focusedTableId, charts, tables, selectedTableIds, primaryTableIds, conceptShelfItems, activeModel, dispatch]);
+
+    // ── Unified submit handler ───────────────────────────────────────
+    const submitChat = useCallback((prompt: string, clarificationCtx?: any, displayPrompt?: string) => {
+        if (selectedAgent === 'report') {
+            reportFromChat(prompt);
+            return;
+        }
+        if (clarificationCtx) {
+            // Build the structured response payload. The backend assembles
+            // the final LLM-facing text ("Selected answers: 1. xxx; 2. yyy\n
+            // User instructions: <typed>") from this array — we no longer
+            // build that string here. Selections live only in the panel UI.
+            const questions = clarificationQuestions?.questions || [];
+            const responses: ClarificationResponse[] = [];
+            questions.forEach((_q, idx) => {
+                const ans = clarifyAnswers[idx];
+                if (ans) responses.push(ans);
+            });
+            const typed = prompt.trim();
+            if (typed) {
+                responses.push({ question_index: -1, answer: typed, source: 'freeform' });
+            }
+            // Build the user-bubble display string from the structured
+            // selections + any typed instructions. We send this same string
+            // as `prompt` — it powers both the timeline bubble and the
+            // user message appended to the trajectory on the backend.
+            const displayPrompt = formatClarificationResponses(responses);
+            exploreFromChat(displayPrompt, clarificationCtx);
+            return;
+        }
+        exploreFromChat(prompt, undefined, displayPrompt);
+    }, [reportFromChat, exploreFromChat, selectedAgent, clarificationQuestions, clarifyAnswers]);
+
+    const resumeFromClarification = useCallback((responses: ClarificationResponse[]) => {
+        if (!pendingClarification) return;
+        // Pass the formatted display string as `prompt` — it powers both the
+        // timeline bubble and the user message appended to the trajectory.
+        const displayPrompt = formatClarificationResponses(responses);
+        exploreFromChat(displayPrompt, pendingClarification);
+    }, [exploreFromChat, pendingClarification]);
+
+    // Reset accumulated clarification answers whenever the active
+    // clarification draft changes (a new clarify/explain pause appeared,
+    // the previous one was resumed, or the user dismissed it).
+    useEffect(() => {
+        setClarifyAnswers({});
+        clarifySubmittedRef.current = null;
+    }, [pendingClarification?.draftId]);
+
+    // Send is allowed only when the user has typed actual instructions.
+    // Selections live in the ClarificationPanel UI only — they never
+    // appear in the chat box. So having only selections (no typed text)
+    // means there's nothing to send beyond clicks; the user must either
+    // click the remaining options (which auto-submits) or type something.
+    const canSend = React.useMemo(() => {
+        if (!focusedTableId) return false;
+        return chatPrompt.trim().length > 0;
+    }, [chatPrompt, focusedTableId]);
+
+    // Handle a single clicked option (or free-text Enter) inside the
+    // ClarificationPanel. We just record the selection by question index
+    // — the chat box is NOT mutated. Auto-submit fires only when EVERY
+    // question is answered.
+    const handleSelectAnswer = useCallback((questionIndex: number, response: ClarificationResponse) => {
+        const questions = clarificationQuestions?.questions;
+        if (!questions || !pendingClarification) return;
+        if (clarifySubmittedRef.current === pendingClarification.draftId) return;
+
+        const newAnswers = { ...clarifyAnswers, [questionIndex]: response };
+        setClarifyAnswers(newAnswers);
+
+        // Auto-submit only when ALL questions are answered. Otherwise we
+        // wait for the user to either answer the rest or hit Send manually.
+        const allAnswered = questions.every((_q, idx) => !!newAnswers[idx]);
+        if (allAnswered) {
+            clarifySubmittedRef.current = pendingClarification.draftId;
+            const responses: ClarificationResponse[] = questions.map((_q, idx) => newAnswers[idx]);
+            resumeFromClarification(responses);
+        }
+    }, [clarificationQuestions, pendingClarification, clarifyAnswers, resumeFromClarification]);
 
     const cancelAgent = useCallback(() => {
         if (agentAbortRef.current) {
             agentAbortRef.current.abort();
             agentAbortRef.current = null;
         }
-        // Also dismiss any pending clarification
-        if (pendingClarification) {
-            dispatch(dfActions.updateAgentWorkInProgress({
-                actionId: pendingClarification.actionId,
-                description: "Conversation ended by user.",
-                status: 'completed',
-                hidden: false,
-                message: { content: "Conversation ended by user.", role: 'completion' },
-                pendingClarification: null,
-            }));
+        // Always clear busy state — the async finally blocks also clear this,
+        // but a direct cancel should guarantee the UI unblocks immediately.
+        setIsChatFormulating(false);
+        // Also dismiss any pending pause draft (clarify or explain)
+        if (pendingClarification?.draftId) {
+            dispatch(dfActions.removeDraftNode(pendingClarification.draftId));
         }
-    }, [pendingClarification, dispatch]);
+    }, [pendingClarification, dispatch, t]);
 
-    const gradientBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.6)}, ${alpha(theme.palette.secondary.main, 0.55)})`;
-    const workingBorder = `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
+    const isReportMode = selectedAgent === 'report';
+    const gradientBorder = isReportMode
+        ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.6)}, ${alpha(theme.palette.warning.dark, 0.5)})`
+        : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.6)}, ${alpha(theme.palette.secondary.main, 0.55)})`;
+    const workingBorder = isReportMode
+        ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.3)}, ${alpha(theme.palette.warning.dark, 0.25)})`
+        : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
 
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
@@ -672,8 +1248,15 @@ export const SimpleChartRecBox: FC = function () {
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
-            transition: 'box-shadow 0.2s ease, background-color 0.2s ease',
-            ...(isChatFormulating ? { backgroundColor: alpha(theme.palette.action.disabledBackground, 0.06) } : {}),
+            transition: 'box-shadow 0.25s ease, background-color 0.3s ease',
+            backgroundColor: isChatFormulating
+                ? alpha(theme.palette.action.disabledBackground, 0.06)
+                : isReportMode
+                    ? alpha(theme.palette.warning.main, 0.03)
+                    : 'transparent',
+            '&:focus-within': {
+                boxShadow: `0 0 0 3px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.10)}`,
+            },
             // Gradient border via pseudo-element (works with border-radius)
             '&::before': {
                 content: '""',
@@ -692,75 +1275,84 @@ export const SimpleChartRecBox: FC = function () {
             },
         }}
         >
-            {/* Show clarification question above input when agent is asking */}
-            {clarificationQuestion && pendingClarification && !isChatFormulating && (
-                <Box sx={{
-                    display: 'flex', alignItems: 'flex-start', gap: '6px',
-                    px: 0.5, py: '6px',
-                    borderBottom: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
-                    backgroundColor: alpha(theme.palette.warning.main, 0.05),
-                    borderRadius: '8px 8px 0 0',
-                    mx: '-8px', mt: '-4px', mb: '4px', pt: '8px', pb: '6px',
-                }}>
-                    <SmartToyOutlinedIcon sx={{ fontSize: 14, color: theme.palette.warning.main, mt: '1px', flexShrink: 0 }} />
-                    <Typography sx={{ fontSize: 12, color: theme.palette.text.primary, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {clarificationQuestion}
-                    </Typography>
-                </Box>
+            {clarificationQuestions?.questions && pendingClarification && !isChatFormulating && (
+                <ClarificationPanel
+                    questions={clarificationQuestions.questions}
+                    variant={clarificationQuestions.variant}
+                    selectedAnswers={clarifyAnswers}
+                    onSelectAnswer={handleSelectAnswer}
+                    onSubmit={resumeFromClarification}
+                    onCancel={cancelAgent}
+                />
             )}
-            {/* Idea chips inline */}
-            {ideas.length > 0 && !isChatFormulating && (
-                <Box sx={{
-                    display: 'flex', flexDirection: 'column', gap: '4px',
-                    borderBottom: `1px solid ${alpha(theme.palette.secondary.main, 0.15)}`,
-                    backgroundColor: alpha(theme.palette.secondary.main, 0.03),
-                    borderRadius: clarificationQuestion ? 0 : '8px 8px 0 0',
-                    mx: '-8px', mt: clarificationQuestion ? 0 : '-4px', mb: '4px', px: '10px', pt: '6px', pb: '6px',
-                }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', mb: '2px' }}>
-                        <TipsAndUpdatesIcon sx={{ fontSize: 12, color: theme.palette.secondary.main }} />
-                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: theme.palette.secondary.main, flex: 1 }}>Ideas</Typography>
-                        <Tooltip title="Regenerate ideas">
-                            <IconButton size="small" onClick={() => getIdeasFromAgent()}
-                                sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.primary.main } }}>
-                                <RefreshIcon sx={{ fontSize: 12 }} />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Clear ideas">
-                            <IconButton size="small" onClick={() => setIdeas([])}
-                                sx={{ p: '2px', color: theme.palette.text.secondary, '&:hover': { color: theme.palette.error.main } }}>
-                                <ClearIcon sx={{ fontSize: 12 }} />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {ideas.map((idea, idx) => {
-                            const color = idea.difficulty === 'easy' ? theme.palette.success.main
-                                : idea.difficulty === 'hard' ? theme.palette.warning.main
-                                : theme.palette.primary.main;
-                            return (
-                                <Box key={idx} sx={{
-                                    px: '6px', py: '3px',
+            {/* Input area wrapper */}
+            <Box sx={{ position: 'relative' }}>
+            {/* @-mention table chips and image attachments.
+                Skip the table-chip row entirely when there's only one root table —
+                there's nothing else the user could @-mention, so the chip is noise. */}
+            {((primaryTableIds.length > 0 && rootTables.length > 1) || attachedImages.length > 0) && !isChatFormulating && (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', px: 0.5, pb: '2px' }}>
+                    {rootTables.length > 1 && primaryTableIds.map(id => {
+                        const tbl = tables.find(t => t.id === id);
+                        const isDefault = defaultPrimaryTableIds.includes(id);
+                        return (
+                            <Chip
+                                key={id}
+                                size="small"
+                                label={`@${tbl?.displayId || id}`}
+                                onDelete={isDefault ? undefined : () => setMentionedTableIds(prev => prev.filter(mid => mid !== id))}
+                                sx={{
+                                    height: 20,
+                                    fontSize: 10,
+                                    color: theme.palette.text.secondary,
+                                    backgroundColor: 'rgba(0,0,0,0.04)',
+                                    border: 'none',
                                     borderRadius: '4px',
-                                    border: `1px solid ${alpha(color, 0.2)}`,
-                                    backgroundColor: alpha(color, 0.04),
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                    '&:hover': { borderColor: alpha(color, 0.6), backgroundColor: alpha(color, 0.08) },
-                                }} onClick={() => { setChatPrompt(idea.text); exploreFromChat(idea.text); }}>
-                                    <Typography component="div" sx={{ fontSize: 10, lineHeight: 1.3, color }}>
-                                        {renderTextWithEmphasis(idea.goal, {
-                                            borderRadius: '0px', borderBottom: '1px solid',
-                                            borderColor: alpha(color, 0.4), fontSize: '10px', lineHeight: 1.3,
-                                            backgroundColor: alpha(color, 0.05),
-                                        })}
-                                    </Typography>
-                                </Box>
-                            );
-                        })}
-                    </Box>
+                                    '& .MuiChip-label': { px: '6px' },
+                                    '& .MuiChip-deleteIcon': { fontSize: 12, color: theme.palette.text.disabled, mr: '2px' },
+                                }}
+                            />
+                        );
+                    })}
+                    {attachedImages.map((_, idx) => (
+                        <Chip
+                            key={`img-${idx}`}
+                            size="small"
+                            icon={<Box component="img" src={attachedImages[idx]} sx={{ width: 14, height: 14, objectFit: 'cover', borderRadius: '2px' }} />}
+                            label={`image${attachedImages.length > 1 ? idx + 1 : ''}`}
+                            onDelete={() => setAttachedImages(prev => prev.filter((_, i) => i !== idx))}
+                            sx={{
+                                height: 20,
+                                fontSize: 10,
+                                color: theme.palette.text.secondary,
+                                backgroundColor: 'rgba(0,0,0,0.04)',
+                                border: 'none',
+                                borderRadius: '4px',
+                                '& .MuiChip-label': { px: '4px' },
+                                '& .MuiChip-icon': { ml: '4px', mr: '-2px' },
+                                '& .MuiChip-deleteIcon': { fontSize: 12, color: theme.palette.text.disabled, mr: '2px' },
+                            }}
+                        />
+                    ))}
                 </Box>
             )}
+            {/* @-mention dropdown */}
+            <Popper open={mentionDropdownOpen && mentionAvailableTables.length > 0} anchorEl={inputCardRef.current} placement="top-start" style={{ zIndex: 1300 }}>
+                <Paper elevation={4} sx={{ maxHeight: 200, overflow: 'auto', minWidth: 180, mb: 0.5 }}>
+                    <MenuList dense sx={{ py: 0.5 }}>
+                        {mentionAvailableTables.map((opt, idx) => (
+                            <MenuItem
+                                key={opt.id}
+                                selected={idx === mentionHighlightIdx}
+                                sx={{ fontSize: 11, py: 0.5 }}
+                                onClick={() => confirmMention(opt.id)}
+                            >
+                                @{opt.displayId || opt.id}
+                            </MenuItem>
+                        ))}
+                    </MenuList>
+                </Paper>
+            </Popper>
             <TextField
                 variant="standard"
                 sx={{
@@ -774,52 +1366,94 @@ export const SimpleChartRecBox: FC = function () {
                         "& .MuiInput-input": { fontSize: '12px', lineHeight: 1.5, color: 'text.disabled' },
                     } : {}),
                 }}
-                onChange={(event: any) => { if (!isChatFormulating) setChatPrompt(event.target.value); }}
+                onChange={(event: any) => {
+                    if (isChatFormulating) return;
+                    const val = event.target.value;
+                    // Open dropdown when @ is typed
+                    if (!mentionDropdownOpen && val.includes('@')) {
+                        const lastAt = val.lastIndexOf('@');
+                        const afterAt = val.slice(lastAt + 1);
+                        // Only open if @ is at end or followed by partial filter (no space yet)
+                        if (!afterAt.includes(' ')) {
+                            setMentionDropdownOpen(true);
+                            setMentionHighlightIdx(0);
+                        }
+                    }
+                    // Close dropdown if no active @ remaining
+                    if (mentionDropdownOpen) {
+                        const lastAt = val.lastIndexOf('@');
+                        if (lastAt < 0 || val.slice(lastAt + 1).includes(' ')) {
+                            setMentionDropdownOpen(false);
+                            setMentionHighlightIdx(0);
+                        }
+                    }
+                    // Remove mentioned tables whose @name is no longer in the text
+                    setMentionedTableIds(prev => prev.filter(id => {
+                        const tbl = tables.find(t2 => t2.id === id);
+                        const name = tbl?.displayId || id;
+                        return val.includes(`@${name}`);
+                    }));
+                    setChatPrompt(val);
+                }}
                 onKeyDown={(event: any) => {
+                    // @-mention keyboard navigation
+                    if (mentionDropdownOpen && mentionAvailableTables.length > 0) {
+                        if (event.key === 'ArrowDown') {
+                            event.preventDefault();
+                            setMentionHighlightIdx(prev => Math.min(prev + 1, mentionAvailableTables.length - 1));
+                            return;
+                        }
+                        if (event.key === 'ArrowUp') {
+                            event.preventDefault();
+                            setMentionHighlightIdx(prev => Math.max(prev - 1, 0));
+                            return;
+                        }
+                        if (event.key === 'Tab' || event.key === 'Enter') {
+                            event.preventDefault();
+                            confirmMention(mentionAvailableTables[mentionHighlightIdx].id);
+                            return;
+                        }
+                        if (event.key === 'Escape') {
+                            event.preventDefault();
+                            setMentionDropdownOpen(false);
+                            setMentionHighlightIdx(0);
+                            return;
+                        }
+                    }
                     if (event.key === 'Tab' && !event.shiftKey && chatPrompt.trim() === '' && !isChatFormulating) {
                         event.preventDefault();
-                        setChatPrompt('help me suggest some exploration directions from this thread');
+                        setChatPrompt(isReportMode ? t('chartRec.threadReportPrompt') : t('chartRec.threadExplorePrompt'));
                     }
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
-                        if (chatPrompt.trim().length > 0 && !isChatFormulating) {
+                        if (canSend && !isChatFormulating) {
                             if (pendingClarification) {
-                                exploreFromChat(chatPrompt, pendingClarification);
+                                submitChat(chatPrompt, pendingClarification);
                             } else {
-                                exploreFromChat(chatPrompt);
+                                submitChat(chatPrompt);
                             }
                         }
                     }
                 }}
+                onPaste={handlePaste}
                 onFocus={() => {
-                    // Scroll to the focused table card, positioning it near the bottom of the visible area
-                    const el = document.querySelector('.data-thread-card.selected-card') as HTMLElement | null;
-                    if (el) {
-                        // Find nearest scrollable ancestor
-                        let scrollContainer: HTMLElement | null = el.parentElement;
-                        while (scrollContainer) {
-                            const ov = getComputedStyle(scrollContainer).overflowY;
-                            if (ov === 'auto' || ov === 'scroll') break;
-                            scrollContainer = scrollContainer.parentElement;
-                        }
-                        if (scrollContainer) {
-                            const containerRect = scrollContainer.getBoundingClientRect();
-                            const elRect = el.getBoundingClientRect();
-                            // Place the element so its bottom sits ~80px above the container's bottom edge
-                            const targetBottom = containerRect.bottom - 80;
-                            const offset = elRect.bottom - targetBottom;
-                            scrollContainer.scrollBy({ top: offset, behavior: 'smooth' });
-                        } else {
-                            el.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                        }
-                    }
+                    // Notify the parent (DataThread) that the chat input was
+                    // focused.  The parent's scroll-to-target effect handles
+                    // the actual scroll based on focusedId / clarify state.
+                    onInputFocus?.();
                 }}
                 slotProps={{ 
                     inputLabel: { shrink: true },
                     input: { readOnly: isChatFormulating },
                 }}
                 value={chatPrompt}
-                placeholder={pendingClarification ? "Reply to agent's question..." : "Ask agent to explore a new direction"}
+                placeholder={
+                    pendingClarification
+                        ? t('chartRec.replyPlaceholder')
+                        : isReportMode
+                            ? t(rootTables.length <= 1 ? 'chartRec.reportPlaceholderSingleTable' : 'chartRec.reportPlaceholder')
+                            : t(rootTables.length <= 1 ? 'chartRec.explorePlaceholderSingleTable' : 'chartRec.explorePlaceholder')
+                }
                 fullWidth
                 multiline
                 minRows={2}
@@ -828,7 +1462,7 @@ export const SimpleChartRecBox: FC = function () {
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
                 {/* Action buttons */}
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.5, overflow: 'hidden', flex: 1 }}>
-                    <Tooltip title="Add more data to the workspace">
+                    <Tooltip title={t('chartRec.addMoreData')}>
                         <IconButton
                             size="small"
                             onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
@@ -839,55 +1473,64 @@ export const SimpleChartRecBox: FC = function () {
                             <AddIcon sx={{ fontSize: 12 }} />
                         </IconButton>
                     </Tooltip>
+                    {/* Agent mode toggle */}
+                    <Tooltip title={selectedAgent === 'explore' ? t('chartRec.switchToReport') : t('chartRec.switchToExplore')}>
+                        <Button
+                            size="small"
+                            onClick={() => setSelectedAgent(prev => prev === 'explore' ? 'report' : 'explore')}
+                            sx={{
+                                textTransform: 'none',
+                                fontSize: 10,
+                                minWidth: 0,
+                                px: 0.75,
+                                py: 0,
+                                height: 20,
+                                color: isReportMode ? theme.palette.warning.main : theme.palette.primary.main,
+                                borderRadius: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '2px',
+                                '&:hover': { backgroundColor: alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.08) },
+                            }}
+                        >
+                            {selectedAgent === 'explore'
+                                ? <AutoGraphIcon sx={{ fontSize: '10px !important' }} />
+                                : <DescriptionOutlinedIcon sx={{ fontSize: '10px !important' }} />}
+                            {selectedAgent === 'explore' ? t('chartRec.modeExplore') : t('chartRec.modeReport')}
+                        </Button>
+                    </Tooltip>
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
                 {isChatFormulating ? (
                     <CircularProgress size={18} sx={{ m: 0.5 }} />
                 ) : (
                     <>
-                        <Tooltip title="Get idea suggestions">
+                        {!isReportMode && (
+                        <Tooltip title={t('chartRec.getIdeaSuggestions')}>
                             <span>
                                 <IconButton
                                     size="small"
                                     sx={{ p: 0.5, color: theme.palette.secondary.main }}
-                                    disabled={!focusedTableId || isLoadingIdeas}
-                                    onClick={() => { 
-                                        if (ideas.length > 0) {
-                                            setIdeas([]);
-                                        } else {
-                                            getIdeasFromAgent(); 
-                                        }
-                                    }}
+                                    disabled={!focusedTableId || isChatFormulating || !!pendingClarification}
+                                    onClick={() => submitChat(t('chartRec.exploreIdeasPrompt'), undefined, t('chartRec.askedForRecommendations'))}
                                 >
-                                    {isLoadingIdeas
-                                        ? <CircularProgress size={18} sx={{ color: theme.palette.warning.main }} />
-                                        : <TipsAndUpdatesIcon sx={{ fontSize: 18 }} />}
+                                    <TipsAndUpdatesIcon sx={{ fontSize: 18 }} />
                                 </IconButton>
                             </span>
                         </Tooltip>
-                        {pendingClarification && !isChatFormulating && (
-                            <Tooltip title="End conversation">
-                                <IconButton
-                                    size="small"
-                                    sx={{ p: 0.5, color: theme.palette.warning.main }}
-                                    onClick={() => cancelAgent()}
-                                >
-                                    <StopCircleOutlinedIcon sx={{ fontSize: 18 }} />
-                                </IconButton>
-                            </Tooltip>
                         )}
-                        <Tooltip title={pendingClarification ? "Send reply" : "Explore"}>
+                        <Tooltip title={t('chartRec.explore')}>
                             <span>
                                 <IconButton
                                     size="small"
                                     color="primary"
                                     sx={{ p: 0.5 }}
-                                    disabled={chatPrompt.trim().length === 0 || !focusedTableId}
+                                    disabled={!canSend}
                                     onClick={() => {
                                         if (pendingClarification) {
-                                            exploreFromChat(chatPrompt, pendingClarification);
+                                            submitChat(chatPrompt, pendingClarification);
                                         } else {
-                                            exploreFromChat(chatPrompt);
+                                            submitChat(chatPrompt);
                                         }
                                     }}
                                 >
@@ -899,14 +1542,15 @@ export const SimpleChartRecBox: FC = function () {
                 )}
                 </Box>
             </Box>
-            {/* Agent working overlay */}
-            {(isChatFormulating || isLoadingIdeas) && (
+            </Box>
+            {/* Agent working overlay — covers entire card during chat formulation */}
+            {isChatFormulating && (
                 <AgentWorkingOverlay 
-                    relevantAgentActions={isLoadingIdeas && !isChatFormulating 
-                        ? [{ status: 'running', description: 'Generating exploration ideas...' }] 
-                        : relevantAgentActions}
+                    message={draftNodes.find(d => d.derive?.status === 'running' && threadTableIds.has(d.derive.trigger.tableId))
+                            ?.derive?.runningPlan}
                     theme={theme}
-                    onCancel={isLoadingIdeas && !isChatFormulating ? () => { ideasAbortRef.current?.abort(); ideasAbortRef.current = null; setIsLoadingIdeas(false); setIdeas([]); } : cancelAgent}
+                    color={isReportMode ? 'warning' : 'primary'}
+                    onCancel={cancelAgent}
                 />
             )}
         </Card>
@@ -920,6 +1564,7 @@ export const SimpleChartRecBox: FC = function () {
                 open={uploadDialogOpen}
                 onClose={() => setUploadDialogOpen(false)}
                 initialTab="menu"
+                hideSampleDatasets
             />
         </Box>
     );

@@ -1,0 +1,232 @@
+/**
+ * Tests for the unified frontend error handler (errorHandler.ts).
+ *
+ * Verifies that handleApiError dispatches messages to the Redux store
+ * (MessageSnackbar) and invokes callbacks appropriately.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mock store
+const mockDispatch = vi.fn();
+vi.mock('../../../../src/app/store', () => ({
+    store: {
+        getState: vi.fn(() => ({})),
+        dispatch: (...args: any[]) => mockDispatch(...args),
+    },
+}));
+
+// Mock dfActions.addMessages
+vi.mock('../../../../src/app/dfSlice', () => ({
+    dfActions: {
+        addMessages: vi.fn((msgs: any[]) => ({ type: 'dfSlice/addMessages', payload: msgs })),
+    },
+}));
+
+// Mock i18n
+vi.mock('../../../../src/i18n', () => ({
+    default: {
+        t: vi.fn((key: string) => key),
+    },
+}));
+
+// Mock errorCodes
+vi.mock('../../../../src/app/errorCodes', () => ({
+    getErrorMessage: vi.fn((err: any) => err.message),
+}));
+
+import { handleApiError } from '../../../../src/app/errorHandler';
+import { extractErrorMessage } from '../../../../src/app/errorHandler';
+import { ApiRequestError, type ApiError } from '../../../../src/app/apiClient';
+import { dfActions } from '../../../../src/app/dfSlice';
+
+beforeEach(() => {
+    mockDispatch.mockClear();
+    vi.mocked(dfActions.addMessages).mockClear();
+});
+
+describe('handleApiError', () => {
+
+    describe('ApiRequestError handling', () => {
+
+        it('should dispatch addMessages for an ApiRequestError', () => {
+            const apiError: ApiError = { code: 'TABLE_NOT_FOUND', message: 'Table not found', retry: false };
+            const err = new ApiRequestError(apiError, 404);
+
+            handleApiError(err, 'test-component');
+
+            expect(dfActions.addMessages).toHaveBeenCalledOnce();
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.type).toBe('error');
+            expect(msg.component).toBe('test-component');
+            expect(msg.value).toBe('Table not found');
+        });
+
+        it('should include detail in the dispatched message', () => {
+            const apiError: ApiError = { code: 'INTERNAL_ERROR', message: 'Oops', detail: 'stack...', retry: false };
+            const err = new ApiRequestError(apiError, 500);
+
+            handleApiError(err, 'ctx');
+
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.detail).toBe('stack...');
+        });
+
+        it('should include request_id in the dispatched message detail', () => {
+            const apiError: ApiError = {
+                code: 'INTERNAL_ERROR',
+                message: 'Oops',
+                retry: false,
+                request_id: 'req-123',
+            };
+            const err = new ApiRequestError(apiError, 500);
+
+            handleApiError(err, 'ctx');
+
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.detail).toBe('Request ID: req-123');
+            expect(msg.diagnostics).toEqual(apiError);
+        });
+
+        it('should include diagnostics with the full apiError', () => {
+            const apiError: ApiError = { code: 'LLM_TIMEOUT', message: 'timeout', retry: true };
+            const err = new ApiRequestError(apiError, 504);
+
+            handleApiError(err, 'ctx');
+
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.diagnostics).toEqual(apiError);
+        });
+    });
+
+    describe('AbortError handling', () => {
+
+        it('should silently ignore AbortError', () => {
+            const err = new DOMException('The operation was aborted', 'AbortError');
+
+            handleApiError(err, 'ctx');
+
+            expect(dfActions.addMessages).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('plain Error handling', () => {
+
+        it('should dispatch addMessages for a plain Error', () => {
+            const err = new Error('Network failure');
+
+            handleApiError(err, 'network');
+
+            expect(dfActions.addMessages).toHaveBeenCalledOnce();
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.value).toBe('Network failure');
+            expect(msg.component).toBe('network');
+        });
+
+        it('should handle non-Error values', () => {
+            handleApiError('string error', 'ctx');
+
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.value).toBe('string error');
+        });
+    });
+
+    describe('silent option', () => {
+
+        it('should not dispatch when silent is true', () => {
+            const err = new Error('silent boom');
+
+            handleApiError(err, 'ctx', { silent: true });
+
+            expect(dfActions.addMessages).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('callback options', () => {
+
+        it('should call onAuth for auth errors and skip dispatch', () => {
+            const onAuth = vi.fn();
+            const apiError: ApiError = { code: 'AUTH_REQUIRED', message: 'Login required', retry: false };
+            const err = new ApiRequestError(apiError, 401);
+
+            handleApiError(err, 'ctx', { onAuth });
+
+            expect(onAuth).toHaveBeenCalledOnce();
+            expect(dfActions.addMessages).not.toHaveBeenCalled();
+        });
+
+        it('should call onRetryable for retryable errors and skip dispatch', () => {
+            const onRetryable = vi.fn();
+            const apiError: ApiError = { code: 'LLM_RATE_LIMIT', message: 'slow down', retry: true };
+            const err = new ApiRequestError(apiError, 429);
+
+            handleApiError(err, 'ctx', { onRetryable });
+
+            expect(onRetryable).toHaveBeenCalledOnce();
+            expect(dfActions.addMessages).not.toHaveBeenCalled();
+        });
+
+        it('should dispatch normally when callback is not provided for matching error', () => {
+            const apiError: ApiError = { code: 'AUTH_REQUIRED', message: 'Login', retry: false };
+            const err = new ApiRequestError(apiError, 401);
+
+            handleApiError(err, 'ctx');
+
+            expect(dfActions.addMessages).toHaveBeenCalledOnce();
+        });
+    });
+
+    describe('RTK serialized error handling', () => {
+
+        it('should extract message from RTK serialized error object', () => {
+            // RTK miniSerializeError produces plain objects like this
+            const serializedError = { name: 'ApiRequestError', message: 'Connection timeout', stack: 'at ...' };
+
+            handleApiError(serializedError, 'data source sidebar');
+
+            expect(dfActions.addMessages).toHaveBeenCalledOnce();
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.value).toBe('Connection timeout');
+            expect(msg.component).toBe('data source sidebar');
+        });
+
+        it('should not produce [object Object] for serialized errors', () => {
+            const serializedError = { name: 'Error', message: 'Something failed' };
+
+            handleApiError(serializedError, 'ctx');
+
+            const msg = vi.mocked(dfActions.addMessages).mock.calls[0][0];
+            expect(msg.value).not.toBe('[object Object]');
+            expect(msg.value).toBe('Something failed');
+        });
+    });
+});
+
+describe('extractErrorMessage', () => {
+
+    it('should extract message from ApiRequestError', () => {
+        const apiError: ApiError = { code: 'DATA_LOAD_ERROR', message: 'Load failed', retry: false };
+        const err = new ApiRequestError(apiError, 200);
+
+        expect(extractErrorMessage(err)).toBe('Load failed');
+    });
+
+    it('should extract message from plain Error', () => {
+        expect(extractErrorMessage(new Error('boom'))).toBe('boom');
+    });
+
+    it('should extract message from RTK serialized error (plain object with .message)', () => {
+        const serialized = { name: 'ApiRequestError', message: 'Table not found', stack: '...' };
+        expect(extractErrorMessage(serialized)).toBe('Table not found');
+    });
+
+    it('should fallback to String() for unknown values', () => {
+        expect(extractErrorMessage(42)).toBe('42');
+        expect(extractErrorMessage(null)).toBe('null');
+    });
+
+    it('should not return [object Object] for objects with message', () => {
+        const obj = { message: 'real error' };
+        expect(extractErrorMessage(obj)).not.toBe('[object Object]');
+        expect(extractErrorMessage(obj)).toBe('real error');
+    });
+});

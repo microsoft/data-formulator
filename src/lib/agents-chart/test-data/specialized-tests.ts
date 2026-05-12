@@ -99,7 +99,7 @@ export function genHeatmapTests(): TestCase[] {
             metadata: {
                 Month: { type: Type.String, semanticType: 'Month', levels: months },
                 Product: { type: Type.String, semanticType: 'Product', levels: products },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Product'), color: makeEncodingItem('Sales') },
         });
@@ -253,7 +253,7 @@ export function genPieTests(): TestCase[] {
             fields: [makeField('Product'), makeField('Revenue')],
             metadata: {
                 Product: { type: Type.String, semanticType: 'Product', levels: cats },
-                Revenue: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Revenue: { type: Type.Number, semanticType: 'Amount', levels: [] },
             },
             encodingMap: { size: makeEncodingItem('Revenue'), color: makeEncodingItem('Product') },
         });
@@ -1280,7 +1280,7 @@ export function genRoseTests(): TestCase[] {
             fields: [makeField('Product'), makeField('Sales'), makeField('Region')],
             metadata: {
                 Product: { type: Type.String, semanticType: 'Product', levels: products },
-                Sales: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Sales: { type: Type.Number, semanticType: 'Amount', levels: [] },
                 Region: { type: Type.String, semanticType: 'Category', levels: regions },
             },
             encodingMap: { x: makeEncodingItem('Product'), y: makeEncodingItem('Sales'), color: makeEncodingItem('Region') },

@@ -1,0 +1,59 @@
+{
+  "dataLoading": {
+    "title": "数据加载助手",
+    "subtitle": "从图片、文件、网页或文本中提取数据。生成合成数据集。浏览示例数据。",
+    "placeholder": "描述要提取、上传或生成的数据...",
+    "attachTooltip": "附加文件或图片",
+    "stopTooltip": "停止生成",
+    "sendTooltip": "发送（Enter）",
+    "shiftEnterHint": "Shift+Enter 换行",
+    "load": "加载",
+    "loadTable": "加载表格",
+    "loadAllTables": "加载全部 {{count}} 个表格",
+    "ranPythonCode": "已运行 Python 代码",
+    "error": "错误",
+    "rows": "行",
+    "cols": "列",
+    "showRawData": "显示原始消息数据",
+    "stopped": "— 已停止",
+    "uploaded": "[已上传：{{name}}]",
+    "defaultImageMessage": "从这张图片中提取数据",
+    "imageModelUnsupported": "当前选择的模型不支持图片输入。请切换到支持视觉的模型，或移除图片后再发送。",
+    "syncInProgress": "正在同步目录元数据…",
+    "syncComplete": "目录同步完成",
+    "syncPartial": "目录同步部分完成，部分元数据可能缺失",
+    "metadataStatusSynced": "已同步",
+    "metadataStatusPartial": "部分同步",
+    "metadataStatusUnavailable": "不可用",
+    "metadataStatusNotSynced": "未同步",
+    "loadPlan": {
+      "title": "Agent 建议载入以下数据",
+      "filters": "筛选条件",
+      "rowLimit": "行数限制",
+      "loadSelected": "加载选中的表",
+      "loaded": "已加载",
+      "preview": "预览",
+      "previewing": "正在预览...",
+      "previewFailed": "预览失败",
+      "noFilters": "无筛选条件"
+    },
+    "toolLabels": {
+      "readingFile": "读取文件",
+      "writingFile": "写入文件",
+      "listingFiles": "列出文件",
+      "runningPython": "运行 Python",
+      "preparingPreview": "准备预览"
+    },
+    "examples": {
+      "extractFromImage": "从图片中提取数据",
+      "extractFromImageExample": "从这张图片中提取收入数据",
+      "extractFromText": "从文本中提取数据",
+      "extractFromTextExample": "从这段文本中提取收入增长数据：业务亮点……",
+      "extractFromTextPrompt": "从这段文本中提取收入增长数据：\n\nBusiness Highlights\n\nMicrosoft Cloud revenue was $51.5 billion and increased 26% (up 24% in constant currency), and commercial remaining performance obligation increased 110% to $625 billion.\n\nRevenue in Productivity and Business Processes was $34.1 billion and increased 16% (up 14% in constant currency), with the following business highlights:\n\n·        Microsoft 365 Commercial cloud revenue increased 17% (up 14% in constant currency)\n\n·        Microsoft 365 Consumer cloud revenue increased 29% (up 27% in constant currency)\n\n·        LinkedIn revenue increased 11% (up 10% in constant currency)\n\n·        Dynamics 365 revenue increased 19% (up 17% in constant currency)\n\nRevenue in Intelligent Cloud was $32.9 billion and increased 29% (up 28% in constant currency), with the following business highlights:\n\n·        Azure and other cloud services revenue increased 39% (up 38% in constant currency)\n\nRevenue in More Personal Computing was $14.3 billion and decreased 3%, with the following business highlights:\n\n·        Windows OEM and Devices revenue increased 1% (relatively unchanged in constant currency)\n\n·        Xbox content and services revenue decreased 5% (down 6% in constant currency)\n\n·        Search and news advertising revenue excluding traffic acquisition costs increased 10% (up 9% in constant currency)\n\nMicrosoft returned $12.7 billion to shareholders in the form of dividends and share repurchases in the second quarter of fiscal year 2026, an increase of 32% compared to the second quarter of fiscal year 2025.",
+      "generateSynthetic": "生成合成数据",
+      "generateSyntheticExample": "生成一个包含 20 行的英国王朝数据集",
+      "browseSamples": "浏览示例数据集",
+      "browseSamplesExample": "有哪些示例数据集？"
+    }
+  }
+}

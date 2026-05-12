@@ -60,7 +60,7 @@ const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) =
 // Icon mapping: chart name → React icon element
 // ---------------------------------------------------------------------------
 
-const CHART_ICONS: Record<string, any> = {
+export const CHART_ICONS: Record<string, React.ReactElement> = {
     "Auto": <InsightsIcon color="primary" />,
     "Scatter Plot": <ChartIcon src={chartIconScatter} />,
     "Regression": <ChartIcon src={chartIconLinearRegression} />,
@@ -98,11 +98,25 @@ const CHART_ICONS: Record<string, any> = {
 // Build CHART_TEMPLATES by adding icons to library template defs
 // ---------------------------------------------------------------------------
 
-function addIcons(defs: { chart: string }[]): ChartTemplate[] {
-    return defs.map(def => ({
-        ...def,
-        icon: CHART_ICONS[def.chart] || <InsightsIcon />,
-    })) as ChartTemplate[];
+/** Global properties injected into any template that supports column/row faceting. */
+const FACET_AXIS_PROPERTIES = [
+    {
+        key: 'independentYAxis', label: 'Independent Y-Axis', type: 'binary' as const,
+        visibleWhen: { channels: ['column', 'row'] },
+    },
+];
+
+function addIcons(defs: { chart: string; channels?: string[]; properties?: any[] }[]): ChartTemplate[] {
+    return defs.map(def => {
+        const hasFacetChannels = def.channels?.some(ch => ch === 'column' || ch === 'row');
+        const extraProps = hasFacetChannels ? FACET_AXIS_PROPERTIES : [];
+        const mergedProperties = [...(def.properties || []).filter((p: any) => p.key !== 'independentYAxis'), ...extraProps];
+        return {
+            ...def,
+            properties: mergedProperties,
+            icon: CHART_ICONS[def.chart] || <InsightsIcon />,
+        };
+    }) as ChartTemplate[];
 }
 
 export const CHART_TEMPLATES: { [key: string]: ChartTemplate[] } = Object.fromEntries(

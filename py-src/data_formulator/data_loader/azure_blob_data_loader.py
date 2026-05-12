@@ -8,7 +8,7 @@ from azure.storage.blob import BlobServiceClient
 from azure.identity import DefaultAzureCredential
 from pyarrow import fs as pa_fs
 
-from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
+from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -18,13 +18,13 @@ class AzureBlobDataLoader(ExternalDataLoader):
     @staticmethod
     def list_params() -> list[dict[str, Any]]:
         params_list = [
-            {"name": "account_name", "type": "string", "required": True, "default": "", "description": "Azure storage account name"},
-            {"name": "container_name", "type": "string", "required": True, "default": "", "description": "Azure blob container name"},
-            {"name": "connection_string", "type": "string", "required": False, "default": "", "description": "Azure storage connection string (alternative to account_name + credentials)"},
-            {"name": "credential_chain", "type": "string", "required": False, "default": "cli;managed_identity;env", "description": "Ordered list of Azure credential providers (cli;managed_identity;env)"},
-            {"name": "account_key", "type": "string", "required": False, "default": "", "description": "Azure storage account key"},
-            {"name": "sas_token", "type": "string", "required": False, "default": "", "description": "Azure SAS token"},
-            {"name": "endpoint", "type": "string", "required": False, "default": "blob.core.windows.net", "description": "Azure endpoint override"}
+            {"name": "account_name", "type": "string", "required": True, "default": "", "tier": "connection", "description": "Azure storage account name"},
+            {"name": "container_name", "type": "string", "required": True, "default": "", "tier": "connection", "description": "Azure blob container name"},
+            {"name": "connection_string", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure storage connection string (alternative to account_name + credentials)"},
+            {"name": "credential_chain", "type": "string", "required": False, "default": "cli;managed_identity;env", "tier": "auth", "description": "Ordered list of Azure credential providers (cli;managed_identity;env)"},
+            {"name": "account_key", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure storage account key"},
+            {"name": "sas_token", "type": "string", "required": False, "default": "", "sensitive": True, "tier": "auth", "description": "Azure SAS token"},
+            {"name": "endpoint", "type": "string", "required": False, "default": "blob.core.windows.net", "tier": "connection", "description": "Azure endpoint override"}
         ]
         return params_list
     
@@ -102,15 +102,18 @@ Just provide `account_name` + `container_name`. Requires `az login` or Managed I
     def fetch_data_as_arrow(
         self,
         source_table: str,
-        size: int = 1000000,
-        sort_columns: list[str] | None = None,
-        sort_order: str = 'asc'
+        import_options: dict[str, Any] | None = None,
     ) -> pa.Table:
         """
         Fetch data from Azure Blob as a PyArrow Table.
         
         For files (parquet, csv), reads directly using PyArrow's Azure filesystem.
         """
+        opts = import_options or {}
+        size = min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)
+        sort_columns = opts.get("sort_columns")
+        sort_order = opts.get("sort_order", "asc")
+
         if not source_table:
             raise ValueError("source_table (Azure blob URL) must be provided")
         
@@ -208,6 +211,7 @@ Just provide `account_name` + `container_name`. Requires `az login` or Managed I
 
                 results.append({
                     "name": azure_url,
+                    "path": [azure_url],
                     "metadata": table_metadata
                 })
             except Exception as e:
@@ -282,3 +286,77 @@ Just provide `account_name` + `container_name`. Requires `az login` or Managed I
         except Exception as e:
             logger.debug("Row sampling failed for %s: %s", azure_url, e)
             return 0
+
+    # -- Catalog tree API --------------------------------------------------
+
+    @staticmethod
+    def catalog_hierarchy() -> list[dict[str, str]]:
+        return [
+            {"key": "container_name", "label": "Container"},
+            {"key": "table", "label": "File"},
+        ]
+
+    def ls(self, path: list[str] | None = None, filter: str | None = None) -> list[CatalogNode]:
+        path = path or []
+        eff = self.effective_hierarchy()
+        if len(path) >= len(eff):
+            return []
+        level_key = eff[len(path)]["key"]
+
+        if level_key == "container_name":
+            return [CatalogNode(name=self.container_name, node_type="namespace", path=path + [self.container_name])]
+
+        if level_key == "table":
+            from azure.storage.blob import BlobServiceClient as _BSC
+            if self.connection_string:
+                bsc = _BSC.from_connection_string(self.connection_string)
+            elif self.account_key:
+                bsc = _BSC(account_url=f"https://{self.account_name}.{self.endpoint}", credential=self.account_key)
+            else:
+                from azure.identity import DefaultAzureCredential
+                bsc = _BSC(account_url=f"https://{self.account_name}.{self.endpoint}", credential=DefaultAzureCredential())
+            container_client = bsc.get_container_client(self.container_name)
+            nodes = []
+            for blob in container_client.list_blobs():
+                name = blob.name
+                if name.endswith("/") or not self._is_supported_file(name):
+                    continue
+                if filter and filter.lower() not in name.lower():
+                    continue
+                nodes.append(CatalogNode(
+                    name=name, node_type="table", path=path + [name],
+                    metadata={"size_bytes": blob.size if hasattr(blob, "size") else 0},
+                ))
+            return nodes
+
+        return []
+
+    def get_metadata(self, path: list[str]) -> dict[str, Any]:
+        if not path:
+            return {}
+        blob_name = path[-1]
+        azure_url = f"az://{self.account_name}.{self.endpoint}/{self.container_name}/{blob_name}"
+        try:
+            sample_df = self._read_sample(azure_url, 5)
+            columns = [{"name": c, "type": str(sample_df[c].dtype)} for c in sample_df.columns]
+            sample_rows = json.loads(sample_df.to_json(orient="records"))
+            row_count = self._estimate_row_count(azure_url)
+            return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
+        except Exception as e:
+            logger.warning(f"get_metadata failed for {path}: {e}")
+            return {}
+
+    def test_connection(self) -> bool:
+        try:
+            from azure.storage.blob import BlobServiceClient as _BSC
+            if self.connection_string:
+                bsc = _BSC.from_connection_string(self.connection_string)
+            elif self.account_key:
+                bsc = _BSC(account_url=f"https://{self.account_name}.{self.endpoint}", credential=self.account_key)
+            else:
+                from azure.identity import DefaultAzureCredential
+                bsc = _BSC(account_url=f"https://{self.account_name}.{self.endpoint}", credential=DefaultAzureCredential())
+            bsc.get_container_client(self.container_name).get_container_properties()
+            return True
+        except Exception:
+            return False

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-import React, { FC, useEffect, useMemo, useRef, useState, memo } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 
 import {
     Box,
@@ -30,13 +30,21 @@ import {
 
 
 import '../scss/VisualizationView.scss';
+import { useTranslation } from 'react-i18next';
 import { batch, useDispatch, useSelector } from 'react-redux';
-import { DataFormulatorState, dfActions, dfSelectors, SSEMessage } from '../app/dfSlice';
+import { DataFormulatorState, dfActions, dfSelectors, SSEMessage, GeneratedReport } from '../app/dfSlice';
 import { getTriggers, getUrls, fetchWithIdentity } from '../app/utils';
-import { Chart, DictTable, Trigger } from "../components/ComponentType";
+import { apiRequest } from '../app/apiClient';
+import { extractErrorMessage } from '../app/errorHandler';
+import { Chart, DictTable, Trigger, InteractionEntry } from "../components/ComponentType";
+import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
+import type { CatalogTableDragItem } from '../components/DndTypes';
+import { loadTable } from '../app/tableThunks';
+import { AppDispatch } from '../app/store';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import StarIcon from '@mui/icons-material/Star';
+import PersonIcon from '@mui/icons-material/Person';
 import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
 
@@ -47,78 +55,91 @@ import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
 
-import { checkChartAvailability, generateChartSkeleton, getDataTable } from './VisualizationView';
+import { checkChartAvailability, generateChartSkeleton, getDataTable } from './ChartUtils';
 
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import { alpha } from '@mui/material/styles';
 
 import { RefreshDataDialog } from './RefreshDataDialog';
-import { AppDispatch } from '../app/store';
-import StopIcon from '@mui/icons-material/Stop';
-import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
-import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
 import PieChartOutlineIcon from '@mui/icons-material/PieChartOutline';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import { useDataRefresh } from '../app/useDataRefresh';
-import { buildChartCard, buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
+import { buildTriggerCard, buildTableCard, BuildTableCardProps } from './DataThreadCards';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
 import { AgentRulesDialog } from './AgentRulesDialog';
-import RuleIcon from '@mui/icons-material/Rule';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
-import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
-import { ViewBorderStyle, transition, radius, borderColor } from '../app/tokens';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import ArticleIcon from '@mui/icons-material/Article';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import SearchIcon from '@mui/icons-material/Search';
+import AutoGraphIcon from '@mui/icons-material/AutoGraph';
+
+import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
+
 import { SimpleChartRecBox } from './SimpleChartRecBox';
-import { ChatThreadView } from './ChatThreadView';
+import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanStepsView } from './InteractionEntryCard';
 
+/** Pick the icon component for a step line based on known prefixes. */
+// Re-exported from InteractionEntryCard — kept here for backward compat with gutter icon logic
 
-export const ThinkingBanner = (message: string, sx?: SxProps) => (
-    <Box sx={{ 
-        display: 'flex', 
-        position: 'relative',
-        overflow: 'hidden',
-        '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
-            animation: 'windowWipe 2s ease-in-out infinite',
-            zIndex: 1,
-            pointerEvents: 'none',
-        },
-        '@keyframes windowWipe': {
-            '0%': {
-                transform: 'translateX(-100%)',
-            },
-            '100%': {
-                transform: 'translateX(100%)',
-            },
-        },
-        ...sx
-    }}>
-        <Typography variant="body2" sx={{ 
-            fontSize: 10, 
-            color: 'rgba(0, 0, 0, 0.7) !important'
+/** Render a multi-step thinking banner as a single block with sectioned steps. */
+export const ThinkingStepsBanner = (steps: string[], sx?: SxProps) => {
+    return (
+        <Box sx={sx}>
+            <PlanStepsView steps={steps} activeLastStep />
+        </Box>
+    );
+};
+
+/** Simple single-message thinking banner (used when no step breakdown is available). */
+export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = true) => {
+    return (
+        <Box sx={{
+            display: 'flex', alignItems: 'center', gap: '4px',
+            position: 'relative', overflow: 'hidden',
+            ...(active ? {
+                '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0, left: 0, width: '100%', height: '100%',
+                    background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.8) 50%, transparent 100%)',
+                    animation: 'windowWipe 2s ease-in-out infinite',
+                    zIndex: 1, pointerEvents: 'none',
+                },
+                '@keyframes windowWipe': {
+                    '0%': { transform: 'translateX(-100%)' },
+                    '100%': { transform: 'translateX(100%)' },
+                },
+            } : {}),
+            ...sx,
         }}>
-            {message}
-        </Typography>
-    </Box>
-);
+            <Typography variant="body2" sx={{ fontSize: 10, color: 'text.secondary' }}>
+                {message}
+            </Typography>
+        </Box>
+    );
+};
 
+
+
+/** Seconds options for stream/database auto-refresh interval (labels in i18n: dataThread.refreshInterval.*). */
+const STREAM_REFRESH_INTERVAL_SECONDS = [1, 10, 30, 60, 300, 600, 1800, 3600, 86400] as const;
 
 // Streaming Settings Popup Component
 const StreamingSettingsPopup = memo<{
@@ -137,6 +158,7 @@ const StreamingSettingsPopup = memo<{
     );
     const [selectMenuOpen, setSelectMenuOpen] = useState<boolean>(false);
     const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+    const { t } = useTranslation();
 
     useEffect(() => {
         if (open) {
@@ -218,7 +240,7 @@ const StreamingSettingsPopup = memo<{
                                 }
                                 label={
                                     <Typography variant="body2" sx={{ fontSize: 11 }}>
-                                        Watch for updates
+                                        {t('dataThread.watchForUpdates')}
                                     </Typography>
                                 }
                                 sx={{ mr: 0 }}
@@ -226,7 +248,7 @@ const StreamingSettingsPopup = memo<{
                             {autoRefresh && (
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
                                     <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
-                                        every
+                                        {t('dataThread.every')}
                                     </Typography>
                                     <TextField
                                         select
@@ -246,15 +268,11 @@ const StreamingSettingsPopup = memo<{
                                             '& .MuiSelect-select': { py: 0.5 }
                                         }}
                                     >
-                                        <MenuItem value={1}>1s</MenuItem>
-                                        <MenuItem value={10}>10s</MenuItem>
-                                        <MenuItem value={30}>30s</MenuItem>
-                                        <MenuItem value={60}>1m</MenuItem>
-                                        <MenuItem value={300}>5m</MenuItem>
-                                        <MenuItem value={600}>10m</MenuItem>
-                                        <MenuItem value={1800}>30m</MenuItem>
-                                        <MenuItem value={3600}>1h</MenuItem>
-                                        <MenuItem value={86400}>24h</MenuItem>
+                                        {STREAM_REFRESH_INTERVAL_SECONDS.map((sec) => (
+                                            <MenuItem key={sec} value={sec}>
+                                                {t(`dataThread.refreshInterval.${sec}`)}
+                                            </MenuItem>
+                                        ))}
                                     </TextField>
                                 </Box>
                             )}
@@ -272,7 +290,7 @@ const StreamingSettingsPopup = memo<{
                                         alignSelf: 'flex-start'
                                     }}
                                 >
-                                    Refresh now
+                                    {t('dataThread.refreshNow')}
                                 </Button>
                             )}
                         </Box>
@@ -283,40 +301,23 @@ const StreamingSettingsPopup = memo<{
     );
 });
 
-// Metadata Popup Component
+// Table Metadata Viewer (read-only)
+// Renders the source-supplied table description for connector/upload
+// tables, or the agent-produced code explanation for derived tables.
+// Per-column metadata is exposed elsewhere as header tooltips on the
+// data preview, not here. Strictly read-only and strictly textual.
+// See design-docs/23-table-description-unification.md.
 const MetadataPopup = memo<{
     open: boolean;
     anchorEl: HTMLElement | null;
     onClose: () => void;
-    onSave: (metadata: string) => void;
-    initialValue: string;
-    tableName: string;
-}>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
-    const [metadata, setMetadata] = useState(initialValue);
+    table: DictTable | null;
+}>(({ open, anchorEl, onClose, table }) => {
+    const { t } = useTranslation();
 
-    let hasChanges = metadata !== initialValue;
-
-    useEffect(() => {
-        setMetadata(initialValue);
-    }, [initialValue, open]);
-
-    const handleSave = () => {
-        onSave(metadata);
-        onClose();
-    };
-
-    const handleCancel = () => {
-        setMetadata(initialValue);
-        onClose();
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Escape') {
-            handleCancel();
-        } else if (e.key === 'Enter' && e.ctrlKey) {
-            handleSave();
-        }
-    };
+    const tableName = table?.displayId || table?.id || '';
+    const description = (table?.description || '').trim();
+    const codeExplanation = (table?.derive?.explanation?.code || '').trim();
 
     return (
         <Popper
@@ -325,11 +326,13 @@ const MetadataPopup = memo<{
             placement="bottom-start"
             style={{ zIndex: 1300 }}
         >
-            <ClickAwayListener onClickAway={handleCancel}>
+            <ClickAwayListener onClickAway={onClose}>
                 <Paper
                     elevation={8}
                     sx={{
                         width: 480,
+                        maxHeight: '70vh',
+                        overflow: 'auto',
                         fontSize: 12,
                         p: 2,
                         mt: 1,
@@ -337,29 +340,34 @@ const MetadataPopup = memo<{
                     }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                        Attach metadata to <Typography component="span" sx={{ fontSize: 'inherit', color: 'primary.main'}}>{tableName}</Typography>
+                        {t('dataThread.metadataFor', { table: tableName, defaultValue: `Metadata for ${tableName}` })}
                     </Typography>
-                    <TextField
-                        autoFocus
-                        label="metadata"
-                        placeholder="Attach additional contexts or guidance so that AI agents can better understand and process the data."
-                        fullWidth
-                        multiline
-                        slotProps={{
-                            inputLabel: {shrink: true},
-                        }}
-                        minRows={3}
-                        maxRows={20}
-                        variant="outlined"
-                        size="small"
-                        value={metadata}
-                        onChange={(e) => setMetadata(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        sx={{ my: 1, '& .MuiInputBase-input': { fontSize: 12 } }}
-                    />
-                    <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <Button size="small" sx={{ml: 'auto'}} onClick={handleCancel} color="primary">Cancel</Button>
-                        <Button size="small" onClick={handleSave} color="primary" disabled={!hasChanges}>Save</Button>
+
+                    {description && (
+                        <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {description}
+                        </Typography>
+                    )}
+
+                    {!description && codeExplanation && (
+                        <Box>
+                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                                {t('dataThread.derivationSummary', { defaultValue: 'Derivation summary' })}
+                            </Typography>
+                            <Typography sx={{ fontSize: 11.5, color: 'text.primary', whiteSpace: 'pre-wrap' }}>
+                                {codeExplanation}
+                            </Typography>
+                        </Box>
+                    )}
+
+                    {!description && !codeExplanation && (
+                        <Typography sx={{ fontSize: 11.5, color: 'text.disabled', fontStyle: 'italic' }}>
+                            {t('dataThread.noMetadata', { defaultValue: 'No description available for this table.' })}
+                        </Typography>
+                    )}
+
+                    <Box sx={{ mt: 1.5, display: 'flex' }}>
+                        <Button size="small" sx={{ ml: 'auto' }} onClick={onClose} color="primary">{t('app.close', { defaultValue: 'Close' })}</Button>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -379,6 +387,7 @@ const RenameTablePopup = memo<{
     tableName: string;
 }>(({ open, anchorEl, onClose, onSave, initialValue, tableName }) => {
     const [name, setName] = useState(initialValue);
+    const { t } = useTranslation();
 
     useEffect(() => {
         setName(initialValue);
@@ -413,7 +422,7 @@ const RenameTablePopup = memo<{
                     sx={{ width: 240, fontSize: 12, p: 1.5, mt: 1, ...ViewBorderStyle }}
                 >
                     <Typography variant="subtitle2" sx={{ mb: 0.5, fontSize: 12 }}>
-                        Rename table
+                        {t('dataThread.renameTable')}
                     </Typography>
                     <TextField
                         autoFocus
@@ -426,8 +435,8 @@ const RenameTablePopup = memo<{
                         sx={{ my: 0.5, '& .MuiInputBase-input': { fontSize: 12 } }}
                     />
                     <Box sx={{ mt: 0.5, display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                        <Button size="small" onClick={onClose}>Cancel</Button>
-                        <Button size="small" onClick={handleSave} color="primary" disabled={name.trim() === '' || name.trim() === initialValue}>Save</Button>
+                        <Button size="small" onClick={onClose}>{t('app.cancel')}</Button>
+                        <Button size="small" onClick={handleSave} color="primary" disabled={name.trim() === '' || name.trim() === initialValue}>{t('app.save')}</Button>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -438,19 +447,21 @@ const RenameTablePopup = memo<{
 const WorkspacePanel: FC<{
     tables: DictTable[],
     chartElements: { tableId: string, chartId: string, element: any }[],
-    suppressScrollRef?: React.MutableRefObject<boolean>,
     sx?: SxProps,
-}> = function ({ tables, chartElements, suppressScrollRef, sx }) {
+}> = function ({ tables, chartElements, sx }) {
     const theme = useTheme();
+    const { t } = useTranslation();
     const dispatch = useDispatch();
     const charts = useSelector(dfSelectors.getAllCharts);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     const focusedTableId = React.useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        return undefined;
     }, [focusedId, charts]);
     const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
@@ -507,24 +518,32 @@ const WorkspacePanel: FC<{
         return encodings.slice(0, 3).join(', ') + (encodings.length > 3 ? '...' : '');
     };
 
-    const getTableSourceName = (table: DictTable) => {
-        // Get the source file name from table source
-        if (table.source?.type === 'file' && table.source?.fileName) {
-            return table.source.fileName;
-        }
-        if (table.source?.type === 'database' && table.source?.databaseTable) {
-            return table.source.databaseTable;
-        }
-        if (table.source?.type === 'stream' && table.source?.url) {
-            // Extract a meaningful name from URL
-            try {
-                const url = new URL(table.source.url);
-                return url.hostname;
-            } catch {
-                return 'stream';
+    const getOriginalTableName = (table: DictTable): string | null => {
+        if (table.derive) return null;
+        const name = table.source?.originalTableName;
+        if (!name || name === (table.displayId || table.id)) return null;
+        return name;
+    };
+
+    const getSourceTooltip = (table: DictTable): string | null => {
+        if (table.derive) return null;
+        const src = table.source;
+        if (!src) return null;
+        switch (src.type) {
+            case 'file': return src.fileName || t('dataThread.sourceFile');
+            case 'paste': return t('dataThread.sourcePaste');
+            case 'url': return src.url || t('dataThread.sourceUrl');
+            case 'stream': {
+                if (src.url) {
+                    try { return new URL(src.url).hostname; } catch { /* fall through */ }
+                }
+                return t('dataThread.sourceStream');
             }
+            case 'database': return src.databaseTable || t('dataThread.sourceDatabase');
+            case 'example': return t('dataThread.sourceExample');
+            case 'extract': return t('dataThread.sourceExtract');
+            default: return null;
         }
-        return null;
     };
 
     return (
@@ -556,7 +575,7 @@ const WorkspacePanel: FC<{
                         <ChevronRightIcon sx={{ fontSize: 14, color: 'rgba(0,0,0,0.5)' }} />
                     }
                     <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.55)', textTransform: 'uppercase', letterSpacing: '0.5px', ml: 0.5 }}>
-                        Workspace
+                        {t('dataThread.workspace')}
                     </Typography>
                 </Box>
                 <Box
@@ -570,7 +589,7 @@ const WorkspacePanel: FC<{
                     }}
                 >
                     <AddIcon sx={{ fontSize: 14 }} />
-                    <Typography sx={{ fontSize: 11, fontWeight: 600 }}>add data</Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600 }}>{t('dataThread.addData')}</Typography>
                 </Box>
             </Box>
 
@@ -579,11 +598,11 @@ const WorkspacePanel: FC<{
                     {tables.map((table, tableIndex) => {
                         const isTableActive = focusedTableId === table.id;
                         const tableCharts = chartElements.filter(ce => ce.tableId === table.id);
-                        const sourceName = getTableSourceName(table);
+                        const originalName = getOriginalTableName(table);
+                        const sourceTooltipText = getSourceTooltip(table);
                         const isLastTable = tableIndex === tables.length - 1;
 
                         const handleTableClick = () => {
-                            if (suppressScrollRef) suppressScrollRef.current = true;
                             dispatch(dfActions.setFocused({ type: 'table', tableId: table.id }));
                         };
 
@@ -613,36 +632,42 @@ const WorkspacePanel: FC<{
                                     }
                                 }}
                             >
-                                <Box
-                                    sx={fileItemSx(isTableActive)}
-                                    onClick={handleTableClick}
-                                >
-                                    {getTableIcon(table)}
-                                    <Typography sx={{
-                                        fontSize: 11,
-                                        fontWeight: isTableActive ? 600 : 400,
-                                        color: isTableActive ? 'primary.main' : 'text.primary',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                        flex: 1,
-                                        minWidth: 0,
-                                    }}>
-                                        {table.displayId || table.id}
-                                        {sourceName && (
-                                            <Typography component="span" sx={{
-                                                fontSize: 10,
-                                                color: 'text.disabled',
-                                                ml: 0.5,
+                                <Tooltip title={sourceTooltipText || ''} placement="right" arrow disableHoverListener={!sourceTooltipText}>
+                                    <Box
+                                        sx={fileItemSx(isTableActive)}
+                                        onClick={handleTableClick}
+                                    >
+                                        {getTableIcon(table)}
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography sx={{
+                                                fontSize: 11,
+                                                fontWeight: isTableActive ? 600 : 400,
+                                                color: isTableActive ? 'primary.main' : 'text.primary',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
                                             }}>
-                                                ({sourceName})
+                                                {table.displayId || table.id}
                                             </Typography>
+                                            {originalName && (
+                                                <Typography sx={{
+                                                    fontSize: 9,
+                                                    color: 'text.disabled',
+                                                    lineHeight: 1.2,
+                                                    mt: '2px',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                }}>
+                                                    {originalName}
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                        {table.description && (
+                                            <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
                                         )}
-                                    </Typography>
-                                    {table.attachedMetadata && (
-                                        <AttachFileIcon sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }} />
-                                    )}
-                                </Box>
+                                    </Box>
+                                </Tooltip>
 
                                 {/* Show all charts for this table with vertical guide line */}
                                 {tableCharts.length > 0 && (
@@ -659,7 +684,6 @@ const WorkspacePanel: FC<{
                                             const isLast = idx === tableCharts.length - 1;
 
                                             const handleChartClick = () => {
-                                                if (suppressScrollRef) suppressScrollRef.current = true;
                                                 dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
                                             };
 
@@ -731,58 +755,34 @@ const WorkspacePanel: FC<{
     );
 };
 
-/** A status message that collapses to a single line on click, and expands back on click. */
-const CollapsibleStatusMessage: FC<{ text: string; color: string }> = ({ text, color }) => {
-    const [collapsed, setCollapsed] = useState(true);
-    return (
-        <Typography
-            variant="body2"
-            onClick={(e) => { e.stopPropagation(); setCollapsed(prev => !prev); }}
-            sx={{
-                fontSize: 10, color, px: 1, py: 0.5, cursor: 'pointer',
-                '&:hover': { textDecoration: 'underline', textDecorationStyle: 'dotted' },
-                ...(collapsed ? {
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    maxWidth: '100%',
-                } : {
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }),
-            }}
-        >
-            {text}
-        </Typography>
-    );
-};
-
 let SingleThreadGroupView: FC<{
-    scrollRef: any,
     threadIdx: number,
-    threadLabel?: string, // Custom label like "thread 1.1" for split sub-threads
-    isSplitThread?: boolean, // When true, truncate used tables to immediate parent + "..."
+    threadLabel?: string, // Custom label; absent on continuation segments
+    isSplitThread?: boolean, // When true, this is a continuation: truncate used tables to immediate parent + render "↑ continued" header
+    hasContinuationBelow?: boolean, // When true, render "↓ continues below" footer
     hideLabel?: boolean, // When true, hide the thread label divider
     leafTables: DictTable[];
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[],
     globalHighlightedTableIds: string[],
     focusedThreadLeafId?: string, // The leaf table ID of the thread containing the focused table
-    chatboxFocused?: boolean, // Whether the chatbox input is focused
     sx?: SxProps
 }> = function ({
-    scrollRef,
     threadIdx,
     threadLabel,
     isSplitThread = false,
+    hasContinuationBelow = false,
     hideLabel = false,
     leafTables,
     chartElements,
-    usedIntermediateTableIds, // tables that have been used
+    usedIntermediateTableIds,
     globalHighlightedTableIds,
     focusedThreadLeafId,
-    chatboxFocused = false,
     sx
 }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    const { t } = useTranslation();
     const { manualRefresh } = useDataRefresh();
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
 
@@ -796,7 +796,7 @@ let SingleThreadGroupView: FC<{
     const isAncestorThread = !threadHighlighted && globalHighlightedTableIds.length > 0
         && leafTables.some(lt => {
             const trigs = getTriggers(lt, tables);
-            const chainIds = [...trigs.map(t => t.tableId), lt.id];
+            const chainIds = [...trigs.map(tp => tp.tableId), lt.id];
             const ownedIds = chainIds.filter(id => !usedIntermediateTableIds.includes(id));
             return ownedIds.some(id => globalHighlightedTableIds.includes(id));
         });
@@ -810,53 +810,52 @@ let SingleThreadGroupView: FC<{
     let focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        return undefined;
     }, [focusedId, charts]);
-    let agentActions = useSelector((state: DataFormulatorState) => state.agentActions);
+    let draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+    let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
 
-    // Pre-index running agent table IDs for O(1) lookup
+    // Build a map from tableId → reports triggered from that table
+    const reportsByTriggerTable = useMemo(() => {
+        const map = new Map<string, GeneratedReport[]>();
+        for (const report of generatedReports) {
+            const triggerId = report.triggerTableId;
+            if (!triggerId) continue;
+            const list = map.get(triggerId) || [];
+            list.push(report);
+            map.set(triggerId, list);
+        }
+        return map;
+    }, [generatedReports]);
+
+    // Pre-index running/clarifying/completed status from DraftNodes
     const runningAgentTableIds = useMemo(() => {
-        const ids = new Map<string, typeof agentActions[0]>();
-        for (const a of agentActions) {
-            if (!a.hidden && a.status === 'running') {
-                // Find the last table created in the chain so far
-                const lastResultTableId = a.messages
-                    ?.filter(m => m.resultTableId)
-                    .pop()?.resultTableId;
-                ids.set(lastResultTableId || a.originTableId, a);
+        const ids = new Map<string, { description: string }>();
+        for (const d of draftNodes) {
+            if (d.derive?.status === 'running') {
+                ids.set(d.derive.trigger.tableId, { description: d.derive.runningPlan || '' });
             }
         }
         return ids;
-    }, [agentActions]);
+    }, [draftNodes]);
 
-    // Pre-index tables with pending clarification
     const clarifyAgentTableIds = useMemo(() => {
-        const ids = new Map<string, typeof agentActions[0]>();
-        for (const a of agentActions) {
-            if (!a.hidden && a.pendingClarification) {
-                const lastResultTableId = a.pendingClarification.lastCreatedTableId
-                    || a.messages?.filter(m => m.resultTableId).pop()?.resultTableId;
-                ids.set(lastResultTableId || a.originTableId, a);
+        const ids = new Map<string, { question: string }>();
+        for (const d of draftNodes) {
+            if (d.derive?.status === 'clarifying') {
+                // The pause entry is either 'clarify' or 'explain'; both shape
+                // the timeline the same way.
+                const pauseEntry = d.derive.trigger.interaction
+                    ?.filter(e => e.role === 'clarify' || e.role === 'explain').pop();
+                ids.set(d.derive.trigger.tableId, { question: pauseEntry?.content || '' });
             }
         }
         return ids;
-    }, [agentActions]);
-
-    // Pre-index tables with completed agent actions
-    const completedAgentTableIds = useMemo(() => {
-        const ids = new Map<string, typeof agentActions[0]>();
-        for (const a of agentActions) {
-            if (!a.hidden && (a.status === 'completed' || a.status === 'warning' || a.status === 'failed') && !a.pendingClarification) {
-                const lastResultTableId = a.messages
-                    ?.filter(m => m.resultTableId)
-                    .pop()?.resultTableId;
-                ids.set(lastResultTableId || a.originTableId, a);
-            }
-        }
-        return ids;
-    }, [agentActions]);
+    }, [draftNodes]);
 
     // Metadata popup state
     const [metadataPopupOpen, setMetadataPopupOpen] = useState(false);
@@ -917,15 +916,6 @@ let SingleThreadGroupView: FC<{
         setMetadataPopupOpen(false);
         setSelectedTableForMetadata(null);
         setMetadataAnchorEl(null);
-    };
-
-    const handleSaveMetadata = (metadata: string) => {
-        if (selectedTableForMetadata) {
-            dispatch(dfActions.updateTableAttachedMetadata({
-                tableId: selectedTableForMetadata.id,
-                attachedMetadata: metadata
-            }));
-        }
     };
 
     // Table menu handlers
@@ -1005,22 +995,24 @@ let SingleThreadGroupView: FC<{
                         output_table_name: derivedTable.virtual?.tableId
                     };
                     
-                    const response = await fetchWithIdentity(getUrls().REFRESH_DERIVED_DATA, {
+                    const { data: result } = await apiRequest<any>(getUrls().REFRESH_DERIVED_DATA, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(requestBody)
                     });
 
-                    const result = await response.json();
-                    if (result.status === 'ok' && result.rows) {
+                    if (result.rows) {
                         return { tableId: derivedTable.id, rows: result.rows } as { tableId: string, rows: any[] };
                     } else {
                         console.error(`Failed to refresh derived table ${derivedTable.id}:`, result.message);
                         dispatch(dfActions.addMessages({
                             timestamp: Date.now(),
                             type: 'error',
-                            component: 'data refresh',
-                            value: `Failed to refresh derived table "${derivedTable.displayId || derivedTable.id}": ${result.message || 'Unknown error'}`
+                            component: t('messages.dataRefresh.component'),
+                            value: t('messages.dataRefresh.failedDerivedTable', {
+                                table: derivedTable.displayId || derivedTable.id,
+                                detail: result.message || t('messages.dataRefresh.unknownError'),
+                            }),
                         }));
                         return null;
                     }
@@ -1029,8 +1021,10 @@ let SingleThreadGroupView: FC<{
                     dispatch(dfActions.addMessages({
                         timestamp: Date.now(),
                         type: 'error',
-                        component: 'data refresh',
-                        value: `Error refreshing derived table "${derivedTable.displayId || derivedTable.id}"`
+                        component: t('messages.dataRefresh.component'),
+                        value: t('messages.dataRefresh.errorRefreshingDerivedTable', {
+                            table: derivedTable.displayId || derivedTable.id,
+                        }),
                     }));
                     return null;
                 }
@@ -1062,16 +1056,18 @@ let SingleThreadGroupView: FC<{
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'success',
-                component: 'data refresh',
-                value: `Successfully refreshed data for "${selectedTableForRefresh.displayId || selectedTableForRefresh.id}" and updated derived tables.`
+                component: t('messages.dataRefresh.component'),
+                value: t('messages.dataRefresh.successRefreshedWithDerived', {
+                    table: selectedTableForRefresh.displayId || selectedTableForRefresh.id,
+                }),
             }));
         } catch (error) {
             console.error('Error during refresh:', error);
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 type: 'error',
-                component: 'data refresh',
-                value: `Error refreshing data: ${error}`
+                component: t('messages.dataRefresh.component'),
+                value: t('messages.dataRefresh.errorRefreshingData', { error: String(error) }),
             }));
         } finally {
             setIsRefreshing(false);
@@ -1088,12 +1084,12 @@ let SingleThreadGroupView: FC<{
 
     const w: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], b.length == 0 ? "" : (spaceElement || ""), ...w(b, a.slice(1), spaceElement)] : b;
     
-    let triggers = parentTable ? getTriggers(parentTable, tables) : [];
-    let tableIdList = parentTable ? [...triggers.map((trigger) => trigger.tableId), parentTable.id] : [];
+    let triggerPairs = parentTable ? getTriggers(parentTable, tables) : [];
+    let tableIdList = parentTable ? [...triggerPairs.map((tp) => tp.tableId), parentTable.id] : [];
 
     let usedTableIdsInThread = tableIdList.filter(id => usedIntermediateTableIds.includes(id));
     let newTableIds = tableIdList.filter(id => !usedTableIdsInThread.includes(id));
-    let newTriggers = triggers.filter(tg => newTableIds.includes(tg.resultTableId));
+    let newTriggerPairs = triggerPairs.filter(tp => newTableIds.includes(tp.resultTableId));
 
     // Use the global highlighted table IDs (computed at DataThread level from the focused table's full ancestor chain)
     let highlightedTableIds = globalHighlightedTableIds;
@@ -1106,91 +1102,226 @@ let SingleThreadGroupView: FC<{
     let tableCardProps: Omit<BuildTableCardProps, 'tableId'> = {
         tables, charts, chartElements, usedIntermediateTableIds,
         highlightedTableIds, focusedTableId, focusedChartId, focusedChart,
-        parentTable, tableIdList, collapsed, scrollRef, dispatch,
+        parentTable, tableIdList, collapsed, dispatch,
         handleOpenTableMenu, primaryBgColor: theme.palette.primary.bgcolor,
+        t,
+        showOriginalName: threadIdx === -1,
     };
 
-    let _buildTableCard = (tableId: string) => {
-        return buildTableCard({ tableId, ...tableCardProps });
+    let _buildTableCard = (tableId: string, opts?: { ghost?: boolean }) => {
+        return buildTableCard({ tableId, ...tableCardProps, ...(opts || {}) });
     }
 
     let tableElementList = newTableIds.map((tableId, i) => _buildTableCard(tableId));
-    let triggerCards = newTriggers.map((trigger) => {
-        const triggerTableId = trigger.resultTableId;
-        const isHL = triggerTableId ? highlightedTableIds.includes(triggerTableId) : false;
-        return _buildTriggerCard(trigger, isHL);
+    let triggerCards = newTriggerPairs.map((tp) => {
+        const isHL = highlightedTableIds.includes(tp.resultTableId);
+        return _buildTriggerCard(tp, isHL);
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    let timelineItems: { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean }[] = [];
+    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string };
+    let timelineItems: TimelineItem[] = [];
 
-    // Add used (shared) tables at the top
-    // Only show the immediate parent + "..." for further ancestors
-    let displayedUsedTableIds = usedTableIdsInThread;
-    if (usedTableIdsInThread.length > 1) {
-        // Keep only the last (immediate parent), prepend "..." placeholder
-        displayedUsedTableIds = usedTableIdsInThread.slice(-1);
-        timelineItems.push({
-            key: 'used-table-ellipsis',
-            type: 'used-table',
-            highlighted: false,
-            element: (
-                <Typography sx={{ fontSize: '10px', color: 'text.disabled' }}>
-                    …
-                </Typography>
-            ),
-        });
-    }
-    displayedUsedTableIds.forEach((tableId, i) => {
-        let table = tableById.get(tableId) as DictTable;
-        timelineItems.push({
-            key: `used-table-${tableId}-${i}`,
-            type: 'used-table',
-            tableId: tableId,
-            highlighted: highlightedTableIds.includes(tableId),
-            element: (
-                <Typography 
-                    sx={{
-                        fontSize: '10px',
-                        cursor: 'pointer',
-                        width: 'fit-content',
-                        '&:hover': {
-                            backgroundColor: alpha(theme.palette.primary.light, 0.1),
-                        },
-                    }} 
-                    onClick={() => { dispatch(dfActions.setFocused({ type: 'table', tableId })) }}>
-                    {table.displayId || tableId}
-                </Typography>
-            ),
-        });
-    });
+    // ── Shared helpers for building timeline items from interaction entries ──
 
-    // Interleave triggers and tables for the main thread body
-    newTableIds.forEach((tableId, i) => {
-        const trigger = newTriggers.find(t => t.resultTableId === tableId);
-        const isHighlighted = highlightedTableIds.includes(tableId);
+    /** Push visible interaction entries as timeline items.
+     *  Adaptively collapses: when a data-agent summary is immediately followed
+     *  by an instruction, the summary text is folded into the instruction's
+     *  `plan` (expandable) rather than shown as a separate entry. */
+    const pushInteractionEntries = (
+        entries: InteractionEntry[],
+        tableId: string,
+        triggerType: 'trigger' | 'leaf-trigger',
+        highlighted: boolean,
+        keyPrefix: string,
+        extraProps?: Partial<TimelineItem>,
+    ) => {
+        // Enrich instruction entries with inputTableNames from derive.source if not already set
+        const derivedTable = tableById.get(tableId);
+        const deriveSourceNames = derivedTable?.derive?.source
+            ? (derivedTable.derive.source as string[]).map(sid => {
+                const st = tableById.get(sid);
+                return st?.displayId || sid.replace(/\.[^/.]+$/, "");
+            })
+            : undefined;
 
-        // Add trigger card if exists
-        if (trigger) {
-            const triggerCard = triggerCards[newTriggers.indexOf(trigger)];
-            if (triggerCard) {
+        for (let ei = 0; ei < entries.length; ei++) {
+            const entry = entries[ei];
+            const nextEntry = ei + 1 < entries.length ? entries[ei + 1] : null;
+
+            // Collapse: summary from data-agent followed by instruction → fold into instruction's plan
+            if (entry.role === 'summary' && entry.from === 'data-agent'
+                && nextEntry?.role === 'instruction') {
+                // Merge: use the summary content as the plan on the next instruction
+                // (only if the instruction doesn't already have a plan)
+                if (!nextEntry.plan) {
+                    nextEntry.plan = entry.content;
+                }
+                continue; // skip rendering this summary entry
+            }
+
+            // Enrich instruction entries with source table names
+            const enrichedEntry = (entry.role === 'instruction' && !entry.inputTableNames && deriveSourceNames)
+                ? { ...entry, inputTableNames: deriveSourceNames }
+                : entry;
+
+            const isResolved = (entry.role === 'clarify' || entry.role === 'explain')
+                && entries.slice(ei + 1).some(e => e.from === 'user');
+            timelineItems.push({
+                key: `${keyPrefix}-${entry.role}-${tableId}-${ei}`,
+                type: triggerType,
+                highlighted,
+                element: <InteractionEntryCard entry={enrichedEntry} highlighted={highlighted} resolved={isResolved} />,
+                interactionEntry: entry,
+                ...extraProps,
+            });
+        }
+    };
+
+    /** Split interaction at the last instruction boundary: entries before → rendered before table, after → rendered after. */
+    const splitAtLastInstruction = (interaction: InteractionEntry[]): [InteractionEntry[], InteractionEntry[]] => {
+        const lastInstrIdx = (() => { for (let i = interaction.length - 1; i >= 0; i--) { if (interaction[i].role === 'instruction') return i; } return -1; })();
+        return [
+            interaction.slice(0, lastInstrIdx + 1),
+            lastInstrIdx >= 0 ? interaction.slice(lastInstrIdx + 1) : [],
+        ];
+    };
+
+    /** Append timeline items for a running, clarifying, or explaining agent draft.
+     *
+     *  When the interaction contains a clarify/explain entry (with a `plan`
+     *  snapshot of the first-round thinking steps), the rendering is split:
+     *    1. Entries before the pause (user prompt)
+     *    2. ThinkingStepsBanner for first-round steps (from pause entry's plan)
+     *    3. Pause entry + user response entries
+     *    4. ThinkingStepsBanner for second-round steps (from runningPlan)
+     */
+    const pushAgentDraftItems = (
+        tableId: string,
+        triggerType: 'trigger' | 'leaf-trigger',
+        highlighted: boolean,
+    ) => {
+        const renderSplitByClarity = (
+            interaction: InteractionEntry[],
+            runningPlan: string | undefined,
+            isRunning: boolean,
+            keyPrefix: string,
+        ) => {
+            const pauseIdx = interaction.findIndex(e => e.role === 'clarify' || e.role === 'explain');
+            if (pauseIdx < 0) {
+                // No pause — render all entries then ThinkingStepsBanner
+                pushInteractionEntries(interaction, tableId, triggerType, highlighted, keyPrefix);
+                const planLines = (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
                 timelineItems.push({
-                    key: triggerCard?.key || `woven-trigger-${tableId}`,
-                    type: 'trigger',
-                    highlighted: isHighlighted,
-                    element: triggerCard,
+                    key: `agent-thinking-${tableId}`,
+                    type: triggerType,
+                    highlighted,
+                    isRunning,
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }),
+                });
+                return;
+            }
+
+            // Split at the pause entry
+            const beforePause = interaction.slice(0, pauseIdx);
+            const pauseAndAfter = interaction.slice(pauseIdx);
+            const pauseEntry = interaction[pauseIdx];
+
+            // 1. Entries before the pause (user prompt etc.)
+            if (beforePause.length > 0) {
+                pushInteractionEntries(beforePause, tableId, triggerType, highlighted, `${keyPrefix}-pre`);
+            }
+
+            // 2. First-round thinking steps (snapshotted in pause entry's plan)
+            if (pauseEntry.plan) {
+                const priorLines = (pauseEntry.plan.includes('\x1E') ? pauseEntry.plan.split('\x1E') : pauseEntry.plan.split('\n')).filter((l: string) => l.trim());
+                if (priorLines.length > 0) {
+                    timelineItems.push({
+                        key: `agent-thinking-prior-${tableId}`,
+                        type: triggerType,
+                        highlighted,
+                        isRunning: false,
+                        element: ThinkingStepsBanner(priorLines, { px: 1, py: 0.5 }),
+                    });
+                }
+            }
+
+            // 3. Pause + response entries
+            pushInteractionEntries(pauseAndAfter, tableId, triggerType, highlighted, `${keyPrefix}-post`, { isClarifying: false, tableId });
+
+            // 4. Second-round thinking steps (current runningPlan)
+            if (isRunning) {
+                const planLines = (runningPlan || t('dataThread.thinking')).split('\x1E').filter((l: string) => l.trim());
+                timelineItems.push({
+                    key: `agent-thinking-${tableId}`,
+                    type: triggerType,
+                    highlighted,
+                    isRunning: true,
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }),
+                });
+            }
+        };
+
+        if (runningAgentTableIds.has(tableId)) {
+            const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
+            const draftInteraction = runningDraft?.derive?.trigger?.interaction;
+            if (draftInteraction && draftInteraction.length > 0) {
+                renderSplitByClarity(
+                    draftInteraction,
+                    runningDraft?.derive?.runningPlan,
+                    true,
+                    'agent-running-entry',
+                );
+            } else {
+                const runningAction = runningAgentTableIds.get(tableId);
+                const message = runningAction?.description || t('dataThread.working');
+                timelineItems.push({
+                    key: `agent-running-${tableId}`,
+                    type: 'chart',
+                    highlighted,
+                    isRunning: true,
+                    element: ThinkingBanner(message, { px: 1, py: 0.5 }),
+                });
+            }
+        } else if (clarifyAgentTableIds.has(tableId)) {
+            const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
+            const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
+            if (clarifyInteraction && clarifyInteraction.length > 0) {
+                renderSplitByClarity(
+                    clarifyInteraction,
+                    undefined,
+                    false,
+                    'agent-clarify-entry',
+                );
+                const lastItem = timelineItems[timelineItems.length - 1];
+                if (lastItem?.interactionEntry?.role === 'clarify' || lastItem?.interactionEntry?.role === 'explain') {
+                    lastItem.isClarifying = true;
+                }
+            } else {
+                timelineItems.push({
+                    key: `agent-clarify-${tableId}`,
+                    type: 'chart',
+                    highlighted,
+                    isClarifying: true,
+                    tableId,
+                    element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>{t('dataThread.waitingForClarification')}</Typography>,
                 });
             }
         }
+    };
 
-        // Add table card and its charts
-        const tableCard = tableElementList[i];
+    /** Push table card and its chart elements as timeline items. */
+    const pushTableAndChartItems = (
+        tableId: string,
+        tableCard: any,
+        tableType: 'table' | 'leaf-table',
+        highlighted: boolean,
+    ) => {
         if (Array.isArray(tableCard)) {
             tableCard.forEach((subItem: any, j: number) => {
                 if (!subItem) return;
-                const subKey = subItem?.key || `woven-${tableId}-${j}`;
+                const subKey = subItem?.key || `card-${tableId}-${j}`;
                 const isChart = subKey.includes('chart');
-                // Extract chartType from the key (pattern: 'relevant-chart-{chartId}')
                 let itemChartType: string | undefined;
                 if (isChart) {
                     const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
@@ -1201,119 +1332,204 @@ let SingleThreadGroupView: FC<{
                 }
                 timelineItems.push({
                     key: subKey,
-                    type: isChart ? 'chart' : 'table',
+                    type: isChart ? 'chart' : tableType,
                     tableId: isChart ? undefined : tableId,
                     chartType: itemChartType,
-                    highlighted: isHighlighted,
+                    highlighted,
                     element: subItem,
                 });
             });
         }
+    };
 
-        // If an agent is running on this table, add a "working..." indicator
-        if (runningAgentTableIds.has(tableId)) {
-            const runningAction = runningAgentTableIds.get(tableId);
-            const message = runningAction?.description || 'working...';
-            timelineItems.push({
-                key: `agent-running-${tableId}`,
-                type: 'chart',
-                highlighted: isHighlighted,
-                isRunning: true,
-                element: ThinkingBanner(message, { px: 1, py: 0.5 }),
-            });
-        } else if (clarifyAgentTableIds.has(tableId)) {
-            timelineItems.push({
-                key: `agent-clarify-${tableId}`,
-                type: 'chart',
-                highlighted: isHighlighted,
-                isClarifying: true,
-                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>waiting for clarification...</Typography>,
-            });
-        } else if (completedAgentTableIds.has(tableId)) {
-            const completedAction = completedAgentTableIds.get(tableId);
-            const completionMsg = completedAction?.messages?.filter(m => m.role === 'completion').pop();
-            if (completionMsg) {
-                const color = completedAction?.status === 'failed' ? theme.palette.error.main : theme.palette.success.main;
+    // Push report cards triggered from the given table
+    const pushReportItems = (tableId: string, highlighted: boolean) => {
+        const reports = reportsByTriggerTable.get(tableId);
+        if (!reports) return;
+        for (const report of reports) {
+                const isFocused = focusedId?.type === 'report' && focusedId.reportId === report.id;
+                const isGenerating = report.status === 'generating';
+                const selectedClassName = isFocused ? 'selected-report-card' : '';
                 timelineItems.push({
-                    key: `agent-completed-${tableId}`,
-                    type: 'chart',
-                    highlighted: isHighlighted,
-                    isCompleted: true,
-                    element: <CollapsibleStatusMessage text={typeof completionMsg.content === 'string' ? completionMsg.content : String(completionMsg.content)} color={color} />,
+                    key: `report-${report.id}`,
+                    type: 'report',
+                    reportId: report.id,
+                    highlighted: highlighted || isFocused,
+                    element: (
+                        <Card className={`data-thread-card ${selectedClassName}`} elevation={0}
+                            sx={{
+                                width: '100%',
+                                backgroundColor: theme.palette.secondary.bgcolor,
+                                ...ComponentBorderStyle,
+                                ...(highlighted ? { borderLeft: '2px solid', borderLeftColor: 'secondary.main' } : {}),
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                            }}
+                            onClick={() => {
+                                dispatch(dfActions.setFocused({ type: 'report', reportId: report.id }));
+                            }}
+                        >
+                            <Box sx={{ margin: '0px', display: 'flex', minWidth: 0, alignItems: 'center',
+                                '& .report-delete-btn': { opacity: 0, transition: 'opacity 0.15s' },
+                                '&:hover .report-delete-btn': { opacity: 1 },
+                            }}>
+                                <Box sx={{ margin: '4px 8px 4px 6px', minWidth: 0, flex: 1 }}>
+                                    <Typography sx={{
+                                        fontSize: 11,
+                                        fontWeight: 500,
+                                        color: 'text.primary',
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: 'vertical',
+                                        overflow: 'hidden',
+                                        wordBreak: 'break-all',
+                                    }}>
+                                        {report.title || t('report.untitled')}
+                                    </Typography>
+                                    {isGenerating && (
+                                        <Typography sx={{
+                                            fontSize: 9,
+                                            color: 'text.disabled',
+                                            lineHeight: 1.3,
+                                            mt: 0.25,
+                                        }}>
+                                            {t('report.composing')}
+                                        </Typography>
+                                    )}
+                                </Box>
+                                <Tooltip title={t('dataThread.deleteReport')}>
+                                    <IconButton
+                                        className="report-delete-btn"
+                                        size="small"
+                                        color="error"
+                                        sx={{ p: 0.5, mr: 0.5, '&:hover': { transform: 'scale(1.15)' } }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            dispatch(dfActions.deleteGeneratedReport(report.id));
+                                        }}
+                                    >
+                                        <DeleteIcon sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                        </Card>
+                    ),
                 });
+        }
+    };
+
+    // Add used (shared) tables at the top
+    // Show the immediate parent as a full table card, with "..." for further ancestors.
+    // On a continuation segment (isSplitThread), suppress the "..." — the
+    // continuation header already signals carry-over and the ghost table card
+    // names the parent explicitly.
+    let displayedUsedTableIds = usedTableIdsInThread;
+    if (usedTableIdsInThread.length > 1) {
+        displayedUsedTableIds = usedTableIdsInThread.slice(-1);
+        if (!isSplitThread) {
+            timelineItems.push({
+                key: 'used-table-ellipsis',
+                type: 'used-table',
+                highlighted: false,
+                element: (
+                    <Typography sx={{ fontSize: '10px', color: 'text.disabled' }}>
+                        …
+                    </Typography>
+                ),
+            });
+        }
+    }
+    displayedUsedTableIds.forEach((tableId, i) => {
+        const isHighlighted = highlightedTableIds.includes(tableId);
+        // On a continuation segment, render the carry-over parent as a
+        // non-interactive "ghost" so it's clearly an orientation aid, not a
+        // fresh table — no background color, dashed border, no actions.
+        pushTableAndChartItems(
+            tableId,
+            _buildTableCard(tableId, { ghost: isSplitThread }),
+            'table',
+            isHighlighted,
+        );
+    });
+
+    // Interleave triggers and tables for the main thread body
+    const afterTableMap = new Map<string, InteractionEntry[]>();
+    newTableIds.forEach((tableId, i) => {
+        const triggerPair = newTriggerPairs.find(tp => tp.resultTableId === tableId);
+        const isHighlighted = highlightedTableIds.includes(tableId);
+
+        // Add trigger card (or interaction log entries) if exists
+        if (triggerPair) {
+            const interaction = triggerPair.interaction;
+            if (interaction && interaction.length > 0) {
+                const [beforeTable, afterTable] = splitAtLastInstruction(interaction);
+                pushInteractionEntries(beforeTable, tableId, 'trigger', isHighlighted, 'interaction');
+                if (afterTable.length > 0) afterTableMap.set(tableId, afterTable);
+            } else {
+                // No interaction log, use trigger card directly
+                const triggerCard = triggerCards[newTriggerPairs.indexOf(triggerPair)];
+                if (triggerCard) {
+                    timelineItems.push({
+                        key: triggerCard?.key || `woven-trigger-${tableId}`,
+                        type: 'trigger',
+                        highlighted: isHighlighted,
+                        element: triggerCard,
+                    });
+                }
             }
         }
+
+        // Add table card and its charts
+        pushTableAndChartItems(tableId, tableElementList[i], 'table', isHighlighted);
+
+        // Add report cards anchored to charts of this table
+        pushReportItems(tableId, isHighlighted);
+
+        // After-table entries (e.g. summary)
+        const afterTable = afterTableMap.get(tableId);
+        if (afterTable && afterTable.length > 0) {
+            pushInteractionEntries(afterTable, tableId, 'trigger', isHighlighted, 'interaction-after');
+        }
+
+        // Running or clarifying agent state
+        pushAgentDraftItems(tableId, 'trigger', isHighlighted);
     });
 
     // Add leaf table components
+    const leafAfterTableMap = new Map<string, InteractionEntry[]>();
     leafTables.forEach((lt, i) => {
         let leafTrigger = lt.derive?.trigger;
-        if (leafTrigger) {
-            timelineItems.push({
-                key: `leaf-trigger-${lt.id}`,
-                type: 'leaf-trigger',
-                highlighted: highlightedTableIds.includes(lt.id),
-                element: _buildTriggerCard(leafTrigger, highlightedTableIds.includes(lt.id)),
-            });
-        }
-        let leafCards = _buildTableCard(lt.id);
-        if (Array.isArray(leafCards)) {
-            leafCards.forEach((subItem: any, j: number) => {
-                if (!subItem) return;
-                const subKey = subItem?.key || `leaf-card-${lt.id}-${j}`;
-                const isChart = subKey.includes('chart');
-                let leafChartType: string | undefined;
-                if (isChart) {
-                    const cIdMatch = subKey.match(/(?:chart)-(.+)$/);
-                    if (cIdMatch) {
-                        const cObj = charts.find(c => c.id === cIdMatch[1]);
-                        leafChartType = cObj?.chartType;
-                    }
-                }
-                timelineItems.push({
-                    key: subKey,
-                    type: isChart ? 'chart' : 'leaf-table',
-                    tableId: isChart ? undefined : lt.id,
-                    chartType: leafChartType,
-                    highlighted: highlightedTableIds.includes(lt.id),
-                    element: subItem,
-                });
-            });
-        }
+        const isHL = highlightedTableIds.includes(lt.id);
 
-        // If an agent is running on this leaf table, add a "working..." indicator
-        if (runningAgentTableIds.has(lt.id)) {
-            const runningAction = runningAgentTableIds.get(lt.id);
-            const message = runningAction?.description || 'working...';
-            timelineItems.push({
-                key: `agent-running-${lt.id}`,
-                type: 'chart',
-                highlighted: highlightedTableIds.includes(lt.id),
-                isRunning: true,
-                element: ThinkingBanner(message, { px: 1, py: 0.5 }),
-            });
-        } else if (clarifyAgentTableIds.has(lt.id)) {
-            timelineItems.push({
-                key: `agent-clarify-${lt.id}`,
-                type: 'chart',
-                highlighted: highlightedTableIds.includes(lt.id),
-                isClarifying: true,
-                element: <Typography variant="body2" sx={{ fontSize: 10, color: theme.palette.warning.main, px: 1, py: 0.5 }}>waiting for clarification...</Typography>,
-            });
-        } else if (completedAgentTableIds.has(lt.id)) {
-            const completedAction = completedAgentTableIds.get(lt.id);
-            const completionMsg = completedAction?.messages?.filter(m => m.role === 'completion').pop();
-            if (completionMsg) {
-                const color = completedAction?.status === 'failed' ? theme.palette.error.main : theme.palette.success.main;
+        if (leafTrigger) {
+            const interaction = leafTrigger.interaction;
+            if (interaction && interaction.length > 0) {
+                const [leafBefore, leafAfter] = splitAtLastInstruction(interaction);
+                pushInteractionEntries(leafBefore, lt.id, 'leaf-trigger', isHL, 'leaf-interaction');
+                if (leafAfter.length > 0) leafAfterTableMap.set(lt.id, leafAfter);
+            } else {
                 timelineItems.push({
-                    key: `agent-completed-${lt.id}`,
-                    type: 'chart',
-                    highlighted: highlightedTableIds.includes(lt.id),
-                    isCompleted: true,
-                    element: <CollapsibleStatusMessage text={typeof completionMsg.content === 'string' ? completionMsg.content : String(completionMsg.content)} color={color} />,
+                    key: `leaf-trigger-${lt.id}`,
+                    type: 'leaf-trigger',
+                    highlighted: isHL,
+                    element: _buildTriggerCard(leafTrigger, isHL),
                 });
             }
         }
+
+        pushTableAndChartItems(lt.id, _buildTableCard(lt.id), 'leaf-table', isHL);
+
+        // Add report cards anchored to charts of this leaf table
+        pushReportItems(lt.id, isHL);
+
+        // After-table entries (e.g. summary)
+        const leafAfterEntries = leafAfterTableMap.get(lt.id);
+        if (leafAfterEntries && leafAfterEntries.length > 0) {
+            pushInteractionEntries(leafAfterEntries, lt.id, 'leaf-trigger', isHL, 'leaf-after');
+        }
+
+        // Running or clarifying agent state
+        pushAgentDraftItems(lt.id, 'leaf-trigger', isHL);
     });
 
     // Timeline rendering helper
@@ -1322,20 +1538,61 @@ let SingleThreadGroupView: FC<{
     const DOT_SIZE = 6;
     const CARD_PY = '6px'; // vertical padding for each timeline row
 
+    // CSS `border-style: dashed` stretches dashes to fit each element's
+    // height, so stacked segments end up with mismatched dash lengths.  A
+    // fixed-size background pattern keeps every dash the same regardless of
+    // the segment's height — the line reads as one continuous stroke even
+    // when split across multiple boxes.
+    const DASH_COLOR = 'rgba(0,0,0,0.22)';
+    const dashedLineSx = {
+        width: '2px',
+        backgroundImage: `linear-gradient(to bottom, ${DASH_COLOR} 50%, transparent 50%)`,
+        backgroundSize: '2px 6px',
+        backgroundRepeat: 'repeat-y',
+        backgroundPosition: 'top center',
+    } as const;
+
+    // Gutter icon for clarify/explain pause entries.
+    // Both share the SmartToy bouncing pulse to call attention; only the
+    // color differs (clarify = warning, explain = info) so they match the
+    // entry card's palette.
+    const getClarifyIcon = (item: typeof timelineItems[0]) => {
+        const role = item.interactionEntry?.role;
+        const color = role === 'explain' ? theme.palette.info.main : theme.palette.warning.main;
+        return <SmartToyOutlinedIcon sx={{
+            width: 14, height: 14, color,
+            animation: 'df-clarify-bounce 1.4s ease-in-out infinite',
+            '@keyframes df-clarify-bounce': {
+                '0%, 100%': { transform: 'scale(1) translateY(0)' },
+                '30%':      { transform: 'scale(1.25) translateY(-2px)' },
+                '60%':      { transform: 'scale(0.95) translateY(1px)' },
+            },
+        }} />;
+    };
+
     const getTimelineDot = (item: typeof timelineItems[0]) => {
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const color = item.highlighted 
             ? theme.palette.primary.main
             : 'rgba(0,0,0,0.15)';
 
+        // For report items, show an article icon or spinner if generating
+        if (item.type === 'report') {
+            const report = item.reportId ? generatedReports.find(r => r.id === item.reportId) : undefined;
+            if (report?.status === 'generating') {
+                return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.secondary.main }} />;
+            }
+            return <ArticleIcon sx={{ width: 14, height: 14, color: item.highlighted ? theme.palette.secondary.main : 'rgba(0,0,0,0.3)' }} />;
+        }
+
         // For running agent items, show a spinner instead of a dot
         if (item.isRunning) {
             return <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />;
         }
 
-        // For clarification items, show an hourglass icon
+        // For clarification / explanation items, show an attention icon
         if (item.isClarifying) {
-            return <HourglassEmptyIcon sx={{ width: 12, height: 12, color: theme.palette.warning.main }} />;
+            return getClarifyIcon(item);
         }
 
         // For completed items, show a checkmark icon
@@ -1405,33 +1662,82 @@ let SingleThreadGroupView: FC<{
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const isChart = item.type === 'chart';
         const dashedColor = item.highlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-        const dashedWidth = item.highlighted ? '2px' : '1px';
+        const dashedWidth = '2px';
         const dashedStyle = 'solid';
         // Bottom connector uses unhighlighted style if next item isn't highlighted
         const bottomHighlighted = item.highlighted && nextHighlighted;
         const bottomDashedColor = bottomHighlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-        const bottomDashedWidth = bottomHighlighted ? '2px' : '1px';
+        const bottomDashedWidth = '2px';
         const bottomDashedStyle = 'solid';
-        const triggerColor = item.highlighted 
-            ? theme.palette.custom.main
-            : 'rgba(0,0,0,0.15)';
-        // Dim non-highlighted cards when chatbox is focused
-        const rowHighlightSx = (chatboxFocused && hasHighlighting && !item.highlighted) ? { opacity: 0.35 } : {};
+        // No dimming or background — rely on timeline color + card border for highlighting
+        const rowHighlightSx = {};
 
-        // Triggers: agent icon on the timeline
+        // Triggers: icon based on interaction entry's `from` actor
         if (isTrigger) {
+            const entry = item.interactionEntry;
+            const isFromUser = entry ? entry.from === 'user' : false;
+            // User → custom (orange), Agent → secondary when highlighted, muted when not
+            const iconColor = item.highlighted
+                ? (isFromUser ? theme.palette.custom.main : theme.palette.text.secondary)
+                : 'rgba(0,0,0,0.15)';
+            // Pick step-specific icon for completed thinking steps
+            const getStepIcon = (label: string, color: string) => {
+                const iconSx = { width: 12, height: 12, color };
+                if (label.startsWith('✗')) return <ErrorOutlineIcon sx={{ ...iconSx, color: theme.palette.error.main }} />;
+                if (label.startsWith('⚠')) return <WarningAmberIcon sx={{ ...iconSx, color: theme.palette.warning.main }} />;
+                if (label.startsWith('📋')) return <InfoOutlinedIcon sx={{ ...iconSx, color: theme.palette.info.main }} />;
+                const stripped = label.startsWith('✓') ? label.slice(2) : label;
+                const lbl = stripped.toLowerCase();
+                if (lbl.startsWith('running code') || lbl.startsWith('运行')) return <TerminalIcon sx={iconSx} />;
+                if (lbl.startsWith('inspecting') || lbl.startsWith('检查')) return <SearchIcon sx={iconSx} />;
+                if (lbl.startsWith('searching') || lbl.startsWith('搜索')) return <SearchIcon sx={iconSx} />;
+                if (lbl.startsWith('creating chart') || lbl.startsWith('图表') || lbl.startsWith('生成图表')) return <AutoGraphIcon sx={iconSx} />;
+                return <AutoAwesomeIcon sx={iconSx} />;
+            };
+            const gutterIcon = item.isRunning
+                ? <CircularProgress size={12} thickness={5} sx={{ color: theme.palette.primary.main }} />
+                : item.isClarifying
+                    ? getClarifyIcon(item)
+                    : item.isCompleted && item.stepLabel
+                        ? getStepIcon(item.stepLabel, iconColor)
+                        : entry
+                            ? getEntryGutterIcon(entry, iconColor)
+                            : getDefaultGutterIcon(iconColor);
+
+            // Clarification rows are clickable to bring the agent's pause
+            // back into focus. Prefer the latest chart on the associated
+            // table (so users keep seeing the chart they were working on);
+            // fall back to focusing the table itself if no chart exists.
+            const clarifyClickHandler = (item.isClarifying && item.tableId)
+                ? () => {
+                    const tableId = item.tableId!;
+                    const chartsForTable = charts.filter(c => c.tableRef === tableId);
+                    const lastChart = chartsForTable[chartsForTable.length - 1];
+                    if (lastChart) {
+                        dispatch(dfActions.setFocused({ type: 'chart', chartId: lastChart.id }));
+                    } else {
+                        dispatch(dfActions.setFocused({ type: 'table', tableId }));
+                    }
+                }
+                : undefined;
+
             return (
-                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                <Box key={`timeline-row-${item.key}`}
+                    {...(item.isClarifying ? { 'data-clarifying': 'true' } : {})}
+                    sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx,
+                    ...(clarifyClickHandler ? { cursor: 'pointer', '&:hover': { backgroundColor: 'rgba(0,0,0,0.02)' } } : {}),
+                }} onClick={clarifyClickHandler}>
                     <Box sx={{ 
                         width: TIMELINE_WIDTH, flexShrink: 0, 
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                     }}>
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
                         <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <AgentIcon sx={{ width: 14, height: 14, color: triggerColor }} />
+                            {gutterIcon}
                         </Box>
                         {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
-                        {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
+                        {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
+                        {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
                         {item.element}
@@ -1453,7 +1759,8 @@ let SingleThreadGroupView: FC<{
                             {getTimelineDot(item)}
                         </Box>
                         {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
-                        {isLast && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
+                        {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
+                        {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0, py: CARD_PY, pl: TIMELINE_GAP }}>
                         {item.element}
@@ -1475,18 +1782,33 @@ let SingleThreadGroupView: FC<{
                         // When connecting to the header (index 0, label visible), match the header's highlight state
                         const useHeader = index === 0 && !hideLabel;
                         const topColor = useHeader ? (headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)') : dashedColor;
-                        const topWidth = useHeader ? (headerHL ? '2px' : '1px') : dashedWidth;
+                        const topWidth = '2px';
                         const topStyle = 'solid';
                         return <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${topWidth} ${topStyle} ${topColor}` }} />;
                     })()}
-                    {index === 0 && hideLabel && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
-                    <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {index === 0 && hideLabel && isSplitThread && (
+                        // Continuation segment: extend the dashed gutter from the
+                        // "↑ continued" header above down through the ghost row
+                        // so the timeline reads as a single unbroken path.
+                        <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
+                    )}
+                    {index === 0 && hideLabel && !isSplitThread && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
+                    <Box sx={{ flexShrink: 0, zIndex: 1, backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        // Ghost row: dim the gutter icon to match the muted card.
+                        ...(item.type === 'used-table' && isSplitThread ? { opacity: 0.45 } : {}),
+                    }}>
                         {getTimelineDot(item)}
                     </Box>
                     {!isLast && (
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 6, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />
                     )}
-                    {isLast && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
+                    {isLast && hasContinuationBelow && (
+                        // Continuation segment tail: extend the dashed gutter
+                        // down into the "↓ continues below" footer so the
+                        // timeline reads as a single unbroken path.
+                        <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
+                    )}
+                    {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 6 }} />}
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0, py: item.type === 'used-table' ? '1px' : CARD_PY, pl: TIMELINE_GAP,
                     ...(item.type === 'used-table' && { display: 'flex', alignItems: 'center' }),
@@ -1504,8 +1826,12 @@ let SingleThreadGroupView: FC<{
                 borderColor: 'transparent',
                 margin: '1px 0',
             },
+            '& .selected-report-card': { 
+                boxShadow: `0 0 0 2px ${theme.palette.secondary.light}`,
+                borderColor: 'transparent',
+                margin: '1px 0',
+            },
             padding: '6px',
-            ...(chatboxFocused && focusedThreadLeafId && !shouldHighlightThread ? { opacity: 0.35 } : {}),
         }}
         >
         <div style={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
@@ -1513,10 +1839,10 @@ let SingleThreadGroupView: FC<{
                 const hlColor = theme.palette.primary.main;
                 const nhColor = 'rgba(0,0,0,0.35)';
                 const connColor = headerHL ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
-                const connWidth = headerHL ? '2px' : '1px';
+                const connWidth = '2px';
                 const connStyle = 'solid';
                 return (
-                <Box sx={{ display: 'flex', flexDirection: 'row', ...(chatboxFocused && hasHighlighting && !headerHL ? { opacity: 0.35 } : {}) }}>
+                <Box sx={{ display: 'flex', flexDirection: 'row' }}>
                     <Box sx={{ 
                         width: TIMELINE_WIDTH, flexShrink: 0, 
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -1530,27 +1856,75 @@ let SingleThreadGroupView: FC<{
                         }} />
                         <Box sx={{ width: 0, flex: '1 1 0', minHeight: 10, borderLeft: `${connWidth} ${connStyle} ${connColor}` }} />
                     </Box>
-                    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5 }}>
+                    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: 0.5, gap: 0.5 }}>
                         <Typography sx={{ 
                             fontSize: '11px', fontWeight: 700, 
                             textTransform: 'uppercase', letterSpacing: '0.02em',
                             color: headerHL ? hlColor : 'rgba(0,0,0,0.55)', 
                         }}>
-                            {threadLabel || (threadIdx === -1 ? 'Thread 0' : `Thread ${threadIdx + 1}`)}
+                            {threadLabel || (threadIdx === -1 ? t('dataThread.threadZero') : t('dataThread.threadIndex', { index: threadIdx + 1 }))}
                         </Typography>
                     </Box>
                 </Box>
                 );
             })()}
+            {isSplitThread && (() => {
+                // Continuation header: a small "↑ continued" chip on a dashed
+                // gutter.  The ghost parent table card immediately below
+                // identifies the carry-over table, and the segment's first
+                // real content is the next instruction — so we don't echo the
+                // previous instruction here (it would duplicate either the
+                // ghost's name or the upcoming instruction card).
+                return (
+                    <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                        <Box sx={{
+                            width: TIMELINE_WIDTH, flexShrink: 0,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        }}>
+                            <Box sx={{ flex: '1 1 0', minHeight: 4 }} />
+                            <KeyboardArrowUpIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+                            <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, py: 0.25, display: 'flex', alignItems: 'center' }}>
+                            <Typography sx={{
+                                fontSize: '10px', color: 'text.disabled',
+                                textTransform: 'uppercase', letterSpacing: '0.04em',
+                            }}>
+                                {t('dataThread.continuedFromAbove')}
+                            </Typography>
+                        </Box>
+                    </Box>
+                );
+            })()}
             {timelineItems.map((item, index) => renderTimelineItem(item, index, index === timelineItems.length - 1, timelineItems[index + 1]?.highlighted ?? false))}
+            {hasContinuationBelow && (() => {
+                return (
+                    <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                        <Box sx={{
+                            width: TIMELINE_WIDTH, flexShrink: 0,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        }}>
+                            <Box sx={{ flex: '1 1 0', minHeight: 6, ...dashedLineSx }} />
+                            <KeyboardArrowDownIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
+                            <Box sx={{ flex: '1 1 0', minHeight: 4 }} />
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0, pl: 0.5, py: 0.25, display: 'flex', alignItems: 'center' }}>
+                            <Typography sx={{
+                                fontSize: '10px', color: 'text.disabled',
+                                textTransform: 'uppercase', letterSpacing: '0.04em',
+                            }}>
+                                {t('dataThread.continuesBelow')}
+                            </Typography>
+                        </Box>
+                    </Box>
+                );
+            })()}
         </div>
         <MetadataPopup
             open={metadataPopupOpen}
             anchorEl={metadataAnchorEl}
             onClose={handleCloseMetadataPopup}
-            onSave={handleSaveMetadata}
-            initialValue={selectedTableForMetadata?.attachedMetadata || ''}
-            tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
+            table={selectedTableForMetadata}
         />
         <RenameTablePopup
             open={renamePopupOpen}
@@ -1579,7 +1953,7 @@ let SingleThreadGroupView: FC<{
                 sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
             >
                 <EditIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
-                Rename
+                {t('dataThread.rename')}
             </MenuItem>
             {/* Pin option - only for derived tables */}
             {selectedTableForMenu?.derive != undefined && (
@@ -1594,11 +1968,12 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <AnchorIcon sx={{ fontSize: 16, color: selectedTableForMenu?.anchored ? 'primary.main' : 'text.secondary' }}/>
-                    {selectedTableForMenu?.anchored ? "Unpin table" : "Pin table"}
+                    {selectedTableForMenu?.anchored ? t('dataThread.unpinTable') : t('dataThread.pinTable')}
                 </MenuItem>
             )}
-            {/* Non-derived table options */}
-            {selectedTableForMenu?.derive == undefined && (
+            {/* View metadata - available for every table; read-only viewer of
+                source description + per-column descriptions (or derivation summary) */}
+            {selectedTableForMenu && (
                 <MenuItem 
                     onClick={(e) => {
                         e.stopPropagation();
@@ -1611,9 +1986,9 @@ let SingleThreadGroupView: FC<{
                 >
                     <AttachFileIcon sx={{ 
                         fontSize: 16,
-                        color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                        color: selectedTableForMenu?.description ? 'secondary.main' : 'text.secondary',
                     }}/>
-                    {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
+                    {t('dataThread.viewMetadata', { defaultValue: 'View metadata' })}
                 </MenuItem>
             )}
             {/* Refresh settings - shown for stream/database sources to configure auto-refresh interval */}
@@ -1631,7 +2006,7 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <StreamIcon sx={{ fontSize: 16, color: selectedTableForMenu.source?.autoRefresh ? 'success.main' : 'text.secondary' }}/>
-                    {selectedTableForMenu.source?.autoRefresh ? 'Refresh settings' : 'Watch for updates'}
+                    {selectedTableForMenu.source?.autoRefresh ? t('dataThread.refreshSettings') : t('dataThread.watchForUpdates')}
                 </MenuItem>
             )}
             {/* Refresh data - hidden for database tables and derived tables */}
@@ -1646,7 +2021,7 @@ let SingleThreadGroupView: FC<{
                     sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
                 >
                     <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
-                    Replace data
+                    {t('dataThread.replaceData')}
                 </MenuItem>
             )}
             <MenuItem 
@@ -1663,7 +2038,7 @@ let SingleThreadGroupView: FC<{
                 sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
             >
                 <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>
-                Delete table
+                {t('dataThread.deleteTable')}
             </MenuItem>
         </Menu>
 
@@ -1699,16 +2074,23 @@ const ChartThumbnail: FC<{
     onChartClick: (chartId: string, tableId: string) => void;
     onDelete: (chartId: string) => void;
 }> = ({ chart, table, status, onChartClick, onDelete }) => {
+    const { t } = useTranslation();
 
-    let deleteButton = <Box className='data-thread-chart-card-action-button'
-        sx={{ zIndex: 10, color: 'blue', position: "absolute", right: 1, background: 'rgba(255, 255, 255, 0.95)' }}>
-        <Tooltip title="delete chart">
-            <IconButton size="small" color="warning" onClick={(event) => {
-                event.stopPropagation();
-                onDelete(chart.id);
-            }}><DeleteIcon fontSize="small" /></IconButton>
-        </Tooltip>
-    </Box>
+    let deleteButton = <Tooltip title={t('dataThread.deleteChart')}>
+        <IconButton className='data-thread-chart-delete-btn' size="small" color="error"
+            aria-label={t('dataThread.deleteChart')}
+            sx={{ 
+                zIndex: 10, position: "absolute", right: 1, top: 1,
+                p: 0.5,
+                opacity: 0, transition: 'opacity 0.15s',
+                backgroundColor: 'rgba(255,255,255,0.85)',
+                '&:hover': { transform: 'scale(1.15)', backgroundColor: 'rgba(255,255,255,0.95)' },
+                '.vega-thumbnail-box:hover &': { opacity: 1 },
+            }}
+            onClick={(event) => { event.stopPropagation(); onDelete(chart.id); }}>
+            <DeleteIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+    </Tooltip>
 
     const pendingOverlay = status == 'pending' ? <Box sx={{
         position: "absolute", top: 0, left: -8, right: -8, bottom: 0, zIndex: 20,
@@ -1771,7 +2153,7 @@ const ChartThumbnail: FC<{
                     >
                         <img 
                             src={chart.thumbnail} 
-                            alt={`${chart.chartType} chart`}
+                            alt={t('dataThread.chartAlt', { type: chart.chartType })}
                             style={{ maxWidth: 120, maxHeight: 100, objectFit: 'contain' }} 
                         />
                     </Box>
@@ -1812,18 +2194,260 @@ const ChartThumbnail: FC<{
 
 // Height estimation constants (px) – per-type heights + py:4px (8px) gap per row
 const LAYOUT_TABLE_HEIGHT = 28 + 8;     // table card + row padding
-const LAYOUT_TRIGGER_HEIGHT = 43 + 8;   // trigger card (2 lines) + row padding
+const LAYOUT_ENTRY_HEIGHT = 38;         // interaction entry — empirical ~1.5-line average incl. row padding
 const LAYOUT_CHART_HEIGHT = 90 + 8;     // chart card (~70-110) + row padding
 const LAYOUT_THREAD_OVERHEAD = 52;      // header divider + thread padding
 const LAYOUT_THREAD_GAP = 8;            // my: 0.5 = 4px top + 4px bottom between threads
+const SCROLL_TOLERANCE = 1.5;           // a column / segment may extend up to 1.5 × vh before we add another
 
 function estimateThreadHeight(
-    tableCount: number, triggerCount: number, chartCount: number
+    tableCount: number, entryCount: number, chartCount: number
 ): number {
     return LAYOUT_THREAD_OVERHEAD
         + tableCount * LAYOUT_TABLE_HEIGHT
-        + triggerCount * LAYOUT_TRIGGER_HEIGHT
+        + entryCount * LAYOUT_ENTRY_HEIGHT
         + chartCount * LAYOUT_CHART_HEIGHT;
+}
+
+/** Effective rendered row count for an interaction list: data-agent
+ *  `summary` entries that are immediately followed by an `instruction` get
+ *  folded into that instruction (see `pushInteractionEntries`), so they
+ *  shouldn't be double-counted in height estimation. */
+function effectiveEntryCount(interaction: InteractionEntry[] | undefined): number {
+    if (!interaction || interaction.length === 0) return 1;
+    let n = 0;
+    for (let i = 0; i < interaction.length; i++) {
+        const e = interaction[i];
+        const next = interaction[i + 1];
+        if (e.role === 'summary' && e.from === 'data-agent' && next?.role === 'instruction') continue;
+        n++;
+    }
+    return Math.max(1, n);
+}
+
+/** Estimated height of one trigger block: interaction entries + result table + its charts. */
+function estimateTriggerBlockHeight(
+    tableId: string,
+    interaction: InteractionEntry[] | undefined,
+    chartElements: { tableId: string }[],
+): number {
+    const charts = chartElements.filter(ce => ce.tableId === tableId).length;
+    return effectiveEntryCount(interaction) * LAYOUT_ENTRY_HEIGHT
+        + LAYOUT_TABLE_HEIGHT
+        + charts * LAYOUT_CHART_HEIGHT;
+}
+
+/**
+ * For each long thread, identify intermediate tables to "promote" as extra
+ * leaves so the thread renders as multiple stacked segments.
+ *
+ * Item-count strategy (no pixel estimates):
+ *
+ *   1. Count "items" per thread: each trigger contributes 1 + #effective
+ *      interaction entries + #charts on its result table.  This is a much
+ *      more stable proxy for visual content than height estimates, which
+ *      vary wildly with text wrapping and chart sizes.
+ *
+ *   2. Sum across threads → totalItems.  Per-column budget = totalItems / N.
+ *
+ *   3. For each thread: K = max(1, round(threadItems / budget)) segments.
+ *      Round (not ceil) → "prefer not to break" — threads only marginally
+ *      larger than budget stay whole.
+ *
+ *   4. Split into K segments by accumulating items as evenly as possible
+ *      across triggers, honouring the ≥2-triggers-per-segment constraint.
+ *
+ * Each cut at trigger index `j` (j ≥ 2, segment starts at trigger j-1)
+ * promotes `triggers[j-2].resultTableId` as a leaf, so the previous segment
+ * ends on that table and the new segment opens on `triggers[j-1]`'s
+ * instruction with the promoted table shown as a dimmed ghost.
+ */
+function computeSplitExtraLeaves(
+    leafTables: DictTable[],
+    allTables: DictTable[],
+    chartElements: { tableId: string }[],
+    fittableColumns: number,
+): DictTable[] {
+    if (fittableColumns <= 1) return [];
+    const tableById = new Map(allTables.map(t => [t.id, t]));
+
+    // Per-trigger item count = 1 (table) + interaction entries + charts.
+    const itemsForTrigger = (resultTableId: string, interaction: InteractionEntry[] | undefined): number => {
+        const charts = chartElements.filter(ce => ce.tableId === resultTableId).length;
+        return 1 + effectiveEntryCount(interaction) + charts;
+    };
+
+    // Compute per-thread totals up front so we can pick the budget.
+    const triggersByLeaf: Trigger[][] = [];
+    const threadItems: number[] = [];
+    for (const lt of leafTables) {
+        const triggers = getTriggers(lt, allTables);
+        triggersByLeaf.push(triggers);
+        let items = 0;
+        for (const tp of triggers) items += itemsForTrigger(tp.resultTableId, tp.interaction);
+        // Leaf trigger contributes its own row count + leaf table + leaf charts.
+        items += itemsForTrigger(lt.id, lt.derive?.trigger?.interaction);
+        threadItems.push(items);
+    }
+    const totalItems = threadItems.reduce((s, v) => s + v, 0);
+    if (totalItems === 0) return [];
+
+    const budget = totalItems / fittableColumns;
+
+    const extras: DictTable[] = [];
+    for (let li = 0; li < leafTables.length; li++) {
+        const lt = leafTables[li];
+        if (!lt.derive) continue;
+        const triggers = triggersByLeaf[li];
+        if (triggers.length < 3) continue;
+
+        const K = Math.max(1, Math.round(threadItems[li] / budget));
+        if (K <= 1) continue;
+
+        // Per-trigger items, with the leaf weight folded into the LAST entry
+        // (the leaf step renders inside the trailing segment but isn't part
+        // of the `triggers` array).
+        const triggerItems = triggers.map(tp => itemsForTrigger(tp.resultTableId, tp.interaction));
+        triggerItems[triggerItems.length - 1] += itemsForTrigger(lt.id, lt.derive.trigger?.interaction);
+
+        // Stability strategy: prefer greedy cuts (which only shift when
+        // earlier content changes) over balanced ones (which redistribute
+        // on every new trigger).  Only re-balance when the trailing segment
+        // grows past 1.5× the previous segment — i.e. greedy has produced
+        // a noticeably lopsided layout that warrants a reshuffle.
+        let cuts = greedyPartitionCuts(triggerItems, K, budget);
+        if (cuts.length === 0) {
+            // Greedy couldn't find K segments at this budget — fall back to
+            // balanced (which uses binary search and always finds a valid
+            // partition when one exists).
+            cuts = balancedPartitionCuts(triggerItems, K);
+        } else {
+            const segItems = segmentSums(triggerItems, cuts);
+            const tail = segItems[segItems.length - 1];
+            const prior = segItems[segItems.length - 2];
+            if (tail > 1.5 * prior) {
+                const rebalanced = balancedPartitionCuts(triggerItems, K);
+                if (rebalanced.length > 0) cuts = rebalanced;
+            }
+        }
+        if (cuts.length === 0) continue;
+
+        for (const j of cuts) {
+            if (j < 2) continue;
+            const promoted = tableById.get(triggers[j - 2].resultTableId);
+            if (promoted) extras.push(promoted);
+        }
+    }
+    return extras;
+}
+
+/**
+ * Greedy K-segment partition: walk left-to-right, cut whenever the running
+ * sum would exceed `budget`.  Stable under incremental growth — existing
+ * cuts only move if content before them changes.  Each segment must contain
+ * ≥ 2 triggers.  Returns [] if fewer than K segments could be produced.
+ */
+function greedyPartitionCuts(
+    triggerItems: number[],
+    K: number,
+    budget: number,
+): number[] {
+    const N = triggerItems.length;
+    if (K <= 1 || N < 2 * K) return [];
+    const cuts: number[] = [];
+    let acc = 0;
+    let segStart = 0;
+    for (let i = 0; i < N; i++) {
+        const inSeg = i - segStart;
+        const remainingSegs = (K - 1) - cuts.length;
+        const remainingTriggers = N - i;
+        const mustCut = remainingSegs > 0 && remainingTriggers <= 2 * remainingSegs && inSeg >= 2;
+        const wantCut = inSeg >= 2 && acc + triggerItems[i] > budget && cuts.length < K - 1;
+        if (mustCut || wantCut) {
+            cuts.push(i + 1);
+            segStart = i;
+            acc = triggerItems[i];
+        } else {
+            acc += triggerItems[i];
+        }
+    }
+    return cuts.length === K - 1 ? cuts : [];
+}
+
+/** Sum items per segment given cut indices (cut at i ⇒ segment starts at i-1). */
+function segmentSums(triggerItems: number[], cuts: number[]): number[] {
+    const breakpoints = [0, ...cuts.map(c => c - 1), triggerItems.length];
+    const sums: number[] = [];
+    for (let s = 0; s < breakpoints.length - 1; s++) {
+        let h = 0;
+        for (let k = breakpoints[s]; k < breakpoints[s + 1]; k++) h += triggerItems[k];
+        sums.push(h);
+    }
+    return sums;
+}
+
+/**
+ * Partition `triggerH` into K contiguous segments minimising the maximum
+ * segment height, with each segment containing ≥ 2 triggers.  Returns K-1
+ * cut indices using the same convention as greedy cuts (cut at i ⇒ new
+ * segment starts at trigger i-1).  Returns [] if no valid partition exists
+ * (e.g. fewer than 2K triggers).
+ */
+function balancedPartitionCuts(triggerH: number[], K: number): number[] {
+    const N = triggerH.length;
+    if (K <= 1 || N < 2 * K) return [];
+
+    const maxH = Math.max(...triggerH);
+    const totalH = triggerH.reduce((s, h) => s + h, 0);
+
+    // Greedy partition with a maximum-segment-height target, honouring the
+    // ≥2-triggers-per-segment constraint.  Returns cut indices if K segments
+    // can fit within `limit`, else null.  All K segments — including the
+    // trailing one — must fit; otherwise the binary search would converge
+    // to an absurdly low limit and produce wildly unbalanced cuts.
+    const tryPartition = (limit: number): number[] | null => {
+        const cuts: number[] = [];
+        let acc = 0;
+        let segStart = 0;
+        let segCount = 1;
+        for (let i = 0; i < N; i++) {
+            const inSeg = i - segStart;
+            const remainingTriggers = N - i;
+            const remainingSegs = K - segCount;
+            // Force a cut if we'd otherwise run out of room for remaining segments.
+            const mustCut = remainingSegs > 0 && remainingTriggers <= 2 * remainingSegs && inSeg >= 2;
+            const wantCut = inSeg >= 2 && acc + triggerH[i] > limit && segCount < K;
+            if (mustCut || wantCut) {
+                // Cut here: new segment starts at trigger i.  Encode as i+1 so
+                // the promotion picks triggers[(i+1)-2] = triggers[i-1].
+                cuts.push(i + 1);
+                segCount++;
+                segStart = i;
+                acc = triggerH[i];
+                // The single trigger that opens this segment must itself fit.
+                if (acc > limit) return null;
+            } else {
+                acc += triggerH[i];
+                // No cut available (we're in the last segment, or the
+                // ≥2-trigger guard blocks).  If we exceed limit, infeasible.
+                if (acc > limit) return null;
+            }
+        }
+        // Final segment must contain ≥ 2 triggers.
+        if (segCount !== K) return null;
+        if (N - segStart < 2) return null;
+        return cuts;
+    };
+
+    let lo = maxH;
+    let hi = totalH;
+    let best: number[] | null = null;
+    while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const r = tryPartition(mid);
+        if (r !== null) { best = r; hi = mid; } else { lo = mid + 1; }
+    }
+    return best ?? [];
 }
 
 /**
@@ -1936,7 +2560,6 @@ function layoutPreserveOrder(heights: number[], numColumns: number): number[][] 
  * 3. If nothing eliminates scrolling, pick the layout that minimises the
  *    tallest column (least scrolling).
  */
-const SCROLL_TOLERANCE = 1.5; // allow up to 50% overflow before adding columns
 
 function chooseBestColumnLayout(
     heights: number[],
@@ -1984,94 +2607,212 @@ function chooseBestColumnLayout(
 }
 
 export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
+    const { t } = useTranslation();
+    const dispatch = useDispatch<AppDispatch>();
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
     let focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
     let charts = useSelector(dfSelectors.getAllCharts);
 
+    let generatedReports = useSelector(dfSelectors.getAllGeneratedReports);
+
     // Derive focusedTableId from focusedId for scroll/highlight logic
     let focusedTableId = useMemo(() => {
         if (!focusedId) return undefined;
         if (focusedId.type === 'table') return focusedId.tableId;
-        const chartId = focusedId.chartId;
-        const chart = charts.find(c => c.id === chartId);
-        return chart?.tableRef;
-    }, [focusedId, charts]);
+        if (focusedId.type === 'chart') {
+            const chart = charts.find(c => c.id === focusedId.chartId);
+            return chart?.tableRef;
+        }
+        if (focusedId.type === 'report') {
+            const report = generatedReports.find(r => r.id === focusedId.reportId);
+            return report?.triggerTableId;
+        }
+        return undefined;
+    }, [focusedId, charts, generatedReports]);
 
     let chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
 
-    const scrollRef = useRef<null | HTMLDivElement>(null)
+    // Subscribe to draftNodes so the scroll-to-target effect re-runs when an
+    // active clarify/explain entry appears or resolves.
+    const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+
     const containerRef = useRef<null | HTMLDivElement>(null)
-    const suppressScrollRef = useRef(false);
+    // Outer wrapper containing both the thread area and the chatbox.
+    // Its height is governed by the parent Allotment pane and stays constant
+    // when the chatbox grows/shrinks during clarification or explanation.
+    // Used to derive a stable viewportHeight for split decisions so that
+    // chatbox resizing doesn't trigger re-splitting of long threads.
+    const outerRef = useRef<null | HTMLDivElement>(null)
     const [expandedColumns, setExpandedColumns] = useState(false);
     const [containerWidth, setContainerWidth] = useState(0);
-    const [chatboxFocused, setChatboxFocused] = useState(false);
-    const [chatMode, setChatMode] = useState(false);
+    // Track container height so we can detect when the chatbox grows/shrinks
+    // (which compresses/expands containerRef as a flex sibling).  Used to
+    // trigger the scroll-to-target effect below.
+    const [containerHeight, setContainerHeight] = useState(0);
+    // Increments every time the chat input is focused.  Used to retrigger the
+    // scroll-to-target effect even when neither focusedId nor containerHeight
+    // changes (e.g. user just clicks into the input without typing).
+    const [chatboxFocusTick, setChatboxFocusTick] = useState(0);
+    const [isDragOver, setIsDragOver] = useState(false);
 
-    // Re-attach ResizeObserver whenever chatMode changes (containerRef moves to a different element)
+    // ── Drop handler for catalog table items from DataSourceSidebar ──────
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        if (e.dataTransfer.types.includes('application/json')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            setIsDragOver(true);
+        }
+    }, []);
+    const handleDragLeave = useCallback(() => setIsDragOver(false), []);
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        setIsDragOver(false);
+        try {
+            const raw = e.dataTransfer.getData('application/json');
+            if (!raw) return;
+            const item: CatalogTableDragItem = JSON.parse(raw);
+            if (item.type !== CATALOG_TABLE_ITEM) return;
+            e.preventDefault();
+
+            const tableObj: DictTable = {
+                kind: 'table' as const,
+                id: item.tableName,
+                displayId: item.tableName,
+                names: [],
+                metadata: {},
+                rows: [],
+                virtual: { tableId: item.tableName, rowCount: 0 },
+                anchored: true,
+                description: '',
+                source: {
+                    type: 'database' as const,
+                    databaseTable: item.tablePath.join('/'),
+                    canRefresh: true,
+                    lastRefreshed: Date.now(),
+                    connectorId: item.connectorId,
+                },
+            };
+
+            dispatch(loadTable({
+                table: tableObj,
+                connectorId: item.connectorId,
+                sourceTableRef: { id: item.tableId || item.tableName, name: item.tableName },
+                importOptions: {},
+            })).unwrap()
+                .then(() => {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'success',
+                        component: 'data thread', value: `Loaded table "${item.tableName}"`,
+                    }));
+                })
+                .catch((err) => {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'error',
+                        component: 'data thread', value: `Failed to load "${item.tableName}": ${extractErrorMessage(err)}`,
+                    }));
+                });
+        } catch { /* ignore bad data */ }
+    }, [dispatch]);
+    // Re-attach ResizeObserver when containerRef changes
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
         const ro = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 setContainerWidth(entry.contentRect.width);
+                setContainerHeight(entry.contentRect.height);
             }
         });
         ro.observe(el);
         return () => ro.disconnect();
-    }, [chatMode]);
+    }, []);
 
     const theme = useTheme();
 
-    const executeScroll = (smooth: boolean = true, block: ScrollLogicalPosition = 'center') => { 
-        if (scrollRef.current != null) {
-            scrollRef.current.scrollIntoView({ 
-                behavior: smooth ? 'smooth' : 'auto', 
-                block
-            }) 
-        }
-    }
-
-    const dispatch = useDispatch();
-
-    // Track previous table/chart counts to detect agent additions
-    const prevCountsRef = useRef({ tables: tables.length, charts: charts.length });
-
+    // Keep the relevant element fully visible above the chatbox.
+    //
+    // Triggered whenever:
+    //   - focusedId changes (user clicked a different chart/table)
+    //   - containerHeight changes (chatbox grew/shrank, e.g. when an
+    //     explain/clarify panel appears or the input expands)
+    //
+    // Three target priorities:
+    //   1. Active clarify/explain inline block (data-clarifying="true")
+    //   2. Focused chart card (data-chart-id)
+    //   3. Focused table card (data-table-id)
+    //
+    // "Fully visible" means the target's top..bottom fits within
+    // containerRef's rect (which already shrinks as the chatbox grows below
+    // it).  If already in view, don't scroll.  If too tall, align top.
     useEffect(() => {
-        // Only auto-scroll when new tables or charts are added (e.g., by the agent),
-        // not when the user simply changes focus by clicking.
-        const prevCounts = prevCountsRef.current;
-        const isNewItem = tables.length > prevCounts.tables || charts.length > prevCounts.charts;
-        prevCountsRef.current = { tables: tables.length, charts: charts.length };
+        if (!containerRef.current) return;
+        const t = setTimeout(() => {
+            const container = containerRef.current;
+            if (!container) return;
+            const scroller = container.firstElementChild as HTMLElement | null;
+            if (!scroller) return;
 
-        if (focusedTableId && isNewItem) {
-            executeScroll(true);
-        }
-    }, [focusedTableId]);
+            // Find the target element in priority order.
+            let target: HTMLElement | null = null;
 
-    // When the chatbox panel expands, scroll the focused table above the overlay if needed
-    useEffect(() => {
-        if (chatboxFocused && focusedTableId && scrollRef.current && containerRef.current) {
-            setTimeout(() => {
-                if (!scrollRef.current || !containerRef.current) return;
-                const container = containerRef.current;
-                const el = scrollRef.current;
-                const containerRect = container.getBoundingClientRect();
-                const elRect = el.getBoundingClientRect();
-                // The overlay panel is ~220px from bottom; ensure the focused element's bottom
-                // is at least 240px above the container's bottom
-                const safeZone = 400;
-                const elBottomInContainer = elRect.bottom - containerRect.top;
-                const visibleHeight = containerRect.height - safeZone;
-                if (elBottomInContainer > visibleHeight) {
-                    // Scroll so the element top is near the top of the container
-                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            }, 100);
-        }
-    }, [chatboxFocused]);
+            // 1. Active clarify/explain inline block (most recent)
+            const clarifyEls = container.querySelectorAll<HTMLElement>('[data-clarifying="true"]');
+            if (clarifyEls.length > 0) {
+                target = clarifyEls[clarifyEls.length - 1];
+            }
+
+            // 2. Focused chart
+            if (!target && focusedId?.type === 'chart') {
+                target = container.querySelector<HTMLElement>(`[data-chart-id="${focusedId.chartId}"]`);
+            }
+
+            // 3. Focused table
+            if (!target && focusedId?.type === 'table') {
+                target = container.querySelector<HTMLElement>(`[data-table-id="${focusedId.tableId}"]`);
+            }
+
+            if (!target) return;
+
+            const containerRect = container.getBoundingClientRect();
+            const scrollerRect = scroller.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            const TOP_MARGIN = 16;
+            const BOTTOM_MARGIN = 16;
+            const visibleTop = containerRect.top + TOP_MARGIN;
+            const visibleBottom = containerRect.bottom - BOTTOM_MARGIN;
+            const visibleHeight = visibleBottom - visibleTop;
+
+            // Already fully visible? Don't scroll — don't bother the user.
+            if (targetRect.top >= visibleTop && targetRect.bottom <= visibleBottom) return;
+
+            // When we do need to scroll, leave generous breathing room above
+            // the target so the user has context (the prior thread items
+            // remain visible).  We aim to place the target's top about 60%
+            // of the way down the visible area — this feels natural since
+            // the user is usually interacting at the bottom and the target
+            // is most often a leaf chart/table near the end.  Clamped so
+            // the target's bottom never gets pushed below the visible area.
+            //
+            // If the target is taller than the visible area, just align its
+            // top with TOP_MARGIN so the start is in view (bottom may be
+            // cut off — preferable to hiding the start).
+            const targetTopInScroller = targetRect.top - scrollerRect.top + scroller.scrollTop;
+            const targetHeight = targetRect.height;
+            const tooTall = targetHeight + TOP_MARGIN + BOTTOM_MARGIN > visibleHeight + TOP_MARGIN + BOTTOM_MARGIN;
+            const desiredOffsetFromTop = tooTall
+                ? TOP_MARGIN
+                : Math.max(TOP_MARGIN, Math.min(visibleHeight * 0.6, visibleHeight - targetHeight - BOTTOM_MARGIN));
+            const newScrollTop = targetTopInScroller - desiredOffsetFromTop;
+
+            // Only scroll if it would meaningfully change position.
+            if (Math.abs(newScrollTop - scroller.scrollTop) > 4) {
+                scroller.scrollTo({ top: Math.max(0, newScrollTop), behavior: 'smooth' });
+            }
+        }, 100);
+        return () => clearTimeout(t);
+    }, [containerHeight, focusedId, draftNodes, chatboxFocusTick]);
 
     // O(1) table lookup by ID
     const tableById = useMemo(() => new Map(tables.map(t => [t.id, t])), [tables]);
@@ -2115,41 +2856,43 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     }
     let leafTables = [ ...tables.filter(t => isLeafTable(t)) ];
 
-    // Split long derivation chains by promoting intermediate tables as additional "leaves".
-    // If a chain has more than MAX_CHAIN_TABLES tables, we add a split point every
-    // MAX_CHAIN_TABLES steps. The sort (shorter chains first) ensures the intermediate
-    // leaf is processed before the real leaf, so its tables get claimed — making the
-    // real leaf's thread show only the remaining (new) tables.
-    // When counting chain length, exclude "used" tables (already claimed by an earlier
-    // chain) so that shared ancestors don't inflate the count. The first chain to
-    // contain a table still counts it as owned.
-    const MAX_CHAIN_TABLES = 5;
+    // Stable viewport estimate for split decisions.  We measure the OUTER
+    // wrapper (thread area + chatbox) and subtract a fixed baseline for the
+    // collapsed chatbox footprint.  This keeps the split threshold stable
+    // when the chatbox expands during clarification/explanation, avoiding
+    // re-splitting of threads as the chatbox grows or shrinks.
+    const CHATBOX_BASELINE_HEIGHT = 120; // approximate collapsed-chatbox footprint in px
+    const outerHeight = outerRef.current?.clientHeight ?? 0;
+    const viewportHeight = outerHeight > CHATBOX_BASELINE_HEIGHT
+        ? outerHeight - CHATBOX_BASELINE_HEIGHT
+        : (containerRef.current?.clientHeight
+            || (typeof window !== 'undefined' ? window.innerHeight : 800));
+    // Determine how many columns can fit in the current container width.  When
+    // only one column fits, splitting a long thread into segments adds visual
+    // overhead (continuation headers + ghost parents) without any layout
+    // benefit, since the segments would just stack in the same single column.
+    const CARD_GAP = 12; // padding + spacing between cards in a column
+    const PANEL_PADDING = 16;
+    const CARD_WIDTH = 220;
+    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
+    // n columns need: n*CARD_WIDTH + (n-1)*CARD_GAP + PANEL_PADDING
+    // Solving for n: n <= (containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH
+    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING + CARD_GAP) / COLUMN_WIDTH)));
 
-    // Process leaves in order, tracking claimed tables to simulate the later claim loop.
-    // A table is "used" for a chain only if a *previous* chain already claimed it.
-    const claimedForSplit = new Set<string>();
-    const extraLeaves: DictTable[] = [];
-    for (const lt of leafTables) {
-        const triggers = getCachedTriggers(lt);
-        const allChainIds = [lt.id, ...triggers.map(t => t.tableId)];
-        // Tables not yet claimed by an earlier chain count as owned
-        const ownedIds = allChainIds.filter(id => !claimedForSplit.has(id));
-        if (ownedIds.length > MAX_CHAIN_TABLES) {
-            // Walk only owned (unclaimed) triggers for split positions
-            const ownedTriggers = triggers.filter(t => !claimedForSplit.has(t.tableId));
-            for (let pos = MAX_CHAIN_TABLES - 1; pos < ownedTriggers.length; pos += MAX_CHAIN_TABLES) {
-                const midId = ownedTriggers[pos].tableId;
-                const midTable = tableById.get(midId);
-                if (midTable && !leafTables.includes(midTable) && !extraLeaves.includes(midTable)) {
-                    extraLeaves.push(midTable);
-                }
-            }
-        }
-        // Claim all tables in this chain for subsequent chains
-        allChainIds.forEach(id => claimedForSplit.add(id));
-    }
+    // Adaptively split long derivation chains so the resulting segments fill
+    // the available columns evenly.  See `computeSplitExtraLeaves` for the
+    // target/K logic.  Skip in single-column mode — the continuation chrome
+    // adds no layout benefit when segments would just stack vertically.
+    const computedExtras = fittableColumns <= 1
+        ? []
+        : computeSplitExtraLeaves(
+            leafTables, tables, chartElements, fittableColumns,
+        );
+    // Avoid duplicating tables that are already leaves (e.g. anchored mids).
+    const existingLeafIds = new Set(leafTables.map(t => t.id));
+    const extraLeaves: DictTable[] = computedExtras.filter(t => !existingLeafIds.has(t.id));
     if (extraLeaves.length > 0) {
-        leafTables.push(...extraLeaves);
+        leafTables = [...leafTables, ...extraLeaves];
     }
 
     // we want to sort the leaf tables by the order of their ancestors
@@ -2158,7 +2901,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let tableOrder = Object.fromEntries(tables.map((table, index) => [table.id, index + (table.anchored ? 1 : 0) * tables.length]));
     let getAncestorOrders = (leafTable: DictTable) => {
         let triggers = getCachedTriggers(leafTable);
-        return [...triggers.map(t => tableOrder[t.tableId]), tableOrder[leafTable.id]];
+        return [...triggers.map(t => tableOrder[t.resultTableId]), tableOrder[leafTable.id]];
     }
 
     leafTables.sort((a, b) => {
@@ -2177,21 +2920,34 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     });
 
     // Compute global highlighted table IDs from the focused table's full ancestor chain
+    // Also includes derive.source tables (all input tables used in computation)
     let globalHighlightedTableIds: string[] = useMemo(() => {
         if (!focusedTableId) return [];
         let focusedTable = tableById.get(focusedTableId);
         if (!focusedTable) return [];
         // Walk up the trigger chain from the focused table to collect all ancestor IDs
-        let ids: string[] = [focusedTableId];
+        let ids = new Set<string>([focusedTableId]);
         let current = focusedTable;
+        // Add derive.source tables for the focused table itself
+        if (current.derive?.source) {
+            for (const sid of current.derive.source as string[]) {
+                ids.add(sid);
+            }
+        }
         while (current.derive && !current.anchored) {
             let parentId = current.derive.trigger.tableId;
-            ids.unshift(parentId);
+            ids.add(parentId);
+            // Add derive.source tables for each ancestor
+            if (current.derive.source) {
+                for (const sid of current.derive.source as string[]) {
+                    ids.add(sid);
+                }
+            }
             let parent = tableById.get(parentId);
             if (!parent) break;
             current = parent;
         }
-        return ids;
+        return [...ids];
     }, [focusedTableId, tableById]);
 
     // Determine which leaf table's thread the focused table belongs to
@@ -2203,7 +2959,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         // Otherwise, find the leaf table whose ancestor chain includes the focused table
         for (const lt of leafTables) {
             const triggers = getCachedTriggers(lt);
-            const chainIds = [...triggers.map(t => t.tableId), lt.id];
+            const chainIds = [...triggers.map(t => t.resultTableId), lt.id];
             if (chainIds.includes(focusedTableId)) {
                 return lt.id;
             }
@@ -2221,8 +2977,18 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return triggers.length + 1 > 1;
     });
 
-    // Build thread entries and their estimated heights for layout
-    type ThreadEntry = { key: string; groupId: string; leafTables: DictTable[]; threadIdx: number; threadLabel?: string; isSplitThread?: boolean; usedTableIds?: string[]; hideLabel?: boolean };
+    // Build thread entries and their estimated heights for layout.
+    type ThreadEntry = {
+        key: string;
+        groupId: string;
+        leafTables: DictTable[];
+        threadIdx: number;
+        threadLabel?: string;
+        isSplitThread?: boolean;          // true → render "↑ continued from above" header + ghost parent
+        hasContinuationBelow?: boolean;   // true → render "↓ continues below" footer
+        usedTableIds?: string[];
+        hideLabel?: boolean;
+    };
     let allThreadEntries: ThreadEntry[] = [];
     let allThreadHeights: number[] = [];
 
@@ -2232,102 +2998,83 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     // Track which table IDs have been claimed by earlier threads
     let claimedTableIds = new Set<string>();
 
-    // Hanging tables: source tables with no children — displayed as a group before thread 1
-    let hangingTables = leafTables.filter(lt => !lt.derive);
-    if (hangingTables.length > 0) {
-        hangingTables.forEach(lt => claimedTableIds.add(lt.id));
-        let hangingChartCount = hangingTables.reduce((sum, lt) => sum + chartElements.filter(ce => ce.tableId === lt.id).length, 0);
+    // Source tables: always displayed as a group at the top, showing all non-derived tables
+    let sourceTables = tables.filter(t => !t.derive);
+    if (sourceTables.length > 0) {
+        sourceTables.forEach(lt => claimedTableIds.add(lt.id));
+        let sourceChartCount = sourceTables.reduce((sum, lt) => sum + chartElements.filter(ce => ce.tableId === lt.id).length, 0);
         allThreadEntries.push({
-            key: 'hanging-tables',
-            groupId: 'hanging-tables',
-            leafTables: hangingTables,
+            key: 'source-tables',
+            groupId: 'source-tables',
+            leafTables: sourceTables,
             threadIdx: -1,
             hideLabel: true,
         });
-        allThreadHeights.push(estimateThreadHeight(hangingTables.length, 0, hangingChartCount));
+        allThreadHeights.push(estimateThreadHeight(sourceTables.length, 0, sourceChartCount));
     }
 
-    // Regular threads: one per threaded leaf table
-    // Assign sub-thread numbering: split (promoted) threads get the main index (1, 2, ...),
-    // real leaf tables whose chain was split get a sub-index (1.1, 1.2, ...)
-    let realThreadIdx = 0; // counter for main threads
-    // Pre-scan: find which real leaf each extra leaf belongs to
+    // Pre-scan: group every threaded leaf (extras + real leaves) by the *real
+    // leaf* whose chain it belongs to.  Extras inherit their real leaf's id.
     let extraLeafToRealLeaf = new Map<string, string>();
-    // Also build reverse: real leaf -> list of extra leaves in its chain
-    let realLeafToExtraLeaves = new Map<string, string[]>();
     for (const lt of threadedTables) {
-        if (!extraLeafIds.has(lt.id)) {
-            // This is a real leaf — find all extra leaves that are ancestors of it
-            const triggers = getCachedTriggers(lt);
-            const chainIds = triggers.map(t => t.tableId);
-            const myExtras: string[] = [];
-            for (const extraId of extraLeafIds) {
-                if (chainIds.includes(extraId)) {
-                    if (!extraLeafToRealLeaf.has(extraId)) {
-                        extraLeafToRealLeaf.set(extraId, lt.id);
-                    }
-                    myExtras.push(extraId);
-                }
-            }
-            if (myExtras.length > 0) {
-                realLeafToExtraLeaves.set(lt.id, myExtras);
+        if (extraLeafIds.has(lt.id)) continue;
+        const triggers = getCachedTriggers(lt);
+        const chainIds = new Set(triggers.map(t => t.resultTableId));
+        for (const extraId of extraLeafIds) {
+            if (chainIds.has(extraId) && !extraLeafToRealLeaf.has(extraId)) {
+                extraLeafToRealLeaf.set(extraId, lt.id);
             }
         }
     }
-    // Map from extra leaf id -> its assigned main thread index
-    let extraLeafToThreadIdx = new Map<string, number>();
-    // Track sub-index counters per chain (keyed by first extra leaf's thread idx)
-    let subThreadCounters = new Map<number, number>();
+    const groupIdOf = (lt: DictTable) =>
+        extraLeafIds.has(lt.id) ? (extraLeafToRealLeaf.get(lt.id) || lt.id) : lt.id;
+
+    // For each group, capture the ordered list of segments (using current
+    // threadedTables iteration order, which has already been ancestor-sorted).
+    const segmentsByGroup = new Map<string, string[]>();
+    for (const lt of threadedTables) {
+        const gid = groupIdOf(lt);
+        const arr = segmentsByGroup.get(gid) || [];
+        arr.push(lt.id);
+        segmentsByGroup.set(gid, arr);
+    }
+
+    // Numbering: only the *first* segment of each group bumps the counter and
+    // gets a visible label.  Continuation segments are unlabelled — they rely
+    // on the "↑ continued" header chip + ghost parent for visual continuity.
+    let realThreadIdx = 0;
 
     threadedTables.forEach((lt, i) => {
         const triggers = getCachedTriggers(lt);
 
-        // Collect all table IDs in this thread's chain
         let threadTableIds = new Set<string>();
-        triggers.forEach(t => threadTableIds.add(t.tableId));
+        triggers.forEach(t => threadTableIds.add(t.resultTableId));
         threadTableIds.add(lt.id);
 
-        // Only new (unclaimed) tables contribute to this thread's height
         let newTableIds = [...threadTableIds].filter(id => !claimedTableIds.has(id));
-
-        let newTriggerCount = triggers.filter(t => newTableIds.includes(t.resultTableId)).length;
+        let newTriggerPairs = triggers.filter(tp => newTableIds.includes(tp.resultTableId));
         let chartCount = newTableIds.reduce((sum, tid) => sum + chartElements.filter(ce => ce.tableId === tid).length, 0);
-
-        // +1 table and +1 trigger for the leaf table itself
+        let entryCount = newTriggerPairs.reduce((sum, tp) => sum + (tp.interaction?.length || 1), 0);
+        entryCount += lt.derive?.trigger?.interaction?.length || 1;
         let totalTables = newTableIds.length + 1;
-        let totalTriggers = newTriggerCount + 1;
 
-        // Claim this thread's tables for subsequent threads
         threadTableIds.forEach(id => claimedTableIds.add(id));
 
-        // Determine thread label and whether this is a split sub-thread
-        const isSplit = extraLeafIds.has(lt.id);
-        // A real leaf is a "continuation" if it has extra leaves in its chain
-        const isContinuation = !isSplit && realLeafToExtraLeaves.has(lt.id);
-        let threadLabel: string;
-        let threadIdxForEntry: number;
+        const gid = groupIdOf(lt);
+        const groupSegs = segmentsByGroup.get(gid)!;
+        const posInGroup = groupSegs.indexOf(lt.id);
+        const isFirst = posInGroup === 0;
+        const isLast = posInGroup === groupSegs.length - 1;
 
-        if (isSplit) {
-            // Promoted intermediate — gets a main thread index
+        let threadLabel: string | undefined;
+        let threadIdxForEntry: number;
+        if (isFirst) {
             realThreadIdx++;
-            extraLeafToThreadIdx.set(lt.id, realThreadIdx);
-            threadLabel = `thread - ${realThreadIdx}`;
+            threadLabel = t('dataThread.threadIndex', { index: String(realThreadIdx) });
             threadIdxForEntry = realThreadIdx - 1;
-        } else if (isContinuation) {
-            // Real leaf whose chain was split — gets sub-index under the last extra leaf's index
-            const myExtras = realLeafToExtraLeaves.get(lt.id) || [];
-            // Use the last extra leaf's thread index (the one closest to this leaf in the chain)
-            const lastExtra = myExtras[myExtras.length - 1];
-            const parentIdx = extraLeafToThreadIdx.get(lastExtra) ?? realThreadIdx;
-            const subIdx = (subThreadCounters.get(parentIdx) || 0) + 1;
-            subThreadCounters.set(parentIdx, subIdx);
-            threadLabel = `thread - ${parentIdx}.${subIdx}`;
-            threadIdxForEntry = i;
         } else {
-            // Normal thread (no splitting involved)
-            realThreadIdx++;
-            threadLabel = `thread - ${realThreadIdx}`;
-            threadIdxForEntry = realThreadIdx - 1;
+            threadLabel = undefined;
+            threadIdxForEntry = realThreadIdx - 1; // inherit head's idx
         }
 
         allThreadEntries.push({
@@ -2336,9 +3083,11 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             leafTables: [lt],
             threadIdx: threadIdxForEntry,
             threadLabel,
-            isSplitThread: isContinuation,
+            isSplitThread: !isFirst,             // continuation → ghost parent + header
+            hideLabel: !isFirst,                 // continuation → no own label divider
+            hasContinuationBelow: !isLast,       // not the tail → "↓ continues below" footer
         });
-        allThreadHeights.push(estimateThreadHeight(totalTables, totalTriggers, chartCount));
+        allThreadHeights.push(estimateThreadHeight(totalTables, entryCount, chartCount));
     });
 
     // Pre-compute usedTableIds for each entry (avoids quadratic recomputation in renderThreadEntry)
@@ -2348,45 +3097,43 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
             entry.usedTableIds = [...accumulated];
             for (const lt of entry.leafTables) {
                 const triggers = getCachedTriggers(lt);
-                accumulated.push(...triggers.map(t => t.tableId), lt.id);
+                // Include both source (tableId) and result (resultTableId) IDs from the chain
+                for (const tp of triggers) {
+                    accumulated.push(tp.tableId, tp.resultTableId);
+                }
+                accumulated.push(lt.id);
             }
         }
     }
 
     // Pick the best column layout: dynamically based on container width.
-    const availableHeight = containerRef.current?.clientHeight ?? 600;
+    // Use the same stable viewportHeight (derived from the outer wrapper) for
+    // packing as we do for split decisions — so the column count doesn't shift
+    // when the chatbox grows during clarification/explanation.
+    const availableHeight = viewportHeight;
     const hasMultipleThreads = allThreadEntries.length > 1;
 
-    const CARD_GAP = 12; // padding + spacing between cards in a column
-    const PANEL_PADDING = 16;
-    const CARD_WIDTH = 220;
-    const COLUMN_WIDTH = CARD_WIDTH + CARD_GAP;
-
-    // Determine how many columns fit in the available container width (1-3)
-    const fittableColumns = Math.max(1, Math.min(3, Math.floor((containerWidth - PANEL_PADDING) / COLUMN_WIDTH)));
     const MAX_COLUMNS = fittableColumns;
     const columnLayout: number[][] = chooseBestColumnLayout(
         allThreadHeights, MAX_COLUMNS, availableHeight, /* flexOrder */ false,
-        /* minColumns */ Math.min(fittableColumns, hasMultipleThreads ? 2 : 1)
+        /* minColumns */ fittableColumns,
     );
-    const actualColumns = columnLayout.length || 1;
 
     let renderThreadEntry = (entry: ThreadEntry) => {
         let usedTableIds = entry.usedTableIds || [];
 
         return <SingleThreadGroupView
             key={entry.key}
-            scrollRef={scrollRef}
             threadIdx={entry.threadIdx}
             threadLabel={entry.threadLabel}
             isSplitThread={entry.isSplitThread}
+            hasContinuationBelow={entry.hasContinuationBelow}
             hideLabel={entry.hideLabel}
             leafTables={entry.leafTables}
             chartElements={chartElements}
             usedIntermediateTableIds={usedTableIds}
             globalHighlightedTableIds={globalHighlightedTableIds}
             focusedThreadLeafId={focusedThreadLeafId}
-            chatboxFocused={chatboxFocused}
             sx={{
                 backgroundColor: 'white',
                 borderRadius: radius.md,
@@ -2420,7 +3167,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 justifyContent: 'center',
                 gap: `${CARD_GAP}px`,
                 py: 1,
-                pb: chatboxFocused ? '180px' : 1,
+                // Bottom padding leaves room so the scroll handler can position
+                // the focused element above the chatbox even when it expands.
+                pb: '180px',
                 pl: `${PANEL_PADDING / 2}px`,
                 pr: 0,
             }}>
@@ -2459,38 +3208,35 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     ) : null;
 
     return (
-        <Box className="data-thread" sx={{ ...sx, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-            {/* Mode toggle button — floats on top-right corner */}
-            <Box sx={{ position: 'absolute', top: 4, right: 16, zIndex: 5 }}>
-                <Tooltip title={chatMode ? 'Switch to thread view' : 'Switch to chat view'}>
-                    <IconButton
-                        size="small"
-                        onClick={() => setChatMode(m => !m)}
-                        sx={{ p: 0.5, color: theme.palette.text.secondary,
-                            backgroundColor: alpha(theme.palette.action.selected, 0.04),
-                            borderRadius: '6px',
-                            '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.08) } }}
-                    >
-                        {chatMode ? <AccountTreeIcon sx={{ fontSize: 18 }} /> : <ForumOutlinedIcon sx={{ fontSize: 18 }} />}
-                    </IconButton>
-                </Tooltip>
+        <Box
+            ref={outerRef}
+            className="data-thread"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            sx={{
+                ...sx,
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                ...(isDragOver && {
+                    outline: '2px dashed',
+                    outlineColor: 'primary.main',
+                    outlineOffset: -2,
+                    backgroundColor: 'action.hover',
+                }),
+            }}
+        >
+            <Box ref={containerRef} sx={{
+                    overflow: 'hidden', 
+                    direction: 'rtl', 
+                    display: 'block', 
+                    flex: 1,
+                    minHeight: 0,
+                }}>
+                {view}
             </Box>
-            {chatMode ? (
-                <Box ref={containerRef} sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <ChatThreadView />
-                </Box>
-            ) : (
-                <Box ref={containerRef} sx={{
-                        overflow: 'hidden', 
-                        direction: 'rtl', 
-                        display: 'block', 
-                        flex: 1,
-                        minHeight: 0,
-                    }}>
-                    {view}
-                </Box>
-            )}
-            <SimpleChartRecBox />
+            <SimpleChartRecBox onInputFocus={() => setChatboxFocusTick(t => t + 1)} />
         </Box>
     );
 }

@@ -2,16 +2,18 @@
 // Licensed under the MIT License.
 
 import { useSelector, useDispatch } from 'react-redux';
+import { useTranslation } from 'react-i18next';
 import { DataFormulatorState, dfActions, dfSelectors, fetchCodeExpl, fetchChartInsight, fetchFieldSemanticType } from './dfSlice';
 import { AppDispatch } from './store';
 import { Chart, FieldItem, Trigger, createDictTable, DictTable } from '../components/ComponentType';
-import { getUrls, getTriggers, fetchWithIdentity } from './utils';
+import { getUrls, getTriggers, translateBackend } from './utils';
+import { apiRequest, streamRequest } from './apiClient';
+import { getErrorMessage } from './errorCodes';
 
 export type IdeaItem = {
     text: string;
     goal: string;
-    difficulty: 'easy' | 'medium' | 'hard';
-    tag?: string;
+    tag: 'deep-dive' | 'pivot' | 'broaden' | 'cross-data' | 'statistical' | string;
 };
 
 export interface StreamIdeasOptions {
@@ -20,14 +22,14 @@ export interface StreamIdeasOptions {
     onIdeas: (ideas: IdeaItem[]) => void;
     onThinkingBuffer: (buffer: string) => void;
     onLoadingChange: (loading: boolean) => void;
+    /** Backend progress phase updates (e.g. "building_context", "generating") */
+    onProgress?: (phase: string) => void;
     /** Chart image (PNG data URL) for current visualization context */
     currentChartImage?: string | null;
     /** Sample rows from the current table */
     currentDataSample?: any[];
     /** Optional start question for idea generation */
     startQuestion?: string;
-    /** If true, only blocks with type==="question" are included (default: false) */
-    filterByType?: boolean;
 }
 
 export interface FormulateDataOptions {
@@ -76,14 +78,70 @@ function generateTableId(tables: DictTable[]): string {
  */
 export function useFormulateData() {
     const dispatch = useDispatch<AppDispatch>();
+    const { t } = useTranslation();
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
-    const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const charts = useSelector(dfSelectors.getAllCharts);
     const activeModel = useSelector(dfSelectors.getActiveModel);
 
     /**
-     * Build an exploration thread from the current table's derivation chain.
+     * Resolve the actual chart that's rendered for a derived table. The
+     * `trigger.chart` saved on the table is just an "Auto" stub generated
+     * during the agent run — the chart the user actually sees lives in the
+     * Redux `charts` slice. Mirrors the lookup in `SimpleChartRecBox`.
+     */
+    function resolveChartForTable(tableId: string) {
+        return charts.find(c => c.tableRef === tableId && c.source === 'trigger')
+            || charts.find(c => c.tableRef === tableId);
+    }
+
+    /** Map a chart's encodingMap to `{ channel: fieldName }` (skips empties). */
+    function chartEncodingsByName(chart: Chart | undefined): Record<string, string> {
+        if (!chart?.encodingMap) return {};
+        return Object.fromEntries(
+            Object.entries(chart.encodingMap)
+                .filter(([, v]: [string, any]) => v?.fieldID)
+                .map(([k, v]: [string, any]) => {
+                    const field = conceptShelfItems.find(f => f.id === v.fieldID);
+                    return [k, field?.name || v.fieldID];
+                })
+        );
+    }
+
+    /**
+     * Build a rich focused thread from the current table's derivation chain.
+     * Each step includes: user question, display instruction, chart type + encodings,
+     * created table metadata, and agent summary.
+     */
+    function buildFocusedThread(currentTable: DictTable): any[] {
+        if (!currentTable.derive || currentTable.anchored) return [];
+        const triggers = getTriggers(currentTable, tables);
+        return triggers.map(trigger => {
+            const resultTable = tables.find(t2 => t2.id === trigger.resultTableId);
+            const interaction = trigger.interaction || [];
+            const userPrompt = interaction.find(e => e.role === 'prompt')?.content;
+            const instruction = interaction.find(e => e.role === 'instruction');
+            const summary = interaction.find(e => e.role === 'summary');
+            // Resolve the actual rendered chart (not the trigger's "Auto" stub)
+            // so chart_type + encodings reflect what the user is looking at.
+            const resolvedChart = resolveChartForTable(trigger.resultTableId);
+            return {
+                user_question: userPrompt || instruction?.content || '',
+                display_instruction: instruction?.displayContent || instruction?.content || '',
+                agent_thinking: instruction?.plan,
+                agent_summary: summary?.content,
+                table_name: resultTable?.virtual?.tableId || trigger.resultTableId,
+                columns: resultTable?.names || [],
+                row_count: resultTable?.virtual?.rowCount ?? resultTable?.rows?.length ?? 0,
+                chart_type: resolvedChart?.chartType || '',
+                encodings: chartEncodingsByName(resolvedChart),
+            };
+        });
+    }
+
+    /**
+     * Build a legacy exploration thread (flat table list) for backward compatibility.
      */
     function buildExplorationThread(currentTable: DictTable): any[] {
         if (!currentTable.derive || currentTable.anchored) return [];
@@ -91,8 +149,63 @@ export function useFormulateData() {
         return triggers.map(trigger => ({
             name: trigger.resultTableId,
             rows: tables.find(t2 => t2.id === trigger.resultTableId)?.rows,
-            description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source} with instruction: ${trigger.instruction}`,
+            description: `Derive from ${tables.find(t2 => t2.id === trigger.resultTableId)?.derive?.source}`,
         }));
+    }
+
+    /**
+     * Build peripheral thread summaries — leaf tables in the workspace that
+     * are NOT part of the focused chain. Mirrors the data agent's Tier 3
+     * context (`SimpleChartRecBox.exploreFromChat`): all leaves except the
+     * focused one, with per-step `display → chart_type (encodings)` lines
+     * using resolved field names.
+     */
+    function buildOtherThreads(currentTable: DictTable): any[] {
+        // Collect all table IDs in the focused thread
+        const focusedIds = new Set<string>();
+        if (currentTable.derive && !currentTable.anchored) {
+            const triggers = getTriggers(currentTable, tables);
+            for (const t of triggers) {
+                focusedIds.add(t.resultTableId);
+            }
+        }
+        focusedIds.add(currentTable.id);
+
+        // Find every leaf table (no children, or all children anchored) that
+        // is derived from somewhere and NOT part of the focused chain.
+        const otherThreads: any[] = [];
+        for (const table of tables) {
+            if (focusedIds.has(table.id)) continue;
+            if (!table.derive) continue;
+            const children = tables.filter(c => c.derive?.trigger?.tableId === table.id);
+            const isLeaf = children.length === 0 || children.every(c => c.anchored);
+            if (!isLeaf) continue;
+
+            const triggers = getTriggers(table, tables);
+            if (triggers.length === 0) continue;
+
+            const steps = triggers.map(trigger => {
+                const instr = trigger.interaction?.find(e => e.role === 'instruction');
+                const label = instr?.displayContent || instr?.content || trigger.resultTableId;
+                // Use the actual rendered chart, not the trigger's "Auto" stub.
+                const chart = resolveChartForTable(trigger.resultTableId);
+                const chartType = chart?.chartType && chart.chartType !== 'Auto' ? chart.chartType : '';
+                const encStr = Object.entries(chartEncodingsByName(chart))
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join(', ');
+                return `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
+            });
+
+            const sourceTableId = triggers[0].tableId;
+            const sourceTable = tables.find(t => t.id === sourceTableId);
+            otherThreads.push({
+                source_table: sourceTable?.virtual?.tableId || sourceTableId,
+                leaf_table: table.virtual?.tableId || table.id,
+                step_count: triggers.length,
+                steps,
+            });
+        }
+        return otherThreads;
     }
 
     /**
@@ -101,110 +214,106 @@ export function useFormulateData() {
     async function streamIdeas(options: StreamIdeasOptions): Promise<void> {
         const {
             actionTableIds, currentTable,
-            onIdeas, onThinkingBuffer, onLoadingChange,
+            onIdeas, onThinkingBuffer, onLoadingChange, onProgress,
             currentChartImage, currentDataSample,
-            startQuestion, filterByType = false,
+            startQuestion,
         } = options;
 
         onLoadingChange(true);
         onThinkingBuffer("");
         onIdeas([]);
 
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        let timedOut = false;
         try {
-            const explorationThread = buildExplorationThread(currentTable);
+            const focusedThread = buildFocusedThread(currentTable);
+            const otherThreads = buildOtherThreads(currentTable);
             const actionTables = actionTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
             const messageBody = JSON.stringify({
-                token: String(Date.now()),
                 model: activeModel,
-                mode: 'interactive',
                 input_tables: actionTables.map(t => ({
                     name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
-                    rows: t.rows,
-                    attached_metadata: t.attachedMetadata,
                 })),
-                exploration_thread: explorationThread,
-                agent_exploration_rules: agentRules.exploration,
-                ...(currentDataSample ? { current_data_sample: currentDataSample } : {}),
+                primary_tables: (() => {
+                    if (currentTable.derive && !currentTable.anchored) {
+                        return (currentTable.derive.source as string[]).map(id => {
+                            const t = tables.find(tbl => tbl.id === id);
+                            return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+                        });
+                    }
+                    return [currentTable.virtual?.tableId || currentTable.id.replace(/\.[^/.]+$/, "")];
+                })(),
+                ...(focusedThread.length > 0 ? { focused_thread: focusedThread } : {}),
+                ...(otherThreads.length > 0 ? { other_threads: otherThreads } : {}),
                 ...(currentChartImage ? { current_chart: currentChartImage } : {}),
                 ...(startQuestion ? { start_question: startQuestion } : {}),
             });
 
             const engine = getUrls().GET_RECOMMENDATION_QUESTIONS;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
+            timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
-            const response = await fetchWithIdentity(engine, {
+            const questions: IdeaItem[] = [];
+            for await (const event of streamRequest(engine, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: messageBody,
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const reader = response.body?.getReader();
-            if (!reader) {
-                throw new Error('No response body reader available');
-            }
-
-            const decoder = new TextDecoder();
-            let lines: string[] = [];
-            let buffer = '';
-
-            const updateState = (currentLines: string[]) => {
-                const dataBlocks = currentLines
-                    .map(line => { try { return JSON.parse(line.trim()); } catch (e) { return null; } })
-                    .filter(block => block != null);
-
-                const questions = (filterByType ? dataBlocks.filter((block: any) => block.type === "question") : dataBlocks)
-                    .map((block: any) => ({
-                        text: block.text,
-                        goal: block.goal,
-                        difficulty: block.difficulty,
-                        tag: block.tag,
-                    }));
-
-                onIdeas(questions);
-            };
-
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const newLines = buffer.split('data: ').filter(line => line.trim() !== "");
-                    buffer = newLines.pop() || '';
-                    if (newLines.length > 0) {
-                        lines.push(...newLines);
-                        updateState(lines);
-                    }
-                    onThinkingBuffer(buffer.replace(/^data: /, ""));
+            }, controller.signal)) {
+                if (event.type === 'error') {
+                    throw new Error(event.error ? getErrorMessage(event.error) : t('messages.error'));
                 }
-            } finally {
-                reader.releaseLock();
+                if (event.type === 'warning') {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'exploration',
+                        value: (event as any).warning?.message ?? 'Warning from server',
+                    }));
+                    continue;
+                }
+                if (event.type === 'progress') {
+                    onProgress?.((event as any).phase);
+                    continue;
+                }
+                if (event.type === 'question' && (event as any).text) {
+                    questions.push({
+                        text: (event as any).text,
+                        goal: (event as any).goal,
+                        tag: (event as any).tag || 'deep-dive',
+                    });
+                    onIdeas([...questions]);
+                    continue;
+                }
+                if ((event as any).text) {
+                    onThinkingBuffer((event as any).text);
+                }
             }
+            clearTimeout(timeoutId);
+            timeoutId = undefined;
 
-            lines.push(buffer);
-            updateState(lines);
-
-            if (lines.length === 0) {
+            if (questions.length === 0) {
                 throw new Error('No valid results returned from agent');
             }
         } catch (error) {
-            dispatch(dfActions.addMessages({
-                "timestamp": Date.now(),
-                "type": "error",
-                "component": "chart builder",
-                "value": "Failed to get ideas from the exploration agent. Please try again.",
-                "detail": error instanceof Error ? error.message : 'Unknown error',
-            }));
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                if (timedOut) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'exploration',
+                        value: t('messages.agent.suggestionsTimedOut', { seconds: config.formulateTimeoutSeconds }),
+                    }));
+                }
+            } else {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: "error",
+                    component: "chart builder",
+                    value: error instanceof Error ? error.message : t('messages.agent.unexpectedError'),
+                    detail: error instanceof Error ? error.message : 'Unknown error',
+                }));
+            }
         } finally {
+            if (timeoutId) clearTimeout(timeoutId);
             onLoadingChange(false);
         }
     }
@@ -214,7 +323,7 @@ export function useFormulateData() {
      * Handles request building, dialog continuation, table/concept creation, and error handling.
      * Chart creation is delegated to the caller via the createChart callback.
      */
-    function formulateData(options: FormulateDataOptions): void {
+    async function formulateData(options: FormulateDataOptions): Promise<void> {
         const {
             instruction, mode, actionTableIds, currentTable,
             overrideTableId, currentVisualization, expectedVisualization,
@@ -227,23 +336,32 @@ export function useFormulateData() {
         onStarted?.();
 
         const actionTables = actionTableIds.map(id => tables.find(t => t.id === id) as DictTable);
-        const token = String(Date.now());
 
         // Build input_tables payload (shared across all request variants)
         const inputTablesPayload = actionTables.map(t => ({
             name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
             rows: t.rows,
-            attached_metadata: t.attachedMetadata,
         }));
+
+        // Determine primary table names for agent context prioritization
+        // For derived tables, all source tables are primary; for source tables, just the current one
+        const primaryTableNames = (() => {
+            if (currentTable.derive && !currentTable.anchored) {
+                return (currentTable.derive.source as string[]).map(id => {
+                    const t = tables.find(tbl => tbl.id === id);
+                    return t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+                });
+            }
+            return [currentTable.virtual?.tableId || currentTable.id.replace(/\.[^/.]+$/, "")];
+        })();
 
         // Build base request body
         let messageBody: any = {
-            token,
             mode,
             input_tables: inputTablesPayload,
+            primary_tables: primaryTableNames,
             extra_prompt: instruction,
             model: activeModel,
-            agent_coding_rules: agentRules.coding,
             ...(currentVisualization ? { current_visualization: currentVisualization } : {}),
             ...(expectedVisualization ? { expected_visualization: expectedVisualization } : {}),
         };
@@ -262,14 +380,12 @@ export function useFormulateData() {
             } else {
                 // Refine: continue existing dialog
                 messageBody = {
-                    token,
                     mode,
                     input_tables: inputTablesPayload,
                     dialog: currentTable.derive.dialog,
                     latest_data_sample: currentTable.rows.slice(0, 10),
                     new_instruction: instruction,
                     model: activeModel,
-                    agent_coding_rules: agentRules.coding,
                     ...(currentVisualization ? { current_visualization: currentVisualization } : {}),
                     ...(expectedVisualization ? { expected_visualization: expectedVisualization } : {}),
                 };
@@ -278,41 +394,16 @@ export function useFormulateData() {
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), config.formulateTimeoutSeconds * 1000);
+        let timedOut = false;
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.formulateTimeoutSeconds * 1000);
 
-        fetchWithIdentity(engine, {
+        apiRequest(engine, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(messageBody),
             signal: controller.signal,
         })
-        .then((response: Response) => {
-            if (!response.ok) {
-                return response.text().then(text => {
-                    try {
-                        const errorData = JSON.parse(text);
-                        throw new Error(errorData.error_message || errorData.error || `Server error (${response.status})`);
-                    } catch (parseError) {
-                        if (parseError instanceof SyntaxError) {
-                            throw new Error(`Server error (${response.status}): The server returned an unexpected response.`);
-                        }
-                        throw parseError;
-                    }
-                });
-            }
-            return response.json();
-        })
-        .then((data) => {
-            if (data.status === "error" && data.error_message) {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": `Data formulation failed: ${data.error_message}`,
-                }));
-                return;
-            }
-
+        .then(({ data }) => {
             if (!data.results || data.results.length === 0) {
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
@@ -320,22 +411,24 @@ export function useFormulateData() {
                     "type": "error",
                     "value": "No result is returned from the data formulation agent. Please try again.",
                 }));
+                onError?.(new Error("No results returned"));
                 return;
             }
-
-            if (data["token"] !== token) return;
 
             const candidates = data["results"].filter((item: any) => item["status"] === "ok");
 
             if (candidates.length === 0) {
+                const firstResult = data.results[0];
                 dispatch(dfActions.addMessages({
                     "timestamp": Date.now(),
                     "type": "error",
                     "component": "chart builder",
                     "value": "Data formulation failed, please try again.",
-                    "code": data.results[0].code,
-                    "detail": data.results[0].content,
+                    "code": firstResult.code,
+                    "detail": translateBackend(firstResult.content, firstResult.content_code),
+                    "diagnostics": firstResult.diagnostics,
                 }));
+                onError?.(new Error("All candidates failed"));
                 return;
             }
 
@@ -359,12 +452,33 @@ export function useFormulateData() {
             }
 
             // Create trigger
+            // Resolve input table names from agent's response
+            const agentInputTables: string[] = refinedGoal['input_tables'] || [];
+            const resolvedSourceIds = agentInputTables.length > 0
+                ? actionTableIds.filter(id => {
+                    const t = tables.find(tbl => tbl.id === id);
+                    if (!t) return false;
+                    const name = t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, "");
+                    return agentInputTables.some((n: string) => n.replace(/\.[^/.]+$/, "") === name);
+                })
+                : actionTableIds;
+            const resolvedSourceNames = (resolvedSourceIds.length > 0 ? resolvedSourceIds : actionTableIds).map(id => {
+                const t = tables.find(tbl => tbl.id === id);
+                return t?.displayId || t?.virtual?.tableId || id.replace(/\.[^/.]+$/, "");
+            });
             const trigger: Trigger = {
                 tableId: currentTable.id,
-                instruction,
-                displayInstruction,
-                chart: triggerChart,
                 resultTableId: candidateTableId,
+                chart: triggerChart,
+                interaction: [{
+                    from: 'user' as const,
+                    to: 'datarec-agent' as const,
+                    role: 'instruction' as const,
+                    content: instruction,
+                    displayContent: displayInstruction,
+                    inputTableNames: resolvedSourceNames,
+                    timestamp: Date.now(),
+                }],
             };
 
             // Create candidate table with derive info
@@ -372,7 +486,7 @@ export function useFormulateData() {
                 code,
                 codeSignature,
                 outputVariable: refinedGoal['output_variable'] || 'result_df',
-                source: actionTableIds,
+                source: resolvedSourceIds.length > 0 ? resolvedSourceIds : actionTableIds,
                 dialog,
                 trigger,
             });
@@ -408,6 +522,15 @@ export function useFormulateData() {
                 }
             }
 
+            const fieldDisplayNames = refinedGoal['field_display_names'];
+            if (fieldDisplayNames && typeof fieldDisplayNames === 'object') {
+                for (const [fieldName, displayName] of Object.entries(fieldDisplayNames)) {
+                    if (candidateTable.metadata[fieldName] && typeof displayName === 'string') {
+                        candidateTable.metadata[fieldName].displayName = displayName;
+                    }
+                }
+            }
+
             // Insert or override table
             if (overrideTableId) {
                 dispatch(dfActions.overrideDerivedTables(candidateTable));
@@ -435,33 +558,30 @@ export function useFormulateData() {
             // Delegate chart creation to the caller
             const focusedChartId = createChart({ candidateTable, refinedGoal, currentConcepts });
 
-            // Auto-generate chart insight after rendering
             if (focusedChartId) {
-                const chartIdForInsight = focusedChartId;
-                setTimeout(() => {
-                    dispatch(fetchChartInsight({ chartId: chartIdForInsight, tableId: candidateTable.id }) as any);
-                }, 1500);
+                dispatch(fetchChartInsight({ chartId: focusedChartId, tableId: candidateTable.id }) as any);
             }
 
             onSuccess?.({ displayInstruction, candidateTable, focusedChartId });
         })
         .catch((error) => {
             if (error.name === 'AbortError') {
-                dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": `Data formulation timed out after ${config.formulateTimeoutSeconds} seconds. Consider breaking down the task, using a different model or prompt, or increasing the timeout limit.`,
-                    "detail": "Request exceeded timeout limit",
-                }));
+                if (timedOut) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        component: "chart builder",
+                        type: "warning",
+                        value: t('messages.agent.formulationTimedOut', { seconds: config.formulateTimeoutSeconds }),
+                    }));
+                }
             } else {
                 console.error(error);
                 dispatch(dfActions.addMessages({
-                    "timestamp": Date.now(),
-                    "component": "chart builder",
-                    "type": "error",
-                    "value": "Data formulation failed, please try again.",
-                    "detail": error.message,
+                    timestamp: Date.now(),
+                    component: "chart builder",
+                    type: "error",
+                    value: t('messages.agent.unexpectedError'),
+                    detail: error.message,
                 }));
             }
             onError?.(error);

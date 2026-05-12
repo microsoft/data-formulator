@@ -4,7 +4,7 @@
 import { Type } from '../../../data/types';
 import { Channel, EncodingItem } from '../../../components/ComponentType';
 import { TestCase, makeField, makeEncodingItem } from './types';
-import { seededRandom, genCategories } from './generators';
+import { seededRandom, genCategories, genDates } from './generators';
 
 /** Facet cardinality sizes */
 export const FACET_SIZES = { S: 2, M: 4, L: 8, XL: 12 } as const;
@@ -154,7 +154,7 @@ export function genFacetTests(
             const fields = [makeField('Category'), makeField('Value')];
             const metadata: Record<string, any> = {
                 Category: { type: Type.String, semanticType: 'Category', levels: categories },
-                Value: { type: Type.Number, semanticType: 'Revenue', levels: [] },
+                Value: { type: Type.Number, semanticType: 'Amount', levels: [] },
             };
 
             if (mode === 'column+row') {
@@ -266,7 +266,7 @@ function buildFacetTest(opts: {
         encodingMap.y = makeEncodingItem('Value');
         fields.push(makeField('Category'), makeField('Value'));
         metadata['Category'] = { type: Type.String, semanticType: 'Category', levels: xCategories };
-        metadata['Value'] = { type: Type.Number, semanticType: 'Revenue', levels: [] };
+        metadata['Value'] = { type: Type.Number, semanticType: 'Amount', levels: [] };
     }
 
     if (colVals) {
@@ -480,9 +480,14 @@ function buildOverflowFacetTest(opts: {
     xBandedCount?: number;
     /** If true, use continuous x × y (scatter) instead of discrete x */
     continuousXY?: boolean;
+    /** If set, generate a temporal line chart with this many time points */
+    temporalLine?: {
+        pointsPerSeries: number;
+        seriesCount?: number;
+    };
     seed: number;
 }): TestCase {
-    const { title, description, tags, chartType, colCount, rowCount, xBandedCount, continuousXY, seed } = opts;
+    const { title, description, tags, chartType, colCount, rowCount, xBandedCount, continuousXY, temporalLine, seed } = opts;
     const rand = seededRandom(seed);
     const colVals = colCount ? genCategories('Region', colCount) : undefined;
     const rowVals = rowCount ? genCategories('Zone', rowCount) : undefined;
@@ -499,9 +504,27 @@ function buildOverflowFacetTest(opts: {
     }
 
     const xCategories = xBandedCount ? genCategories('Item', xBandedCount) : [];
+    const seriesNames = temporalLine?.seriesCount
+        ? genCategories('Category', temporalLine.seriesCount) : [];
+    const timePoints = temporalLine
+        ? genDates(temporalLine.pointsPerSeries) : [];
 
     for (const facet of facets) {
-        if (continuousXY) {
+        if (temporalLine) {
+            const series = seriesNames.length > 0 ? seriesNames : [''];
+            for (const s of series) {
+                for (const t of timePoints) {
+                    const row: Record<string, any> = {
+                        Date: t,
+                        Value: Math.round(50 + rand() * 500),
+                        ...(facet.col != null ? { Col: facet.col } : {}),
+                        ...(facet.row != null ? { Row: facet.row } : {}),
+                    };
+                    if (s) row['Series'] = s;
+                    data.push(row);
+                }
+            }
+        } else if (continuousXY) {
             for (let i = 0; i < 20; i++) {
                 data.push({
                     X: Math.round(10 + rand() * 90),
@@ -526,7 +549,18 @@ function buildOverflowFacetTest(opts: {
     const fields: ReturnType<typeof makeField>[] = [];
     const metadata: Record<string, any> = {};
 
-    if (continuousXY) {
+    if (temporalLine) {
+        encodingMap.x = makeEncodingItem('Date');
+        encodingMap.y = makeEncodingItem('Value');
+        fields.push(makeField('Date'), makeField('Value'));
+        metadata['Date'] = { type: Type.Date, semanticType: 'Time', levels: [] };
+        metadata['Value'] = { type: Type.Number, semanticType: 'Value', levels: [] };
+        if (seriesNames.length > 0) {
+            encodingMap.color = makeEncodingItem('Series');
+            fields.push(makeField('Series'));
+            metadata['Series'] = { type: Type.String, semanticType: 'Category', levels: seriesNames };
+        }
+    } else if (continuousXY) {
         encodingMap.x = makeEncodingItem('X');
         encodingMap.y = makeEncodingItem('Y');
         fields.push(makeField('X'), makeField('Y'));
@@ -537,7 +571,7 @@ function buildOverflowFacetTest(opts: {
         encodingMap.y = makeEncodingItem('Value');
         fields.push(makeField('Category'), makeField('Value'));
         metadata['Category'] = { type: Type.String, semanticType: 'Category', levels: xCategories };
-        metadata['Value'] = { type: Type.Number, semanticType: 'Revenue', levels: [] };
+        metadata['Value'] = { type: Type.Number, semanticType: 'Amount', levels: [] };
     }
 
     if (colVals) {
@@ -582,6 +616,37 @@ export function genFacetOverflowedColTests(): TestCase[] {
             colCount: 20,
             continuousXY: true,
             seed: 1301,
+        }),
+        // 10 columns with temporal line charts — many time points per panel.
+        // AR-based min subplot width should make panels wider → fewer columns.
+        buildOverflowFacetTest({
+            title: '10 Cols × 50 Dates — Line (temporal overflow)',
+            description: '10 column facets, each with 50 time points. Line chart AR prefers landscape → wider min subplots.',
+            tags: ['facet', 'column', 'overflow', 'temporal', 'line'],
+            chartType: 'Line Chart',
+            colCount: 10,
+            temporalLine: { pointsPerSeries: 50 },
+            seed: 1302,
+        }),
+        // 8 columns with multi-series temporal lines — 3 series × 30 dates.
+        buildOverflowFacetTest({
+            title: '8 Cols × 3 Series × 30 Dates — Line (multi-series)',
+            description: '8 column facets, 3 color series each with 30 dates. Connected marks want wider panels.',
+            tags: ['facet', 'column', 'overflow', 'temporal', 'line', 'color'],
+            chartType: 'Line Chart',
+            colCount: 8,
+            temporalLine: { pointsPerSeries: 30, seriesCount: 3 },
+            seed: 1303,
+        }),
+        // 20 columns with temporal line — heavy overflow, should wrap.
+        buildOverflowFacetTest({
+            title: '20 Cols × 40 Dates — Line (heavy overflow)',
+            description: '20 column facets with 40 time points each. Needs wrap — but wider min subplots mean fewer cols per row.',
+            tags: ['facet', 'column', 'overflow', 'temporal', 'line', 'wrap'],
+            chartType: 'Line Chart',
+            colCount: 20,
+            temporalLine: { pointsPerSeries: 40 },
+            seed: 1304,
         }),
     ];
 }
@@ -647,6 +712,125 @@ export function genFacetOverflowedRowTests(): TestCase[] {
             rowCount: 12,
             continuousXY: true,
             seed: 1321,
+        }),
+    ];
+}
+
+// ============================================================================
+// Dense Line + Facet Tests
+// ============================================================================
+
+/**
+ * Helper: build a dense-line facet test case.
+ *
+ * Generates a Line Chart with many overlapping color series (like
+ * rolling-correlation curves) faceted into `colCount` column panels.
+ * Each panel shares the same temporal x-axis and the same set of color
+ * series, mimicking real-world dashboards such as "Rolling Correlations
+ * Between Energy and Food Prices".
+ */
+function buildDenseLineFacetTest(opts: {
+    title: string;
+    description: string;
+    tags: string[];
+    colCount: number;
+    colorCount: number;
+    timePoints: number;
+    seed: number;
+}): TestCase {
+    const { title, description, tags, colCount, colorCount, timePoints, seed } = opts;
+    const rand = seededRandom(seed);
+
+    const facetVals = genCategories('Category', colCount);
+    const colorVals = genCategories('Product', colorCount);
+    const dates = genDates(timePoints, 2008);
+
+    const data: Record<string, any>[] = [];
+    for (const facet of facetVals) {
+        for (const series of colorVals) {
+            for (const date of dates) {
+                data.push({
+                    Date: date,
+                    Value: Math.round((rand() * 2 - 1) * 1000) / 1000, // range -1..1
+                    Series: series,
+                    Facet: facet,
+                });
+            }
+        }
+    }
+
+    const encodingMap: Partial<Record<Channel, EncodingItem>> = {
+        x: makeEncodingItem('Date'),
+        y: makeEncodingItem('Value'),
+        color: makeEncodingItem('Series'),
+        column: makeEncodingItem('Facet'),
+    };
+
+    const fields = [
+        makeField('Date'),
+        makeField('Value'),
+        makeField('Series'),
+        makeField('Facet'),
+    ];
+
+    const metadata: Record<string, any> = {
+        Date: { type: Type.Date, semanticType: 'Date', levels: dates },
+        Value: { type: Type.Number, semanticType: 'Value', levels: [] },
+        Series: { type: Type.String, semanticType: 'Category', levels: colorVals },
+        Facet: { type: Type.String, semanticType: 'Category', levels: facetVals },
+    };
+
+    return { title, description, tags, chartType: 'Line Chart', data, fields, metadata, encodingMap };
+}
+
+/**
+ * Dense Line + Facet tests — many overlapping color series within each
+ * facet panel.  Tests layout, legend, and readability when both the
+ * number of lines per panel and the number of facet columns are high.
+ *
+ * Covers 3, 4, 5, and 6 column facets with 8 color series each.
+ */
+export function genFacetDenseLineTests(): TestCase[] {
+    return [
+        // 3 columns × 8 lines — similar to the rolling-correlation dashboard
+        buildDenseLineFacetTest({
+            title: '3 Cols × 8 Lines — Dense Line',
+            description: '3 column facets, each with 8 overlapping line series. Tests dense multi-series readability.',
+            tags: ['facet', 'column', 'dense-line', 'line'],
+            colCount: 3,
+            colorCount: 8,
+            timePoints: 60,
+            seed: 1400,
+        }),
+        // 4 columns × 8 lines
+        buildDenseLineFacetTest({
+            title: '4 Cols × 8 Lines — Dense Line',
+            description: '4 column facets, each with 8 overlapping line series. Tighter panels than 3-col.',
+            tags: ['facet', 'column', 'dense-line', 'line'],
+            colCount: 4,
+            colorCount: 8,
+            timePoints: 60,
+            seed: 1401,
+        }),
+        // 5 columns × 8 lines
+        buildDenseLineFacetTest({
+            title: '5 Cols × 8 Lines — Dense Line',
+            description: '5 column facets, each with 8 overlapping line series. Panels start getting narrow.',
+            tags: ['facet', 'column', 'dense-line', 'line'],
+            colCount: 5,
+            colorCount: 8,
+            timePoints: 60,
+            seed: 1402,
+        }),
+        // 6 columns × 8 lines
+        buildDenseLineFacetTest({
+            title: '6 Cols × 8 Lines — Dense Line',
+            description: '6 column facets, each with 8 overlapping line series. Heavy layout pressure — tests wrap/clip.',
+            tags: ['facet', 'column', 'dense-line', 'line'],
+            colCount: 6,
+            colorCount: 8,
+            timePoints: 60,
+            seed: 1403,
         }),
     ];
 }

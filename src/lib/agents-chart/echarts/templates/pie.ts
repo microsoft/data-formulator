@@ -12,7 +12,7 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { extractCategories, DEFAULT_COLORS, computeCircumferencePressure, computeEffectiveBarCount } from './utils';
+import { extractCategories, computeCircumferencePressure, computeEffectiveBarCount } from './utils';
 
 export const ecPieChartDef: ChartTemplateDef = {
     chart: 'Pie Chart',
@@ -72,7 +72,8 @@ export const ecPieChartDef: ChartTemplateDef = {
                 minArcPx: 45,
                 minRadius: 60,
                 maxStretch: ctx.assembleOptions?.maxStretch,
-                margin: 50,   // extra room for pie label lines + text
+                // 增大 margin，给外侧标签留出更多画布空间，避免文字被裁切。
+                margin: 80,
             });
 
         const canvasW = rawCanvasW;
@@ -83,10 +84,26 @@ export const ecPieChartDef: ChartTemplateDef = {
         const n = pieData.length;
         const labelFontSize = n <= 4 ? 13 : n <= 8 ? 11 : n <= 15 ? 10 : 9;
 
+        // 估算最长标签需要的宽度（按字符数粗略估算），再反推饼图半径与标签宽度。
+        const maxLabelChars = pieData.reduce((m, d) => {
+            const len = String(d.name ?? '').length;
+            return len > m ? len : m;
+        }, 0);
+        const approxCharWidth = labelFontSize * 0.55; // 略小一点，避免过度放大 label 宽度
+        const neededLabelWidth = Math.max(40, maxLabelChars * approxCharWidth);
+
         // Label width budget: available space outside the pie on each side.
-        // Shrink pie more when there are many slices to leave label room.
-        const radiusFraction = n <= 4 ? 0.70 : n <= 8 ? 0.60 : n <= 15 ? 0.55 : 0.50;
-        const labelBudget = Math.max(40, Math.round((canvasW - 40) / 2 * (1 - radiusFraction)));
+        // Shrink pie more when there are many slices or标签过长，以便让文字尽量完全展示在画布内。
+        const baseRadiusFraction = n <= 4 ? 0.72 : n <= 8 ? 0.62 : n <= 15 ? 0.54 : 0.48;
+        const halfCanvas = (canvasW - 40) / 2;
+        const padding = 16;
+        const maxLabelWidthAvailable = Math.max(40, halfCanvas - halfCanvas * baseRadiusFraction - padding);
+        const labelBudget = Math.min(neededLabelWidth, maxLabelWidthAvailable);
+        const radiusFraction = baseRadiusFraction;
+
+        // 根据需要的文字宽度，适度调整引导线长度，但整体保持较短，避免文字被推到画布外。
+        const labelLineLength = Math.max(10, Math.min(22, 10 + neededLabelWidth * 0.10));
+        const labelLineLength2 = Math.max(8, Math.min(26, 8 + neededLabelWidth * 0.15));
 
         // Pie radius
         const outerRadiusPx = Math.max(60, Math.round(
@@ -127,15 +144,22 @@ export const ecPieChartDef: ChartTemplateDef = {
                     width: labelBudget,
                     overflow: 'break',     // word-wrap long labels
                 },
+                // 让 ECharts 尝试自动避免标签重叠，并在必要时隐藏重叠标签，
+                // 减少标签被挤到画布外的概率。
+                avoidLabelOverlap: true,
+                labelLayout: {
+                    hideOverlap: true,
+                },
                 labelLine: {
                     show: true,
+                    length: labelLineLength,
+                    length2: labelLineLength2,
                 },
                 itemStyle: {
                     borderRadius: chartProperties?.cornerRadius ?? 0,
                 },
             }],
-            // Assign colors
-            color: DEFAULT_COLORS,
+            // 颜色由 ecApplyLayoutToSpec 根据 colorDecisions 设置 option.color
         };
 
         // Canvas size from context

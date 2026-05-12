@@ -58,11 +58,11 @@ export interface EncodingTypeDecision {
 function visCategoryToVLType(vc: VisCategory): 'quantitative' | 'ordinal' | 'nominal' | 'temporal' {
     switch (vc) {
         case 'quantitative': return 'quantitative';
-        case 'ordinal':      return 'ordinal';
-        case 'temporal':     return 'temporal';
-        case 'geographic':   return 'quantitative';
+        case 'ordinal': return 'ordinal';
+        case 'temporal': return 'temporal';
+        case 'geographic': return 'quantitative';
         case 'nominal':
-        default:             return 'nominal';
+        default: return 'nominal';
     }
 }
 
@@ -80,6 +80,10 @@ function validateTemporalParsing(
 ): boolean {
     const sampleValues = data.map(r => r[fieldName]).slice(0, 15).filter((v: any) => v != null);
     if (sampleValues.length === 0) return false;
+
+    // Single unique value → not useful as temporal axis (would show a single point)
+    const uniqueValues = new Set(sampleValues.map(String));
+    if (uniqueValues.size <= 1) return false;
 
     const looksTemporalValue = (val: any): boolean => {
         if (val instanceof Date) return true;
@@ -412,10 +416,15 @@ export const DEFAULT_GAS_PRESSURE_PARAMS: GasPressureParams = {
  * Result of the per-axis stretch decision.
  */
 export interface GasPressureDecision {
-    /** Per-axis stretch: X axis (1 = no stretch) */
+    /** Per-axis stretch: X axis (1 = no stretch, capped by maxStretch) */
     stretchX: number;
-    /** Per-axis stretch: Y axis (1 = no stretch) */
+    /** Per-axis stretch: Y axis (1 = no stretch, capped by maxStretch) */
     stretchY: number;
+    /** Uncapped stretch for X (raw pressure^elasticity, not clipped to maxStretch).
+     *  Used by the layout engine to compute ideal aspect ratio before squeezing. */
+    rawStretchX: number;
+    /** Uncapped stretch for Y (raw pressure^elasticity, not clipped to maxStretch). */
+    rawStretchY: number;
 }
 
 /**
@@ -450,7 +459,7 @@ export function computeGasPressure(
     const N = xValues.length;
 
     if (N <= 1 || canvasWidth <= 0 || canvasHeight <= 0) {
-        return { stretchX: 1, stretchY: 1 };
+        return { stretchX: 1, stretchY: 1, rawStretchX: 1, rawStretchY: 1 };
     }
 
     // Per-axis stretch via unique-position linear packing.
@@ -462,11 +471,12 @@ export function computeGasPressure(
     // 1D pressure = uniquePositions × σ_1d / axisDimension.
     const sigma1dDefault = Math.sqrt(params.markCrossSection); // ~5 px
 
-    const computeAxisStretch = (values: number[], domain: [number, number], baseDim: number, sigma1d: number): number => {
-        if (baseDim <= 0 || values.length <= 1) return 1;
+    /** Returns [cappedStretch, rawStretch] for one axis. */
+    const computeAxisStretch = (values: number[], domain: [number, number], baseDim: number, sigma1d: number): [number, number] => {
+        if (baseDim <= 0 || values.length <= 1) return [1, 1];
 
         const range = domain[1] - domain[0];
-        if (range <= 0) return 1;
+        if (range <= 0) return [1, 1];
 
         // Bucket values to ~1px resolution in pixel space
         const pxPerUnit = baseDim / range;
@@ -478,8 +488,9 @@ export function computeGasPressure(
 
         // 1D pressure: how many sigma-sized marks fight for baseDim pixels
         const pressure = (uniquePositions * sigma1d) / baseDim;
-        if (pressure <= 1) return 1;
-        return Math.min(params.maxStretch, Math.pow(pressure, params.elasticity));
+        if (pressure <= 1) return [1, 1];
+        const raw = Math.pow(pressure, params.elasticity);
+        return [Math.min(params.maxStretch, raw), raw];
     };
 
     const sigma1dX = params.markCrossSectionX != null ? Math.sqrt(params.markCrossSectionX) : sigma1dDefault;
@@ -488,23 +499,26 @@ export function computeGasPressure(
     // Helper: compute stretch for one axis, using series-count override if set.
     // When a series override is provided, σ is used directly (not sqrt'd)
     // because series count is already a 1D concept.
+    /** Returns [cappedStretch, rawStretch] for one axis, with series-count override support. */
     const computeStretchForAxis = (
         values: number[], domain: [number, number], baseDim: number,
         sigma1d: number, sigmaRaw: number, itemCountOverride?: number,
-    ): number => {
+    ): [number, number] => {
         if (itemCountOverride != null && sigmaRaw > 0) {
             const pressure = (itemCountOverride * sigmaRaw) / baseDim;
-            return pressure <= 1 ? 1 : Math.min(params.maxStretch, Math.pow(pressure, params.elasticity));
+            if (pressure <= 1) return [1, 1];
+            const raw = Math.pow(pressure, params.elasticity);
+            return [Math.min(params.maxStretch, raw), raw];
         }
-        return sigma1d > 0 ? computeAxisStretch(values, domain, baseDim, sigma1d) : 1;
+        return sigma1d > 0 ? computeAxisStretch(values, domain, baseDim, sigma1d) : [1, 1];
     };
 
     const sigmaRawX = params.markCrossSectionX ?? params.markCrossSection;
     const sigmaRawY = params.markCrossSectionY ?? params.markCrossSection;
-    const stretchX = computeStretchForAxis(xValues, xDomain, canvasWidth, sigma1dX, sigmaRawX, params.xItemCountOverride);
-    const stretchY = computeStretchForAxis(yValues, yDomain, canvasHeight, sigma1dY, sigmaRawY, params.yItemCountOverride);
+    const [stretchX, rawStretchX] = computeStretchForAxis(xValues, xDomain, canvasWidth, sigma1dX, sigmaRawX, params.xItemCountOverride);
+    const [stretchY, rawStretchY] = computeStretchForAxis(yValues, yDomain, canvasHeight, sigma1dY, sigmaRawY, params.yItemCountOverride);
 
-    return { stretchX, stretchY };
+    return { stretchX, stretchY, rawStretchX, rawStretchY };
 }
 
 // ---------------------------------------------------------------------------

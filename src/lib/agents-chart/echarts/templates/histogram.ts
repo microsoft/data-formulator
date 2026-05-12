@@ -12,7 +12,6 @@
  */
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
-import { DEFAULT_COLORS } from './utils';
 
 export const ecHistogramDef: ChartTemplateDef = {
     chart: 'Histogram',
@@ -65,6 +64,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                     name: xField,
                     nameLocation: 'middle',
                     nameGap: 25,
+                    axisTick: { show: true, alignWithLabel: true },
                     axisLabel: { rotate: categories.length > 10 ? 45 : 0 },
                 },
                 yAxis: {
@@ -72,6 +72,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                     name: 'Count',
                     nameLocation: 'middle',
                     nameGap: 40,
+                    axisTick: { show: true },
                 },
                 series: [{
                     type: 'bar',
@@ -104,7 +105,6 @@ export const ecHistogramDef: ChartTemplateDef = {
             });
 
             const series: any[] = [];
-            let colorIdx = 0;
             const legendData: string[] = [];
 
             for (const [name, vals] of groupValues) {
@@ -122,12 +122,10 @@ export const ecHistogramDef: ChartTemplateDef = {
                     stack: 'total',
                     barCategoryGap: '0%',
                     itemStyle: {
-                        color: DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length],
                         borderColor: '#fff',
                         borderWidth: 0.5,
                     },
                 });
-                colorIdx++;
             }
 
             const option: any = {
@@ -139,6 +137,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                     name: xField,
                     nameLocation: 'middle',
                     nameGap: 25,
+                    axisTick: { show: true, alignWithLabel: true },
                     axisLabel: { rotate: categories.length > 10 ? 45 : 0 },
                 },
                 yAxis: {
@@ -146,6 +145,7 @@ export const ecHistogramDef: ChartTemplateDef = {
                     name: 'Count',
                     nameLocation: 'middle',
                     nameGap: 40,
+                    axisTick: { show: true },
                 },
                 series,
             };

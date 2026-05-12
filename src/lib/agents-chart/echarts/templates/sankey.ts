@@ -25,6 +25,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { DEFAULT_COLORS } from './utils';
+import { getPaletteForScheme } from '../colormap';
 
 export const ecSankeyDef: ChartTemplateDef = {
     chart: 'Sankey Diagram',
@@ -40,11 +41,11 @@ export const ecSankeyDef: ChartTemplateDef = {
             // Each node block needs generous space:
             // x-step covers node width (~20px) + edge routing gap (~60px)
             // y-step covers node height + nodeGap
-            defaultStepMultiplier: 3,
+            defaultBandSize: 60,
         },
     }),
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table, chartProperties, layout } = ctx;
+        const { channelSemantics, table, chartProperties, layout, colorDecisions } = ctx;
         const sourceField = channelSemantics.x?.field;   // source node
         const targetField = channelSemantics.y?.field;    // target node
         const valueField = channelSemantics.size?.field;  // flow value
@@ -76,9 +77,25 @@ export const ecSankeyDef: ChartTemplateDef = {
 
         // Build nodes with colors
         const nodeArr = [...nodeSet];
+
+        // ── Resolve palette from backend-agnostic color decisions ────────
+        const decision = colorDecisions?.color ?? colorDecisions?.group;
+        let palette: string[] | undefined;
+        if (decision?.schemeId) {
+            const fromRegistry = getPaletteForScheme(decision.schemeId);
+            if (fromRegistry && fromRegistry.length > 0) {
+                palette = fromRegistry;
+            }
+        }
+        if (!palette || palette.length === 0) {
+            const catCount = nodeArr.length;
+            const fallbackId = catCount > 10 ? 'cat20' : 'cat10';
+            palette = getPaletteForScheme(fallbackId) ?? DEFAULT_COLORS;
+        }
+
         const nodes = nodeArr.map((name, i) => ({
             name,
-            itemStyle: { color: DEFAULT_COLORS[i % DEFAULT_COLORS.length] },
+            itemStyle: { color: palette![i % palette!.length] },
         }));
 
         // ── Layout-driven sizing ─────────────────────────────────────────
@@ -137,7 +154,7 @@ export const ecSankeyDef: ChartTemplateDef = {
                 top: 20,
                 bottom: 20,
             }],
-            color: DEFAULT_COLORS,
+            color: palette ?? DEFAULT_COLORS,
             _width: canvasW,
             _height: canvasH,
         };

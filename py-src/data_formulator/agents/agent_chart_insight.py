@@ -25,9 +25,11 @@ Respond with a JSON object in exactly this format (no markdown fences):
 
 class ChartInsightAgent(object):
 
-    def __init__(self, client, workspace=None):
+    def __init__(self, client, workspace=None, language_instruction="", knowledge_store=None):
         self.client = client
         self.workspace = workspace
+        self.language_instruction = language_instruction
+        self._knowledge_store = knowledge_store
 
     def run(self, chart_image_base64, chart_type, field_names, input_tables=None, n=1):
         """
@@ -48,9 +50,25 @@ class ChartInsightAgent(object):
         if input_tables and self.workspace:
             data_summary = generate_data_summary(
                 input_tables, workspace=self.workspace,
-                include_data_samples=True, row_sample_size=3
+                include_data_samples=True, row_sample_size=3,
             )
             context_parts.append(f"\nData summary:\n{data_summary}")
+
+        # Search relevant knowledge for analysis context
+        if self._knowledge_store:
+            try:
+                search_query = " ".join([chart_type] + field_names[:5]).strip()
+                if search_query:
+                    relevant = self._knowledge_store.search(
+                        search_query, categories=["experiences"], max_results=3,
+                    )
+                    if relevant:
+                        kb_parts = ["Relevant analysis knowledge:"]
+                        for item in relevant:
+                            kb_parts.append(f"- {item['title']}: {item['snippet'][:200]}")
+                        context_parts.append("\n".join(kb_parts))
+            except Exception:
+                logger.warning("Failed to search knowledge experiences", exc_info=True)
 
         context = "\n".join(context_parts)
 
@@ -64,13 +82,21 @@ class ChartInsightAgent(object):
                 "type": "image_url",
                 "image_url": {
                     "url": f"data:image/png;base64,{chart_image_base64}",
-                    "detail": "low"
+                    "detail": "high"
                 }
             }
         ]
 
+        system_prompt = SYSTEM_PROMPT
+
+        if self._knowledge_store:
+            system_prompt += self._knowledge_store.format_rules_block()
+
+        if self.language_instruction:
+            system_prompt = system_prompt + "\n\n" + self.language_instruction
+
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
         ]
 

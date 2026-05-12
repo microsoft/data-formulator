@@ -12,24 +12,36 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, DEFAULT_COLORS } from './utils';
+import { getPaletteForScheme } from '../colormap';
 
 const isDiscrete = (type: string | undefined) => type === 'nominal' || type === 'ordinal';
 
+/** True if all category labels parse as numbers → use horizontal labels; otherwise vertical. */
+function areCategoriesNumeric(cats: string[]): boolean {
+    if (cats.length === 0) return true;
+    return cats.every((c) => {
+        const s = String(c).trim();
+        if (s === '') return false;
+        const n = Number(s);
+        return !isNaN(n) && isFinite(n);
+    });
+}
+
 /** Map VL-style scheme names to ECharts built-in color ranges. */
 const SCHEME_COLORS: Record<string, string[]> = {
-    viridis:     ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'],
-    inferno:     ['#000004', '#420a68', '#932667', '#dd513a', '#fca50a', '#fcffa4'],
-    magma:       ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'],
-    plasma:      ['#0d0887', '#6a00a8', '#b12a90', '#e16462', '#fca636', '#f0f921'],
-    turbo:       ['#30123b', '#4662d7', '#35abed', '#1ae4b6', '#72fe5e', '#c8ef34', '#faba39', '#f66b19', '#d23105', '#7a0403'],
-    blues:       ['#f7fbff', '#6baed6', '#08519c'],
-    reds:        ['#fff5f0', '#fb6a4a', '#a50f15'],
-    greens:      ['#f7fcf5', '#74c476', '#00441b'],
-    oranges:     ['#fff5eb', '#fd8d3c', '#7f2704'],
-    purples:     ['#fcfbfd', '#9e9ac8', '#3f007d'],
-    greys:       ['#ffffff', '#969696', '#252525'],
-    blueorange:  ['#08519c', '#f7fbff', '#ff7f00'],
-    redblue:     ['#a50f15', '#ffffff', '#08519c'],
+    viridis: ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'],
+    inferno: ['#000004', '#420a68', '#932667', '#dd513a', '#fca50a', '#fcffa4'],
+    magma: ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'],
+    plasma: ['#0d0887', '#6a00a8', '#b12a90', '#e16462', '#fca636', '#f0f921'],
+    turbo: ['#30123b', '#4662d7', '#35abed', '#1ae4b6', '#72fe5e', '#c8ef34', '#faba39', '#f66b19', '#d23105', '#7a0403'],
+    blues: ['#f7fbff', '#6baed6', '#08519c'],
+    reds: ['#fff5f0', '#fb6a4a', '#a50f15'],
+    greens: ['#f7fcf5', '#74c476', '#00441b'],
+    oranges: ['#fff5eb', '#fd8d3c', '#7f2704'],
+    purples: ['#fcfbfd', '#9e9ac8', '#3f007d'],
+    greys: ['#ffffff', '#969696', '#252525'],
+    blueorange: ['#08519c', '#f7fbff', '#ff7f00'],
+    redblue: ['#a50f15', '#ffffff', '#08519c'],
 };
 
 export const ecHeatmapDef: ChartTemplateDef = {
@@ -39,13 +51,11 @@ export const ecHeatmapDef: ChartTemplateDef = {
     markCognitiveChannel: 'color',
     declareLayoutMode: () => ({
         axisFlags: { x: { banded: true }, y: { banded: true } },
-        paramOverrides: {
-            minStep: 20,               // heatmap cells need room for value labels
-            defaultStepMultiplier: 2,  // inflate default step so cells aren't cramped
-        },
+        // No paramOverrides needed — uses the backend default band size
+        // (defaultBandSize=20, minStep=6), matching VL heatmap sizing.
     }),
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table, chartProperties } = ctx;
+        const { channelSemantics, table, chartProperties, colorDecisions } = ctx;
         const xCS = channelSemantics.x;
         const yCS = channelSemantics.y;
         const colorCS = channelSemantics.color;
@@ -92,27 +102,71 @@ export const ecHeatmapDef: ChartTemplateDef = {
 
         // Color scheme
         const schemeName = chartProperties?.colorScheme || 'viridis';
-        const schemeColors = SCHEME_COLORS[schemeName] || SCHEME_COLORS.viridis;
+        const decision = colorDecisions?.color ?? colorDecisions?.group;
+        const isDivergingScale =
+            decision?.schemeType === 'diverging'
+            || schemeName === 'blueorange'
+            || schemeName === 'redblue';
+        if (isDivergingScale && minVal < 0 && maxVal > 0) {
+            const sym = Math.max(Math.abs(minVal), Math.abs(maxVal));
+            minVal = -sym;
+            maxVal = sym;
+        }
+
+        // 优先使用 backend-agnostic colorDecisions：
+        //   - 若有显式 schemeId，则尝试该 id；
+        //   - 否则依据 schemeType（sequential / diverging）选择默认连续 / 发散色带；
+        //   - 都没有时，再退回到本地 SCHEME_COLORS（兼容旧行为）。
+        let schemeColors: string[];
+
+        if (decision) {
+            let paletteFromDecision: string[] | undefined;
+            if (decision.schemeId) {
+                paletteFromDecision = getPaletteForScheme(decision.schemeId);
+            }
+            if (!paletteFromDecision || paletteFromDecision.length === 0) {
+                if (decision.schemeType === 'diverging') {
+                    paletteFromDecision = getPaletteForScheme('RdBu');
+                } else if (decision.schemeType === 'sequential') {
+                    paletteFromDecision = getPaletteForScheme('viridis');
+                }
+            }
+            if (paletteFromDecision && paletteFromDecision.length > 0) {
+                schemeColors = paletteFromDecision;
+            } else {
+                schemeColors = SCHEME_COLORS[schemeName] || SCHEME_COLORS.viridis;
+            }
+        } else {
+            schemeColors = SCHEME_COLORS[schemeName] || SCHEME_COLORS.viridis;
+        }
 
         const option: any = {
-            tooltip: {
-                position: 'top',
-                formatter: (params: any) => {
-                    const d = params.data;
-                    return `${xCategories[d[0]]}, ${yCategories[d[1]]}: ${d[2]}`;
-                },
+            tooltip: { position: 'top' },
+            _encodingTooltip: {
+                trigger: 'item',
+                parts: [
+                    { from: 'data', index: 0, label: xField, format: 'category', categoryNames: xCategories },
+                    { from: 'data', index: 1, label: yField, format: 'category', categoryNames: yCategories },
+                    { from: 'data', index: 2, label: colorField ?? 'Value', format: 'number' },
+                ],
             },
             xAxis: {
                 type: 'category',
                 data: xCategories,
                 name: xField,
                 splitArea: { show: true },
+                axisTick: { show: true, alignWithLabel: true },
+                axisLabel: {
+                    rotate: areCategoriesNumeric(xCategories) ? 0 : 90,
+                },
             },
             yAxis: {
                 type: 'category',
                 data: yCategories,
                 name: yField,
                 splitArea: { show: true },
+                axisTick: { show: true, alignWithLabel: true },
+                axisLabel: { rotate: 0 },
             },
             visualMap: {
                 min: minVal,

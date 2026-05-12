@@ -65,12 +65,13 @@ import yaml
 
 from data_formulator.datalake.azure_blob_workspace import AzureBlobWorkspace
 from data_formulator.datalake.cache_manager import GlobalCacheManager
-from data_formulator.datalake.metadata import (
+from data_formulator.datalake.workspace_metadata import (
     METADATA_FILENAME,
     WorkspaceMetadata,
 )
 from data_formulator.datalake.parquet_utils import sanitize_table_name
 from data_formulator.datalake.workspace import Workspace, get_data_formulator_home
+from data_formulator.security.path_safety import ConfinedDir
 
 if TYPE_CHECKING:
     from azure.storage.blob import ContainerClient
@@ -133,6 +134,7 @@ class CachedAzureBlobWorkspace(AzureBlobWorkspace):
         container_client: "ContainerClient",
         datalake_root: str = "",
         *,
+        blob_prefix: str | None = None,
         cache_root: str | Path | None = None,
         max_cache_bytes: int = _DEFAULT_MAX_CACHE_BYTES,
         max_global_cache_bytes: int | None = None,
@@ -160,16 +162,23 @@ class CachedAzureBlobWorkspace(AzureBlobWorkspace):
         # super().__init__ because the parent's __init__ may call
         # _upload_bytes (via _init_metadata / save_metadata).
         safe_id = Workspace._sanitize_identity_id(identity_id)
-        root = datalake_root.strip("/")
 
         if cache_root is None:
             cache_root = get_data_formulator_home() / "cache"
         base = Path(cache_root)
-        if root:
-            self._cache_dir = base / root / safe_id
+
+        if blob_prefix is not None:
+            # Multi-workspace mode: cache dir based on blob prefix
+            safe_prefix = blob_prefix.strip("/").replace("/", os.sep)
+            self._cache_dir = base / safe_prefix
         else:
-            self._cache_dir = base / safe_id
+            root = datalake_root.strip("/")
+            if root:
+                self._cache_dir = base / root / safe_id
+            else:
+                self._cache_dir = base / safe_id
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._cache_jail = ConfinedDir(self._cache_dir, mkdir=False)
 
         self._max_cache_bytes = max_cache_bytes
 
@@ -202,7 +211,7 @@ class CachedAzureBlobWorkspace(AzureBlobWorkspace):
 
         # Now safe to call super().__init__ — our _upload_bytes / etc.
         # overrides are in place and _cache_dir is ready.
-        super().__init__(identity_id, container_client, datalake_root)
+        super().__init__(identity_id, container_client, datalake_root, blob_prefix=blob_prefix)
 
         # Run initial eviction if cache is over-sized (e.g. from prev run)
         self._maybe_evict()
@@ -223,16 +232,10 @@ class CachedAzureBlobWorkspace(AzureBlobWorkspace):
     def _cache_path(self, filename: str) -> Path:
         """Return the local cache path for *filename*.
 
-        Raises ``ValueError`` if the resolved path escapes the cache
-        directory (defence-in-depth against path-traversal attacks).
+        Delegates to :class:`ConfinedDir` which raises ``ValueError``
+        if the resolved path escapes the cache directory.
         """
-        resolved = (self._cache_dir / filename).resolve()
-        if not resolved.is_relative_to(self._cache_dir.resolve()):
-            raise ValueError(
-                f"Path traversal detected: {filename!r} resolves outside "
-                f"the cache directory"
-            )
-        return resolved
+        return self._cache_jail.resolve(filename)
 
     # ------------------------------------------------------------------
     # Low-level blob overrides (write-through cache)

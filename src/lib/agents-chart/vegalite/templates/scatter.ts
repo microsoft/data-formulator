@@ -35,7 +35,7 @@ export const regressionDef: ChartTemplateDef = {
             },
             {
                 mark: { type: "line", color: "red" },
-                transform: [{ regression: "field1", on: "field2", group: "field3" }],
+                transform: [{ regression: "field1", on: "field2" }],
                 encoding: { x: {}, y: {} },
             },
         ],
@@ -146,6 +146,7 @@ export const boxplotDef: ChartTemplateDef = {
         return {
             axisFlags: { [result.axis]: { banded: true } },
             resolvedTypes: result.resolvedTypes,
+            paramOverrides: { defaultBandSize: 28 },  // box+whisker needs wider bands
         };
     },
     instantiate: (spec, ctx) => {

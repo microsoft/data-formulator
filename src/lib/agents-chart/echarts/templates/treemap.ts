@@ -18,6 +18,7 @@
 
 import { ChartTemplateDef, ChartPropertyDef } from '../../core/types';
 import { extractCategories, DEFAULT_COLORS } from './utils';
+import { getPaletteForScheme } from '../colormap';
 import { computeEffectiveBarCount } from '../../core/decisions';
 
 export const ecTreemapDef: ChartTemplateDef = {
@@ -26,7 +27,7 @@ export const ecTreemapDef: ChartTemplateDef = {
     channels: ['color', 'size', 'detail'],
     markCognitiveChannel: 'area',
     instantiate: (spec, ctx) => {
-        const { channelSemantics, table, chartProperties } = ctx;
+        const { channelSemantics, table, chartProperties, colorDecisions } = ctx;
         const catField = channelSemantics.color?.field;
         const valField = channelSemantics.size?.field;
         const subCatField = channelSemantics.detail?.field;
@@ -35,6 +36,21 @@ export const ecTreemapDef: ChartTemplateDef = {
 
         const categories = extractCategories(table, catField, channelSemantics.color?.ordinalSortOrder);
         if (categories.length === 0) return;
+
+        // ── Resolve palette from backend-agnostic color decisions ────────
+        const decision = colorDecisions?.color ?? colorDecisions?.group;
+        let palette: string[] | undefined;
+        if (decision?.schemeId) {
+            const fromRegistry = getPaletteForScheme(decision.schemeId);
+            if (fromRegistry && fromRegistry.length > 0) {
+                palette = fromRegistry;
+            }
+        }
+        if (!palette || palette.length === 0) {
+            const catCount = categories.length;
+            const fallbackId = catCount > 10 ? 'cat20' : 'cat10';
+            palette = getPaletteForScheme(fallbackId) ?? DEFAULT_COLORS;
+        }
 
         // Build treemap data
         let treemapData: any[];
@@ -59,7 +75,7 @@ export const ecTreemapDef: ChartTemplateDef = {
                 return {
                     name: cat,
                     children,
-                    itemStyle: { color: DEFAULT_COLORS[catIdx % DEFAULT_COLORS.length] },
+                    itemStyle: { color: palette![catIdx % palette!.length] },
                 };
             });
         } else {
@@ -81,7 +97,7 @@ export const ecTreemapDef: ChartTemplateDef = {
             treemapData = categories.map((cat, i) => ({
                 name: cat,
                 value: agg.get(cat) ?? 0,
-                itemStyle: { color: DEFAULT_COLORS[i % DEFAULT_COLORS.length] },
+                itemStyle: { color: palette![i % palette!.length] },
             }));
         }
 
@@ -188,7 +204,7 @@ export const ecTreemapDef: ChartTemplateDef = {
                     },
                 ],
             }],
-            color: DEFAULT_COLORS,
+            color: palette ?? DEFAULT_COLORS,
             _width: canvasW,
             _height: canvasH,
         };

@@ -1,0 +1,1934 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+/**
+ * DataSourceSidebar — persistent collapsible panel on the left edge.
+ * Shows connected data sources with catalog trees.  Users can click
+ * to preview, drag-and-drop to import, and see ✓ / refresh on loaded
+ * tables.
+ */
+
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import { useTranslation } from 'react-i18next';
+import {
+    Box,
+    Typography,
+    IconButton,
+    Tooltip,
+    Collapse,
+    CircularProgress,
+    Popover,
+    Button,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogContentText,
+    DialogActions,
+    TextField,
+    InputAdornment,
+    Menu,
+    MenuItem,
+    Select,
+    ListItemIcon,
+    ListItemText,
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import DownloadIcon from '@mui/icons-material/Download';
+import { generateUUID } from '../app/identity';
+import { VirtualizedCatalogTree } from '../components/VirtualizedCatalogTree';
+
+import StorageIcon from '@mui/icons-material/Storage';
+import AddIcon from '@mui/icons-material/Add';
+import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import ExploreOutlinedIcon from '@mui/icons-material/ExploreOutlined';
+import ContentPasteOutlinedIcon from '@mui/icons-material/ContentPasteOutlined';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
+import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import SearchIcon from '@mui/icons-material/Search';
+import ClearIcon from '@mui/icons-material/Clear';
+
+import { KnowledgePanel } from './KnowledgePanel';
+import { LocalInstallUpgradePanel } from './LocalInstallUpgradePanel';
+
+import { DataFormulatorState, dfActions } from '../app/dfSlice';
+import { AppDispatch } from '../app/store';
+import { CONNECTOR_URLS, CONNECTOR_ACTION_URLS, SourceTableRef, translateBackend } from '../app/utils';
+import { apiRequest } from '../app/apiClient';
+import { extractErrorMessage } from '../app/errorHandler';
+import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
+import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
+import { loadTable } from '../app/tableThunks';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, updateWorkspaceMeta, onWorkspaceListChanged } from '../app/workspaceService';
+import type { WorkspaceSummary } from '../app/workspaceService';
+import { borderColor } from '../app/tokens';
+
+import type { ConnectorInstance, DictTable } from '../components/ComponentType';
+import { ConnectorTablePreview } from '../components/ConnectorTablePreview';
+import type { ColumnMeta } from '../components/ConnectorTablePreview';
+import {
+    CatalogTreeNode,
+    collectNamespaceIds,
+} from '../components/CatalogTree';
+import { CATALOG_TABLE_ITEM } from '../components/DndTypes';
+import type { CatalogTableDragItem } from '../components/DndTypes';
+import { ResizeHandle } from '../components/ResizeHandle';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const RAIL_WIDTH = 40;
+const DEFAULT_PANEL_WIDTH = 260;
+const MIN_PANEL_WIDTH = 200;
+const MAX_PANEL_WIDTH = 450;
+
+const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
+
+// Compact relative time for sidebar rows: "2m", "3h", "yesterday",
+// "May 5", "May 5, 24". Designed to stay <= ~10 chars so it fits in
+// the narrow sidebar without truncating session names.
+function formatCompactTime(iso: string | null | undefined): string {
+    if (!iso) return '';
+    const then = new Date(iso);
+    const t = then.getTime();
+    if (Number.isNaN(t)) return '';
+    const now = Date.now();
+    const diffSec = Math.max(0, Math.round((now - t) / 1000));
+    if (diffSec < 60) return 'just now';
+    const diffMin = Math.round(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m`;
+    const diffHr = Math.round(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h`;
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+    const diffDays = Math.floor((startOfToday.getTime() - then.getTime()) / 86400000) + 1;
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7) return `${diffDays}d`;
+    const sameYear = then.getFullYear() === new Date().getFullYear();
+    return then.toLocaleDateString(undefined, sameYear
+        ? { month: 'short', day: 'numeric' }
+        : { month: 'short', day: 'numeric', year: '2-digit' });
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface CatalogCache {
+    tree: CatalogTreeNode[];
+    fetchedAt: number;
+}
+
+interface PreviewState {
+    connectorId: string;
+    node: CatalogTreeNode;
+    columns: ColumnMeta[];
+    sampleRows: Record<string, any>[];
+    rowCount: number | null;
+    tableDescription?: string;
+    loading: boolean;
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+// ─── Outer wrapper — ultra-lightweight, only reads isOpen ────────────────────
+
+export const DataSourceSidebar: React.FC<{
+    onOpenUploadDialog?: (tab?: string) => void;
+    connectorRefreshKey?: number;
+}> = ({ onOpenUploadDialog, connectorRefreshKey = 0 }) => {
+    const { t } = useTranslation();
+    const dispatch = useDispatch<AppDispatch>();
+
+    const isOpen = useSelector((state: DataFormulatorState) => state.dataSourceSidebarOpen);
+    const disableConnectors = useSelector((state: DataFormulatorState) => state.serverConfig.DISABLE_DATA_CONNECTORS);
+    const focusedConnectorId = useSelector((state: DataFormulatorState) => state.focusedConnectorId);
+
+    const toggle = () => dispatch(dfActions.setDataSourceSidebarOpen(!isOpen));
+
+    // When connectors are disabled (browser-only / hosted mode) we land
+    // users on 'upload' instead of 'sources' so they don't open the panel
+    // straight onto an upgrade message — but the sources tab remains
+    // available so users can learn what local install unlocks.
+    const [initialTab, setInitialTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>(
+        disableConnectors ? 'upload' : 'sources',
+    );
+
+    // External callers (e.g. SaveExperienceButton on success) can ask the
+    // sidebar to open and switch to a specific tab.
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail || {};
+            const tab = detail.tab as 'sources' | 'sessions' | 'knowledge' | undefined;
+            setInitialTab(tab ?? 'knowledge');
+            dispatch(dfActions.setDataSourceSidebarOpen(true));
+        };
+        window.addEventListener('open-knowledge-panel', handler);
+        return () => window.removeEventListener('open-knowledge-panel', handler);
+    }, [dispatch]);
+
+    // Resizable panel width, persisted in localStorage
+    const [panelWidth, setPanelWidth] = useState<number>(() => {
+        const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+        return saved ? Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, Number(saved))) : DEFAULT_PANEL_WIDTH;
+    });
+
+    // Suppress the open/close width transition while the user is actively
+    // dragging the resize handle. Otherwise every pixel of mouse motion
+    // kicks off a 200ms width animation, producing a visibly laggy drag
+    // that always trails the cursor.
+    const [resizing, setResizing] = useState(false);
+
+    const handleResize = useCallback((delta: number) => {
+        if (!resizing) setResizing(true);
+        setPanelWidth(prev => {
+            const next = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, prev + delta));
+            return next;
+        });
+    }, [resizing]);
+
+    const handleResizeEnd = useCallback(() => {
+        setResizing(false);
+        setPanelWidth(prev => {
+            localStorage.setItem(SIDEBAR_WIDTH_KEY, String(prev));
+            return prev;
+        });
+    }, []);
+
+    const totalWidth = isOpen ? RAIL_WIDTH + panelWidth : RAIL_WIDTH;
+
+    // Brief sidebar-wide attention nudge whenever a focus request lands
+    // (e.g. dialog → sidebar handoff). A horizontal translateX is enough to
+    // pull the eye left without disturbing layout (transforms don't reflow).
+    // Bumping a counter on each new request guarantees the animation
+    // replays even when the same connector is focused twice in a row.
+    const [bounceTick, setBounceTick] = useState(0);
+    const lastFocusRef = useRef<string | undefined>(undefined);
+    useEffect(() => {
+        if (!focusedConnectorId) return;
+        if (focusedConnectorId === lastFocusRef.current) {
+            // Same target re-focused — still replay the bounce.
+        }
+        lastFocusRef.current = focusedConnectorId;
+        setBounceTick(t => t + 1);
+    }, [focusedConnectorId]);
+
+    // Keep the panel mounted during the close animation so its content
+    // doesn't pop out before the wrapper width has finished collapsing.
+    // We mount immediately on open and only unmount after the same
+    // duration as the wrapper transition (200ms).
+    const [showPanel, setShowPanel] = useState<boolean>(isOpen);
+    useEffect(() => {
+        if (isOpen) {
+            setShowPanel(true);
+            return;
+        }
+        const timeoutId = setTimeout(() => setShowPanel(false), 200);
+        return () => clearTimeout(timeoutId);
+    }, [isOpen]);
+
+    return (
+        <Box
+            sx={{
+                width: totalWidth,
+                minWidth: totalWidth,
+                transition: resizing ? 'none' : 'width 0.2s ease, min-width 0.2s ease',
+                display: 'flex',
+                flexDirection: 'row',
+                borderRight: `1px solid ${borderColor.view}`,
+                backgroundColor: 'background.paper',
+                // Clip during the open/close width transition so panel
+                // content doesn't bleed past the shrinking border. Tooltips
+                // and Popovers from inside still escape correctly because
+                // MUI portals them to document.body.
+                overflow: 'hidden',
+                position: 'relative',
+                // One-shot horizontal nudge on each focus request.
+                // Encoding bounceTick into the @keyframes name produces a
+                // fresh CSS rule per request, which forces the browser to
+                // replay the animation without having to remount the
+                // wrapper (a remount would tear down the panel state and
+                // trigger reloads).
+                ...(bounceTick > 0 && {
+                    animation: `df-sidebar-bounce-${bounceTick} 0.6s cubic-bezier(0.22, 1, 0.36, 1)`,
+                    [`@keyframes df-sidebar-bounce-${bounceTick}`]: {
+                        '0%':   { transform: 'translateX(0)' },
+                        '30%':  { transform: 'translateX(10px)' },
+                        '60%':  { transform: 'translateX(-2px)' },
+                        '100%': { transform: 'translateX(0)' },
+                    },
+                }),
+            }}
+        >
+            {/* Rail — always visible */}
+            <Box sx={{
+                width: RAIL_WIDTH,
+                minWidth: RAIL_WIDTH,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                pt: 1,
+                gap: 0.5,
+            }}>
+                <Tooltip title={t('sidebar.sessions', { defaultValue: 'Saved workspaces' })} placement="right">
+                    <IconButton size="small" onClick={() => { setInitialTab('sessions'); if (!isOpen) toggle(); else if (initialTab !== 'sessions') setInitialTab('sessions'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'sessions' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'sessions' ? 'action.selected' : 'transparent',
+                        borderRadius: 1,
+                    }}>
+                        <FolderOutlinedIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('sidebar.openDataConnectors', { defaultValue: 'Data connectors' })} placement="right">
+                    <IconButton size="small" onClick={() => { setInitialTab('sources'); if (!isOpen) toggle(); else if (initialTab !== 'sources') setInitialTab('sources'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'sources' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'sources' ? 'action.selected' : 'transparent',
+                        borderRadius: 1,
+                    }}>
+                        <RelationalDBIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('sidebar.openUpload', { defaultValue: 'Add data' })} placement="right">
+                    <IconButton size="small" onClick={() => { setInitialTab('upload'); if (!isOpen) toggle(); else if (initialTab !== 'upload') setInitialTab('upload'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'upload' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'upload' ? 'action.selected' : 'transparent',
+                        borderRadius: 1,
+                    }}>
+                        <FileUploadOutlinedIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title={t('sidebar.knowledge', { defaultValue: 'Agent knowledge' })} placement="right">
+                    <IconButton size="small" onClick={() => { setInitialTab('knowledge'); if (!isOpen) toggle(); else if (initialTab !== 'knowledge') setInitialTab('knowledge'); else toggle(); }} sx={{
+                        color: isOpen && initialTab === 'knowledge' ? 'primary.main' : 'text.secondary',
+                        bgcolor: isOpen && initialTab === 'knowledge' ? 'action.selected' : 'transparent',
+                        borderRadius: 1,
+                    }}>
+                        <LightbulbOutlinedIcon fontSize="small" />
+                    </IconButton>
+                </Tooltip>
+            </Box>
+
+            {/* Panel — stays mounted during the close animation so its
+                content doesn't disappear before the wrapper has finished
+                collapsing. See `showPanel` above. */}
+            {showPanel && (
+                <DataSourceSidebarPanel
+                    panelWidth={panelWidth}
+                    onOpenUploadDialog={onOpenUploadDialog}
+                    onCollapse={toggle}
+                    initialTab={initialTab}
+                    connectorRefreshKey={connectorRefreshKey}
+                    disableConnectors={disableConnectors}
+                />
+            )}
+
+            {/* Resize handle — draggable right edge */}
+            {showPanel && (
+                <ResizeHandle
+                    direction="horizontal"
+                    onResize={handleResize}
+                    onResizeEnd={handleResizeEnd}
+                />
+            )}
+        </Box>
+    );
+};
+
+// ─── Inner panel — only mounted when open, subscribes to heavier state ───────
+
+const DataSourceSidebarPanel: React.FC<{
+    panelWidth: number;
+    onOpenUploadDialog?: (tab?: string) => void;
+    onCollapse: () => void;
+    initialTab?: 'upload' | 'sources' | 'sessions' | 'knowledge';
+    connectorRefreshKey?: number;
+    disableConnectors?: boolean;
+}> = ({ panelWidth, onOpenUploadDialog, onCollapse, initialTab = 'sources', connectorRefreshKey = 0, disableConnectors = false }) => {
+    const { t } = useTranslation();
+    const dispatch = useDispatch<AppDispatch>();
+
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    const identityKey = useSelector(
+        (state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`,
+    );
+
+    // Lightweight selector: only extract the fields we need from tables to avoid
+    // re-rendering the entire sidebar when table row data changes.
+    const tableIdentities = useSelector(
+        (state: DataFormulatorState) => state.tables.map(t => ({
+            id: t.id,
+            connectorId: t.source?.connectorId,
+            databaseTable: t.source?.databaseTable,
+            originalTableName: t.source?.originalTableName,
+            virtualTableId: t.virtual?.tableId,
+        })),
+        // Shallow-compare the mapped array by serializing — cheap because it's just IDs/strings
+        (a, b) => a.length === b.length && a.every((item, i) => item.id === b[i].id),
+    );
+
+    // Connector instances fetched from backend
+    const [connectors, setConnectors] = useState<ConnectorInstance[]>([]);
+    const [loadingConnectors, setLoadingConnectors] = useState(false);
+
+    // Catalog tree state per connector ID. Keep loading/error explicit instead
+    // of inferring it from whether a cache object exists.
+    const [catalogByConnector, setCatalogByConnector] = useState<Record<string, LoadableState<CatalogCache>>>({});
+    const catalogCache = useMemo(() => {
+        const cache: Record<string, CatalogCache> = {};
+        for (const [connectorId, state] of Object.entries(catalogByConnector)) {
+            if (state.data && state.status !== 'error') {
+                cache[connectorId] = state.data;
+            }
+        }
+        return cache;
+    }, [catalogByConnector]);
+
+    // Which source section is currently expanded (only one at a time —
+    // clicking a different connector switches the expansion). Catalog
+    // browsing is a focused activity; users don't need multiple trees open
+    // simultaneously, and keeping it single-expanded means layout above any
+    // focused row stays stable.
+    const [expandedConnectorId, setExpandedConnectorId] = useState<string | null>(null);
+
+    // Tree expanded items per connector
+    const [treeExpanded, setTreeExpanded] = useState<Record<string, string[]>>({});
+
+    // Preview popover state
+    const [preview, setPreview] = useState<PreviewState | null>(null);
+    const [previewAnchor, setPreviewAnchor] = useState<HTMLElement | null>(null);
+    const [importing, setImporting] = useState(false);
+
+    // Delete connector confirmation
+    const [deleteTarget, setDeleteTarget] = useState<ConnectorInstance | null>(null);
+    const [deleting, setDeleting] = useState(false);
+
+    // Add-connector menu anchor
+    const [addConnectorAnchor, setAddConnectorAnchor] = useState<HTMLElement | null>(null);
+
+    // Catalog search: input changes are local; Enter/search button hits backend.
+    const [catalogSearch, setCatalogSearch] = useState('');
+    const [serverSearchActive, setServerSearchActive] = useState(false);
+    const [searchCatalogCache, setSearchCatalogCache] = useState<Record<string, CatalogCache>>({});
+    const [searchingCatalog, setSearchingCatalog] = useState<Record<string, boolean>>({});
+
+    // Sidebar tab: 'sources' or 'sessions' or 'knowledge'
+    const [activeTab, setActiveTab] = useState<'upload' | 'sources' | 'sessions' | 'knowledge'>(initialTab);
+
+    // Sync tab when rail icon switches it
+    useEffect(() => {
+        setActiveTab(initialTab);
+    }, [initialTab]);
+
+    // ── Sessions ─────────────────────────────────────────────────────────────
+
+    const [sessions, setSessions] = useState<WorkspaceSummary[]>([]);
+
+    // Sort key for the sessions list. Default to creation time so the
+    // chronological order doesn't shuffle every time a workspace is touched.
+    type SessionSortKey = 'created_desc' | 'created_asc' | 'updated_desc' | 'name_asc';
+    const [sessionSort, setSessionSort] = useState<SessionSortKey>('created_desc');
+
+    const sortedSessions = useMemo(() => {
+        const cmpDate = (a: string | null | undefined, b: string | null | undefined): number => {
+            if (!a && !b) return 0;
+            if (!a) return 1;
+            if (!b) return -1;
+            return a.localeCompare(b);
+        };
+        const copy = [...sessions];
+        switch (sessionSort) {
+            case 'created_desc':
+                return copy.sort((a, b) => cmpDate(b.created_at, a.created_at));
+            case 'created_asc':
+                return copy.sort((a, b) => cmpDate(a.created_at, b.created_at));
+            case 'updated_desc':
+                return copy.sort((a, b) => cmpDate(b.saved_at, a.saved_at));
+            case 'name_asc':
+                return copy.sort((a, b) =>
+                    (a.display_name || '').localeCompare(b.display_name || ''),
+                );
+            default:
+                return copy;
+        }
+    }, [sessions, sessionSort]);
+
+    const refreshSessions = useCallback(() => {
+        listWorkspaces()
+            .then(list => setSessions(list))
+            .catch(() => { /* session list is best-effort */ });
+    }, []);
+
+    // Inline rename state for sidebar session rows.
+    const [renamingSession, setRenamingSession] = useState<string | null>(null);
+    const [renameSessionDraft, setRenameSessionDraft] = useState('');
+
+    const startRenameSession = useCallback((id: string, currentName: string) => {
+        setRenamingSession(id);
+        setRenameSessionDraft(currentName);
+    }, []);
+
+    const cancelRenameSession = useCallback(() => {
+        setRenamingSession(null);
+        setRenameSessionDraft('');
+    }, []);
+
+    const commitRenameSession = useCallback(async () => {
+        const id = renamingSession;
+        if (!id) return;
+        const next = renameSessionDraft.trim();
+        const current = sessions.find(s => s.id === id);
+        if (!current || !next || next === current.display_name) {
+            cancelRenameSession();
+            return;
+        }
+        setSessions(prev =>
+            prev.map(s => (s.id === id ? { ...s, display_name: next } : s)),
+        );
+        cancelRenameSession();
+        try {
+            await updateWorkspaceMeta(id, next);
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'data-source-sidebar',
+                value: 'Failed to rename session',
+            }));
+            refreshSessions();
+        }
+    }, [renamingSession, renameSessionDraft, sessions, cancelRenameSession, dispatch, refreshSessions]);
+
+    useEffect(() => {
+        refreshSessions();
+    }, [identityKey, refreshSessions]);
+
+    useEffect(() => {
+        return onWorkspaceListChanged(refreshSessions);
+    }, [refreshSessions]);
+
+    const buildSessionTooltip = useCallback((s: WorkspaceSummary): string => {
+        const parts: string[] = [];
+        if (s.table_count != null) {
+            parts.push(t('sidebar.tableCount', { count: s.table_count }));
+        }
+        if (s.chart_count != null && s.chart_count > 0) {
+            parts.push(t('sidebar.chartCount', { count: s.chart_count }));
+        }
+        if (s.saved_at) {
+            parts.push(new Date(s.saved_at).toLocaleDateString());
+        }
+        return parts.length > 0 ? parts.join(' · ') : t('sidebar.clickToOpen');
+    }, [t]);
+
+    const handleOpenSession = useCallback(async (sessionId: string) => {
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('sidebar.openingWorkspace') }));
+        try {
+            const result = await loadWorkspace(sessionId);
+            if (result && Object.keys(result.state).length > 0) {
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: sessionId, displayName: result.displayName } }));
+            } else {
+                dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: 'Untitled Session' }));
+            }
+        } catch {
+            dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: 'Untitled Session' }));
+        }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+    }, [dispatch]);
+
+    const handleDeleteSession = useCallback(async (sessionId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            await deleteWorkspace(sessionId);
+            setSessions(prev => {
+                const updated = prev.filter(s => s.id !== sessionId);
+                // If we deleted the active session, switch to the next one up the list
+                if (activeWorkspace?.id === sessionId) {
+                    const deletedIndex = prev.findIndex(s => s.id === sessionId);
+                    const nextSession = updated[Math.min(deletedIndex, updated.length - 1)];
+                    if (nextSession) {
+                        handleOpenSession(nextSession.id);
+                    } else {
+                        // No sessions left — start fresh
+                        const now = new Date();
+                        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+                        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+                        const short = generateUUID().slice(0, 4);
+                        const wsId = `session_${date}_${time}_${short}`;
+                        dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'Untitled Session' } }));
+                    }
+                }
+                return updated;
+            });
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.sessionDeleted'),
+            }));
+        } catch {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: t('sidebar.failedDeleteSession'),
+            }));
+        }
+    }, [dispatch, activeWorkspace, handleOpenSession]);
+
+    // ── Connector list ───────────────────────────────────────────────────────
+
+    const fetchConnectors = useCallback(() => {
+        if (disableConnectors) return;
+        setLoadingConnectors(true);
+        apiRequest(CONNECTOR_URLS.LIST, { method: 'GET' })
+            .then(({ data }) => {
+                const list: ConnectorInstance[] = data.connectors || [];
+                setConnectors(list);
+            })
+            .catch(() => { /* connector list is best-effort */ })
+            .finally(() => setLoadingConnectors(false));
+    }, [disableConnectors]);
+
+    // Fetch on mount and whenever identity changes.
+    useEffect(() => {
+        setConnectors([]);
+        setCatalogByConnector({});
+        setSearchCatalogCache({});
+        setServerSearchActive(false);
+        setSearchingCatalog({});
+        setExpandedConnectorId(null);
+        setTreeExpanded({});
+        setPreview(null);
+        setPreviewAnchor(null);
+        fetchConnectors();
+    }, [fetchConnectors, identityKey, connectorRefreshKey]);
+
+    // Sort connectors by category
+    const sortedConnectors = useMemo(
+        () => [...connectors].sort((a, b) => connectorSortOrder(a.source_type, b.source_type)),
+        [connectors],
+    );
+
+    // ── Catalog fetching ─────────────────────────────────────────────────────
+
+    // Guard against concurrent fetches for the same connector
+    const fetchingRef = useRef<Set<string>>(new Set());
+
+    /** Fetch the full catalog tree for a connector in one call.
+     *  Uses GET_CATALOG_TREE which returns the complete nested tree
+     *  (all levels including children) via list_tables(). */
+    const fetchCatalogTree = useCallback(async (connectorId: string) => {
+        const fetchKey = `catalog:${connectorId}`;
+        if (fetchingRef.current.has(fetchKey)) return;
+        fetchingRef.current.add(fetchKey);
+        setCatalogByConnector(prev => ({
+            ...prev,
+            [connectorId]: loadingLoadable(prev[connectorId]),
+        }));
+        try {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.GET_CATALOG_TREE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorId }),
+            });
+            const tree: CatalogTreeNode[] = data.tree || [];
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: successLoadable(
+                    { tree, fetchedAt: Date.now() },
+                    cache => cache.tree.length === 0,
+                ),
+            }));
+            // Auto-expand top-level namespaces when the count is modest, so
+            // small/scoped catalogs (Sakila, single-DB Postgres) reveal
+            // their tables on first render. Tree data is already in memory,
+            // so this is purely a UI default.
+            const topNamespaceIds = tree
+                .filter(n => n.node_type === 'namespace' || n.node_type === 'table_group')
+                .map(n => n.path.join('/'));
+            const autoExpand = topNamespaceIds.length > 0 && topNamespaceIds.length <= 10
+                ? topNamespaceIds
+                : [];
+            setTreeExpanded(prev => ({ ...prev, [connectorId]: autoExpand }));
+        } catch (e: any) {
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: errorLoadable(e, prev[connectorId]?.data ?? { tree: [], fetchedAt: Date.now() }),
+            }));
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'warning',
+                component: 'data-source-sidebar',
+                value: e?.apiError?.message || t('dataLoading.syncPartial'),
+            }));
+        } finally {
+            fetchingRef.current.delete(fetchKey);
+        }
+    }, [dispatch, t]);
+
+    const syncCatalogMetadata = useCallback(async (connectorId: string) => {
+        const syncKey = `sync:${connectorId}`;
+        if (fetchingRef.current.has(syncKey)) return;
+        fetchingRef.current.add(syncKey);
+        setCatalogByConnector(prev => ({
+            ...prev,
+            [connectorId]: loadingLoadable(prev[connectorId]),
+        }));
+        try {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.SYNC_CATALOG_METADATA, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connectorId }),
+            });
+            const tree: CatalogTreeNode[] = data.tree || [];
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: successLoadable(
+                    { tree, fetchedAt: Date.now() },
+                    cache => cache.tree.length === 0,
+                ),
+            }));
+            // Same auto-expand rule as the initial fetch.
+            const topNamespaceIds = tree
+                .filter(n => n.node_type === 'namespace' || n.node_type === 'table_group')
+                .map(n => n.path.join('/'));
+            const autoExpand = topNamespaceIds.length > 0 && topNamespaceIds.length <= 10
+                ? topNamespaceIds
+                : [];
+            setTreeExpanded(prev => ({ ...prev, [connectorId]: autoExpand }));
+            if (data.message_code === 'catalog.syncPartial') {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'warning',
+                    component: 'data-source-sidebar',
+                    value: translateBackend(data.message, data.message_code, data.message_params),
+                }));
+            }
+        } catch (e: any) {
+            setCatalogByConnector(prev => ({
+                ...prev,
+                [connectorId]: errorLoadable(e, { tree: [], fetchedAt: Date.now() }),
+            }));
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'warning',
+                component: 'data-source-sidebar',
+                value: e?.apiError?.message || t('dataLoading.syncPartial'),
+            }));
+        } finally {
+            fetchingRef.current.delete(syncKey);
+        }
+    }, [dispatch, t]);
+
+    const clearCatalogSearch = useCallback(() => {
+        setCatalogSearch('');
+        setServerSearchActive(false);
+        setSearchCatalogCache({});
+        setSearchingCatalog({});
+    }, []);
+
+    const handleCatalogSearchChange = useCallback((value: string) => {
+        setCatalogSearch(value);
+        setServerSearchActive(false);
+        setSearchCatalogCache({});
+        setSearchingCatalog({});
+    }, []);
+
+    const searchConnectorCatalog = useCallback(async (connector: ConnectorInstance, query: string) => {
+        setSearchingCatalog(prev => ({ ...prev, [connector.id]: true }));
+        try {
+            const { data } = await apiRequest(CONNECTOR_ACTION_URLS.SEARCH_CATALOG, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connector.id, query, limit: 100 }),
+            });
+            const tree = (data.tree || []) as CatalogTreeNode[];
+            setSearchCatalogCache(prev => ({
+                ...prev,
+                [connector.id]: { tree, fetchedAt: Date.now() },
+            }));
+            setTreeExpanded(prev => ({
+                ...prev,
+                [connector.id]: collectNamespaceIds(tree),
+            }));
+        } catch {
+            setSearchCatalogCache(prev => ({
+                ...prev,
+                [connector.id]: { tree: [], fetchedAt: Date.now() },
+            }));
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'warning',
+                component: 'data source sidebar',
+                value: t('sidebar.failedSearchConnector', {
+                    connector: connector.display_name,
+                    defaultValue: `Failed to search ${connector.display_name}`,
+                }),
+            }));
+        } finally {
+            setSearchingCatalog(prev => ({ ...prev, [connector.id]: false }));
+        }
+    }, [dispatch, t]);
+
+    const runCatalogSearch = useCallback(() => {
+        const query = catalogSearch.trim();
+        if (!query) {
+            clearCatalogSearch();
+            return;
+        }
+        const connected = sortedConnectors.filter(connector => connector.connected);
+        setServerSearchActive(true);
+        setSearchCatalogCache({});
+        connected.forEach(connector => {
+            void searchConnectorCatalog(connector, query);
+        });
+    }, [catalogSearch, clearCatalogSearch, searchConnectorCatalog, sortedConnectors]);
+
+    const anyCatalogSearchLoading = useMemo(
+        () => Object.values(searchingCatalog).some(Boolean),
+        [searchingCatalog],
+    );
+
+    // ── Loaded tables map ────────────────────────────────────────────────────
+
+    // Build a map: table name / path → 'loaded' for already-imported tables
+    const loadedTablesMap = useMemo(() => {
+        const map: Record<string, string> = {};
+        for (const t of tableIdentities) {
+            map[t.id] = 'loaded';
+            if (t.databaseTable) {
+                map[t.databaseTable] = 'loaded';
+            }
+            if (t.originalTableName) {
+                map[t.originalTableName] = 'loaded';
+            }
+        }
+        return map;
+    }, [tableIdentities]);
+
+    // ── Filtered catalog trees (frontend search) ───────────────────────────
+    const filterTree = useCallback((nodes: CatalogTreeNode[], query: string): CatalogTreeNode[] => {
+        const q = query.toLowerCase();
+        const result: CatalogTreeNode[] = [];
+        for (const node of nodes) {
+            if (node.node_type === 'load_more') {
+                result.push(node);
+            } else if (node.node_type === 'table') {
+                if (node.name.toLowerCase().includes(q)) {
+                    result.push(node);
+                }
+            } else {
+                const filteredChildren = node.children ? filterTree(node.children, query) : [];
+                if (filteredChildren.length > 0) {
+                    result.push({ ...node, children: filteredChildren });
+                }
+            }
+        }
+        return result;
+    }, []);
+
+    const filteredCatalogCache = useMemo(() => {
+        if (!catalogSearch.trim()) return catalogCache;
+        const filtered: Record<string, CatalogCache> = {};
+        for (const [connId, cache] of Object.entries(catalogCache)) {
+            const tree = filterTree(cache.tree, catalogSearch.trim());
+            if (tree.length > 0) {
+                filtered[connId] = { ...cache, tree };
+            }
+        }
+        return filtered;
+    }, [catalogCache, catalogSearch, filterTree]);
+
+    // Auto-expand all namespaces in filtered results so search matches are visible
+    useEffect(() => {
+        if (!catalogSearch.trim()) return;
+        setTreeExpanded(prev => {
+            const next = { ...prev };
+            for (const [connId, cache] of Object.entries(filteredCatalogCache)) {
+                next[connId] = collectNamespaceIds(cache.tree);
+            }
+            return next;
+        });
+    }, [filteredCatalogCache, catalogSearch]);
+
+    // ── Toggle expand source ─────────────────────────────────────────────────
+
+    const catalogCacheRef = useRef(catalogCache);
+    catalogCacheRef.current = catalogCache;
+
+    const toggleSource = useCallback((connectorId: string) => {
+        setExpandedConnectorId(prev => {
+            if (prev === connectorId) return null;
+            if (!catalogCacheRef.current[connectorId]) {
+                fetchCatalogTree(connectorId);
+            }
+            return connectorId;
+        });
+    }, [fetchCatalogTree]);
+
+    // Auto-expand the first connected connector on panel open so the sidebar
+    // isn't an all-collapsed list. Tracked per identity/refresh so a user
+    // collapse stays collapsed across re-renders within the same panel mount.
+    // The panel re-mounts when the sidebar is reopened, which naturally
+    // re-triggers this effect.
+    //
+    // Suppressed when an explicit focus request is pending — otherwise that
+    // focus would compete with an unrelated expansion.
+    const focusedConnectorId = useSelector(
+        (state: DataFormulatorState) => state.focusedConnectorId,
+    );
+    const autoExpandedRef = useRef<string>('');
+    useEffect(() => {
+        const key = `${identityKey}:${connectorRefreshKey}`;
+        if (autoExpandedRef.current === key) return;
+        if (focusedConnectorId) return;
+        const first = sortedConnectors.find(c => c.connected);
+        if (!first) return;
+        autoExpandedRef.current = key;
+        setExpandedConnectorId(prev => prev ?? first.id);
+        if (!catalogCacheRef.current[first.id]) {
+            fetchCatalogTree(first.id);
+        }
+    }, [sortedConnectors, identityKey, connectorRefreshKey, fetchCatalogTree, focusedConnectorId]);
+
+    // ── Consume focus requests (e.g. handoff from the upload dialog).
+    //    The sidebar wrapper bounces on each focus request (handled in the
+    //    outer wrapper component); here we just switch tab and expand the
+    //    target connector.
+    useEffect(() => {
+        if (!focusedConnectorId) return;
+        const target = sortedConnectors.find(c => c.id === focusedConnectorId);
+        if (!target) return; // wait for the next render after connectors load
+
+        setActiveTab('sources');
+        // Mark the auto-expand slot as consumed so it doesn't fire after this.
+        autoExpandedRef.current = `${identityKey}:${connectorRefreshKey}`;
+
+        if (target.connected) {
+            setExpandedConnectorId(focusedConnectorId);
+            if (!catalogCacheRef.current[focusedConnectorId]) {
+                fetchCatalogTree(focusedConnectorId);
+            }
+        }
+
+        dispatch(dfActions.clearFocusedConnector());
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focusedConnectorId, sortedConnectors]);
+
+    // ── Preview a table on click ──────────────────────────────────────────
+
+    const buildSourceTableRef = useCallback((node: CatalogTreeNode): SourceTableRef => {
+        const name = node.metadata?._source_name || node.metadata?._catalogName || node.name;
+        const id = node.metadata?.dataset_id != null ? String(node.metadata.dataset_id) : name;
+        return { id, name };
+    }, []);
+
+    const handlePreviewTable = useCallback((connectorId: string, node: CatalogTreeNode, anchorEl: HTMLElement) => {
+        if (node.node_type !== 'table') return;
+
+        const ref = buildSourceTableRef(node);
+        const nodeMeta = node.metadata || {};
+
+        setPreview({
+            connectorId,
+            node,
+            columns: [],
+            sampleRows: [],
+            rowCount: node.metadata?.row_count ?? null,
+            tableDescription: nodeMeta.source_description || nodeMeta.description,
+            loading: true,
+        });
+        setPreviewAnchor(anchorEl);
+
+        apiRequest(CONNECTOR_ACTION_URLS.PREVIEW_DATA, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                connector_id: connectorId,
+                source_table: ref,
+                limit: 10,
+            }),
+        })
+            .then(({ data }) => {
+                if (data.columns) {
+                    setPreview(prev => {
+                        if (!prev) return null;
+                        const newCols = (data.columns as typeof prev.columns);
+                        return {
+                            ...prev,
+                            columns: newCols.length > 0 ? newCols : prev.columns,
+                            sampleRows: data.rows || [],
+                            rowCount: data.total_row_count ?? prev.rowCount,
+                            tableDescription: data.description ?? prev.tableDescription,
+                            loading: false,
+                        };
+                    });
+                } else {
+                    setPreview(prev => prev ? { ...prev, loading: false } : null);
+                }
+            })
+            .catch(() => {
+                setPreview(prev => prev ? { ...prev, loading: false } : null);
+            });
+    }, []);
+
+    const closePreview = useCallback(() => {
+        setPreview(null);
+        setPreviewAnchor(null);
+    }, []);
+
+    // ── Import table (from preview "Load" button) ────────────────────────────
+
+    const handleImportTable = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
+        if (node.node_type !== 'table') return;
+
+        // Empty/home state has no active workspace; the backend requires one,
+        // so spin up a fresh session before loading.
+        if (!activeWorkspace) {
+            const now = new Date();
+            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+            const short = generateUUID().slice(0, 4);
+            const wsId = `session_${date}_${time}_${short}`;
+            dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
+        }
+
+        const ref = buildSourceTableRef(node);
+        const pathKey = node.path.join('/');
+
+        const tableObj: DictTable = {
+            kind: 'table' as const,
+            id: node.name,
+            displayId: node.name,
+            names: [],
+            metadata: {},
+            rows: [],
+            virtual: { tableId: node.name, rowCount: node.metadata?.row_count || 0 },
+            anchored: true,
+            description: '',
+            source: {
+                type: 'database' as const,
+                databaseTable: pathKey,
+                canRefresh: true,
+                lastRefreshed: Date.now(),
+                connectorId,
+            },
+        };
+
+        setImporting(true);
+        dispatch(loadTable({
+            table: tableObj,
+            connectorId,
+            sourceTableRef: ref,
+            importOptions: importOptions || {},
+        })).unwrap()
+            .then((result) => {
+                if (result.truncated) {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        type: 'warning',
+                        component: 'data source sidebar',
+                        value: t('sidebar.loadedTableTruncated', {
+                            name: ref.name,
+                            count: (result.originalRowCount ?? 0).toLocaleString(),
+                        }),
+                    }));
+                } else {
+                    dispatch(dfActions.addMessages({
+                        timestamp: Date.now(),
+                        type: 'success',
+                        component: 'data source sidebar',
+                        value: t('sidebar.loadedTable', { name: ref.name }),
+                    }));
+                }
+                closePreview();
+            })
+            .catch((error) => {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'error',
+                    component: 'data source sidebar',
+                    value: t('sidebar.failedLoadTable', { name: ref.name, error: extractErrorMessage(error) }),
+                }));
+            })
+            .finally(() => setImporting(false));
+    }, [dispatch, closePreview, buildSourceTableRef, activeWorkspace]);
+
+    // Import a table into a fresh workspace session. Reuses the same load
+    // path; the only difference is we reset workspace state first so the
+    // user lands in a clean session with just this table.
+    const handleImportTableInNewSession = useCallback((connectorId: string, node: CatalogTreeNode, importOptions?: Record<string, any>) => {
+        const now = new Date();
+        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        const short = generateUUID().slice(0, 4);
+        const wsId = `session_${date}_${time}_${short}`;
+        dispatch(dfActions.resetForNewWorkspace({ id: wsId, displayName: node.name }));
+        handleImportTable(connectorId, node, importOptions);
+    }, [dispatch, handleImportTable]);
+
+    // ── Refresh table data ───────────────────────────────────────────────────
+
+    const handleRefreshTable = useCallback((connectorId: string, node: CatalogTreeNode, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const pathKey = node.path.join('/');
+        const sourceName = node.metadata?._source_name;
+        const loaded = tableIdentities.find(
+            t => t.connectorId === connectorId && (
+                t.databaseTable === pathKey || t.id === node.name ||
+                (sourceName && (t.databaseTable === sourceName || t.id === sourceName))
+            )
+        );
+        if (!loaded) return;
+
+        const ref = buildSourceTableRef(node);
+
+        apiRequest(CONNECTOR_ACTION_URLS.REFRESH_DATA, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                connector_id: connectorId,
+                table_name: loaded.virtualTableId || loaded.id,
+                source_table: ref,
+            }),
+        })
+            .then(() => {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(),
+                    type: 'success',
+                    component: 'data source sidebar',
+                    value: t('sidebar.refreshedTable', { name: ref.name }),
+                }));
+            })
+            .catch(() => {
+                dispatch(dfActions.addMessages({
+                    timestamp: Date.now(), type: 'error',
+                    component: 'data source sidebar', value: 'Failed to refresh table data',
+                }));
+            });
+    }, [tableIdentities, dispatch, buildSourceTableRef]);
+
+    const clearConnectorUiState = useCallback((connectorId: string) => {
+        setCatalogByConnector(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        setSearchCatalogCache(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        setSearchingCatalog(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        setExpandedConnectorId(prev => (prev === connectorId ? null : prev));
+        setTreeExpanded(prev => { const next = { ...prev }; delete next[connectorId]; return next; });
+        if (preview?.connectorId === connectorId) {
+            closePreview();
+        }
+    }, [closePreview, preview?.connectorId]);
+
+    // ── Delete connector ──────────────────────────────────────────────────
+
+    const handleDeleteConnector = useCallback(async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
+        try {
+            await apiRequest(CONNECTOR_URLS.DELETE(deleteTarget.id), { method: 'DELETE' });
+            setConnectors(prev => prev.filter(c => c.id !== deleteTarget.id));
+            clearConnectorUiState(deleteTarget.id);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorDeleted', { name: deleteTarget.display_name }),
+            }));
+        } catch (e: any) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: e?.apiError?.message || t('sidebar.failedDeleteConnector'),
+            }));
+        } finally {
+            setDeleting(false);
+            setDeleteTarget(null);
+        }
+    }, [clearConnectorUiState, deleteTarget, dispatch, t]);
+
+    // ── Disconnect connector ──────────────────────────────────────────────
+    // For admin (non-deletable) connectors the user can't remove the
+    // definition itself, but they *can* clear stored credentials and the
+    // active loader so they (or the next user on this identity) can
+    // re-authenticate via "Edit connection".
+
+    const handleDisconnectConnector = useCallback(async (connector: ConnectorInstance) => {
+        try {
+            await apiRequest(CONNECTOR_ACTION_URLS.DISCONNECT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connector_id: connector.id }),
+            });
+            // Catalog cache is intentionally preserved server-side so Agent
+            // search keeps working offline; clear local UI state so the row
+            // collapses and any in-flight preview is dismissed.
+            setConnectors(prev => prev.map(c => c.id === connector.id
+                ? { ...c, connected: false, has_stored_credentials: false }
+                : c));
+            clearConnectorUiState(connector.id);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data source sidebar',
+                value: t('sidebar.connectorDisconnected', { name: connector.display_name }),
+            }));
+        } catch (e: any) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data source sidebar',
+                value: e?.apiError?.message || t('sidebar.failedDisconnectConnector'),
+            }));
+        }
+    }, [clearConnectorUiState, dispatch, t]);
+
+    // ── Render ───────────────────────────────────────────────────────────────
+
+    return (
+        <Box sx={{
+            // Pin width to the resolved panelWidth so internal layout doesn't
+            // reflow while the wrapper's width transitions on open/close —
+            // the wrapper clips us until it has caught up.
+            width: panelWidth,
+            minWidth: panelWidth,
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            borderLeft: `1px solid ${borderColor.view}`,
+            overflow: 'hidden',
+        }}>
+
+            {/* ── Upload Data tab ── */}
+            {activeTab === 'upload' && (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}>
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                        {t('sidebar.uploadData', { defaultValue: 'Upload Data' })}
+                    </Typography>
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+                <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', py: 0.5 }}>
+                    {[
+                        { icon: <ExploreOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.sampleDatasets', { defaultValue: 'Sample datasets' }), tab: 'explore' },
+                        { icon: <UploadFileIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.uploadFile', { defaultValue: 'Upload file' }), tab: 'upload' },
+                        { icon: <ContentPasteOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.pasteData', { defaultValue: 'Paste data' }), tab: 'paste' },
+                        { icon: <SmartToyOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.extractData', { defaultValue: 'Data Assistant' }), tab: 'extract' },
+                        { icon: <LinkOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.loadFromUrl', { defaultValue: 'Load from URL' }), tab: 'url' },
+                    ].map((item, i) => (
+                        <Box
+                            key={i}
+                            onClick={() => onOpenUploadDialog?.(item.tab)}
+                            sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, cursor: 'pointer', color: 'text.primary', '&:hover': { bgcolor: 'action.hover' }, userSelect: 'none' }}
+                        >
+                            {item.icon}
+                            <Typography noWrap sx={{ fontSize: 12, fontWeight: 500 }}>{item.label}</Typography>
+                        </Box>
+                    ))}
+                </Box>
+            </Box>
+            )}
+
+            {/* ── Data Connectors tab ── */}
+            {activeTab === 'sources' && disableConnectors && (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                >
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                        {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
+                    </Typography>
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+                <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+                    <LocalInstallUpgradePanel compact />
+                </Box>
+            </Box>
+            )}
+
+            {/* ── Data Connectors tab ── */}
+            {activeTab === 'sources' && !disableConnectors && (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                >
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                        {t('sidebar.dataConnectorsTitle', { defaultValue: 'Data Connectors' })}
+                    </Typography>
+                    <Tooltip title={t('sidebar.addConnector', { defaultValue: 'Add data connector' })}>
+                        <IconButton
+                            size="small"
+                            onClick={(e) => setAddConnectorAnchor(e.currentTarget)}
+                            sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.primary' } }}
+                        >
+                            <AddIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                    <Menu
+                        anchorEl={addConnectorAnchor}
+                        open={Boolean(addConnectorAnchor)}
+                        onClose={() => setAddConnectorAnchor(null)}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                        slotProps={{ paper: { sx: { minWidth: 180 } } }}
+                    >
+                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.(); }} sx={{ fontSize: 12, py: 0.75 }}>
+                            <ListItemIcon><StorageIcon sx={{ fontSize: 16 }} /></ListItemIcon>
+                            <ListItemText slotProps={{ primary: { sx: { fontSize: 12 } } }}>
+                                {t('sidebar.addConnector', { defaultValue: 'Add data connector' })}
+                            </ListItemText>
+                        </MenuItem>
+                        <MenuItem onClick={() => { setAddConnectorAnchor(null); onOpenUploadDialog?.('local-folder'); }} sx={{ fontSize: 12, py: 0.75 }}>
+                            <ListItemIcon><FolderOpenIcon sx={{ fontSize: 16 }} /></ListItemIcon>
+                            <ListItemText slotProps={{ primary: { sx: { fontSize: 12 } } }}>
+                                {t('sidebar.linkLocalFolder', { defaultValue: 'Link local folder' })}
+                            </ListItemText>
+                        </MenuItem>
+                    </Menu>
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.5, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
+
+                {/* Search box: typing filters local cache, Enter/button searches backend. */}
+                <Box sx={{ px: 1.5, pt: 1, pb: 0.5 }}>
+                    <TextField
+                        size="small"
+                        fullWidth
+                        value={catalogSearch}
+                        onChange={(e) => handleCatalogSearchChange(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                runCatalogSearch();
+                            }
+                        }}
+                        placeholder={t('sidebar.searchTables', { defaultValue: 'Search tables...' })}
+                        slotProps={{
+                            input: {
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: catalogSearch ? (
+                                    <InputAdornment position="end" sx={{ gap: 0.25 }}>
+                                        <IconButton
+                                            size="small"
+                                            onClick={runCatalogSearch}
+                                            disabled={anyCatalogSearchLoading}
+                                            sx={{ p: 0.25 }}
+                                        >
+                                            {anyCatalogSearchLoading
+                                                ? <CircularProgress size={12} />
+                                                : <SearchIcon sx={{ fontSize: 14, color: 'text.disabled' }} />}
+                                        </IconButton>
+                                        <IconButton size="small" onClick={clearCatalogSearch} sx={{ p: 0.25 }}>
+                                            <ClearIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                                        </IconButton>
+                                    </InputAdornment>
+                                ) : null,
+                            },
+                        }}
+                        sx={{
+                            '& .MuiInputBase-root': { fontSize: 12, height: 30, borderRadius: 1 },
+                            '& .MuiInputBase-input': { py: 0.5, px: 0.5 },
+                            '& .MuiInputBase-input::placeholder': { fontSize: 11 },
+                        }}
+                    />
+                </Box>
+
+                {loadingConnectors && connectors.length === 0 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                        <CircularProgress size={20} />
+                    </Box>
+                )}
+
+                {sortedConnectors
+                    .filter((connector) => {
+                        const searchText = catalogSearch.trim();
+                        if (!searchText) return true;
+                        if (serverSearchActive) {
+                            if (!connector.connected) return false;
+                            const serverCache = searchCatalogCache[connector.id];
+                            return !!searchingCatalog[connector.id] || !!(serverCache && serverCache.tree.length > 0);
+                        }
+                        const cache = catalogCache[connector.id];
+                        if (!cache) return true; // not yet loaded — keep visible
+                        const filtered = filteredCatalogCache[connector.id];
+                        return filtered && filtered.tree.length > 0;
+                    })
+                    .map((connector) => {
+                    const searchText = catalogSearch.trim();
+                    const localSearchActive = !!searchText && !serverSearchActive;
+                    const activeSearchMode = !!searchText;
+                    const displayCache = serverSearchActive
+                        ? searchCatalogCache[connector.id]
+                        : (localSearchActive ? filteredCatalogCache[connector.id] : catalogCache[connector.id]);
+                    const catalogState = catalogByConnector[connector.id];
+                    const isExpanded = activeSearchMode
+                        ? (!!displayCache && displayCache.tree.length > 0)
+                        : expandedConnectorId === connector.id;
+                    const isLoading = serverSearchActive
+                        ? (searchingCatalog[connector.id] ?? false)
+                        : catalogState?.status === 'loading';
+                    const catalogError = !serverSearchActive && catalogState?.status === 'error'
+                        ? catalogState.error
+                        : undefined;
+                    const expanded = treeExpanded[connector.id] || [];
+
+                    return (
+                        <Box key={connector.id}>
+                            {/* Source header */}
+                            <Box
+                                onClick={() => {
+                                    if (connector.connected) {
+                                        toggleSource(connector.id);
+                                    } else {
+                                        // Not connected — open config dialog for this connector
+                                        onOpenUploadDialog?.(`connector:${connector.id}`);
+                                    }
+                                }}
+                                sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 0.75,
+                                    px: 1.5,
+                                    py: 0.75,
+                                    cursor: 'pointer',
+                                    '&:hover': { bgcolor: 'action.hover' },
+                                    '&:hover .connector-row-action': { visibility: 'visible' },
+                                    userSelect: 'none',
+                                }}
+                            >
+                                {connector.connected
+                                    ? (isExpanded
+                                        ? <ExpandMoreIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                                        : <ChevronRightIcon sx={{ fontSize: 14, color: 'text.disabled' }} />)
+                                    : <ChevronRightIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                                }
+                                {getConnectorIcon(connector.icon || connector.source_type, { sx: { fontSize: 16, opacity: 0.7 } })}
+                                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: connector.connected ? 'success.main' : 'warning.main', flexShrink: 0 }} />
+                                <Typography noWrap sx={{ fontSize: 12, flex: 1, fontWeight: 500, color: connector.connected ? 'text.primary' : 'text.secondary' }}>
+                                    {connector.display_name}
+                                </Typography>
+                                {connector.connected && (
+                                    <Tooltip title={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}>
+                                        <IconButton
+                                            size="small"
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (serverSearchActive && searchText) {
+                                                    void searchConnectorCatalog(connector, searchText);
+                                                } else {
+                                                    syncCatalogMetadata(connector.id);
+                                                }
+                                            }}
+                                            sx={{
+                                                color: 'text.disabled', p: 0.25,
+                                                // Stays visible while a refresh is in-flight so the
+                                                // spinner is always shown.
+                                                visibility: isLoading ? 'visible' : 'hidden',
+                                            }}
+                                        >
+                                            {isLoading
+                                                ? <CircularProgress size={12} />
+                                                : <RefreshIcon sx={{ fontSize: 14 }} />}
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                                {/* Edit connection — available for both user and admin
+                                    connectors. Admin connectors can't be deleted, but
+                                    the user still needs a way to (re)enter credentials
+                                    or trigger a fresh login after disconnecting. */}
+                                <Tooltip title={t('sidebar.configureConnector', { defaultValue: 'Edit connection' })}>
+                                    <IconButton
+                                        size="small"
+                                        className="connector-row-action"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onOpenUploadDialog?.(`connector:${connector.id}`);
+                                        }}
+                                        sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'primary.main' } }}
+                                    >
+                                        <SettingsOutlinedIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </Tooltip>
+                                {connector.deletable ? (
+                                    <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
+                                        <IconButton
+                                            size="small"
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDeleteTarget(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'error.main' } }}
+                                        >
+                                            <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                ) : connector.connected && (
+                                    /* Admin connector: surface Disconnect in place of Delete.
+                                       Only meaningful when there's an active session/credentials
+                                       to clear; if already disconnected, "Edit connection" is
+                                       the path to re-authenticate. */
+                                    <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect connector' })}>
+                                        <IconButton
+                                            size="small"
+                                            className="connector-row-action"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                void handleDisconnectConnector(connector);
+                                            }}
+                                            sx={{ color: 'text.disabled', p: 0.25, visibility: 'hidden', '&:hover': { color: 'warning.main' } }}
+                                        >
+                                            <LinkOffOutlinedIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
+                            </Box>
+
+                            {/* Catalog tree — only for connected sources.
+                                Wrapper pl is intentionally one indent step (8px)
+                                deeper than the connector header's `px: 1.5`,
+                                so the first-level namespace icon sits one
+                                step right of the database icon — same step as
+                                namespace → leaf. Keeps the icon column visually
+                                uniform between connector → namespace → leaf. */}
+                            {connector.connected && (
+                            <Collapse in={isExpanded} timeout={100}>
+                                <Box sx={{ pl: 2, pr: 0.5, pb: 1 }}>
+                                    {!displayCache && isLoading && (
+                                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
+                                            <CircularProgress size={16} />
+                                        </Box>
+                                    )}
+                                    {displayCache && displayCache.tree.length > 0 && (
+                                        <VirtualizedCatalogTree
+                                            nodes={displayCache.tree}
+                                            loadedMap={loadedTablesMap}
+                                            expandedIds={expanded}
+                                            onExpandedChange={(newIds) => {
+                                                setTreeExpanded(prev => ({ ...prev, [connector.id]: newIds }));
+                                            }}
+                                            onLazyExpand={undefined}
+                                            onItemClick={(node, e) => {
+                                                if (node.node_type === 'table') {
+                                                    handlePreviewTable(connector.id, node, e.currentTarget as HTMLElement);
+                                                }
+                                            }}
+                                            onDragStart={(node, event) => {
+                                                const dsId = node.metadata?.dataset_id;
+                                                const sourceName = node.metadata?._source_name || node.name;
+                                                const item: CatalogTableDragItem = {
+                                                    type: CATALOG_TABLE_ITEM,
+                                                    connectorId: connector.id,
+                                                    tableName: sourceName,
+                                                    tableId: dsId != null ? String(dsId) : sourceName,
+                                                    tablePath: node.path,
+                                                    sourceType: connector.source_type,
+                                                };
+                                                event.dataTransfer.setData('application/json', JSON.stringify(item));
+                                                event.dataTransfer.effectAllowed = 'copy';
+                                            }}
+                                            renderTableActions={(node) => {
+                                                const pathKey = node.path.join('/');
+                                                const sourceName = node.metadata?._source_name;
+                                                const isLoaded = loadedTablesMap[node.name] || loadedTablesMap[pathKey] || (sourceName && loadedTablesMap[sourceName]);
+                                                if (!isLoaded) return null;
+                                                return (
+                                                    <Tooltip title={t('sidebar.refresh', { defaultValue: 'Refresh data' })}>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => { e.stopPropagation(); handleRefreshTable(connector.id, node, e); }}
+                                                            sx={{ p: 0, ml: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
+                                                        >
+                                                            <RefreshIcon sx={{ fontSize: 13 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                );
+                                            }}
+                                            maxHeight="none"
+                                            sx={{ px: 0.5 }}
+                                        />
+                                    )}
+                                    {displayCache && displayCache.tree.length === 0 && !isLoading && (
+                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', pl: 1, fontStyle: 'italic' }}>
+                                            {t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
+                                        </Typography>
+                                    )}
+                                    {!displayCache && !isLoading && (
+                                        <Typography sx={{ fontSize: 11, color: catalogError ? 'error.main' : 'text.disabled', pl: 1, fontStyle: 'italic' }}>
+                                            {catalogError || t('sidebar.emptyTree', { defaultValue: 'No tables found' })}
+                                        </Typography>
+                                    )}
+                                </Box>
+                            </Collapse>
+                            )}
+                        </Box>
+                    );
+                })}
+
+            </Box>
+            </Box>
+            )}
+
+            {/* ── Sessions tab ── */}
+            {activeTab === 'sessions' && (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                >
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary' }}>
+                        {t('sidebar.sessions', { defaultValue: 'Sessions' })}
+                    </Typography>
+                    {/* Sort selector — sits next to the title so it reads
+                        as a modifier of the section, not an aside. The
+                        chevron is sized to match the 11px label rather
+                        than the default 24px MUI icon. */}
+                    <Select
+                        size="small"
+                        variant="standard"
+                        value={sessionSort}
+                        onChange={(e) => setSessionSort(e.target.value as SessionSortKey)}
+                        disableUnderline
+                        IconComponent={(props) => (
+                            <ExpandMoreIcon {...props} sx={{ fontSize: 14, color: 'text.disabled', right: 0 }} />
+                        )}
+                        sx={{
+                            fontSize: 11,
+                            color: 'text.disabled',
+                            cursor: 'pointer',
+                            '& .MuiSelect-select': {
+                                py: 0,
+                                pl: 0,
+                                pr: '14px !important',
+                                minHeight: 0,
+                            },
+                            '&:hover': { color: 'text.secondary' },
+                            '&:hover .MuiSelect-icon': { color: 'text.secondary' },
+                        }}
+                        renderValue={(v) => {
+                            const labels: Record<SessionSortKey, string> = {
+                                created_desc: 'newest',
+                                created_asc: 'oldest',
+                                updated_desc: 'recently modified',
+                                name_asc: 'name',
+                            };
+                            return labels[v as SessionSortKey];
+                        }}
+                    >
+                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>newest first</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>oldest first</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>recently modified</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>name (a–z)</MenuItem>
+                    </Select>
+                    <Box sx={{ flex: 1 }} />
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
+                {/* New session action */}
+                <Box
+                    onClick={() => {
+                        const now = new Date();
+                        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+                        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+                        const short = generateUUID().slice(0, 4);
+                        const wsId = `session_${date}_${time}_${short}`;
+                        dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'Untitled Session' } }));
+                    }}
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.75,
+                        px: 1.5,
+                        py: 0.75,
+                        cursor: 'pointer',
+                        '&:hover': { bgcolor: 'action.hover' },
+                        userSelect: 'none',
+                    }}
+                >
+                    <AddIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                    <Typography noWrap sx={{ fontSize: 12, fontWeight: 500, color: 'text.secondary' }}>
+                        {t('sidebar.newSession', { defaultValue: 'New session' })}
+                    </Typography>
+                </Box>
+                {sessions.length === 0 ? (
+                    <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
+                        <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic' }}>
+                            {t('sidebar.noSessions', { defaultValue: 'No saved sessions' })}
+                        </Typography>
+                    </Box>
+                ) : (
+                    sortedSessions.map((s) => {
+                        const isRenaming = renamingSession === s.id;
+                        return (
+                        <Tooltip
+                            key={s.id}
+                            title={isRenaming ? '' : (() => {
+                                const date = s.saved_at ? new Date(s.saved_at).toLocaleDateString() : '';
+                                if (activeWorkspace?.id === s.id) return date ? t('sidebar.currentSessionWithDate', { date }) : t('sidebar.currentSession');
+                                const base = buildSessionTooltip(s);
+                                return date ? `${base} · ${date}` : base;
+                            })()}
+                            placement="right"
+                            enterDelay={400}
+                        >
+                        <Box
+                            onClick={() => { if (!isRenaming && activeWorkspace?.id !== s.id) handleOpenSession(s.id); }}
+                            sx={{
+                                position: 'relative',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.75,
+                                px: 1.5,
+                                py: 0.5,
+                                cursor: isRenaming ? 'default' : (activeWorkspace?.id === s.id ? 'default' : 'pointer'),
+                                '&:hover': { bgcolor: 'action.hover' },
+                                '&:hover .row-actions': { display: 'flex' },
+                                '&:hover .row-timestamp': { visibility: 'hidden' },
+                                userSelect: 'none',
+                            }}
+                        >
+                            {activeWorkspace?.id === s.id && (
+                                <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'primary.main', flexShrink: 0 }} />
+                            )}
+                            {isRenaming ? (
+                                <TextField
+                                    autoFocus
+                                    value={renameSessionDraft}
+                                    onChange={(e) => setRenameSessionDraft(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onBlur={commitRenameSession}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            commitRenameSession();
+                                        } else if (e.key === 'Escape') {
+                                            e.preventDefault();
+                                            cancelRenameSession();
+                                        }
+                                    }}
+                                    variant="standard"
+                                    sx={{ flex: 1 }}
+                                    slotProps={{
+                                        input: {
+                                            sx: { fontSize: 12, fontWeight: 500, py: 0 },
+                                        },
+                                    }}
+                                />
+                            ) : (
+                                <Typography noWrap sx={{
+                                    fontSize: 12, flex: 1, fontWeight: 500,
+                                    color: activeWorkspace?.id === s.id ? 'primary.main' : 'text.primary',
+                                }}>
+                                    {s.display_name}
+                                </Typography>
+                            )}
+                            {!isRenaming && (() => {
+                                // Show the timestamp that matches the active sort so the
+                                // visual order is self-explanatory: created time when
+                                // sorted by creation, last-saved otherwise.
+                                const useCreated = sessionSort === 'created_desc' || sessionSort === 'created_asc';
+                                const stamp = formatCompactTime(useCreated ? s.created_at : s.saved_at);
+                                if (!stamp) return null;
+                                return (
+                                    <Typography
+                                        className="row-timestamp"
+                                        sx={{
+                                            fontSize: 10,
+                                            color: 'text.disabled',
+                                            flexShrink: 0,
+                                            ml: 0.5,
+                                        }}
+                                    >
+                                        {stamp}
+                                    </Typography>
+                                );
+                            })()}
+                            {!isRenaming && (
+                                <Box
+                                    className="row-actions"
+                                    sx={{
+                                        position: 'absolute',
+                                        top: '50%',
+                                        right: 8,
+                                        transform: 'translateY(-50%)',
+                                        display: 'none',
+                                        gap: 0.25,
+                                    }}
+                                >
+                                    <Tooltip title="Rename">
+                                        <IconButton
+                                            size="small"
+                                            onClick={(e) => { e.stopPropagation(); startRenameSession(s.id, s.display_name); }}
+                                            sx={{ p: 0.25, color: 'primary.main' }}
+                                        >
+                                            <EditOutlinedIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <IconButton
+                                        size="small"
+                                        onClick={(e) => handleDeleteSession(s.id, e)}
+                                        sx={{ p: 0.25, color: 'warning.main' }}
+                                    >
+                                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </Box>
+                            )}
+                        </Box>
+                        </Tooltip>
+                        );
+                    })
+                )}
+            </Box>
+            </Box>
+            )}
+
+            {/* ── Knowledge tab ── */}
+            {activeTab === 'knowledge' && (
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box
+                    sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, borderBottom: `1px solid ${borderColor.view}`, flexShrink: 0 }}
+                >
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', flex: 1 }}>
+                        {t('knowledge.title', { defaultValue: 'Agent Knowledge' })}
+                    </Typography>
+                    <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
+                        <IconButton size="small" onClick={onCollapse} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <ChevronLeftIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
+                <KnowledgePanel />
+            </Box>
+            )}
+
+            {/* Preview popover */}
+            <Popover
+                open={Boolean(previewAnchor && preview)}
+                anchorEl={previewAnchor}
+                onClose={closePreview}
+                anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'center', horizontal: 'left' }}
+                slotProps={{
+                    paper: {
+                        sx: {
+                            // Size to the table's natural width (DataFrameTable
+                            // is rendered with autoWidth in the connector
+                            // preview), bounded so very narrow tables still
+                            // give the header room and very wide tables
+                            // don't dominate the viewport. Users can still
+                            // resize the popover larger via the resize handle.
+                            width: 'auto',
+                            minWidth: 480,
+                            maxWidth: 'min(1100px, 75vw)',
+                            minHeight: 300,
+                            maxHeight: '85vh',
+                            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                            resize: 'both',
+                        },
+                    },
+                }}
+            >
+                {preview && (() => {
+                    const pathKey = preview.node.path.join('/');
+                    const alreadyLoaded = !!(loadedTablesMap[preview.node.name] || loadedTablesMap[pathKey]);
+                    const sourceTableRef = buildSourceTableRef(preview.node);
+                    const nodeMeta = preview.node.metadata || {};
+                    const sourceDescription = nodeMeta.source_description || preview.tableDescription || nodeMeta.description;
+                    return (
+                        <Box sx={{ p: 2, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' }}>
+                            <ConnectorTablePreview
+                                connectorId={preview.connectorId}
+                                sourceTable={sourceTableRef}
+                                displayName={preview.node.name}
+                                tableDescription={sourceDescription}
+                                sourceDescription={sourceDescription}
+                                columns={preview.columns}
+                                sampleRows={preview.sampleRows}
+                                rowCount={preview.rowCount}
+                                loading={preview.loading || importing}
+                                alreadyLoaded={alreadyLoaded}
+                                enableFilters
+                                onLoad={(opts) => handleImportTable(preview.connectorId, preview.node, opts)}
+                                onLoadInNewSession={activeWorkspace ? (opts) => handleImportTableInNewSession(preview.connectorId, preview.node, opts) : undefined}
+                                onRefreshPreview={(rows, cols, rc) => {
+                                    setPreview(prev => {
+                                        if (!prev) return null;
+                                        return {
+                                            ...prev,
+                                            sampleRows: rows,
+                                            columns: cols.length > 0 ? cols : prev.columns,
+                                            rowCount: rc ?? prev.rowCount,
+                                        };
+                                    });
+                                }}
+                            />
+                        </Box>
+                    );
+                })()}
+            </Popover>
+
+            {/* Delete connector confirmation dialog */}
+            <Dialog
+                open={!!deleteTarget}
+                onClose={() => { if (!deleting) setDeleteTarget(null); }}
+            >
+                <DialogTitle sx={{ fontSize: 15, pb: 0.5 }}>
+                    {t('sidebar.deleteConnectorTitle', { defaultValue: 'Delete connector' })}
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ fontSize: 13 }}>
+                        {t('sidebar.deleteConnectorConfirm', {
+                            name: deleteTarget?.display_name,
+                            defaultValue: `Are you sure you want to delete "{{name}}"? Imported data will not be affected.`,
+                        })}
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setDeleteTarget(null)}
+                        disabled={deleting}
+                        sx={{ textTransform: 'none', fontSize: 12 }}
+                    >
+                        {t('app.cancel', { defaultValue: 'Cancel' })}
+                    </Button>
+                    <Button
+                        onClick={handleDeleteConnector}
+                        disabled={deleting}
+                        color="error"
+                        variant="contained"
+                        sx={{ textTransform: 'none', fontSize: 12 }}
+                    >
+                        {deleting
+                            ? t('sidebar.deletingEllipsis', { defaultValue: 'Deleting...' })
+                            : t('sidebar.deleteConfirmBtn', { defaultValue: 'Delete' })}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+        </Box>
+    );
+};

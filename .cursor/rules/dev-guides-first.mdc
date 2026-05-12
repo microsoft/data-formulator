@@ -1,0 +1,68 @@
+---
+description: Require reading dev-guides before development and keeping docs in sync
+globs:
+alwaysApply: true
+---
+
+# Dev Guides First
+
+## Before Starting Any Development
+
+Before implementing or designing a new feature, module, or significant change, **always
+read the relevant documents in `dev-guides/`** to understand existing conventions:
+
+| Guide | When to Read |
+|-------|-------------|
+| `dev-guides/1-streaming-protocol.md` | Any work on streaming endpoints or NDJSON protocol |
+| `dev-guides/2-log-sanitization.md` | Any work involving logging, credentials, external services, or DataLoaders |
+| `dev-guides/3-data-loader-development.md` | Any work on ExternalDataLoader, DataConnector, or connector routes |
+| `dev-guides/4-authentication-oidc-tokenstore.md` | Any work on OIDC, TokenStore, AUTH_MODE, or SSO flows |
+| `dev-guides/6-i18n-language-injection.md` | Any work on Agent prompts, Agent routes, backend user-visible messages, or frontend i18n |
+| `dev-guides/7-unified-error-handling.md` | Any work on API errors, frontend API calls, streaming error events, or error tests |
+| `dev-guides/8-path-safety.md` | Any work on backend file access, downloads, Workspace paths, Agent tools, DataLoaders, or sandbox config |
+| `dev-guides/10-agent-knowledge-reasoning-log.md` | Any work on Agent knowledge injection, KnowledgeStore, reasoning logs, or experience distillation |
+| `dev-guides/11-catalog-metadata-sync.md` | Any work on catalog sync, catalog_cache, catalog_annotations, metadata merge, Agent catalog tools, or frontend catalog browsing |
+| `dev-guides/12-sandbox-session.md` | Any work on sandbox execution, Agent tool-calling loops, explore/execute_python code execution, or namespace management |
+| `dev-guides/13-unified-row-limits.md` | Any work on row limits, data loading size caps, frontendRowLimit, MAX_IMPORT_ROWS, or DataLoader size parameter |
+| `.cursor/rules/i18n-no-hardcoded-strings.mdc` | Any work adding or changing user-visible strings in `src/` |
+
+Also check `.cursor/rules/` and `.cursor/skills/` for related coding conventions.
+
+## After Introducing New Conventions
+
+When your work establishes a new development pattern, convention, or architectural
+decision, you MUST update documentation before considering the task complete:
+
+1. **Update existing dev-guide** — if your change extends an existing convention
+   (e.g. new sensitive key type → update `2-log-sanitization.md`)
+
+2. **Create new dev-guide** — if your change introduces a new cross-cutting convention
+   that future developers must follow. Place in `dev-guides/` with the next number prefix.
+
+3. **Update existing SKILL** — if your change affects how an existing skill works
+   (e.g. new error handling pattern → update `error-handling/SKILL.md`)
+
+4. **Create new SKILL** — if your change introduces a reusable development workflow
+   that AI agents should follow. Place in `.cursor/skills/<name>/SKILL.md`.
+
+5. **Update existing Rule** — if your change adds constraints to an existing rule
+   (e.g. new banned pattern → update the relevant `.mdc` file)
+
+6. **Create new Rule** — if your change introduces file-scoped coding conventions
+   that should be enforced automatically. Place in `.cursor/rules/<name>.mdc`.
+
+## Documentation Sync Checklist
+
+For every PR that introduces new patterns:
+
+- [ ] Searched `dev-guides/` for related existing docs
+- [ ] Updated or created dev-guide if introducing cross-cutting conventions
+- [ ] Updated or created `.cursor/skills/` if introducing reusable workflows
+- [ ] Updated or created `.cursor/rules/` if introducing file-scoped constraints
+- [ ] New dev-guide includes a "New Module Checklist" section (if applicable)
+
+## File Naming Conventions
+
+- **dev-guides**: `<number>-<kebab-case-topic>.md` (e.g. `3-data-loader-development.md`)
+- **skills**: `.cursor/skills/<topic>/SKILL.md`
+- **rules**: `.cursor/rules/<kebab-case-topic>.mdc`
