@@ -73,8 +73,8 @@ const CommandRow: React.FC<{
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                 fontSize: 12,
                 color: 'text.primary',
-                overflow: 'auto',
-                whiteSpace: 'nowrap',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
                 userSelect: 'all',
             }}
         >
@@ -83,21 +83,23 @@ const CommandRow: React.FC<{
         <Button
             size="small"
             onClick={onCopy}
-            startIcon={
-                copied ? (
-                    <CheckIcon sx={{ fontSize: 14 }} />
-                ) : (
-                    <ContentCopyIcon sx={{ fontSize: 14 }} />
-                )
-            }
+            aria-label={copied ? copiedLabel : copyLabel}
+            title={copied ? copiedLabel : copyLabel}
             sx={{
                 fontSize: 12,
                 textTransform: 'none',
                 minWidth: 'auto',
+                p: 0.5,
+                flexShrink: 0,
+                alignSelf: 'flex-start',
                 color: copied ? 'success.main' : 'text.secondary',
             }}
         >
-            {copied ? copiedLabel : copyLabel}
+            {copied ? (
+                <CheckIcon sx={{ fontSize: 16 }} />
+            ) : (
+                <ContentCopyIcon sx={{ fontSize: 16 }} />
+            )}
         </Button>
     </Paper>
 );
