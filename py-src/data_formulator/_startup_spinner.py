@@ -25,14 +25,18 @@ _INDENT = "  "
 
 
 def _enabled() -> bool:
-    if os.environ.get("DF_NO_SPINNER"):
-        return False
-    if os.environ.get("NO_COLOR") and os.environ.get("TERM") == "dumb":
+    if os.environ.get("TERM") == "dumb":
         return False
     try:
         return sys.stdout.isatty()
     except Exception:
         return False
+
+
+def _color(code: str, text: str) -> str:
+    if os.environ.get("NO_COLOR"):
+        return text
+    return f"\x1b[{code}m{text}\x1b[0m"
 
 
 @contextmanager
@@ -69,6 +73,6 @@ def spinner(label: str):
         stop.set()
         thread.join()
         elapsed = time.monotonic() - start
-        glyph = "\x1b[32m✔\x1b[0m" if ok else "\x1b[31m✖\x1b[0m"
+        glyph = _color("32", "✔") if ok else _color("31", "✖")
         sys.stdout.write(f"\r\x1b[2K{_INDENT}{glyph} {label} ({elapsed:.1f}s)\n")
         sys.stdout.flush()
