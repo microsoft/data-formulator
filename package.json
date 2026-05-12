@@ -33,7 +33,7 @@
         "js-yaml": "^4.1.1",
         "katex": "^0.16.22",
         "localforage": "^1.10.0",
-        "lodash": "^4.17.23",
+        "lodash": "^4.18.1",
         "markdown-to-jsx": "^7.4.0",
         "oidc-client-ts": "3.5.0",
         "prettier": "^2.8.3",
