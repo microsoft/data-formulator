@@ -109,6 +109,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import YouTubeIcon from '@mui/icons-material/YouTube';
 import PublicIcon from '@mui/icons-material/Public';
 import { useTranslation } from 'react-i18next';
+import { syncVegaLocale } from '../lib/vega-locale';
 
 // Discord Icon Component
 const DiscordIcon: FC<{ sx?: any }> = ({ sx }) => (
@@ -978,11 +979,18 @@ const AppShell: FC = () => {
 export const AppFC: FC<AppFCProps> = function AppFC(appProps) {
 
     const dispatch = useDispatch<AppDispatch>();
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const rawPaletteKey = useSelector((state: DataFormulatorState) => state.config.paletteKey);
     const activePaletteKey = (rawPaletteKey && palettes[rawPaletteKey]) ? rawPaletteKey : defaultPaletteKey;
 
     const [configLoaded, setConfigLoaded] = useState(false);
+
+    useEffect(() => {
+        syncVegaLocale();
+        const onLangChanged = () => syncVegaLocale();
+        i18n.on('languageChanged', onLangChanged);
+        return () => { i18n.off('languageChanged', onLangChanged); };
+    }, [i18n]);
 
     useEffect(() => {
         apiRequest(getUrls().APP_CONFIG)

@@ -190,10 +190,12 @@ export const refineTemporalType = (values: any[], inferredType: Type): Type => {
     const nonNull = values.filter(v => v != null && v !== '');
     if (nonNull.length === 0) return inferredType;
     const allMidnight = nonNull.every(v => {
-        const d = new Date(v);
-        if (isNaN(d.getTime())) return false;
-        return d.getHours() === 0 && d.getMinutes() === 0
-            && d.getSeconds() === 0 && d.getMilliseconds() === 0;
+        if (typeof v !== 'string') return false;
+        const tIdx = v.indexOf('T');
+        if (tIdx === -1) return false;
+        const timePart = v.slice(tIdx + 1).replace(/[Z+-].*$/, '');
+        const parts = timePart.split(':');
+        return parts.length >= 2 && parts.every(p => parseFloat(p) === 0);
     });
     return allMidnight ? Type.Date : Type.DateTime;
 };
