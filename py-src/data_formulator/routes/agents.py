@@ -730,6 +730,8 @@ def request_chart_insight():
     chart_type = content.get("chart_type", "")
     field_names = content.get("field_names", [])
     input_tables = content.get("input_tables", [])
+    chart_data_sample = content.get("chart_data_sample", None)
+    encoding_map = content.get("encoding_map", None)
 
     if not chart_image:
         raise AppError(ErrorCode.VALIDATION_ERROR, "Chart image not available. Please retry.")
@@ -753,7 +755,11 @@ def request_chart_insight():
         agent = ChartInsightAgent(client=client, workspace=workspace,
                                   language_instruction=get_language_instruction(),
                                   knowledge_store=knowledge_store)
-        candidates = agent.run(chart_image, chart_type, field_names, input_tables)
+        candidates = agent.run(
+            chart_image, chart_type, field_names, input_tables,
+            chart_data_sample=chart_data_sample,
+            encoding_map=encoding_map,
+        )
 
         if not candidates or len(candidates) == 0:
             logger.warning("[chart-insight] failed request_id=%s reason=no_candidates",
@@ -770,8 +776,12 @@ def request_chart_insight():
         logger.info("[chart-insight] done request_id=%s takeaway_count=%d",
                     getattr(flask.g, 'request_id', ''),
                     len(result.get('takeaways', [])))
-        return json_ok({"title": result.get("title", ""),
-                        "takeaways": result.get("takeaways", [])})
+        return json_ok({
+            "title": result.get("title", ""),
+            "summary": result.get("summary", ""),
+            "insights": result.get("insights", []),
+            "takeaways": result.get("takeaways", []),
+        })
 
     except AppError:
         raise

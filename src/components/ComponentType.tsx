@@ -321,9 +321,29 @@ export function createDictTable(
     }
 }
 
+/** Categorical "kind" of an insight.
+ *  - The agent emits one of `anomaly | comparison | trend | relationship`.
+ *  - `observation` is a frontend-only fallback for missing or unknown kinds
+ *    (treated as a generic finding with a muted color). Keep in sync with
+ *    `ALLOWED_KINDS` in `py-src/data_formulator/agents/agent_chart_insight.py`. */
+export type InsightKind =
+    | 'anomaly'
+    | 'comparison'
+    | 'trend'
+    | 'relationship'
+    | 'observation';
+
+export interface Insight {
+    title?: string;            // short noun phrase (2-4 words); fallback: first words of text
+    text: string;
+    kind?: InsightKind;        // missing → render as 'observation'
+}
+
 export interface ChartInsight {
     title: string;
-    takeaways: string[];
+    summary?: string;          // 1-2 sentence chart-level caption (renders below chart)
+    insights: Insight[];       // structured insights list
+    takeaways: string[];       // plain text list — kept for backward compat (deprecated)
     key: string;  // "chartType|sortedFieldIds" — used to detect staleness
 }
 
@@ -361,13 +381,14 @@ export type Chart = {
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
 }
 
-/** Compute a string key for insight invalidation: chartType|sortedFieldIds */
+/** Compute a string key for insight invalidation: v<schema>|chartType|sortedFieldIds. */
+const INSIGHT_SCHEMA_VERSION = 4;
 export function computeInsightKey(chart: Chart): string {
     const fieldIds = Object.values(chart.encodingMap)
         .map(enc => enc.fieldID)
         .filter((id): id is string => !!id)
         .sort();
-    return `${chart.chartType}|${fieldIds.join(',')}`;
+    return `v${INSIGHT_SCHEMA_VERSION}|${chart.chartType}|${fieldIds.join(',')}`;
 }
 
 /**
