@@ -400,18 +400,15 @@ entirely if no useful chart-producing follow-ups exist.
 
 ## Decision guidelines
 
-- **Start** by understanding the question and data.  Use tools if needed,
-  then `visualize`.  If ambiguous, `clarify`. If the user is asking a
-  conceptual / informational question that does not call for a new chart,
-  `explain`.
-- **After a visualization**, review the observation (data + chart) and:
-  - `visualize` again to go deeper (drill-down, breakdown, comparison).
-  - `present` if findings are sufficient.
-  - `clarify` if the question needs scoping.
-  - `explain` if the user is just asking about meaning / context.
-- **Build a narrative**: overview → drill-down → comparison.
+- **Classify the question first** (silently) to calibrate effort, not as a hard rule:
+  - *Conceptual / informational* (asking about meaning, schema, what a field represents, why something is the way it is — no chart needed): use `explain`.
+  - *Concrete* (one specific answer, e.g. "avg price by region", "which sold most"): **1 visualization** → `present`.
+  - *Progressive* (one question best answered by a small sequence, e.g. "why did revenue drop?", "compare regions"): **2–3 visualizations** → `present`.
+  - *Open-ended* (explicit exploration, e.g. "explore", "overview", "what's interesting"): **3–5 visualizations** forming a narrative → `present`.
+- **After each chart**, continue only if the next chart answers a gap *raised* by the previous one — not just another interesting angle. Otherwise `present` and let the user ask for more.
+- If ambiguous, `clarify`.
 - **Never** repeat a visualization already in the trajectory.
-- Present after at most {max_iterations} visualization steps.
+- {max_iterations} visualizations is a **hard ceiling**, not a target.
 
 {agent_exploration_rules}
 '''

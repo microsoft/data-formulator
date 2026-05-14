@@ -18,7 +18,7 @@ import {
     Paper,
     Typography,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { alpha, type Theme } from '@mui/material/styles';
 import StorageIcon from '@mui/icons-material/Storage';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import VpnKeyOutlinedIcon from '@mui/icons-material/VpnKeyOutlined';
@@ -28,10 +28,11 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import { useTranslation } from 'react-i18next';
 
-const PIP_INSTALL_CMD = 'pip install data-formulator';
-const RUN_CMD = 'python -m data_formulator';
+const UVX_CMD = 'uvx --prerelease=allow data-formulator';
 const REPO_URL = 'https://github.com/microsoft/data-formulator';
 const PYPI_URL = 'https://pypi.org/project/data-formulator/';
+const UV_INSTALL_URL = 'https://docs.astral.sh/uv/getting-started/installation/';
+const INSTALL_GUIDE_URL = 'https://github.com/microsoft/data-formulator#get-started';
 
 interface FeatureRow {
     icon: React.ReactNode;
@@ -72,8 +73,8 @@ const CommandRow: React.FC<{
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                 fontSize: 12,
                 color: 'text.primary',
-                overflow: 'auto',
-                whiteSpace: 'nowrap',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
                 userSelect: 'all',
             }}
         >
@@ -82,21 +83,23 @@ const CommandRow: React.FC<{
         <Button
             size="small"
             onClick={onCopy}
-            startIcon={
-                copied ? (
-                    <CheckIcon sx={{ fontSize: 14 }} />
-                ) : (
-                    <ContentCopyIcon sx={{ fontSize: 14 }} />
-                )
-            }
+            aria-label={copied ? copiedLabel : copyLabel}
+            title={copied ? copiedLabel : copyLabel}
             sx={{
                 fontSize: 12,
                 textTransform: 'none',
                 minWidth: 'auto',
+                p: 0.5,
+                flexShrink: 0,
+                alignSelf: 'flex-start',
                 color: copied ? 'success.main' : 'text.secondary',
             }}
         >
-            {copied ? copiedLabel : copyLabel}
+            {copied ? (
+                <CheckIcon sx={{ fontSize: 16 }} />
+            ) : (
+                <ContentCopyIcon sx={{ fontSize: 16 }} />
+            )}
         </Button>
     </Paper>
 );
@@ -181,7 +184,7 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
                             px: 1,
                             py: 0.75,
                             borderRadius: 1,
-                            bgcolor: (theme) => alpha(theme.palette.primary.light, 0.08),
+                            bgcolor: (theme: Theme) => alpha(theme.palette.primary.light, 0.08),
                         }}
                     >
                         <Box sx={{ color: 'text.secondary', mt: '2px', flexShrink: 0 }}>
@@ -207,23 +210,38 @@ export const LocalInstallUpgradePanel: React.FC<LocalInstallUpgradePanelProps> =
                     {t('upload.upgrade.installHeading', { defaultValue: 'Install & launch' })}
                 </Typography>
                 <CommandRow
-                    cmd={PIP_INSTALL_CMD}
-                    copied={copiedCmd === PIP_INSTALL_CMD}
-                    onCopy={() => handleCopy(PIP_INSTALL_CMD)}
+                    cmd={UVX_CMD}
+                    copied={copiedCmd === UVX_CMD}
+                    onCopy={() => handleCopy(UVX_CMD)}
                     copyLabel={t('upload.upgrade.copy', { defaultValue: 'Copy' })}
                     copiedLabel={t('upload.upgrade.copied', { defaultValue: 'Copied' })}
                 />
-                <CommandRow
-                    cmd={RUN_CMD}
-                    copied={copiedCmd === RUN_CMD}
-                    onCopy={() => handleCopy(RUN_CMD)}
-                    copyLabel={t('upload.upgrade.copy', { defaultValue: 'Copy' })}
-                    copiedLabel={t('upload.upgrade.copied', { defaultValue: 'Copied' })}
-                />
-                <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-                    {t('upload.upgrade.pythonHint', {
-                        defaultValue: 'Requires Python 3.11 or newer.',
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.5 }}>
+                    {t('upload.upgrade.requirements', {
+                        defaultValue: 'Requires Python 3.11+ and ',
                     })}
+                    <Link
+                        href={UV_INSTALL_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        underline="hover"
+                    >
+                        uv
+                    </Link>
+                    {t('upload.upgrade.requirementsTail', {
+                        defaultValue: '. Prefer pip, conda, or Docker? See ',
+                    })}
+                    <Link
+                        href={INSTALL_GUIDE_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        underline="hover"
+                    >
+                        {t('upload.upgrade.otherInstallMethods', {
+                            defaultValue: 'other install methods',
+                        })}
+                    </Link>
+                    .
                 </Typography>
             </Box>
 

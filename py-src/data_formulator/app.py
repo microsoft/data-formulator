@@ -158,13 +158,15 @@ def _register_blueprints():
     from data_formulator.error_handler import register_error_handlers
     register_error_handlers(app)
 
+    from data_formulator._startup_spinner import spinner
+
     # Import tables routes (imports database connectors)
-    print("  Loading data loader drivers...", flush=True)
-    from data_formulator.routes.tables import tables_bp
-    
+    with spinner("Loading data loader drivers"):
+        from data_formulator.routes.tables import tables_bp
+
     # Import agent routes (imports AI/ML libraries: litellm, sklearn, etc.)
-    print("  Loading AI agents...", flush=True)
-    from data_formulator.routes.agents import agent_bp
+    with spinner("Loading AI agents"):
+        from data_formulator.routes.agents import agent_bp
     
     # Import session routes
     from data_formulator.routes.sessions import session_bp
@@ -210,9 +212,9 @@ def _register_blueprints():
 
     # Auto-register all installed data loaders as DataConnector instances
     if not app.config['CLI_ARGS'].get('disable_data_connectors'):
-        print("  Loading data connectors...", flush=True)
-        from data_formulator.data_connector import register_data_connectors
-        register_data_connectors(app)
+        with spinner("Loading data connectors"):
+            from data_formulator.data_connector import register_data_connectors
+            register_data_connectors(app)
     else:
         print("  Data connectors disabled (DISABLE_DATA_CONNECTORS=true)", flush=True)
 

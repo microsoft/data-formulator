@@ -8,5 +8,6 @@ version: 2
 updates:
  - package-ecosystem: "devcontainers"
    directory: "/"
+   target-branch: "dev"
    schedule:
      interval: weekly
