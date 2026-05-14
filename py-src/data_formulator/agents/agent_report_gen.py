@@ -21,7 +21,10 @@ import litellm
 import openai
 import pandas as pd
 
-from data_formulator.agents.agent_utils import generate_data_summary
+from data_formulator.agents.agent_utils import (
+    attach_reasoning_content,
+    generate_data_summary,
+)
 from data_formulator.agents.context import (
     build_focused_thread_context,
     build_lightweight_table_context,
@@ -251,6 +254,7 @@ class ReportGenAgent:
                     for tc in tool_calls
                 ],
             }
+            attach_reasoning_content(assistant_msg, choice.message)
             messages.append(assistant_msg)
 
             # Execute each tool

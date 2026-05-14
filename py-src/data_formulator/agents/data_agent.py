@@ -31,6 +31,7 @@ import openai
 import pandas as pd
 
 from data_formulator.agents.agent_utils import (
+    attach_reasoning_content,
     ensure_output_variable_in_code,
     extract_json_objects,
     generate_data_summary,
@@ -1596,6 +1597,7 @@ class DataAgent:
                     "role": "assistant",
                     "content": content or None,
                 }
+                attach_reasoning_content(assistant_msg, choice.message)
                 assistant_msg["tool_calls"] = [
                     {
                         "id": tc.id,
@@ -1774,7 +1776,9 @@ class DataAgent:
                 json_retries += 1
                 logger.warning("[DataAgent] No JSON found (retry %d/%d), asking LLM to reformat",
                                json_retries, max_json_retries)
-                messages.append({"role": "assistant", "content": content})
+                retry_assistant_msg: dict[str, Any] = {"role": "assistant", "content": content}
+                attach_reasoning_content(retry_assistant_msg, choice.message)
+                messages.append(retry_assistant_msg)
                 messages.append({
                     "role": "user",
                     "content": (

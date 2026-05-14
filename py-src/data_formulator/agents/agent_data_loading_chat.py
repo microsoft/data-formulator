@@ -22,6 +22,7 @@ import openai
 import pandas as pd
 
 from data_formulator.agents.agent_data_clean_stream import parse_table_sections
+from data_formulator.agents.agent_utils import accumulate_reasoning_content
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +384,7 @@ class DataLoadingAgent:
             # Accumulate streaming response
             tool_calls_acc = {}  # id -> {name, arguments_str}
             current_text = []
+            accumulated_reasoning = None
             finish_reason = None
 
             for chunk in response:
@@ -391,6 +393,11 @@ class DataLoadingAgent:
 
                 delta = chunk.choices[0].delta
                 finish_reason = chunk.choices[0].finish_reason
+
+                # Accumulate reasoning_content (DeepSeek V4 reasoning models)
+                accumulated_reasoning = accumulate_reasoning_content(
+                    accumulated_reasoning, delta
+                )
 
                 # Stream text tokens
                 if hasattr(delta, 'content') and delta.content:
@@ -421,6 +428,8 @@ class DataLoadingAgent:
 
             # Build assistant message with tool calls for LLM context
             assistant_msg = {"role": "assistant", "content": "".join(current_text) or None}
+            if accumulated_reasoning is not None:
+                assistant_msg["reasoning_content"] = accumulated_reasoning
             assistant_msg["tool_calls"] = []
             for idx in sorted(tool_calls_acc.keys()):
                 tc = tool_calls_acc[idx]

@@ -10,7 +10,11 @@ import pandas as pd
 import litellm
 import openai
 
-from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
+from data_formulator.agents.agent_utils import (
+    attach_reasoning_content,
+    extract_json_objects,
+    generate_data_summary,
+)
 from data_formulator.agents.context import (
     build_focused_thread_context,
     build_lightweight_table_context,
@@ -303,6 +307,7 @@ class InteractiveExploreAgent(object):
                     for tc in tool_calls
                 ],
             }
+            attach_reasoning_content(assistant_msg, choice.message)
             messages.append(assistant_msg)
 
             # Execute each tool call
