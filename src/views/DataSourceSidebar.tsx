@@ -11,6 +11,7 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
 import {
     Box,
     Typography,
@@ -71,7 +72,7 @@ import { extractErrorMessage } from '../app/errorHandler';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
 import { loadTable } from '../app/tableThunks';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, updateWorkspaceMeta, onWorkspaceListChanged } from '../app/workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, updateWorkspaceMeta, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import { borderColor } from '../app/tokens';
 
@@ -101,19 +102,19 @@ const SIDEBAR_WIDTH_KEY = 'df-sidebar-panel-width';
 function formatCompactTime(iso: string | null | undefined): string {
     if (!iso) return '';
     const then = new Date(iso);
-    const t = then.getTime();
-    if (Number.isNaN(t)) return '';
+    const ts = then.getTime();
+    if (Number.isNaN(ts)) return '';
     const now = Date.now();
-    const diffSec = Math.max(0, Math.round((now - t) / 1000));
-    if (diffSec < 60) return 'just now';
+    const diffSec = Math.max(0, Math.round((now - ts) / 1000));
+    if (diffSec < 60) return i18n.t('sidebar.timeJustNow');
     const diffMin = Math.round(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m`;
+    if (diffMin < 60) return i18n.t('sidebar.timeMinutes', { count: diffMin });
     const diffHr = Math.round(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h`;
+    if (diffHr < 24) return i18n.t('sidebar.timeHours', { count: diffHr });
     const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
     const diffDays = Math.floor((startOfToday.getTime() - then.getTime()) / 86400000) + 1;
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 7) return `${diffDays}d`;
+    if (diffDays === 1) return i18n.t('sidebar.timeYesterday');
+    if (diffDays < 7) return i18n.t('sidebar.timeDays', { count: diffDays });
     const sameYear = then.getFullYear() === new Date().getFullYear();
     return then.toLocaleDateString(undefined, sameYear
         ? { month: 'short', day: 'numeric' }
@@ -499,11 +500,28 @@ const DataSourceSidebarPanel: React.FC<{
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'error',
                 component: 'data-source-sidebar',
-                value: 'Failed to rename session',
+                value: t('sidebar.failedRenameSession'),
             }));
             refreshSessions();
         }
     }, [renamingSession, renameSessionDraft, sessions, cancelRenameSession, dispatch, refreshSessions]);
+
+    const handleExportSession = useCallback(async (id: string, displayName: string) => {
+        try {
+            const blob = await exportWorkspace(id);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${displayName || id}.zip`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        } catch (e) {
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'data-source-sidebar',
+                value: t('sidebar.exportFailed'),
+            }));
+        }
+    }, [dispatch, t]);
 
     useEffect(() => {
         refreshSessions();
@@ -1627,18 +1645,18 @@ const DataSourceSidebarPanel: React.FC<{
                         }}
                         renderValue={(v) => {
                             const labels: Record<SessionSortKey, string> = {
-                                created_desc: 'newest',
-                                created_asc: 'oldest',
-                                updated_desc: 'recently modified',
-                                name_asc: 'name',
+                                created_desc: t('sidebar.sortNewest'),
+                                created_asc: t('sidebar.sortOldest'),
+                                updated_desc: t('sidebar.sortRecentlyModified'),
+                                name_asc: t('sidebar.sortName'),
                             };
                             return labels[v as SessionSortKey];
                         }}
                     >
-                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>newest first</MenuItem>
-                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>oldest first</MenuItem>
-                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>recently modified</MenuItem>
-                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>name (a–z)</MenuItem>
+                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>{t('sidebar.sortNewestFirst')}</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>{t('sidebar.sortOldestFirst')}</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>{t('sidebar.sortRecentlyModifiedFirst')}</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>{t('sidebar.sortNameAsc')}</MenuItem>
                     </Select>
                     <Box sx={{ flex: 1 }} />
                     <Tooltip title={t('sidebar.collapse', { defaultValue: 'Collapse' })} placement="bottom">
@@ -1779,19 +1797,28 @@ const DataSourceSidebarPanel: React.FC<{
                                         gap: 0.25,
                                     }}
                                 >
-                                    <Tooltip title="Rename">
+                                    <Tooltip title={t('sidebar.rename', { defaultValue: 'Rename' })}>
                                         <IconButton
                                             size="small"
                                             onClick={(e) => { e.stopPropagation(); startRenameSession(s.id, s.display_name); }}
-                                            sx={{ p: 0.25, color: 'primary.main' }}
+                                            sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'primary.main' } }}
                                         >
                                             <EditOutlinedIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title={t('sidebar.exportSession', { defaultValue: 'Export' })}>
+                                        <IconButton
+                                            size="small"
+                                            onClick={(e) => { e.stopPropagation(); handleExportSession(s.id, s.display_name); }}
+                                            sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.primary' } }}
+                                        >
+                                            <DownloadIcon sx={{ fontSize: 14 }} />
                                         </IconButton>
                                     </Tooltip>
                                     <IconButton
                                         size="small"
                                         onClick={(e) => handleDeleteSession(s.id, e)}
-                                        sx={{ p: 0.25, color: 'warning.main' }}
+                                        sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'warning.main' } }}
                                     >
                                         <DeleteOutlineIcon sx={{ fontSize: 14 }} />
                                     </IconButton>

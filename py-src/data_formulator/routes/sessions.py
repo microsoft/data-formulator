@@ -260,14 +260,31 @@ def update_workspace_meta():
 
 @session_bp.route("/export", methods=["POST"])
 def export_session():
-    """Export the active workspace as a zip."""
+    """Export a workspace as a zip.
+
+    Body: ``{ "state": {...}, "workspace_id": "session_..." }``
+
+    ``workspace_id`` identifies which workspace's files to package.
+    This avoids the need for an ``X-Workspace-Id`` header, allowing
+    export from the landing page where no workspace is active.
+    """
+    if _is_ephemeral():
+        raise AppError(ErrorCode.INVALID_REQUEST, "Export is handled client-side in ephemeral mode")
+
     data = request.get_json(force=True)
     state: dict = data.get("state")
+    workspace_id: str = (data.get("workspace_id") or "").strip()
     if state is None:
         raise AppError(ErrorCode.INVALID_REQUEST, "State payload is required")
+    if not workspace_id:
+        raise AppError(ErrorCode.INVALID_REQUEST, "workspace_id is required")
 
     identity_id = get_identity_id()
-    ws = get_workspace(identity_id)
+    mgr = get_workspace_manager(identity_id)
+    if not mgr.workspace_exists(workspace_id):
+        raise AppError(ErrorCode.TABLE_NOT_FOUND, f"Workspace '{workspace_id}' not found")
+
+    ws = mgr.open_workspace(workspace_id, identity_id)
 
     from data_formulator.datalake.workspace_manager import _strip_sensitive
     clean_state = _strip_sensitive(state)
@@ -279,14 +296,34 @@ def export_session():
 
 @session_bp.route("/import", methods=["POST"])
 def import_session():
-    """Import a workspace from a zip."""
+    """Import a workspace from a zip.
+
+    The optional ``workspace_id`` form field specifies the target
+    workspace.  If the workspace doesn't exist yet it is created
+    automatically, so callers can generate a fresh ID client-side.
+    When omitted, falls back to the ``X-Workspace-Id`` header.
+    """
+    if _is_ephemeral():
+        return json_ok({"state": {}, "message": "Import handled client-side in ephemeral mode"})
+
     if "file" not in request.files:
         raise AppError(ErrorCode.INVALID_REQUEST, "No file uploaded")
 
     file = request.files["file"]
+    workspace_id = (request.form.get("workspace_id") or "").strip()
+
     try:
         identity_id = get_identity_id()
-        ws = get_workspace(identity_id)
+        mgr = get_workspace_manager(identity_id)
+
+        if workspace_id:
+            if mgr.workspace_exists(workspace_id):
+                ws = mgr.open_workspace(workspace_id, identity_id)
+            else:
+                ws = mgr.create_and_open_workspace(workspace_id, identity_id)
+        else:
+            ws = get_workspace(identity_id)
+
         state = ws.import_session_zip(io.BytesIO(file.read()))
         return json_ok({"state": state})
     except ValueError:
