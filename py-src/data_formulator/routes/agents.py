@@ -25,6 +25,7 @@ from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_simple import SimpleAgents
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.datalake.workspace import Workspace, get_user_home
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
@@ -998,10 +999,10 @@ def refresh_derived_data():
                 else:
                     display_df = result_df
                 display_df = display_df.loc[:, ~display_df.columns.duplicated()]
-                response_data["rows"] = json.loads(display_df.to_json(orient='records', date_format='iso'))
+                response_data["rows"] = df_to_safe_records(display_df)
             else:
                 result_df = result_df.loc[:, ~result_df.columns.duplicated()]
-                response_data["rows"] = json.loads(result_df.to_json(orient='records', date_format='iso'))
+                response_data["rows"] = df_to_safe_records(result_df)
 
             return json_ok(response_data)
         else:

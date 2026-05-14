@@ -10,6 +10,7 @@ are consumed by Workspace methods that handle metadata bookkeeping.
 """
 
 import hashlib
+import json
 import logging
 import re
 from pathlib import Path
@@ -87,6 +88,22 @@ def get_sample_rows_from_arrow(
         return []
     sample = table.slice(0, min(limit, table.num_rows))
     return make_json_safe(sample.to_pylist())
+
+
+def df_to_safe_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Convert a pandas DataFrame to a list of JSON-safe record dicts.
+
+    Uses ``date_format='iso'`` so that datetime columns are serialized as
+    ISO-8601 strings instead of epoch milliseconds.  ``default_handler=str``
+    provides a safety net for exotic types (Decimal, bytes, etc.).
+
+    All code that converts a DataFrame to records for API responses or
+    streaming should call this function rather than using ``df.to_json``
+    / ``df.to_dict`` directly.
+    """
+    return json.loads(
+        df.to_json(orient="records", date_format="iso", default_handler=str)
+    )
 
 
 def normalize_dtype_to_app_type(dtype_str: str) -> str:

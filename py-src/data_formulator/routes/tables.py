@@ -18,7 +18,7 @@ from pathlib import Path
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.datalake.workspace import Workspace
 from data_formulator.workspace_factory import get_workspace as _create_workspace
-from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename, normalize_dtype_to_app_type
+from data_formulator.datalake.parquet_utils import sanitize_table_name as parquet_sanitize_table_name, safe_data_filename, normalize_dtype_to_app_type, df_to_safe_records
 from data_formulator.datalake.file_manager import save_uploaded_file, is_supported_file, get_file_type, normalize_text_encoding
 from data_formulator.datalake.workspace_metadata import TableMetadata as DatalakeTableMetadata, ColumnInfo
 import re
@@ -241,7 +241,7 @@ def list_tables():
                             df = workspace.read_data_as_df(table_name)
                             df = df.head(1000)
                         df = _dedup_dataframe_columns(df)
-                        sample_rows = json.loads(df.to_json(orient='records', date_format='iso'))
+                        sample_rows = df_to_safe_records(df)
                     except Exception as e:
                         logger.warning("Could not read sample rows for %s", table_name, exc_info=e)
                 source_metadata = _table_metadata_to_source_metadata(meta)
@@ -378,7 +378,7 @@ def sample_table():
                 offset,
             )
         result_df = _dedup_dataframe_columns(result_df)
-        rows_json = json.loads(result_df.to_json(orient='records', date_format='iso'))
+        rows_json = df_to_safe_records(result_df)
         return json_ok({
             "rows": rows_json,
             "total_row_count": total_row_count,
@@ -408,14 +408,14 @@ def get_table_data():
             )
             page_df = _dedup_dataframe_columns(page_df)
             columns = list(page_df.columns)
-            rows = json.loads(page_df.to_json(orient='records', date_format='iso'))
+            rows = df_to_safe_records(page_df)
         else:
             df = workspace.read_data_as_df(table_name)
             df = _dedup_dataframe_columns(df)
             total_rows = len(df)
             columns = list(df.columns)
             page_df = df.iloc[offset : offset + page_size]
-            rows = json.loads(page_df.to_json(orient='records', date_format='iso'))
+            rows = df_to_safe_records(page_df)
 
         return json_ok({
             "table_name": table_name,
@@ -617,7 +617,7 @@ def parse_file():
             for sheet_name in xls.sheet_names:
                 df = xls.parse(sheet_name)
                 df = df.where(df.notna(), None)
-                records = df.to_dict(orient='records')
+                records = df_to_safe_records(df)
                 sheets.append({
                     "sheet_name": sheet_name,
                     "columns": list(df.columns),
@@ -629,7 +629,7 @@ def parse_file():
             raw = normalize_text_encoding(file.stream.read(), 'csv')
             df = pd.read_csv(io.BytesIO(raw))
             df = df.where(df.notna(), None)
-            records = df.to_dict(orient='records')
+            records = df_to_safe_records(df)
             return json_ok({
                 "sheets": [{
                     "sheet_name": "Sheet1",

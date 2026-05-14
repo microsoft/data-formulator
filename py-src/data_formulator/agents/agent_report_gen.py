@@ -23,6 +23,7 @@ from data_formulator.agents.agent_utils import (
     attach_reasoning_content,
     generate_data_summary,
 )
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.agents.context import (
     build_focused_thread_context,
     build_lightweight_table_context,
@@ -400,7 +401,7 @@ class ReportGenAgent:
             df = df.head(max_rows)
             return {
                 "columns": df.columns.tolist(),
-                "rows": df.to_dict(orient="records"),
+                "rows": df_to_safe_records(df),
             }
         except Exception as e:
             logger.error(f"[ReportAgent] resolve_table_data error: {e}")

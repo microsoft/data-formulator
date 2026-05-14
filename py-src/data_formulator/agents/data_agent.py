@@ -43,6 +43,7 @@ from data_formulator.agents.context import (
     handle_search_data_tables,
 )
 from data_formulator.agents.client_utils import Client
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.prompts.chart_creation_guide import CHART_CREATION_GUIDE
 from data_formulator.security.code_signing import sign_result
 from data_formulator.workflows.create_vl_plots import (
@@ -1180,7 +1181,7 @@ class DataAgent:
                 "status": "ok",
                 "code": code,
                 "content": {
-                    "rows": json.loads(query_output.to_json(orient='records')),
+                    "rows": df_to_safe_records(query_output),
                     "virtual": {
                         "table_name": output_table_name,
                         "row_count": row_count,

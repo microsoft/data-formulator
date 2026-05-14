@@ -5,6 +5,7 @@ import pandas as pd
 import pyarrow as pa
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
 from azure.kusto.data.helpers import dataframe_from_result_table
@@ -287,7 +288,7 @@ class KustoDataLoader(ExternalDataLoader):
             details = self.query(f".show table ['{table_name}'] details").to_dict(orient="records")
             row_count = int(details[0]["TotalRowCount"])
             sample_df = self.query(f"['{table_name}'] | take 5")
-            sample_rows = json.loads(sample_df.to_json(orient="records", date_format="iso"))
+            sample_rows = df_to_safe_records(sample_df)
             result: dict[str, Any] = {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
             doc_string = details[0].get("DocString")
             if doc_string and str(doc_string).strip():

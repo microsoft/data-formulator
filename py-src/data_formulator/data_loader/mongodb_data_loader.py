@@ -1,4 +1,3 @@
-import json
 import logging
 from datetime import datetime
 
@@ -8,6 +7,7 @@ import pymongo
 from bson import ObjectId
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -258,7 +258,7 @@ class MongoDBDataLoader(ExternalDataLoader):
                     } for col in df.columns]
                     
                     # Convert sample_data for return
-                    sample_rows = json.loads(df.to_json(orient="records"))
+                    sample_rows = df_to_safe_records(df)
                 else:
                     columns = []
                     sample_rows = []
@@ -325,7 +325,7 @@ class MongoDBDataLoader(ExternalDataLoader):
             if sample:
                 df = self._process_documents(sample)
                 columns = [{"name": c, "type": str(df[c].dtype)} for c in df.columns]
-                sample_rows = json.loads(df.to_json(orient="records"))
+                sample_rows = df_to_safe_records(df)
             else:
                 columns, sample_rows = [], []
             return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}

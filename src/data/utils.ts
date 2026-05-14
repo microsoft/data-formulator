@@ -129,7 +129,7 @@ export const createTableFromFromObjectArray = (title: string, values: any[], anc
             for (let r = 0; r < len; r++) {
                 col.push(values[r][names[i]]);
             }
-            const type = inferTypeFromValueArray(col);
+            const type = refineTemporalType(col, inferTypeFromValueArray(col));
             col = coerceValueArrayFromTypes(col, type);
             columns.set(cleanNames[i], new Column(col, type));
         }
@@ -179,6 +179,23 @@ export const inferTypeFromValueArray = (values: any[]): Type => {
     }
 
     return types[0];
+};
+
+/**
+ * Downgrade DateTime to Date when every non-null value has a zero time component.
+ * Call this on a column AFTER type inference to refine the temporal precision.
+ */
+export const refineTemporalType = (values: any[], inferredType: Type): Type => {
+    if (inferredType !== Type.DateTime) return inferredType;
+    const nonNull = values.filter(v => v != null && v !== '');
+    if (nonNull.length === 0) return inferredType;
+    const allMidnight = nonNull.every(v => {
+        const d = new Date(v);
+        if (isNaN(d.getTime())) return false;
+        return d.getHours() === 0 && d.getMinutes() === 0
+            && d.getSeconds() === 0 && d.getMilliseconds() === 0;
+    });
+    return allMidnight ? Type.Date : Type.DateTime;
 };
 
 export const convertTypeToDtype = (type: Type | undefined): string => {

@@ -21,6 +21,7 @@ import pandas as pd
 
 from data_formulator.agents.agent_data_clean_stream import parse_table_sections
 from data_formulator.agents.agent_utils import accumulate_reasoning_content
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
 
@@ -661,7 +662,7 @@ class DataLoadingAgent:
                             "path": f"scratch/{safe_name}.csv",
                             "rows": len(df),
                             "columns": list(df.columns),
-                            "preview": df.head(3).to_dict(orient="records"),
+                            "preview": df_to_safe_records(df.head(3)),
                         }
 
                 if saved:
@@ -716,7 +717,7 @@ class DataLoadingAgent:
                     "type": "preview_table",
                     "name": name,
                     "columns": list(df.columns),
-                    "sample_rows": df.head(5).to_dict(orient="records"),
+                    "sample_rows": df_to_safe_records(df.head(5)),
                     "total_rows": len(df),
                     "csv_scratch_path": f"scratch/{safe_name}.csv",
                 })
@@ -743,7 +744,7 @@ class DataLoadingAgent:
                     "type": "preview_table",
                     "name": name,
                     "columns": list(df.columns),
-                    "sample_rows": df.head(5).to_dict(orient="records"),
+                    "sample_rows": df_to_safe_records(df.head(5)),
                     "total_rows": len(df),
                     "csv_scratch_path": f"scratch/{name}.csv",
                 })
@@ -778,7 +779,7 @@ class DataLoadingAgent:
                     "type": "preview_table",
                     "name": table_name,
                     "columns": list(df.columns),
-                    "sample_rows": df.head(5).to_dict(orient="records"),
+                    "sample_rows": df_to_safe_records(df.head(5)),
                     "total_rows": len(df),
                     "csv_scratch_path": file_path,
                 })
@@ -852,7 +853,7 @@ class DataLoadingAgent:
                         "table_url": table.get("url", ""),
                         "format": table.get("format", "csv"),
                         "columns": list(df.columns),
-                        "sample_rows": df.head(5).to_dict(orient="records"),
+                        "sample_rows": df_to_safe_records(df.head(5)),
                         "total_sample_rows": len(df),
                     })
                 except Exception:
