@@ -95,10 +95,12 @@ agent = SortDataAgent(client=client, language_instruction=language_instruction)
 | 场景 | Mode |
 |------|------|
 | `DataAgent`、`ChartInsightAgent`、`InteractiveExploreAgent`、`ReportGenAgent` | `full` |
+| `CodeExplanationAgent`、`DataCleanAgentStream`、`DataLoadingAgent` | `full` |
 | `DataRecAgent`、`DataTransformationAgent`、`DataLoadAgent` | `compact` |
-| `SortDataAgent` | `compact` |
+| `SortDataAgent`、`ChartRestyleAgent` | `compact` |
 | `workspace-name` | `full` |
 | `test-model`、模型列表、纯状态检查 | 不注入 |
+| `nl-to-filter`、`classify-chart-intent` | 不注入（纯结构化输出） |
 
 ### 2.2 Agent 层
 

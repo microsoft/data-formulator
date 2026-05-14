@@ -1183,7 +1183,7 @@ def chart_restyle():
     client = get_client(model_config)
 
     try:
-        agent = ChartRestyleAgent(client=client, language_instruction=get_language_instruction())
+        agent = ChartRestyleAgent(client=client, language_instruction=get_language_instruction(mode="compact"))
         result = agent.run(
             vl_spec=vl_spec,
             instruction=instruction,
