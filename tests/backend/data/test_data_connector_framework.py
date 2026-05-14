@@ -342,6 +342,7 @@ class TestFrontendConfig:
         assert cfg["pinned_params"] == {
             "host": "db.local",
             "database": "analytics",
+            "user": "alice",
         }
         form_names = {f["name"] for f in cfg["params_form"]}
         assert "user" not in form_names
