@@ -315,6 +315,7 @@ my_report_data_loader.py -> my_report
 - [ ] 大目录优先实现 `ls(path, filter, limit, offset)` 与 `search_catalog(query)`，避免前端展开时全量扫描。
 - [ ] table 节点携带稳定源标识符，例如 `metadata["_source_name"]`，供 preview/import/refresh 使用。
 - [ ] `fetch_data_as_arrow()` 尊重 `import_options` 中的 `size`、`columns`、`sort_columns`、`sort_order`、`filters`、`source_filters`。
+- [ ] `sample_rows` 等面向前端的 DataFrame→records 转换使用 `df_to_safe_records(df)` 而非 `to_json`/`to_dict`（详见 `dev-guides/15-dataframe-serialization.md`）。
 - [ ] `size` 必须通过 `min(opts.get("size", MAX_IMPORT_ROWS), MAX_IMPORT_ROWS)` 截断，从 `external_data_loader` 导入 `MAX_IMPORT_ROWS`。详见 `dev-guides/13-unified-row-limits.md`。
 - [ ] SQL 类 loader 构造筛选条件时使用参数化、标识符白名单或受控运算符集合，禁止拼接未校验的 operator/column。
 

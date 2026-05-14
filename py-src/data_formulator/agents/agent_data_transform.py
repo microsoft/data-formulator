@@ -6,6 +6,7 @@ import time
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block, ensure_output_variable_in_code
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.security.sanitize import sanitize_error_message
 from data_formulator.agents.agent_data_rec import (
     SHARED_ENVIRONMENT,
@@ -250,7 +251,7 @@ class DataTransformationAgent(object):
                             "status": "ok",
                             "code": code,
                             "content": {
-                                'rows': json.loads(query_output.to_json(orient='records')),
+                                'rows': df_to_safe_records(query_output),
                                 'virtual': {
                                     'table_name': output_table_name,
                                     'row_count': row_count
@@ -383,7 +384,7 @@ class DataTransformationAgent(object):
                         {"role":"user","content": user_content}]
 
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort="high")
             t_llm = time.time() - t_llm_start
         except Exception as e:
             # Fallback to text-only if model doesn't support images
@@ -392,7 +393,7 @@ class DataTransformationAgent(object):
                         *filtered_prev_messages,
                         {"role":"user","content": user_query}]
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort="high")
             t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(response, messages, t_llm=t_llm)
@@ -454,14 +455,14 @@ class DataTransformationAgent(object):
             messages = [*updated_dialog, {"role":"user", "content": user_content}]
 
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort="high")
             t_llm = time.time() - t_llm_start
         except Exception as e:
             # Fallback to text-only if model doesn't support images
             logger.warning(f"Image-based completion failed, falling back to text-only: {e}")
             messages = [*updated_dialog, {"role":"user", "content": followup_text}]
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort="high")
             t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(response, messages, t_llm=t_llm)

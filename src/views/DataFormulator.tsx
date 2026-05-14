@@ -161,7 +161,7 @@ export const DataFormulatorFC = ({ }) => {
     }, [fetchWorkspaces]);
 
     const handleOpenWorkspace = useCallback(async (name: string) => {
-        dispatch(dfActions.setSessionLoading({ loading: true, label: `Opening workspace...` }));
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.openingWorkspace') }));
         try {
             const result = await loadWorkspace(name);
             if (result && Object.keys(result.state).length > 0) {
@@ -182,7 +182,7 @@ export const DataFormulatorFC = ({ }) => {
         } catch {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'error',
-                component: 'workspace', value: 'Failed to delete workspace',
+                component: 'workspace', value: t('workspace.deleteFailed'),
             }));
         }
         setConfirmDeleteWs(null);
@@ -219,42 +219,45 @@ export const DataFormulatorFC = ({ }) => {
         } catch {
             dispatch(dfActions.addMessages({
                 timestamp: Date.now(), type: 'error',
-                component: 'workspace', value: 'Failed to rename workspace',
+                component: 'workspace', value: t('workspace.renameFailed'),
             }));
             // On failure, refetch so the UI returns to the server's truth.
             fetchWorkspaces();
         }
     }, [renamingWs, renameDraft, savedWorkspaces, cancelRenameWorkspace, dispatch, fetchWorkspaces]);
 
-    const handleExportWorkspace = useCallback(async (name: string) => {
+    const handleExportWorkspace = useCallback(async (id: string) => {
         try {
-            const blob = await exportWorkspace(name);
+            const blob = await exportWorkspace(id);
+            const ws = savedWorkspaces.find(w => w.id === id);
+            const fileName = ws?.display_name || id;
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `${name}.zip`;
+            a.download = `${fileName}.zip`;
             a.click();
             URL.revokeObjectURL(a.href);
         } catch (e) {
             console.warn('Failed to export workspace:', e);
         }
-    }, []);
+    }, [savedWorkspaces]);
 
     const importRef = useRef<HTMLInputElement>(null);
     const handleImportWorkspace = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-        dispatch(dfActions.setSessionLoading({ loading: true, label: `Importing ${file.name}...` }));
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.importingFile', { name: file.name }) }));
         try {
             const wsName = file.name.replace(/\.zip$/, '') || 'imported';
             const wsId = generateSessionId();
             const state = await importWorkspace(file, wsId, wsName);
-            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: wsName } }));
+            const restoredName = (state as any).activeWorkspace?.displayName || wsName;
+            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: restoredName } }));
         } catch (e) {
             console.warn('Failed to import workspace:', e);
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
         if (importRef.current) importRef.current.value = '';
-    }, [dispatch]);
+    }, [dispatch, t]);
 
     // Sorted view of saved workspaces. We don't mutate the underlying
     // list (the backend's response is the source of truth); we just
@@ -735,7 +738,7 @@ export const DataFormulatorFC = ({ }) => {
             <Box sx={{mt: 4}}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 2, fontSize: '1.2rem'}}>
                     <Typography sx={{ color: 'text.secondary' }}>
-                        Your Sessions
+                        {t('workspace.yourSessions')}
                     </Typography>
                 </Divider>
                 {/* Sort control — placed in the upper-right of the section
@@ -760,18 +763,18 @@ export const DataFormulatorFC = ({ }) => {
                         }}
                         renderValue={(v) => {
                             const labels: Record<typeof wsSort, string> = {
-                                created_desc: 'newest',
-                                created_asc: 'oldest',
-                                updated_desc: 'recently modified',
-                                name_asc: 'name',
+                                created_desc: t('workspace.sortNewest'),
+                                created_asc: t('workspace.sortOldest'),
+                                updated_desc: t('workspace.sortRecentlyModified'),
+                                name_asc: t('workspace.sortName'),
                             };
                             return labels[v as typeof wsSort];
                         }}
                     >
-                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>newest first</MenuItem>
-                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>oldest first</MenuItem>
-                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>recently modified</MenuItem>
-                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>name (a–z)</MenuItem>
+                        <MenuItem value="created_desc" sx={{ fontSize: 12 }}>{t('workspace.sortNewestFirst')}</MenuItem>
+                        <MenuItem value="created_asc" sx={{ fontSize: 12 }}>{t('workspace.sortOldestFirst')}</MenuItem>
+                        <MenuItem value="updated_desc" sx={{ fontSize: 12 }}>{t('workspace.sortRecentlyModifiedFirst')}</MenuItem>
+                        <MenuItem value="name_asc" sx={{ fontSize: 12 }}>{t('workspace.sortNameAsc')}</MenuItem>
                     </Select>
                 </Box>
                 <Box sx={{
@@ -827,19 +830,19 @@ export const DataFormulatorFC = ({ }) => {
                                 opacity: 0,
                                 transition: 'opacity 0.15s',
                             }}>
-                                <Tooltip title="Rename">
+                                <Tooltip title={t('workspace.rename')}>
                                     <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
                                         onClick={(e) => { e.stopPropagation(); startRenameWorkspace(w.id, w.display_name); }}>
                                         <EditOutlinedIcon fontSize="small" />
                                     </IconButton>
                                 </Tooltip>
-                                <Tooltip title="Export">
+                                <Tooltip title={t('workspace.export')}>
                                     <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
                                         onClick={(e) => { e.stopPropagation(); handleExportWorkspace(w.id); }}>
                                         <DownloadIcon fontSize="small" />
                                     </IconButton>
                                 </Tooltip>
-                                <Tooltip title="Delete">
+                                <Tooltip title={t('workspace.delete')}>
                                     <IconButton size="small" sx={{ color: 'text.secondary', backgroundColor: 'rgba(255,255,255,0.85)', '&:hover': { backgroundColor: 'rgba(240,240,240,0.95)' } }}
                                         onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(w.id); }}>
                                         <DeleteOutlineIcon fontSize="small" />
@@ -858,24 +861,27 @@ export const DataFormulatorFC = ({ }) => {
                         '&:hover': { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
                     }}>
                         <UploadFileIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-                        <Typography variant="caption" color="text.secondary">Import workspace (.zip)</Typography>
+                        <Typography variant="caption" color="text.secondary">{t('workspace.importZip')}</Typography>
                         <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                     </Card>
                 </Box>
             </Box>
             {/* ── Delete workspace confirmation ────────────────────── */}
             <Dialog open={confirmDeleteWs !== null} onClose={() => setConfirmDeleteWs(null)}>
-                <DialogTitle>Delete session?</DialogTitle>
+                <DialogTitle>{t('workspace.deleteTitle')}</DialogTitle>
                 <DialogContent>
-                    <Typography>
-                        This will permanently delete <strong>{savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs}</strong>{' '}
-                        ({confirmDeleteWs}) and all its data.
-                    </Typography>
+                    <Typography dangerouslySetInnerHTML={{
+                        __html: t('workspace.deleteConfirm', {
+                            name: savedWorkspaces.find(w => w.id === confirmDeleteWs)?.display_name || confirmDeleteWs,
+                            id: confirmDeleteWs,
+                            interpolation: { escapeValue: false },
+                        }),
+                    }} />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setConfirmDeleteWs(null)}>Cancel</Button>
+                    <Button onClick={() => setConfirmDeleteWs(null)}>{t('workspace.cancel')}</Button>
                     <Button color="error" onClick={() => confirmDeleteWs && handleDeleteWorkspace(confirmDeleteWs)}>
-                        Delete
+                        {t('workspace.delete')}
                     </Button>
                 </DialogActions>
             </Dialog>

@@ -85,17 +85,6 @@ class TestChartInsightValidation:
         assert data["status"] == "error"
         assert data["error"]["code"] == ErrorCode.INVALID_REQUEST
 
-    @patch("data_formulator.routes.agents.model_supports_vision", return_value=False)
-    def test_non_vision_model_returns_error(self, _mock_vision, client) -> None:
-        resp = client.post(
-            "/api/agent/chart-insight",
-            json=_valid_body(),
-        )
-        data = resp.get_json()
-        assert data["status"] == "error"
-        assert data["error"]["code"] == ErrorCode.VALIDATION_ERROR
-        assert "vision" in data["error"]["message"].lower()
-
 
 # ---------------------------------------------------------------------------
 # Success path
@@ -103,7 +92,6 @@ class TestChartInsightValidation:
 
 class TestChartInsightSuccess:
 
-    @patch("data_formulator.routes.agents.model_supports_vision", return_value=True)
     @patch("data_formulator.routes.agents._get_knowledge_store")
     @patch("data_formulator.routes.agents.get_workspace")
     @patch("data_formulator.routes.agents.get_identity_id", return_value="test-user")
@@ -116,7 +104,6 @@ class TestChartInsightSuccess:
         mock_get_identity,
         mock_get_workspace,
         mock_get_ks,
-        mock_vision,
         client,
     ) -> None:
         agent_instance = MagicMock()
@@ -141,14 +128,13 @@ class TestChartInsightSuccess:
 
 class TestChartInsightAgentErrors:
 
-    @patch("data_formulator.routes.agents.model_supports_vision", return_value=True)
     @patch("data_formulator.routes.agents._get_knowledge_store")
     @patch("data_formulator.routes.agents.get_workspace")
     @patch("data_formulator.routes.agents.get_identity_id", return_value="test-user")
     @patch("data_formulator.routes.agents.get_client")
     @patch("data_formulator.routes.agents.ChartInsightAgent")
     def test_empty_candidates_returns_agent_error(
-        self, MockAgent, mock_client, mock_id, mock_ws, mock_ks, mock_vision, client,
+        self, MockAgent, mock_client, mock_id, mock_ws, mock_ks, client,
     ) -> None:
         MockAgent.return_value.run.return_value = []
 
@@ -157,14 +143,13 @@ class TestChartInsightAgentErrors:
         assert data["status"] == "error"
         assert data["error"]["code"] == ErrorCode.AGENT_ERROR
 
-    @patch("data_formulator.routes.agents.model_supports_vision", return_value=True)
     @patch("data_formulator.routes.agents._get_knowledge_store")
     @patch("data_formulator.routes.agents.get_workspace")
     @patch("data_formulator.routes.agents.get_identity_id", return_value="test-user")
     @patch("data_formulator.routes.agents.get_client")
     @patch("data_formulator.routes.agents.ChartInsightAgent")
     def test_candidate_status_not_ok_returns_agent_error(
-        self, MockAgent, mock_client, mock_id, mock_ws, mock_ks, mock_vision, client,
+        self, MockAgent, mock_client, mock_id, mock_ws, mock_ks, client,
     ) -> None:
         MockAgent.return_value.run.return_value = [{"status": "error", "content": "parse fail"}]
 
@@ -173,14 +158,13 @@ class TestChartInsightAgentErrors:
         assert data["status"] == "error"
         assert data["error"]["code"] == ErrorCode.AGENT_ERROR
 
-    @patch("data_formulator.routes.agents.model_supports_vision", return_value=True)
     @patch("data_formulator.routes.agents._get_knowledge_store")
     @patch("data_formulator.routes.agents.get_workspace")
     @patch("data_formulator.routes.agents.get_identity_id", return_value="test-user")
     @patch("data_formulator.routes.agents.get_client")
     @patch("data_formulator.routes.agents.ChartInsightAgent")
     def test_llm_exception_returns_classified_error(
-        self, MockAgent, mock_client, mock_id, mock_ws, mock_ks, mock_vision, client,
+        self, MockAgent, mock_client, mock_id, mock_ws, mock_ks, client,
     ) -> None:
         exc = Exception("Error code: 401 - Unauthorized, invalid api key")
         MockAgent.return_value.run.side_effect = exc

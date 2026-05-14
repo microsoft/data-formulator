@@ -3,7 +3,7 @@
 
 import { Type } from '../data/types';
 import { channels, type ChartTemplateDef } from '../lib/agents-chart';
-import { inferTypeFromValueArray } from '../data/utils';
+import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 
 export type FieldSource = "custom" | "original";
 
@@ -305,14 +305,18 @@ export function createDictTable(
         displayId: `${id}`,
         names, 
         rows,
-        metadata: names.reduce((acc, name) => ({
-            ...acc,
-            [name]: {
-                type: inferTypeFromValueArray(rows.map(r => r[name])),
-                semanticType: "",
-                levels: []
-            }
-        }), {}),
+        metadata: names.reduce((acc, name) => {
+            const colValues = rows.map(r => r[name]);
+            const inferred = inferTypeFromValueArray(colValues);
+            return {
+                ...acc,
+                [name]: {
+                    type: refineTemporalType(colValues, inferred),
+                    semanticType: "",
+                    levels: []
+                }
+            };
+        }, {}),
         derive,
         virtual,
         anchored,

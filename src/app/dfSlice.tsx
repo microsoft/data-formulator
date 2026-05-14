@@ -15,7 +15,7 @@ import { deleteTablesFromWorkspace } from './workspaceService';
 import { getChartPngDataUrl } from './chartCache';
 import i18n from '../i18n';
 import { Type } from '../data/types';
-import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
+import { createTableFromFromObjectArray, inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 import { Identity, IdentityType, getBrowserId } from './identity';
 
 enableMapSet();
@@ -84,7 +84,6 @@ export interface ModelConfig {
     api_key?: string;
     api_base?: string;
     api_version?: string;
-    supports_vision?: boolean;
     /** True for models configured server-side via .env. Their credentials never leave the server. */
     is_global?: boolean;
 }
@@ -815,20 +814,17 @@ export const dataFormulatorSlice = createSlice({
 
             state.tables = state.tables.map(t => {
                 if (t.id == tableId) {
-                    // Update metadata type inference based on new data
                     let newMetadata = { ...t.metadata };
                     for (let name of t.names) {
                         if (newRows.length > 0 && name in newRows[0]) {
+                            const colVals = newRows.map(r => r[name]);
                             newMetadata[name] = {
                                 ...newMetadata[name],
-                                type: inferTypeFromValueArray(newRows.map(r => r[name])),
+                                type: refineTemporalType(colVals, inferTypeFromValueArray(colVals)),
                             };
                         }
                     }
-                    // Update lastRefreshed timestamp if source exists
                     const updatedSource = t.source ? { ...t.source, lastRefreshed: Date.now() } : undefined;
-                    // Use provided content hash (from backend for virtual/DB tables) or compute locally
-                    // For virtual tables, backend hash reflects full table; for stream tables, compute from actual rows
                     const newContentHash = providedContentHash || computeContentHash(newRows, t.names);
                     const updatedVirtual = { ...t.virtual, rowCount: newRows.length };
                     return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash, virtual: updatedVirtual };
@@ -849,9 +845,10 @@ export const dataFormulatorSlice = createSlice({
                 let newMetadata = { ...t.metadata };
                 for (let name of t.names) {
                     if (newRows.length > 0 && name in newRows[0]) {
+                        const colVals = newRows.map(r => r[name]);
                         newMetadata[name] = {
                             ...newMetadata[name],
-                            type: inferTypeFromValueArray(newRows.map(r => r[name])),
+                            type: refineTemporalType(colVals, inferTypeFromValueArray(colVals)),
                         };
                     }
                 }
@@ -910,8 +907,9 @@ export const dataFormulatorSlice = createSlice({
             }
 
             let newMetadata = structuredClone(table.metadata);
+            const inferredColType = refineTemporalType(newValues, inferTypeFromValueArray(newValues));
             for (let name of newNames) {
-                newMetadata[name] = { type: inferTypeFromValueArray(newValues), semanticType: "", levels: [] };
+                newMetadata[name] = {type: inferredColType, semanticType: "", levels: []};
             }
 
             // Create new rows with the column positioned after the first parent

@@ -25,6 +25,7 @@ from data_formulator.agents.agent_sort_data import SortDataAgent
 from data_formulator.agents.agent_simple import SimpleAgents
 from data_formulator.auth.identity import get_identity_id
 from data_formulator.security.code_signing import sign_result, verify_code, MAX_CODE_SIZE
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.datalake.workspace import Workspace, get_user_home
 from data_formulator.workspace_factory import get_workspace
 from data_formulator.agents.agent_data_load import DataLoadAgent
@@ -35,7 +36,7 @@ from data_formulator.agents.agent_chart_insight import ChartInsightAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
-from data_formulator.model_registry import model_registry, model_supports_vision
+from data_formulator.model_registry import model_registry
 from data_formulator.knowledge.store import KnowledgeStore
 
 from data_formulator.agents.data_agent import DataAgent
@@ -112,15 +113,6 @@ def _with_warnings(gen):
         yield chunk
     for w in flush_stream_warnings():
         yield w
-
-
-def _messages_include_image(messages: list[dict]) -> bool:
-    """Return True when a chat payload contains user image attachments."""
-    for msg in messages:
-        for att in msg.get("attachments") or []:
-            if att.get("type") == "image" and att.get("url"):
-                return True
-    return False
 
 
 @agent_bp.after_request
@@ -740,12 +732,6 @@ def request_chart_insight():
     if not model_config:
         raise AppError(ErrorCode.INVALID_REQUEST, "Model configuration is required")
 
-    if not model_supports_vision(model_config):
-        raise AppError(
-            ErrorCode.VALIDATION_ERROR,
-            "The selected model does not support image input. Please switch to a vision-capable model.",
-        )
-
     client = get_client(model_config)
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
@@ -1023,10 +1009,10 @@ def refresh_derived_data():
                 else:
                     display_df = result_df
                 display_df = display_df.loc[:, ~display_df.columns.duplicated()]
-                response_data["rows"] = json.loads(display_df.to_json(orient='records', date_format='iso'))
+                response_data["rows"] = df_to_safe_records(display_df)
             else:
                 result_df = result_df.loc[:, ~result_df.columns.duplicated()]
-                response_data["rows"] = json.loads(result_df.to_json(orient='records', date_format='iso'))
+                response_data["rows"] = df_to_safe_records(result_df)
 
             return json_ok(response_data)
         else:
@@ -1208,7 +1194,7 @@ def chart_restyle():
     client = get_client(model_config)
 
     try:
-        agent = ChartRestyleAgent(client=client, language_instruction=get_language_instruction())
+        agent = ChartRestyleAgent(client=client, language_instruction=get_language_instruction(mode="compact"))
         result = agent.run(
             vl_spec=vl_spec,
             instruction=instruction,
@@ -1306,9 +1292,6 @@ def data_loading_chat():
     logger.info("# data-loading-chat request")
 
     messages = content.get("messages", [])
-    if _messages_include_image(messages) and not model_supports_vision(content.get("model")):
-        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "The selected model does not support image input. Please switch to a vision-capable model or remove the image."))
-
     client = get_client(content['model'])
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)

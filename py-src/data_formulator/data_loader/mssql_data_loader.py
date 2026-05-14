@@ -7,6 +7,7 @@ import pyarrow as pa
 import pyodbc
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 log = logging.getLogger(__name__)
 
@@ -669,7 +670,7 @@ Install ODBC driver: `brew install unixodbc msodbcsql17` (macOS) or `sudo apt-ge
             sample_df = self._execute_query(
                 f"SELECT TOP 5 {col_list} FROM [{db}].[{schema}].[{table_name}]"
             ).to_pandas()
-            sample_rows = json.loads(sample_df.fillna(value=None).to_json(orient="records", date_format="iso", default_handler=str))
+            sample_rows = df_to_safe_records(sample_df.fillna(value=None))
             result: dict[str, Any] = {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
             if table_description:
                 result["description"] = table_description

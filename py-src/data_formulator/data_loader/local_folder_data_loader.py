@@ -18,6 +18,7 @@ import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.security.path_safety import ConfinedDir
 
 logger = logging.getLogger(__name__)
@@ -182,8 +183,7 @@ class LocalFolderDataLoader(ExternalDataLoader):
                 {"name": c, "type": str(sample_df[c].dtype)}
                 for c in sample_df.columns
             ]
-            meta["sample_rows"] = json.loads(
-                sample_df.to_json(orient="records"))
+            meta["sample_rows"] = df_to_safe_records(sample_df)
             meta["row_count"] = meta.get("row_count") or len(sample_df)
         except Exception as exc:
             logger.debug("Sample read failed for %s: %s", path, exc)

@@ -37,7 +37,7 @@ from data_formulator.data_loader.external_data_loader import (
     SENSITIVE_PARAMS,
 )
 from data_formulator.data_loader.connector_errors import classify_connector_error
-from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type
+from data_formulator.datalake.parquet_utils import normalize_dtype_to_app_type, df_to_safe_records
 from data_formulator.security.path_safety import ConfinedDir
 
 logger = logging.getLogger(__name__)
@@ -1671,7 +1671,7 @@ def connector_preview_data():
             import_options=import_options,
         )
         df = arrow_table.to_pandas()
-        rows = _json.loads(df.to_json(orient="records", date_format="iso"))
+        rows = df_to_safe_records(df)
         columns = [{"name": col, "type": normalize_dtype_to_app_type(str(df[col].dtype))} for col in df.columns]
 
         # Enrich columns with source-level types from loader metadata.

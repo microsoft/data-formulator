@@ -31,7 +31,7 @@ VALID_CATEGORIES = frozenset({"rules", "experiences"})
 
 _MAX_DEPTH = {
     "rules": 1,
-    "experiences": 1,   # flat: only "file.md" (no sub-directories)
+    "experiences": 2,   # one sub-dir: "category/file.md"
 }
 
 KNOWLEDGE_LIMITS: dict[str, int] = {

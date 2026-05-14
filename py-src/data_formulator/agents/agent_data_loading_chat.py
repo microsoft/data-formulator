@@ -17,11 +17,11 @@ import logging
 import os
 import re
 
-import litellm
-import openai
 import pandas as pd
 
 from data_formulator.agents.agent_data_clean_stream import parse_table_sections
+from data_formulator.agents.agent_utils import accumulate_reasoning_content
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +383,7 @@ class DataLoadingAgent:
             # Accumulate streaming response
             tool_calls_acc = {}  # id -> {name, arguments_str}
             current_text = []
+            accumulated_reasoning = None
             finish_reason = None
 
             for chunk in response:
@@ -391,6 +392,11 @@ class DataLoadingAgent:
 
                 delta = chunk.choices[0].delta
                 finish_reason = chunk.choices[0].finish_reason
+
+                # Accumulate reasoning_content (DeepSeek V4 reasoning models)
+                accumulated_reasoning = accumulate_reasoning_content(
+                    accumulated_reasoning, delta
+                )
 
                 # Stream text tokens
                 if hasattr(delta, 'content') and delta.content:
@@ -421,6 +427,8 @@ class DataLoadingAgent:
 
             # Build assistant message with tool calls for LLM context
             assistant_msg = {"role": "assistant", "content": "".join(current_text) or None}
+            if accumulated_reasoning is not None:
+                assistant_msg["reasoning_content"] = accumulated_reasoning
             assistant_msg["tool_calls"] = []
             for idx in sorted(tool_calls_acc.keys()):
                 tc = tool_calls_acc[idx]
@@ -495,30 +503,10 @@ class DataLoadingAgent:
     # ------------------------------------------------------------------
 
     def _call_llm(self, messages, stream=True):
-        """Call the LLM with tool definitions, working around Client.get_completion
-        not supporting a `tools` parameter."""
-        if self.client.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.client.params.get("api_base", None),
-                api_key=self.client.params.get("api_key", ""),
-                timeout=120,
-            )
-            return client.chat.completions.create(
-                model=self.client.model,
-                messages=messages,
-                tools=TOOLS,
-                stream=stream,
-            )
-        else:
-            params = self.client.params.copy()
-            return litellm.completion(
-                model=self.client.model,
-                messages=messages,
-                tools=TOOLS,
-                drop_params=True,
-                stream=stream,
-                **params,
-            )
+        """Call the LLM with tool definitions."""
+        return self.client.get_completion_with_tools(
+            messages, tools=TOOLS, stream=stream, reasoning_effort="high",
+        )
 
     # ------------------------------------------------------------------
     # Tool execution
@@ -674,7 +662,7 @@ class DataLoadingAgent:
                             "path": f"scratch/{safe_name}.csv",
                             "rows": len(df),
                             "columns": list(df.columns),
-                            "preview": df.head(3).to_dict(orient="records"),
+                            "preview": df_to_safe_records(df.head(3)),
                         }
 
                 if saved:
@@ -729,7 +717,7 @@ class DataLoadingAgent:
                     "type": "preview_table",
                     "name": name,
                     "columns": list(df.columns),
-                    "sample_rows": df.head(5).to_dict(orient="records"),
+                    "sample_rows": df_to_safe_records(df.head(5)),
                     "total_rows": len(df),
                     "csv_scratch_path": f"scratch/{safe_name}.csv",
                 })
@@ -756,7 +744,7 @@ class DataLoadingAgent:
                     "type": "preview_table",
                     "name": name,
                     "columns": list(df.columns),
-                    "sample_rows": df.head(5).to_dict(orient="records"),
+                    "sample_rows": df_to_safe_records(df.head(5)),
                     "total_rows": len(df),
                     "csv_scratch_path": f"scratch/{name}.csv",
                 })
@@ -791,7 +779,7 @@ class DataLoadingAgent:
                     "type": "preview_table",
                     "name": table_name,
                     "columns": list(df.columns),
-                    "sample_rows": df.head(5).to_dict(orient="records"),
+                    "sample_rows": df_to_safe_records(df.head(5)),
                     "total_rows": len(df),
                     "csv_scratch_path": file_path,
                 })
@@ -865,7 +853,7 @@ class DataLoadingAgent:
                         "table_url": table.get("url", ""),
                         "format": table.get("format", "csv"),
                         "columns": list(df.columns),
-                        "sample_rows": df.head(5).to_dict(orient="records"),
+                        "sample_rows": df_to_safe_records(df.head(5)),
                         "total_sample_rows": len(df),
                     })
                 except Exception:

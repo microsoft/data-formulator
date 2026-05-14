@@ -62,7 +62,14 @@ export const getIconFromType = (t: Type | undefined): JSX.Element => {
 export const formatCellValue = (value: any, dataType?: Type, semanticType?: string): string => {
     if (value == null) return '';
 
-    if (typeof value === 'number' && dataType !== Type.Duration) {
+    if (dataType === Type.DateTime || dataType === Type.Date || dataType === Type.Time) {
+        return formatTemporalValue(value, dataType);
+    }
+    if (dataType === Type.Duration) {
+        return formatDuration(value);
+    }
+
+    if (typeof value === 'number') {
         if (!Number.isFinite(value)) return String(value);
         if (shouldDisplayNumericSemanticAsPlainText(semanticType)) return String(value);
         if (Number.isInteger(value)) {
@@ -72,13 +79,6 @@ export const formatCellValue = (value: any, dataType?: Type, semanticType?: stri
             minimumFractionDigits: 0,
             maximumFractionDigits: 4,
         });
-    }
-
-    if (dataType === Type.DateTime || dataType === Type.Date || dataType === Type.Time) {
-        return formatTemporalValue(value, dataType);
-    }
-    if (dataType === Type.Duration) {
-        return formatDuration(value);
     }
 
     if (typeof value === 'boolean') return String(value);
@@ -110,6 +110,10 @@ const shouldDisplayNumericSemanticAsPlainText = (semanticType?: string): boolean
 
 const formatTemporalValue = (value: any, dataType: Type): string => {
     if (dataType === Type.Time) {
+        if (typeof value === 'number') {
+            const d = new Date(value);
+            if (!isNaN(d.getTime())) return d.toLocaleTimeString();
+        }
         const d = new Date(`1970-01-01T${value}`);
         if (isNaN(d.getTime())) return String(value);
         return d.toLocaleTimeString();

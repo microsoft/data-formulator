@@ -26,11 +26,10 @@ import uuid
 from pathlib import Path
 from typing import Any, Generator
 
-import litellm
-import openai
 import pandas as pd
 
 from data_formulator.agents.agent_utils import (
+    attach_reasoning_content,
     ensure_output_variable_in_code,
     extract_json_objects,
     generate_data_summary,
@@ -44,6 +43,7 @@ from data_formulator.agents.context import (
     handle_search_data_tables,
 )
 from data_formulator.agents.client_utils import Client
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.prompts.chart_creation_guide import CHART_CREATION_GUIDE
 from data_formulator.security.code_signing import sign_result
 from data_formulator.workflows.create_vl_plots import (
@@ -1181,7 +1181,7 @@ class DataAgent:
                 "status": "ok",
                 "code": code,
                 "content": {
-                    "rows": json.loads(query_output.to_json(orient='records')),
+                    "rows": df_to_safe_records(query_output),
                     "virtual": {
                         "table_name": output_table_name,
                         "row_count": row_count,
@@ -1593,6 +1593,7 @@ class DataAgent:
                     "role": "assistant",
                     "content": content or None,
                 }
+                attach_reasoning_content(assistant_msg, choice.message)
                 assistant_msg["tool_calls"] = [
                     {
                         "id": tc.id,
@@ -1771,7 +1772,9 @@ class DataAgent:
                 json_retries += 1
                 logger.warning("[DataAgent] No JSON found (retry %d/%d), asking LLM to reformat",
                                json_retries, max_json_retries)
-                messages.append({"role": "assistant", "content": content})
+                retry_assistant_msg: dict[str, Any] = {"role": "assistant", "content": content}
+                attach_reasoning_content(retry_assistant_msg, choice.message)
+                messages.append(retry_assistant_msg)
                 messages.append({
                     "role": "user",
                     "content": (
@@ -1834,48 +1837,9 @@ class DataAgent:
 
     def _call_llm_once(self, messages: list[dict]):
         """Single LLM call (no retry)."""
-        if self.client.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.client.params.get("api_base", None),
-                api_key=self.client.params.get("api_key", ""),
-                timeout=120,
-            )
-            try:
-                return client.chat.completions.create(
-                    model=self.client.model,
-                    messages=messages,
-                    tools=TOOLS,
-                )
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    return client.chat.completions.create(
-                        model=self.client.model,
-                        messages=sanitized,
-                        tools=TOOLS,
-                    )
-                raise
-        else:
-            params = self.client.params.copy()
-            try:
-                return litellm.completion(
-                    model=self.client.model,
-                    messages=messages,
-                    tools=TOOLS,
-                    drop_params=True,
-                    **params,
-                )
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    return litellm.completion(
-                        model=self.client.model,
-                        messages=sanitized,
-                        tools=TOOLS,
-                        drop_params=True,
-                        **params,
-                    )
-                raise
+        return self.client.get_completion_with_tools(
+            messages, tools=TOOLS, reasoning_effort="high",
+        )
 
     # ------------------------------------------------------------------
     # Observation formatting

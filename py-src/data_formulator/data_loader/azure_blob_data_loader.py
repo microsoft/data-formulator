@@ -9,6 +9,7 @@ from azure.identity import DefaultAzureCredential
 from pyarrow import fs as pa_fs
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, CatalogNode, MAX_IMPORT_ROWS, sanitize_table_name
+from data_formulator.datalake.parquet_utils import df_to_safe_records
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -200,7 +201,7 @@ Just provide `account_name` + `container_name`. Requires `az login` or Managed I
                     'type': str(sample_df[col].dtype)
                 } for col in sample_df.columns]
 
-                sample_rows = json.loads(sample_df.to_json(orient="records"))
+                sample_rows = df_to_safe_records(sample_df)
                 row_count = self._estimate_row_count(azure_url, blob)
 
                 table_metadata = {
@@ -339,7 +340,7 @@ Just provide `account_name` + `container_name`. Requires `az login` or Managed I
         try:
             sample_df = self._read_sample(azure_url, 5)
             columns = [{"name": c, "type": str(sample_df[c].dtype)} for c in sample_df.columns]
-            sample_rows = json.loads(sample_df.to_json(orient="records"))
+            sample_rows = df_to_safe_records(sample_df)
             row_count = self._estimate_row_count(azure_url)
             return {"row_count": row_count, "columns": columns, "sample_rows": sample_rows}
         except Exception as e:

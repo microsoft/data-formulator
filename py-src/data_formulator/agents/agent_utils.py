@@ -14,6 +14,62 @@ import re
 _logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# reasoning_content helpers
+# ---------------------------------------------------------------------------
+
+def attach_reasoning_content(msg: dict, choice_message) -> dict:
+    """Attach ``reasoning_content`` from an LLM response to an assistant message dict.
+
+    Some reasoning models (currently DeepSeek V4) return a
+    ``reasoning_content`` field alongside the regular ``content``.
+    In multi-turn conversations this field **must** be echoed back in the
+    assistant message, otherwise the API may reject the request or the
+    chain-of-thought context is lost.
+
+    For models that do not produce this field the function is a safe no-op.
+
+    Args:
+        msg: The assistant message dict (mutated in-place and returned).
+        choice_message: The ``choice.message`` object from an LLM response.
+
+    Returns:
+        The same *msg* dict, for chaining convenience.
+
+    See: https://api-docs.deepseek.com/guides/reasoning_model
+    """
+    rc = getattr(choice_message, "reasoning_content", None)
+    if rc is not None:
+        msg["reasoning_content"] = rc
+    return msg
+
+
+def accumulate_reasoning_content(
+    accumulated: str | None, delta
+) -> str | None:
+    """Accumulate ``reasoning_content`` from streaming delta chunks.
+
+    In streaming mode, reasoning models (currently DeepSeek V4) deliver
+    ``reasoning_content`` as incremental ``delta.reasoning_content``
+    chunks, similar to ``delta.content``.  This helper concatenates them.
+
+    For non-reasoning models the delta has no such attribute; the
+    accumulator is returned unchanged.
+
+    Args:
+        accumulated: The string accumulated so far, or ``None``.
+        delta: A streaming ``choice.delta`` object.
+
+    Returns:
+        Updated accumulator (``str`` once the first chunk arrives,
+        ``None`` if no reasoning_content has been seen).
+    """
+    rc_delta = getattr(delta, "reasoning_content", None)
+    if rc_delta:
+        return (accumulated or "") + rc_delta
+    return accumulated
+
+
 def _source_table_matches_catalog_entry(
     source_table: str,
     catalog_entry: dict[str, Any],

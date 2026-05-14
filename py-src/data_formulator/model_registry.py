@@ -7,20 +7,6 @@ from typing import Optional, Dict, List
 BUILTIN_PROVIDERS = {'openai', 'azure', 'anthropic', 'gemini', 'ollama'}
 
 
-def is_likely_text_only_model(model_name: str | None) -> bool:
-    """Return True for known model names that reject image input."""
-    return "deepseek-chat" in (model_name or "").lower()
-
-
-def model_supports_vision(model_config: dict | None) -> bool:
-    """Infer whether a model can receive image input."""
-    if not model_config:
-        return False
-    if model_config.get("supports_vision") is False:
-        return False
-    return not is_likely_text_only_model(model_config.get("model"))
-
-
 class ModelRegistry:
     """
     Load global model configurations from environment variables.
@@ -92,7 +78,6 @@ class ModelRegistry:
                     "api_base": api_base,
                     "api_version": api_version,
                     "provider_display": provider,
-                    "supports_vision": not is_likely_text_only_model(model_name),
                 }
 
     def get_config(self, model_id: str) -> Optional[dict]:
@@ -111,7 +96,6 @@ class ModelRegistry:
                 "model": m["model"],
                 "api_base": m["api_base"],
                 "api_version": m["api_version"],
-                "supports_vision": m.get("supports_vision", True),
                 "is_global": True,
             }
             for m in self._models.values()

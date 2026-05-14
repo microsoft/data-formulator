@@ -20,9 +20,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-import litellm
-import openai
-
 from data_formulator.agents.client_utils import Client
 
 logger = logging.getLogger(__name__)
@@ -386,26 +383,9 @@ class ExperienceDistillAgent:
 
     def _call_llm(self, messages: list[dict]) -> str:
         """Single LLM call to generate the experience document."""
-        if self.client.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.client.params.get("api_base"),
-                api_key=self.client.params.get("api_key", ""),
-                timeout=self.timeout_seconds,
-            )
-            resp = client.chat.completions.create(
-                model=self.client.model,
-                messages=messages,
-            )
-        else:
-            params = self.client.params.copy()
-            params.setdefault("timeout", self.timeout_seconds)
-            resp = litellm.completion(
-                model=self.client.model,
-                messages=messages,
-                drop_params=True,
-                **params,
-            )
-
+        resp = self.client.get_completion(
+            messages, reasoning_effort="high", timeout=self.timeout_seconds,
+        )
         return resp.choices[0].message.content or ""
 
     @staticmethod
