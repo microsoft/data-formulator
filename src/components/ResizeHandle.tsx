@@ -21,7 +21,13 @@ import { Box } from '@mui/material';
 export interface ResizeHandleProps {
     /** 'horizontal' = left/right resize, 'vertical' = top/bottom resize */
     direction: 'horizontal' | 'vertical';
-    /** Called continuously during drag with the pixel delta since last call */
+    /** Which edge of the parent the handle attaches to.
+     *  horizontal: 'end' = right edge (default), 'start' = left edge.
+     *  vertical:   'end' = bottom edge (default), 'start' = top edge. */
+    edge?: 'start' | 'end';
+    /** Called continuously during drag with the pixel delta since last call.
+     *  Sign convention: positive = pointer moved right/down (raw screen delta).
+     *  For a 'start'-anchored panel, the caller typically subtracts delta from width. */
     onResize: (delta: number) => void;
     /** Called once when drag ends */
     onResizeEnd?: () => void;
@@ -33,6 +39,7 @@ export interface ResizeHandleProps {
 
 export const ResizeHandle: React.FC<ResizeHandleProps> = ({
     direction,
+    edge = 'end',
     onResize,
     onResizeEnd,
     thickness = 6,
@@ -75,6 +82,18 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = ({
     }, [onResizeEnd]);
 
     const isHorizontal = direction === 'horizontal';
+    const isStart = edge === 'start';
+
+    // Position the hit-target on the requested edge of the parent.
+    const hitPosition = isHorizontal
+        ? { top: 0, bottom: 0, ...(isStart ? { left: 0 } : { right: 0 }), width: thickness, cursor: 'col-resize' }
+        : { left: 0, right: 0, ...(isStart ? { top: 0 } : { bottom: 0 }), height: thickness, cursor: 'row-resize' };
+
+    // Visible 2px indicator hugs the same edge as the hit-target so it
+    // visually aligns with the panel border instead of floating in the middle.
+    const indicatorPosition = isHorizontal
+        ? { top: 0, bottom: 0, ...(isStart ? { left: 0 } : { right: 0 }), width: 2 }
+        : { left: 0, right: 0, ...(isStart ? { top: 0 } : { bottom: 0 }), height: 2 };
 
     return (
         <Box
@@ -83,21 +102,12 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = ({
             onPointerUp={handlePointerUp}
             sx={{
                 position: 'absolute',
-                ...(isHorizontal
-                    ? { top: 0, bottom: 0, right: 0, width: thickness, cursor: 'col-resize' }
-                    : { left: 0, right: 0, bottom: 0, height: thickness, cursor: 'row-resize' }),
+                ...hitPosition,
                 zIndex: 2,
-                // Hit area is `thickness` px wide for an easy grab target,
-                // but the visible hover indicator sits flush against the
-                // outer edge so it visually aligns with the panel border
-                // (otherwise the centered indicator leaves a noticeable gap
-                // between the highlight and the panel edge).
                 '&::after': {
                     content: '""',
                     position: 'absolute',
-                    ...(isHorizontal
-                        ? { top: 0, bottom: 0, right: 0, width: 2 }
-                        : { left: 0, right: 0, bottom: 0, height: 2 }),
+                    ...indicatorPosition,
                     bgcolor: 'transparent',
                     transition: 'background-color 0.15s',
                 },
