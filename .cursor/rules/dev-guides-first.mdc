@@ -24,6 +24,7 @@ read the relevant documents in `dev-guides/`** to understand existing convention
 | `dev-guides/11-catalog-metadata-sync.md` | Any work on catalog sync, catalog_cache, catalog_annotations, metadata merge, Agent catalog tools, or frontend catalog browsing |
 | `dev-guides/12-sandbox-session.md` | Any work on sandbox execution, Agent tool-calling loops, explore/execute_python code execution, or namespace management |
 | `dev-guides/13-unified-row-limits.md` | Any work on row limits, data loading size caps, frontendRowLimit, MAX_IMPORT_ROWS, or DataLoader size parameter |
+| `dev-guides/14-model-capability-runtime-degradation.md` | Any work on LLM Client calls, Agent LLM invocations, model capability checks, reasoning_effort, or image/vision degradation |
 | `.cursor/rules/i18n-no-hardcoded-strings.mdc` | Any work adding or changing user-visible strings in `src/` |
 
 Also check `.cursor/rules/` and `.cursor/skills/` for related coding conventions.

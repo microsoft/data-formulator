@@ -383,7 +383,7 @@ class DataTransformationAgent(object):
                         {"role":"user","content": user_content}]
 
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort="high")
             t_llm = time.time() - t_llm_start
         except Exception as e:
             # Fallback to text-only if model doesn't support images
@@ -392,7 +392,7 @@ class DataTransformationAgent(object):
                         *filtered_prev_messages,
                         {"role":"user","content": user_query}]
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort="high")
             t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(response, messages, t_llm=t_llm)
@@ -454,14 +454,14 @@ class DataTransformationAgent(object):
             messages = [*updated_dialog, {"role":"user", "content": user_content}]
 
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort="high")
             t_llm = time.time() - t_llm_start
         except Exception as e:
             # Fallback to text-only if model doesn't support images
             logger.warning(f"Image-based completion failed, falling back to text-only: {e}")
             messages = [*updated_dialog, {"role":"user", "content": followup_text}]
             t_llm_start = time.time()
-            response = self.client.get_completion(messages = messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort="high")
             t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(response, messages, t_llm=t_llm)

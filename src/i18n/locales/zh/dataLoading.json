@@ -18,7 +18,6 @@
     "stopped": "— 已停止",
     "uploaded": "[已上传：{{name}}]",
     "defaultImageMessage": "从这张图片中提取数据",
-    "imageModelUnsupported": "当前选择的模型不支持图片输入。请切换到支持视觉的模型，或移除图片后再发送。",
     "syncInProgress": "正在同步目录元数据…",
     "syncComplete": "目录同步完成",
     "syncPartial": "目录同步部分完成，部分元数据可能缺失",

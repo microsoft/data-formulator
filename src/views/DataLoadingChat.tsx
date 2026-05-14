@@ -41,17 +41,6 @@ import { TableIcon } from '../icons';
 import { DataFrameTable } from './DataFrameTable';
 import { LoadPlanCard } from '../components/LoadPlanCard';
 
-/** Returns true when the model name suggests it does not support image input. */
-export function checkIsLikelyTextOnlyModel(modelName: string | undefined): boolean {
-    return (modelName || '').toLowerCase().includes('deepseek-chat');
-}
-
-export function checkModelSupportsImageInput(model: Pick<ModelConfig, 'model' | 'supports_vision'> | undefined): boolean {
-    if (!model) return false;
-    if (model.supports_vision === false) return false;
-    return !checkIsLikelyTextOnlyModel(model.model);
-}
-
 // ---------------------------------------------------------------------------
 // Helper: generate table name
 // ---------------------------------------------------------------------------
@@ -736,16 +725,6 @@ export const DataLoadingChat: React.FC = () => {
         const text = prompt.trim();
         if (!text && userImages.length === 0) return;
         if (chatInProgress) return;
-        if (userImages.length > 0 && !checkModelSupportsImageInput(activeModel)) {
-            dispatch(dfActions.addMessages({
-                timestamp: Date.now(),
-                type: 'warning',
-                component: t('dataLoading.title'),
-                value: t('dataLoading.imageModelUnsupported'),
-            }));
-            return;
-        }
-
         const attachments: ChatAttachment[] = userImages.map((url, i) => ({
             type: 'image' as const, name: `image-${i + 1}`, url,
         }));

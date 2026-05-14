@@ -18,7 +18,6 @@
     "stopped": "— stopped",
     "uploaded": "[Uploaded: {{name}}]",
     "defaultImageMessage": "Extract data from this image",
-    "imageModelUnsupported": "The selected model does not support image input. Please switch to a vision-capable model or remove the image.",
     "syncInProgress": "Syncing catalog metadata…",
     "syncComplete": "Catalog sync complete",
     "syncPartial": "Catalog sync partially completed — some metadata may be missing",

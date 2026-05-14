@@ -17,8 +17,6 @@ import logging
 import os
 import re
 
-import litellm
-import openai
 import pandas as pd
 
 from data_formulator.agents.agent_data_clean_stream import parse_table_sections
@@ -504,30 +502,10 @@ class DataLoadingAgent:
     # ------------------------------------------------------------------
 
     def _call_llm(self, messages, stream=True):
-        """Call the LLM with tool definitions, working around Client.get_completion
-        not supporting a `tools` parameter."""
-        if self.client.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.client.params.get("api_base", None),
-                api_key=self.client.params.get("api_key", ""),
-                timeout=120,
-            )
-            return client.chat.completions.create(
-                model=self.client.model,
-                messages=messages,
-                tools=TOOLS,
-                stream=stream,
-            )
-        else:
-            params = self.client.params.copy()
-            return litellm.completion(
-                model=self.client.model,
-                messages=messages,
-                tools=TOOLS,
-                drop_params=True,
-                stream=stream,
-                **params,
-            )
+        """Call the LLM with tool definitions."""
+        return self.client.get_completion_with_tools(
+            messages, tools=TOOLS, stream=stream, reasoning_effort="high",
+        )
 
     # ------------------------------------------------------------------
     # Tool execution

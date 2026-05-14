@@ -7,9 +7,6 @@ import time
 
 import pandas as pd
 
-import litellm
-import openai
-
 from data_formulator.agents.agent_utils import (
     attach_reasoning_content,
     extract_json_objects,
@@ -338,45 +335,6 @@ class InteractiveExploreAgent(object):
 
     def _call_llm_with_tools(self, messages, tools):
         """Non-streaming LLM call with tool definitions."""
-        if self.client.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.client.params.get("api_base", None),
-                api_key=self.client.params.get("api_key", ""),
-                timeout=120,
-            )
-            try:
-                return client.chat.completions.create(
-                    model=self.client.model,
-                    messages=messages,
-                    tools=tools,
-                )
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    return client.chat.completions.create(
-                        model=self.client.model,
-                        messages=sanitized,
-                        tools=tools,
-                    )
-                raise
-        else:
-            params = self.client.params.copy()
-            try:
-                return litellm.completion(
-                    model=self.client.model,
-                    messages=messages,
-                    tools=tools,
-                    drop_params=True,
-                    **params,
-                )
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    return litellm.completion(
-                        model=self.client.model,
-                        messages=sanitized,
-                        tools=tools,
-                        drop_params=True,
-                        **params,
-                    )
-                raise
+        return self.client.get_completion_with_tools(
+            messages, tools=tools, reasoning_effort="high",
+        )

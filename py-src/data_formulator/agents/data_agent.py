@@ -26,8 +26,6 @@ import uuid
 from pathlib import Path
 from typing import Any, Generator
 
-import litellm
-import openai
 import pandas as pd
 
 from data_formulator.agents.agent_utils import (
@@ -1838,48 +1836,9 @@ class DataAgent:
 
     def _call_llm_once(self, messages: list[dict]):
         """Single LLM call (no retry)."""
-        if self.client.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.client.params.get("api_base", None),
-                api_key=self.client.params.get("api_key", ""),
-                timeout=120,
-            )
-            try:
-                return client.chat.completions.create(
-                    model=self.client.model,
-                    messages=messages,
-                    tools=TOOLS,
-                )
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    return client.chat.completions.create(
-                        model=self.client.model,
-                        messages=sanitized,
-                        tools=TOOLS,
-                    )
-                raise
-        else:
-            params = self.client.params.copy()
-            try:
-                return litellm.completion(
-                    model=self.client.model,
-                    messages=messages,
-                    tools=TOOLS,
-                    drop_params=True,
-                    **params,
-                )
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    return litellm.completion(
-                        model=self.client.model,
-                        messages=sanitized,
-                        tools=TOOLS,
-                        drop_params=True,
-                        **params,
-                    )
-                raise
+        return self.client.get_completion_with_tools(
+            messages, tools=TOOLS, reasoning_effort="high",
+        )
 
     # ------------------------------------------------------------------
     # Observation formatting

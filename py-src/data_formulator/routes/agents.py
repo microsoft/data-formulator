@@ -35,7 +35,7 @@ from data_formulator.agents.agent_chart_insight import ChartInsightAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
-from data_formulator.model_registry import model_registry, model_supports_vision
+from data_formulator.model_registry import model_registry
 from data_formulator.knowledge.store import KnowledgeStore
 
 from data_formulator.agents.data_agent import DataAgent
@@ -112,15 +112,6 @@ def _with_warnings(gen):
         yield chunk
     for w in flush_stream_warnings():
         yield w
-
-
-def _messages_include_image(messages: list[dict]) -> bool:
-    """Return True when a chat payload contains user image attachments."""
-    for msg in messages:
-        for att in msg.get("attachments") or []:
-            if att.get("type") == "image" and att.get("url"):
-                return True
-    return False
 
 
 @agent_bp.after_request
@@ -738,12 +729,6 @@ def request_chart_insight():
     if not model_config:
         raise AppError(ErrorCode.INVALID_REQUEST, "Model configuration is required")
 
-    if not model_supports_vision(model_config):
-        raise AppError(
-            ErrorCode.VALIDATION_ERROR,
-            "The selected model does not support image input. Please switch to a vision-capable model.",
-        )
-
     client = get_client(model_config)
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)
@@ -1296,9 +1281,6 @@ def data_loading_chat():
     logger.info("# data-loading-chat request")
 
     messages = content.get("messages", [])
-    if _messages_include_image(messages) and not model_supports_vision(content.get("model")):
-        return stream_preflight_error(AppError(ErrorCode.INVALID_REQUEST, "The selected model does not support image input. Please switch to a vision-capable model or remove the image."))
-
     client = get_client(content['model'])
     identity_id = get_identity_id()
     workspace = get_workspace(identity_id)

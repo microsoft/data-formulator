@@ -461,7 +461,7 @@ class DataRecAgent(object):
                     {"role":"user","content": user_query}]
 
         t_llm_start = time.time()
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort="high")
         t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(input_tables, messages, response, t_llm=t_llm)
@@ -496,7 +496,7 @@ class DataRecAgent(object):
                     "content": f"This is the result from the latest transformation:\n\n{sample_data_str}\n\nUpdate the Python script above based on the following instruction:\n\n{new_instruction}"}]
 
         t_llm_start = time.time()
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort="high")
         t_llm = time.time() - t_llm_start
 
         return self.process_gpt_response(input_tables, messages, response, t_llm=t_llm)

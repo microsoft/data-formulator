@@ -17,8 +17,6 @@ import json
 import logging
 from typing import Any, Generator
 
-import litellm
-import openai
 import pandas as pd
 
 from data_formulator.agents.agent_utils import (
@@ -414,84 +412,16 @@ class ReportGenAgent:
 
     def _call_llm(self, messages: list[dict], tools: list[dict] | None = None):
         """Non-streaming LLM call with optional tool definitions."""
-        if self.client.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.client.params.get("api_base", None),
-                api_key=self.client.params.get("api_key", ""),
-                timeout=120,
+        if tools:
+            return self.client.get_completion_with_tools(
+                messages, tools=tools, reasoning_effort="high",
             )
-            kwargs: dict[str, Any] = {
-                "model": self.client.model,
-                "messages": messages,
-            }
-            if tools:
-                kwargs["tools"] = tools
-            try:
-                return client.chat.completions.create(**kwargs)
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    kwargs["messages"] = sanitized
-                    return client.chat.completions.create(**kwargs)
-                raise
-        else:
-            params = self.client.params.copy()
-            kwargs = {
-                "model": self.client.model,
-                "messages": messages,
-                "drop_params": True,
-            }
-            if tools:
-                kwargs["tools"] = tools
-            kwargs.update(params)
-            try:
-                return litellm.completion(**kwargs)
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    kwargs["messages"] = sanitized
-                    return litellm.completion(**kwargs)
-                raise
+        return self.client.get_completion(messages, reasoning_effort="high")
 
     def _call_llm_streaming(self, messages: list[dict], tools: list[dict] | None = None):
         """Streaming LLM call with optional tool definitions."""
-        if self.client.endpoint == "openai":
-            client = openai.OpenAI(
-                base_url=self.client.params.get("api_base", None),
-                api_key=self.client.params.get("api_key", ""),
-                timeout=120,
+        if tools:
+            return self.client.get_completion_with_tools(
+                messages, tools=tools, stream=True, reasoning_effort="high",
             )
-            kwargs: dict[str, Any] = {
-                "model": self.client.model,
-                "messages": messages,
-                "stream": True,
-            }
-            if tools:
-                kwargs["tools"] = tools
-            try:
-                return client.chat.completions.create(**kwargs)
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    kwargs["messages"] = sanitized
-                    return client.chat.completions.create(**kwargs)
-                raise
-        else:
-            params = self.client.params.copy()
-            kwargs = {
-                "model": self.client.model,
-                "messages": messages,
-                "stream": True,
-                "drop_params": True,
-            }
-            if tools:
-                kwargs["tools"] = tools
-            kwargs.update(params)
-            try:
-                return litellm.completion(**kwargs)
-            except Exception as e:
-                if self.client._is_image_deserialize_error(str(e)):
-                    sanitized = self.client._strip_images_from_messages(messages)
-                    kwargs["messages"] = sanitized
-                    return litellm.completion(**kwargs)
-                raise
+        return self.client.get_completion(messages, stream=True, reasoning_effort="high")
