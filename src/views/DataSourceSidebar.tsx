@@ -72,7 +72,7 @@ import { extractErrorMessage } from '../app/errorHandler';
 import { LoadableState, errorLoadable, loadingLoadable, successLoadable } from '../app/loadableState';
 import { getConnectorIcon, connectorSortOrder, RelationalDBIcon } from '../icons';
 import { loadTable } from '../app/tableThunks';
-import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, updateWorkspaceMeta, onWorkspaceListChanged } from '../app/workspaceService';
+import { listWorkspaces, loadWorkspace, deleteWorkspace, exportWorkspace, importWorkspace, updateWorkspaceMeta, onWorkspaceListChanged } from '../app/workspaceService';
 import type { WorkspaceSummary } from '../app/workspaceService';
 import { borderColor } from '../app/tokens';
 
@@ -493,6 +493,9 @@ const DataSourceSidebarPanel: React.FC<{
         setSessions(prev =>
             prev.map(s => (s.id === id ? { ...s, display_name: next } : s)),
         );
+        if (activeWorkspace?.id === id) {
+            dispatch(dfActions.setActiveWorkspace({ id, displayName: next }));
+        }
         cancelRenameSession();
         try {
             await updateWorkspaceMeta(id, next);
@@ -504,7 +507,7 @@ const DataSourceSidebarPanel: React.FC<{
             }));
             refreshSessions();
         }
-    }, [renamingSession, renameSessionDraft, sessions, cancelRenameSession, dispatch, refreshSessions]);
+    }, [renamingSession, renameSessionDraft, sessions, activeWorkspace, cancelRenameSession, dispatch, refreshSessions]);
 
     const handleExportSession = useCallback(async (id: string, displayName: string) => {
         try {
@@ -521,6 +524,33 @@ const DataSourceSidebarPanel: React.FC<{
                 value: t('sidebar.exportFailed'),
             }));
         }
+    }, [dispatch, t]);
+
+    const importRef = useRef<HTMLInputElement>(null);
+    const handleImportWorkspace = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.importingFile', { name: file.name }) }));
+        try {
+            const wsName = file.name.replace(/\.zip$/, '') || 'imported';
+            const now = new Date();
+            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+            const short = generateUUID().slice(0, 4);
+            const wsId = `session_${date}_${time}_${short}`;
+            const state = await importWorkspace(file, wsId, wsName);
+            const restoredName = (state as any).activeWorkspace?.displayName || wsName;
+            dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: restoredName } }));
+        } catch (e) {
+            console.warn('Failed to import workspace:', e);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'data-source-sidebar',
+                value: t('sidebar.importFailed'),
+            }));
+        }
+        dispatch(dfActions.setSessionLoading({ loading: false }));
+        if (importRef.current) importRef.current.value = '';
     }, [dispatch, t]);
 
     useEffect(() => {
@@ -545,17 +575,18 @@ const DataSourceSidebarPanel: React.FC<{
         return parts.length > 0 ? parts.join(' · ') : t('sidebar.clickToOpen');
     }, [t]);
 
-    const handleOpenSession = useCallback(async (sessionId: string) => {
+    const handleOpenSession = useCallback(async (sessionId: string, metaDisplayName?: string) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('sidebar.openingWorkspace') }));
         try {
             const result = await loadWorkspace(sessionId);
             if (result && Object.keys(result.state).length > 0) {
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: sessionId, displayName: result.displayName } }));
+                const displayName = metaDisplayName || result.displayName;
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: sessionId, displayName } }));
             } else {
-                dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: 'Untitled Session' }));
+                dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: metaDisplayName || 'Untitled Session' }));
             }
         } catch {
-            dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: 'Untitled Session' }));
+            dispatch(dfActions.setActiveWorkspace({ id: sessionId, displayName: metaDisplayName || 'Untitled Session' }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
     }, [dispatch]);
@@ -571,7 +602,7 @@ const DataSourceSidebarPanel: React.FC<{
                     const deletedIndex = prev.findIndex(s => s.id === sessionId);
                     const nextSession = updated[Math.min(deletedIndex, updated.length - 1)];
                     if (nextSession) {
-                        handleOpenSession(nextSession.id);
+                        handleOpenSession(nextSession.id, nextSession.display_name);
                     } else {
                         // No sessions left — start fresh
                         const now = new Date();
@@ -1666,31 +1697,38 @@ const DataSourceSidebarPanel: React.FC<{
                     </Tooltip>
                 </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
-                {/* New session action */}
-                <Box
-                    onClick={() => {
-                        const now = new Date();
-                        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-                        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                        const short = generateUUID().slice(0, 4);
-                        const wsId = `session_${date}_${time}_${short}`;
-                        dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'Untitled Session' } }));
-                    }}
-                    sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        px: 1.5,
-                        py: 0.75,
-                        cursor: 'pointer',
-                        '&:hover': { bgcolor: 'action.hover' },
-                        userSelect: 'none',
-                    }}
-                >
-                    <AddIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                    <Typography noWrap sx={{ fontSize: 12, fontWeight: 500, color: 'text.secondary' }}>
-                        {t('sidebar.newSession', { defaultValue: 'New session' })}
-                    </Typography>
+                {/* New session + import actions */}
+                <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.75, userSelect: 'none' }}>
+                    <Box
+                        onClick={() => {
+                            const now = new Date();
+                            const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+                            const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+                            const short = generateUUID().slice(0, 4);
+                            const wsId = `session_${date}_${time}_${short}`;
+                            dispatch(dfActions.loadState({ tables: [], charts: [], draftNodes: [], conceptShelfItems: [], activeWorkspace: { id: wsId, displayName: 'Untitled Session' } }));
+                        }}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.75,
+                            flex: 1,
+                            cursor: 'pointer',
+                            borderRadius: 0.5,
+                            '&:hover': { bgcolor: 'action.hover' },
+                        }}
+                    >
+                        <AddIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                        <Typography noWrap sx={{ fontSize: 12, fontWeight: 500, color: 'text.secondary' }}>
+                            {t('sidebar.newSession', { defaultValue: 'New session' })}
+                        </Typography>
+                    </Box>
+                    <Tooltip title={t('workspace.importZip')} placement="bottom">
+                        <IconButton size="small" onClick={() => importRef.current?.click()} sx={{ p: 0.25, color: 'text.disabled', '&:hover': { color: 'text.secondary' } }}>
+                            <UploadFileIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                    <input type="file" hidden accept=".zip" ref={importRef} onChange={handleImportWorkspace} />
                 </Box>
                 {sessions.length === 0 ? (
                     <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
@@ -1714,7 +1752,7 @@ const DataSourceSidebarPanel: React.FC<{
                             enterDelay={400}
                         >
                         <Box
-                            onClick={() => { if (!isRenaming && activeWorkspace?.id !== s.id) handleOpenSession(s.id); }}
+                            onClick={() => { if (!isRenaming && activeWorkspace?.id !== s.id) handleOpenSession(s.id, s.display_name); }}
                             sx={{
                                 position: 'relative',
                                 display: 'flex',

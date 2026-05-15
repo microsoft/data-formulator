@@ -408,21 +408,40 @@ class WorkspaceManager:
         return new_dir
 
     def update_display_name(self, workspace_id: str, display_name: str) -> None:
-        """Update only the displayName in workspace_meta.json (no full state write)."""
+        """Update the displayName in workspace_meta.json and session_state.json.
+
+        Write-through: both files are updated so they stay consistent
+        even when the workspace is not currently open in the frontend.
+        """
         safe = self._safe_id(workspace_id)
         meta_file = self._root / safe / WORKSPACE_META_FILENAME
         if not meta_file.exists():
             self._write_meta(workspace_id, display_name)
-            return
-        try:
-            meta = json.loads(meta_file.read_text(encoding="utf-8"))
-        except Exception:
-            meta = {}
-        meta["displayName"] = display_name
-        meta["updatedAt"] = datetime.now(tz=timezone.utc).isoformat()
-        meta_file.write_text(
-            json.dumps(meta, ensure_ascii=False), encoding="utf-8",
-        )
+        else:
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+            meta["displayName"] = display_name
+            meta["updatedAt"] = datetime.now(tz=timezone.utc).isoformat()
+            meta_file.write_text(
+                json.dumps(meta, ensure_ascii=False), encoding="utf-8",
+            )
+
+        # Write-through: patch session_state.json if it exists
+        state_file = self._root / safe / SESSION_STATE_FILENAME
+        if state_file.exists():
+            try:
+                state = json.loads(state_file.read_text(encoding="utf-8"))
+                aw = state.get("activeWorkspace")
+                if isinstance(aw, dict):
+                    aw["displayName"] = display_name
+                    state_file.write_text(
+                        json.dumps(state, default=str, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+            except Exception:
+                pass  # best-effort; next auto-save will sync
 
     # ── Session state persistence ────────────────────────────────────
 

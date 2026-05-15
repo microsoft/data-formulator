@@ -160,17 +160,18 @@ export const DataFormulatorFC = ({ }) => {
         return onWorkspaceListChanged(fetchWorkspaces);
     }, [fetchWorkspaces]);
 
-    const handleOpenWorkspace = useCallback(async (name: string) => {
+    const handleOpenWorkspace = useCallback(async (name: string, metaDisplayName?: string) => {
         dispatch(dfActions.setSessionLoading({ loading: true, label: t('workspace.openingWorkspace') }));
         try {
             const result = await loadWorkspace(name);
             if (result && Object.keys(result.state).length > 0) {
-                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName: result.displayName } }));
+                const displayName = metaDisplayName || result.displayName;
+                dispatch(dfActions.loadState({ ...result.state, activeWorkspace: { id: name, displayName } }));
             } else {
-                dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'Untitled Session' }));
+                dispatch(dfActions.setActiveWorkspace({ id: name, displayName: metaDisplayName || 'Untitled Session' }));
             }
         } catch {
-            dispatch(dfActions.setActiveWorkspace({ id: name, displayName: 'Untitled Session' }));
+            dispatch(dfActions.setActiveWorkspace({ id: name, displayName: metaDisplayName || 'Untitled Session' }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
     }, [dispatch]);
@@ -254,6 +255,11 @@ export const DataFormulatorFC = ({ }) => {
             dispatch(dfActions.loadState({ ...state, activeWorkspace: { id: wsId, displayName: restoredName } }));
         } catch (e) {
             console.warn('Failed to import workspace:', e);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(), type: 'error',
+                component: 'workspace',
+                value: t('workspace.importFailed'),
+            }));
         }
         dispatch(dfActions.setSessionLoading({ loading: false }));
         if (importRef.current) importRef.current.value = '';
@@ -785,7 +791,7 @@ export const DataFormulatorFC = ({ }) => {
                     {sortedSavedWorkspaces.map(w => {
                         const isRenaming = renamingWs === w.id;
                         return (
-                        <Card key={w.id} variant="outlined" onClick={isRenaming ? undefined : () => handleOpenWorkspace(w.id)} sx={{
+                        <Card key={w.id} variant="outlined" onClick={isRenaming ? undefined : () => handleOpenWorkspace(w.id, w.display_name)} sx={{
                             position: 'relative', textAlign: 'left',
                             cursor: isRenaming ? 'default' : 'pointer',
                             '&:hover': isRenaming ? {} : { transform: 'translateY(-2px)', backgroundColor: 'action.hover' },
