@@ -377,7 +377,8 @@
       "partial": "不完整",
       "unavailable": "不可用",
       "not_synced": "未同步"
-    }
+    },
+    "loadInNewSession": "在新会话中加载"
   },
   "dataThread": {
     "title": "数据线程",
@@ -439,6 +440,10 @@
     "pinTable": "固定表",
     "refreshSettings": "刷新设置",
     "replaceData": "替换数据",
+    "viewMetadata": "查看元数据",
+    "metadataFor": "{{table}} 的元数据",
+    "derivationSummary": "派生摘要",
+    "noMetadata": "该表暂无描述信息。",
     "rowsByColumns": "{{rows}}行 \u00d7 {{cols}}列",
     "chartAlt": "{{type}}图表",
     "streamSourceLabel": "流式源",
@@ -749,6 +754,7 @@
     "refresh": "刷新数据",
     "emptyTree": "未找到表格",
     "addConnector": "添加数据连接器",
+    "configureConnector": "编辑连接",
     "linkLocalFolder": "链接本地文件夹",
     "newSession": "新建会话",
     "noSessions": "暂无已保存的会话",

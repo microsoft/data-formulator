@@ -145,7 +145,10 @@
       "copy": "复制",
       "copied": "已复制",
       "viewOnGithub": "在 GitHub 查看",
-      "viewOnPypi": "PyPI 包"
+      "viewOnPypi": "PyPI 包",
+      "requirements": "需要 Python 3.11 以上版本及 ",
+      "requirementsTail": "。偏好 pip、conda 或 Docker？请查看",
+      "otherInstallMethods": "其他安装方式"
     }
   }
 }

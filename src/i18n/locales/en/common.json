@@ -377,7 +377,8 @@
       "partial": "Partial",
       "unavailable": "Unavailable",
       "not_synced": "Not synced"
-    }
+    },
+    "loadInNewSession": "Load in new session"
   },
   "dataThread": {
     "title": "Data Threads",
@@ -439,6 +440,10 @@
     "pinTable": "Pin table",
     "refreshSettings": "Refresh settings",
     "replaceData": "Replace data",
+    "viewMetadata": "View metadata",
+    "metadataFor": "Metadata for {{table}}",
+    "derivationSummary": "Derivation summary",
+    "noMetadata": "No description available for this table.",
     "rowsByColumns": "{{rows}}r \u00d7 {{cols}}c",
     "chartAlt": "{{type}} chart",
     "streamSourceLabel": "stream",
@@ -749,6 +754,7 @@
     "refresh": "Refresh data",
     "emptyTree": "No tables found",
     "addConnector": "Add data connector",
+    "configureConnector": "Edit connection",
     "linkLocalFolder": "Link local folder",
     "newSession": "New session",
     "noSessions": "No saved sessions",

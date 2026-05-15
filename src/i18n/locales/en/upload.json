@@ -145,7 +145,10 @@
       "copy": "Copy",
       "copied": "Copied",
       "viewOnGithub": "View on GitHub",
-      "viewOnPypi": "PyPI package"
+      "viewOnPypi": "PyPI package",
+      "requirements": "Requires Python 3.11+ and ",
+      "requirementsTail": ". Prefer pip, conda, or Docker? See ",
+      "otherInstallMethods": "other install methods"
     }
   }
 }
