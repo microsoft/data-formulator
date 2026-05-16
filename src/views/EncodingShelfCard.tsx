@@ -1670,11 +1670,10 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         </Box>);
 
     const encodingShelfCard = (
-        <Box sx={{ 
-            padding: '4px 6px', 
-            maxWidth: "400px", 
-            display: 'flex', 
-            flexDirection: 'column', 
+        <Box sx={{
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
         }}>
             <Box sx={{ padding: '4px 0px' }}>
                 {channelComponent}

@@ -9,8 +9,8 @@ import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { vlAdaptChart, vlRecommendEncodings } from '../lib/agents-chart';
 import { getDataTable } from '../views/ChartUtils';
-import { getTriggers, getUrls, computeContentHash } from './utils';
-import { apiRequest } from './apiClient';
+import { getTriggers, getUrls, computeContentHash, prepVisTable } from './utils';
+import { apiRequest, streamRequest } from './apiClient';
 import { deleteTablesFromWorkspace } from './workspaceService';
 import { getChartPngDataUrl } from './chartCache';
 import i18n from '../i18n';
@@ -22,10 +22,10 @@ enableMapSet();
 
 // Redux Persist will handle persistence automatically with enableMapSet()
 
-export const generateFreshChart = (tableRef: string, chartType: string, source: "user" | "trigger" = "user") : Chart => {
-    return { 
-        id: `chart-${Date.now()- Math.floor(Math.random() * 10000)}`, 
-        chartType: chartType, 
+export const generateFreshChart = (tableRef: string, chartType: string, source: "user" | "trigger" = "user"): Chart => {
+    return {
+        id: `chart-${Date.now() - Math.floor(Math.random() * 10000)}`,
+        chartType: chartType,
         encodingMap: Object.assign({}, ...getChartChannels(chartType).map((channel) => ({ [channel]: { channel: channel, bin: false } }))),
         tableRef: tableRef,
         saved: false,
@@ -34,7 +34,7 @@ export const generateFreshChart = (tableRef: string, chartType: string, source: 
 }
 
 export interface SSEMessage {
-    type: "heartbeat" | "notification" | "action"; 
+    type: "heartbeat" | "notification" | "action";
     text: string;
     data?: Record<string, any>;
     timestamp: number;
@@ -62,15 +62,15 @@ export interface ServerConfig {
         source_type: string;
         name: string;
         icon: string;
-        params_form: Array<{name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter'}>;
+        params_form: Array<{ name: string; type: string; required: boolean; default?: string; description?: string; sensitive?: boolean; tier?: 'connection' | 'auth' | 'filter' }>;
         pinned_params: Record<string, string>;
-        hierarchy: Array<{key: string; label: string}>;
-        effective_hierarchy: Array<{key: string; label: string}>;
+        hierarchy: Array<{ key: string; label: string }>;
+        effective_hierarchy: Array<{ key: string; label: string }>;
         auth_instructions: string;
         auth_mode?: string;
         delegated_login?: { login_url: string; label?: string } | null;
     }>;
-    DISABLED_SOURCES?: Record<string, {install_hint: string}>;
+    DISABLED_SOURCES?: Record<string, { install_hint: string }>;
     CONNECTED_CONNECTORS?: string[];
     IDENTITY?: { type: string; id: string };
     CREDENTIAL_VAULT_ENABLED?: boolean;
@@ -89,7 +89,7 @@ export interface ModelConfig {
 }
 
 
-export type FocusedId = 
+export type FocusedId =
     | { type: 'table'; tableId: string }
     | { type: 'chart'; chartId: string }
     | { type: 'report'; reportId: string }
@@ -135,19 +135,19 @@ export interface DataFormulatorState {
     /** User-added models, persisted across browser sessions. */
     models: ModelConfig[];
     selectedModelId: string | undefined;
-    testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}[];
+    testedModels: { id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string }[];
 
-    tables : DictTable[];
+    tables: DictTable[];
     draftNodes: DraftNode[];
     charts: Chart[];
-    
+
     conceptShelfItems: FieldItem[];
 
     // controls logs and message index
     messages: Message[];
     displayedMessageIdx: number;
 
-    focusedDataCleanBlockId: {blockId: string, itemId: number} | undefined;
+    focusedDataCleanBlockId: { blockId: string, itemId: number } | undefined;
 
     focusedId: FocusedId;
 
@@ -288,7 +288,7 @@ let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
 
     let unrefedDerivedTableIds = getUnrefedDerivedTableIds(state);
     let tableIdsToDelete = state.tables.filter(t => !t.anchored && unrefedDerivedTableIds.includes(t.id)).map(t => t.id);
-    
+
     // Clean up virtual tables from workspace before removing from state
     let tablesToDelete = state.tables.filter(t => tableIdsToDelete.includes(t.id));
     deleteTablesFromWorkspace(tablesToDelete.map(t => t.virtual.tableId));
@@ -356,7 +356,7 @@ export const fetchFieldSemanticType = createAsyncThunk(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                input_data: {name: table.id, rows: sampleRows, virtual: table.virtual ? true : false},
+                input_data: { name: table.id, rows: sampleRows, virtual: table.virtual ? true : false },
                 model: dfSelectors.getActiveModel(state)
             }),
         });
@@ -376,11 +376,11 @@ export const fetchCodeExpl = createAsyncThunk(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 input_tables: derivedTable.derive?.source
-                                .map(tId => state.tables.find(t => t.id == tId) as DictTable)
-                                .map(t => ({ 
-                                    name: t.id, 
-                                    rows: t.rows,
-                                })),
+                    .map(tId => state.tables.find(t => t.id == tId) as DictTable)
+                    .map(t => ({
+                        name: t.id,
+                        rows: t.rows,
+                    })),
                 code: derivedTable.derive?.code,
                 model: dfSelectors.getActiveModel(state)
             }),
@@ -419,6 +419,23 @@ export const fetchChartInsight = createAsyncThunk(
                 return field?.name || id;
             });
 
+        const idToName = (id: string | undefined): string | undefined => {
+            if (!id) return undefined;
+            return state.conceptShelfItems.find(f => f.id === id)?.name;
+        };
+
+        // Build a structured encoding_map for the agent — channel → {field, aggregate?, dtype?}.
+        const encodingMapForAgent: Record<string, { field: string; aggregate?: string; dtype?: string }> = {};
+        for (const [channel, enc] of Object.entries(chart.encodingMap)) {
+            if (!enc?.fieldID) continue;
+            const name = idToName(enc.fieldID) || enc.fieldID;
+            encodingMapForAgent[channel] = {
+                field: name,
+                ...(enc.aggregate ? { aggregate: enc.aggregate } : {}),
+                ...(enc.dtype ? { dtype: enc.dtype } : {}),
+            };
+        }
+
         // Collect input table info (include source tables for derived tables)
         const table = state.tables.find(t => t.id === args.tableId);
         const tableIds = table?.derive?.source ? [...table.derive.source, table.id] : [table?.id].filter(Boolean);
@@ -440,6 +457,26 @@ export const fetchChartInsight = createAsyncThunk(
             ));
         }, timeoutSeconds * 1000);
 
+        let chartDataSample: any[] = [];
+        if (table) {
+            try {
+                const filteredRows = table.rows.map(row =>
+                    Object.fromEntries(
+                        Object.values(chart.encodingMap)
+                            .map(enc => enc.fieldID)
+                            .filter((id): id is string => !!id)
+                            .map(id => idToName(id))
+                            .filter((name): name is string => !!name && table!.names.includes(name))
+                            .map(name => [name, row[name]])
+                    )
+                );
+                const visRows = prepVisTable(filteredRows, state.conceptShelfItems, chart.encodingMap);
+                chartDataSample = visRows.slice(0, 10);
+            } catch (e) {
+                console.warn('[fetchChartInsight] failed to compute chart-level data sample', e);
+            }
+        }
+
         try {
             const { data } = await apiRequest(getUrls().CHART_INSIGHT_URL, {
                 method: 'POST',
@@ -450,12 +487,20 @@ export const fetchChartInsight = createAsyncThunk(
                     field_names: fieldNames,
                     input_tables: inputTables,
                     model: dfSelectors.getActiveModel(state),
+                    chart_data_sample: chartDataSample,
+                    encoding_map: encodingMapForAgent,
                 }),
                 signal: controller.signal,
             });
 
-            return { title: data.title, takeaways: data.takeaways,
-                     chartId: args.chartId, insightKey: computeInsightKey(chart) };
+            return {
+                title: data.title,
+                summary: data.summary,
+                insights: data.insights,
+                takeaways: data.takeaways,
+                chartId: args.chartId,
+                insightKey: computeInsightKey(chart),
+            };
         } finally {
             clearTimeout(timeoutId);
         }
@@ -523,7 +568,7 @@ export const dataFormulatorSlice = createSlice({
     reducers: {
         resetState: (state) => {
             //state.table = undefined;
-            
+
             // Preserve: models, selectedModelId, testedModels,
             //           config, dataLoaderConnectParams, identity
 
@@ -558,9 +603,9 @@ export const dataFormulatorSlice = createSlice({
             // Clear active workspace so stale IDs don't persist across restarts
             state.activeWorkspace = null;
             // Redux Persist will handle persistence automatically
-            
+
         },
-        setSessionLoading: (state, action: PayloadAction<{loading: boolean, label?: string}>) => {
+        setSessionLoading: (state, action: PayloadAction<{ loading: boolean, label?: string }>) => {
             state.sessionLoading = action.payload.loading;
             state.sessionLoadingLabel = action.payload.label || '';
         },
@@ -641,9 +686,11 @@ export const dataFormulatorSlice = createSlice({
                                     ...node.derive.trigger,
                                     interaction: [
                                         ...(node.derive.trigger.interaction || []),
-                                        { from: 'data-agent' as const, to: 'user' as const, role: 'error' as const,
-                                          content: 'Interrupted by page refresh. You can retry or delete this step.',
-                                          timestamp: Date.now() }
+                                        {
+                                            from: 'data-agent' as const, to: 'user' as const, role: 'error' as const,
+                                            content: 'Interrupted by page refresh. You can retry or delete this step.',
+                                            timestamp: Date.now()
+                                        }
                                     ]
                                 }
                             }
@@ -710,14 +757,14 @@ export const dataFormulatorSlice = createSlice({
                 try { localStorage.removeItem('df_selected_model'); } catch { /* */ }
             }
         },
-        updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}>) => {
+        updateModelStatus: (state, action: PayloadAction<{ id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string }>) => {
             let id = action.payload.id;
             let status = action.payload.status;
             let message = action.payload.message;
-            
+
             state.testedModels = [
-                ...state.testedModels.filter(t => t.id != id), 
-                {id: id, status, message}
+                ...state.testedModels.filter(t => t.id != id),
+                { id: id, status, message }
             ];
         },
         addTableToStore: (state, action: PayloadAction<DictTable>) => {
@@ -748,23 +795,23 @@ export const dataFormulatorSlice = createSlice({
         removeTableLocally: (state, action: PayloadAction<string>) => {
             removeTableStateRoutine(state, action.payload);
         },
-        updateTableAnchored: (state, action: PayloadAction<{tableId: string, anchored: boolean}>) => {
+        updateTableAnchored: (state, action: PayloadAction<{ tableId: string, anchored: boolean }>) => {
             let tableId = action.payload.tableId;
             let anchored = action.payload.anchored;
-            state.tables = state.tables.map(t => t.id == tableId ? {...t, anchored} : t);
+            state.tables = state.tables.map(t => t.id == tableId ? { ...t, anchored } : t);
         },
-        updateTableDisplayId: (state, action: PayloadAction<{tableId: string, displayId: string}>) => {
+        updateTableDisplayId: (state, action: PayloadAction<{ tableId: string, displayId: string }>) => {
             let tableId = action.payload.tableId;
             let displayId = action.payload.displayId;
-            state.tables = state.tables.map(t => t.id == tableId ? {...t, displayId} : t);
+            state.tables = state.tables.map(t => t.id == tableId ? { ...t, displayId } : t);
         },
-        updateTableRows: (state, action: PayloadAction<{tableId: string, rows: any[], contentHash?: string}>) => {
+        updateTableRows: (state, action: PayloadAction<{ tableId: string, rows: any[], contentHash?: string }>) => {
             // Update the rows of a table while preserving all other table properties
             // This is used for refreshing data in original (non-derived) tables
             let tableId = action.payload.tableId;
             let newRows = action.payload.rows;
             let providedContentHash = action.payload.contentHash;
-            
+
             state.tables = state.tables.map(t => {
                 if (t.id == tableId) {
                     let newMetadata = { ...t.metadata };
@@ -785,7 +832,7 @@ export const dataFormulatorSlice = createSlice({
                 return t;
             });
         },
-        updateMultipleTableRows: (state, action: PayloadAction<{tableId: string, rows: any[], contentHash?: string}[]>) => {
+        updateMultipleTableRows: (state, action: PayloadAction<{ tableId: string, rows: any[], contentHash?: string }[]>) => {
             // Batch-update rows for multiple tables in a single state mutation.
             // This avoids N separate dispatches (each creating a new state.tables reference)
             // when refreshing derived tables after a source table changes.
@@ -811,13 +858,13 @@ export const dataFormulatorSlice = createSlice({
                 return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash, virtual: updatedVirtual };
             });
         },
-        updateTableSource: (state, action: PayloadAction<{tableId: string, source: DataSourceConfig}>) => {
+        updateTableSource: (state, action: PayloadAction<{ tableId: string, source: DataSourceConfig }>) => {
             // Update the source configuration of a table
             let tableId = action.payload.tableId;
             let source = action.payload.source;
-            state.tables = state.tables.map(t => t.id == tableId ? {...t, source} : t);
+            state.tables = state.tables.map(t => t.id == tableId ? { ...t, source } : t);
         },
-        updateTableSourceRefreshSettings: (state, action: PayloadAction<{tableId: string, autoRefresh: boolean, refreshIntervalSeconds?: number}>) => {
+        updateTableSourceRefreshSettings: (state, action: PayloadAction<{ tableId: string, autoRefresh: boolean, refreshIntervalSeconds?: number }>) => {
             // Update just the refresh settings of a table's source
             let tableId = action.payload.tableId;
             let autoRefresh = action.payload.autoRefresh;
@@ -836,7 +883,7 @@ export const dataFormulatorSlice = createSlice({
                 return t;
             });
         },
-        extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
+        extendTableWithNewFields: (state, action: PayloadAction<{ tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[] }>) => {
             // extend the existing extTable with new columns from the new table
             let newValues = action.payload.values;
             let tableId = action.payload.tableId;
@@ -854,7 +901,7 @@ export const dataFormulatorSlice = createSlice({
             if (previousName && table.names.indexOf(previousName) != -1) {
                 let replacePosition = table.names.indexOf(previousName);
                 newNames[replacePosition] = columnName;
-            } else {            
+            } else {
                 let insertPosition = lastParentName ? table.names.indexOf(lastParentName) : table.names.length - 1;
                 newNames = table.names.slice(0, insertPosition + 1).concat(columnName).concat(table.names.slice(insertPosition + 1));
             }
@@ -867,7 +914,7 @@ export const dataFormulatorSlice = createSlice({
 
             // Create new rows with the column positioned after the first parent
             let newRows = table.rows.map((row, i) => {
-                let newRow: {[key: string]: any} = {};
+                let newRow: { [key: string]: any } = {};
                 for (let key of Object.keys(row)) {
                     newRow[key] = row[key];
                     if (key === lastParentName) {
@@ -882,18 +929,18 @@ export const dataFormulatorSlice = createSlice({
                 }
                 return newRow;
             });
-            
+
             table.names = newNames;
             table.metadata = newMetadata;
             table.rows = newRows;
         },
-        removeDerivedField: (state, action: PayloadAction<{tableId: string, fieldId: string}>) => {
+        removeDerivedField: (state, action: PayloadAction<{ tableId: string, fieldId: string }>) => {
             let tableId = action.payload.tableId;
             let fieldId = action.payload.fieldId;
             let table = state.tables.find(t => t.id == tableId) as DictTable;
             let fieldName = state.conceptShelfItems.find(f => f.id == fieldId)?.name as string;
 
-            let fieldIndex = table.names.indexOf(fieldName);  
+            let fieldIndex = table.names.indexOf(fieldName);
             if (fieldIndex != -1) {
                 table.names = table.names.slice(0, fieldIndex).concat(table.names.slice(fieldIndex + 1));
                 delete table.metadata[fieldName];
@@ -903,11 +950,11 @@ export const dataFormulatorSlice = createSlice({
                 });
             }
         },
-        createNewChart: (state, action: PayloadAction<{chartType: string, tableId: string}>) => {
+        createNewChart: (state, action: PayloadAction<{ chartType: string, tableId: string }>) => {
             let chartType = action.payload.chartType;
             let tableId = action.payload.tableId || state.tables[0].id;
             let freshChart = generateFreshChart(tableId, chartType, "user") as Chart;
-            
+
             // Auto-populate encodings based on table metadata
             let table = state.tables.find(t => t.id === tableId);
             if (table) {
@@ -923,8 +970,8 @@ export const dataFormulatorSlice = createSlice({
                     }
                 }
             }
-            
-            state.charts = [ freshChart , ...state.charts];
+
+            state.charts = [freshChart, ...state.charts];
             state.focusedId = { type: 'chart', chartId: freshChart.id };
         },
         addChart: (state, action: PayloadAction<Chart>) => {
@@ -941,7 +988,7 @@ export const dataFormulatorSlice = createSlice({
 
             let chartCopy = JSON.parse(JSON.stringify(state.charts.find(chart => chart.id == chartId) as Chart)) as Chart;
             chartCopy = { ...chartCopy, saved: false }
-            chartCopy.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
+            chartCopy.id = `chart-${Date.now() - Math.floor(Math.random() * 10000)}`;
             state.charts.push(chartCopy);
             state.focusedId = { type: 'chart', chartId: chartCopy.id };
         },
@@ -960,7 +1007,7 @@ export const dataFormulatorSlice = createSlice({
             let chartId = action.payload;
             deleteChartsRoutine(state, [chartId]);
         },
-        updateChartType: (state, action: PayloadAction<{chartId: string, chartType: string}>) => {
+        updateChartType: (state, action: PayloadAction<{ chartId: string, chartType: string }>) => {
             let chartId = action.payload.chartId;
             let chartType = action.payload.chartType;
 
@@ -1011,7 +1058,7 @@ export const dataFormulatorSlice = createSlice({
                     if (field) newEncodingMap[ch as Channel] = { fieldID: field.id };
                 }
                 chart = { ...chart, chartType, encodingMap: newEncodingMap };
-                
+
                 // Fill any remaining empty channels via full recommendation
                 if (table) {
                     const suggested = vlRecommendEncodings(chartType, table.rows, semanticTypes);
@@ -1031,8 +1078,8 @@ export const dataFormulatorSlice = createSlice({
                 dfSelectors.replaceChart(state, chart);
             }
         },
-        
-        updateTableRef: (state, action: PayloadAction<{chartId: string, tableRef: string}>) => {
+
+        updateTableRef: (state, action: PayloadAction<{ chartId: string, tableRef: string }>) => {
             let chartId = action.payload.chartId;
             let tableRef = action.payload.tableRef;
             state.charts = state.charts.map(chart => {
@@ -1043,7 +1090,7 @@ export const dataFormulatorSlice = createSlice({
                 }
             })
         },
-        updateChartConfig: (state, action: PayloadAction<{chartId: string, key: string, value: any}>) => {
+        updateChartConfig: (state, action: PayloadAction<{ chartId: string, key: string, value: any }>) => {
             let chartId = action.payload.chartId;
             let key = action.payload.key;
             let value = action.payload.value;
@@ -1059,13 +1106,13 @@ export const dataFormulatorSlice = createSlice({
                 }
             }
         },
-        updateChartThumbnail: (state, action: PayloadAction<{chartId: string, thumbnail: string}>) => {
+        updateChartThumbnail: (state, action: PayloadAction<{ chartId: string, thumbnail: string }>) => {
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == action.payload.chartId);
             if (chart) {
                 chart.thumbnail = action.payload.thumbnail;
             }
         },
-        updateChartInsight: (state, action: PayloadAction<{chartId: string, insight: ChartInsight}>) => {
+        updateChartInsight: (state, action: PayloadAction<{ chartId: string, insight: ChartInsight }>) => {
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == action.payload.chartId);
             if (chart) {
                 chart.insight = action.payload.insight;
@@ -1136,14 +1183,14 @@ export const dataFormulatorSlice = createSlice({
                 if (chart.activeVariantId) chart.activeVariantId = undefined;
             }
         },
-        updateChartEncodingProp: (state, action: PayloadAction<{chartId: string, channel: Channel, prop: string, value: any}>) => {
+        updateChartEncodingProp: (state, action: PayloadAction<{ chartId: string, channel: Channel, prop: string, value: any }>) => {
             let chartId = action.payload.chartId;
             let channel = action.payload.channel;
             let prop = action.payload.prop;
             let value = action.payload.value;
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
             let table = state.tables.find(t => t.id == chart?.tableRef) as DictTable;
-            
+
             if (chart) {
                 //TODO: check this, finding reference and directly update??
                 let encoding = chart.encodingMap[channel];
@@ -1187,7 +1234,7 @@ export const dataFormulatorSlice = createSlice({
                 if (changed && chart.activeVariantId) chart.activeVariantId = undefined;
             }
         },
-        swapChartEncoding: (state, action: PayloadAction<{chartId: string, channel1: Channel, channel2: Channel}>) => {
+        swapChartEncoding: (state, action: PayloadAction<{ chartId: string, channel1: Channel, channel2: Channel }>) => {
             let chartId = action.payload.chartId;
             let channel1 = action.payload.channel1;
             let channel2 = action.payload.channel2;
@@ -1221,16 +1268,16 @@ export const dataFormulatorSlice = createSlice({
             let conceptID = action.payload;
             let allCharts = dfSelectors.getAllCharts(state);
             // remove concepts from encoding maps
-            if (allCharts.some(chart => chart.saved 
+            if (allCharts.some(chart => chart.saved
                 && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
                 console.log("cannot delete!")
             } else {
                 state.conceptShelfItems = state.conceptShelfItems.filter(f => f.id != conceptID);
-                for (let chart of allCharts)  {
+                for (let chart of allCharts) {
                     for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
                         if (encoding.fieldID && conceptID == encoding.fieldID) {
                             // clear the encoding
-                            chart.encodingMap[channel as Channel] = { }
+                            chart.encodingMap[channel as Channel] = {}
                         }
                     }
                 }
@@ -1240,16 +1287,16 @@ export const dataFormulatorSlice = createSlice({
             let allCharts = dfSelectors.getAllCharts(state);
             for (let conceptID of action.payload) {
                 // remove concepts from encoding maps
-                if (allCharts.some(chart => chart.saved 
+                if (allCharts.some(chart => chart.saved
                     && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
                     console.log("cannot delete!")
                 } else {
                     state.conceptShelfItems = state.conceptShelfItems.filter(field => field.id != conceptID);
-                    for (let chart of allCharts)  {
+                    for (let chart of allCharts) {
                         for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
                             if (encoding.fieldID && conceptID == encoding.fieldID) {
                                 // clear the encoding
-                                chart.encodingMap[channel as Channel] = { }
+                                chart.encodingMap[channel as Channel] = {}
                             }
                         }
                     }
@@ -1352,25 +1399,25 @@ export const dataFormulatorSlice = createSlice({
         },
         overrideDerivedTables: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
-            
+
             // Clean up old virtual table from workspace since it's being replaced
             let oldTable = state.tables.find(t => t.id == table.id);
             if (oldTable) {
                 deleteTablesFromWorkspace([oldTable.virtual.tableId]);
             }
-            
+
             state.tables = [...state.tables.filter(t => t.id != table.id), table];
         },
         deleteDerivedTableById: (state, action: PayloadAction<string>) => {
             // delete a synthesis output based on index
             let tableId = action.payload;
-            
+
             // Clean up virtual table from workspace before removing from state
             let tableToDelete = state.tables.find(t => t.derive && t.id == tableId);
             if (tableToDelete) {
                 deleteTablesFromWorkspace([tableToDelete.virtual.tableId]);
             }
-            
+
             state.tables = state.tables.filter(t => !(t.derive && t.id == tableId));
         },
         clearUnReferencedTables: (state) => {
@@ -1379,17 +1426,17 @@ export const dataFormulatorSlice = createSlice({
             let referredTableId = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems))
                 .filter(t => t != undefined).map(t => t.id);
             let tablesToRemove = state.tables.filter(t => t.derive && !referredTableId.some(tableId => tableId == t.id));
-            
+
             // Clean up virtual tables from workspace
             deleteTablesFromWorkspace(tablesToRemove.map(t => t.virtual.tableId));
-            
+
             state.tables = state.tables.filter(t => !tablesToRemove.some(tr => tr.id == t.id));
         },
         clearUnReferencedCustomConcepts: (state) => {
             let fieldNamesFromTables = state.tables.map(t => t.names).flat();
             let fieldIdsReferredByCharts = dfSelectors.getAllCharts(state).map(c => Object.values(c.encodingMap).map(enc => enc.fieldID).filter(fid => fid != undefined) as string[]).flat();
 
-            state.conceptShelfItems = state.conceptShelfItems.filter(field => !(field.source == "custom" 
+            state.conceptShelfItems = state.conceptShelfItems.filter(field => !(field.source == "custom"
                 && !(fieldNamesFromTables.includes(field.name) || fieldIdsReferredByCharts.includes(field.id))))
         },
         addMessages: (state, action: PayloadAction<Message>) => {
@@ -1408,10 +1455,10 @@ export const dataFormulatorSlice = createSlice({
                 state.viewMode = 'report';
             }
         },
-        setFocusedDataCleanBlockId: (state, action: PayloadAction<{blockId: string, itemId: number} | undefined>) => {
+        setFocusedDataCleanBlockId: (state, action: PayloadAction<{ blockId: string, itemId: number } | undefined>) => {
             state.focusedDataCleanBlockId = action.payload;
         },
-        changeChartRunningStatus: (state, action: PayloadAction<{chartId: string, status: boolean}>) => {
+        changeChartRunningStatus: (state, action: PayloadAction<{ chartId: string, status: boolean }>) => {
             if (action.payload.status) {
                 state.chartSynthesisInProgress = [...new Set([...state.chartSynthesisInProgress, action.payload.chartId])]
             } else {
@@ -1421,12 +1468,12 @@ export const dataFormulatorSlice = createSlice({
         setIdentity: (state, action: PayloadAction<Identity>) => {
             state.identity = action.payload;
         },
-        updateDataLoaderConnectParams: (state, action: PayloadAction<{dataLoaderType: string, params: Record<string, string>}>) => {
+        updateDataLoaderConnectParams: (state, action: PayloadAction<{ dataLoaderType: string, params: Record<string, string> }>) => {
             let dataLoaderType = action.payload.dataLoaderType;
             let params = action.payload.params;
             state.dataLoaderConnectParams[dataLoaderType] = params;
         },
-        updateDataLoaderConnectParam: (state, action: PayloadAction<{dataLoaderType: string, paramName: string, paramValue: string}>) => {
+        updateDataLoaderConnectParam: (state, action: PayloadAction<{ dataLoaderType: string, paramName: string, paramValue: string }>) => {
             let dataLoaderType = action.payload.dataLoaderType;
             if (!state.dataLoaderConnectParams[dataLoaderType]) {
                 state.dataLoaderConnectParams[dataLoaderType] = {};
@@ -1446,7 +1493,7 @@ export const dataFormulatorSlice = createSlice({
         addDataCleanBlock: (state, action: PayloadAction<DataCleanBlock>) => {
             state.dataCleanBlocks = [...state.dataCleanBlocks, action.payload];
         },
-        removeDataCleanBlocks: (state, action: PayloadAction<{blockIds: string[]}>) => {
+        removeDataCleanBlocks: (state, action: PayloadAction<{ blockIds: string[] }>) => {
             state.dataCleanBlocks = state.dataCleanBlocks.filter(block => !action.payload.blockIds.includes(block.id));
         },
         resetDataCleanBlocks: (state) => {
@@ -1455,9 +1502,9 @@ export const dataFormulatorSlice = createSlice({
         updateLastDataCleanBlock: (state, action: PayloadAction<Partial<DataCleanBlock>>) => {
             if (state.dataCleanBlocks.length > 0) {
                 const lastIndex = state.dataCleanBlocks.length - 1;
-                state.dataCleanBlocks[lastIndex] = { 
-                    ...state.dataCleanBlocks[lastIndex], 
-                    ...action.payload 
+                state.dataCleanBlocks[lastIndex] = {
+                    ...state.dataCleanBlocks[lastIndex],
+                    ...action.payload
                 };
             }
         },
@@ -1480,7 +1527,7 @@ export const dataFormulatorSlice = createSlice({
         clearChatMessages: (state) => {
             state.dataLoadingChatMessages = [];
         },
-        confirmTableLoad: (state, action: PayloadAction<{messageId: string, tableName: string}>) => {
+        confirmTableLoad: (state, action: PayloadAction<{ messageId: string, tableName: string }>) => {
             const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
             if (msg?.pendingLoads) {
                 const pending = msg.pendingLoads.find(p => p.name === action.payload.tableName);
@@ -1489,7 +1536,7 @@ export const dataFormulatorSlice = createSlice({
                 }
             }
         },
-        markLoadPlanConfirmed: (state, action: PayloadAction<{messageId: string}>) => {
+        markLoadPlanConfirmed: (state, action: PayloadAction<{ messageId: string }>) => {
             const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);
             if (msg?.loadPlan) {
                 msg.loadPlan.candidates.forEach(c => { c.selected = false; });
@@ -1553,192 +1600,200 @@ export const dataFormulatorSlice = createSlice({
     },
     extraReducers: (builder) => {
         builder
-        .addCase(fetchFieldSemanticType.fulfilled, (state, action) => {
-            let data = action.payload;
-            let tableId = action.meta.arg.id;
-            let table = state.tables.find(t => t.id == tableId) as DictTable;
+            .addCase(fetchFieldSemanticType.fulfilled, (state, action) => {
+                let data = action.payload;
+                let tableId = action.meta.arg.id;
+                let table = state.tables.find(t => t.id == tableId) as DictTable;
 
-            if (data["result"]?.length > 0) {
-                let typeMap = data['result'][0]['fields'];
+                if (data["result"]?.length > 0) {
+                    let typeMap = data['result'][0]['fields'];
 
-                for (let name of table.names) {
-                    table.metadata[name] = { 
-                        type: typeMap[name]['type'] as Type, 
-                        semanticType: typeMap[name]['semantic_type'], 
-                        levels: typeMap[name]['sort_order'] || undefined,
-                        intrinsicDomain: typeMap[name]['intrinsic_domain'] || undefined,
-                        unit: typeMap[name]['unit'] || undefined,
-                    };
-                }
-
-                if (data["result"][0]["suggested_table_name"]) {
-                    // avoid duplicate display ids
-                    let existingDisplayIds = state.tables.filter(t => t.id != tableId).map(t => t.displayId);
-                    let suffix = "";
-                    let displayId = `${data["result"][0]["suggested_table_name"] as string}${suffix}`;
-                    let suffixId = 1;
-                    while (existingDisplayIds.includes(displayId)) {
-                        displayId = `${data["result"][0]["suggested_table_name"] as string}${suffixId}`;
-                        suffixId++;
-                        suffix = `-${suffixId}`;
+                    for (let name of table.names) {
+                        table.metadata[name] = {
+                            type: typeMap[name]['type'] as Type,
+                            semanticType: typeMap[name]['semantic_type'],
+                            levels: typeMap[name]['sort_order'] || undefined,
+                            intrinsicDomain: typeMap[name]['intrinsic_domain'] || undefined,
+                            unit: typeMap[name]['unit'] || undefined,
+                        };
                     }
-                    table.displayId = displayId;
+
+                    if (data["result"][0]["suggested_table_name"]) {
+                        // avoid duplicate display ids
+                        let existingDisplayIds = state.tables.filter(t => t.id != tableId).map(t => t.displayId);
+                        let suffix = "";
+                        let displayId = `${data["result"][0]["suggested_table_name"] as string}${suffix}`;
+                        let suffixId = 1;
+                        while (existingDisplayIds.includes(displayId)) {
+                            displayId = `${data["result"][0]["suggested_table_name"] as string}${suffixId}`;
+                            suffixId++;
+                            suffix = `-${suffixId}`;
+                        }
+                        table.displayId = displayId;
+                    }
                 }
-            }
-        })
-        .addCase(fetchGlobalModelList.fulfilled, (state, action) => {
-            // Populate globalModels so the UI renders every configured model
-            // immediately.  Status starts as "unknown"; the user can click
-            // "Test" to verify connectivity, or errors surface on first use.
-            const models: ModelConfig[] = action.payload;
-            state.globalModels = models;
+            })
+            .addCase(fetchGlobalModelList.fulfilled, (state, action) => {
+                // Populate globalModels so the UI renders every configured model
+                // immediately.  Status starts as "unknown"; the user can click
+                // "Test" to verify connectivity, or errors surface on first use.
+                const models: ModelConfig[] = action.payload;
+                state.globalModels = models;
 
-            // Reset all global model statuses to "configured" on every app start.
-            // "configured" means: admin has set this up in .env, ready to use,
-            // but connectivity has not been verified this session.
-            // testedModels is persisted by redux-persist, so without this reset
-            // stale "ok" statuses from a previous session would linger.
-            // User-added model test results are preserved.
-            const globalIds = new Set(models.map(m => m.id));
-            state.testedModels = [
-                ...models.map(m => ({ id: m.id, status: 'configured' as const, message: '' })),
-                ...state.testedModels.filter(t => !globalIds.has(t.id)),
-            ];
+                // Reset all global model statuses to "configured" on every app start.
+                // "configured" means: admin has set this up in .env, ready to use,
+                // but connectivity has not been verified this session.
+                // testedModels is persisted by redux-persist, so without this reset
+                // stale "ok" statuses from a previous session would linger.
+                // User-added model test results are preserved.
+                const globalIds = new Set(models.map(m => m.id));
+                state.testedModels = [
+                    ...models.map(m => ({ id: m.id, status: 'configured' as const, message: '' })),
+                    ...state.testedModels.filter(t => !globalIds.has(t.id)),
+                ];
 
-            // Auto-select the first global model when nothing is selected.
-            if (state.selectedModelId == undefined && models.length > 0) {
-                state.selectedModelId = models[0].id;
-            }
-        })
-        .addCase(fetchGlobalModelList.rejected, (state, action) => {
-            if (action.error?.name !== 'AbortError') {
+                // Auto-select the first global model when nothing is selected.
+                if (state.selectedModelId == undefined && models.length > 0) {
+                    state.selectedModelId = models[0].id;
+                }
+            })
+            .addCase(fetchGlobalModelList.rejected, (state, action) => {
+                if (action.error?.name !== 'AbortError') {
+                    state.messages.push({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'model list',
+                        value: i18n.t('messages.globalModelListFailed'),
+                    });
+                }
+            })
+            .addCase(fetchAvailableModels.fulfilled, (state, action) => {
+                // Phase 2 (after connectivity checks): update statuses for each model.
+                const serverModels: (ModelConfig & { status: string; error: string | null })[] = action.payload;
+
+                // Update globalModels with the full response (may include extra fields).
+                state.globalModels = serverModels;
+
+                // Replace global model entries in testedModels with real statuses,
+                // preserving user-model test results.
+                state.testedModels = [
+                    ...serverModels.map(m => ({
+                        id: m.id,
+                        status: (m.status === 'connected' ? 'ok' : 'error') as 'ok' | 'error' | 'testing' | 'unknown' | 'configured',
+                        message: m.error ?? '',
+                    })),
+                    ...state.testedModels.filter(t => !serverModels.some(m => m.id === t.id)),
+                ];
+
+                // Auto-select the first connected global model when nothing is selected.
+                if (state.selectedModelId == undefined) {
+                    const firstConnected = serverModels.find(m => m.status === 'connected');
+                    if (firstConnected) {
+                        state.selectedModelId = firstConnected.id;
+                    }
+                }
+            })
+            .addCase(fetchAvailableModels.rejected, (state, action) => {
+                if (action.error?.name === 'AbortError') {
+                    return;
+                }
+
+                state.testedModels = state.testedModels.map(model =>
+                    model.status === 'testing'
+                        ? { ...model, status: 'configured' as const, message: '' }
+                        : model
+                );
                 state.messages.push({
                     timestamp: Date.now(), type: 'warning',
                     component: 'model list',
-                    value: i18n.t('messages.globalModelListFailed'),
+                    value: i18n.t('messages.availableModelsFailed'),
                 });
-            }
-        })
-        .addCase(fetchAvailableModels.fulfilled, (state, action) => {
-            // Phase 2 (after connectivity checks): update statuses for each model.
-            const serverModels: (ModelConfig & { status: string; error: string | null })[] = action.payload;
-
-            // Update globalModels with the full response (may include extra fields).
-            state.globalModels = serverModels;
-
-            // Replace global model entries in testedModels with real statuses,
-            // preserving user-model test results.
-            state.testedModels = [
-                ...serverModels.map(m => ({
-                    id: m.id,
-                    status: (m.status === 'connected' ? 'ok' : 'error') as 'ok' | 'error' | 'testing' | 'unknown' | 'configured',
-                    message: m.error ?? '',
-                })),
-                ...state.testedModels.filter(t => !serverModels.some(m => m.id === t.id)),
-            ];
-
-            // Auto-select the first connected global model when nothing is selected.
-            if (state.selectedModelId == undefined) {
-                const firstConnected = serverModels.find(m => m.status === 'connected');
-                if (firstConnected) {
-                    state.selectedModelId = firstConnected.id;
+            })
+            .addCase(fetchCodeExpl.fulfilled, (state, action) => {
+                let codeExplResponse = action.payload;
+                let derivedTableId = action.meta.arg.id;
+                let derivedTable = state.tables.find(t => t.id == derivedTableId)
+                if (derivedTable?.derive) {
+                    derivedTable.derive.explanation = codeExplResponse;
                 }
-            }
-        })
-        .addCase(fetchAvailableModels.rejected, (state, action) => {
-            if (action.error?.name === 'AbortError') {
-                return;
-            }
+            })
+            .addCase(fetchCodeExpl.rejected, (state, action) => {
+                if (action.error?.name !== 'AbortError') {
+                    state.messages.push({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'code explanation',
+                        value: 'Failed to generate code explanation',
+                    });
+                }
+            })
+            .addCase(fetchFieldSemanticType.rejected, (state, action) => {
+                if (action.error?.name !== 'AbortError') {
+                    state.messages.push({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'semantic type',
+                        value: 'Failed to infer field semantic types',
+                    });
+                }
+            })
+            .addCase(fetchChartInsight.pending, (state, action) => {
+                let chartId = action.meta.arg.chartId;
+                if (!state.chartInsightInProgress.includes(chartId)) {
+                    state.chartInsightInProgress.push(chartId);
+                }
+            })
+            .addCase(fetchChartInsight.fulfilled, (state, action) => {
+                let { chartId, insightKey, title, summary, insights, takeaways } = action.payload;
+                let chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+                const resolvedInsights = insights || (takeaways || []).map((t: string) => ({ text: t }));
+                const resolvedTakeaways = takeaways || (insights || []).map((i: any) => i.text);
+                if (chart && (title || resolvedInsights.length > 0)) {
+                    chart.insight = {
+                        title,
+                        ...(typeof summary === 'string' && summary ? { summary } : {}),
+                        insights: resolvedInsights,
+                        takeaways: resolvedTakeaways,
+                        key: insightKey,
+                    };
+                }
+                state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
+                console.log("fetched chart insight", action.payload);
+            })
+            .addCase(fetchChartInsight.rejected, (state, action) => {
+                const chartId = action.meta.arg.chartId;
+                state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
 
-            state.testedModels = state.testedModels.map(model =>
-                model.status === 'testing'
-                    ? { ...model, status: 'configured' as const, message: '' }
-                    : model
-            );
-            state.messages.push({
-                timestamp: Date.now(), type: 'warning',
-                component: 'model list',
-                value: i18n.t('messages.availableModelsFailed'),
-            });
-        })
-        .addCase(fetchCodeExpl.fulfilled, (state, action) => {
-            let codeExplResponse = action.payload;
-            let derivedTableId = action.meta.arg.id;
-            let derivedTable = state.tables.find(t => t.id == derivedTableId)
-            if (derivedTable?.derive) {
-                derivedTable.derive.explanation = codeExplResponse;
-            }
-        })
-        .addCase(fetchCodeExpl.rejected, (state, action) => {
-            if (action.error?.name !== 'AbortError') {
-                state.messages.push({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'code explanation',
-                    value: 'Failed to generate code explanation',
-                });
-            }
-        })
-        .addCase(fetchFieldSemanticType.rejected, (state, action) => {
-            if (action.error?.name !== 'AbortError') {
-                state.messages.push({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'semantic type',
-                    value: 'Failed to infer field semantic types',
-                });
-            }
-        })
-        .addCase(fetchChartInsight.pending, (state, action) => {
-            let chartId = action.meta.arg.chartId;
-            if (!state.chartInsightInProgress.includes(chartId)) {
-                state.chartInsightInProgress.push(chartId);
-            }
-        })
-        .addCase(fetchChartInsight.fulfilled, (state, action) => {
-            let { chartId, insightKey, title, takeaways } = action.payload;
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
-            if (chart && (title || (takeaways && takeaways.length > 0))) {
-                chart.insight = { title, takeaways: takeaways || [], key: insightKey };
-            }
-            state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
-            console.log("fetched chart insight", action.payload);
-        })
-        .addCase(fetchChartInsight.rejected, (state, action) => {
-            const chartId = action.meta.arg.chartId;
-            state.chartInsightInProgress = state.chartInsightInProgress.filter(id => id !== chartId);
+                const errorName = action.error?.name;
 
-            const errorName = action.error?.name;
+                if (errorName === 'AbortError') {
+                    // User cancelled — no feedback needed
+                    return;
+                }
 
-            if (errorName === 'AbortError') {
-                // User cancelled — no feedback needed
-                return;
-            }
+                if (errorName === 'TimeoutError') {
+                    state.messages.push({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'chart insight',
+                        value: i18n.t('messages.chartInsightTimedOut', {
+                            seconds: state.config.formulateTimeoutSeconds,
+                        }),
+                    });
+                    return;
+                }
 
-            if (errorName === 'TimeoutError') {
-                state.messages.push({
-                    timestamp: Date.now(), type: 'warning',
-                    component: 'chart insight',
-                    value: i18n.t('messages.chartInsightTimedOut', {
-                        seconds: state.config.formulateTimeoutSeconds,
-                    }),
-                });
-                return;
-            }
+                if (errorName === 'ChartImageNotReady') {
+                    state.messages.push({
+                        timestamp: Date.now(), type: 'warning',
+                        component: 'chart insight',
+                        value: i18n.t('messages.chartInsightImageNotReady'),
+                    });
+                    return;
+                }
 
-            if (errorName === 'ChartImageNotReady') {
                 state.messages.push({
                     timestamp: Date.now(), type: 'warning',
                     component: 'chart insight',
-                    value: i18n.t('messages.chartInsightImageNotReady'),
+                    value: action.error?.message || i18n.t('messages.chartInsightFailed'),
                 });
-                return;
-            }
-
-            state.messages.push({
-                timestamp: Date.now(), type: 'warning',
-                component: 'chart insight',
-                value: action.error?.message || i18n.t('messages.chartInsightFailed'),
-            });
-        })
+            })
     },
 })
 
@@ -1851,12 +1906,12 @@ export const dfSelectors = {
         let sourceTables = focusedTable?.derive?.source || [focusedTable?.id];
         return sourceTables;
     },
-    
+
     // Memoized chart selector that combines both sources.
     // Decoupled from row-data changes via selectTriggerCharts.
     getAllCharts: createSelector(
-        [(state: DataFormulatorState) => state.charts, 
-         selectTriggerCharts],
+        [(state: DataFormulatorState) => state.charts,
+            selectTriggerCharts],
         (userCharts, triggerCharts) => {
             return [...userCharts, ...triggerCharts];
         }
@@ -1876,7 +1931,7 @@ export const dfSelectors = {
     },
     // Generated reports selectors
     getAllGeneratedReports: (state: DataFormulatorState) => state.generatedReports,
-    getReportById: (state: DataFormulatorState, reportId: string) => 
+    getReportById: (state: DataFormulatorState, reportId: string) =>
         state.generatedReports.find(r => r.id === reportId),
 }
 

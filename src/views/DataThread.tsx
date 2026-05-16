@@ -51,6 +51,13 @@ import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../ic
 import _ from 'lodash';
 import { getChartTemplate } from '../components/ChartTemplates';
 
+// Load prismjs core BEFORE the language plugins. The plugin files
+// (`prism-python.js`, etc.) reference `Prism` as a UMD global that only
+// exists once `prismjs`'s body has run.  This used to be guaranteed by
+// VisualizationView (which already imports `Prism from 'prismjs'`)
+// always evaluating before DataThread, but transitive import-graph
+// changes can flip that order — so DataThread must load core itself.
+import 'prismjs'
 import 'prismjs/components/prism-python' // Language
 import 'prismjs/components/prism-typescript' // Language
 import 'prismjs/themes/prism.css'; //Example style, you can use another
