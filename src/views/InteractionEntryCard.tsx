@@ -8,6 +8,7 @@ import { Box, Collapse, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import { AgentToyIcon, AgentToyVariant } from './AgentToyIcon';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
@@ -17,7 +18,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { InteractionEntry } from '../components/ComponentType';
-import { AgentIcon, TableIcon } from '../icons';
+import { AgentIcon } from '../icons';
 import { radius, borderColor } from '../app/tokens';
 
 /** Pick the icon component for a step line based on known prefixes. */
@@ -187,6 +188,13 @@ export function renderFieldHighlights(text: string, bgColor: string): React.Reac
     });
 }
 
+/** Strip `**field**` markers from text, leaving plain inline text. Used in
+ *  agent prose where the field-highlight chip is suppressed but the raw
+ *  markers should not leak through. */
+export function stripFieldMarkers(text: string): string {
+    return text.replace(/\*\*([^*]+)\*\*/g, '$1');
+}
+
 export interface InteractionEntryCardProps {
     entry: InteractionEntry;
     highlighted?: boolean;
@@ -207,21 +215,9 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     if (entry.from === 'user' && (entry.role === 'prompt' || entry.role === 'instruction')) {
         const palette = theme.palette.custom;
         const fieldBg = alpha(palette.main, 0.08);
-        const userInputTablesSuffix = entry.inputTableNames && entry.inputTableNames.length > 0 ? (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', mt: '2px' }}>
-                {entry.inputTableNames.map((name, idx) => (
-                    <React.Fragment key={name}>
-                        {idx > 0 && <Typography component="span" sx={{ fontSize: 9, color: theme.palette.text.disabled }}>,</Typography>}
-                        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                            <TableIcon sx={{ fontSize: 10, color: theme.palette.text.disabled }} />
-                            <Typography component="span" sx={{ fontSize: 9, color: theme.palette.text.disabled }}>
-                                {name}
-                            </Typography>
-                        </Box>
-                    </React.Fragment>
-                ))}
-            </Box>
-        ) : null;
+        // Provenance for multi-input derivations is rendered as a structural
+        // "merge node" in the timeline gutter (see DataThread), so the
+        // instruction card itself stays free of chip-strip chrome.
         return (
             <Box onClick={handleClick} sx={{
                 fontSize: '11px',
@@ -236,7 +232,6 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 <Typography component="div" sx={{ fontSize: 'inherit', color: 'inherit' }}>
                     {renderFieldHighlights(text, fieldBg)}
                 </Typography>
-                {userInputTablesSuffix}
             </Box>
         );
     }
@@ -245,6 +240,10 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
     // Unified collapsible rendering: collapsed shows short text, expand shows 💭 thinking + full text
     if (entry.from !== 'user') {
         const fieldBg = alpha(theme.palette.primary.main, 0.05);
+
+        const displayText = stripFieldMarkers(entry.role === 'instruction'
+            ? (entry.displayContent || entry.content)
+            : text);
 
         // Role-specific color: secondary for content, semantic colors for status
         let color: string;
@@ -255,12 +254,12 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 break;
             case 'clarify':
                 color = resolved ? theme.palette.text.secondary : theme.palette.warning.main;
-                if (resolved) collapsedLabel = t('interaction.askedForClarification');
+                if (resolved) collapsedLabel = (displayText || t('interaction.askedForClarification')).replace(/\s+/g, ' ').trim();
                 break;
             case 'explain': {
                 color = resolved ? theme.palette.text.secondary : theme.palette.info.main;
                 if (resolved) {
-                    collapsedLabel = t('interaction.gaveExplanation');
+                    collapsedLabel = (displayText || t('interaction.gaveExplanation')).replace(/\s+/g, ' ').trim();
                 }
                 // Active explain renders inline in the info color (same
                 // treatment as an active clarify) so it reads as primary
@@ -277,9 +276,6 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 color = theme.palette.text.secondary;
         }
 
-        const displayText = entry.role === 'instruction'
-            ? (entry.displayContent || entry.content)
-            : text;
         const hasPlan = !!entry.plan && entry.plan !== displayText;
 
         // Active clarify/explain entries are read in the ClarificationPanel
@@ -303,22 +299,24 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         const isCollapsible = hasPlan || !!collapsedLabel || canClampText;
         const [expanded, setExpanded] = useState(false);
 
-        // Render input table names suffix if available
-        const inputTablesSuffix = entry.inputTableNames && entry.inputTableNames.length > 0 ? (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px', mt: '2px' }}>
-                {entry.inputTableNames.map((name, idx) => (
-                    <React.Fragment key={name}>
-                        {idx > 0 && <Typography component="span" sx={{ fontSize: 9, color: theme.palette.text.disabled }}>,</Typography>}
-                        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                            <TableIcon sx={{ fontSize: 10, color: theme.palette.text.disabled }} />
-                            <Typography component="span" sx={{ fontSize: 9, color: theme.palette.text.disabled }}>
-                                {name}
-                            </Typography>
-                        </Box>
-                    </React.Fragment>
-                ))}
-            </Box>
-        ) : null;
+        // Provenance for multi-input derivations is rendered as a structural
+        // "merge node" in the timeline gutter (see DataThread), so the
+        // instruction card itself stays free of chip-strip chrome.
+
+        // Conversational agent entries (instruction / clarify / explain /
+        // summary) all read as "the agent talking" — wrap them in the same
+        // faint bg bubble so the agent column groups visually and alternates
+        // cleanly with the user's orange cards. No border (the toy icon +
+        // indentation already says it's the agent).
+        const isConversational = entry.role === 'instruction'
+            || entry.role === 'clarify'
+            || entry.role === 'explain'
+            || entry.role === 'summary';
+        const bubbleSx = isConversational ? {
+            py: 0.5, px: 1,
+            borderRadius: radius.sm,
+            backgroundColor: alpha(theme.palette.text.secondary, 0.04),
+        } : {};
 
         return (
             <Box
@@ -328,11 +326,15 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                     // refocus — show pointer here too so the affordance
                     // reads consistently across icon, gutter, and text.
                     cursor: (isCollapsible || isActiveAgentPause) ? 'pointer' : 'default',
-                    ...(isCollapsible ? {
+                    ...bubbleSx,
+                    ...(isCollapsible && !isConversational ? {
                         borderRadius: '4px',
                         px: '2px',
                         mx: '-2px',
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
+                    } : {}),
+                    ...(isCollapsible && isConversational ? {
+                        '&:hover': { backgroundColor: alpha(theme.palette.text.secondary, 0.07) },
                     } : {}),
                 }}
                 onClick={() => isCollapsible && setExpanded(!expanded)}
@@ -349,13 +351,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                     {hasPlan && <Box sx={{ borderBottom: `1px solid ${borderColor.component}`, my: '2px' }} />}
                     {collapsedLabel && (
                         <Typography component="div" sx={{
-                            fontSize: '10px',
+                            fontSize: '11px',
                             color,
                             py: '1px',
                         }}>
-                            {entry.role === 'instruction' || entry.role === 'explain'
-                                ? renderFieldHighlights(displayText, fieldBg)
-                                : displayText}
+                            {displayText}
                         </Typography>
                     )}
                 </Collapse>
@@ -363,21 +363,24 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 {collapsedLabel ? (
                     !expanded && (
                         <Typography component="div" sx={{
-                            fontSize: '10px',
-                            color: theme.palette.text.disabled,
-                            fontStyle: 'italic',
+                            fontSize: '11px',
+                            color: theme.palette.text.secondary,
                             py: '1px',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
                         }}>
                             {collapsedLabel}
                         </Typography>
                     )
                 ) : entry.role === 'summary' ? (
-                    <Box sx={{ fontSize: '10px', py: '1px' }}>
+                    <Box sx={{ fontSize: '11px', py: '1px' }}>
                         <CompactMarkdown content={displayText} color={color} />
                     </Box>
                 ) : (
                     <Typography component="div" sx={{
-                        fontSize: '10px',
+                        fontSize: '11px',
                         color,
                         py: '1px',
                         ...((forceClampText || (canClampText && !expanded)) ? {
@@ -391,18 +394,15 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                             <Box component="span" sx={{
                                 display: 'inline',
                                 fontWeight: 600,
-                                fontSize: '9px',
+                                fontSize: '10px',
                                 mr: '4px',
                             }}>
                                 ({t('interaction.clarificationNeeded')})
                             </Box>
                         )}
-                        {entry.role === 'instruction' || entry.role === 'explain'
-                            ? renderFieldHighlights(displayText, fieldBg)
-                            : displayText}
+                        {displayText}
                     </Typography>
                 )}
-                {inputTablesSuffix}
             </Box>
         );
     }
@@ -422,14 +422,25 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
 
 /** Returns the appropriate gutter icon for an InteractionEntry. */
 export function getEntryGutterIcon(entry: InteractionEntry, color: string): React.ReactNode {
-    const iconSx = { width: 14, height: 14, color };
+    const iconSx = { width: 18, height: 18, color };
     if (entry.from === 'user') {
         return <PersonIcon sx={iconSx} />;
     }
-    return <SmartToyOutlinedIcon sx={iconSx} />;
+    // Pick a role-specific variant of the agent toy so the gutter conveys
+    // state at a glance (thinking / summary / clarify / explain).
+    const variant: AgentToyVariant = (() => {
+        switch (entry.role) {
+            case 'clarify': return 'clarify';
+            case 'explain': return 'explain';
+            case 'summary': return 'summary';
+            case 'instruction': return 'thinking';
+            default: return 'default';
+        }
+    })();
+    return <AgentToyIcon variant={variant} sx={iconSx} />;
 }
 
 /** Returns the appropriate gutter icon when no entry is available (fallback). */
 export function getDefaultGutterIcon(color: string): React.ReactNode {
-    return <AgentIcon sx={{ width: 14, height: 14, color }} />;
+    return <AgentIcon sx={{ width: 18, height: 18, color }} />;
 }

@@ -89,6 +89,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
+import CallMergeIcon from '@mui/icons-material/CallMerge';
 
 import { ViewBorderStyle, ComponentBorderStyle, transition, radius, borderColor } from '../app/tokens';
 
@@ -1119,8 +1120,17 @@ let SingleThreadGroupView: FC<{
     });
 
     // Build a flat sequence of timeline items: [trigger, table, charts, trigger, table, charts, ...]
-    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string };
+    type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string };
     let timelineItems: TimelineItem[] = [];
+
+    // Provenance tracker: the set of source-table names currently in scope for
+    // this thread. A merge node is emitted whenever an instruction's input
+    // table set differs from this — covering joins (set grows), narrowings
+    // (set shrinks), and substitutions (set changes). Initialised to the
+    // thread's anchor table so the first derivation against it is silent.
+    const sourceSetKey = (names: string[]): string => [...names].sort().join('\x1F');
+    const initialAnchorName = parentTable?.displayId || parentTable?.id;
+    let prevSourceKey: string | null = initialAnchorName ? sourceSetKey([initialAnchorName]) : null;
 
     // ── Shared helpers for building timeline items from interaction entries ──
 
@@ -1175,6 +1185,42 @@ let SingleThreadGroupView: FC<{
                 interactionEntry: entry,
                 ...extraProps,
             });
+
+            // Emit a structural "merge node" between the instruction and its
+            // result table whenever the set of source tables CHANGES from the
+            // previously-active set in this thread — covers joining-in new
+            // sources, narrowing the set, or substituting one source for
+            // another. Repeated derivations against the same source set stay
+            // silent (no chrome).
+            const mergeNames = enrichedEntry.inputTableNames;
+            if (entry.role === 'instruction' && mergeNames && mergeNames.length > 0) {
+                const nextKey = sourceSetKey(mergeNames);
+                if (nextKey !== prevSourceKey) {
+                    const mergeColor = highlighted ? theme.palette.primary.main : theme.palette.text.secondary;
+                    timelineItems.push({
+                        key: `${keyPrefix}-merge-${tableId}-${ei}`,
+                        type: 'merge',
+                        highlighted,
+                        element: (
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '6px', rowGap: 0, color: mergeColor, fontSize: '11px' }}>
+                                <Typography component="span" sx={{ fontSize: 'inherit', color: 'inherit' }}>
+                                    {t('dataThread.usingSources')}
+                                </Typography>
+                                {mergeNames.map((name, idx) => (
+                                    <Box key={`${name}-${idx}`} component="span" sx={{ display: 'inline-flex', alignItems: 'center', columnGap: '3px' }}>
+                                        <TableIcon sx={{ fontSize: '11px', color: 'inherit' }} />
+                                        <Typography component="span" sx={{ fontSize: 'inherit', color: 'inherit' }}>
+                                            {name}
+                                        </Typography>
+                                    </Box>
+                                ))}
+                            </Box>
+                        ),
+                        ...extraProps,
+                    });
+                    prevSourceKey = nextKey;
+                }
+            }
         }
     };
 
@@ -1661,6 +1707,7 @@ let SingleThreadGroupView: FC<{
         const isTrigger = item.type === 'trigger' || item.type === 'leaf-trigger';
         const isTable = item.type === 'table' || item.type === 'leaf-table' || item.type === 'used-table';
         const isChart = item.type === 'chart';
+        const isMerge = item.type === 'merge';
         const dashedColor = item.highlighted ? alpha(theme.palette.primary.main, 0.6) : 'rgba(0,0,0,0.1)';
         const dashedWidth = '2px';
         const dashedStyle = 'solid';
@@ -1671,6 +1718,32 @@ let SingleThreadGroupView: FC<{
         const bottomDashedStyle = 'solid';
         // No dimming or background — rely on timeline color + card border for highlighting
         const rowHighlightSx = {};
+
+        // Merge nodes: a confluence glyph in the gutter + inline list of
+        // joined source tables. Communicates provenance changes (join, narrow,
+        // or substitute) — rendered with stronger weight than ambient chrome
+        // since it conveys meaningful lineage information.
+        if (isMerge) {
+            return (
+                <Box key={`timeline-row-${item.key}`} sx={{ display: 'flex', flexDirection: 'row', position: 'relative', ...rowHighlightSx }}>
+                    <Box sx={{
+                        width: TIMELINE_WIDTH, flexShrink: 0,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    }}>
+                        <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${dashedWidth} ${dashedStyle} ${dashedColor}` }} />
+                        <Box sx={{ flexShrink: 0, zIndex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'white' }}>
+                            <CallMergeIcon sx={{ fontSize: 12, color: item.highlighted ? theme.palette.primary.main : 'rgba(0,0,0,0.15)', transform: 'rotate(180deg)' }} />
+                        </Box>
+                        {!isLast && <Box sx={{ width: 0, flex: '1 1 0', minHeight: 2, borderLeft: `${bottomDashedWidth} ${bottomDashedStyle} ${bottomDashedColor}` }} />}
+                        {isLast && hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2, ...dashedLineSx }} />}
+                        {isLast && !hasContinuationBelow && <Box sx={{ flex: '1 1 0', minHeight: 2 }} />}
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0, py: '4px', pl: TIMELINE_GAP, display: 'flex', alignItems: 'center' }}>
+                        {item.element}
+                    </Box>
+                </Box>
+            );
+        }
 
         // Triggers: icon based on interaction entry's `from` actor
         if (isTrigger) {

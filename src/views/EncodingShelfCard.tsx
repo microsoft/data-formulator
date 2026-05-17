@@ -331,13 +331,6 @@ const STYLE_PRESETS: StylePreset[] = [
             'Restyle this chart in the FiveThirtyEight (538) blog style.',
     },
     {
-        key: 'minimal',
-        label: 'Minimal',
-        description: 'Clean and pared-back',
-        instruction:
-            'Restyle this chart in a minimal, pared-back modernist style.',
-    },
-    {
         key: 'dark',
         label: 'Dark Mode',
         description: 'Dark theme',
@@ -350,6 +343,13 @@ const STYLE_PRESETS: StylePreset[] = [
         description: 'Optimized for slides',
         instruction:
             'Restyle this chart for a slide-deck presentation, optimized for being viewed at a distance.',
+    },
+    {
+        key: 'comic',
+        label: 'Comic',
+        description: 'Hand-drawn comic book look',
+        instruction:
+            'Restyle this chart in a comic style.',
     },
 ];
 
@@ -1271,8 +1271,8 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }}>
             {/* Left group: one-click style presets. Clicking the palette
                 icon opens a menu of curated "style sheets" (NYT, Economist,
-                FiveThirtyEight, minimal, dark mode, presentation). Each
-                preset sends a detailed style instruction straight to the
+                FiveThirtyEight, minimal, dark mode, presentation, comic).
+                Each preset sends a detailed style instruction straight to the
                 restyle agent — bypassing the intent classifier since these
                 are guaranteed style-only changes. The user can still type
                 freeform instructions in the textbox above; the menu's

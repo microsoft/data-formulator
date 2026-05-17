@@ -416,6 +416,7 @@
     "threadIndex": "线程 - {{index}}",
     "continuedFromAbove": "续上",
     "continuesBelow": "续下",
+    "usingSources": "使用",
     "hmm": "嗯...",
     "oops": "出错了...",
     "completed": "已完成",

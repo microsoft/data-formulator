@@ -135,7 +135,7 @@ export interface DataFormulatorState {
     /** User-added models, persisted across browser sessions. */
     models: ModelConfig[];
     selectedModelId: string | undefined;
-    testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}[];
+    testedModels: {id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}[];
 
     tables : DictTable[];
     draftNodes: DraftNode[];
@@ -710,7 +710,7 @@ export const dataFormulatorSlice = createSlice({
                 try { localStorage.removeItem('df_selected_model'); } catch { /* */ }
             }
         },
-        updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown' | 'configured', message: string}>) => {
+        updateModelStatus: (state, action: PayloadAction<{id: string, status: 'ok' | 'error' | 'testing' | 'unknown', message: string}>) => {
             let id = action.payload.id;
             let status = action.payload.status;
             let message = action.payload.message;
@@ -1588,20 +1588,18 @@ export const dataFormulatorSlice = createSlice({
         })
         .addCase(fetchGlobalModelList.fulfilled, (state, action) => {
             // Populate globalModels so the UI renders every configured model
-            // immediately.  Status starts as "unknown"; the user can click
-            // "Test" to verify connectivity, or errors surface on first use.
+            // immediately. Server-configured models are trusted by default:
+            // they start as "unknown" and are selectable without a connectivity
+            // check. Users can click "Test" to verify manually if they want.
             const models: ModelConfig[] = action.payload;
             state.globalModels = models;
 
-            // Reset all global model statuses to "configured" on every app start.
-            // "configured" means: admin has set this up in .env, ready to use,
-            // but connectivity has not been verified this session.
-            // testedModels is persisted by redux-persist, so without this reset
-            // stale "ok" statuses from a previous session would linger.
-            // User-added model test results are preserved.
+            // Reset stale global model statuses on every app start so a previous
+            // session's "ok"/"error" doesn't linger. User-added model test
+            // results are preserved.
             const globalIds = new Set(models.map(m => m.id));
             state.testedModels = [
-                ...models.map(m => ({ id: m.id, status: 'configured' as const, message: '' })),
+                ...models.map(m => ({ id: m.id, status: 'unknown' as const, message: '' })),
                 ...state.testedModels.filter(t => !globalIds.has(t.id)),
             ];
 
@@ -1631,7 +1629,7 @@ export const dataFormulatorSlice = createSlice({
             state.testedModels = [
                 ...serverModels.map(m => ({
                     id: m.id,
-                    status: (m.status === 'connected' ? 'ok' : 'error') as 'ok' | 'error' | 'testing' | 'unknown' | 'configured',
+                    status: (m.status === 'connected' ? 'ok' : 'error') as 'ok' | 'error' | 'testing' | 'unknown',
                     message: m.error ?? '',
                 })),
                 ...state.testedModels.filter(t => !serverModels.some(m => m.id === t.id)),
@@ -1652,7 +1650,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.testedModels = state.testedModels.map(model =>
                 model.status === 'testing'
-                    ? { ...model, status: 'configured' as const, message: '' }
+                    ? { ...model, status: 'unknown' as const, message: '' }
                     : model
             );
             state.messages.push({

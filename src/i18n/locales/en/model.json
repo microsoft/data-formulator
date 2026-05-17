@@ -46,9 +46,13 @@
     "openaiProviderTip": "Use openai provider for OpenAI-compatible APIs.",
     "loadingModels": "Loading models...",
     "serverManaged": "Server managed",
+    "serverChip": "server configured",
+    "serverConfigured": "server configured",
+    "serverManagedTooltip": "Managed by administrator",
     "serverManagedSection": "Server configured models",
     "serverManagedReadonly": "Read-only",
     "userManagedSection": "My models",
+    "testing": "Testing…",
     "configured": "Configured",
     "configuredMessage": "Server configured, click to verify connectivity"
   }
