@@ -49,9 +49,9 @@ class TestModelNamePrefixing:
         c = Client("ollama", "ollama/llama3", api_base="http://localhost:11434")
         assert c.model == "ollama/llama3"
 
-    def test_openai_model_unchanged(self):
+    def test_openai_model_prefixed(self):
         c = Client("openai", "gpt-4o", api_key="k")
-        assert c.model == "gpt-4o"
+        assert c.model == "openai/gpt-4o"
 
 
 # ---------------------------------------------------------------------------
@@ -213,14 +213,14 @@ class TestFromConfig:
         cfg = {"endpoint": "openai", "model": "gpt-4o", "api_key": "mykey"}
         c = Client.from_config(cfg)
         assert c.endpoint == "openai"
-        assert c.model == "gpt-4o"
+        assert c.model == "openai/gpt-4o"
         assert c.params["api_key"] == "mykey"
 
     def test_strips_whitespace_from_values(self):
         cfg = {"endpoint": "  openai  ", "model": "  gpt-4o  ", "api_key": "  key  "}
         c = Client.from_config(cfg)
         assert c.endpoint == "openai"
-        assert c.model == "gpt-4o"
+        assert c.model == "openai/gpt-4o"
         assert c.params["api_key"] == "key"
 
     def test_optional_fields_absent_when_empty(self):
