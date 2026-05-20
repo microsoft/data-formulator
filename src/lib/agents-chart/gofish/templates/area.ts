@@ -10,7 +10,7 @@
  *     chart(select("points")).mark(area({opacity: 0.8})),
  *   ])
  *
- * Multi-series (stacked area) also needs group() — marked TODO.
+ * Multi-series (stacked area) uses group() for per-series area rendering.
  */
 
 import { ChartTemplateDef } from '../../core/types';

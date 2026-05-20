@@ -114,7 +114,7 @@ def build_language_instruction(language: str, *, mode: str = "full") -> str:
 
     Returns ``""`` when *language* is ``"en"`` (or empty / unrecognised).
     """
-    lang = (language or DEFAULT_LANGUAGE).strip().lower()
+    lang = ((language or "").strip().lower()) or DEFAULT_LANGUAGE
 
     if lang == "en":
         return ""

@@ -74,7 +74,7 @@ class SortDataAgent(object):
 
         input_obj = {
             'name': name,
-            'value': values
+            'values': values
         }
 
         user_query = f"[INPUT]\n\n{json.dumps(input_obj, ensure_ascii=False)}\n\n[OUTPUT]"
