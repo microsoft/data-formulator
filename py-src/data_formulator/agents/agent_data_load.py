@@ -3,6 +3,7 @@
 
 import json
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.agents.semantic_types import (
@@ -12,6 +13,8 @@ from data_formulator.agents.semantic_types import (
 import logging
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "data_load"
 
 
 SYSTEM_PROMPT = '''You are a data scientist to help user infer data types based off the table provided by the user.
@@ -199,7 +202,7 @@ class DataLoadAgent(object):
         messages = [{"role":"system", "content": self.system_prompt},
                     {"role":"user","content": user_query}]
         
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
 
         candidates = []
         for choice in response.choices:

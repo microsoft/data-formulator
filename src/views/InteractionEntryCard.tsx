@@ -39,7 +39,8 @@ export const getStepIconComponent = (line: string) => {
 const PlanStepItem: React.FC<{
     step: string;
     showShimmer: boolean;
-}> = ({ step, showShimmer }) => {
+    trailing?: React.ReactNode;
+}> = ({ step, showShimmer, trailing }) => {
     const [expanded, setExpanded] = useState(false);
     const isChecked = step.startsWith('✓');
     const isFailed = step.startsWith('✗');
@@ -88,6 +89,7 @@ const PlanStepItem: React.FC<{
             }}>
                 {displayLine}
             </Typography>
+            {trailing}
         </Box>
     );
 };
@@ -99,7 +101,9 @@ export const PlanStepsView: React.FC<{
     steps: string[];
     activeLastStep?: boolean;
     filterCreatingChart?: boolean;
-}> = ({ steps, activeLastStep = false, filterCreatingChart = false }) => {
+    /** Inline node appended after the text of the last (active) step — used for live timers. */
+    trailing?: React.ReactNode;
+}> = ({ steps, activeLastStep = false, filterCreatingChart = false, trailing }) => {
     const filtered = filterCreatingChart
         ? steps.filter(l => {
             const stripped = l.startsWith('✓') ? l.slice(2) : l;
@@ -114,7 +118,7 @@ export const PlanStepsView: React.FC<{
                 const isLast = idx === filtered.length - 1;
                 const isChecked = step.startsWith('✓');
                 const showShimmer = activeLastStep && isLast && !isChecked;
-                return <PlanStepItem key={idx} step={step} showShimmer={showShimmer} />;
+                return <PlanStepItem key={idx} step={step} showShimmer={showShimmer} trailing={isLast ? trailing : undefined} />;
             })}
         </Box>
     );
@@ -224,6 +228,9 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 color: theme.palette.text.primary,
                 py: 0.5, px: 1,
                 borderRadius: radius.sm,
+                // Keep the user card visually weighted (full bgcolor tint) —
+                // user prompts/instructions are the anchors of the thread,
+                // so they should read stronger than the agent's bubbles.
                 backgroundColor: palette.bgcolor,
                 border: `1px solid ${borderColor.component}`,
                 ...(highlighted ? { borderLeft: `2px solid ${palette.main}` } : {}),
@@ -267,7 +274,7 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                 break;
             }
             case 'summary':
-                color = theme.palette.text.secondary;
+                color = theme.palette.text.primary;
                 break;
             case 'error':
                 color = theme.palette.error.main;
@@ -304,18 +311,33 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
         // instruction card itself stays free of chip-strip chrome.
 
         // Conversational agent entries (instruction / clarify / explain /
-        // summary) all read as "the agent talking" — wrap them in the same
-        // faint bg bubble so the agent column groups visually and alternates
-        // cleanly with the user's orange cards. No border (the toy icon +
-        // indentation already says it's the agent).
+        // summary) all read as "the agent talking" — wrap them in a bordered
+        // bubble matching the user's instruction card so the timeline reads
+        // as a sibling pair of cards. Active clarify/explain and error keep
+        // their semantic color via a left-border accent rather than a
+        // tinted fill. `summary` entries are the agent's findings/conclusions,
+        // so they get a distinct soft info-tinted fill (boxed color only —
+        // same border/shape as other bubbles) to read as "insight" rather
+        // than "in-progress discussion".
         const isConversational = entry.role === 'instruction'
             || entry.role === 'clarify'
             || entry.role === 'explain'
             || entry.role === 'summary';
+        const accentColor: string | null = entry.role === 'error'
+            ? theme.palette.error.main
+            : (entry.role === 'clarify' && !resolved) ? theme.palette.warning.main
+            : (entry.role === 'explain' && !resolved) ? theme.palette.info.main
+            : null;
+        const isSummary = entry.role === 'summary';
+        const bubbleBg = isSummary
+            ? alpha(theme.palette.info.main, 0.05)
+            : alpha(theme.palette.text.secondary, 0.025);
         const bubbleSx = isConversational ? {
             py: 0.5, px: 1,
             borderRadius: radius.sm,
-            backgroundColor: alpha(theme.palette.text.secondary, 0.04),
+            backgroundColor: bubbleBg,
+            border: `1px solid ${borderColor.component}`,
+            ...(accentColor ? { borderLeft: `2px solid ${accentColor}` } : {}),
         } : {};
 
         return (
@@ -334,7 +356,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         '&:hover': { backgroundColor: 'rgba(0,0,0,0.03)' },
                     } : {}),
                     ...(isCollapsible && isConversational ? {
-                        '&:hover': { backgroundColor: alpha(theme.palette.text.secondary, 0.07) },
+                        '&:hover': {
+                            backgroundColor: isSummary
+                                ? alpha(theme.palette.info.main, 0.09)
+                                : alpha(theme.palette.text.secondary, 0.05),
+                        },
                     } : {}),
                 }}
                 onClick={() => isCollapsible && setExpanded(!expanded)}

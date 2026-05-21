@@ -160,8 +160,6 @@ export const ChartRenderService: FC = () => {
                     chart, visTableRows, table.metadata, items,
                 );
                 fullSpec.data = { values: variantValues };
-                fullSpec.width = FULL_WIDTH;
-                fullSpec.height = FULL_HEIGHT;
             } else {
                 fullSpec = assembleVegaChart(
                     chart.chartType,

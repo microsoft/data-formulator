@@ -19,11 +19,14 @@ import re
 
 import pandas as pd
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_data_clean_stream import parse_table_sections
 from data_formulator.agents.agent_utils import accumulate_reasoning_content
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "data_loading_chat"
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +508,7 @@ class DataLoadingAgent:
     def _call_llm(self, messages, stream=True):
         """Call the LLM with tool definitions."""
         return self.client.get_completion_with_tools(
-            messages, tools=TOOLS, stream=stream, reasoning_effort="high",
+            messages, tools=TOOLS, stream=stream, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
         )
 
     # ------------------------------------------------------------------

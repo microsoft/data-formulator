@@ -623,8 +623,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }
 
             // ── tool_start: agent is calling a tool (explore/inspect) ──
-            // (think tool is handled via thinking_text event, not here)
-            if (result.type === "tool_start" && result.tool !== "think") {
+            if (result.type === "tool_start") {
                 // Show pending thought as a visible step before the tool step
                 if (pendingThought) {
                     thinkingSteps.push(pendingThought);
@@ -654,8 +653,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             }
 
             // ── tool_result: mark the last tool step as done ──
-            // (skip for think tool — it doesn't add steps)
-            if (result.type === "tool_result" && result.tool !== "think") {
+            if (result.type === "tool_result") {
                 const isError = result.status === "error" || !!result.error;
                 for (let i = thinkingSteps.length - 1; i >= 0; i--) {
                     if (!thinkingSteps[i].startsWith('✓') && !thinkingSteps[i].startsWith('✗')) {

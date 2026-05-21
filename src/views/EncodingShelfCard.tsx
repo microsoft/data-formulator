@@ -485,7 +485,11 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     useEffect(() => {
         if (!isLoadingIdeas) { setIdeaElapsed(0); return; }
-        const timer = setInterval(() => setIdeaElapsed(e => e + 1), 1000);
+        // Tick once per second — fast enough to read as live, slow enough to
+        // stay readable; the loading indicator carries the liveness cue.
+        // Anchor to a start timestamp to avoid float drift.
+        const t0 = Date.now();
+        const timer = setInterval(() => setIdeaElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
         return () => clearInterval(timer);
     }, [isLoadingIdeas]);
     

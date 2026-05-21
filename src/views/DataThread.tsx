@@ -99,17 +99,69 @@ import { InteractionEntryCard, getEntryGutterIcon, getDefaultGutterIcon, PlanSte
 /** Pick the icon component for a step line based on known prefixes. */
 // Re-exported from InteractionEntryCard — kept here for backward compat with gutter icon logic
 
-/** Render a multi-step thinking banner as a single block with sectioned steps. */
-export const ThinkingStepsBanner = (steps: string[], sx?: SxProps) => {
+/** Live elapsed-time hint in whole seconds (`5s`, `12s`).
+ *  Ticks once per second — fast enough to read as live, slow enough that the
+ *  digit stays readable and doesn't pull peripheral attention. Liveness is
+ *  also conveyed by the banner's shimmer animation.
+ *  When `startTime` is omitted, anchors to the component's mount time —
+ *  useful for places where we don't have a meaningful upstream anchor.
+ *  When `resetKey` changes (e.g. the active step transitions from "thinking"
+ *  to "running code"), the anchor is reset to *now* so the timer reflects
+ *  the duration of the **current** action rather than the cumulative wait. */
+const LiveStatus: React.FC<{ startTime?: number; resetKey?: string }> = ({ startTime, resetKey }) => {
+    const anchorRef = useRef(startTime ?? Date.now());
+    const lastResetKeyRef = useRef(resetKey);
+    if (startTime != null && anchorRef.current !== startTime && resetKey === lastResetKeyRef.current) {
+        anchorRef.current = startTime;
+    }
+    if (resetKey !== lastResetKeyRef.current) {
+        anchorRef.current = Date.now();
+        lastResetKeyRef.current = resetKey;
+    }
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const id = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(id);
+    }, []);
+    const secs = Math.max(0, Math.floor((now - anchorRef.current) / 1000));
+    const label = secs < 60
+        ? `${secs}s`
+        : `${Math.floor(secs / 60)}m${secs % 60}s`;
     return (
-        <Box sx={sx}>
-            <PlanStepsView steps={steps} activeLastStep />
+        <Typography component="span" sx={{
+            fontSize: 10,
+            color: 'text.disabled',
+            fontVariantNumeric: 'tabular-nums',
+            ml: '6px',
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+        }}>
+            {label}
+        </Typography>
+    );
+};
+
+/** Render a multi-step thinking banner as a single block with sectioned steps.
+ *  When `startTime` is provided, the live timer is appended *inline* next to
+ *  the active (last) step's text — same alignment grammar as the single-line
+ *  ThinkingBanner — rather than right-flushed in a separate column.
+ *  The timer resets whenever the active step changes so it shows the time
+ *  spent on the **current** action, not the cumulative wait. */
+export const ThinkingStepsBanner = (steps: string[], sx?: SxProps, startTime?: number) => {
+    const activeStep = steps.length > 0 ? steps[steps.length - 1] : '';
+    return (
+        <Box sx={{ ...sx }}>
+            <PlanStepsView
+                steps={steps}
+                activeLastStep
+                trailing={startTime != null ? <LiveStatus startTime={startTime} resetKey={activeStep} /> : undefined}
+            />
         </Box>
     );
 };
 
 /** Simple single-message thinking banner (used when no step breakdown is available). */
-export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = true) => {
+export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = true, showTimer: boolean = false, startTime?: number) => {
     return (
         <Box sx={{
             display: 'flex', alignItems: 'center', gap: '4px',
@@ -133,6 +185,7 @@ export const ThinkingBanner = (message: string, sx?: SxProps, active: boolean = 
             <Typography variant="body2" sx={{ fontSize: 10, color: 'text.secondary' }}>
                 {message}
             </Typography>
+            {showTimer && <LiveStatus startTime={startTime} resetKey={message} />}
         </Box>
     );
 };
@@ -1123,14 +1176,40 @@ let SingleThreadGroupView: FC<{
     type TimelineItem = { key: string; element: React.ReactNode; type: 'used-table' | 'trigger' | 'table' | 'chart' | 'leaf-trigger' | 'leaf-table' | 'report' | 'merge'; highlighted: boolean; tableId?: string; chartType?: string; isRunning?: boolean; isClarifying?: boolean; isCompleted?: boolean; interactionEntry?: InteractionEntry; reportId?: string; stepLabel?: string };
     let timelineItems: TimelineItem[] = [];
 
-    // Provenance tracker: the set of source-table names currently in scope for
+    // Each running/clarifying draft should produce at most ONE banner per
+    // render pass. The same draft can be reachable from multiple
+    // pushAgentDraftItems call sites (the trigger-table loop *and* the
+    // leaf-table loop both call it for whichever tableId they're rendering),
+    // and after a `visualize` event the draft's `trigger.tableId` flips to
+    // the freshly-created child — which is then visited again as a leaf,
+    // so without deduping we get a duplicate "working..." banner.
+    const renderedDraftIds = new Set<string>();
+
+    // Provenance tracker: the set of source-table IDs currently in scope for
     // this thread. A merge node is emitted whenever an instruction's input
     // table set differs from this — covering joins (set grows), narrowings
     // (set shrinks), and substitutions (set changes). Initialised to the
-    // thread's anchor table so the first derivation against it is silent.
-    const sourceSetKey = (names: string[]): string => [...names].sort().join('\x1F');
-    const initialAnchorName = parentTable?.displayId || parentTable?.id;
-    let prevSourceKey: string | null = initialAnchorName ? sourceSetKey([initialAnchorName]) : null;
+    // **root computation parents** of the thread's anchor so the first
+    // derivation against the same roots stays silent.
+    //
+    // We compare on table IDs rather than display names: names are derived
+    // from `displayId || stripExt(sid)` and can drift between sides.
+    //
+    // Why "root parents" instead of `parentTable.id`: `derive.source`
+    // contains *root/anchored* table IDs (computation parents), while
+    // `parentTable` may itself be a derived intermediate. Comparing the
+    // intermediate's own id against an instruction's root-id source set
+    // would always mismatch and emit a redundant merge node on the very
+    // first derivation in the thread.
+    const sourceSetKey = (ids: string[]): string => [...ids].sort().join('\x1F');
+    const initialSourceIds: string[] = (() => {
+        if (!parentTable) return [];
+        // If parentTable is a root (no derive) or anchored, it IS the source.
+        const src = parentTable.derive?.source as string[] | undefined;
+        if (!src || src.length === 0) return [parentTable.id];
+        return src;
+    })();
+    let prevSourceKey: string | null = initialSourceIds.length > 0 ? sourceSetKey(initialSourceIds) : null;
 
     // ── Shared helpers for building timeline items from interaction entries ──
 
@@ -1192,9 +1271,24 @@ let SingleThreadGroupView: FC<{
             // sources, narrowing the set, or substituting one source for
             // another. Repeated derivations against the same source set stay
             // silent (no chrome).
+            //
+            // Compare on table IDs (from `derive.source`) for stability;
+            // names are only used for display.
             const mergeNames = enrichedEntry.inputTableNames;
-            if (entry.role === 'instruction' && mergeNames && mergeNames.length > 0) {
-                const nextKey = sourceSetKey(mergeNames);
+            const mergeIds = derivedTable?.derive?.source as string[] | undefined;
+            if (entry.role === 'instruction' && mergeNames && mergeNames.length > 0 && mergeIds && mergeIds.length > 0) {
+                const nextKey = sourceSetKey(mergeIds);
+                // eslint-disable-next-line no-console
+                console.log('[merge-node check]', {
+                    tableId,
+                    parentTableId: parentTable?.id,
+                    initialSourceIds,
+                    prevSourceKey,
+                    mergeIds,
+                    mergeNames,
+                    nextKey,
+                    fires: nextKey !== prevSourceKey,
+                });
                 if (nextKey !== prevSourceKey) {
                     const mergeColor = highlighted ? theme.palette.primary.main : theme.palette.text.secondary;
                     timelineItems.push({
@@ -1253,6 +1347,18 @@ let SingleThreadGroupView: FC<{
             isRunning: boolean,
             keyPrefix: string,
         ) => {
+            // For the live banner, anchor elapsed-time to the most recent
+            // user-side entry so resuming after a clarify resets the counter
+            // (the agent's *current* cycle started then, not the original
+            // prompt). Falls back to the first interaction timestamp.
+            const lastUserTs = (() => {
+                for (let i = interaction.length - 1; i >= 0; i--) {
+                    if (interaction[i].from === 'user' && interaction[i].timestamp) {
+                        return interaction[i].timestamp as number;
+                    }
+                }
+                return interaction[0]?.timestamp;
+            })();
             const pauseIdx = interaction.findIndex(e => e.role === 'clarify' || e.role === 'explain');
             if (pauseIdx < 0) {
                 // No pause — render all entries then ThinkingStepsBanner
@@ -1263,7 +1369,7 @@ let SingleThreadGroupView: FC<{
                     type: triggerType,
                     highlighted,
                     isRunning,
-                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }),
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, isRunning ? lastUserTs : undefined),
                 });
                 return;
             }
@@ -1303,13 +1409,17 @@ let SingleThreadGroupView: FC<{
                     type: triggerType,
                     highlighted,
                     isRunning: true,
-                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }),
+                    element: ThinkingStepsBanner(planLines, { px: 1, py: 0.5 }, lastUserTs),
                 });
             }
         };
 
         if (runningAgentTableIds.has(tableId)) {
             const runningDraft = draftNodes.find(d => d.derive?.status === 'running' && d.derive.trigger.tableId === tableId);
+            if (runningDraft && renderedDraftIds.has(runningDraft.id)) {
+                return;
+            }
+            if (runningDraft) renderedDraftIds.add(runningDraft.id);
             const draftInteraction = runningDraft?.derive?.trigger?.interaction;
             if (draftInteraction && draftInteraction.length > 0) {
                 renderSplitByClarity(
@@ -1326,11 +1436,15 @@ let SingleThreadGroupView: FC<{
                     type: 'chart',
                     highlighted,
                     isRunning: true,
-                    element: ThinkingBanner(message, { px: 1, py: 0.5 }),
+                    element: ThinkingBanner(message, { px: 1, py: 0.5 }, true, true),
                 });
             }
         } else if (clarifyAgentTableIds.has(tableId)) {
             const clarifyDraft = draftNodes.find(d => d.derive?.status === 'clarifying' && d.derive.trigger.tableId === tableId);
+            if (clarifyDraft && renderedDraftIds.has(clarifyDraft.id)) {
+                return;
+            }
+            if (clarifyDraft) renderedDraftIds.add(clarifyDraft.id);
             const clarifyInteraction = clarifyDraft?.derive?.trigger?.interaction;
             if (clarifyInteraction && clarifyInteraction.length > 0) {
                 renderSplitByClarity(

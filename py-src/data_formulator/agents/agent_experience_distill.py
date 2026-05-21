@@ -20,9 +20,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.client_utils import Client
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "experience_distill"
 
 
 SYSTEM_PROMPT = """\
@@ -384,7 +387,7 @@ class ExperienceDistillAgent:
     def _call_llm(self, messages: list[dict]) -> str:
         """Single LLM call to generate the experience document."""
         resp = self.client.get_completion(
-            messages, reasoning_effort="high", timeout=self.timeout_seconds,
+            messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model), timeout=self.timeout_seconds,
         )
         return resp.choices[0].message.content or ""
 

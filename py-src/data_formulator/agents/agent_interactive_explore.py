@@ -7,6 +7,7 @@ import time
 
 import pandas as pd
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import (
     attach_reasoning_content,
     extract_json_objects,
@@ -20,6 +21,8 @@ from data_formulator.agents.context import (
 )
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "interactive_explore"
 
 # ── Tool definition (inspect only) ────────────────────────────────────────
 
@@ -223,7 +226,7 @@ class InteractiveExploreAgent(object):
 
         # ── Stream the final response ─────────────────────────────────
         try:
-            stream = self.client.get_completion(messages=messages, stream=True)
+            stream = self.client.get_completion(messages=messages, stream=True, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         except Exception as e:
             # If image fails, retry without it
             if current_chart:
@@ -336,5 +339,5 @@ class InteractiveExploreAgent(object):
     def _call_llm_with_tools(self, messages, tools):
         """Non-streaming LLM call with tool definitions."""
         return self.client.get_completion_with_tools(
-            messages, tools=tools, reasoning_effort="high",
+            messages, tools=tools, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
         )

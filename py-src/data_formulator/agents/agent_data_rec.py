@@ -4,6 +4,7 @@
 import json
 import time
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, generate_data_summary, supplement_missing_block, ensure_output_variable_in_code
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.datalake.parquet_utils import df_to_safe_records
@@ -14,6 +15,8 @@ import pandas as pd
 import logging
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "data_rec"
 
 # =============================================================================
 # Shared prompt sections  (imported by DataTransformationAgent)
@@ -462,7 +465,7 @@ class DataRecAgent(object):
                     {"role":"user","content": user_query}]
 
         t_llm_start = time.time()
-        response = self.client.get_completion(messages=messages, reasoning_effort="high")
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(input_tables, messages, response, t_llm=t_llm)
@@ -497,7 +500,7 @@ class DataRecAgent(object):
                     "content": f"This is the result from the latest transformation:\n\n{sample_data_str}\n\nUpdate the Python script above based on the following instruction:\n\n{new_instruction}"}]
 
         t_llm_start = time.time()
-        response = self.client.get_completion(messages=messages, reasoning_effort="high")
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         t_llm = time.time() - t_llm_start
 
         return self.process_gpt_response(input_tables, messages, response, t_llm=t_llm)

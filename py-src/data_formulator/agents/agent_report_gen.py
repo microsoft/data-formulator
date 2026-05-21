@@ -19,6 +19,7 @@ from typing import Any, Generator
 
 import pandas as pd
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import (
     attach_reasoning_content,
     generate_data_summary,
@@ -39,6 +40,8 @@ from data_formulator.workflows.create_vl_plots import (
 )
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "report_gen"
 
 # ── Tool definitions ──────────────────────────────────────────────────────
 
@@ -415,14 +418,14 @@ class ReportGenAgent:
         """Non-streaming LLM call with optional tool definitions."""
         if tools:
             return self.client.get_completion_with_tools(
-                messages, tools=tools, reasoning_effort="high",
+                messages, tools=tools, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
             )
-        return self.client.get_completion(messages, reasoning_effort="high")
+        return self.client.get_completion(messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
 
     def _call_llm_streaming(self, messages: list[dict], tools: list[dict] | None = None):
         """Streaming LLM call with optional tool definitions."""
         if tools:
             return self.client.get_completion_with_tools(
-                messages, tools=tools, stream=True, reasoning_effort="high",
+                messages, tools=tools, stream=True, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
             )
-        return self.client.get_completion(messages, stream=True, reasoning_effort="high")
+        return self.client.get_completion(messages, stream=True, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))

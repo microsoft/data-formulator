@@ -10,10 +10,13 @@ returns a plain dict result (no streaming, no workspace access).
 import json
 import logging
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import extract_json_objects
 from data_formulator.agents.agent_language import inject_language_instruction
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "simple"
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +134,7 @@ class SimpleAgents:
         ]
 
         logger.info("[SimpleAgents.nl_to_filter] run start")
-        response = self.client.get_completion(messages=messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         raw = response.choices[0].message.content.strip()
 
         # Strip markdown code fences if present
@@ -184,7 +187,7 @@ class SimpleAgents:
         ]
 
         logger.info("[SimpleAgents.workspace_name] run start")
-        response = self.client.get_completion(messages=messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
         display_name = response.choices[0].message.content.strip().strip("\"'")
         if len(display_name) > 60:
             display_name = display_name[:57] + "..."
@@ -219,7 +222,7 @@ class SimpleAgents:
         ]
 
         try:
-            response = self.client.get_completion(messages=messages)
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             raw = (response.choices[0].message.content or "").strip().upper()
         except Exception as e:
             logger.warning("[SimpleAgents.classify_chart_intent] LLM call failed: %s", e)

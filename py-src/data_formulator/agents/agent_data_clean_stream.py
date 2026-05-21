@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import extract_json_objects
 from data_formulator.agents.web_utils import download_html_content
 
@@ -10,6 +11,8 @@ import json
 import traceback
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "data_clean"
 
 
 def parse_table_sections(text):
@@ -203,7 +206,7 @@ class DataCleanAgentStream(object):
         ]
         
         ###### the part that calls open_ai
-        stream = self.client.get_completion(messages = messages, stream=True)
+        stream = self.client.get_completion(messages = messages, stream=True, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
 
         accumulated_content = ""
         

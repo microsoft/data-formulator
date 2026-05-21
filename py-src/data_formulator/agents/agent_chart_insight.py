@@ -1,11 +1,14 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "chart_insight"
 
 
 SYSTEM_PROMPT = r'''You are a data analyst helping users understand their visualizations.
@@ -103,7 +106,7 @@ class ChartInsightAgent(object):
         logger.debug(f"ChartInsightAgent: analyzing {chart_type} chart with fields {field_names}")
         logger.info(f"[ChartInsightAgent] run start | chart_type={chart_type}")
 
-        response = self.client.get_completion(messages=messages)
+        response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
 
         candidates = []
         for choice in response.choices:

@@ -87,6 +87,13 @@ class Client(object):
         lowered = error_text.lower()
         return ("image_url" in lowered and "expected `text`" in lowered) or "unknown variant `image_url`" in lowered
 
+    def _is_reasoning_effort_error(self, error_text: str) -> bool:
+        """Detect provider errors caused by an unsupported ``reasoning_effort``
+        value (e.g. ``"minimal"`` on a model that only accepts
+        ``none/low/medium/high/xhigh``). The provider message reliably
+        mentions the parameter name."""
+        return "reasoning_effort" in error_text.lower()
+
     @classmethod
     def from_config(cls, model_config: dict[str, str]):
         """
@@ -140,7 +147,14 @@ class Client(object):
                 drop_params=True, stream=stream, **params,
             )
         except Exception as e:
-            if self._is_image_deserialize_error(str(e)):
+            err = str(e)
+            if self._is_reasoning_effort_error(err):
+                params.pop("reasoning_effort", None)
+                return litellm.completion(
+                    model=self.model, messages=messages,
+                    drop_params=True, stream=stream, **params,
+                )
+            if self._is_image_deserialize_error(err):
                 sanitized = self._strip_images_from_messages(messages)
                 return litellm.completion(
                     model=self.model, messages=sanitized,
@@ -163,7 +177,14 @@ class Client(object):
                 drop_params=True, stream=stream, **params, **kwargs,
             )
         except Exception as e:
-            if self._is_image_deserialize_error(str(e)):
+            err = str(e)
+            if self._is_reasoning_effort_error(err):
+                params.pop("reasoning_effort", None)
+                return litellm.completion(
+                    model=self.model, messages=messages, tools=tools,
+                    drop_params=True, stream=stream, **params, **kwargs,
+                )
+            if self._is_image_deserialize_error(err):
                 sanitized = self._strip_images_from_messages(messages)
                 return litellm.completion(
                     model=self.model, messages=sanitized, tools=tools,

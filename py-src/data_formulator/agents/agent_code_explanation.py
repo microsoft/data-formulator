@@ -2,11 +2,14 @@
 # Licensed under the MIT License.
 
 import json
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects, extract_code_from_gpt_response
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "code_explanation"
 
 
 SYSTEM_PROMPT = r'''You are a data scientist to help user explain derived data concepts, 
@@ -165,7 +168,7 @@ class CodeExplanationAgent(object):
         messages = [{"role":"system", "content": system_prompt},
                     {"role":"user","content": user_query}]
         
-        response = self.client.get_completion(messages = messages)
+        response = self.client.get_completion(messages = messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
 
         candidates = []
         for choice in response.choices:

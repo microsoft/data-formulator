@@ -28,6 +28,7 @@ from typing import Any, Generator
 
 import pandas as pd
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import (
     attach_reasoning_content,
     ensure_output_variable_in_code,
@@ -55,6 +56,8 @@ from data_formulator.workflows.create_vl_plots import (
 )
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "data_agent"
 
 # ── Weak-model rescue helpers ─────────────────────────────────────────────
 # When a weaker LLM calls visualize/clarify/explain/present as a tool instead
@@ -96,27 +99,6 @@ def _rescue_validate_action(data: dict) -> list[str]:
 # gather data before committing to a user-visible action.
 
 TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "think",
-            "description": (
-                "Share your reasoning or findings with the user before taking "
-                "an action. Use this to explain what you discovered from the "
-                "data and what you plan to do next."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "Your reasoning, findings, or plan.",
-                    },
-                },
-                "required": ["message"],
-            },
-        },
-    },
     {
         "type": "function",
         "function": {
@@ -286,11 +268,8 @@ data visualizations.  You operate in a loop.
 
 ## Tools (internal — for data gathering)
 
-You have tools you can call to gather data and share reasoning:
+You have tools you can call to gather data:
 
-- **think(message)** — optionally share your reasoning or findings with
-  the user before taking an action.  Useful for complex analyses where
-  you want to explain what you found and why you chose this chart.
 - **explore(code)** — run Python code to inspect data, compute stats, etc.
   **Important**: each call runs in a fresh namespace — variables do NOT
   persist between calls.  Combine all related operations (loading,
@@ -326,13 +305,13 @@ are shown to the user and end the current turn.
 MUST appear as a JSON object in your **text reply**.  Only the items
 listed in the Tools section above (`explore`, `inspect_source_data`,
 `search_data_tables`, `read_catalog_metadata`, `search_knowledge`,
-`read_knowledge`, `think`) may be invoked as tool calls.
+`read_knowledge`) may be invoked as tool calls.
 
 ### `visualize`
 ```json
 {{
     "action": "visualize",
-    "display_instruction": "<casual first-person, ≤25 words. Bold **column names**. e.g. 'Plotting **fertility** vs **life_expect** by **cluster** to see how demographic groups differ'>",
+    "display_instruction": "<≤12 words. State the question or hypothesis the chart investigates — don't recap the chart spec (x/y/color/split are already visible). Bold a **column** if it anchors the question. ✗ 'Plotting price over time, split by fuel, to see trends'>",
     "input_tables": ["<table names from [SOURCE TABLES] that the code reads>"],
     "code": "<Python code producing a DataFrame assigned to output_variable>",
     "output_variable": "<snake_case variable name>",
@@ -1626,11 +1605,7 @@ class DataAgent:
                     tool_t0 = time.time()
                     tool_status = "ok"
 
-                    if tool_name == "think":
-                        thought_msg = tool_args.get("message", "")
-                        tool_content = "ok"
-                        yield {"type": "thinking_text", "content": thought_msg}
-                    elif tool_name == "explore":
+                    if tool_name == "explore":
                         result = self._run_explore_code(
                             tool_args.get("code", ""),
                             input_tables or [],
@@ -1838,7 +1813,7 @@ class DataAgent:
     def _call_llm_once(self, messages: list[dict]):
         """Single LLM call (no retry)."""
         return self.client.get_completion_with_tools(
-            messages, tools=TOOLS, reasoning_effort="high",
+            messages, tools=TOOLS, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model),
         )
 
     # ------------------------------------------------------------------

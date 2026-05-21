@@ -294,8 +294,7 @@ const VegaChartRenderer: FC<{
                 chart, visTableRows, tableMetadata, conceptShelfItems,
             );
             spec.data = { values: variantValues };
-            spec.width = chartWidth;
-            spec.height = chartHeight;
+
         } else {
             spec = assembleVegaChart(
                 chart.chartType,

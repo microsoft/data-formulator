@@ -4,6 +4,7 @@
 import json
 import time
 
+from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block, ensure_output_variable_in_code
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.datalake.parquet_utils import df_to_safe_records
@@ -21,6 +22,8 @@ import pandas as pd
 import logging
 
 logger = logging.getLogger(__name__)
+
+_AGENT_ID = "data_transform"
 
 SYSTEM_PROMPT = f'''You are a data scientist who transforms data for visualization.
 Given [CONTEXT] (dataset summaries) and [GOAL] (user intent + chart spec), refine the goal and write a Python script to produce the transformed data.
@@ -384,16 +387,16 @@ class DataTransformationAgent(object):
                         {"role":"user","content": user_content}]
 
             t_llm_start = time.time()
-            response = self.client.get_completion(messages=messages, reasoning_effort="high")
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             t_llm = time.time() - t_llm_start
         except Exception as e:
             # Fallback to text-only if model doesn't support images
             logger.warning(f"Image-based completion failed, falling back to text-only: {e}")
-            messages = [{"role":"system", "content": self.system_prompt},
+            messages = [{'role':'system', 'content': self.system_prompt},
                         *filtered_prev_messages,
-                        {"role":"user","content": user_query}]
+                        {'role':'user','content': user_query}]
             t_llm_start = time.time()
-            response = self.client.get_completion(messages=messages, reasoning_effort="high")
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(response, messages, t_llm=t_llm)
@@ -455,14 +458,14 @@ class DataTransformationAgent(object):
             messages = [*updated_dialog, {"role":"user", "content": user_content}]
 
             t_llm_start = time.time()
-            response = self.client.get_completion(messages=messages, reasoning_effort="high")
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             t_llm = time.time() - t_llm_start
         except Exception as e:
             # Fallback to text-only if model doesn't support images
             logger.warning(f"Image-based completion failed, falling back to text-only: {e}")
-            messages = [*updated_dialog, {"role":"user", "content": followup_text}]
+            messages = [*updated_dialog, {'role':'user', 'content': followup_text}]
             t_llm_start = time.time()
-            response = self.client.get_completion(messages=messages, reasoning_effort="high")
+            response = self.client.get_completion(messages=messages, reasoning_effort=reasoning_effort_for(_AGENT_ID, self.client.model))
             t_llm = time.time() - t_llm_start
 
         candidates = self.process_gpt_response(response, messages, t_llm=t_llm)
