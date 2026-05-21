@@ -74,7 +74,6 @@ class TestInputConstruction:
         assert '"values"' in user_content, (
             f"Expected key 'values' in user content but got:\n{user_content}"
         )
-        assert '"value"' not in user_content.split('"values"')[0] or True  # key 'value' must not appear as a standalone key
         # Parse out the JSON block from [INPUT]\n\n{...}\n\n[OUTPUT]
         json_part = user_content.split("[INPUT]")[1].split("[OUTPUT]")[0].strip()
         parsed = json.loads(json_part)
