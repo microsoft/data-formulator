@@ -11,7 +11,7 @@
  *   ])
  *
  * For categorical x-axis we use spread() instead of scatter().
- * Multi-series (color) requires group() which needs layer naming — marked TODO.
+ * Multi-series (color) uses group() to render one line per series.
  */
 
 import { ChartTemplateDef } from '../../core/types';
