@@ -117,7 +117,7 @@ def build_language_instruction(language: str, *, mode: str = "full") -> str:
     For unrecognised codes (e.g. ``"xx"``), a non-empty instruction block
     is still returned using the raw code as the display name.
     """
-    lang = ((language or "").strip().lower()) or DEFAULT_LANGUAGE
+    lang = ((language or "").strip().lower()) or DEFAULT_LANGUAGE.lower()
 
     if lang == "en":
         return ""
