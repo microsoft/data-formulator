@@ -734,7 +734,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Button key="data-btn" size="small"
             sx={toggleBtnSx(bottomTab === 'data')}
             startIcon={<TableChartOutlinedIcon sx={{ fontSize: 14 }} />}
-            onClick={() => setBottomTab(prev => prev === 'data' ? '' : 'data')}>
+            onClick={() => setBottomTab('data')}>
             {t('chart.data')}
         </Button>
     );
@@ -743,14 +743,14 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         <Button key="code-btn" size="small"
             sx={toggleBtnSx(bottomTab === 'code')}
             startIcon={<TerminalIcon sx={{ fontSize: 14 }} />}
-            onClick={() => setBottomTab(prev => prev === 'code' ? '' : 'code')}>
+            onClick={() => setBottomTab('code')}>
             {t('chart.code')}
         </Button>,
         ...(hasConcepts ? [
             <Button key="concepts-btn" size="small"
                 sx={toggleBtnSx(bottomTab === 'concepts')}
                 startIcon={<AutoStoriesIcon sx={{ fontSize: 14 }} />}
-                onClick={() => setBottomTab(prev => prev === 'concepts' ? '' : 'concepts')}>
+                onClick={() => setBottomTab('concepts')}>
                 {t('chart.concepts')}
             </Button>
         ] : []),
@@ -772,13 +772,10 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             sx={toggleBtnSx(bottomTab === 'insight')}
             startIcon={insightLoading ? <CircularProgress size={12} /> : <InsightIcon sx={{ fontSize: 14 }} />}
             onClick={() => {
-                setBottomTab(prev => {
-                    if (prev === 'insight') return '';
-                    if (!insightFresh && !insightLoading) {
-                        dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
-                    }
-                    return 'insight';
-                });
+                if (bottomTab !== 'insight' && !insightFresh && !insightLoading) {
+                    dispatch(fetchChartInsight({ chartId: focusedChart.id, tableId: table.id }) as any);
+                }
+                setBottomTab('insight');
             }}>
             {t('chart.insight')}
         </Button>
@@ -1102,9 +1099,9 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
 const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelectionBox }) => {
     const { t } = useTranslation();
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, width: '100%' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75, maxWidth: 820, textAlign: 'center' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.primary' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, width: '100%', py: 2 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, maxWidth: 820, textAlign: 'center' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, color: 'text.primary' }}>
                     <AnimatedAgentToyIcon
                         sx={{ fontSize: 26, color: 'primary.main' }}
                     />
@@ -1112,14 +1109,14 @@ const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelec
                         {t('chart.emptyStateTitle')}
                     </Typography>
                 </Box>
-                <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.5 }}>
+                <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.6 }}>
                     {t('chart.emptyStateSubtitle')}
                 </Typography>
             </Box>
             {/* "or" divider + manual chart picker — always visible on the
                 fresh-start landing so a user who'd rather start manually
                 isn't gated behind an extra click. */}
-            <Divider sx={{ mt: 4, mb: 2, width: '100%', maxWidth: 720 }} textAlign='left'>
+            <Divider sx={{ mt: 3, mb: 2, width: '100%', maxWidth: 960 }} textAlign='left'>
                 <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
                     {t('chart.orCreateYourself')}
                 </Typography>
@@ -1155,16 +1152,16 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     // when there is no result and synthesis is running, just show the waiting panel
     if (!focusedChart || focusedChart?.chartType == "?") {
-        let chartSelectionBox = <Box sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 2.5, justifyContent: 'center', maxWidth: 1100 }}>
+        let chartSelectionBox = <Box sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", rowGap: 3, columnGap: 4, justifyContent: 'center', maxWidth: 1100 }}>
             {Object.entries(CHART_TEMPLATES)
                 .filter(([category, templates]) => category !== "Custom" && templates.some(t => t.chart !== "Auto"))
                 .map(([category, templates]) => (
-                    <Box key={category} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', px: 0.5, py: 0.5 }}>
+                    <Box key={category} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', px: 0.5, py: 0.5, gap: 0.25 }}>
                         <Typography sx={{
                             fontSize: 11,
                             color: 'text.secondary',
                             fontWeight: 400,
-                            mb: 1,
+                            mb: 1.5,
                             pl: 1,
                         }}>{category}</Typography>
                         {templates
@@ -1174,7 +1171,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                     disabled={synthesisRunning}
                                     key={`${category}-${index}-${t.chart}-btn`}
                                     sx={{
-                                        margin: 0, padding: '3px 8px 3px 4px',
+                                        margin: 0, padding: '4px 8px 4px 4px',
                                         display: 'flex', flexDirection: 'row',
                                         textTransform: 'none', justifyContent: 'flex-start',
                                         minWidth: 0,

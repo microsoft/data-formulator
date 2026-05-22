@@ -71,6 +71,7 @@ export let buildChartCard = (
                     height: 6,
                     borderRadius: '50%',
                     backgroundColor: '#FFC107',
+                    boxShadow: '0 0 4px rgba(255, 193, 7, 0.85), 0 0 1px rgba(0,0,0,0.25)',
                     pointerEvents: 'none',
                     zIndex: 2,
                     animation: 'unreadPulse 1.6s ease-in-out infinite',

@@ -240,6 +240,32 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
 
                 const ancestors = [grandparent, parent].filter(Boolean) as typeof tables;
 
+                // Symmetric reach: when the current node sits at an end of
+                // the lineage, extend further into the available direction
+                // so we always show up to 3 neighbours total.
+                //
+                //  • At the root (no ancestors) with a single child: also
+                //    surface the grandchild(ren) as additional right-chain
+                //    entries.  This turns "Movie Performance → Movie
+                //    Budgets Gross → …" into "Movie Performance → Movie
+                //    Budgets Gross → Genre ROI Summary".
+                //  • At a leaf (no children) we already display two
+                //    ancestors; if there's only a parent, also surface
+                //    the great-grandparent so we still show 3 nodes.
+                let extraDescendants: typeof tables = [];
+                if (ancestors.length === 0 && children.length === 1) {
+                    extraDescendants = tables.filter(t => t.derive?.trigger?.tableId === children[0].id);
+                }
+                const greatGrandparent = hasGreatGrandparent
+                    ? tables.find(t => t.id === grandparent!.derive!.trigger.tableId)
+                    : undefined;
+                if (children.length === 0 && ancestors.length === 1 && greatGrandparent) {
+                    ancestors.unshift(greatGrandparent);
+                }
+                // Is there still an unseen node above our topmost ancestor?
+                const topAncestor = ancestors[0];
+                const hasHiddenAncestor = !!topAncestor?.derive?.trigger?.tableId;
+
                 if (ancestors.length === 0 && children.length === 0) return null;
 
                 // ── chart filtering ────────────────────────────────────────
@@ -314,11 +340,26 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                 // right of the current node — each branch sits on its own
                 // short rail with its label + inline stack chip.
                 const useChildrenFan = children.length >= 2;
-                const FAN_W = 280; // approximate width budget for the fan block
+                // The fan is a vertical stack of branches, so its width is
+                // governed by the LONGEST single branch — not the sum of
+                // children.  Estimate: elbow stub + label padding + label
+                // glyphs + optional grandchild ellipsis affordance.  This
+                // replaces the old fixed FAN_W = 280 which overestimated
+                // and caused ancestors to be shed unnecessarily.
+                const fanBranchW = (t: typeof currentTable) => {
+                    const labelW = (t?.displayId.length ?? 0) * charW;
+                    const grandchildAffordance =
+                        tables.some(tt => tt.derive?.trigger?.tableId === t.id) ? 24 : 0;
+                    // 22 elbow + 14 pl + label + ~10 right padding
+                    return 22 + 14 + labelW + grandchildAffordance + 10;
+                };
+                const FAN_W = useChildrenFan
+                    ? Math.max(...children.map(fanBranchW))
+                    : 0;
 
                 let leftChain = [...ancestors];
-                let rightChain = useChildrenFan ? [] as typeof tables : [...children];
-                let leftEllipsis = hasGreatGrandparent;
+                let rightChain = useChildrenFan ? [] as typeof tables : [...children, ...extraDescendants];
+                let leftEllipsis = hasHiddenAncestor;
                 let rightTruncated = false;
 
                 const totalW = () => {
@@ -405,13 +446,27 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     items.push({ kind: 'children-fan', key: 'fan', branches: children });
                 } else {
                     rightChain.forEach((c, i) => {
-                        items.push({ kind: 'connector', key: `c-${c.id}-sep`, node: i === 0 ? <Sep /> : <Comma /> });
+                        const prev = i === 0 ? currentTable : rightChain[i - 1];
+                        const isDescendant = c.derive?.trigger?.tableId === prev.id;
+                        // Sep = chain continuation (parent→child).  Comma =
+                        // sibling enumeration under the same parent.
+                        items.push({
+                            kind: 'connector',
+                            key: `c-${c.id}-sep`,
+                            node: isDescendant ? <Sep /> : <Comma />,
+                        });
                         items.push({
                             kind: 'table', key: `r-${c.id}`,
                             label: <TableRef table={c} />,
                             charts: chartsForTable(c.id),
                         });
-                        if (tables.some(t => t.derive?.trigger?.tableId === c.id)) {
+                        // "…" affordance: only when c has children AND the
+                        // next ribbon entry isn't one of them (otherwise the
+                        // chain already exposes the descendant).
+                        const cChildren = tables.filter(t => t.derive?.trigger?.tableId === c.id);
+                        const nextInChain = rightChain[i + 1];
+                        const nextIsChild = !!nextInChain && cChildren.some(cc => cc.id === nextInChain.id);
+                        if (cChildren.length > 0 && !nextIsChild) {
                             items.push({ kind: 'connector', key: `r-${c.id}-sep2`, node: <Sep /> });
                             items.push({ kind: 'connector', key: `r-${c.id}-ell`, node: <Ellipsis /> });
                         }
@@ -698,7 +753,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                             }} />
                                         )}
                                         {shown.map((c) => {
-                                            const childCharts = chartsForTable(c.id);
                                             const hasGrandchildren = tables.some(t => t.derive?.trigger?.tableId === c.id);
                                             return (
                                                 <Box key={c.id} sx={{
@@ -721,25 +775,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                                         pl: '14px',
                                                     }}>
                                                         <TableRef table={c} />
-                                                        {childCharts.length > 0 && (
-                                                            <Typography component="span" sx={{
-                                                                // Match the stacked-card
-                                                                // ×N badge styling so
-                                                                // chip identity is
-                                                                // consistent across the
-                                                                // widget.
-                                                                fontSize: 11,
-                                                                color: 'text.secondary',
-                                                                px: '5px', py: '1px',
-                                                                ml: '2px',
-                                                                border: `1px solid ${alpha(theme.palette.text.primary, 0.15)}`,
-                                                                borderRadius: '10px',
-                                                                background: theme.palette.background.paper,
-                                                                lineHeight: 1.2,
-                                                            }}>
-                                                                {`×${childCharts.length}`}
-                                                            </Typography>
-                                                        )}
                                                         {hasGrandchildren && (
                                                             <>
                                                                 <Box sx={{ width: 12, height: '1px', backgroundColor: LINE_COLOR }} />
