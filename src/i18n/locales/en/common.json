@@ -504,6 +504,7 @@
     "interactive": "interactive",
     "agent": "agent",
     "getIdeas": "Get Ideas",
+    "whatsNext": "What's next?",
     "editor": "Editor",
     "getIdeasForVisualization": "get ideas for visualization",
     "differentIdeas": "Different ideas?",

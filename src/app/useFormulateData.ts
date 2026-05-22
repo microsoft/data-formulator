@@ -184,6 +184,7 @@ export function useFormulateData() {
             const triggers = getTriggers(table, tables);
             if (triggers.length === 0) continue;
 
+            const STEP_FINDING_CHAR_LIMIT = 200;
             const steps = triggers.map(trigger => {
                 const instr = trigger.interaction?.find(e => e.role === 'instruction');
                 const label = instr?.displayContent || instr?.content || trigger.resultTableId;
@@ -193,7 +194,16 @@ export function useFormulateData() {
                 const encStr = Object.entries(chartEncodingsByName(chart))
                     .map(([k, v]) => `${k}: ${v}`)
                     .join(', ');
-                return `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
+                // Per-step agent commentary: the `summary` entry the visualize
+                // action emits after running this step.
+                let finding = trigger.interaction?.find(
+                    e => e.role === 'summary',
+                )?.content?.trim() || '';
+                if (finding.length > STEP_FINDING_CHAR_LIMIT) {
+                    finding = finding.slice(0, STEP_FINDING_CHAR_LIMIT - 1).trimEnd() + '…';
+                }
+                const head = `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
+                return finding ? `${head} — finding: ${finding}` : head;
             });
 
             const sourceTableId = triggers[0].tableId;

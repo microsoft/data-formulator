@@ -356,13 +356,13 @@ export type Chart = {
     chartType: string, 
     encodingMap: EncodingMap, 
     tableRef: string, 
-    saved: boolean,
     source: "user" | "trigger",
     config?: Record<string, any>,  // additional chart properties defined by the chart template
     thumbnail?: string,  // PNG data URL for thumbnail display (managed by ChartRenderService, not persisted)
     insight?: ChartInsight,  // AI-generated insight about the visualization
     styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default
+    unread?: boolean,  // true for agent-generated charts the user hasn't focused yet; cleared on focus
 }
 
 /** Compute a string key for insight invalidation: chartType|sortedFieldIds */
@@ -398,7 +398,6 @@ export let duplicateChart = (chart: Chart) : Chart => {
         chartType: chart.chartType,
         encodingMap: JSON.parse(JSON.stringify(chart.encodingMap)) as EncodingMap,
         tableRef: chart.tableRef,
-        saved: false,
         source: chart.source,
         config: chart.config ? JSON.parse(JSON.stringify(chart.config)) : undefined,
         // styleVariants are intentionally NOT copied: they are user-authored

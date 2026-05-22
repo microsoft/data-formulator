@@ -68,8 +68,8 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
             overflow: 'hidden',
         }}>
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}>
-                <WritingPencil size={10} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 10 }}>
+                <WritingPencil size={14} />
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, fontSize: 13 }}>
                     {t('chartRec.agentWorking')}
                 </Typography>
             </Box>
@@ -84,13 +84,13 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
             )}
             <Typography variant="caption" sx={{
                 color: 'text.disabled',
-                fontSize: 10,
+                fontSize: 12,
                 textAlign: 'center',
                 display: '-webkit-box',
                 WebkitLineClamp: 3,
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
-                lineHeight: 1.3,
+                lineHeight: 1.35,
                 wordBreak: 'break-word',
             }}>
                 {latestMessage}{elapsedSuffix}
@@ -142,11 +142,18 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const agentAbortRef = useRef<AbortController | null>(null);
     const userChartFocusLockedRef = useRef(false);
     const lastAutoFocusedChartIdRef = useRef<string | null>(null);
+    // Whether we've already auto-focused an artifact during the current
+    // agent run. We only jump focus once per run (to the FIRST generated
+    // chart), so the user isn't yanked around as further charts stream in.
+    // Subsequent artifacts rely on the "freshly created" highlight + NEW
+    // tag for discoverability instead.
+    const firstFocusedThisRunRef = useRef(false);
 
     useEffect(() => {
         if (!isChatFormulating) {
             userChartFocusLockedRef.current = false;
             lastAutoFocusedChartIdRef.current = null;
+            firstFocusedThisRunRef.current = false;
             return;
         }
         if (focusedId?.type === 'chart') {
@@ -357,6 +364,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const actionId = isResume ? clarificationContext!.actionId : `exploreDataFromNL_${String(Date.now())}`;
         const actionTables = selectedTableIds.map(id => tables.find(t => t.id === id) as DictTable);
 
+        // Seed the auto-focus baseline with whatever chart the user is
+        // currently looking at. Otherwise the lock effect would compare the
+        // current focused chart to `null` on run-start and trip immediately,
+        // blocking the first-artifact auto-focus.
+        lastAutoFocusedChartIdRef.current = focusedId?.type === 'chart' ? focusedId.chartId : null;
+        firstFocusedThisRunRef.current = false;
+        userChartFocusLockedRef.current = false;
+
         setIsChatFormulating(true);
 
         // DraftNode handles status
@@ -448,6 +463,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 const triggers = getTriggers(leaf, tables);
                 if (triggers.length === 0) continue;
 
+                const STEP_FINDING_CHAR_LIMIT = 200;
                 const steps: string[] = [];
                 for (const trig of triggers) {
                     const tt = tables.find(t2 => t2.id === trig.resultTableId);
@@ -466,7 +482,16 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             })
                             .join(', ')
                         : '';
-                    steps.push(`${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`);
+                    // Per-step agent commentary: the `summary` entry that the
+                    // visualize action emits after running this step.
+                    let finding = trig.interaction?.find(
+                        (e: InteractionEntry) => e.role === 'summary',
+                    )?.content?.trim() || '';
+                    if (finding.length > STEP_FINDING_CHAR_LIMIT) {
+                        finding = finding.slice(0, STEP_FINDING_CHAR_LIMIT - 1).trimEnd() + '…';
+                    }
+                    const head = `${label}${chartType ? ` → ${chartType}` : ''}${encStr ? ` (${encStr})` : ''}`;
+                    steps.push(finding ? `${head} — finding: ${finding}` : head);
                 }
 
                 if (steps.length > 0) {
@@ -803,9 +828,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
 
                 const currentConcepts = [...conceptShelfItems.filter(c => names.includes(c.name)), ...allNewConcepts, ...conceptsToAdd];
                 let newChart = resolveRecommendedChart(refinedGoal, currentConcepts, candidateTable);
+                // Mark as unread by default; cleared below if we auto-focus it
+                // (i.e. it's the first artifact this run) or by setFocused when
+                // the user clicks the card.
+                newChart.unread = true;
                 createdCharts.push(newChart);
                 dispatch(dfActions.addChart(newChart));
-                if (shouldAutoFocusGeneratedChart(userChartFocusLockedRef.current)) {
+                if (!firstFocusedThisRunRef.current && shouldAutoFocusGeneratedChart(userChartFocusLockedRef.current)) {
+                    firstFocusedThisRunRef.current = true;
                     lastAutoFocusedChartIdRef.current = newChart.id;
                     dispatch(dfActions.setFocused({ type: 'chart', chartId: newChart.id }));
                 }
@@ -1018,6 +1048,9 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         const cleanPrompt = prompt.trim() || 'Create a report summarizing the exploration.';
 
         setChatPrompt('');
+        lastAutoFocusedChartIdRef.current = focusedId?.type === 'chart' ? focusedId.chartId : null;
+        firstFocusedThisRunRef.current = false;
+        userChartFocusLockedRef.current = false;
         setIsChatFormulating(true);
 
         // Build available charts list
@@ -1235,12 +1268,38 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
         ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.3)}, ${alpha(theme.palette.warning.dark, 0.25)})`
         : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.3)}, ${alpha(theme.palette.secondary.main, 0.25)})`;
 
+    // Landing / "no thread yet" highlight: when the user has loaded data
+    // but hasn't started an exploration on the focused table (no real
+    // charts AND the table isn't part of a derivation chain), gently pulse
+    // a colored ring around the input card to anchor the eye here.
+    // Suppressed once they start typing, while an agent is running, or
+    // while a clarification is pending — anything that already draws focus.
+    const focusedTableHasCharts = !!focusedTableId && charts.some(c =>
+        c.tableRef === focusedTableId
+        && c.chartType !== '?'
+        && c.chartType !== 'Auto'
+        && c.source !== 'trigger'
+    );
+    const focusedTableObj = focusedTableId ? tables.find(t => t.id === focusedTableId) : undefined;
+    const focusedTableHasDerivation = !!focusedTableObj && (
+        focusedTableObj.derive !== undefined
+        || tables.some(t => t.derive?.trigger?.tableId === focusedTableId)
+    );
+    const isLandingHighlight = (
+        !!focusedTableId
+        && !focusedTableHasCharts
+        && !focusedTableHasDerivation
+        && !isChatFormulating
+        && !pendingClarification
+        && chatPrompt.trim() === ''
+    );
+
     const inputBox = (
         <Card ref={inputCardRef} variant="outlined" sx={{
             display: 'flex', flexDirection: 'column',
             mx: 1, mb: 1, mt: 0.5,
-            px: 1, pt: 0.5, pb: 0.25,
-            borderRadius: '8px',
+            px: 1.25, pt: 1, pb: 0.5,
+            borderRadius: '10px',
             border: 'none',
             outline: 'none',
             position: 'relative',
@@ -1250,10 +1309,23 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             backgroundColor: isChatFormulating
                 ? alpha(theme.palette.action.disabledBackground, 0.06)
                 : isReportMode
-                    ? alpha(theme.palette.warning.main, 0.03)
-                    : 'transparent',
+                    ? alpha(theme.palette.warning.main, 0.04)
+                    : theme.palette.background.paper,
+            boxShadow: `0 1px 2px ${alpha(theme.palette.common.black, 0.04)}, 0 4px 12px ${alpha(theme.palette.common.black, 0.06)}`,
+            ...(isLandingHighlight ? {
+                animation: 'df-chatinput-landing-pulse 2.4s ease-in-out infinite',
+                '@keyframes df-chatinput-landing-pulse': {
+                    '0%, 100%': {
+                        boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0.0)}, 0 4px 14px ${alpha(theme.palette.common.black, 0.06)}`,
+                    },
+                    '50%': {
+                        boxShadow: `0 0 0 6px ${alpha(theme.palette.primary.main, 0.14)}, 0 4px 18px ${alpha(theme.palette.common.black, 0.08)}`,
+                    },
+                },
+            } : {}),
             '&:focus-within': {
-                boxShadow: `0 0 0 3px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.10)}`,
+                animation: 'none',
+                boxShadow: `0 0 0 3px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.12)}, 0 4px 14px ${alpha(theme.palette.common.black, 0.08)}`,
             },
             // Gradient border via pseudo-element (works with border-radius)
             '&::before': {
@@ -1454,8 +1526,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 }
                 fullWidth
                 multiline
-                minRows={2}
-                maxRows={4}
+                minRows={3}
+                maxRows={6}
             />
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
                 {/* Action buttons */}
@@ -1464,11 +1536,14 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                         <IconButton
                             size="small"
                             onClick={(e) => { e.stopPropagation(); setUploadDialogOpen(true); }}
-                            sx={{ p: 0, width: 18, height: 18, color: theme.palette.text.secondary,
+                            sx={{
+                                p: 0.5,
+                                color: theme.palette.text.secondary,
                                 borderRadius: '4px',
-                                '&:hover': { color: theme.palette.primary.main, borderColor: alpha(theme.palette.primary.main, 0.5) } }}
+                                '&:hover': { color: theme.palette.primary.main, backgroundColor: alpha(theme.palette.primary.main, 0.06) },
+                            }}
                         >
-                            <AddIcon sx={{ fontSize: 12 }} />
+                            <AddIcon sx={{ fontSize: 18 }} />
                         </IconButton>
                     </Tooltip>
                     {/* Agent mode toggle */}
@@ -1478,22 +1553,22 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             onClick={() => setSelectedAgent(prev => prev === 'explore' ? 'report' : 'explore')}
                             sx={{
                                 textTransform: 'none',
-                                fontSize: 10,
+                                fontSize: 11,
                                 minWidth: 0,
-                                px: 0.75,
+                                px: 0.875,
                                 py: 0,
-                                height: 20,
+                                height: 26,
                                 color: isReportMode ? theme.palette.warning.main : theme.palette.primary.main,
                                 borderRadius: '4px',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '2px',
+                                gap: '3px',
                                 '&:hover': { backgroundColor: alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.08) },
                             }}
                         >
                             {selectedAgent === 'explore'
-                                ? <AutoGraphIcon sx={{ fontSize: '10px !important' }} />
-                                : <DescriptionOutlinedIcon sx={{ fontSize: '10px !important' }} />}
+                                ? <AutoGraphIcon sx={{ fontSize: '14px !important' }} />
+                                : <DescriptionOutlinedIcon sx={{ fontSize: '14px !important' }} />}
                             {selectedAgent === 'explore' ? t('chartRec.modeExplore') : t('chartRec.modeReport')}
                         </Button>
                     </Tooltip>

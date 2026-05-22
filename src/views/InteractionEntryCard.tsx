@@ -323,21 +323,27 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
             || entry.role === 'clarify'
             || entry.role === 'explain'
             || entry.role === 'summary';
-        const accentColor: string | null = entry.role === 'error'
-            ? theme.palette.error.main
-            : (entry.role === 'clarify' && !resolved) ? theme.palette.warning.main
-            : (entry.role === 'explain' && !resolved) ? theme.palette.info.main
-            : null;
         const isSummary = entry.role === 'summary';
+        const isActiveClarify = entry.role === 'clarify' && !resolved;
+        const isActiveExplain = entry.role === 'explain' && !resolved;
+        // Tinted-fill bubbles read as a stand-alone state ("insight" /
+        // "awaiting actions" / "explanation") rather than in-progress chatter.
+        // All use the same border/shape; only the fill hue differs.
         const bubbleBg = isSummary
             ? alpha(theme.palette.info.main, 0.05)
-            : alpha(theme.palette.text.secondary, 0.025);
+            : isActiveClarify
+                ? alpha(theme.palette.warning.main, 0.05)
+                : isActiveExplain
+                    ? alpha(theme.palette.info.main, 0.05)
+                    : alpha(theme.palette.text.secondary, 0.025);
         const bubbleSx = isConversational ? {
             py: 0.5, px: 1,
             borderRadius: radius.sm,
             backgroundColor: bubbleBg,
             border: `1px solid ${borderColor.component}`,
-            ...(accentColor ? { borderLeft: `2px solid ${accentColor}` } : {}),
+            // Only error keeps a left accent — it's the one role that needs
+            // an unambiguous "something went wrong" signal regardless of fill.
+            ...(entry.role === 'error' ? { borderLeft: `2px solid ${theme.palette.error.main}` } : {}),
         } : {};
 
         return (
@@ -359,7 +365,11 @@ export const InteractionEntryCard: React.FC<InteractionEntryCardProps> = memo(({
                         '&:hover': {
                             backgroundColor: isSummary
                                 ? alpha(theme.palette.info.main, 0.09)
-                                : alpha(theme.palette.text.secondary, 0.05),
+                                : isActiveClarify
+                                    ? alpha(theme.palette.warning.main, 0.09)
+                                    : isActiveExplain
+                                        ? alpha(theme.palette.info.main, 0.09)
+                                        : alpha(theme.palette.text.secondary, 0.05),
                         },
                     } : {}),
                 }}

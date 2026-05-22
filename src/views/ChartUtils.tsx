@@ -46,10 +46,7 @@ export let getDataTable = (chart: Chart, tables: DictTable[], charts: Chart[],
         return activeFields.every(f => t.names.includes(f.name));
     });
     
-    let confirmedTableCandidates = workingTableCandidates.filter(t => !charts.some(c => c.saved && c.tableRef == t.id));
-    if(confirmedTableCandidates.length > 0) {
-        return confirmedTableCandidates[0];
-    } else if (workingTableCandidates.length > 0) {
+    if(workingTableCandidates.length > 0) {
         return workingTableCandidates[0];
     } else {
         // sort base tables based on how many active fields are covered by existing tables

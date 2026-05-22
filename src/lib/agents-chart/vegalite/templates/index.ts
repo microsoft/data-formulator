@@ -33,7 +33,7 @@ import { customPointDef, customLineDef, customBarDef, customRectDef, customAreaD
  * Keys are category names shown in the UI, values are arrays of template definitions.
  */
 export const vlTemplateDefs: { [key: string]: ChartTemplateDef[] } = {
-    "Scatter & Point":  [scatterPlotDef, regressionDef, boxplotDef, stripPlotDef],
+    "Scatter":  [scatterPlotDef, regressionDef, boxplotDef, stripPlotDef],
     "Bar":              [barChartDef, groupedBarChartDef, stackedBarChartDef, histogramDef, lollipopChartDef, pyramidChartDef],
     "Line & Area":      [lineChartDef, dottedLineChartDef, bumpChartDef, areaChartDef, streamgraphDef],
     "Part-to-Whole":    [pieChartDef, roseChartDef, heatmapDef, waterfallChartDef],

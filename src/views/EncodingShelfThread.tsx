@@ -61,7 +61,7 @@ export let ChartElementFC: FC<{
     if (chart.thumbnail) {
         return (
             <Box sx={{ margin: "auto", display: 'flex', justifyContent: 'center', alignItems: 'center',
-                       backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white" }}>
+                       backgroundColor: "white" }}>
                 <img 
                     src={chart.thumbnail} 
                     alt={`${chart.chartType} chart`}

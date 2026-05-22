@@ -704,7 +704,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                         newChart = structuredClone(chart) as Chart;
                         newChart.source = "user";
                         newChart.id = `chart-${Date.now() - Math.floor(Math.random() * 10000)}`;
-                        newChart.saved = false;
                         newChart.tableRef = candidateTable.id;
                         // Style variants belong to the chart they were authored
                         // against — don't carry them over to a follow-up chart.

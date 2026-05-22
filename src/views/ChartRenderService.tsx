@@ -25,6 +25,7 @@ import { assembleVegaChart, prepVisTable } from '../app/utils';
 import { buildEmbeddedDataForChart } from '../app/restyle';
 import { getDataTable, checkChartAvailability } from './ChartUtils';
 import { getCachedChart, setCachedChart, computeCacheKey, invalidateChart, ChartCacheEntry } from '../app/chartCache';
+import { displayRowsCache, computeDisplayRowsCacheKey } from '../app/displayRowsCache';
 import { compile } from 'vega-lite';
 import { parse, View } from 'vega';
 import _ from 'lodash';
@@ -117,6 +118,9 @@ export const ChartRenderService: FC = () => {
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const chartSynthesisInProgress = useSelector((state: DataFormulatorState) => state.chartSynthesisInProgress);
     const maxStretchFactor = useSelector((state: DataFormulatorState) => state.config.maxStretchFactor);
+    // Re-run when the focused canvas caches a fresh display-row sample so
+    // thumbnails can use the same richer data the main chart is rendering.
+    const displayRowsTick = useSelector((state: DataFormulatorState) => state.displayRowsTick);
 
     // Track which charts are currently being rendered to avoid duplicates
     const renderingRef = useRef<Set<string>>(new Set());
@@ -133,9 +137,17 @@ export const ChartRenderService: FC = () => {
 
         try {
             // --- Prepare data (mirror MemoizedChartObject's pipeline) ---
-            // Use all rows so the thumbnail faithfully matches the main chart's
-            // appearance (sort order, aggregation, overflow filtering, etc.).
-            let visTableRows: any[] = structuredClone(table.rows);
+            // Prefer the same sample VisualizationView fetched for the
+            // focused canvas — for virtual tables `table.rows` is only a
+            // small preview slice, so rendering from it produces a
+            // thumbnail that doesn't match the main chart. The canvas
+            // populates `displayRowsCache` with up to 1000 server-sampled
+            // rows; reuse that when present.
+            const dispKey = computeDisplayRowsCacheKey(table, chart, items);
+            const cachedDisplay = displayRowsCache.get(dispKey);
+            let visTableRows: any[] = cachedDisplay
+                ? structuredClone(cachedDisplay.rows)
+                : structuredClone(table.rows);
 
             // Pre-aggregate for the encoding map
             visTableRows = prepVisTable(visTableRows, items, chart.encodingMap);
@@ -243,12 +255,21 @@ export const ChartRenderService: FC = () => {
             const activeVariant = chart.activeVariantId
                 ? chart.styleVariants?.find(v => v.id === chart.activeVariantId)
                 : undefined;
+            // Mix in the canvas's display-row sample fingerprint so a
+            // thumbnail rendered from the preview slice gets re-rendered
+            // once the richer server sample arrives in `displayRowsCache`.
+            const displayEntry = displayRowsCache.get(
+                computeDisplayRowsCacheKey(table, chart, conceptShelfItems),
+            );
+            const displayFingerprint = displayEntry
+                ? `disp:${displayEntry.rows.length}/${displayEntry.totalCount}`
+                : `preview:${table.rows.length}`;
             const cacheKey = computeCacheKey(
                 chart.chartType,
                 chart.encodingMap,
                 chart.config,
                 table.rows.length,
-                table.contentHash,
+                `${table.contentHash || ''}|${displayFingerprint}`,
                 table.id,
                 table.metadata,
                 activeVariant?.id,
@@ -289,7 +310,7 @@ export const ChartRenderService: FC = () => {
 
             return () => { cancelled = true; };
         }
-    }, [charts, tables, conceptShelfItems, chartSynthesisInProgress, processChart, dispatch]);
+    }, [charts, tables, conceptShelfItems, chartSynthesisInProgress, displayRowsTick, processChart, dispatch]);
 
     // This component renders nothing
     return null;

@@ -385,7 +385,7 @@ entirely if no useful chart-producing follow-ups exist.
   - *Open-ended* (explicit exploration, e.g. "explore", "overview", "what's interesting"): **3–5 visualizations** forming a narrative → `present`.
 - **After each chart**, continue only if the next chart answers a gap *raised* by the previous one — not just another interesting angle. Otherwise `present` and let the user ask for more.
 - If ambiguous, `clarify`.
-- **Never** repeat a visualization already in the trajectory.
+- **Never** repeat a visualization already in the trajectory or in another thread.
 - {max_iterations} visualizations is a **hard ceiling**, not a target.
 
 {agent_exploration_rules}
@@ -1256,7 +1256,7 @@ class DataAgent:
             )
         if has_other_threads:
             context_lines.append(
-                "- **[OTHER THREADS]**: Brief summaries of other exploration threads."
+                "- **[OTHER THREADS]**: Brief summaries of other exploration threads in this workspace. "
             )
         if has_attached_images:
             context_lines.append(

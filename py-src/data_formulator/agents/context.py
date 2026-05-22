@@ -94,7 +94,11 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
 def build_peripheral_thread_context(other_threads: list[dict[str, Any]]) -> str:
     """Build Tier 3: minimal peripheral thread context.
 
-    One line per step, just display_instruction + chart type.
+    One line per step. Each step string carries the user's instruction, the
+    rendered chart type/encodings, and — when available — the agent's own
+    per-step finding (``" — finding: ..."``). That per-step commentary is what
+    lets the model recognise a similar question has already been answered and
+    avoid producing a near-duplicate chart in a new thread.
     """
     lines = ["[OTHER THREADS]"]
     for thread in other_threads:

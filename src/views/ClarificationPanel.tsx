@@ -1,7 +1,7 @@
 import React, { FC, useEffect, useRef, useState } from 'react';
 import { Box, Collapse, IconButton, Tooltip, Typography, useTheme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import { AgentToyIcon } from './AgentToyIcon';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
@@ -110,8 +110,8 @@ export const ClarificationPanel: FC<ClarificationPanelProps> = ({
                     '&:hover': { backgroundColor: alpha(accentColor, 0.06) },
                 }}
             >
-                <SmartToyOutlinedIcon sx={{
-                    fontSize: 14,
+                <AgentToyIcon variant={isExplain ? 'explain' : 'clarify'} sx={{
+                    fontSize: 16,
                     color: minimized ? theme.palette.text.disabled : accentColor,
                     flexShrink: 0,
                 }} />

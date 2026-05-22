@@ -43,7 +43,6 @@ import { loadTable } from '../app/tableThunks';
 import { AppDispatch } from '../app/store';
 
 import DeleteIcon from '@mui/icons-material/Delete';
-import StarIcon from '@mui/icons-material/Star';
 import PersonIcon from '@mui/icons-material/Person';
 import { TableIcon, AnchorIcon, InsightIcon, StreamIcon, AgentIcon } from '../icons';
 
@@ -81,6 +80,7 @@ import { AgentRulesDialog } from './AgentRulesDialog';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import { AgentToyIcon } from './AgentToyIcon';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ArticleIcon from '@mui/icons-material/Article';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -1719,13 +1719,14 @@ let SingleThreadGroupView: FC<{
     const getClarifyIcon = (item: typeof timelineItems[0]) => {
         const role = item.interactionEntry?.role;
         const color = role === 'explain' ? theme.palette.info.main : theme.palette.warning.main;
-        return <SmartToyOutlinedIcon sx={{
-            width: 14, height: 14, color,
+        const variant = role === 'explain' ? 'explain' : 'clarify';
+        return <AgentToyIcon variant={variant} sx={{
+            width: 16, height: 16, color,
             animation: 'df-clarify-bounce 1.4s ease-in-out infinite',
             '@keyframes df-clarify-bounce': {
                 '0%, 100%': { transform: 'scale(1) translateY(0)' },
-                '30%':      { transform: 'scale(1.25) translateY(-2px)' },
-                '60%':      { transform: 'scale(0.95) translateY(1px)' },
+                '30%':      { transform: 'scale(1.15) translateY(-1.5px)' },
+                '60%':      { transform: 'scale(0.97) translateY(1px)' },
             },
         }} />;
     };
@@ -2259,25 +2260,8 @@ const ChartThumbnail: FC<{
     table: DictTable;
     status: 'available' | 'pending' | 'unavailable';
     onChartClick: (chartId: string, tableId: string) => void;
-    onDelete: (chartId: string) => void;
-}> = ({ chart, table, status, onChartClick, onDelete }) => {
+}> = ({ chart, table, status, onChartClick }) => {
     const { t } = useTranslation();
-
-    let deleteButton = <Tooltip title={t('dataThread.deleteChart')}>
-        <IconButton className='data-thread-chart-delete-btn' size="small" color="error"
-            aria-label={t('dataThread.deleteChart')}
-            sx={{ 
-                zIndex: 10, position: "absolute", right: 1, top: 1,
-                p: 0.5,
-                opacity: 0, transition: 'opacity 0.15s',
-                backgroundColor: 'rgba(255,255,255,0.85)',
-                '&:hover': { transform: 'scale(1.15)', backgroundColor: 'rgba(255,255,255,0.95)' },
-                '.vega-thumbnail-box:hover &': { opacity: 1 },
-            }}
-            onClick={(event) => { event.stopPropagation(); onDelete(chart.id); }}>
-            <DeleteIcon sx={{ fontSize: 16 }} />
-        </IconButton>
-    </Tooltip>
 
     const pendingOverlay = status == 'pending' ? <Box sx={{
         position: "absolute", top: 0, left: -8, right: -8, bottom: 0, zIndex: 20,
@@ -2294,7 +2278,6 @@ const ChartThumbnail: FC<{
             sx={{ width: "100%", color: 'text.secondary', height: 48, display: "flex", backgroundColor: "white", position: 'relative', flexDirection: "column" }}>
             {pendingOverlay}
             <InsightIcon sx={{ margin: 'auto', color: 'darkgray' }}  fontSize="medium" />
-            {deleteButton}
         </Box>;
     }
 
@@ -2309,7 +2292,6 @@ const ChartThumbnail: FC<{
                 <Box sx={{ margin: "auto", transform: chart.chartType == 'Table' ? "rotate(15deg)" : undefined }} >
                     {generateChartSkeleton(chartTemplate?.icon, 32, 32, chart.chartType == 'Table' ? 1 : 0.5)} 
                 </Box>
-                {deleteButton}
             </Box>
         </Box>;
     }
@@ -2323,15 +2305,11 @@ const ChartThumbnail: FC<{
                 style={{ width: "100%", position: "relative", cursor: "pointer" }}
             >
                 <Box sx={{ margin: "auto" }}>
-                    {chart.saved && <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
-                        <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                    </Typography>}
                     {pendingOverlay}
-                    {deleteButton}
                     <Box className={"vega-thumbnail"}
                         sx={{
                             display: "flex",
-                            backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
+                            backgroundColor: "white",
                             justifyContent: 'center',
                             alignItems: 'center',
                             minHeight: 48,
@@ -2358,15 +2336,11 @@ const ChartThumbnail: FC<{
             style={{ width: "100%", position: "relative", cursor: "pointer" }}
         >
             <Box sx={{ margin: "auto" }}>
-                {chart.saved && <Typography sx={{ position: "absolute", margin: "5px", zIndex: 2 }}>
-                    <StarIcon sx={{ color: "gold" }} fontSize="small" />
-                </Typography>}
                 {pendingOverlay}
-                {deleteButton}
                 <Box className={"vega-thumbnail"}
                     sx={{
                         display: "flex",
-                        backgroundColor: chart.saved ? "rgba(255,215,0,0.05)" : "white",
+                        backgroundColor: "white",
                         justifyContent: 'center',
                         alignItems: 'center',
                         minHeight: 60,
@@ -3026,9 +3000,15 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                 onChartClick={() => {
                     dispatch(dfActions.setFocused({ type: 'chart', chartId: chart.id }));
                 }}
-                onDelete={() => {dispatch(dfActions.deleteChartById(chart.id))}}
             />;
-            return { chartId: chart.id, tableId: table.id, element };
+            return {
+                chartId: chart.id,
+                tableId: table.id,
+                element,
+                onDelete: () => { dispatch(dfActions.deleteChartById(chart.id)); },
+                deleteTooltip: t('dataThread.deleteChart'),
+                unread: !!chart.unread,
+            };
         });
     }, [charts, tables, conceptShelfItems, chartSynthesisInProgress]);
 

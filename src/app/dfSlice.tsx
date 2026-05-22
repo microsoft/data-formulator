@@ -17,6 +17,7 @@ import i18n from '../i18n';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 import { Identity, IdentityType, getBrowserId } from './identity';
+import { REHYDRATE } from 'redux-persist';
 
 enableMapSet();
 
@@ -28,7 +29,6 @@ export const generateFreshChart = (tableRef: string, chartType: string, source: 
         chartType: chartType, 
         encodingMap: Object.assign({}, ...getChartChannels(chartType).map((channel) => ({ [channel]: { channel: channel, bin: false } }))),
         tableRef: tableRef,
-        saved: false,
         source: source,
     }
 }
@@ -156,6 +156,16 @@ export interface DataFormulatorState {
     chartSynthesisInProgress: string[];
     chartInsightInProgress: string[];
 
+    /**
+     * Monotonically increasing counter bumped whenever the focused canvas
+     * fetches a fresh display-row sample (see `src/app/displayRowsCache.ts`).
+     * Background services that render off-screen (e.g. ChartRenderService)
+     * select this so they re-run when the canvas's richer sample becomes
+     * available, instead of being stuck rendering against the small preview
+     * slice that virtual tables ship in `table.rows`.
+     */
+    displayRowsTick: number;
+
     serverConfig: ServerConfig;
 
     config: ClientConfig;
@@ -218,6 +228,7 @@ const initialState: DataFormulatorState = {
 
     chartSynthesisInProgress: [],
     chartInsightInProgress: [],
+    displayRowsTick: 0,
 
     serverConfig: {
         DISABLE_DISPLAY_KEYS: false,
@@ -940,21 +951,9 @@ export const dataFormulatorSlice = createSlice({
             let chartId = action.payload;
 
             let chartCopy = JSON.parse(JSON.stringify(state.charts.find(chart => chart.id == chartId) as Chart)) as Chart;
-            chartCopy = { ...chartCopy, saved: false }
             chartCopy.id = `chart-${Date.now()- Math.floor(Math.random() * 10000)}`;
             state.charts.push(chartCopy);
             state.focusedId = { type: 'chart', chartId: chartCopy.id };
-        },
-        saveUnsaveChart: (state, action: PayloadAction<string>) => {
-            let chartId = action.payload;
-
-            state.charts = state.charts.map(chart => {
-                if (chart.id == chartId) {
-                    return { ...chart, saved: !chart.saved };
-                } else {
-                    return chart;
-                }
-            })
         },
         deleteChartById: (state, action: PayloadAction<string>) => {
             let chartId = action.payload;
@@ -1064,6 +1063,9 @@ export const dataFormulatorSlice = createSlice({
             if (chart) {
                 chart.thumbnail = action.payload.thumbnail;
             }
+        },
+        bumpDisplayRowsTick: (state) => {
+            state.displayRowsTick = (state.displayRowsTick || 0) + 1;
         },
         updateChartInsight: (state, action: PayloadAction<{chartId: string, insight: ChartInsight}>) => {
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == action.payload.chartId);
@@ -1221,17 +1223,12 @@ export const dataFormulatorSlice = createSlice({
             let conceptID = action.payload;
             let allCharts = dfSelectors.getAllCharts(state);
             // remove concepts from encoding maps
-            if (allCharts.some(chart => chart.saved 
-                && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
-                console.log("cannot delete!")
-            } else {
-                state.conceptShelfItems = state.conceptShelfItems.filter(f => f.id != conceptID);
-                for (let chart of allCharts)  {
-                    for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
-                        if (encoding.fieldID && conceptID == encoding.fieldID) {
-                            // clear the encoding
-                            chart.encodingMap[channel as Channel] = { }
-                        }
+            state.conceptShelfItems = state.conceptShelfItems.filter(f => f.id != conceptID);
+            for (let chart of allCharts)  {
+                for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
+                    if (encoding.fieldID && conceptID == encoding.fieldID) {
+                        // clear the encoding
+                        chart.encodingMap[channel as Channel] = { }
                     }
                 }
             }
@@ -1240,17 +1237,12 @@ export const dataFormulatorSlice = createSlice({
             let allCharts = dfSelectors.getAllCharts(state);
             for (let conceptID of action.payload) {
                 // remove concepts from encoding maps
-                if (allCharts.some(chart => chart.saved 
-                    && Object.entries(chart.encodingMap).some(([channel, encoding]) => encoding.fieldID && conceptID == encoding.fieldID))) {
-                    console.log("cannot delete!")
-                } else {
-                    state.conceptShelfItems = state.conceptShelfItems.filter(field => field.id != conceptID);
-                    for (let chart of allCharts)  {
-                        for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
-                            if (encoding.fieldID && conceptID == encoding.fieldID) {
-                                // clear the encoding
-                                chart.encodingMap[channel as Channel] = { }
-                            }
+                state.conceptShelfItems = state.conceptShelfItems.filter(field => field.id != conceptID);
+                for (let chart of allCharts)  {
+                    for (let [channel, encoding] of Object.entries(chart.encodingMap)) {
+                        if (encoding.fieldID && conceptID == encoding.fieldID) {
+                            // clear the encoding
+                            chart.encodingMap[channel as Channel] = { }
                         }
                     }
                 }
@@ -1399,13 +1391,21 @@ export const dataFormulatorSlice = createSlice({
             state.displayedMessageIdx = action.payload
         },
         setFocused: (state, action: PayloadAction<FocusedId>) => {
-            state.focusedId = action.payload;
+            const payload = action.payload;
+            state.focusedId = payload;
 
-            if (action.payload?.type === 'chart' && state.viewMode == 'report') {
+            if (payload?.type === 'chart' && state.viewMode == 'report') {
                 state.viewMode = 'editor';
             }
-            if (action.payload?.type === 'report') {
+            if (payload?.type === 'report') {
                 state.viewMode = 'report';
+            }
+            // Clear the "unread" mark on a chart as soon as the user focuses it.
+            if (payload?.type === 'chart') {
+                const focusedChart = state.charts.find(c => c.id === payload.chartId);
+                if (focusedChart?.unread) {
+                    focusedChart.unread = false;
+                }
             }
         },
         setFocusedDataCleanBlockId: (state, action: PayloadAction<{blockId: string, itemId: number} | undefined>) => {
@@ -1553,6 +1553,56 @@ export const dataFormulatorSlice = createSlice({
     },
     extraReducers: (builder) => {
         builder
+        .addCase(REHYDRATE, (state: any, action: any) => {
+            // On a normal page refresh, redux-persist replays the persisted
+            // state directly into the reducer — it does NOT go through our
+            // `loadState` action. Any draft that was `running` or
+            // `clarifying` when the tab closed will rehydrate in that
+            // status, but the SSE stream that was driving it is gone, so
+            // the UI gets stuck on a "thinking…" banner with a runaway
+            // elapsed-time counter. Mark those drafts as interrupted and
+            // clear transient agent flags, mirroring the same cleanup
+            // `loadState` performs for session loads.
+            const incoming = action.payload;
+            if (!incoming) return;
+            if (Array.isArray(incoming.draftNodes)) {
+                incoming.draftNodes = incoming.draftNodes.map((node: DraftNode) => {
+                    if (node.derive?.status === 'running' || node.derive?.status === 'clarifying') {
+                        return {
+                            ...node,
+                            derive: {
+                                ...node.derive,
+                                status: 'interrupted' as const,
+                                runningPlan: undefined,
+                                trigger: {
+                                    ...node.derive.trigger,
+                                    interaction: [
+                                        ...(node.derive.trigger.interaction || []),
+                                        {
+                                            from: 'data-agent' as const,
+                                            to: 'user' as const,
+                                            role: 'error' as const,
+                                            content: 'Interrupted by page refresh. You can retry or delete this step.',
+                                            timestamp: Date.now(),
+                                        },
+                                    ],
+                                },
+                            },
+                        };
+                    }
+                    return node;
+                });
+            }
+            // Reset other transient in-progress flags that snuck into the
+            // persisted blob (chartSynthesisInProgress / chartInsightInProgress
+            // are already blacklisted in store.ts).
+            incoming.cleanInProgress = false;
+            incoming.dataLoadingChatInProgress = false;
+            incoming.sessionLoading = false;
+            incoming.sessionLoadingLabel = '';
+            incoming.messages = [];
+            incoming.displayedMessageIdx = -1;
+        })
         .addCase(fetchFieldSemanticType.fulfilled, (state, action) => {
             let data = action.payload;
             let tableId = action.meta.arg.id;

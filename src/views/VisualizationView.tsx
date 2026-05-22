@@ -46,6 +46,7 @@ import '../scss/DataView.scss';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchChartInsight } from '../app/dfSlice';
 import { assembleVegaChart, extractFieldsFromEncodingMap, getUrls, prepVisTable, fetchWithIdentity } from '../app/utils';
+import { displayRowsCache } from '../app/displayRowsCache';
 import { buildEmbeddedDataForChart } from '../app/restyle';
 import { apiRequest } from '../app/apiClient';
 import embed from 'vega-embed';
@@ -54,9 +55,7 @@ import { DictTable } from "../components/ComponentType";
 
 import AddchartIcon from '@mui/icons-material/Addchart';
 import DeleteIcon from '@mui/icons-material/Delete';
-import StarIcon from '@mui/icons-material/Star';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import StarBorderIcon from '@mui/icons-material/StarBorder';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
@@ -65,6 +64,7 @@ import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import CasinoIcon from '@mui/icons-material/Casino';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import { AgentToyIcon, AnimatedAgentToyIcon } from './AgentToyIcon';
 
 import { CHART_TEMPLATES, getChartTemplate } from '../components/ChartTemplates';
 
@@ -239,11 +239,6 @@ export let SampleSizeEditor: FC<{
     </Box>
 }
 
-/**
- * Module-level cache: avoids re-fetching server data when switching back to a chart.
- */
-const displayRowsCache = new Map<string, { rows: any[], totalCount: number }>();
-
 /** Main chart uses vega-embed (interactive tooltips). Static toSVG() removes hover behavior. */
 const VegaChartRenderer: FC<{
     chart: Chart;
@@ -255,8 +250,9 @@ const VegaChartRenderer: FC<{
     scaleFactor: number;
     maxStretchFactor?: number;
     chartUnavailable: boolean;
+    insightTitle?: string;
     onSpecReady?: (spec: any | null) => void;
-}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady }) => {
+}> = React.memo(({ chart, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, onSpecReady }) => {
 
     const dispatch = useDispatch();
     const elementId = `focused-chart-element-${chart.id}`;
@@ -328,6 +324,24 @@ const VegaChartRenderer: FC<{
         }
 
         spec['background'] = 'white';
+
+        // Inject the insight title into the Vega-Lite spec instead of rendering
+        // it as outside HTML. Vega-Lite anchors the title against the plot group
+        // (frame: 'group'), so it stays centered over the actual chart area even
+        // when a legend pushes the embed wrapper off-center. We don't override a
+        // title already supplied by a style variant.
+        if (insightTitle && !spec.title) {
+            const faceted = !!(chart.encodingMap.column?.fieldID || chart.encodingMap.row?.fieldID);
+            spec.title = {
+                text: insightTitle,
+                anchor: 'middle',
+                fontWeight: 500,
+                fontSize: 13,
+                color: '#555',
+                offset: 12,
+            };
+        }
+
         onSpecReady?.(spec);
 
         const el = document.getElementById(elementId);
@@ -358,7 +372,7 @@ const VegaChartRenderer: FC<{
             el.innerHTML = '';
         };
 
-    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, onSpecReady, elementId]);
+    }, [chart.id, chart.chartType, chart.encodingMap, chart.config, chart.activeVariantId, chart.styleVariants, conceptShelfItems, visTableRows, tableMetadata, chartWidth, chartHeight, scaleFactor, maxStretchFactor, chartUnavailable, insightTitle, onSpecReady, elementId]);
 
     if (chart.chartType === "Auto") {
         return <Box sx={{ position: "relative", display: "flex", flexDirection: "column", margin: 'auto', color: 'darkgray' }}>
@@ -570,6 +584,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                     setVisTableTotalRowCount(data.total_row_count);
                     setDataVersion(versionId);
                     displayRowsCache.set(versionId, { rows: data.rows, totalCount: data.total_row_count });
+                    dispatch(dfActions.bumpDisplayRowsTick());
                 }
                 // Else: this response is stale, ignore it
             })
@@ -592,6 +607,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             setDataVersion(versionId);
             // Cache for instant reuse on chart revisit
             displayRowsCache.set(versionId, { rows: clonedRows, totalCount: table.rows.length });
+            dispatch(dfActions.bumpDisplayRowsTick());
         }
     }
 
@@ -663,21 +679,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             color: 'action.disabled',
         },
     };
-
-    let saveButton = (
-        <Tooltip key="save-copy-tooltip" title={focusedChart.saved ? t('chart.notAnymore') : t('chart.iLikeIt')}>
-            <span>
-                <IconButton key="unsave-btn" size="small" sx={actionBtnSx}
-                    onClick={() => {
-                        if (!chartUnavailable) {
-                            dispatch(dfActions.saveUnsaveChart(focusedChart.id));
-                        }
-                    }}>
-                    {focusedChart.saved ? <StarIcon sx={{ fontSize: 18, color: "goldenrod" }} /> : <StarBorderIcon sx={{ fontSize: 18 }} />}
-                </IconButton>
-            </span>
-        </Tooltip>
-    );
 
     let deleteButton = (
         <Tooltip title={t('chart.delete')} key="delete-btn-tooltip">
@@ -789,7 +790,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         ...derivedTableItems,
         <Divider key="action-divider" orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />,
         logButton,
-        saveButton,
         // vegaEditorButton,
         deleteButton,
     ]
@@ -848,14 +848,6 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
                             in={!isDataStale} timeout={600}>    
                             <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%', mt: 'max(120px, 4vh)', mb: 'max(120px, 4vh)'}} className="chart-box">
-                                {insightFresh && focusedChart.insight?.title && (
-                                    <Typography fontSize="small" sx={{
-                                        fontWeight: (focusedChart.encodingMap.column?.fieldID || focusedChart.encodingMap.row?.fieldID) ? 400 : 600,
-                                        textAlign: 'center', mb: 0.5, color: 'text.secondary',
-                                    }}>
-                                        {focusedChart.insight.title}
-                                    </Typography>
-                                )}
                                 <Box sx={{minHeight: 240, maxWidth: '100%', overflow: 'hidden'}}>
                                     <VegaChartRenderer
                                         key={focusedChart.id}
@@ -868,6 +860,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
                                         scaleFactor={localScaleFactor}
                                         maxStretchFactor={config.maxStretchFactor}
                                         chartUnavailable={chartUnavailable}
+                                        insightTitle={insightFresh && focusedChart.insight?.title ? focusedChart.insight.title : undefined}
                                         onSpecReady={handleSpecReady}
                                     />
                                 </Box>
@@ -1100,6 +1093,44 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     </Box>
 }
 
+// Landing / empty-state hero shown when no chart is focused AND there is
+// no existing thread (no charts, no derived/ancestor tables) for the
+// focused table — i.e., the very first moment after data is loaded.
+// Leads with a friendly welcome and points the user toward the chat input
+// at the bottom-left, then presents the manual chart palette below an
+// "or" divider so it's still one click away.
+const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelectionBox }) => {
+    const { t } = useTranslation();
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, width: '100%' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.75, maxWidth: 820, textAlign: 'center' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.primary' }}>
+                    <AnimatedAgentToyIcon
+                        sx={{ fontSize: 26, color: 'primary.main' }}
+                    />
+                    <Typography sx={{ fontSize: 22, fontWeight: 500, lineHeight: 1.25 }}>
+                        {t('chart.emptyStateTitle')}
+                    </Typography>
+                </Box>
+                <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.5 }}>
+                    {t('chart.emptyStateSubtitle')}
+                </Typography>
+            </Box>
+            {/* "or" divider + manual chart picker — always visible on the
+                fresh-start landing so a user who'd rather start manually
+                isn't gated behind an extra click. */}
+            <Divider sx={{ mt: 4, mb: 2, width: '100%', maxWidth: 720 }} textAlign='left'>
+                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                    {t('chart.orCreateYourself')}
+                </Typography>
+            </Divider>
+            <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+                {chartSelectionBox}
+            </Box>
+        </Box>
+    );
+};
+
 export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView({ }) {
 
     const { t } = useTranslation();
@@ -1124,19 +1155,30 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     // when there is no result and synthesis is running, just show the waiting panel
     if (!focusedChart || focusedChart?.chartType == "?") {
-        let chartSelectionBox = <Box sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 2 }}>
+        let chartSelectionBox = <Box sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 2.5, justifyContent: 'center', maxWidth: 1100 }}>
             {Object.entries(CHART_TEMPLATES)
                 .filter(([category, templates]) => category !== "Custom" && templates.some(t => t.chart !== "Auto"))
                 .map(([category, templates]) => (
-                    <Box key={category} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <Box key={category} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', px: 0.5, py: 0.5 }}>
+                        <Typography sx={{
+                            fontSize: 11,
+                            color: 'text.secondary',
+                            fontWeight: 400,
+                            mb: 1,
+                            pl: 1,
+                        }}>{category}</Typography>
                         {templates
                             .filter(t => t.chart !== "Auto")
                             .map((t, index) => (
                                 <Button
                                     disabled={synthesisRunning}
                                     key={`${category}-${index}-${t.chart}-btn`}
-                                    sx={{ margin: '1px', padding: '2px', display: 'flex', flexDirection: 'row',
-                                        textTransform: 'none', justifyContent: 'flex-start', minWidth: 0, width: '100%' }}
+                                    sx={{
+                                        margin: 0, padding: '3px 8px 3px 4px',
+                                        display: 'flex', flexDirection: 'row',
+                                        textTransform: 'none', justifyContent: 'flex-start',
+                                        minWidth: 0,
+                                    }}
                                     onClick={() => {
                                         let focusedChart = allCharts.find(c => c.id == focusedChartId);
                                         if (focusedChart?.chartType == "?") {
@@ -1146,10 +1188,12 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                                         }
                                     }}
                                 >
-                                    <Box sx={{ opacity: synthesisRunning ? 0.5 : 1, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                        {typeof t?.icon == 'string' ? <img height="40px" width="40px" src={t?.icon} alt="" role="presentation" /> : t.icon}
+                                    <Box sx={{ opacity: synthesisRunning ? 0.5 : 1, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        {typeof t?.icon == 'string'
+                                            ? <img height="30px" width="30px" src={t?.icon} alt="" role="presentation" />
+                                            : <Box sx={{ '& svg': { width: 30, height: 30 } }}>{t.icon}</Box>}
                                     </Box>
-                                    <Typography sx={{ ml: '4px', whiteSpace: "nowrap", fontSize: '10px', lineHeight: 1.2 }}>{t?.chart}</Typography>
+                                    <Typography sx={{ ml: '6px', whiteSpace: "nowrap", fontSize: '11px', lineHeight: 1.2 }}>{t?.chart}</Typography>
                                 </Button>
                             ))
                         }
@@ -1162,14 +1206,45 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
                 <Box sx={{ overflow: "hidden", display: 'flex', flex: 1 }}>
                     <Box className="vis-scroll" sx={{ display: 'flex', overflowY: 'auto', overflowX: 'hidden', flexDirection: 'column', flex: 1 }}>
                         <Box sx={{ minHeight: 'min(75vh, 600px)', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                            <Box sx={{ margin: 'auto' }}>
-                                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
-                                <Divider sx={{my: 3}} textAlign='left'>
-                                    <Typography sx={{fontSize: 12, color: "text.secondary"}}>
-                                        {t('chart.orStartWithChartType')}
-                                    </Typography>
-                                </Divider>
-                                {chartSelectionBox}
+                            <Box sx={{ margin: 'auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                {(() => {
+                                    // "Has thread" = the focused table is
+                                    // already part of an exploration: it has
+                                    // real charts, or it's derived from /
+                                    // feeds into another table. In that case
+                                    // we keep the original compact layout
+                                    // (provenance ribbon + "or" + palette).
+                                    // Otherwise (fresh start, just-loaded
+                                    // data) we show the welcoming hero with
+                                    // a chat pointer.
+                                    const hasRealCharts = !!focusedTableId && allCharts.some(c =>
+                                        c.tableRef === focusedTableId
+                                        && c.chartType !== '?'
+                                        && c.chartType !== 'Auto'
+                                        && c.source !== 'trigger'
+                                    );
+                                    const focusedTable = focusedTableId ? tables.find(t => t.id === focusedTableId) : undefined;
+                                    const hasDerivation = !!focusedTable && (
+                                        focusedTable.derive !== undefined
+                                        || tables.some(t => t.derive?.trigger?.tableId === focusedTableId)
+                                    );
+                                    const hasThread = hasRealCharts || hasDerivation;
+
+                                    if (hasThread) {
+                                        return (
+                                            <>
+                                                {focusedTableId ? <ChartRecBox sx={{margin: 'auto'}} tableId={focusedTableId as string} placeHolderChartId={focusedChartId as string} /> : null}
+                                                <Divider sx={{my: 4, width: '100%', maxWidth: 720}} textAlign='left'>
+                                                    <Typography sx={{fontSize: 11, color: "text.secondary"}}>
+                                                        {t('chart.orStartWithChartType')}
+                                                    </Typography>
+                                                </Divider>
+                                                {chartSelectionBox}
+                                            </>
+                                        );
+                                    }
+                                    return <EmptyStateHero chartSelectionBox={chartSelectionBox} />;
+                                })()}
                             </Box>
                         </Box>
                         {focusedId?.type === 'table' && focusedTableId && (() => {
