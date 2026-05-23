@@ -36,6 +36,12 @@ export function OidcCallback() {
                 if (!mgr) return;
 
                 const params = new URLSearchParams(window.location.search);
+                const idpError = params.get("error");
+                if (idpError) {
+                    window.location.href = `/?auth_error=${encodeURIComponent(idpError)}`;
+                    return;
+                }
+
                 if (!params.get("state") && params.get("code")) {
                     // IdP-initiated flow: the SSO redirected here directly
                     // without DF having started the login.  Re-initiate a

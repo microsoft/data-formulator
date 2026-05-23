@@ -616,6 +616,7 @@
     "completingLogin": "Completing login…",
     "idpRedirecting": "Redirecting from SSO, please wait…",
     "callbackFailed": "Login callback failed: {{message}}",
+    "ssoErrorAccessDenied": "Authorization was cancelled. If you wish to use SSO, please try signing in again.",
     "ssoErrorInvalidState": "SSO session expired or was interrupted. Please try signing in again.",
     "ssoErrorInvalidClient": "SSO client credentials are incorrect. Please contact your administrator to verify the configuration.",
     "ssoErrorTokenExchange": "SSO login failed during token exchange. Please try again or contact your administrator.",

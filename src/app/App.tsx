@@ -733,6 +733,7 @@ const ErrorBoundaryFallback: React.FC = () => {
 };
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
+    access_denied: 'auth.ssoErrorAccessDenied',
     invalid_state: 'auth.ssoErrorInvalidState',
     invalid_client: 'auth.ssoErrorInvalidClient',
     token_exchange_failed: 'auth.ssoErrorTokenExchange',

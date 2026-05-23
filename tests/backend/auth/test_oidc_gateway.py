@@ -193,6 +193,48 @@ class TestOIDCCallback:
         assert resp.status_code == 302
         assert "auth_error=backend_oidc_not_enabled" in resp.headers["Location"]
 
+    def test_callback_access_denied_returns_access_denied_error(self, client):
+        """When user cancels at IdP, the error param is recognized."""
+        with client.session_transaction() as sess:
+            sess["_oauth_state"] = "test-state"
+        resp = client.get("/auth/callback?error=access_denied&state=test-state")
+        assert resp.status_code == 302
+        assert "auth_error=access_denied" in resp.headers["Location"]
+
+    def test_callback_access_denied_clears_oauth_state(self, client):
+        """Cancelled auth should clean up the pending oauth state."""
+        with client.session_transaction() as sess:
+            sess["_oauth_state"] = "test-state"
+        client.get("/auth/callback?error=access_denied&state=test-state")
+        with client.session_transaction() as sess:
+            assert "_oauth_state" not in sess
+
+    def test_callback_idp_server_error_returns_token_exchange_failed(self, client):
+        """Non-access_denied IdP errors map to token_exchange_failed."""
+        with client.session_transaction() as sess:
+            sess["_oauth_state"] = "test-state"
+        resp = client.get("/auth/callback?error=server_error&state=test-state")
+        assert resp.status_code == 302
+        assert "auth_error=token_exchange_failed" in resp.headers["Location"]
+
+    def test_callback_access_denied_preserves_existing_sso_session(self, client):
+        """Cancelling re-auth must NOT invalidate the existing SSO session."""
+        import time
+        with client.session_transaction() as sess:
+            sess["_oauth_state"] = "test-state"
+            sess["sso"] = {
+                "access_token": "existing-tok",
+                "refresh_token": None,
+                "expires_at": time.time() + 3600,
+                "user": {"name": "Alice"},
+            }
+        resp = client.get("/auth/callback?error=access_denied&state=test-state")
+        assert resp.status_code == 302
+        assert "auth_error=access_denied" in resp.headers["Location"]
+        with client.session_transaction() as sess:
+            assert "sso" in sess
+            assert sess["sso"]["access_token"] == "existing-tok"
+
 
 # ==================================================================
 # oidc_bp: /api/auth/oidc/status

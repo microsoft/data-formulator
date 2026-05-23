@@ -616,6 +616,7 @@
     "completingLogin": "正在完成登录…",
     "idpRedirecting": "正在从 SSO 系统跳转，请稍候…",
     "callbackFailed": "登录回调失败：{{message}}",
+    "ssoErrorAccessDenied": "授权已取消。如需使用单点登录，请重新登录。",
     "ssoErrorInvalidState": "SSO 会话已过期或被中断，请重新登录。",
     "ssoErrorInvalidClient": "SSO 客户端密钥配置错误，请联系管理员检查配置。",
     "ssoErrorTokenExchange": "SSO 登录过程中令牌交换失败，请重试或联系管理员。",
