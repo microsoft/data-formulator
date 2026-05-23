@@ -1,7 +1,11 @@
 {
   "dataLoading": {
     "title": "Data Loading Assistant",
-    "subtitle": "Extract data from images, files, webpages, or text. Generate synthetic datasets. Browse sample data.",
+    "subtitle": "I can help you extract, generate, or browse data — or just ask me anything.",
+    "sectionTry": "Try a task",
+    "sectionChat": "Or just ask",
+    "chatHint": "",
+    "chatHintExample": "What data do we have here?",
     "placeholder": "Describe data to extract, upload, or generate...",
     "attachTooltip": "Attach file or image",
     "stopTooltip": "Stop generation",

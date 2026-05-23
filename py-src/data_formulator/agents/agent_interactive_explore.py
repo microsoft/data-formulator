@@ -13,6 +13,7 @@ from data_formulator.agents.agent_utils import (
     extract_json_objects,
     generate_data_summary,
 )
+from data_formulator.agents.agent_language import inject_language_instruction
 from data_formulator.agents.context import (
     build_focused_thread_context,
     build_lightweight_table_context,
@@ -188,8 +189,7 @@ class InteractiveExploreAgent(object):
         if self._knowledge_store:
             system_prompt += self._knowledge_store.format_rules_block()
 
-        if self.language_instruction:
-            system_prompt = system_prompt + "\n\n" + self.language_instruction
+        system_prompt = inject_language_instruction(system_prompt, self.language_instruction)
 
         ctx_elapsed = time.time() - t_ctx
         logger.info(

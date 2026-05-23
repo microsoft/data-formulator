@@ -6,6 +6,7 @@ import json
 from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
+from data_formulator.agents.agent_language import inject_language_instruction
 from data_formulator.agents.semantic_types import (
     generate_semantic_types_prompt,
 )
@@ -169,9 +170,7 @@ class DataLoadAgent(object):
         self.workspace = workspace
         self.language_instruction = language_instruction
 
-        self.system_prompt = SYSTEM_PROMPT
-        if language_instruction:
-            self.system_prompt = self.system_prompt + "\n\n" + language_instruction
+        self.system_prompt = inject_language_instruction(SYSTEM_PROMPT, language_instruction)
 
         self._diag = AgentDiagnostics(
             agent_name="DataLoadAgent",

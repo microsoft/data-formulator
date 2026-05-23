@@ -23,6 +23,7 @@ import TextFieldsIcon from '@mui/icons-material/TextFields';
 import DatasetIcon from '@mui/icons-material/Dataset';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import AddIcon from '@mui/icons-material/Add';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -613,27 +614,60 @@ const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> =
 
 const SampleTaskItem: React.FC<{
     icon: React.ReactElement;
-    title: string;
+    title?: string;
     example: string;
     onClickExample: () => void;
 }> = ({ icon, title, example, onClickExample }) => {
-    const theme = useTheme();
     return (
-        <Box sx={{
-            display: 'flex', alignItems: 'flex-start', gap: 1.25,
-            py: 0.75,
-        }}>
-            <Box sx={{ color: 'text.secondary', mt: 0.125 }}>{icon}</Box>
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography component="span" sx={{ fontSize: 12, lineHeight: 1.5, color: 'text.secondary' }}>
-                    {title}
-                    {' — '}
-                </Typography>
-                <Typography component="span" onClick={onClickExample} sx={{
+        <Box
+            role="button"
+            tabIndex={0}
+            onClick={onClickExample}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClickExample(); }
+            }}
+            title={title ? `${title} — ${example}` : example}
+            sx={{
+                display: 'flex', alignItems: 'center', gap: 1.25,
+                px: 1, py: 0.625,
+                mx: -1,
+                borderRadius: 1,
+                cursor: 'pointer',
+                color: 'text.secondary',
+                transition: 'background-color 120ms ease, color 120ms ease',
+                '&:hover': {
+                    backgroundColor: 'action.hover',
+                    color: 'text.primary',
+                },
+                '&:focus-visible': {
+                    outline: 'none',
+                    backgroundColor: 'action.hover',
+                    color: 'text.primary',
+                },
+            }}
+        >
+            <Box sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary' }}>{icon}</Box>
+            <Box sx={{
+                minWidth: 0, flex: 1,
+                display: 'flex', alignItems: 'baseline', gap: 0.75,
+                overflow: 'hidden',
+            }}>
+                {title ? (
+                    <Typography sx={{
+                        fontSize: 12, lineHeight: 1.5,
+                        color: 'text.secondary',
+                        flexShrink: 0,
+                    }}>
+                        {title}
+                    </Typography>
+                ) : null}
+                <Typography sx={{
                     fontSize: 12, lineHeight: 1.5,
-                    color: theme.palette.primary.main,
-                    cursor: 'pointer',
-                    '&:hover': { textDecoration: 'underline' },
+                    color: 'inherit',
+                    minWidth: 0, flex: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
                 }}>
                     {example}
                 </Typography>
@@ -995,18 +1029,42 @@ export const DataLoadingChat: React.FC = () => {
               }}>
                 {isEmpty ? (
                     <Box sx={{ maxWidth: 480, width: '100%' }}>
-                        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.5, textAlign: 'center' }}>
+                        <Typography sx={{ fontSize: 14, fontWeight: 600, mb: 0.75, textAlign: 'center' }}>
                             {t('dataLoading.title')}
                         </Typography>
-                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2, textAlign: 'center', lineHeight: 1.5 }}>
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 3.5, textAlign: 'center', lineHeight: 1.5 }}>
                             {t('dataLoading.subtitle')}
                         </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+                        <Typography sx={{
+                            fontSize: 11, fontWeight: 600, letterSpacing: 0.6,
+                            textTransform: 'uppercase', color: 'text.secondary',
+                            mb: 0.75,
+                        }}>
+                            {t('dataLoading.sectionTry')}
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', mb: 3 }}>
                             {sampleTasks.map((task, i) => (
                                 <SampleTaskItem key={i} icon={task.icon} title={task.title}
                                     example={task.example} onClickExample={task.action} />
                             ))}
                         </Box>
+
+                        <Typography sx={{
+                            fontSize: 11, fontWeight: 600, letterSpacing: 0.6,
+                            textTransform: 'uppercase', color: 'text.secondary',
+                            mb: 0.75,
+                        }}>
+                            {t('dataLoading.sectionChat')}
+                        </Typography>
+                        <SampleTaskItem
+                            icon={<ChatBubbleOutlineIcon sx={{ fontSize: 16 }} />}
+                            example={t('dataLoading.chatHintExample')}
+                            onClickExample={() => {
+                                setPrompt(t('dataLoading.chatHintExample'));
+                                setTimeout(() => inputRef.current?.focus(), 50);
+                            }}
+                        />
                     </Box>
                 ) : (
                     <>

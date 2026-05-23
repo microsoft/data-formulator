@@ -466,7 +466,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
         },
         { 
             value: 'url' as UploadTabType, 
-            title: t('upload.loadFromUrl'), 
+            title: t('upload.loadFromUrlTitle', { defaultValue: 'Load from URL (live)' }), 
             description: t('upload.loadFromUrlDesc'),
             icon: <LinkIcon />, 
             disabled: false,

@@ -45,7 +45,7 @@ from data_formulator.agents.context import (
 )
 from data_formulator.agents.client_utils import Client
 from data_formulator.datalake.parquet_utils import df_to_safe_records
-from data_formulator.prompts.chart_creation_guide import CHART_CREATION_GUIDE
+from data_formulator.agents.chart_creation_guide import CHART_CREATION_GUIDE
 from data_formulator.security.code_signing import sign_result
 from data_formulator.workflows.create_vl_plots import (
     assemble_vegailte_chart,

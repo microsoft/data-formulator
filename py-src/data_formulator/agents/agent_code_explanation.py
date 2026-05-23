@@ -4,6 +4,7 @@
 import json
 from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects, extract_code_from_gpt_response
+from data_formulator.agents.agent_language import inject_language_instruction
 
 import logging
 
@@ -163,9 +164,7 @@ class CodeExplanationAgent(object):
         logger.debug(user_query)
         logger.info(f"[CodeExplanationAgent] run start")
 
-        system_prompt = SYSTEM_PROMPT
-        if self.language_instruction:
-            system_prompt = system_prompt + "\n\n" + self.language_instruction
+        system_prompt = inject_language_instruction(SYSTEM_PROMPT, self.language_instruction)
 
         messages = [{"role":"system", "content": system_prompt},
                     {"role":"user","content": user_query}]

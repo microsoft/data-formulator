@@ -5,17 +5,16 @@ import json
 import time
 
 from data_formulator.agent_config import reasoning_effort_for
-from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block, ensure_output_variable_in_code
+from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response, supplement_missing_block, ensure_output_variable_in_code, compose_system_prompt
 from data_formulator.agents.agent_diagnostics import AgentDiagnostics
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.security.sanitize import sanitize_error_message
-from data_formulator.agents.agent_data_rec import (
+from data_formulator.agents.chart_creation_guide import (
     SHARED_ENVIRONMENT,
     SHARED_SEMANTIC_TYPE_REFERENCE,
     SHARED_CHART_REFERENCE,
     SHARED_STATISTICAL_ANALYSIS,
     SHARED_DUCKDB_NOTES,
-
 )
 import pandas as pd
 
@@ -103,26 +102,15 @@ class DataTransformationAgent(object):
 
         if system_prompt is not None:
             self._base_prompt = system_prompt
-            self.system_prompt = system_prompt
         else:
             self._base_prompt = SYSTEM_PROMPT
-            base_prompt = SYSTEM_PROMPT
-            if combined_rules:
-                self.system_prompt = base_prompt + "\n\n[AGENT CODING RULES]\nPlease follow these rules when generating code. Note: if the user instruction conflicts with these rules, you should prioritize user instructions.\n\n" + combined_rules
-            else:
-                self.system_prompt = base_prompt
 
-        if language_instruction:
-            marker = "**About the execution environment:**"
-            idx = self.system_prompt.find(marker)
-            if idx > 0:
-                self.system_prompt = (
-                    self.system_prompt[:idx]
-                    + language_instruction + "\n\n"
-                    + self.system_prompt[idx:]
-                )
-            else:
-                self.system_prompt = self.system_prompt + "\n\n" + language_instruction
+        self.system_prompt = compose_system_prompt(
+            self._base_prompt,
+            agent_coding_rules=combined_rules if system_prompt is None else "",
+            language_instruction=language_instruction,
+            language_marker="**About the execution environment:**",
+        )
 
         self._diag = AgentDiagnostics(
             agent_name="DataTransformationAgent",

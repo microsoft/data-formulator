@@ -24,6 +24,7 @@ from data_formulator.agents.agent_utils import (
     attach_reasoning_content,
     generate_data_summary,
 )
+from data_formulator.agents.agent_language import inject_language_instruction
 from data_formulator.datalake.parquet_utils import df_to_safe_records
 from data_formulator.agents.context import (
     build_focused_thread_context,
@@ -188,8 +189,7 @@ class ReportGenAgent:
 
         # Build system prompt
         system_prompt = SYSTEM_PROMPT
-        if self.language_instruction:
-            system_prompt += "\n\n" + self.language_instruction
+        system_prompt = inject_language_instruction(system_prompt, self.language_instruction)
 
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},

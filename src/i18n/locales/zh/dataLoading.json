@@ -1,7 +1,11 @@
 {
   "dataLoading": {
     "title": "数据加载助手",
-    "subtitle": "从图片、文件、网页或文本中提取数据。生成合成数据集。浏览示例数据。",
+    "subtitle": "我可以帮你提取、生成或浏览数据 — 有问题随时问。",
+    "sectionTry": "试试这些任务",
+    "sectionChat": "或直接提问",
+    "chatHint": "",
+    "chatHintExample": "这里有什么数据？",
     "placeholder": "描述要提取、上传或生成的数据...",
     "attachTooltip": "附加文件或图片",
     "stopTooltip": "停止生成",

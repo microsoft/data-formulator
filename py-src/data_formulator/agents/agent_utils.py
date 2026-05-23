@@ -15,6 +15,42 @@ _logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# system-prompt composition
+# ---------------------------------------------------------------------------
+
+def compose_system_prompt(
+    base_prompt: str,
+    *,
+    agent_coding_rules: str = "",
+    language_instruction: str = "",
+    language_marker: str | None = None,
+) -> str:
+    """Assemble a system prompt by appending coding rules and injecting a language block.
+
+    - ``agent_coding_rules`` (already-combined rules text) is appended under an
+      ``[AGENT CODING RULES]`` preamble when non-empty.
+    - ``language_instruction`` is inserted before ``language_marker`` if the marker
+      is found in the resulting prompt, otherwise appended at the end.
+    """
+    # Local import keeps agent_utils dependency-light at module import time.
+    from data_formulator.agents.agent_language import inject_language_instruction
+
+    prompt = base_prompt
+    if agent_coding_rules:
+        prompt = prompt + (
+            "\n\n[AGENT CODING RULES]\n"
+            "Please follow these rules when generating code. "
+            "Note: if the user instruction conflicts with these rules, "
+            "you should prioritize user instructions.\n\n"
+        ) + agent_coding_rules
+    if language_instruction:
+        prompt = inject_language_instruction(
+            prompt, language_instruction, marker=language_marker
+        )
+    return prompt
+
+
+# ---------------------------------------------------------------------------
 # reasoning_content helpers
 # ---------------------------------------------------------------------------
 

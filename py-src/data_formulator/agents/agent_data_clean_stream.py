@@ -3,6 +3,7 @@
 
 from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import extract_json_objects
+from data_formulator.agents.agent_language import inject_language_instruction
 from data_formulator.agents.web_utils import download_html_content
 
 import logging
@@ -190,9 +191,7 @@ class DataCleanAgentStream(object):
         logger.debug(user_prompt)
         logger.info(f"[DataCleanAgent] run start (streaming)")
 
-        prompt_text = SYSTEM_PROMPT
-        if self.language_instruction:
-            prompt_text = prompt_text + "\n\n" + self.language_instruction
+        prompt_text = inject_language_instruction(SYSTEM_PROMPT, self.language_instruction)
 
         system_message = {
             'role': 'system',

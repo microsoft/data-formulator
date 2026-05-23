@@ -3,6 +3,7 @@
 
 from data_formulator.agent_config import reasoning_effort_for
 from data_formulator.agents.agent_utils import generate_data_summary, extract_json_objects
+from data_formulator.agents.agent_language import inject_language_instruction
 
 import logging
 
@@ -95,8 +96,7 @@ class ChartInsightAgent(object):
         if self._knowledge_store:
             system_prompt += self._knowledge_store.format_rules_block()
 
-        if self.language_instruction:
-            system_prompt = system_prompt + "\n\n" + self.language_instruction
+        system_prompt = inject_language_instruction(system_prompt, self.language_instruction)
 
         messages = [
             {"role": "system", "content": system_prompt},
