@@ -754,10 +754,10 @@
     "clarificationNeeded": "等待操作"
   },
   "concepts": {
-    "showFewer": "收起概念",
-    "showAll": "显示所有概念",
-    "showFirstN": "显示前 {{count}} 个概念",
-    "showAllN": "显示全部 {{count}} 个概念"
+    "showFewer": "收起公式",
+    "showAll": "显示所有公式",
+    "showFirstN": "显示前 {{count}} 个公式",
+    "showAllN": "显示全部 {{count}} 个公式"
   },
   "dataframe": {
     "columnCount": "{{count}} 列"

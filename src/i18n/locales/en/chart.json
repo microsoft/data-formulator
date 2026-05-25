@@ -10,7 +10,7 @@
       "months": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
       "shortMonths": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     },
-    "derivedConcepts": "Derived Concepts",
+    "derivedConcepts": "Formulas",
     "dataTransformCode": "Data transformation code",
     "dataTransformExplanation": "Data transformation explanation",
     "zoomIn": "zoom in",
@@ -35,7 +35,7 @@
     "code": "code",
     "agentLog": "Agent Log",
     "explain": "explain",
-    "concepts": "explanation",
+    "concepts": "formulas",
     "orStartWithChartType": "create a new chart?",
     "orCreateYourself": "or create one yourself?",
     "emptyStateTitle": "Ready to explore your data?",

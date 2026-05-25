@@ -126,7 +126,8 @@ const renderWithMath = (text: string) => {
 const ConceptExplanationCard = styled(Box, {
     shouldForwardProp: (prop) => prop !== 'secondary',
 })<{ secondary: boolean }>(({ theme, secondary }) => ({
-    padding: '8px 12px',
+    padding: '8px 10px',
+    minWidth: 0,
     borderLeft: `3px solid ${secondary ? theme.palette.secondary.main : theme.palette.primary.light}`,
     borderRadius: '2px',
     backgroundColor: alpha(theme.palette.background.paper, 0.5),
@@ -151,14 +152,23 @@ const ConceptName = styled(Typography, {
 const ConceptExplanation = styled(Typography)(({ theme }) => ({
     fontSize: '11px',
     lineHeight: 1.4,
-    overflow: 'auto',
+    minWidth: 0,
     color: theme.palette.text.primary,
     '& .katex': {
-        fontSize: '12px',
+        fontSize: '11px',
         lineHeight: 1.2,
     },
+    // KaTeX block-math defaults to `overflow-x: auto` with vertical padding
+    // that reserves room for a scrollbar even when the formula fits.  Drop
+    // the bottom padding and only show the scrollbar if it's actually needed
+    // (and hide its track to keep the card clean).
     '& .katex-display': {
         margin: '4px 0',
+        paddingBottom: 0,
+        overflowX: 'auto',
+        overflowY: 'hidden',
+        scrollbarWidth: 'none',
+        '&::-webkit-scrollbar': { display: 'none' },
     },
 }));
 
@@ -189,13 +199,15 @@ export const ConceptExplCards: FC<ConceptExplCardsProps> = ({
 
 
     return (
-        <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-            {/* Concepts Grid */}
-            <Box sx={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(2, 1fr)',
+        <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', width: '100%' }}>
+            {/* Formulas grid — reflows to one column when there isn't room for two
+                side-by-side, so long formulas (\sum, fractions) don't overflow. */}
+            <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
                     gap: 1,
-                    overflow: 'hidden',
+                    width: '100%',
+                    minWidth: 0,
                 }}>
                     {displayConcepts.map((concept, index) => {
                         let secondary = concept.field == "Statistical Analysis";

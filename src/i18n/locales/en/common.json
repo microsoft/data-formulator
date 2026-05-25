@@ -754,10 +754,10 @@
     "clarificationNeeded": "Awaiting actions"
   },
   "concepts": {
-    "showFewer": "Show fewer concepts",
-    "showAll": "Show all concepts",
-    "showFirstN": "Show first {{count}} concepts",
-    "showAllN": "Show all {{count}} concepts"
+    "showFewer": "Show fewer formulas",
+    "showAll": "Show all formulas",
+    "showFirstN": "Show first {{count}} formulas",
+    "showAllN": "Show all {{count}} formulas"
   },
   "dataframe": {
     "columnCount": "{{count}} columns"

@@ -10,7 +10,7 @@
       "months": ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"],
       "shortMonths": ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"]
     },
-    "derivedConcepts": "派生概念",
+    "derivedConcepts": "公式",
     "dataTransformCode": "数据转换代码",
     "dataTransformExplanation": "数据转换说明",
     "zoomIn": "放大",
@@ -35,7 +35,7 @@
     "code": "代码",
     "agentLog": "Agent 日志",
     "explain": "解释",
-    "concepts": "解释",
+    "concepts": "公式",
     "orStartWithChartType": "创建新图表？",
     "orCreateYourself": "或者自己创建一个？",
     "emptyStateTitle": "准备好探索你的数据了吗？",

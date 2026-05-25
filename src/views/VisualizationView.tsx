@@ -60,7 +60,7 @@ import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import AutoStoriesIcon from '@mui/icons-material/AutoStories';
+import FunctionsIcon from '@mui/icons-material/Functions';
 import CasinoIcon from '@mui/icons-material/Casino';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -725,6 +725,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         backgroundColor: active ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
         transition: 'all 0.15s ease',
         minWidth: 'auto',
+        '& .MuiButton-startIcon': { mr: 0.5 },
         '&:hover': {
             backgroundColor: 'rgba(25, 118, 210, 0.08)',
             color: 'primary.main',
@@ -750,7 +751,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
         ...(hasConcepts ? [
             <Button key="concepts-btn" size="small"
                 sx={toggleBtnSx(bottomTab === 'concepts')}
-                startIcon={<AutoStoriesIcon sx={{ fontSize: 14 }} />}
+                startIcon={<FunctionsIcon sx={{ fontSize: 14 }} />}
                 onClick={() => setBottomTab('concepts')}>
                 {t('chart.concepts')}
             </Button>
