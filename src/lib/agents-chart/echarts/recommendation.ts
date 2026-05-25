@@ -31,19 +31,22 @@ function ecGetRecommendation(chartType: string, tv: InternalTableView): Record<s
 
     switch (chartType) {
         case 'Gauge Chart': {
+            // Channels: ['size', 'column'] — size carries the value, column
+            // optionally splits into multiple dials.
             const valueField = pickQuantitative(tv, used);
             if (!valueField) return {};
-            assign('value', valueField);
-            assign('color', pickLowCardDiscrete(tv, used, 10));
+            assign('size', valueField);
+            assign('column', pickLowCardDiscrete(tv, used, 10));
             return rec;
         }
 
         case 'Funnel Chart': {
+            // Channels: ['y', 'size'] — y is the stage/category, size is the value.
             const valueField = pickQuantitative(tv, used);
-            const colorField = pickLowCardDiscrete(tv, used, 15);
-            if (!valueField || !colorField) return {};
-            assign('value', valueField);
-            assign('color', colorField);
+            const stageField = pickLowCardDiscrete(tv, used, 15);
+            if (!valueField || !stageField) return {};
+            assign('y', stageField);
+            assign('size', valueField);
             return rec;
         }
 
@@ -58,13 +61,15 @@ function ecGetRecommendation(chartType: string, tv: InternalTableView): Record<s
         }
 
         case 'Sankey Diagram': {
+            // Channels: ['x', 'y', 'size'] — x is source node, y is target node,
+            // size is the flow value.
             const sourceField = pickDiscrete(tv, used);
             const targetField = pickDiscrete(tv, used);
             const valueField = pickQuantitative(tv, used);
             if (!sourceField || !targetField || !valueField) return {};
-            assign('source', sourceField);
-            assign('target', targetField);
-            assign('value', valueField);
+            assign('x', sourceField);
+            assign('y', targetField);
+            assign('size', valueField);
             return rec;
         }
 

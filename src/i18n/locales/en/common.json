@@ -577,7 +577,37 @@
     "loadedOfTotal": "{{loaded}} / {{total}} rows",
     "viewRandomRows": "view 10000 random rows from this table",
     "downloadAsCsv": "Download as CSV",
-    "downloading": "Downloading..."
+    "downloading": "Downloading...",
+    "columnMenu": {
+      "openMenu": "Column options",
+      "sortAsc": "Sort ascending",
+      "sortDesc": "Sort descending",
+      "clearSort": "Clear sort",
+      "filter": "Filter…",
+      "filterActive": "Filter (active)",
+      "clearFilter": "Clear filter",
+      "filterComingSoon": "Filter UI coming next."
+    },
+    "filter": {
+      "from": "From",
+      "to": "To",
+      "includeBlanks": "Show blanks",
+      "showBlanksOnly": "Show blanks only",
+      "contains": "Contains…",
+      "blank": "(blank)",
+      "apply": "Apply",
+      "clear": "Clear filter",
+      "search": "Search values",
+      "selectAll": "(Select all)",
+      "noMatches": "No matching values",
+      "distinctHint": "{{count}} distinct values",
+      "sectionSort": "Sort",
+      "sectionFilter": "Filter",
+      "filterApplied": "Filter applied",
+      "summaryRows": "{{count, number}} rows",
+      "summaryDistinct": "{{count, number}} distinct",
+      "summaryBlanks": "{{count, number}} blanks"
+    }
   },
   "chatDialog": {
     "noHistory": "There is no conversation history yet",

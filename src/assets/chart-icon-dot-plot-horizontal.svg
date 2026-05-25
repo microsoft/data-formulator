@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- Row 1 -->
+  <line x1="80" y1="70" x2="180" y2="70" stroke="#B8B8B8" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="80"  cy="70" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="180" cy="70" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <!-- Row 2 -->
+  <line x1="110" y1="118" x2="210" y2="118" stroke="#B8B8B8" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="110" cy="118" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="210" cy="118" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <!-- Row 3 -->
+  <line x1="70" y1="166" x2="150" y2="166" stroke="#B8B8B8" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="70"  cy="166" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+  <circle cx="150" cy="166" r="9" fill="#76c6ff" stroke="#363636" stroke-width="2"/>
+</svg>

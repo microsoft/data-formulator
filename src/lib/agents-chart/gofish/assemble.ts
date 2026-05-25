@@ -430,6 +430,7 @@ export function assembleGoFish(input: ChartAssemblyInput): GoFishSpec {
         channelSemantics,
         layout: layoutResult,
         table: values,
+        fullTable: convertedData,
         resolvedEncodings,
         encodings,
         chartProperties,

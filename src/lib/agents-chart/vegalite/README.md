@@ -36,7 +36,7 @@ vegalite/
     index.ts           – template registry (27 templates, 7 categories)
     scatter.ts         – Scatter Plot, Linear Regression
     bar.ts             – Bar, Grouped Bar, Stacked Bar, Histogram, Lollipop, Pyramid
-    line.ts            – Line, Dotted Line, Bump Chart
+    line.ts            – Line, Bump Chart
     area.ts            – Area, Streamgraph
     pie.ts             – Pie Chart
     rose.ts            – Rose Chart
@@ -58,7 +58,7 @@ vegalite/
 |----------|--------|
 | Scatter & Point | Scatter Plot, Linear Regression, Boxplot, Strip Plot |
 | Bar | Bar Chart, Grouped Bar, Stacked Bar, Histogram, Lollipop, Pyramid |
-| Line & Area | Line Chart, Dotted Line, Bump Chart, Area Chart, Streamgraph |
+| Line & Area | Line Chart, Bump Chart, Area Chart, Streamgraph |
 | Part-to-Whole | Pie Chart, Rose Chart, Heatmap, Waterfall Chart |
 | Statistical | Density Plot, Ranged Dot Plot, Radar Chart, Candlestick Chart |
 | Map | US Map, World Map |

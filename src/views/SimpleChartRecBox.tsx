@@ -113,6 +113,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
     const config = useSelector((state: DataFormulatorState) => state.config);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const draftNodes = useSelector((state: DataFormulatorState) => state.draftNodes);
+    const chartThumbnails = useSelector((state: DataFormulatorState) => state.chartThumbnails) || {};
 
     const theme = useTheme();
     const { t } = useTranslation();
@@ -436,8 +437,8 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 };
 
                 // Include chart thumbnail for the focused leaf table (the one the user is looking at)
-                if (walkTable.id === focusedTableId && resolvedChart?.thumbnail) {
-                    step.chart_thumbnail = resolvedChart.thumbnail;
+                if (walkTable.id === focusedTableId && resolvedChart && chartThumbnails[resolvedChart.id]) {
+                    step.chart_thumbnail = chartThumbnails[resolvedChart.id];
                 }
 
                 focusedSteps.unshift(step);

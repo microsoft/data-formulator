@@ -34,6 +34,8 @@ export const ReportView: FC = () => {
     const allGeneratedReports = useSelector(dfSelectors.getAllGeneratedReports);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const focusedId = useSelector((state: DataFormulatorState) => state.focusedId);
+    // Thumbnails live in their own slice so updates don't churn `state.charts`.
+    const chartThumbnails = useSelector((state: DataFormulatorState) => state.chartThumbnails) || {};
     const focusedChartId = focusedId?.type === 'chart' ? focusedId.chartId : undefined;
     const theme = useTheme();
     const { t } = useTranslation();
@@ -462,9 +464,9 @@ ${styles}
                     const blob = new Blob([cached.svg], { type: 'image/svg+xml;charset=utf-8' });
                     const blobUrl = URL.createObjectURL(blob);
                     updateCachedReportImages(chartId, blobUrl, config.defaultChartWidth, config.defaultChartHeight);
-                } else if (chart.thumbnail) {
+                } else if (chartThumbnails[chartId]) {
                     // Fall back to thumbnail
-                    updateCachedReportImages(chartId, chart.thumbnail, config.defaultChartWidth, config.defaultChartHeight);
+                    updateCachedReportImages(chartId, chartThumbnails[chartId], config.defaultChartWidth, config.defaultChartHeight);
                 }
             });
         }
@@ -561,8 +563,8 @@ ${styles}
                 if (cached?.svg) {
                     const blob = new Blob([cached.svg], { type: 'image/svg+xml;charset=utf-8' });
                     updateCachedReportImages(chart.id, URL.createObjectURL(blob), config.defaultChartWidth, config.defaultChartHeight);
-                } else if (chart.thumbnail) {
-                    updateCachedReportImages(chart.id, chart.thumbnail, config.defaultChartWidth, config.defaultChartHeight);
+                } else if (chartThumbnails[chart.id]) {
+                    updateCachedReportImages(chart.id, chartThumbnails[chart.id], config.defaultChartWidth, config.defaultChartHeight);
                 }
             });
         }

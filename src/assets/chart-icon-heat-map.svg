@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- 4x4 grid (no axes) -->
+  <g stroke="#363636" stroke-width="2">
+    <rect x="40"  y="40"  width="44" height="44" fill="#cfe9fa"/>
+    <rect x="84"  y="40"  width="44" height="44" fill="#76c6ff"/>
+    <rect x="128" y="40"  width="44" height="44" fill="#3aa6ee"/>
+    <rect x="172" y="40"  width="44" height="44" fill="#cfe9fa"/>
+
+    <rect x="40"  y="84"  width="44" height="44" fill="#76c6ff"/>
+    <rect x="84"  y="84"  width="44" height="44" fill="#3aa6ee"/>
+    <rect x="128" y="84"  width="44" height="44" fill="#1f6fb0"/>
+    <rect x="172" y="84"  width="44" height="44" fill="#76c6ff"/>
+
+    <rect x="40"  y="128" width="44" height="44" fill="#cfe9fa"/>
+    <rect x="84"  y="128" width="44" height="44" fill="#76c6ff"/>
+    <rect x="128" y="128" width="44" height="44" fill="#3aa6ee"/>
+    <rect x="172" y="128" width="44" height="44" fill="#cfe9fa"/>
+
+    <rect x="40"  y="172" width="44" height="44" fill="#eaf4fc"/>
+    <rect x="84"  y="172" width="44" height="44" fill="#cfe9fa"/>
+    <rect x="128" y="172" width="44" height="44" fill="#76c6ff"/>
+    <rect x="172" y="172" width="44" height="44" fill="#eaf4fc"/>
+  </g>
+</svg>
+

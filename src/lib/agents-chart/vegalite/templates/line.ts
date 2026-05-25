@@ -18,9 +18,18 @@ const interpolateConfigProperty: ChartPropertyDef = {
     ],
 };
 
+const showPointsProperty: ChartPropertyDef = {
+    key: "showPoints", label: "Show points", type: "binary", defaultValue: false,
+};
+
 function applyInterpolate(vgSpec: any, config?: Record<string, any>): void {
     if (!config?.interpolate) return;
     vgSpec.mark = setMarkProp(vgSpec.mark, 'interpolate', config.interpolate);
+}
+
+function applyShowPoints(vgSpec: any, config?: Record<string, any>): void {
+    if (!config?.showPoints) return;
+    vgSpec.mark = setMarkProp(vgSpec.mark, 'point', true);
 }
 
 export const lineChartDef: ChartTemplateDef = {
@@ -34,21 +43,7 @@ export const lineChartDef: ChartTemplateDef = {
     instantiate: (spec, ctx) => {
         defaultBuildEncodings(spec, ctx.resolvedEncodings);
         applyInterpolate(spec, ctx.chartProperties);
+        applyShowPoints(spec, ctx.chartProperties);
     },
-    properties: [interpolateConfigProperty],
-};
-
-export const dottedLineChartDef: ChartTemplateDef = {
-    chart: "Dotted Line Chart",
-    template: { mark: { type: "line", point: true }, encoding: {} },
-    channels: ["x", "y", "color", "detail", "column", "row"],
-    markCognitiveChannel: 'position',
-    declareLayoutMode: () => ({
-        paramOverrides: { continuousMarkCrossSection: { x: 100, y: 20, seriesCountAxis: 'auto' }, facetAspectRatioResistance: 0.5 },
-    }),
-    instantiate: (spec, ctx) => {
-        defaultBuildEncodings(spec, ctx.resolvedEncodings);
-        applyInterpolate(spec, ctx.chartProperties);
-    },
-    properties: [interpolateConfigProperty],
+    properties: [interpolateConfigProperty, showPointsProperty],
 };

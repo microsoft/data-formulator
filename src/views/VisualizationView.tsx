@@ -400,12 +400,13 @@ const VegaChartRenderer: FC<{
     }
 
     return (
-        <Box sx={{ mx: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '100%', overflow: 'hidden' }}>
+        <Box sx={{ mx: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '100%', overflow: 'visible' }}>
             <Box
                 id={elementId}
                 sx={{
                     maxWidth: '100%',
-                    '& .vega-embed': { margin: 'auto' },
+                    overflow: 'visible',
+                    '& .vega-embed': { margin: 'auto', overflow: 'visible' },
                 }}
             />
         </Box>
@@ -845,7 +846,23 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     let focusedElement = <Fade key={`fade-${focusedChart.id}-${dataVersion}-${focusedChart.chartType}-${JSON.stringify(focusedChart.encodingMap)}`} 
                             in={!isDataStale} timeout={600}>    
                             <Box sx={{display: "flex", flexDirection: "column", flexShrink: 0, justifyContent: 'center', justifyItems: 'center', maxWidth: '100%', mt: 'max(120px, 4vh)', mb: 'max(120px, 4vh)'}} className="chart-box">
-                                <Box sx={{minHeight: 240, maxWidth: '100%', overflow: 'hidden'}}>
+                                {/*
+                                  Chart container chrome
+                                  ──────────────────────
+                                  - pt: 40  → reserves a strip at the top so the absolutely
+                                    positioned zoom-slider overlay (chartResizer, ~32px tall
+                                    anchored top-left) never covers chart content. Without this,
+                                    full-width charts like KPI grids run right up under the slider.
+                                  - pr: 28  → reserves a strip on the right for vega-embed's
+                                    actions menu ("..."), which floats at the top-right of the
+                                    Vega canvas and can otherwise hug / extend past the panel edge.
+                                  - minHeight: 280 → guarantees the Vega actions menu and its
+                                    dropdown have vertical room to render even when a chart's
+                                    intrinsic height is very small (e.g. one row of compact cards).
+                                  These are view-level concerns and intentionally NOT solved per
+                                  chart template.
+                                */}
+                                <Box sx={{minHeight: 280, maxWidth: '100%', overflow: 'hidden', pt: '40px', pr: '28px'}}>
                                     <VegaChartRenderer
                                         key={focusedChart.id}
                                         chart={focusedChart}
@@ -1100,15 +1117,8 @@ const EmptyStateHero: FC<{ chartSelectionBox: React.ReactNode }> = ({ chartSelec
     const { t } = useTranslation();
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, width: '100%', py: 2 }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, maxWidth: 820, textAlign: 'center' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, color: 'text.primary' }}>
-                    <AnimatedAgentToyIcon
-                        sx={{ fontSize: 26, color: 'primary.main' }}
-                    />
-                    <Typography sx={{ fontSize: 22, fontWeight: 500, lineHeight: 1.25 }}>
-                        {t('chart.emptyStateTitle')}
-                    </Typography>
-                </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, maxWidth: 820, textAlign: 'center' }}>
+                <AnimatedAgentToyIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                 <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.6 }}>
                     {t('chart.emptyStateSubtitle')}
                 </Typography>
@@ -1152,7 +1162,7 @@ export const VisualizationViewFC: FC<VisPanelProps> = function VisualizationView
 
     // when there is no result and synthesis is running, just show the waiting panel
     if (!focusedChart || focusedChart?.chartType == "?") {
-        let chartSelectionBox = <Box sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", rowGap: 3, columnGap: 4, justifyContent: 'center', maxWidth: 1100 }}>
+        let chartSelectionBox = <Box sx={{ display: "flex", flexDirection: "row", flexWrap: "wrap", rowGap: 3, columnGap: 2.5, justifyContent: 'center', maxWidth: 1100 }}>
             {Object.entries(CHART_TEMPLATES)
                 .filter(([category, templates]) => category !== "Custom" && templates.some(t => t.chart !== "Auto"))
                 .map(([category, templates]) => (

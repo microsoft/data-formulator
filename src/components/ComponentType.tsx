@@ -243,6 +243,15 @@ export interface DictTable {
         type: Type,
         semanticType: string, 
         levels: any[],
+        // Parallel to `levels` (same order); only populated when `levels`
+        // was filled by the backend column-stats pass (design-doc 31).
+        // When `levels` is curated (chart-gallery / LLM) this stays undefined
+        // and the column filter checklist hides the count column.
+        levelCounts?: number[],
+        // Total distinct non-null values; drives the filter popover variant
+        // (≤ 100 → checklist, > 100 → keyword search).
+        distinctCount?: number,
+        nullCount?: number,
         intrinsicDomain?: [number, number],
         unit?: string,
         displayName?: string,
@@ -358,7 +367,6 @@ export type Chart = {
     tableRef: string, 
     source: "user" | "trigger",
     config?: Record<string, any>,  // additional chart properties defined by the chart template
-    thumbnail?: string,  // PNG data URL for thumbnail display (managed by ChartRenderService, not persisted)
     insight?: ChartInsight,  // AI-generated insight about the visualization
     styleVariants?: ChartStyleVariant[],  // user-authored style refinements (see ChartStyleVariant)
     activeVariantId?: string,  // id of the variant currently rendered in the focused canvas; undefined = default

@@ -23,6 +23,8 @@ export const channels = [
     "x", "y", "x2", "y2", "id", "color", "opacity", "size", "shape", "strokeDash", "column",
     "row", "latitude", "longitude", "radius", "detail", "group",
     "open", "high", "low", "close", "angle",
+    // KPI Card: one row per tile, no chart axes.
+    "metric", "value", "goal",
 ] as const;
 
 export const channelGroups: Record<string, string[]> = {
@@ -30,6 +32,7 @@ export const channelGroups: Record<string, string[]> = {
     "legends": ["color", "group", "size", "shape", "text", "opacity", "strokeDash"],
     "price": ["open", "high", "low", "close"],
     "facets": ["column", "row"],
+    "kpi": ["metric", "value", "goal"],
 };
 
 /**
@@ -391,6 +394,20 @@ export interface InstantiateContext {
 
     /** The data table (array of row objects, post-overflow filtering) */
     table: any[];
+
+    /**
+     * The full data table (array of row objects, BEFORE overflow filtering).
+     *
+     * `table` may have categories silently dropped by `filterOverflow` to
+     * fit the canvas. Templates that need an honest view of the raw data
+     * — e.g. a "top-N + Others" rollup, an annotation that summarizes
+     * what wasn't shown, or a sparkline reference — should read from
+     * `fullTable` instead.
+     *
+     * Optional for backwards-compatibility; backends that don't set it
+     * fall back to `table`.
+     */
+    fullTable?: any[];
 
     /** Resolved VL encoding objects (built by assembler from Phase 0 decisions) */
     resolvedEncodings: Record<string, any>;

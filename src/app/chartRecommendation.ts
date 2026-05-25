@@ -68,6 +68,12 @@ export const resolveRecommendedChart = (refinedGoal: any, allFields: FieldItem[]
     if (chartObj['config'] && typeof chartObj['config'] === 'object') {
         newChart.config = { ...chartObj['config'] };
     }
+
+    // Legacy: "Dotted Line Chart" was folded into Line Chart with a `showPoints` config flag.
+    if (rawChartType === 'Dotted Line Chart' || rawChartType === 'dotted_line') {
+        newChart.chartType = 'Line Chart';
+        newChart.config = { ...(newChart.config || {}), showPoints: true };
+    }
     return newChart;
 };
 

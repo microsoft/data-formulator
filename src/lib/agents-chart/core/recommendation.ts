@@ -65,6 +65,17 @@ const FAMILY_XY_STANDARD: ChannelRoleMap = {
     column: 'facetCol', row: 'facetRow',
 };
 
+/** Horizontal x/y charts (Bar Table, etc.): y=category, x=measure. Same channel
+ *  names as standard x/y, but axes are swapped — keeping them as x/y means we
+ *  inherit shelf/color/facet plumbing for free, while adaptation knows the
+ *  category lives on `y` so switching to/from a vertical bar chart auto-swaps. */
+const FAMILY_XY_HORIZONTAL: ChannelRoleMap = {
+    y: 'category', x: 'measure', color: 'series',
+    opacity: 'auxiliary', size: 'auxiliary', shape: 'auxiliary',
+    detail: 'auxiliary', group: 'series',
+    column: 'facetCol', row: 'facetRow',
+};
+
 /** Pie-like charts: color=category, size=measure */
 const FAMILY_PIE: ChannelRoleMap = {
     color: 'category', size: 'measure',
@@ -146,13 +157,13 @@ const FAMILY_RANGE: ChannelRoleMap = {
 const CHART_ROLE_MAP: Record<string, ChannelRoleMap> = {
     // Axis-based (x/y standard)
     'Bar Chart': FAMILY_XY_STANDARD,
-    'Pyramid Chart': FAMILY_XY_STANDARD,
+    'Pyramid Chart': FAMILY_XY_HORIZONTAL,
     'Grouped Bar Chart': FAMILY_XY_STANDARD,
     'Stacked Bar Chart': FAMILY_XY_STANDARD,
     'Lollipop Chart': FAMILY_XY_STANDARD,
     'Waterfall Chart': FAMILY_XY_STANDARD,
+    'Bar Table': FAMILY_XY_HORIZONTAL,
     'Line Chart': FAMILY_XY_STANDARD,
-    'Dotted Line Chart': FAMILY_XY_STANDARD,
     'Bump Chart': FAMILY_XY_STANDARD,
     'Area Chart': FAMILY_XY_STANDARD,
     'Streamgraph': FAMILY_XY_STANDARD,
@@ -265,17 +276,15 @@ export function adaptChannels(
  * Edit-distance-based adaptation: find the minimum-cost mapping from existing
  * field→channel assignments to target chart channels.
  *
- * Cost model:
- *   0    — field stays in the same channel (compatible type)
- *   0.5  — field moves to a channel with the same semantic role
- *            (e.g., color→group — both "series" role)
- *   1    — field moves to a channel with a different but compatible role
- *   1.5  — field is dropped (not assigned to any target channel)
- *            (slightly above move-cost so we prefer keeping fields when tied)
+ * Cost model (see `assignCost` below):
+ *   0    — same channel name AND same semantic role
+ *   0.5  — different channel name, same semantic role
+ *   1    — same channel name but different role, OR different name + role
+ *   1.5  — field is dropped
  *   ∞    — field type is incompatible with target channel
  *
- * After the minimum-cost assignment, remaining empty target channels are
- * filled via the recommendation engine.
+ * No autofill: the result contains at most as many fields as the source had.
+ * Empty target channels are left for the user to fill explicitly.
  */
 function adaptViaRecommendation(
     sourceType: string,
@@ -284,7 +293,7 @@ function adaptViaRecommendation(
     encodings: Record<string, string>,
     data: any[],
     semanticTypes: Record<string, string>,
-    recommendFn: RecommendFn,
+    _recommendFn: RecommendFn,
 ): Record<string, string> {
     // --- Pre-process: handle facet channels and filter data ---
     const FACET_CHANNELS = ['column', 'row'];
@@ -323,18 +332,32 @@ function adaptViaRecommendation(
     };
 
     // --- Cost function for assigning field (from srcCh) to targetCh ---
+    //
+    // Role match is the dominant signal: a field whose role matches the target
+    // channel's role is preferred over a field that merely happens to share the
+    // same channel name.  This is important when swapping between strict
+    // "category × quantitative" chart types (Bar, Pie, Heatmap, …) where the
+    // semantic axis assignment of the target should win over channel-name
+    // preservation from the source.
     const assignCost = (srcCh: string, field: string, targetCh: string): number => {
         const targetRole = getChannelRole(targetType, targetCh);
         if (!isFieldCompatibleWithRole(targetRole, field)) return Infinity;
 
-        // Same channel name → free
-        if (srcCh === targetCh) return 0;
-
-        // Same semantic role (e.g., color→group, both "series") → small cost
         const srcRole = getChannelRole(sourceType, srcCh);
+
+        // Same channel AND same role → free preservation (e.g. Bar→Stacked Bar x→x)
+        if (srcCh === targetCh && srcRole === targetRole) return 0;
+
+        // Same semantic role, different channel name → small cost
+        //   (e.g. Heatmap.color (measure) → Bar.y (measure))
         if (srcRole === targetRole) return 0.5;
 
-        // Different role but type-compatible → higher cost
+        // Same channel name but different role → role mismatch is more costly
+        //   than a role-match move; prevents e.g. src.color (series) clobbering
+        //   tgt.color (category) in Pie.
+        if (srcCh === targetCh) return 1;
+
+        // Different role and different name, type-compatible → highest move cost
         return 1;
     };
 
@@ -389,20 +412,14 @@ function adaptViaRecommendation(
     solve(0, 0, {});
 
     // --- Merge pre-pinned facets + solver result ---
+    //
+    // Intentionally do NOT auto-fill remaining empty target channels via the
+    // recommendation engine: when the user already configured a chart with N
+    // fields and switches type, the adapted chart should also have at most N
+    // fields.  Adding extra fields the user never picked is surprising (e.g.
+    // a 2-encoding Bar Chart turning into a 5-encoding Scatter Plot on type
+    // switch).  Empty channels are left for the user to fill explicitly.
     const result: Record<string, string> = { ...prePinned, ...bestAssignment };
-    const usedFields = new Set(Object.values(result));
-
-    // --- Fill remaining empty channels via recommendation ---
-    const emptyChannels = targetChannels.filter(ch => !(ch in result));
-    if (emptyChannels.length > 0) {
-        const rec = recommendFn(targetType, buildTableView(facetedData, semanticTypes));
-        for (const ch of emptyChannels) {
-            if (rec[ch] && !usedFields.has(rec[ch])) {
-                result[ch] = rec[ch];
-                usedFields.add(rec[ch]);
-            }
-        }
-    }
 
     return result;
 }

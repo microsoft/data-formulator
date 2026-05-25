@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- Secondary line (gray) -->
+  <polyline points="60,150 100,170 140,110 180,140 220,130" fill="none" stroke="#B8B8B8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Primary line (blue) -->
+  <polyline points="60,170 100,130 140,150 180,80 220,100" fill="none" stroke="#76c6ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -39,7 +39,7 @@
     "orStartWithChartType": "create a new chart?",
     "orCreateYourself": "or create one yourself?",
     "emptyStateTitle": "Ready to explore your data?",
-    "emptyStateSubtitle": "Ask the agent a question in the chat — it can suggest ideas, build charts, and transform data for you.",
+    "emptyStateSubtitle": "Ask the agent a question in the chat — it can suggest ideas, explain data, transform data, and build charts for you.",
     "emptyStateChatHint": "Try the chat input at the bottom-left",
     "emptyStateOrPickType": "Or pick a chart type to start manually",
     "resample": "Resample",
@@ -86,7 +86,6 @@
       "lollipopChart": "Lollipop Chart",
       "pyramidChart": "Pyramid Chart",
       "lineChart": "Line Chart",
-      "dottedLineChart": "Dotted Line Chart",
       "bumpChart": "Bump Chart",
       "areaChart": "Area Chart",
       "streamgraph": "Streamgraph",
@@ -106,12 +105,12 @@
       "customArea": "Custom Area"
     },
     "chartCategoryTip": {
-      "scatterAndPoint": "Scatter & point-based charts",
-      "bar": "Bar & column charts",
-      "lineAndArea": "Line & area charts",
-      "partToWhole": "Part-to-whole comparison charts",
-      "statistical": "Statistical analysis charts",
-      "map": "Geographic map charts",
+      "points": "Point-based charts (scatter, dot, regression)",
+      "bars": "Bar & column charts",
+      "distributions": "Distribution & statistical charts",
+      "linesAndAreas": "Line & area charts",
+      "circular": "Radial charts (pie, rose, radar)",
+      "tablesAndMaps": "Tile, table, KPI & map charts",
       "custom": "Custom mark types"
     },
     "gallery": {
@@ -166,7 +165,6 @@
         "histogram": "Histogram",
         "heatmap": "Heatmap",
         "lineChart": "Line Chart",
-        "dottedLineChart": "Dotted Line Chart",
         "boxplot": "Boxplot",
         "pieChart": "Pie Chart",
         "rangedDotPlot": "Ranged Dot Plot",

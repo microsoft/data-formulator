@@ -33,6 +33,19 @@ export const generateFreshChart = (tableRef: string, chartType: string, source: 
     }
 }
 
+/**
+ * Migrate legacy `chartType: "Dotted Line Chart"` to `Line Chart` with `config.showPoints: true`.
+ * Dotted Line was removed as a standalone type and folded into a Line Chart property.
+ */
+const migrateDottedLineChart = (chart: any): any => {
+    if (chart?.chartType !== 'Dotted Line Chart') return chart;
+    return {
+        ...chart,
+        chartType: 'Line Chart',
+        config: { ...(chart.config || {}), showPoints: true },
+    };
+};
+
 export interface SSEMessage {
     type: "heartbeat" | "notification" | "action"; 
     text: string;
@@ -157,6 +170,16 @@ export interface DataFormulatorState {
     chartInsightInProgress: string[];
 
     /**
+     * Thumbnail PNG data URLs keyed by chart id. Stored in a separate slice
+     * (rather than on `chart.thumbnail`) so a thumbnail update doesn't
+     * invalidate the `charts` array reference and trigger a cascade of
+     * `ChartRenderService` effect re-runs / cancelled render queues.
+     * Not persisted — thumbnails are re-derived from the module-scoped
+     * `chartCache` on reload.
+     */
+    chartThumbnails: Record<string, string>;
+
+    /**
      * Monotonically increasing counter bumped whenever the focused canvas
      * fetches a fresh display-row sample (see `src/app/displayRowsCache.ts`).
      * Background services that render off-screen (e.g. ChartRenderService)
@@ -228,6 +251,7 @@ const initialState: DataFormulatorState = {
 
     chartSynthesisInProgress: [],
     chartInsightInProgress: [],
+    chartThumbnails: {},
     displayRowsTick: 0,
 
     serverConfig: {
@@ -270,9 +294,24 @@ const initialState: DataFormulatorState = {
     focusedConnectorId: undefined,
 }
 
+/**
+ * Non-memoized equivalent of `dfSelectors.getAllCharts` for use inside
+ * reducers. Reducers receive an Immer draft `state`; passing a draft into
+ * memoized selectors (createSelector) causes the selector to cache draft
+ * proxies. Once the reducer completes, those proxies are revoked, and any
+ * later read from the cached array throws "Cannot perform 'get' on a proxy
+ * that has been revoked". Always use this helper from reducer code paths.
+ */
+const collectAllCharts = (state: DataFormulatorState): Chart[] => {
+    const triggerCharts = state.tables
+        .filter(t => t.derive?.trigger?.chart)
+        .map(t => t.derive?.trigger?.chart) as Chart[];
+    return [...state.charts, ...triggerCharts];
+};
+
 let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
     // find tables directly referred by charts
-    let allCharts = dfSelectors.getAllCharts(state);
+    let allCharts = collectAllCharts(state);
     let chartRefedTables = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems))
         .filter(t => t != undefined).map(t => t.id);
     let tableWithDescendants = state.tables.filter(table => state.tables.some(t => t.derive?.trigger.tableId == table.id)).map(t => t.id);
@@ -281,18 +320,57 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
 }
 
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
-    let charts = state.charts.filter(c => !chartIds.includes(c.id));
     let currentFocusedChartId = state.focusedId?.type === 'chart' ? state.focusedId.chartId : undefined;
 
-    if (currentFocusedChartId && chartIds.includes(currentFocusedChartId)) {
-        let leafCharts = charts;
-        if (leafCharts.length > 0) {
-            state.focusedId = { type: 'chart', chartId: leafCharts[0].id };
+    // Capture context BEFORE filtering so we can pick a sensible new focus.
+    // When the focused chart is being deleted, we prefer:
+    //   1. The neighboring sibling on the same table (visually adjacent).
+    //   2. The table itself, if no sibling remains.
+    //   3. Any remaining chart, as a final fallback.
+    let deletedFocusedChart = currentFocusedChartId && chartIds.includes(currentFocusedChartId)
+        ? state.charts.find(c => c.id === currentFocusedChartId)
+        : undefined;
+    let focusedTableRef = deletedFocusedChart?.tableRef;
+    let focusedSiblingIndex = -1;
+    if (deletedFocusedChart && focusedTableRef) {
+        const siblings = state.charts.filter(c => c.tableRef === focusedTableRef);
+        focusedSiblingIndex = siblings.findIndex(c => c.id === currentFocusedChartId);
+    }
+
+    let charts = state.charts.filter(c => !chartIds.includes(c.id));
+
+    if (deletedFocusedChart) {
+        const remainingSiblings = focusedTableRef
+            ? charts.filter(c => c.tableRef === focusedTableRef)
+            : [];
+        if (remainingSiblings.length > 0) {
+            // Pick the chart just before the deleted one in original order
+            // (visually "previous"). Clamp so the very first sibling
+            // falls back to the new first, and tail deletions land on
+            // the new last.
+            const targetIdx = Math.min(
+                Math.max(0, focusedSiblingIndex - 1),
+                remainingSiblings.length - 1,
+            );
+            state.focusedId = { type: 'chart', chartId: remainingSiblings[targetIdx].id };
+        } else if (focusedTableRef && state.tables.some(t => t.id === focusedTableRef)) {
+            // Last chart on this table — surface the table itself.
+            state.focusedId = { type: 'table', tableId: focusedTableRef };
+        } else if (charts.length > 0) {
+            state.focusedId = { type: 'chart', chartId: charts[0].id };
         } else {
             state.focusedId = undefined;
         }
     }
+
     state.chartSynthesisInProgress = state.chartSynthesisInProgress.filter(s => !chartIds.includes(s));
+
+    // Clean up thumbnail entries for removed charts.
+    if (state.chartThumbnails) {
+        for (const id of chartIds) {
+            delete state.chartThumbnails[id];
+        }
+    }
 
     // update focusedChart and activeThreadChart
     state.charts = charts;
@@ -375,6 +453,29 @@ export const fetchFieldSemanticType = createAsyncThunk(
     }
 );
 
+/**
+ * Fetch backend-computed per-column statistics for a workspace-stored
+ * (virtual) table and merge them into ``table.metadata``. Powers the
+ * data-grid column filter popover (design-doc 31): the response carries
+ * ``distinct_count`` / ``null_count`` for every column and, for
+ * low-cardinality columns, ``levels`` + parallel ``level_counts``.
+ *
+ * ``levels`` is merged with precedence — curated orderings already on the
+ * table (LLM ``sort_order``, chart-gallery hints) win; the stats-derived
+ * list only fills when the existing ``levels`` is empty.
+ */
+export const fetchColumnStats = createAsyncThunk(
+    "dataFormulatorSlice/fetchColumnStats",
+    async (table: DictTable) => {
+        const { data } = await apiRequest(getUrls().GET_COLUMN_STATS, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table_name: table.virtual?.tableId || table.id }),
+        });
+        return { tableId: table.id, statistics: data?.statistics || [] };
+    }
+);
+
 export const fetchCodeExpl = createAsyncThunk(
     "dataFormulatorSlice/fetchCodeExpl",
     async (derivedTable: DictTable, { getState }) => {
@@ -406,7 +507,7 @@ export const fetchChartInsight = createAsyncThunk(
         console.log(">>> call agent to generate chart insight <<<");
 
         const state = getState() as DataFormulatorState;
-        const chart = dfSelectors.getAllCharts(state).find(c => c.id === args.chartId);
+        const chart = collectAllCharts(state).find(c => c.id === args.chartId);
         if (!chart) throw new Error(`Chart not found: ${args.chartId}`);
 
         // Wait for chart image to be available in cache (replaces fixed 1.5s delay at call site)
@@ -662,7 +763,18 @@ export const dataFormulatorSlice = createSlice({
                     }
                     return node;
                 }),
-                charts: saved.charts || [],
+                charts: (saved.charts || []).map(migrateDottedLineChart).map((c: Chart) => {
+                    // Legacy sessions stored `thumbnail` on the Chart itself.
+                    // We now keep thumbnails in a sibling slice (see
+                    // `chartThumbnails` in state). Strip the field on load so
+                    // it doesn't get re-persisted; ChartRenderService will
+                    // repopulate the thumbnail slice from the module cache.
+                    if (c && (c as any).thumbnail !== undefined) {
+                        const { thumbnail: _drop, ...rest } = c as any;
+                        return rest as Chart;
+                    }
+                    return c;
+                }),
                 conceptShelfItems: saved.conceptShelfItems || [],
                 focusedDataCleanBlockId: saved.focusedDataCleanBlockId || undefined,
                 focusedId: saved.focusedId || undefined,
@@ -686,6 +798,14 @@ export const dataFormulatorSlice = createSlice({
                 activeWorkspace: saved.activeWorkspace ?? state.activeWorkspace ?? null,
 
                 dataSourceSidebarOpen: state.dataSourceSidebarOpen,
+
+                // Reset display-rows tick so dependent components re-fetch.
+                displayRowsTick: 0,
+
+                // Thumbnails are not persisted; ChartRenderService
+                // repopulates this slice from the module cache / fresh
+                // renders after load.
+                chartThumbnails: {},
             };
         },
         setServerConfig: (state, action: PayloadAction<ServerConfig>) => {
@@ -963,13 +1083,13 @@ export const dataFormulatorSlice = createSlice({
             let chartId = action.payload.chartId;
             let chartType = action.payload.chartType;
 
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            let chart = collectAllCharts(state).find(c => c.id == chartId);
             if (chart) {
                 const template = getChartTemplate(chartType) as ChartTemplate;
                 const sourceType = chart.chartType;
 
                 // Get data table + semantic types for recommendation-based adaptation
-                let allCharts = dfSelectors.getAllCharts(state);
+                let allCharts = collectAllCharts(state);
                 let table = getDataTable(chart, state.tables, allCharts, state.conceptShelfItems);
                 const semanticTypes: Record<string, string> = {};
                 if (table) {
@@ -1010,17 +1130,14 @@ export const dataFormulatorSlice = createSlice({
                     if (field) newEncodingMap[ch as Channel] = { fieldID: field.id };
                 }
                 chart = { ...chart, chartType, encodingMap: newEncodingMap };
-                
-                // Fill any remaining empty channels via full recommendation
-                if (table) {
-                    const suggested = vlRecommendEncodings(chartType, table.rows, semanticTypes);
-                    for (const [channel, fieldName] of Object.entries(suggested)) {
-                        if (chart.encodingMap[channel as Channel]?.fieldID == undefined) {
-                            const fieldItem = state.conceptShelfItems.find(f => f.name === fieldName && table!.names.includes(f.name));
-                            if (fieldItem) chart.encodingMap[channel as Channel] = { fieldID: fieldItem.id };
-                        }
-                    }
-                }
+
+                // Intentionally do NOT autofill remaining empty channels via a
+                // second recommendation pass: the adapter already returns at
+                // most as many fields as the source had, and re-recommending
+                // here would (a) re-introduce duplicates (e.g. `metric` already
+                // on `y` getting suggested again for `color`) and (b) surprise
+                // the user by inflating a 2-encoding chart into a 5-encoding
+                // one on type switch.  Empty channels are left for the user.
 
                 // Chart type changed — any active variant was authored against
                 // the old structure, so step out of it. The variants stay in
@@ -1046,7 +1163,7 @@ export const dataFormulatorSlice = createSlice({
             let chartId = action.payload.chartId;
             let key = action.payload.key;
             let value = action.payload.value;
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            let chart = collectAllCharts(state).find(c => c.id == chartId);
             if (chart) {
                 if (!chart.config) {
                     chart.config = {};
@@ -1059,16 +1176,19 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         updateChartThumbnail: (state, action: PayloadAction<{chartId: string, thumbnail: string}>) => {
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id == action.payload.chartId);
-            if (chart) {
-                chart.thumbnail = action.payload.thumbnail;
-            }
+            // Write to a dedicated slice (not onto the Chart object) so that
+            // thumbnail updates don't invalidate the `charts` array reference
+            // — that ref is in the dep list of ChartRenderService's effect,
+            // and churning it cancels the in-flight render queue on every
+            // tick (see design discussion on tick performance).
+            if (!state.chartThumbnails) state.chartThumbnails = {};
+            state.chartThumbnails[action.payload.chartId] = action.payload.thumbnail;
         },
         bumpDisplayRowsTick: (state) => {
             state.displayRowsTick = (state.displayRowsTick || 0) + 1;
         },
         updateChartInsight: (state, action: PayloadAction<{chartId: string, insight: ChartInsight}>) => {
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id == action.payload.chartId);
+            let chart = collectAllCharts(state).find(c => c.id == action.payload.chartId);
             if (chart) {
                 chart.insight = action.payload.insight;
             }
@@ -1080,7 +1200,7 @@ export const dataFormulatorSlice = createSlice({
         // the preview reflects whichever variant the user has active.
         addStyleVariant: (state, action: PayloadAction<{chartId: string, variant: ChartStyleVariant, activate?: boolean}>) => {
             const { chartId, variant, activate } = action.payload;
-            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            const chart = collectAllCharts(state).find(c => c.id === chartId);
             if (!chart) return;
             if (!chart.styleVariants) chart.styleVariants = [];
             chart.styleVariants.push(variant);
@@ -1090,13 +1210,13 @@ export const dataFormulatorSlice = createSlice({
         },
         setActiveVariant: (state, action: PayloadAction<{chartId: string, variantId: string | undefined}>) => {
             const { chartId, variantId } = action.payload;
-            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            const chart = collectAllCharts(state).find(c => c.id === chartId);
             if (!chart) return;
             chart.activeVariantId = variantId;
         },
         deleteStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string}>) => {
             const { chartId, variantId } = action.payload;
-            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            const chart = collectAllCharts(state).find(c => c.id === chartId);
             if (!chart || !chart.styleVariants) return;
             chart.styleVariants = chart.styleVariants.filter(v => v.id !== variantId);
             if (chart.activeVariantId === variantId) {
@@ -1108,7 +1228,7 @@ export const dataFormulatorSlice = createSlice({
         },
         renameStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, label: string}>) => {
             const { chartId, variantId, label } = action.payload;
-            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            const chart = collectAllCharts(state).find(c => c.id === chartId);
             const v = chart?.styleVariants?.find(v => v.id === variantId);
             if (v) v.label = label;
         },
@@ -1117,7 +1237,7 @@ export const dataFormulatorSlice = createSlice({
         // the chip doesn't visibly disappear and re-appear.
         updateStyleVariant: (state, action: PayloadAction<{chartId: string, variantId: string, vlSpec: any, rationale?: string, encodingFingerprint?: string}>) => {
             const { chartId, variantId, vlSpec, rationale, encodingFingerprint } = action.payload;
-            const chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            const chart = collectAllCharts(state).find(c => c.id === chartId);
             const v = chart?.styleVariants?.find(v => v.id === variantId);
             if (!v) return;
             v.vlSpec = vlSpec;
@@ -1128,7 +1248,7 @@ export const dataFormulatorSlice = createSlice({
             let chartId = action.payload.chartId;
             let channel = action.payload.channel;
             let encoding = action.payload.encoding;
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            let chart = collectAllCharts(state).find(c => c.id == chartId);
             if (chart) {
                 chart.encodingMap[channel] = encoding;
                 // Auto-revert to default whenever the user edits the encoding so
@@ -1143,7 +1263,7 @@ export const dataFormulatorSlice = createSlice({
             let channel = action.payload.channel;
             let prop = action.payload.prop;
             let value = action.payload.value;
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            let chart = collectAllCharts(state).find(c => c.id == chartId);
             let table = state.tables.find(t => t.id == chart?.tableRef) as DictTable;
             
             if (chart) {
@@ -1194,7 +1314,7 @@ export const dataFormulatorSlice = createSlice({
             let channel1 = action.payload.channel1;
             let channel2 = action.payload.channel2;
 
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
+            let chart = collectAllCharts(state).find(c => c.id == chartId);
             if (chart) {
                 let enc1 = chart.encodingMap[channel1];
                 let enc2 = chart.encodingMap[channel2];
@@ -1221,7 +1341,7 @@ export const dataFormulatorSlice = createSlice({
         },
         deleteConceptItemByID: (state, action: PayloadAction<string>) => {
             let conceptID = action.payload;
-            let allCharts = dfSelectors.getAllCharts(state);
+            let allCharts = collectAllCharts(state);
             // remove concepts from encoding maps
             state.conceptShelfItems = state.conceptShelfItems.filter(f => f.id != conceptID);
             for (let chart of allCharts)  {
@@ -1234,7 +1354,7 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         batchDeleteConceptItemByID: (state, action: PayloadAction<string[]>) => {
-            let allCharts = dfSelectors.getAllCharts(state);
+            let allCharts = collectAllCharts(state);
             for (let conceptID of action.payload) {
                 // remove concepts from encoding maps
                 state.conceptShelfItems = state.conceptShelfItems.filter(field => field.id != conceptID);
@@ -1367,7 +1487,7 @@ export const dataFormulatorSlice = createSlice({
         },
         clearUnReferencedTables: (state) => {
             // remove all tables that are not referred
-            let allCharts = dfSelectors.getAllCharts(state);
+            let allCharts = collectAllCharts(state);
             let referredTableId = allCharts.map(chart => getDataTable(chart, state.tables, allCharts, state.conceptShelfItems))
                 .filter(t => t != undefined).map(t => t.id);
             let tablesToRemove = state.tables.filter(t => t.derive && !referredTableId.some(tableId => tableId == t.id));
@@ -1379,7 +1499,7 @@ export const dataFormulatorSlice = createSlice({
         },
         clearUnReferencedCustomConcepts: (state) => {
             let fieldNamesFromTables = state.tables.map(t => t.names).flat();
-            let fieldIdsReferredByCharts = dfSelectors.getAllCharts(state).map(c => Object.values(c.encodingMap).map(enc => enc.fieldID).filter(fid => fid != undefined) as string[]).flat();
+            let fieldIdsReferredByCharts = collectAllCharts(state).map(c => Object.values(c.encodingMap).map(enc => enc.fieldID).filter(fid => fid != undefined) as string[]).flat();
 
             state.conceptShelfItems = state.conceptShelfItems.filter(field => !(field.source == "custom" 
                 && !(fieldNamesFromTables.includes(field.name) || fieldIdsReferredByCharts.includes(field.id))))
@@ -1521,7 +1641,7 @@ export const dataFormulatorSlice = createSlice({
             if (wasFocused && report) {
                 const triggerTableId = report.triggerTableId;
                 if (triggerTableId) {
-                    const allCharts = dfSelectors.getAllCharts(state);
+                    const allCharts = collectAllCharts(state);
                     const tableChart = allCharts.find(c => c.tableRef === triggerTableId && c.source === 'user');
                     if (tableChart) {
                         state.focusedId = { type: 'chart', chartId: tableChart.id };
@@ -1612,12 +1732,20 @@ export const dataFormulatorSlice = createSlice({
                 let typeMap = data['result'][0]['fields'];
 
                 for (let name of table.names) {
-                    table.metadata[name] = { 
-                        type: typeMap[name]['type'] as Type, 
-                        semanticType: typeMap[name]['semantic_type'], 
-                        levels: typeMap[name]['sort_order'] || undefined,
-                        intrinsicDomain: typeMap[name]['intrinsic_domain'] || undefined,
-                        unit: typeMap[name]['unit'] || undefined,
+                    const prev = table.metadata[name] || { type: Type.String, semanticType: "", levels: [] };
+                    const sortOrder = typeMap[name]['sort_order'];
+                    const hasCuratedLevels = Array.isArray(sortOrder) && sortOrder.length > 0;
+                    // Per design-doc 31 precedence: when the agent supplies a
+                    // curated sort_order, drop any data-derived levelCounts so
+                    // the popover checklist hides the count column.
+                    table.metadata[name] = {
+                        ...prev,
+                        type: typeMap[name]['type'] as Type,
+                        semanticType: typeMap[name]['semantic_type'],
+                        levels: hasCuratedLevels ? sortOrder : (prev.levels || []),
+                        levelCounts: hasCuratedLevels ? undefined : prev.levelCounts,
+                        intrinsicDomain: typeMap[name]['intrinsic_domain'] || prev.intrinsicDomain,
+                        unit: typeMap[name]['unit'] || prev.unit,
                     };
                 }
 
@@ -1634,6 +1762,31 @@ export const dataFormulatorSlice = createSlice({
                     }
                     table.displayId = displayId;
                 }
+            }
+        })
+        .addCase(fetchColumnStats.fulfilled, (state, action) => {
+            const { tableId, statistics } = action.payload as {
+                tableId: string;
+                statistics: Array<{ column: string; statistics: any }>;
+            };
+            const table = state.tables.find(t => t.id === tableId) as DictTable | undefined;
+            if (!table) return;
+            for (const entry of statistics) {
+                const name = entry?.column;
+                if (!name || !(name in table.metadata)) continue;
+                const s = entry.statistics || {};
+                const prev = table.metadata[name];
+                const hasExistingLevels = Array.isArray(prev.levels) && prev.levels.length > 0;
+                const incomingLevels = Array.isArray(s.levels) ? s.levels : undefined;
+                const incomingCounts = Array.isArray(s.level_counts) ? s.level_counts : undefined;
+                table.metadata[name] = {
+                    ...prev,
+                    distinctCount: typeof s.unique_count === 'number' ? s.unique_count : prev.distinctCount,
+                    nullCount: typeof s.null_count === 'number' ? s.null_count : prev.nullCount,
+                    // Curated levels win; only fill when empty.
+                    levels: hasExistingLevels ? prev.levels : (incomingLevels || []),
+                    levelCounts: hasExistingLevels ? prev.levelCounts : incomingCounts,
+                };
             }
         })
         .addCase(fetchGlobalModelList.fulfilled, (state, action) => {
@@ -1743,7 +1896,7 @@ export const dataFormulatorSlice = createSlice({
         })
         .addCase(fetchChartInsight.fulfilled, (state, action) => {
             let { chartId, insightKey, title, takeaways } = action.payload;
-            let chart = dfSelectors.getAllCharts(state).find(c => c.id === chartId);
+            let chart = collectAllCharts(state).find(c => c.id === chartId);
             if (chart && (title || (takeaways && takeaways.length > 0))) {
                 chart.insight = { title, takeaways: takeaways || [], key: insightKey };
             }
@@ -1885,7 +2038,7 @@ export const dfSelectors = {
         if (!state.focusedId) return undefined;
         if (state.focusedId.type === 'table') return state.focusedId.tableId;
         // type === 'chart': derive table from the chart's tableRef
-        let allCharts = dfSelectors.getAllCharts(state);
+        let allCharts = collectAllCharts(state);
         let chart = allCharts.find(c => c.id === (state.focusedId as { type: 'chart'; chartId: string }).chartId);
         return chart?.tableRef;
     },
@@ -1909,6 +2062,15 @@ export const dfSelectors = {
             return [...userCharts, ...triggerCharts];
         }
     ),
+
+    /**
+     * Subscribe to a single chart's thumbnail without re-rendering whenever
+     * any other chart's thumbnail changes. Use as
+     *   `useSelector(dfSelectors.getChartThumbnail(chartId))`.
+     */
+    getChartThumbnail: (chartId: string) =>
+        (state: DataFormulatorState): string | undefined =>
+            state.chartThumbnails?.[chartId],
 
     replaceChart: (state: DataFormulatorState, chart: Chart) => {
         if (state.charts.find(c => c.id == chart.id)) {

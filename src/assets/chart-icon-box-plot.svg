@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Y-axis -->
+  <line x1="48" y1="28" x2="48" y2="220" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- X-axis -->
+  <line x1="44" y1="216" x2="240" y2="216" stroke="#363636" stroke-width="4" stroke-linecap="round"/>
+  <!-- Box 1 -->
+  <line x1="90" y1="60"  x2="90" y2="190" stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+  <rect x="70" y="95" width="40" height="70" fill="#76c6ff" stroke="#363636" stroke-width="3"/>
+  <line x1="70" y1="135" x2="110" y2="135" stroke="#363636" stroke-width="3"/>
+  <line x1="78" y1="60"  x2="102" y2="60"  stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+  <line x1="78" y1="190" x2="102" y2="190" stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+  <!-- Box 2 -->
+  <line x1="180" y1="80" x2="180" y2="200" stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+  <rect x="160" y="115" width="40" height="60" fill="#76c6ff" stroke="#363636" stroke-width="3"/>
+  <line x1="160" y1="150" x2="200" y2="150" stroke="#363636" stroke-width="3"/>
+  <line x1="168" y1="80"  x2="192" y2="80"  stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+  <line x1="168" y1="200" x2="192" y2="200" stroke="#363636" stroke-width="3" stroke-linecap="round"/>
+</svg>

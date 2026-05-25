@@ -37,6 +37,7 @@ export let ChartElementFC: FC<{
     boxWidth?: number, boxHeight?: number}> = function({chart, tableRows, tableMetadata, boxWidth, boxHeight}) {
 
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    const thumbnail = useSelector(dfSelectors.getChartThumbnail(chart.id));
 
     let WIDTH = boxWidth || 120;
     let HEIGHT = boxHeight || 80;
@@ -58,12 +59,12 @@ export let ChartElementFC: FC<{
     } 
 
     // Use cached thumbnail from ChartRenderService when available
-    if (chart.thumbnail) {
+    if (thumbnail) {
         return (
             <Box sx={{ margin: "auto", display: 'flex', justifyContent: 'center', alignItems: 'center',
                        backgroundColor: "white" }}>
                 <img 
-                    src={chart.thumbnail} 
+                    src={thumbnail} 
                     alt={`${chart.chartType} chart`}
                     style={{ maxWidth: WIDTH, maxHeight: HEIGHT, objectFit: 'contain' }} 
                 />

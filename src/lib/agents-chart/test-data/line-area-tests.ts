@@ -8,32 +8,6 @@ import { seededRandom, genDates, genYears, genMonths, genCategories } from './ge
 // Line Chart tests have been moved to line-tests.ts (matrix-driven).
 // Area Chart & Streamgraph tests have been moved to area-tests.ts (matrix-driven).
 
-// ------ Dotted Line Chart ------
-export function genDottedLineTests(): TestCase[] {
-    const tests: TestCase[] = [];
-    const rand = seededRandom(650);
-
-    {
-        const months = genMonths(12);
-        const data = months.map(m => ({ Month: m, Temperature: Math.round(10 + rand() * 25) }));
-        tests.push({
-            title: 'Ordinal × Quant (dotted line)',
-            description: 'Monthly temperatures with point markers',
-            tags: ['ordinal', 'quantitative', 'small'],
-            chartType: 'Dotted Line Chart',
-            data,
-            fields: [makeField('Month'), makeField('Temperature')],
-            metadata: {
-                Month: { type: Type.String, semanticType: 'Month', levels: months },
-                Temperature: { type: Type.Number, semanticType: 'Temperature', levels: [] },
-            },
-            encodingMap: { x: makeEncodingItem('Month'), y: makeEncodingItem('Temperature') },
-        });
-    }
-
-    return tests;
-}
-
 // ------ Bump Chart ------
 export function genBumpChartTests(): TestCase[] {
     const tests: TestCase[] = [];

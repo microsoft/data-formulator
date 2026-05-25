@@ -5,7 +5,7 @@
  * Vega-Lite recommendation & adaptation wrappers.
  *
  * Extends core/recommendation.ts with VL-only chart types (Regression,
- * Ranged Dot Plot, Pyramid, Lollipop, Dotted Line, Bump, Density, Waterfall,
+ * Ranged Dot Plot, Pyramid, Lollipop, Bump, Density, Waterfall,
  * Strip, US/World Map) and filters results to VL-valid channels.
  */
 
@@ -71,7 +71,6 @@ function vlGetRecommendation(chartType: string, tv: InternalTableView): Record<s
             return rec;
         }
 
-        case 'Dotted Line Chart':
         case 'Bump Chart': {
             // Same logic as Line Chart
             const xField = pickSeriesAxis(tv, used);
@@ -114,6 +113,17 @@ function vlGetRecommendation(chartType: string, tv: InternalTableView): Record<s
             if (!xField || !yField) return {};
             assign('x', xField);
             assign('y', yField);
+            return rec;
+        }
+
+        case 'Bar Table': {
+            // y = category to rank, x = quantitative value driving bar length
+            const yField = pickDiscrete(tv, used);
+            const xField = pickQuantitative(tv, used);
+            if (!xField || !yField) return {};
+            assign('y', yField);
+            assign('x', xField);
+            assign('color', pickLowCardNominal(tv, used, 20));
             return rec;
         }
 

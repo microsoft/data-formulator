@@ -18,7 +18,7 @@ import { Type, mapApiTypeToAppType } from '../data/types';
 import { inferTypeFromValueArray, refineTemporalType } from '../data/utils';
 import { getUrls, CONNECTOR_ACTION_URLS, computeContentHash, SourceTableRef } from './utils';
 import { apiRequest } from './apiClient';
-import { DataFormulatorState, dfActions, fetchFieldSemanticType } from './dfSlice';
+import { DataFormulatorState, dfActions, fetchColumnStats, fetchFieldSemanticType } from './dfSlice';
 import { tableDataDB } from './workspaceDB';
 import i18n from '../i18n';
 
@@ -315,6 +315,12 @@ export const loadTable = createAsyncThunk<
         // Dispatch the table into Redux state
         dispatch(dfActions.addTableToStore(finalTable));
         dispatch(fetchFieldSemanticType(finalTable));
+        // Workspace-stored tables get backend-computed column stats
+        // (distinct/null counts + low-card value lists) for the grid
+        // filter popover. Browser-only tables skip this in v1.
+        if (finalTable.virtual) {
+            dispatch(fetchColumnStats(finalTable));
+        }
 
         // Notify user about local (browser) truncation only.
         // Database-side truncation (row limit from import options) is

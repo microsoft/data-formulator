@@ -120,6 +120,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     // reference to states
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const allCharts = useSelector(dfSelectors.getAllCharts);
+    // Thumbnails live in their own slice; reading the whole map is fine here
+    // because the recommendation strip already re-renders when its chart list
+    // changes. The map identity only changes when some thumbnail is updated.
+    const chartThumbnails = useSelector((state: DataFormulatorState) => state.chartThumbnails) || {};
     const { formulateData } = useFormulateData();
 
     const focusNextChartRef = useRef<boolean>(true);
@@ -501,9 +505,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                     const renderThumb = (chart: Chart) => {
                         const tpl = getChartTemplate(chart.chartType);
                         const label = chart.chartType;
-                        const content = chart.thumbnail ? (
+                        const thumb = chartThumbnails[chart.id];
+                        const content = thumb ? (
                             <img
-                                src={chart.thumbnail}
+                                src={thumb}
                                 alt={label}
                                 style={{ maxWidth: imgMaxW, maxHeight: imgMaxH, objectFit: 'contain' }}
                             />
@@ -601,21 +606,24 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                                             },
                                         }}
                                     >
-                                        {front.thumbnail ? (
-                                            <img
-                                                src={front.thumbnail}
-                                                alt={front.chartType}
-                                                style={{
-                                                    maxWidth: '100%', maxHeight: '100%',
-                                                    objectFit: 'contain',
-                                                }}
-                                            />
-                                        ) : (
-                                            generateChartSkeleton(
-                                                getChartTemplate(front.chartType)?.icon,
-                                                skeletonPx, skeletonPx, 0.4,
-                                            )
-                                        )}
+                                        {(() => {
+                                            const frontThumb = chartThumbnails[front.id];
+                                            return frontThumb ? (
+                                                <img
+                                                    src={frontThumb}
+                                                    alt={front.chartType}
+                                                    style={{
+                                                        maxWidth: '100%', maxHeight: '100%',
+                                                        objectFit: 'contain',
+                                                    }}
+                                                />
+                                            ) : (
+                                                generateChartSkeleton(
+                                                    getChartTemplate(front.chartType)?.icon,
+                                                    skeletonPx, skeletonPx, 0.4,
+                                                )
+                                            );
+                                        })()}
                                     </Box>
                                     {charts.length > 1 && (
                                         <Typography sx={{

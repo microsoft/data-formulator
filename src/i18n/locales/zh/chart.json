@@ -39,7 +39,7 @@
     "orStartWithChartType": "创建新图表？",
     "orCreateYourself": "或者自己创建一个？",
     "emptyStateTitle": "准备好探索你的数据了吗？",
-    "emptyStateSubtitle": "在聊天框中向智能体提问 —— 它可以提供探索建议、生成图表、转换数据。",
+    "emptyStateSubtitle": "在聊天框中向智能体提问 —— 它可以提供探索建议、解读数据、转换数据、生成图表。",
     "emptyStateChatHint": "试试左下角的聊天输入框",
     "emptyStateOrPickType": "或者手动选择一种图表类型",
     "resample": "重新采样",
@@ -86,7 +86,6 @@
       "lollipopChart": "棒棒糖图",
       "pyramidChart": "金字塔图",
       "lineChart": "折线图",
-      "dottedLineChart": "带点折线图",
       "bumpChart": "排名变化图",
       "areaChart": "面积图",
       "streamgraph": "流图",
@@ -106,12 +105,12 @@
       "customArea": "自定义面积图"
     },
     "chartCategoryTip": {
-      "scatterAndPoint": "散点和点类图表",
-      "bar": "柱状图/条形图类",
-      "lineAndArea": "折线和面积图类",
-      "partToWhole": "部分与整体比较图类",
-      "statistical": "统计分析图类",
-      "map": "地理地图图表",
+      "points": "点类图表（散点、点图、回归）",
+      "bars": "柱状与条形图类",
+      "distributions": "分布与统计图类",
+      "linesAndAreas": "线图与面积图类",
+      "circular": "环状图类（饼图、玫瑰、雷达）",
+      "tablesAndMaps": "网格、表格、KPI 与地图类",
       "custom": "自定义标记类型"
     },
     "gallery": {
@@ -166,7 +165,6 @@
         "histogram": "直方图",
         "heatmap": "热力图",
         "lineChart": "折线图",
-        "dottedLineChart": "带点折线图",
         "boxplot": "箱线图",
         "pieChart": "饼图",
         "rangedDotPlot": "区间点图",

@@ -10,7 +10,9 @@
  *
  * Results are stored in:
  *   1. Module-level chartCache (SVG + PNG) — for VisualizationView to read
- *   2. chart.thumbnail in Redux (PNG data URL) — for DataThread <img> tags
+ *   2. `state.chartThumbnails[chartId]` in Redux (PNG data URL) — for
+ *      DataThread / ChartRecBox / etc. <img> tags. Kept in its own slice
+ *      so thumbnail updates don't invalidate the `charts` array reference.
  *
  * This eliminates redundant DOM-based Vega rendering in DataThread
  * and EncodingShelfThread, replacing heavy <VegaLite> / embed() calls
@@ -121,6 +123,11 @@ export const ChartRenderService: FC = () => {
     // Re-run when the focused canvas caches a fresh display-row sample so
     // thumbnails can use the same richer data the main chart is rendering.
     const displayRowsTick = useSelector((state: DataFormulatorState) => state.displayRowsTick);
+    // Read the thumbnails map via a ref so we can check current values inside
+    // the effect without adding the map to the dep list (the dispatch we
+    // issue below mutates it, and including it would re-enter the effect).
+    const chartThumbnailsRef = useRef<Record<string, string>>({});
+    chartThumbnailsRef.current = useSelector((state: DataFormulatorState) => state.chartThumbnails) || {};
 
     // Track which charts are currently being rendered to avoid duplicates
     const renderingRef = useRef<Set<string>>(new Set());
@@ -278,9 +285,11 @@ export const ChartRenderService: FC = () => {
 
             const cached = getCachedChart(chart.id);
             if (cached && cached.specKey === cacheKey) {
-                // Already up-to-date — but ensure Redux thumbnail is set
-                // (e.g., after page reload where module cache is cleared but Redux persisted)
-                if (!chart.thumbnail || chart.thumbnail !== cached.thumbnailDataUrl) {
+                // Already up-to-date — but ensure the Redux thumbnail slice
+                // matches (e.g. after a page reload where the module cache
+                // is repopulated but the slice was reset to {}).
+                const current = chartThumbnailsRef.current[chart.id];
+                if (!current || current !== cached.thumbnailDataUrl) {
                     dispatch(dfActions.updateChartThumbnail({
                         chartId: chart.id,
                         thumbnail: cached.thumbnailDataUrl,

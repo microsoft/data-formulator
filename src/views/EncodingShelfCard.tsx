@@ -99,7 +99,7 @@ const chartNameToI18nKey: Record<string, string> = {
     "Bar Chart": "barChart", "Grouped Bar Chart": "groupedBarChart",
     "Stacked Bar Chart": "stackedBarChart", "Histogram": "histogram",
     "Lollipop Chart": "lollipopChart", "Pyramid Chart": "pyramidChart",
-    "Line Chart": "lineChart", "Dotted Line Chart": "dottedLineChart",
+    "Line Chart": "lineChart",
     "Bump Chart": "bumpChart", "Area Chart": "areaChart", "Streamgraph": "streamgraph",
     "Pie Chart": "pieChart", "Rose Chart": "roseChart",
     "Heatmap": "heatmap", "Waterfall Chart": "waterfallChart",
@@ -111,9 +111,13 @@ const chartNameToI18nKey: Record<string, string> = {
 };
 
 const chartCategoryToI18nKey: Record<string, string> = {
-    "Scatter & Point": "scatterAndPoint", "Bar": "bar",
-    "Line & Area": "lineAndArea", "Part-to-Whole": "partToWhole",
-    "Statistical": "statistical", "Map": "map", "Custom": "custom",
+    "Points": "points",
+    "Bars": "bars",
+    "Distributions": "distributions",
+    "Lines & Areas": "linesAndAreas",
+    "Circular": "circular",
+    "Tables & Maps": "tablesAndMaps",
+    "Custom": "custom",
 };
 import { TableIcon, AgentIcon as PrecisionManufacturing } from '../icons';
 import ChangeCircleOutlinedIcon from '@mui/icons-material/ChangeCircleOutlined';

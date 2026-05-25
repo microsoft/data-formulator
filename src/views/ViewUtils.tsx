@@ -14,6 +14,24 @@ import CommitIcon from '@mui/icons-material/Commit';
 
 import { DictTable } from '../components/ComponentType';
 
+/**
+ * Compact MUI Menu/Select slotProps for dense list surfaces (column filter
+ * popover, table-header kebab). Keeps menu rows visually consistent across
+ * the data-grid filter UI (design-doc 31).
+ */
+export const DENSE_MENU_SLOT_PROPS = {
+    paper: {
+        sx: {
+            '& .MuiMenuItem-root': {
+                fontSize: 12,
+                minHeight: 28,
+                py: 0.25,
+                px: 1,
+            },
+        },
+    },
+} as const;
+
 export const groupConceptItems = (conceptShelfItems: FieldItem[], tables: DictTable[])  => {
     // group concepts based on which source table they belongs to
     return conceptShelfItems.map(f => {

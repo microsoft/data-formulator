@@ -2262,6 +2262,9 @@ const ChartThumbnail: FC<{
     onChartClick: (chartId: string, tableId: string) => void;
 }> = ({ chart, table, status, onChartClick }) => {
     const { t } = useTranslation();
+    // Thumbnails live in a dedicated slice so updating one chart's preview
+    // doesn't invalidate the `charts` array reference for every consumer.
+    const thumbnail = useSelector(dfSelectors.getChartThumbnail(chart.id));
 
     const pendingOverlay = status == 'pending' ? <Box sx={{
         position: "absolute", top: 0, left: -8, right: -8, bottom: 0, zIndex: 20,
@@ -2297,7 +2300,7 @@ const ChartThumbnail: FC<{
     }
 
     // ---- Thumbnail path: use cached PNG from ChartRenderService ----
-    if (chart.thumbnail) {
+    if (thumbnail) {
         return (
             <Box
                 onClick={() => onChartClick(chart.id, table.id)}
@@ -2317,7 +2320,7 @@ const ChartThumbnail: FC<{
                         }}
                     >
                         <img 
-                            src={chart.thumbnail} 
+                            src={thumbnail} 
                             alt={t('dataThread.chartAlt', { type: chart.chartType })}
                             style={{ maxWidth: 120, maxHeight: 100, objectFit: 'contain' }} 
                         />

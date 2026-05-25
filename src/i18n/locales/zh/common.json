@@ -466,7 +466,37 @@
     "loadedOfTotal": "已加载 {{loaded}} / {{total}} 行",
     "viewRandomRows": "查看此表的 10000 行随机数据",
     "downloadAsCsv": "下载为 CSV",
-    "downloading": "下载中..."
+    "downloading": "下载中...",
+    "columnMenu": {
+      "openMenu": "列选项",
+      "sortAsc": "升序排序",
+      "sortDesc": "降序排序",
+      "clearSort": "清除排序",
+      "filter": "筛选…",
+      "filterActive": "筛选（已启用）",
+      "clearFilter": "清除筛选",
+      "filterComingSoon": "筛选界面即将推出。"
+    },
+    "filter": {
+      "from": "起始",
+      "to": "结束",
+      "includeBlanks": "显示空值",
+      "showBlanksOnly": "仅显示空值",
+      "contains": "包含…",
+      "blank": "（空值）",
+      "apply": "应用",
+      "clear": "清除筛选",
+      "search": "搜索值",
+      "selectAll": "（全选）",
+      "noMatches": "无匹配值",
+      "distinctHint": "{{count}} 个不同值",
+      "sectionSort": "排序",
+      "sectionFilter": "筛选",
+      "filterApplied": "已启用筛选",
+      "summaryRows": "{{count, number}} 行",
+      "summaryDistinct": "{{count, number}} 个不同值",
+      "summaryBlanks": "{{count, number}} 个空值"
+    }
   },
   "chatDialog": {
     "noHistory": "尚无对话记录",

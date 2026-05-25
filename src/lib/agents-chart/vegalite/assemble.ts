@@ -303,6 +303,7 @@ export function assembleVegaLite(input: ChartAssemblyInput): any {
         channelSemantics,
         layout: layoutResult,
         table: values,
+        fullTable: convertedData,
         resolvedEncodings,
         encodings,
         chartProperties,

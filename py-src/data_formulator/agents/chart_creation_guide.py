@@ -64,36 +64,45 @@ Key guidelines:
 
 SHARED_CHART_REFERENCE = '''**[CHART TYPE REFERENCE]**
 
-| chart_type | encodings | config |
-|---|---|---|
-| Scatter Plot | x, y, color, size, facet | opacity (0.1–1.0) |
-| Regression | x, y, color, size, facet | regressionMethod ("linear","log","exp","pow","quad","poly"), polyOrder (2–10) |
-| Bar Chart | x, y, color, facet | — |
-| Grouped Bar Chart | x, y, group, facet | — |
-| Line Chart | x, y, color, strokeDash, facet | interpolate ("linear","monotone","step") |
-| Area Chart | x, y, color, facet | — |
-| Heatmap | x, y, color, facet | colorScheme ("viridis","blues","reds","oranges","greens","blueorange","redblue") |
-| Boxplot | x, y, color, facet | — |
-| Pie Chart | size, color, facet | innerRadius (0–100; 0=pie, >0=donut) |
-| Lollipop Chart | x, y, color, facet | — |
-| Waterfall Chart | x, y, color, facet | — |
-| Candlestick Chart | x, open, high, low, close, facet | — |
-| World Map | longitude, latitude, color, size | projection ("mercator","equalEarth","naturalEarth1","orthographic"), projectionCenter ([lon,lat]) |
-| US Map | longitude, latitude, color, size | — (fixed albersUsa) |
+The `chart_type` value in the `visualize` action MUST be one of the names listed
+in the first column below (exact spelling, including capitalization). When a row
+lists multiple names, pick whichever fits the "when to use" hint best.
+
+| chart_type | encodings | config | when to use |
+|---|---|---|---|
+| Scatter Plot | x, y, color, size, facet | opacity (0.1–1.0) | Relationships between two quantitative fields |
+| Regression | x, y, color, size, facet | regressionMethod ("linear","log","exp","pow","quad","poly"), polyOrder (2–10) | Trend line over scatter; one line per color group |
+| Bar Chart / Lollipop Chart / Waterfall Chart | x, y, color, facet | — | Bar: default categorical comparison. Lollipop: cleaner for ranked lists / sparse categories. Waterfall: cumulative gain/loss, each bar starts where the previous ended |
+| Grouped Bar Chart | x, y, group, facet | — | Side-by-side bars across a second categorical dimension |
+| Histogram / Density Plot | x, color, facet | — | Distribution of one quantitative field. Histogram: discrete bins, auto-binned. Density Plot: smooth KDE curve |
+| Boxplot | x, y, color, facet | — | Distribution summary (median/quartiles/outliers) by category |
+| Ranged Dot Plot | x, y, color, facet | — | Min–max range or two-point comparison per category |
+| Line Chart | x, y, color, strokeDash, facet | interpolate ("linear","monotone","step") | Trends over an ordered (usually temporal) x-axis |
+| Area Chart | x, y, color, facet | — | Magnitude over ordered x; auto-stacks when color is set |
+| Pie Chart | size, color, facet | innerRadius (0–100; 0=pie, >0=donut) | Part-of-whole with ≤7 categories. Wedge value goes on **size**, not **theta** |
+| Radar Chart | x, y, color, facet | — | Multi-metric profile/comparison; x = metric name, y = value, color = entity (long-form data) |
+| Heatmap | x, y, color, facet | colorScheme ("viridis","blues","reds","oranges","greens","blueorange","redblue") | Matrix / 2D density; color encodes the quantitative cell value |
+| Bar Table | x, y, color, facet | — | Ranked horizontal table with inline bars; one row per category. y = category, x = value |
+| KPI Card | metric, value, goal | — | "Big number" dashboard tile(s); one row per tile. `value` must be pre-aggregated; `goal` is optional |
+| Candlestick Chart | x, open, high, low, close, facet | — | OHLC financial data |
+| World Map | longitude, latitude, color, size | projection ("mercator","equalEarth","naturalEarth1","orthographic"), projectionCenter ([lon,lat]) | Geographic points/regions on a world projection |
+| US Map | longitude, latitude, color, size | — (fixed albersUsa) | US-only points/regions (albersUsa projection) |
 
 **Critical chart rules:**
-- **Scatter Plot**: good default for relationships/correlations. Use config opacity (0.1–1.0) for dense data instead of encoding opacity.
-- **Regression**: automatically overlays a trend line — do NOT compute regression in Python. Use color to get separate trend lines per group.
-- **Bar Chart**: x=categorical, y=quantitative (vertical bars). Swap x↔y for horizontal bars. For histograms/distributions, bin the data in the Python step. Same-x rows are auto-stacked.
-- **Grouped Bar Chart**: use the group channel (not color) for side-by-side bars.
-- **Line Chart**: use strokeDash to differentiate line styles (e.g. actual vs forecast).
-- **Pie Chart**: use "size" channel (not "theta") for the wedge values. Avoid when >7–8 categories.
-- **Lollipop Chart**: like bar but with dot+line — cleaner for ranked comparisons.
-- **Waterfall Chart**: cumulative gain/loss — each bar starts where the previous ended.
-- **Candlestick Chart**: OHLC financial data — requires open, high, low, close columns.
-- **World Map/US Map**: use "longitude"/"latitude" as channel names, not "x"/"y".
-- **facet**: available for all chart types; use a categorical field with small cardinality.
-- All fields in "encodings" must also appear in "output_fields". Typically use 2–3 channels (x, y, color/size).'''
+- **Scatter Plot**: use config opacity (0.1–1.0) for dense data instead of encoding opacity.
+- **Regression**: trend line is automatic — do NOT compute regression coefficients/predictions in Python. Use `color` to get separate trend lines per group.
+- **Bar Chart**: x=categorical, y=quantitative (vertical bars). Swap x↔y for horizontal bars. Same-x rows are auto-stacked when `color` is set.
+- **Grouped Bar Chart**: use the `group` channel (not `color`) for side-by-side bars.
+- **Histogram**: do NOT pre-bin in Python — pass the raw quantitative field on `x` and the chart bins automatically. Pre-aggregating gives wrong bin widths.
+- **Line Chart**: use `strokeDash` to differentiate line styles (e.g. actual vs forecast).
+- **Pie Chart**: use the `size` channel (not `theta`) for wedge values. Avoid when >7–8 categories.
+- **Radar Chart**: data must be long-form — one row per (entity, metric, value). If your data is wide-form (one column per metric), melt it first in the Python step.
+- **Bar Table**: y is the category column to rank; x is the quantitative value driving bar length. Don't sort in Python — the template sorts.
+- **KPI Card**: channels are `metric`, `value`, `goal` (not x/y). One DataFrame row = one tile. The `value` column must already contain the final number to display (aggregate upstream in the Python step).
+- **Candlestick Chart**: requires `open`, `high`, `low`, `close` columns.
+- **World Map / US Map**: channel names are `longitude` / `latitude`, not `x` / `y`.
+- **facet**: available for nearly all chart types; use a low-cardinality categorical field.
+- All fields in `encodings` must also appear in `output_fields`. Typically use 2–3 channels (x, y, color/size).'''
 
 
 SHARED_STATISTICAL_ANALYSIS = '''**Statistical analysis guide:**

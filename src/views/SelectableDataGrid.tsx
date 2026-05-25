@@ -30,12 +30,14 @@ import { TableIcon } from '../icons';
 import CasinoIcon from '@mui/icons-material/Casino';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest, assertDownloadResponseOk } from '../app/apiClient';
 import { useDrag } from 'react-dnd';
 import { useSelector } from 'react-redux';
 import { DataFormulatorState } from '../app/dfSlice';
+import { ColumnFilter, ColumnFilterPopover } from './ColumnFilterPopover';
 
 export interface ColumnDef {
     id: string;
@@ -100,14 +102,27 @@ interface DraggableHeaderProps {
     columnDef: ColumnDef;
     orderBy: string | undefined;
     order: 'asc' | 'desc';
-    onSortClick: () => void;
+    onSortAsc: () => void;
+    onSortDesc: () => void;
+    onClearSort: () => void;
+    onOpenFilter: (anchor: HTMLElement) => void;
+    hasFilter: boolean;
     tableId: string;
 }
 
 const DraggableHeader: React.FC<DraggableHeaderProps> = ({ 
-    columnDef, orderBy, order, onSortClick, tableId 
+    columnDef, orderBy, order, onSortAsc, onSortDesc, onClearSort,
+    onOpenFilter, hasFilter, tableId
 }) => {
     const { t } = useTranslation();
+    const filterButtonRef = React.useRef<HTMLButtonElement | null>(null);
+    const kebabButtonRef = React.useRef<HTMLButtonElement | null>(null);
+    const isSorted = orderBy === columnDef.id;
+    const cycleSort = () => {
+        if (!isSorted) { onSortAsc(); return; }
+        if (order === 'asc') { onSortDesc(); return; }
+        onClearSort();
+    };
     const theme = useTheme();
     const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
     const semanticType = useSelector(
@@ -152,16 +167,6 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
     const hoverBackgroundColor = field 
         ? alpha(getColorForFieldSource(field.source, theme), 0.1)
         : backgroundColor;
-    
-    // Determine sort icon
-    const getSortIcon = () => {
-        if (orderBy !== columnDef.id) {
-            return <UnfoldMoreIcon sx={{ fontSize: 16 }} />;
-        }
-        return order === 'asc' 
-            ? <ArrowUpwardIcon sx={{ fontSize: 16 }} />
-            : <ArrowDownwardIcon sx={{ fontSize: 16 }} />;
-    };
 
     return (
         <Box 
@@ -203,13 +208,13 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                         display: 'none',
                     },
                 }}
-                active={orderBy === columnDef.id}
-                direction={orderBy === columnDef.id ? order : 'asc'}
+                active={isSorted}
+                direction={isSorted ? order : 'asc'}
                 onClick={(e) => {
                     // Prevent sort when dragging
                     if (!isDragging) {
                         e.stopPropagation();
-                        onSortClick();
+                        cycleSort();
                     }
                 }}
             >
@@ -238,27 +243,60 @@ const DraggableHeader: React.FC<DraggableHeaderProps> = ({
                         {columnDef.label}
                     </Typography>
                 </Tooltip>
+                {isSorted && (
+                    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', ml: 0.25, color: theme.palette.primary.main }}>
+                        {order === 'asc'
+                            ? <ArrowUpwardIcon sx={{ fontSize: 13 }} />
+                            : <ArrowDownwardIcon sx={{ fontSize: 13 }} />}
+                    </Box>
+                )}
             </TableSortLabel>
-            {/* Separate sort handler button */}
-            <Tooltip title={<Typography sx={{fontSize: 10}}>{t('dataGrid.sortBy', { label: columnDef.label })}</Typography>}>
+            {/* Inline filter status hint \u2014 only rendered when a filter is active on this column.
+                Clicking reopens the filter popover. */}
+            {hasFilter && (
+                <Tooltip title={<Typography sx={{fontSize: 10}}>{t('dataGrid.columnMenu.filterActive')}</Typography>}>
+                    <IconButton
+                        ref={filterButtonRef}
+                        size="small"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenFilter(e.currentTarget);
+                        }}
+                        sx={{
+                            padding: '2px',
+                            marginLeft: '2px',
+                            color: theme.palette.primary.main,
+                            '&:hover': {
+                                backgroundColor: alpha(theme.palette.action.hover, 0.2),
+                            },
+                        }}
+                    >
+                        <FilterAltIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                </Tooltip>
+            )}
+            {/* Column kebab — single entry point that opens the unified
+                sort + filter popover (design-doc 31 §4.2). */}
+            <Tooltip title={<Typography sx={{fontSize: 10}}>{t('dataGrid.columnMenu.openMenu')}</Typography>}>
                 <IconButton
+                    ref={kebabButtonRef}
                     size="small"
                     onClick={(e) => {
                         e.stopPropagation();
-                        onSortClick();
+                        onOpenFilter(e.currentTarget);
                     }}
                     sx={{
                         padding: '2px',
-                        marginLeft: '4px',
+                        marginLeft: '1px',
                         marginRight: '2px',
-                        opacity: orderBy === columnDef.id ? 1 : 0.5,
+                        color: alpha(theme.palette.text.primary, 0.55),
                         '&:hover': {
-                            opacity: 1,
+                            color: theme.palette.text.primary,
                             backgroundColor: alpha(theme.palette.action.hover, 0.2),
                         },
                     }}
                 >
-                    {getSortIcon()}
+                    <MoreVertIcon sx={{ fontSize: 15 }} />
                 </IconButton>
             </Tooltip>
         </Box>
@@ -289,6 +327,30 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
     const { t } = useTranslation();
     const [orderBy, setOrderBy] = React.useState<string | undefined>(undefined);
     const [order, setOrder] = React.useState<'asc' | 'desc'>('asc');
+
+    // Column filter state — keyed by column id. Presence of an entry means
+    // the column has an active filter (design-doc 31). Server-side pushdown
+    // is handled by fetchVirtualData; non-virtual tables ignore filters in v1.
+    const [columnFilters, setColumnFilters] = React.useState<Record<string, ColumnFilter>>({});
+    const [filterPopover, setFilterPopover] = React.useState<{ columnId: string; anchor: HTMLElement } | null>(null);
+
+    // Lookup of per-column metadata (distinctCount/nullCount/levels/levelCounts/type)
+    // to drive the filter popover's variant selection synchronously.
+    const tableMetadata = useSelector(
+        (state: DataFormulatorState) => state.tables.find(t => t.id === tableId)?.metadata,
+    );
+
+    // Ref-based bridge to fetchVirtualData (declared further below); lets stable
+    // sort handlers call into the latest fetch function without re-creating themselves.
+    const fetchVirtualDataRef = React.useRef<((sortByColumnIds: string[], sortOrder: 'asc' | 'desc', offset?: number, append?: boolean) => void) | null>(null);
+
+    const applySort = React.useCallback((newOrderBy: string | undefined, newOrder: 'asc' | 'desc') => {
+        setOrder(newOrder);
+        setOrderBy(newOrderBy);
+        if (virtual) {
+            fetchVirtualDataRef.current?.(newOrderBy ? [newOrderBy] : [], newOrder);
+        }
+    }, [virtual]);
 
     let theme = useTheme();
 
@@ -377,6 +439,13 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
         }
     };
 
+    // Hold the live filters in a ref so fetchVirtualData stays stable yet
+    // always reads the latest set when called from sort/scroll handlers.
+    const filtersRef = React.useRef<ColumnFilter[]>([]);
+    React.useEffect(() => {
+        filtersRef.current = Object.values(columnFilters);
+    }, [columnFilters]);
+
     const fetchVirtualData = React.useCallback((
         sortByColumnIds: string[],
         sortOrder: 'asc' | 'desc',
@@ -391,6 +460,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
 
         const currentFetchId = ++fetchIdRef.current;
 
+        const activeFilters = filtersRef.current;
         const message: Record<string, any> = {
             table: tableId,
             size: PAGE_SIZE,
@@ -399,6 +469,7 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                 ? (sortOrder === 'asc' ? 'head' : 'bottom')
                 : 'head',
             order_by_fields: sortByColumnIds.length > 0 ? sortByColumnIds : ['#rowId'],
+            ...(activeFilters.length > 0 ? { filters: activeFilters } : {}),
         };
 
         apiRequest<any>(getUrls().SAMPLE_TABLE, {
@@ -427,6 +498,25 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
             setIsLoadingMore(false);
         });
     }, [tableId, rowCount]);
+
+    // Keep the ref in sync so stable handlers (e.g. applySort) can call the latest version.
+    React.useEffect(() => {
+        fetchVirtualDataRef.current = fetchVirtualData;
+    }, [fetchVirtualData]);
+
+    // Refetch from offset 0 whenever filters change (virtual tables only).
+    // Skip the initial mount; the first load happens via the existing
+    // virtual-data effect.
+    const didMountFiltersRef = React.useRef(false);
+    React.useEffect(() => {
+        if (!virtual) return;
+        if (!didMountFiltersRef.current) {
+            didMountFiltersRef.current = true;
+            return;
+        }
+        fetchVirtualData(orderBy ? [orderBy] : [], order, 0, false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [columnFilters]);
 
     const handleEndReached = React.useCallback(() => {
         if (!virtual || !hasMore || isLoadingMore || isLoading) return;
@@ -523,25 +613,11 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                                                     orderBy={orderBy}
                                                     order={order}
                                                     tableId={tableId}
-                                                    onSortClick={() => {
-                                                        let newOrder: 'asc' | 'desc' = 'asc';
-                                                        let newOrderBy : string | undefined = columnDef.id;
-                                                        if (orderBy === columnDef.id && order === 'asc') {
-                                                            newOrder = 'desc';
-                                                        } else if (orderBy === columnDef.id && order === 'desc') {
-                                                            newOrder = 'asc';
-                                                            newOrderBy = undefined;
-                                                        } else {
-                                                            newOrder = 'asc';
-                                                        }
-
-                                                        setOrder(newOrder);
-                                                        setOrderBy(newOrderBy);
-                                                        
-                                                        if (virtual) {
-                                                            fetchVirtualData(newOrderBy ? [newOrderBy] : [], newOrder);
-                                                        }
-                                                    }}
+                                                    hasFilter={Boolean(columnFilters[columnDef.id])}
+                                                    onSortAsc={() => applySort(columnDef.id, 'asc')}
+                                                    onSortDesc={() => applySort(columnDef.id, 'desc')}
+                                                    onClearSort={() => applySort(undefined, 'asc')}
+                                                    onOpenFilter={(anchor) => setFilterPopover({ columnId: columnDef.id, anchor })}
                                                 />
                                             )}
                                         </TableCell>
@@ -632,6 +708,41 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = React.memo(
                     </Tooltip>
                 </Box>
             </Paper>
+            {/* Column filter popover — variant chosen synchronously from metadata
+                (design-doc 31). Server-side pushdown via fetchVirtualData. */}
+            {filterPopover && (() => {
+                const meta = tableMetadata?.[filterPopover.columnId];
+                const colDef = columnDefs.find(c => c.id === filterPopover.columnId);
+                return (
+                    <ColumnFilterPopover
+                        anchor={filterPopover.anchor}
+                        open={true}
+                        onClose={() => setFilterPopover(null)}
+                        columnId={filterPopover.columnId}
+                        columnLabel={colDef?.label || filterPopover.columnId}
+                        dataType={colDef?.dataType}
+                        distinctCount={meta?.distinctCount}
+                        nullCount={meta?.nullCount}
+                        levels={meta?.levels}
+                        levelCounts={meta?.levelCounts}
+                        currentFilter={columnFilters[filterPopover.columnId]}
+                        onApply={(f) => {
+                            setColumnFilters(prev => {
+                                const next = { ...prev };
+                                if (f) next[filterPopover.columnId] = f;
+                                else delete next[filterPopover.columnId];
+                                return next;
+                            });
+                        }}
+                        rowCount={rowCount}
+                        isSorted={orderBy === filterPopover.columnId}
+                        sortOrder={order}
+                        onSortAsc={() => applySort(filterPopover.columnId, 'asc')}
+                        onSortDesc={() => applySort(filterPopover.columnId, 'desc')}
+                        onClearSort={() => applySort(undefined, 'asc')}
+                    />
+                );
+            })()}
         </Box >
     );
 });

@@ -65,7 +65,6 @@ const CHART_ICON_ALIAS: Record<string, string> = {
     'Pyramid':     'Pyramid Chart',
     'Candlestick': 'Candlestick Chart',
     'Waterfall':   'Waterfall Chart',
-    'Dotted Line': 'Dotted Line Chart',
     'Ranged Dot':  'Ranged Dot Plot',
     'Density':     'Density Plot',
     'Strip':       'Strip Plot',
