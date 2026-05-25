@@ -12,7 +12,7 @@ import { apiRequest } from '../app/apiClient';
 import { CONNECTOR_ACTION_URLS } from '../app/utils';
 import { transition } from '../app/tokens';
 import { TablePreviewRow, TablePreviewData } from './TablePreviewRow';
-import type { LoadPlan, LoadPlanCandidate } from './ComponentType';
+import type { LoadPlan, LoadPlanCandidate, PendingTableLoad } from './ComponentType';
 
 interface LoadPlanCardProps {
     plan: LoadPlan;
@@ -280,3 +280,142 @@ export const LoadPlanCard: React.FC<LoadPlanCardProps> = ({ plan, onConfirm, con
     );
 };
 
+// ---------------------------------------------------------------------------
+// PendingLoadsCard
+// ---------------------------------------------------------------------------
+// Renders one or more agent-proposed scratch-CSV table loads using the
+// same visual shell as `LoadPlanCard` above, so users see a consistent
+// multi-table import UI regardless of whether candidates come from a
+// connector plan or a notebook-style extract step.
+
+interface PendingLoadsCardProps {
+    pendingLoads: PendingTableLoad[];
+    onLoad: (pending: PendingTableLoad) => Promise<void> | void;
+}
+
+export const PendingLoadsCard: React.FC<PendingLoadsCardProps> = ({ pendingLoads, onLoad }) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+
+    // Confirmed = already loaded earlier; unconfirmed = selectable.
+    const [selection, setSelection] = useState<Record<number, boolean>>(
+        () => Object.fromEntries(pendingLoads.map((p, i) => [i, !p.confirmed]))
+    );
+    // Auto-expand previews — scratch CSV samples are already inlined
+    // client-side, so there's no fetch cost to showing them by default.
+    const [expanded, setExpanded] = useState<Record<number, boolean>>(
+        () => Object.fromEntries(pendingLoads.map((_, i) => [i, true]))
+    );
+    const [loading, setLoading] = useState(false);
+
+    const allConfirmed = pendingLoads.every(p => p.confirmed);
+    const selectedCount = Object.entries(selection)
+        .filter(([i, on]) => on && !pendingLoads[Number(i)].confirmed).length;
+
+    const toggleItem = (idx: number) =>
+        setSelection(prev => ({ ...prev, [idx]: !prev[idx] }));
+    const togglePreview = (idx: number) =>
+        setExpanded(prev => ({ ...prev, [idx]: !prev[idx] }));
+
+    const handleConfirm = async () => {
+        if (selectedCount === 0) return;
+        setLoading(true);
+        try {
+            for (let i = 0; i < pendingLoads.length; i++) {
+                if (selection[i] && !pendingLoads[i].confirmed) {
+                    await onLoad(pendingLoads[i]);
+                }
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const isDark = theme.palette.mode === 'dark';
+    const borderColorBase = allConfirmed
+        ? alpha(theme.palette.success.main, 0.3)
+        : alpha(theme.palette.primary.main, isDark ? 0.25 : 0.15);
+    const borderColorHover = allConfirmed
+        ? alpha(theme.palette.success.main, 0.45)
+        : alpha(theme.palette.primary.main, isDark ? 0.4 : 0.3);
+    const shadowBase = isDark
+        ? '0 1px 2px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.2)'
+        : '0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03)';
+    const shadowHover = isDark
+        ? '0 2px 4px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3)'
+        : '0 2px 4px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.04)';
+
+    return (
+        <Box sx={{
+            my: 0.75,
+            p: 1,
+            border: `1px solid ${borderColorBase}`,
+            borderRadius: 1.5,
+            boxShadow: shadowBase,
+            transition: transition.fast,
+            '&:hover': {
+                borderColor: borderColorHover,
+                boxShadow: shadowHover,
+            },
+        }}>
+            {pendingLoads.map((p, i) => {
+                const preview = p.preview;
+                const rowLabel = preview.totalRows > preview.sampleRows.length
+                    ? `${preview.totalRows.toLocaleString()} ${t('dataLoading.rows')}`
+                    : '';
+                const meta = [rowLabel, `${preview.columns.length} ${t('dataLoading.cols')}`]
+                    .filter(Boolean).join(' · ');
+
+                const previewData: TablePreviewData = {
+                    state: 'ready',
+                    columns: preview.columns,
+                    rows: preview.sampleRows,
+                    totalRows: preview.totalRows,
+                };
+
+                return (
+                    <TablePreviewRow
+                        key={i}
+                        name={p.name}
+                        meta={meta}
+                        leading={p.confirmed
+                            ? <CheckIcon sx={{ fontSize: 16, color: 'success.main', mx: 0.25 }} />
+                            : <Checkbox size="small" checked={!!selection[i]}
+                                onChange={() => toggleItem(i)} sx={{ p: 0.25 }} />}
+                        preview={previewData}
+                        expanded={!!expanded[i]}
+                        onTogglePreview={preview.sampleRows.length > 0 ? () => togglePreview(i) : undefined}
+                    />
+                );
+            })}
+
+            <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center' }}>
+                <Box sx={{ flex: 1 }} />
+                {allConfirmed ? (
+                    <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
+                        {t('dataLoading.loadPlan.loadedCount', {
+                            count: pendingLoads.length,
+                            defaultValue: '✓ Loaded',
+                        })}
+                    </Typography>
+                ) : (
+                    <Button
+                        size="small"
+                        variant="contained"
+                        disabled={selectedCount === 0 || loading}
+                        onClick={handleConfirm}
+                        sx={{
+                            textTransform: 'none', fontSize: 12,
+                            py: 0.5, px: 2, minHeight: 0,
+                            borderRadius: 1.5, boxShadow: 'none',
+                        }}
+                    >
+                        {loading
+                            ? '...'
+                            : `${t('dataLoading.loadPlan.loadSelected')} (${selectedCount})`}
+                    </Button>
+                )}
+            </Box>
+        </Box>
+    );
+};

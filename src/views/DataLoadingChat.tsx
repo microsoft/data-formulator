@@ -11,6 +11,7 @@ import {
     alpha, useTheme, Collapse,
 } from '@mui/material';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CheckIcon from '@mui/icons-material/Check';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -33,7 +34,7 @@ import { apiRequest, streamRequest } from '../app/apiClient';
 import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
-import { LoadPlanCard } from '../components/LoadPlanCard';
+import { LoadPlanCard, PendingLoadsCard } from '../components/LoadPlanCard';
 import { TablePreviewRow, TablePreviewData } from '../components/TablePreviewRow';
 import { AgentChatInput } from './AgentChatInput';
 
@@ -361,10 +362,26 @@ const ChatBubble: React.FC<{
                                 sx={{ maxWidth: '100%', maxHeight: 160, borderRadius: 1, objectFit: 'contain' }} />
                         </Box>
                     ))}
-                    {/* File attachments */}
+                    {/* File attachments — match the muted chip style used
+                        in the input area before send, so visual identity
+                        carries through from compose to history. */}
                     {message.attachments?.filter(a => a.type !== 'image').map((att, i) => (
-                        <Chip key={i} label={att.name} size="small" icon={<AttachFileIcon />}
-                            sx={{ mb: 0.5, mr: 0.5, fontSize: 11 }} />
+                        <Box key={i} sx={{
+                            display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                            px: 0.75, py: 0.25, mb: 0.5, mr: 0.5,
+                            color: 'text.secondary',
+                            bgcolor: alpha(theme.palette.text.primary, 0.04),
+                            border: `1px solid ${alpha(theme.palette.text.primary, 0.12)}`,
+                            borderRadius: 1,
+                            maxWidth: 220,
+                        }}>
+                            <InsertDriveFileOutlinedIcon sx={{ fontSize: 13, color: 'text.disabled', flexShrink: 0 }} />
+                            <Typography variant="caption" title={att.name}
+                                sx={{ fontSize: 11, lineHeight: 1.4,
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {att.name}
+                            </Typography>
+                        </Box>
                     ))}
                     {message.content && (
                         <Typography sx={{ fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
@@ -393,29 +410,11 @@ const ChatBubble: React.FC<{
                 {message.content && <MarkdownContent content={message.content} />}
                 {message.codeBlocks?.map((block, i) => <CodeBlockView key={i} block={block} />)}
                 {message.tables?.map((table, i) => <InlineTablePreviewView key={i} preview={table} />)}
-                {message.pendingLoads?.map((pending, i) => (
-                    <InlineTablePreviewView key={i} preview={pending.preview}
-                        confirmed={pending.confirmed}
-                        onLoad={pending.confirmed ? undefined : () => handleLoadTable(pending)} />
-                ))}
-
-                {/* Unified "Load all" — only when there are multiple
-                    pending loads. Single-table uses the in-wrapper footer
-                    for visual parity with LoadPlanCard. */}
-                {message.pendingLoads && message.pendingLoads.length > 1
-                    && message.pendingLoads.some(p => !p.confirmed) && (
-                    <Box sx={{ mt: 1, display: 'flex' }}>
-                        <Box sx={{ flex: 1 }} />
-                        <Button size="small" variant="contained"
-                            onClick={async () => {
-                                for (const pending of message.pendingLoads || []) {
-                                    if (!pending.confirmed) await handleLoadTable(pending);
-                                }
-                            }}
-                            sx={{ textTransform: 'none', fontSize: 12, py: 0.5, px: 2, minHeight: 0, borderRadius: 1.5, boxShadow: 'none' }}>
-                            {t('dataLoading.loadAllTables', { count: message.pendingLoads.filter(p => !p.confirmed).length })}
-                        </Button>
-                    </Box>
+                {message.pendingLoads && message.pendingLoads.length > 0 && (
+                    <PendingLoadsCard
+                        pendingLoads={message.pendingLoads}
+                        onLoad={handleLoadTable}
+                    />
                 )}
 
                 {/* Load plan card — Agent-proposed multi-table import.
@@ -696,6 +695,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
 
     const [prompt, setPrompt] = useState('');
     const [userImages, setUserImages] = useState<string[]>([]);
+    const [userAttachments, setUserAttachments] = useState<string[]>([]);
     const [streamingContent, setStreamingContent] = useState('');
     const [streamingToolSteps, setStreamingToolSteps] = useState<ToolStep[]>([]);
     const [debugEvents, setDebugEvents] = useState<any[]>([]);
@@ -742,12 +742,38 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
             setStreamingToolSteps([]);
             setPrompt('');
             setUserImages([]);
+            setUserAttachments([]);
             setPendingAutoSend(false);
         }
 
-        const hasText = !!initialPrompt && initialPrompt.trim().length > 0;
+        // Extract `[Uploaded: name]` mentions from the seeded prompt and
+        // surface them as chips. The mention template is locale-aware,
+        // so we build the regex from the current i18n value rather than
+        // hard-coding the English form.
+        const mentionTemplate = t('dataLoading.uploaded', { name: '__DF_NAME__' });
+        const mentionPattern = mentionTemplate
+            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            .replace('__DF_NAME__', '(.+?)');
+        const mentionRegex = new RegExp(mentionPattern, 'g');
+        let seededPrompt = initialPrompt || '';
+        const extractedNames: string[] = [];
+        if (seededPrompt) {
+            let match: RegExpExecArray | null;
+            while ((match = mentionRegex.exec(seededPrompt)) !== null) {
+                extractedNames.push(match[1]);
+            }
+            if (extractedNames.length > 0) {
+                seededPrompt = seededPrompt
+                    .replace(new RegExp(`\\n?${mentionPattern}`, 'g'), '')
+                    .trim();
+            }
+        }
+
+        const hasText = seededPrompt.trim().length > 0;
         const hasImages = !!initialImages && initialImages.length > 0;
-        if (hasText) setPrompt(initialPrompt!);
+        const hasAttachments = extractedNames.length > 0;
+        if (hasText) setPrompt(seededPrompt);
+        if (hasAttachments) setUserAttachments(extractedNames);
         if (hasImages) {
             // Always replace, never append. The prop is a "seed" — each
             // change represents a fresh handoff from the parent, not an
@@ -759,7 +785,7 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
         // produces a fresh conversation, so allow auto-send post-reset
         // even though `hasExistingMessages` may not have re-rendered to
         // `false` yet in this tick.
-        if (autoSendInitialPrompt && (hasText || hasImages) && (isReset || !hasExistingMessages)) {
+        if (autoSendInitialPrompt && (hasText || hasImages || hasAttachments) && (isReset || !hasExistingMessages)) {
             setPendingAutoSend(true);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -770,15 +796,25 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
     // ---- Send message ----
     const sendMessage = useCallback(() => {
         const text = prompt.trim();
-        if (!text && userImages.length === 0) return;
+        if (!text && userImages.length === 0 && userAttachments.length === 0) return;
         if (chatInProgress) return;
-        const attachments: ChatAttachment[] = userImages.map((url, i) => ({
+        const imageAttachments: ChatAttachment[] = userImages.map((url, i) => ({
             type: 'image' as const, name: `image-${i + 1}`, url,
         }));
+        const fileAttachments: ChatAttachment[] = userAttachments.map(name => ({
+            type: 'file' as const, name,
+        }));
+        const attachments: ChatAttachment[] = [...imageAttachments, ...fileAttachments];
+
+        // The visible bubble keeps the user's original text plus file
+        // chips (rendered from `attachments`). The agent payload below
+        // re-injects `[Uploaded: name]` mentions so the backend still
+        // sees the file references inline.
+        const displayText = text || (userImages.length > 0 ? t('dataLoading.defaultImageMessage') : '');
 
         const userMsg: ChatMessage = {
             id: `msg-${Date.now()}-user`, role: 'user',
-            content: text || (userImages.length > 0 ? t('dataLoading.defaultImageMessage') : ''),
+            content: displayText,
             attachments: attachments.length > 0 ? attachments : undefined,
             timestamp: Date.now(),
         };
@@ -794,12 +830,23 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
         dispatch(dfActions.setDataLoadingChatInProgress(true));
         setPrompt('');
         setUserImages([]);
+        setUserAttachments([]);
         setStreamingContent('');
         setStreamingToolSteps([]);
 
-        const allMessages = [...chatMessages, userMsg].map(m => ({
-            role: m.role, content: m.content, attachments: m.attachments,
-        }));
+        const allMessages = [...chatMessages, userMsg].map(m => {
+            // Re-hydrate `[Uploaded: name]` mentions from file attachments
+            // so the backend still sees them as text references, while
+            // the chat UI shows clean text + chips.
+            const fileNames = (m.attachments || [])
+                .filter(a => a.type === 'file' || a.type === 'text_file')
+                .map(a => a.name);
+            const mentions = fileNames.map(name => t('dataLoading.uploaded', { name })).join('\n');
+            const augmented = mentions
+                ? (m.content ? `${m.content}\n${mentions}` : mentions)
+                : m.content;
+            return { role: m.role, content: augmented, attachments: m.attachments };
+        });
 
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -1125,9 +1172,11 @@ export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
                             apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
                                 method: 'POST', body: formData,
                             }).then(() => {
-                                setPrompt(prev => prev + (prev ? '\n' : '') + t('dataLoading.uploaded', { name: file.name }));
+                                setUserAttachments(prev => [...prev, file.name]);
                             }).catch(err => console.error('Upload failed:', err));
                         }}
+                        attachments={userAttachments}
+                        onAttachmentsChange={setUserAttachments}
                     />
                 </Box>
 

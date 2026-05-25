@@ -44,6 +44,7 @@ import { AgentChatInput } from './AgentChatInput';
 import exampleImageTable from '../assets/example-image-table.png';
 import { getUrls, CONNECTOR_URLS } from '../app/utils';
 import { apiRequest } from '../app/apiClient';
+import { generateUUID } from '../app/identity';
 import { DataLoaderForm } from './DBTableManager';
 import { MultiTablePreview } from './MultiTablePreview';
 import { 
@@ -380,6 +381,7 @@ export { type ConnectorInstance } from '../components/ComponentType';
 
 // Map connector source_type (class name) to i18n key suffix
 const CONNECTOR_TYPE_KEY_MAP: Record<string, string> = {
+    SampleDatasetsLoader: 'sample_datasets',
     MySQLDataLoader: 'mysql',
     PostgreSQLDataLoader: 'postgresql',
     MSSQLDataLoader: 'mssql',
@@ -453,6 +455,22 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
 }) => {
     const theme = useTheme();
     const { t } = useTranslation();
+    const dispatch = useDispatch<AppDispatch>();
+    const activeWorkspace = useSelector((state: DataFormulatorState) => state.activeWorkspace);
+    // Backend requires an active workspace (X-Workspace-Id header) for
+    // scratch uploads and chat. The menu can be opened on the entry
+    // surface before any workspace has been picked, so we lazily mint
+    // one here — the parent's `openUploadDialog` does the same when it
+    // can, but we cover the path where this menu is rendered directly.
+    const ensureActiveWorkspace = (): string => {
+        if (activeWorkspace?.id) return activeWorkspace.id;
+        const now = new Date();
+        const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        const wsId = `session_${date}_${time}_${generateUUID().slice(0, 4)}`;
+        dispatch(dfActions.setActiveWorkspace({ id: wsId, displayName: 'Untitled Session' }));
+        return wsId;
+    };
     // Data source configurations (upload-style entries — file, paste,
     // URL). The "Data Loading Agent" entry is surfaced separately as a
     // chat box at the top of the menu. Sample datasets are no longer
@@ -550,60 +568,99 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
     // ------------------------------------------------------------------
     const [agentInput, setAgentInput] = useState('');
     const [agentImages, setAgentImages] = useState<string[]>([]);
+    const [agentAttachments, setAgentAttachments] = useState<string[]>([]);
     const submitAgentChat = () => {
         const text = agentInput.trim();
-        if (text.length === 0 && agentImages.length === 0) {
+        if (text.length === 0 && agentImages.length === 0 && agentAttachments.length === 0) {
             // Empty submission — just open the chat surface.
             if (onStartChat) onStartChat('', []);
             else onSelectTab('extract');
             return;
         }
+        // Augment the outgoing prompt with `[Uploaded: name]` lines so the
+        // agent sees attachments as text references, without polluting
+        // the editable input the user sees.
+        const mentions = agentAttachments
+            .map(name => t('dataLoading.uploaded', { name }))
+            .join('\n');
+        const finalText = mentions
+            ? (text ? `${text}\n${mentions}` : mentions)
+            : text;
         if (onStartChat) {
-            onStartChat(text, agentImages);
+            onStartChat(finalText, agentImages);
         } else {
             onSelectTab('extract');
         }
         setAgentInput('');
         setAgentImages([]);
+        setAgentAttachments([]);
     };
 
     // Suggestions surfaced as a focus-time dropdown — ordered to cover the
-    // four primary agent workflows: ask → find → extract image → extract text.
+    // primary agent workflows. The `kind` tag renders as a muted suffix
+    // so users can scan task types at a glance (ask vs. find vs. extract).
     const agentChatSuggestions = useMemo(() => [
         {
+            kind: t('upload.agentChatSuggestion.kind.ask', { defaultValue: 'ask' }),
             label: t('upload.agentChatSuggestion.askConnected', {
                 defaultValue: 'What datasets do we have from connected sources?',
             }),
             onClick: () => {
                 setAgentImages([]);
+                setAgentAttachments([]);
                 setAgentInput(t('upload.agentChatSuggestion.askConnected', {
                     defaultValue: 'What datasets do we have from connected sources?',
                 }));
             },
         },
         {
+            kind: t('upload.agentChatSuggestion.kind.find', { defaultValue: 'find' }),
             label: t('upload.agentChatSuggestion.findCPI', {
                 defaultValue: 'Help me load consumer price index data',
             }),
             onClick: () => {
                 setAgentImages([]);
+                setAgentAttachments([]);
                 setAgentInput(t('upload.agentChatSuggestion.findCPI', {
                     defaultValue: 'Help me load consumer price index data',
                 }));
             },
         },
         {
-            label: t('upload.agentChatSuggestion.findSpaceLaunches', {
-                defaultValue: 'Load space launch datasets from a few public sources',
+            kind: t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' }),
+            label: t('upload.agentChatSuggestion.extractFromExcel', {
+                defaultValue: 'Extract data from an attached Excel file',
             }),
             onClick: () => {
+                // Fetch the bundled sample workbook from /public, upload
+                // it to the session scratch space (same path the attach
+                // button uses), then surface its name as a chip so the
+                // example is ready to send.
                 setAgentImages([]);
-                setAgentInput(t('upload.agentChatSuggestion.findSpaceLaunches', {
-                    defaultValue: 'Load space launch datasets from a few public sources',
+                setAgentAttachments([]);
+                setAgentInput(t('upload.agentChatSuggestion.extractFromExcel', {
+                    defaultValue: 'Extract data from an attached Excel file',
                 }));
+                const sampleName = 'climate-gas-indicator.xlsx';
+                ensureActiveWorkspace();
+                fetch(`/${sampleName}`)
+                    .then(res => res.blob())
+                    .then(blob => {
+                        const file = new File([blob], sampleName, {
+                            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        });
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        return apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
+                            method: 'POST', body: formData,
+                        });
+                    })
+                    .then(() => setAgentAttachments([sampleName]))
+                    .catch(err => console.error('Sample Excel upload failed:', err));
             },
         },
         {
+            kind: t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' }),
             label: t('dataLoading.examples.extractFromImageExample', {
                 defaultValue: 'Extract revenue data from this image',
             }),
@@ -615,6 +672,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                         reader.onload = () => {
                             if (reader.result) {
                                 setAgentImages([reader.result as string]);
+                                setAgentAttachments([]);
                                 setAgentInput(t('dataLoading.examples.extractFromImageExample', {
                                     defaultValue: 'Extract revenue data from this image',
                                 }));
@@ -625,11 +683,13 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             },
         },
         {
+            kind: t('upload.agentChatSuggestion.kind.extract', { defaultValue: 'extract' }),
             label: t('dataLoading.examples.extractFromTextExample', {
                 defaultValue: 'Extract revenue growth data from this text: Business Highlights ...',
             }),
             onClick: () => {
                 setAgentImages([]);
+                setAgentAttachments([]);
                 setAgentInput(t('dataLoading.examples.extractFromTextPrompt', {
                     defaultValue: t('dataLoading.examples.extractFromTextExample', {
                         defaultValue: 'Extract revenue growth data from this text...',
@@ -645,7 +705,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    mb: 2,
+                    mb: 1.5,
                 }}
             >
                 <Typography
@@ -696,7 +756,23 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
                 images={agentImages}
                 onImagesChange={setAgentImages}
                 onSend={submitAgentChat}
-                showAttachButton={false}
+                onNonImageFile={(file) => {
+                    // Upload non-image files (Excel, CSV, JSON, …) to the
+                    // session scratch space. The filename is shown as a
+                    // chip; the `[Uploaded: name]` mention is appended to
+                    // the outgoing prompt at send-time so the editable
+                    // input stays clean.
+                    ensureActiveWorkspace();
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
+                        method: 'POST', body: formData,
+                    }).then(() => {
+                        setAgentAttachments(prev => [...prev, file.name]);
+                    }).catch(err => console.error('Upload failed:', err));
+                }}
+                attachments={agentAttachments}
+                onAttachmentsChange={setAgentAttachments}
                 minRows={1}
                 tabSuggestion={t('upload.agentChatTabSuggestion', {
                     defaultValue: 'What dataset do we have here?',
@@ -716,7 +792,7 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
-            gap: 2,
+            gap: 3,
             mx: 0,
             textAlign: 'left',
         }}>
@@ -724,76 +800,79 @@ export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({
             {agentChatBox}
 
             {/* Upload data */}
-            <Typography 
-                variant="body2" 
-                color="text.secondary" 
-                sx={{ 
-                    textAlign: 'left',
-                    mb: 0.5,
-                    opacity: 0.6,
-                    fontSize: '0.75rem',
-                    letterSpacing: '0.02em'
-                }}
-            >
-                {t('upload.uploadData', { defaultValue: 'Upload data' })}
-            </Typography>
-            <Box sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                gap: 1.5,
-            }}>
-                {regularDataSources.map((source) => (
-                    <DataSourceCard
-                        key={source.value}
-                        icon={source.icon}
-                        title={source.title}
-                        description={source.description}
-                        onClick={() => onSelectTab(source.value)}
-                        disabled={source.disabled}
-                        badge={source.badge}
-                    />
-                ))}
+            <Box>
+                <Typography 
+                    variant="body2" 
+                    color="text.secondary" 
+                    sx={{ 
+                        textAlign: 'left',
+                        mb: 1.5,
+                        opacity: 0.6,
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.02em'
+                    }}
+                >
+                    {t('upload.uploadData', { defaultValue: 'Upload data' })}
+                </Typography>
+                <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: 1.5,
+                }}>
+                    {regularDataSources.map((source) => (
+                        <DataSourceCard
+                            key={source.value}
+                            icon={source.icon}
+                            title={source.title}
+                            description={source.description}
+                            onClick={() => onSelectTab(source.value)}
+                            disabled={source.disabled}
+                            badge={source.badge}
+                        />
+                    ))}
+                </Box>
             </Box>
 
             {/* Data Connections */}
-            <Typography 
-                variant="body2" 
-                color="text.secondary" 
-                sx={{ 
-                    textAlign: 'left',
-                    mt: 1,
-                    mb: 0.5,
-                    opacity: 0.6,
-                    fontSize: '0.75rem',
-                    letterSpacing: '0.02em',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.5,
-                }}
-            >
-                <StreamIcon sx={{ fontSize: 12, animation: 'pulse 2s infinite', '@keyframes pulse': {
-                    '0%': { opacity: 1 },
-                    '50%': { opacity: 0.4 },
-                    '100%': { opacity: 1 },
-                } }} />
-                {t('upload.dataConnections')}
-            </Typography>
-            <Box sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                gap: 1.5,
-            }}>
-                {connectionSources.map((source) => (
-                    <DataSourceCard
-                        key={source.value}
-                        icon={source.icon}
-                        title={source.title}
-                        description={source.description}
-                        onClick={() => handleConnectionClick(source.value)}
-                        disabled={source.disabled}
-                        variant={source.variant}
-                    />
-                ))}
+            <Box>
+                <Typography 
+                    variant="body2" 
+                    color="text.secondary" 
+                    sx={{ 
+                        textAlign: 'left',
+                        mb: 1.5,
+                        opacity: 0.6,
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.02em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                    }}
+                >
+                    <StreamIcon sx={{ fontSize: 12, animation: 'pulse 2s infinite', '@keyframes pulse': {
+                        '0%': { opacity: 1 },
+                        '50%': { opacity: 0.4 },
+                        '100%': { opacity: 1 },
+                    } }} />
+                    {t('upload.dataConnections')}
+                </Typography>
+                <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: 1.5,
+                }}>
+                    {connectionSources.map((source) => (
+                        <DataSourceCard
+                            key={source.value}
+                            icon={source.icon}
+                            title={source.title}
+                            description={source.description}
+                            onClick={() => handleConnectionClick(source.value)}
+                            disabled={source.disabled}
+                            variant={source.variant}
+                        />
+                    ))}
+                </Box>
             </Box>
         </Box>
     );

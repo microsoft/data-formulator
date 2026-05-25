@@ -45,7 +45,12 @@
     "agentChatSuggestion": {
       "askConnected": "What datasets do we have from connected sources?",
       "findCPI": "Help me load consumer price index data",
-      "findSpaceLaunches": "Load space launch datasets from a few public sources"
+      "extractFromExcel": "Extract data from an attached Excel file",
+      "kind": {
+        "ask": "ask",
+        "find": "find",
+        "extract": "extract"
+      }
     },
     "uploadData": "Upload Data",
     "importData": "Import data",
@@ -113,6 +118,7 @@
     "storedInBrowser": "Data stays in browser only",
     "storedOnDisk": "Data stored on disk",
     "connectorDesc": {
+      "sample_datasets": "For exploring Data Formulator",
       "mysql": "Query tables from a MySQL database",
       "postgresql": "Query tables from a PostgreSQL database",
       "mssql": "Query tables from Microsoft SQL Server",

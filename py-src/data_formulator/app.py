@@ -4,9 +4,22 @@
 import argparse
 import sys
 import os
+import warnings
 import mimetypes
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/javascript', '.mjs')
+
+# Suppress a noisy pydantic serializer warning emitted by litellm/openai
+# when a Chat Completions ``usage`` dict (prompt_tokens / completion_tokens)
+# gets serialized through a model whose field is typed as the Responses
+# API ``ResponseAPIUsage``. The response itself is correct (HTTP 200);
+# only the serializer's "may not be as expected" notice is misleading.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Pydantic serializer warnings",
+    category=UserWarning,
+    module=r"pydantic\..*",
+)
 
 import flask
 from flask import Flask, request, send_from_directory

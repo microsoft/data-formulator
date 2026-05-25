@@ -21,6 +21,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import StopIcon from '@mui/icons-material/Stop';
 import { useTranslation } from 'react-i18next';
@@ -46,6 +47,15 @@ export interface AgentChatInputProps {
      * non-image files are silently ignored (image-only mode).
      */
     onNonImageFile?: (file: File) => void;
+    /**
+     * Optional list of attached non-image files (e.g. uploaded Excel/CSV).
+     * Rendered as removable chips above the input — mirrors the
+     * image-preview row. The parent owns the array and handles
+     * upload/removal side effects (e.g. stripping the matching
+     * `[Uploaded: name]` mention from the prompt).
+     */
+    attachments?: string[];
+    onAttachmentsChange?: (names: string[]) => void;
     sendTooltip?: string;
     stopTooltip?: string;
     attachTooltip?: string;
@@ -90,7 +100,7 @@ export interface AgentChatInputProps {
      * suggestions can hand off arbitrary state (e.g. a sample image
      * plus a long prompt). Does not push surrounding content.
      */
-    focusSuggestions?: Array<{ label: string; onClick: () => void }>;
+    focusSuggestions?: Array<{ label: string; onClick: () => void; kind?: string }>;
     /**
      * Optional header label shown above the focus-suggestion list.
      * Defaults to "Try asking".
@@ -111,6 +121,8 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
     autoFocus = false,
     fileAccept = 'image/*,.csv,.json,.xlsx,.xls,.txt,.tsv',
     onNonImageFile,
+    attachments,
+    onAttachmentsChange,
     sendTooltip,
     stopTooltip,
     attachTooltip,
@@ -317,6 +329,43 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                     </Box>
                 )}
 
+                {/* Attached non-image file chips (Excel, CSV, JSON, …) */}
+                {attachments && attachments.length > 0 && (
+                    <Box sx={{ display: 'flex', gap: 0.5, px: 1, pt: 1, pb: 0, flexWrap: 'wrap' }}>
+                        {attachments.map((name, i) => (
+                            <Box key={`${name}-${i}`} sx={{
+                                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                                pl: 0.75, pr: 0.25, py: 0.25,
+                                color: 'text.secondary',
+                                bgcolor: alpha(theme.palette.text.primary, 0.04),
+                                border: `1px solid ${borderColor.divider}`,
+                                borderRadius: 1,
+                                maxWidth: 220,
+                            }}>
+                                <InsertDriveFileOutlinedIcon sx={{ fontSize: 13, color: 'text.disabled', flexShrink: 0 }} />
+                                <Typography
+                                    variant="caption"
+                                    title={name}
+                                    sx={{
+                                        fontSize: 11, lineHeight: 1.4,
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    {name}
+                                </Typography>
+                                {onAttachmentsChange && (
+                                    <IconButton size="small"
+                                        onClick={() => onAttachmentsChange(attachments.filter((_, idx) => idx !== i))}
+                                        sx={{ width: 16, height: 16, p: 0, color: 'text.disabled',
+                                            '&:hover': { color: 'text.primary', bgcolor: alpha(theme.palette.text.primary, 0.06) } }}>
+                                        <CloseIcon sx={{ fontSize: 11 }} />
+                                    </IconButton>
+                                )}
+                            </Box>
+                        ))}
+                    </Box>
+                )}
+
                 {hiddenFileInput}
 
                 {layout === 'stacked' ? (
@@ -390,9 +439,8 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                         {focusSuggestionsLabel ?? 'Try asking'}
                     </Typography>
                     {focusSuggestions!.map((s, i) => (
-                        <Typography
+                        <Box
                             key={i}
-                            variant="body2"
                             onMouseDown={(e) => {
                                 // Prevent the textarea from blurring so the
                                 // overlay doesn't disappear mid-click.
@@ -401,26 +449,50 @@ export const AgentChatInput: React.FC<AgentChatInputProps> = ({
                                 actualInputRef.current?.focus();
                             }}
                             sx={{
-                                display: 'block',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 1,
                                 px: 1.5,
                                 py: 0.5,
-                                fontSize: 13,
                                 cursor: 'pointer',
                                 color: 'text.secondary',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                '&::before': {
-                                    content: '"–"',
-                                    display: 'inline-block',
-                                    width: '1em',
-                                    color: 'text.disabled',
-                                },
                                 '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
                             }}
                         >
-                            {s.label}
-                        </Typography>
+                            <Typography
+                                variant="body2"
+                                sx={{
+                                    flex: 1, minWidth: 0,
+                                    fontSize: 13,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    color: 'inherit',
+                                    '&::before': {
+                                        content: '"–"',
+                                        display: 'inline-block',
+                                        width: '1em',
+                                        color: 'text.disabled',
+                                    },
+                                }}
+                            >
+                                {s.label}
+                            </Typography>
+                            {s.kind && (
+                                <Typography
+                                    variant="caption"
+                                    sx={{
+                                        flexShrink: 0,
+                                        fontSize: 10,
+                                        letterSpacing: '0.04em',
+                                        textTransform: 'uppercase',
+                                        color: 'text.disabled',
+                                    }}
+                                >
+                                    {s.kind}
+                                </Typography>
+                            )}
+                        </Box>
                     ))}
                 </Box>
             )}

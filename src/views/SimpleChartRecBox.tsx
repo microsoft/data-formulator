@@ -36,11 +36,12 @@ import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
+import StopIcon from '@mui/icons-material/Stop';
 
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { UnifiedDataUploadDialog } from './UnifiedDataUploadDialog';
+import { transition } from '../app/tokens';
 import { Theme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { shouldAutoFocusGeneratedChart } from '../app/agentInteractionPolicy';
@@ -74,13 +75,23 @@ const AgentWorkingOverlay: FC<{ message?: string; elapsed?: number; theme: Theme
                 </Typography>
             </Box>
             {onCancel && (
-                <IconButton
-                    size="small"
-                    onClick={onCancel}
-                    sx={{ position: 'absolute', bottom: 6, right: 6, p: 1.5, width: 16, height: 16, color: theme.palette.warning.main }}
-                >
-                    <StopCircleOutlinedIcon sx={{ fontSize: 14 }} />
-                </IconButton>
+                <Tooltip title={t('dataLoading.stopTooltip', { defaultValue: 'Stop' })} placement="top">
+                    <IconButton
+                        size="small"
+                        onClick={onCancel}
+                        // Filled error-circle stop affordance \u2014 same recipe
+                        // as AgentChatInput's in-flight stop button so the
+                        // cancel action reads consistently across surfaces.
+                        sx={{
+                            position: 'absolute', bottom: 8, right: 8,
+                            width: 28, height: 28, p: 0,
+                            bgcolor: 'error.main', color: 'common.white',
+                            '&:hover': { bgcolor: 'error.dark' },
+                        }}
+                    >
+                        <StopIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                </Tooltip>
             )}
             <Typography variant="caption" sx={{
                 color: 'text.disabled',
@@ -1300,19 +1311,29 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             display: 'flex', flexDirection: 'column',
             mx: 1, mb: 1, mt: 0.5,
             px: 1.25, pt: 1, pb: 0.5,
-            borderRadius: '10px',
+            borderRadius: '12px',
+            // The 2-tone border is drawn by the `::before` gradient
+            // overlay below (works through border-radius + masks). We
+            // intentionally leave the Card's own border off so the two
+            // don't fight; focus state uses a shadow halo instead of a
+            // border-color shift.
             border: 'none',
             outline: 'none',
             position: 'relative',
             overflow: isChatFormulating ? 'hidden' : 'visible',
             flexShrink: 0,
-            transition: 'box-shadow 0.25s ease, background-color 0.3s ease',
+            transition: transition.fast,
             backgroundColor: isChatFormulating
                 ? alpha(theme.palette.action.disabledBackground, 0.06)
                 : isReportMode
                     ? alpha(theme.palette.warning.main, 0.04)
                     : theme.palette.background.paper,
-            boxShadow: `0 1px 2px ${alpha(theme.palette.common.black, 0.04)}, 0 4px 12px ${alpha(theme.palette.common.black, 0.06)}`,
+            // Neutral elevation shadow recipe shared with AgentChatInput;
+            // hover lifts the card a touch without shifting any colors.
+            boxShadow: '0 1px 6px rgba(32, 33, 36, 0.10), 0 1px 2px rgba(32, 33, 36, 0.06)',
+            '&:hover': {
+                boxShadow: '0 2px 10px rgba(32, 33, 36, 0.14), 0 1px 3px rgba(32, 33, 36, 0.08)',
+            },
             ...(isLandingHighlight ? {
                 animation: 'df-chatinput-landing-pulse 2.4s ease-in-out infinite',
                 '@keyframes df-chatinput-landing-pulse': {
@@ -1326,7 +1347,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
             } : {}),
             '&:focus-within': {
                 animation: 'none',
-                boxShadow: `0 0 0 3px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.12)}, 0 4px 14px ${alpha(theme.palette.common.black, 0.08)}`,
+                boxShadow: `0 0 0 2px ${alpha(isReportMode ? theme.palette.warning.main : theme.palette.primary.main, 0.15)}, 0 2px 10px rgba(32, 33, 36, 0.14)`,
             },
             // Gradient border via pseudo-element (works with border-radius)
             '&::before': {
@@ -1597,8 +1618,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                             <span>
                                 <IconButton
                                     size="small"
-                                    color="primary"
-                                    sx={{ p: 0.5 }}
                                     disabled={!canSend}
                                     onClick={() => {
                                         if (pendingClarification) {
@@ -1607,8 +1626,26 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                             submitChat(chatPrompt);
                                         }
                                     }}
+                                    // When the user has typed text, promote
+                                    // the arrow to a contained primary
+                                    // affordance so it reads as the active
+                                    // submit action. Otherwise stay as a
+                                    // quiet outlined icon button.
+                                    sx={{
+                                        p: 0,
+                                        width: 28, height: 28,
+                                        bgcolor: canSend ? 'primary.main' : 'transparent',
+                                        color: canSend ? 'common.white' : 'primary.main',
+                                        '&:hover': {
+                                            bgcolor: canSend ? 'primary.dark' : 'transparent',
+                                        },
+                                        '&.Mui-disabled': {
+                                            bgcolor: 'transparent',
+                                            color: 'text.disabled',
+                                        },
+                                    }}
                                 >
-                                    <ArrowUpwardRoundedIcon sx={{ fontSize: 20 }} />
+                                    <ArrowUpwardRoundedIcon sx={{ fontSize: 18 }} />
                                 </IconButton>
                             </span>
                         </Tooltip>
