@@ -30,15 +30,15 @@
     "metadataStatusUnavailable": "不可用",
     "metadataStatusNotSynced": "未同步",
     "loadPlan": {
-      "title": "Agent 建议载入以下数据",
       "filters": "筛选条件",
       "rowLimit": "行数限制",
       "loadSelected": "加载选中的表",
-      "loaded": "已加载",
+      "loadedCount": "✓ 已加载 {{count}} 张表",
       "preview": "预览",
+      "hidePreview": "收起",
       "previewing": "正在预览...",
       "previewFailed": "预览失败",
-      "noFilters": "无筛选条件"
+      "fromSource": "来自"
     },
     "toolLabels": {
       "readingFile": "读取文件",

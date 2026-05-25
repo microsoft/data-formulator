@@ -15,7 +15,6 @@ import { useTranslation } from 'react-i18next';
 import { FixedSizeList, ListChildComponentProps } from 'react-window';
 import { Box, Tooltip, Typography, useTheme } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -97,6 +96,27 @@ interface RowContext {
 
 // ─── Row component (react-window v1 API) ────────────────────────────────────
 
+// ── Layout constants (Notion/outliner-style: one glyph per row) ──
+// Each row has exactly ONE leading glyph in the "item slot":
+//   - Namespace (folder-like, no semantic icon): chevron itself acts as the
+//     slot glyph; its rotation signals expanded vs collapsed.
+//   - Table leaf:  TableIcon.
+//   - Group:       DashboardOutlinedIcon (semantic — distinguishes a multi-
+//                  table dataset from a plain namespace; clickable to toggle).
+// No separate chevron-in-gutter, so adjacent folder/table rows automatically
+// share the same icon-and-label columns.
+//
+//   | depth*INDENT | slot(16) | GAP | label …
+//
+// Outer leading inset is provided by the catalog tree's wrapper (in
+// DataSourceSidebar.tsx), not by this component, so it can be tuned to align
+// with the connector header's icon column.
+const INDENT_PER_LEVEL = 12;
+const ITEM_SLOT = 16;
+const ITEM_LABEL_GAP = 4;
+/** Left padding for the row's content (slot + label). */
+const rowPadLeft = (depth: number) => depth * INDENT_PER_LEVEL;
+
 function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>) {
     const { rows, loadedMap, onToggle, onItemClick, onLoadMore, onDragStart, renderTableActions, selectedItemId } = data;
     const row = rows[index];
@@ -111,10 +131,14 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
     const isNamespace = node.node_type === 'namespace';
     const isExpandable = isNamespace || isGroup;
 
+    // Lazy / load-more rows: align the leading text with where a real row's
+    // label would sit at this depth: pl + slot + gap.
+    const placeholderPadLeft = `${rowPadLeft(depth) + ITEM_SLOT + ITEM_LABEL_GAP}px`;
+
     if (isLazyPlaceholder) {
         return (
             <div style={style}>
-                <Box sx={{ pl: `${depth * 16 + 24}px`, display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Box sx={{ pl: placeholderPadLeft, display: 'flex', alignItems: 'center', height: '100%' }}>
                     <Typography sx={{ fontSize: 11, color: 'text.disabled', fontStyle: 'italic' }}>Loading…</Typography>
                 </Box>
             </div>
@@ -124,7 +148,7 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
     if (isLoadMore) {
         return (
             <div style={style}>
-                <Box sx={{ pl: `${depth * 16 + 24}px`, display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Box sx={{ pl: placeholderPadLeft, display: 'flex', alignItems: 'center', height: '100%' }}>
                     <Typography
                         component="span"
                         sx={{ fontSize: 12, color: 'primary.main', cursor: 'pointer' }}
@@ -177,12 +201,11 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                 <Box
                     onClick={handleClick}
                     sx={{
-                        // Indent: leaves render at their parent's depth so the
-                        // leaf icon lines up under the parent namespace icon
-                        // (the reserved-but-empty chevron slot supplies the
-                        // visual padding). Expandable rows use their own depth.
-                        pl: `${(isExpandable ? depth : Math.max(0, depth - 1)) * 8 + 4}px`, pr: 0.5,
-                        display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0,
+                        // Notion/outliner-style: one leading glyph per row.
+                        // The glyph is either the chevron (namespace) or the
+                        // type icon (table/group); they share the same column.
+                        pl: `${rowPadLeft(depth)}px`, pr: 0.5,
+                        display: 'flex', alignItems: 'center', gap: `${ITEM_LABEL_GAP}px`, minWidth: 0,
                         height: '100%',
                         borderRadius: '6px',
                         cursor: 'pointer',
@@ -192,23 +215,25 @@ function CatalogRow({ index, style, data }: ListChildComponentProps<RowContext>)
                         ...(isSelected ? { backgroundColor: theme.palette.action.selected, fontWeight: 500 } : {}),
                     }}
                 >
-                    {/* Expand/collapse arrow */}
-                    {isExpandable ? (
-                        <Box sx={{ width: 16, minWidth: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'text.disabled' }}>
-                            {isExpanded
-                                ? <ExpandMoreIcon sx={{ fontSize: 16 }} />
-                                : <ChevronRightIcon sx={{ fontSize: 16 }} />}
-                        </Box>
-                    ) : (
-                        <Box sx={{ width: 16, minWidth: 16 }} />
-                    )}
-                    {/* Icon */}
-                    {isGroup
-                        ? <DashboardOutlinedIcon sx={{ fontSize: 16, color: groupLoaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                        : isTable
-                            ? <TableIcon sx={{ fontSize: 16, color: loaded ? 'success.main' : 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                            : <FolderOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0, opacity: 0.7 }} />
-                    }
+                    {/* Single leading glyph (slot) — chevron for namespaces,
+                        type icon for tables/groups. */}
+                    <Box
+                        sx={{
+                            width: ITEM_SLOT, minWidth: ITEM_SLOT, height: ITEM_SLOT,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0,
+                        }}
+                    >
+                        {isNamespace
+                            ? (isExpanded
+                                ? <ExpandMoreIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                                : <ChevronRightIcon sx={{ fontSize: 16, color: 'text.disabled' }} />)
+                            : isGroup
+                                ? <DashboardOutlinedIcon sx={{ fontSize: 16, color: groupLoaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
+                                : isTable
+                                    ? <TableIcon sx={{ fontSize: 16, color: loaded ? 'success.main' : 'text.secondary', opacity: 0.8 }} />
+                                    : null}
+                    </Box>
                     {/* Label */}
                     <Typography noWrap component="span" sx={{ flex: 1, minWidth: 0, fontSize: 13 }}>
                         {node.name}

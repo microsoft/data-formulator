@@ -266,6 +266,12 @@ def _resolve_connector_with_key(data: dict[str, Any]) -> tuple[str, "DataConnect
     except Exception as exc:
         raise AppError(ErrorCode.INVALID_REQUEST, "Identity is required") from exc
 
+    # Ensure this identity's user connectors are lazily restored from disk
+    # specs into the in-process registry. Without this, a fresh server
+    # process can fail with "Connector not found" on the first import/preview
+    # call when the frontend hasn't yet fetched the connector list.
+    load_connectors(identity)
+
     # Admin/global connector IDs are public registry keys.
     if connector_id in _ADMIN_CONNECTOR_IDS and connector_id in DATA_CONNECTORS:
         return connector_id, DATA_CONNECTORS[connector_id]
@@ -848,13 +854,18 @@ def list_connectors():
     for registry_key, connector, is_admin in _visible_connector_items(identity):
         has_stored = False
         connected = False
-        if identity:
+        auth_mode = _loader_auth_mode(connector._loader_class)
+        if auth_mode == "none":
+            # No-auth connectors (e.g. built-in example datasets) are always
+            # available — there's no credential to store and no connection
+            # to establish.
+            connected = True
+        elif identity:
             has_stored = connector.has_stored_credentials(identity)
             connected = (
                 connector._get_loader(identity) is not None
                 or has_stored
             )
-        auth_mode = _loader_auth_mode(connector._loader_class)
         sso_blocked = (
             token_store.is_sso_reconnect_blocked(connector._source_id)
             if token_store else False
@@ -1143,6 +1154,21 @@ def connector_connect():
     data = request.get_json() or {}
     source = _resolve_connector(data)
 
+    # No-auth connectors (e.g. built-in example datasets) have nothing to
+    # connect — they're always available. Return a synthetic success
+    # response so any (legacy) frontend code that still calls connect is
+    # a no-op rather than an error.
+    if _loader_auth_mode(source._loader_class) == "none":
+        loader = source._loader_class()
+        return json_ok({
+            "status": "connected",
+            "persisted": False,
+            "params": loader.get_safe_params(),
+            "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
+            "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
+            "pinned_scope": loader.pinned_scope(),
+        })
+
     try:
         mode = data.get("mode", "credentials")
         persist = data.get("persist", True)
@@ -1177,17 +1203,29 @@ def connector_connect():
         safe = loader.get_safe_params()
 
         # Best-effort: seed a lightweight catalog for agent search.
-        # Do not overwrite a richer sync-catalog-metadata snapshot.
+        # Do not overwrite a richer sync-catalog-metadata snapshot, EXCEPT
+        # for local-folder sources: filesystem scans are cheap, and the
+        # cached snapshot otherwise goes stale whenever the user adds/renames
+        # files in the connected directory — which causes agent search to
+        # miss files that are clearly visible on disk.
         try:
             from data_formulator.datalake.catalog_cache import save_catalog
             from data_formulator.datalake.workspace import get_user_home
+            from data_formulator.data_loader.local_folder_data_loader import (
+                LocalFolderDataLoader,
+            )
             identity_for_cache = source._get_identity()
             user_home = get_user_home(identity_for_cache)
             flat_tables = loader.list_tables()
             loader.ensure_table_keys(flat_tables)
+            cache_mode = (
+                "replace"
+                if isinstance(loader, LocalFolderDataLoader)
+                else "seed_if_missing"
+            )
             save_catalog(
                 user_home, source._source_id, flat_tables,
-                mode="seed_if_missing",
+                mode=cache_mode,
             )
         except Exception:
             logger.debug("Failed to save catalog cache on connect for '%s'",
@@ -1225,6 +1263,15 @@ def connector_disconnect():
     data = request.get_json() or {}
     source = _resolve_connector(data)
 
+    # No-auth connectors (e.g. built-in example datasets) cannot be
+    # disconnected — they have no credentials to clear and are intentionally
+    # always available.
+    if _loader_auth_mode(source._loader_class) == "none":
+        raise AppError(
+            ErrorCode.INVALID_REQUEST,
+            "This connector is always available and cannot be disconnected.",
+        )
+
     try:
         identity = source._get_identity()
         source._loaders.pop(identity, None)
@@ -1250,6 +1297,18 @@ def connector_get_status():
     """Check connection status (no side effects — no auto-reconnect)."""
     data = request.get_json() or {}
     source = _resolve_connector(data)
+
+    # No-auth connectors are always connected.
+    if _loader_auth_mode(source._loader_class) == "none":
+        loader = source._loader_class()
+        return json_ok({
+            "connected": True,
+            "persisted": False,
+            "params": loader.get_safe_params(),
+            "hierarchy": _hierarchy_dicts(loader.catalog_hierarchy()),
+            "effective_hierarchy": _hierarchy_dicts(loader.effective_hierarchy()),
+            "pinned_scope": loader.pinned_scope(),
+        })
 
     identity = source._get_identity()
     loader = source._get_loader(identity)
@@ -1359,19 +1418,39 @@ def connector_get_catalog_tree():
         name_filter = data.get("filter")
 
         from data_formulator.datalake.workspace import get_user_home
-        from data_formulator.datalake.catalog_cache import _load_catalog_raw
+        from data_formulator.datalake.catalog_cache import _load_catalog_raw, save_catalog
+        from data_formulator.data_loader.local_folder_data_loader import (
+            LocalFolderDataLoader,
+        )
 
         identity = source._get_identity()
         user_home = get_user_home(identity)
         raw = _load_catalog_raw(user_home, source._source_id)
 
-        if raw and raw.get("tables"):
+        # Local folders: always re-scan from disk. Filesystem listing is cheap
+        # and the on-disk snapshot otherwise goes stale (e.g. new files added
+        # after connect are invisible to agent search).
+        is_local_folder = isinstance(loader, LocalFolderDataLoader)
+
+        if raw and raw.get("tables") and not is_local_folder:
             flat_tables = _filter_catalog_tables(raw.get("tables", []), name_filter)
             flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
         else:
             flat_tables = loader.list_tables(table_filter=name_filter)
             loader.ensure_table_keys(flat_tables)
             flat_tables = _merged_catalog_tables(user_home, source._source_id, flat_tables)
+            if is_local_folder and not name_filter:
+                # Persist the fresh listing so agent search stays in sync.
+                try:
+                    save_catalog(
+                        user_home, source._source_id, flat_tables,
+                        mode="replace",
+                    )
+                except Exception:
+                    logger.debug(
+                        "Failed to refresh local-folder catalog cache for '%s'",
+                        source._source_id, exc_info=True,
+                    )
 
         tree = _catalog_tree_payload(loader, flat_tables)
 
@@ -2062,8 +2141,11 @@ def register_data_connectors(app: Flask) -> None:
     # 1. Register the global management blueprint
     app.register_blueprint(connectors_bp)
 
-    # 2. Load admin connectors
-    admin_specs = _load_admin_specs()
+    # 2. Load admin connectors from YAML/env (skipped when external connectors
+    #    are disabled — but the blueprint and built-in sample_datasets
+    #    connector below remain available so users can still load demo data).
+    disabled = bool(app.config.get('CLI_ARGS', {}).get('disable_data_connectors'))
+    admin_specs = [] if disabled else _load_admin_specs()
 
     for spec in admin_specs:
         loader_class = DATA_LOADERS.get(spec.loader_type)
@@ -2096,3 +2178,19 @@ def register_data_connectors(app: Flask) -> None:
     for key, reason in DISABLED_LOADERS.items():
         if key not in DATA_CONNECTORS:
             logger.info("Source '%s' not available: %s", key, reason)
+
+    # 3. Always register the built-in sample datasets connector. This is
+    #    the one data source that remains available even in
+    #    ``--disable_database`` mode — it has no auth, no external
+    #    dependency beyond ``requests``, and gives users a zero-config
+    #    way to explore Data Formulator.
+    sample_loader_class = DATA_LOADERS.get("sample_datasets")
+    if sample_loader_class and "sample_datasets" not in DATA_CONNECTORS:
+        DATA_CONNECTORS["sample_datasets"] = DataConnector.from_loader(
+            sample_loader_class,
+            source_id="sample_datasets",
+            display_name="Example Datasets",
+            icon="dataset",
+        )
+        _ADMIN_CONNECTOR_IDS.add("sample_datasets")
+        logger.info("Registered built-in 'sample_datasets' connector")

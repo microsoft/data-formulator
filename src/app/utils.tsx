@@ -17,8 +17,6 @@ export function getUrls() {
         APP_CONFIG: `/api/app-config`,
         AUTH_INFO_PREFIX: `/api/.auth/`,
 
-        EXAMPLE_DATASETS: `/api/example-datasets`,
-
         // these functions involves ai agents
         LIST_GLOBAL_MODELS: `/api/agent/list-global-models`,
         CHECK_AVAILABLE_MODELS: `/api/agent/check-available-models`,

@@ -39,54 +39,51 @@ You are a data assistant helping users load and prepare data for analysis in Dat
 Tools available:
 - read_file / write_file / list_directory — workspace filesystem
 - execute_python — run Python (pandas, numpy, DuckDB). All DataFrames are auto-saved to scratch/.
-- list_available_data — list connected data sources (with folder breakdown) and built-in sample datasets
-- show_user_data_preview — show interactive table preview with Load button
+- list_available_data — list connected data sources (including the built-in 'sample_datasets' source) with folder breakdown
+- show_user_data_preview — show interactive table preview with Load button (for execute_python results or extracted tables only)
 - search_data_candidates — search across all data sources for tables matching a keyword
-- read_candidate_metadata — read detailed metadata for a table from a connected source
+- read_candidate_metadata — read detailed metadata for a table from any connected source
 - propose_load_plan — propose a multi-table loading plan for user confirmation
 
 CRITICAL: You MUST call the show_user_data_preview tool to show data. Do NOT just describe data in text.
 
-Four workflows:
+Three workflows:
 
-**Workflow 1 — Sample dataset:**
-1. Call list_available_data to see what built-in datasets exist (returns exact dataset_name to use)
-2. Call show_user_data_preview(dataset_name="<exact name>") — ALL tables in the dataset are shown
-
-**Workflow 2 — Uploaded file or code processing:**
+**Workflow 1 — Uploaded file or code processing:**
 1. Inspect files with read_file/list_directory
 2. Process with execute_python (DataFrames auto-saved to scratch/)
 3. Call show_user_data_preview(saved_dfs=["df_name"])
 
-**Workflow 3 — Unstructured text or image extraction:**
+**Workflow 2 — Unstructured text or image extraction:**
 1. Extract table into CSV format
 2. Call show_user_data_preview(tables=[{{"name": "...", "data": "col1,col2\\n..."}}])
 
-**Workflow 4 — Find and load data from connected sources:**
-1. Call search_data_candidates(query="...", scope="all") to find relevant tables
+**Workflow 3 — Find and load data from connected sources (including sample datasets):**
+1. Call search_data_candidates(query="...", scope="all") to find relevant tables.
+   The 'sample_datasets' source contains built-in demo datasets and is searched like any other source.
 2. For EACH promising not-imported table, call read_candidate_metadata(source_id, table_key) to inspect columns and understand available values
 3. Based on the column metadata, decide which columns to filter on and what values to use
 4. Call propose_load_plan(candidates=[...], reasoning="...") — the UI shows a confirmation card
 5. Keep your text brief after propose_load_plan. The UI handles the rest.
 
 Workflow selection rubric (apply in order):
-- User pasted/uploaded data, attached an image, or asked to process scratch files → Workflow 2 or 3.
-- User asked for a named sample dataset or generic exploration data → Workflow 1.
+- User pasted/uploaded data, attached an image, or asked to process scratch files → Workflow 1 or 2.
 - User asked "what data do you have / what's available / which sources are connected" → call
-  list_available_data — it returns connected sources with their top-level folder breakdown and the
-  built-in sample datasets. Do NOT rely solely on the summary below; it only shows counts.
-- Otherwise, if any connected data sources are listed below AND the user is describing data they want
-  to analyze (an entity, metric, time range, region, product, etc.) → start with Workflow 4. Use
-  list_available_data first if you need to see the folder taxonomy, then try keyword variants
-  (English + the user's language, synonyms, table-name fragments, folder names) with
-  search_data_candidates before giving up.
-- Only fall back to synthetic data after Workflow 4 returned no plausible matches.
+  list_available_data — it returns all connected sources (including 'sample_datasets') with their
+  top-level folder breakdown. Do NOT rely solely on the summary below; it only shows counts.
+- Otherwise, if connected data sources are listed below AND the user is describing data they want
+  to analyze (an entity, metric, time range, region, product, demo data, etc.) → start with
+  Workflow 3. Try keyword variants (English + the user's language, synonyms, table-name fragments,
+  folder names) with search_data_candidates before giving up. The built-in 'sample_datasets' source
+  is included automatically.
+- Only fall back to synthetic data after Workflow 3 returned no plausible matches.
 
 Rules:
 - After show_user_data_preview or propose_load_plan, keep text VERY brief. The UI shows the preview automatically.
-- For sample datasets, NEVER use execute_python or write_file to recreate them.
+- show_user_data_preview is ONLY for: (a) DataFrames you actually produced with execute_python via saved_dfs=, or (b) tables you literally extracted from a user-provided image or pasted text via tables=. NEVER use show_user_data_preview(tables=...) to narrate, describe, or invent contents of a connector-sourced table. To load ANY table from a connected source (including sample_datasets), you MUST use propose_load_plan.
+- For sample datasets, NEVER use execute_python or write_file to recreate them — use Workflow 3.
 - execute_python auto-saves ALL DataFrames created in code.
-- In propose_load_plan, always pass source_id and table_key exactly from search_data_candidates/read_candidate_metadata.
+- In propose_load_plan, always pass source_id and table_key exactly from search_data_candidates/read_candidate_metadata. If propose_load_plan returns an error listing valid source_ids, re-run search_data_candidates with a better query and retry — do NOT guess IDs.
 - Do NOT set row_limit in propose_load_plan; the system applies the user's configured global limit automatically.
 
 Filter rules for propose_load_plan:
@@ -103,7 +100,6 @@ Current date and time: {current_time}
 Currently loaded workspace tables: {table_names}
 Connected data sources:
 {connector_summary}
-Sample datasets are available — call list_available_data to see them.
 
 IMPORTANT:
 - When extracting tables: clean column names, remove units from values (note in headers), flatten multi-level headers.
@@ -200,7 +196,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_available_data",
-            "description": "List everything the agent can offer to the user: connected data sources (with table/folder counts) and built-in sample datasets (with table previews and exact call syntax). Authoritative answer to 'what data do you have'. Workspace tables are already in the system prompt and are not repeated here.",
+            "description": "List all connected data sources (with table/folder counts), including the built-in 'sample_datasets' source. Authoritative answer to 'what data do you have'. Workspace tables are already in the system prompt and are not repeated here.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -213,18 +209,14 @@ TOOLS = [
         "function": {
             "name": "show_user_data_preview",
             "description": (
-                "Show interactive table preview(s) with Load button. Three modes (use exactly one):\n"
-                "1. dataset_name: load built-in sample dataset by name\n"
-                "2. saved_dfs: reference DataFrames auto-saved by execute_python (by variable name)\n"
-                "3. tables: inline CSV data for direct extraction from text/images\n"
+                "Show interactive table preview(s) with Load button. Two modes (use exactly one):\n"
+                "1. saved_dfs: reference DataFrames auto-saved by execute_python (by variable name)\n"
+                "2. tables: inline CSV data for direct extraction from text/images\n"
+                "For tables in a connected source (including sample_datasets), use propose_load_plan instead."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "dataset_name": {
-                        "type": "string",
-                        "description": "Exact dataset name from list_sample_datasets (e.g. 'Space launches'). All tables in the dataset are shown.",
-                    },
                     "saved_dfs": {
                         "type": "array",
                         "description": "DataFrame variable names from execute_python (e.g. ['df_clean', 'df_summary'])",
@@ -618,9 +610,6 @@ class DataLoadingAgent:
             return self._tool_list_directory(args, workspace_jail)
         elif name == "execute_python":
             return self._tool_execute_python(args)
-        elif name == "list_sample_datasets":
-            # Back-compat alias for list_available_data.
-            return self._tool_list_available_data()
         elif name == "show_user_data_preview":
             return self._tool_show_user_data_preview(args, scratch_jail)
         elif name == "list_available_data":
@@ -779,19 +768,17 @@ class DataLoadingAgent:
             return {"stdout": "", "error": "Code execution failed"}
 
     def _tool_show_user_data_preview(self, args, scratch_jail):
-        """Unified data preview with 3 modes."""
-        dataset_name = args.get("dataset_name")
+        """Unified data preview. To load from a connected source (including
+        the built-in 'sample_datasets'), use propose_load_plan instead."""
         saved_dfs = args.get("saved_dfs")
         tables = args.get("tables")
 
-        if dataset_name:
-            return self._preview_sample_dataset(dataset_name)
-        elif saved_dfs:
+        if saved_dfs:
             return self._preview_saved_dfs(saved_dfs, scratch_jail)
         elif tables:
             return self._preview_inline_tables(tables, scratch_jail)
         else:
-            return {"error": "Provide one of: dataset_name, saved_dfs, or tables."}
+            return {"error": "Provide one of: saved_dfs or tables. For connected-source tables (including sample_datasets), use propose_load_plan."}
 
     def _preview_saved_dfs(self, df_names, scratch_jail):
         """Preview DataFrames auto-saved by execute_python."""
@@ -888,77 +875,17 @@ class DataLoadingAgent:
 
         return {"actions": actions}
 
-    def _preview_sample_dataset(self, dataset_name):
-        """Build preview actions for a built-in sample dataset (exact match)."""
-        from data_formulator.example_datasets_config import EXAMPLE_DATASETS
-
-        matched = None
-        for ds in EXAMPLE_DATASETS:
-            if ds["name"].lower() == dataset_name.lower().strip():
-                matched = ds
-                break
-
-        if not matched:
-            available = ", ".join(ds["name"] for ds in EXAMPLE_DATASETS)
-            return {"error": f"Dataset '{dataset_name}' not found. Available: {available}. Use list_sample_datasets to see exact names."}
-
-        tables_info = []
-        for table in matched.get("tables", []):
-            sample = table.get("sample", [])
-            if isinstance(sample, list) and len(sample) > 0:
-                columns = list(sample[0].keys()) if isinstance(sample[0], dict) else []
-                tables_info.append({
-                    "table_url": table.get("url", ""),
-                    "format": table.get("format", "json"),
-                    "columns": columns,
-                    "sample_rows": sample[:5],
-                    "total_sample_rows": len(sample),
-                })
-            elif isinstance(sample, str) and sample.strip():
-                try:
-                    df = pd.read_csv(io.StringIO(sample.strip()),
-                                     sep="," if table.get("format") == "csv" else "\t")
-                    tables_info.append({
-                        "table_url": table.get("url", ""),
-                        "format": table.get("format", "csv"),
-                        "columns": list(df.columns),
-                        "sample_rows": df_to_safe_records(df.head(5)),
-                        "total_sample_rows": len(df),
-                    })
-                except Exception:
-                    tables_info.append({
-                        "table_url": table.get("url", ""),
-                        "format": table.get("format", "csv"),
-                        "columns": [],
-                        "sample_rows": [],
-                        "total_sample_rows": 0,
-                    })
-
-        actions = [{
-            "type": "load_sample_dataset",
-            "name": matched["name"],
-            "description": matched.get("description", ""),
-            "live": matched.get("live", False),
-            "refreshIntervalSeconds": matched.get("refreshIntervalSeconds"),
-            "tables": tables_info,
-        }]
-
-        return {"actions": actions}
-
     # ------------------------------------------------------------------
     # Data discovery tools
     # ------------------------------------------------------------------
 
     def _tool_list_available_data(self):
-        """Single directory of connected sources + built-in sample datasets.
-
-        Replaces the prior separate ``list_data_sources`` and
-        ``list_sample_datasets`` tools.  Workspace tables are intentionally
+        """Directory of all connected sources, including the built-in
+        'sample_datasets' source.  Workspace tables are intentionally
         omitted \u2014 they are already listed in the system prompt.
         """
         return {
             "connected_sources": self._collect_connected_sources(),
-            "sample_datasets": self._collect_sample_datasets(),
         }
 
     def _collect_connected_sources(self):
@@ -1020,6 +947,12 @@ class DataLoadingAgent:
                         "table_count": len(ftables),
                         "sample_tables": sorted(ftables)[:5],
                     })
+                # Also surface root-level (non-folder) tables. sample_datasets
+                # collapses single-table datasets to the root, and without
+                # this they'd be invisible to the model — which then
+                # mis-reports table counts as belonging to the folders.
+                if flat_tables:
+                    table_sample = sorted(flat_tables)[:20]
             else:
                 # Flat catalog: show up to 10 sample table names.
                 table_sample = sorted(flat_tables)[:10]
@@ -1028,41 +961,12 @@ class DataLoadingAgent:
                 "source_id": sid,
                 "table_count": len(tables),
                 "folder_count": len(folder_to_tables) if any_hierarchy else 0,
+                "root_table_count": len(flat_tables) if any_hierarchy else 0,
                 "folder_sample": folder_sample,
                 "table_sample": table_sample,
                 "hierarchical": any_hierarchy,
             })
         return sources
-
-    def _collect_sample_datasets(self):
-        """Return built-in sample datasets with their tables and call syntax."""
-        from data_formulator.example_datasets_config import EXAMPLE_DATASETS
-
-        datasets = []
-        for ds in EXAMPLE_DATASETS:
-            tables = []
-            for t in ds.get("tables", []):
-                url = t.get("url", "")
-                table_name = url.split("/")[-1].split(".")[0] if url else "table"
-                sample = t.get("sample", [])
-                if isinstance(sample, list) and sample:
-                    cols = list(sample[0].keys()) if isinstance(sample[0], dict) else []
-                elif isinstance(sample, str) and sample.strip():
-                    header = sample.strip().split("\n")[0]
-                    sep = "," if t.get("format") == "csv" else "\t"
-                    cols = header.split(sep)
-                else:
-                    cols = []
-                tables.append({"table_name": table_name, "columns_preview": cols[:6]})
-
-            datasets.append({
-                "dataset_name": ds["name"],
-                "description": ds.get("description", ""),
-                "tables": tables,
-                "call": f'show_user_data_preview(dataset_name="{ds["name"]}")',
-            })
-
-        return datasets
 
     def _tool_search_data_candidates(self, args):
         """Search across workspace + connector catalog for matching tables."""
@@ -1081,13 +985,37 @@ class DataLoadingAgent:
         return {"result": text}
 
     def _tool_propose_load_plan(self, args):
-        """Produce a structured load plan action for frontend rendering."""
-        candidates = [
-            self._normalize_load_plan_candidate(c)
-            for c in (args.get("candidates", []) or [])
-            if isinstance(c, dict)
-        ]
+        """Produce a structured load plan action for frontend rendering.
+
+        Candidates are validated against the cached catalog before they leave
+        this turn.  If *every* candidate fails to resolve, we return a
+        recoverable error so the model can retry with corrected IDs instead
+        of emitting a card the user can't actually use.
+        """
+        raw = [c for c in (args.get("candidates", []) or []) if isinstance(c, dict)]
+        candidates = [self._normalize_load_plan_candidate(c) for c in raw]
         reasoning = args.get("reasoning", "")
+
+        resolvable = [c for c in candidates if not c.get("resolution_error")]
+        if candidates and not resolvable:
+            # All candidates failed. Hand the model the valid IDs and ask it
+            # to retry.  Returning an "error" here keeps the assistant loop
+            # alive; the frontend never sees a broken card.
+            hint = self._format_valid_sources_hint()
+            failures = "; ".join(
+                f"{c.get('source_id')!r}/{c.get('table_key')!r}: {c.get('resolution_error')}"
+                for c in candidates
+            )
+            return {
+                "error": (
+                    "All proposed candidates failed to resolve against the catalog. "
+                    f"Errors: {failures}. "
+                    "Re-run search_data_candidates and read_candidate_metadata, then "
+                    "call propose_load_plan again with the exact source_id and "
+                    f"table_key from those tools.\n\n{hint}"
+                )
+            }
+
         actions = [{
             "type": "load_plan",
             "candidates": candidates,
@@ -1101,11 +1029,34 @@ class DataLoadingAgent:
         The model sees catalog names and stable table keys, but each loader may
         require a different opaque import id.  Superset, for example, must be
         loaded by numeric dataset_id, not by the Chinese dataset label.
+
+        If ``source_id`` is not a known cached source or ``table_key`` does
+        not match any catalog entry, a ``resolution_error`` field is set so
+        the caller can fail loudly (rather than emit a card that 500s when
+        the user clicks Load).
         """
         result = dict(candidate)
         source_id = str(result.get("source_id") or "")
         table_key = str(result.get("table_key") or "")
+
+        resolution_error = None
+        known_sources = self._known_source_ids()
+        if not source_id:
+            resolution_error = "missing source_id"
+        elif known_sources and source_id not in known_sources:
+            resolution_error = (
+                f"unknown source_id {source_id!r}; "
+                f"valid: {', '.join(sorted(known_sources)) or 'none'}"
+            )
+
         catalog_entry = self._lookup_catalog_entry(source_id, table_key)
+        if resolution_error is None and not catalog_entry:
+            if not table_key:
+                resolution_error = "missing table_key"
+            else:
+                resolution_error = (
+                    f"table_key {table_key!r} not found in source {source_id!r}"
+                )
 
         metadata = (catalog_entry or {}).get("metadata") or {}
         display_name = (
@@ -1135,8 +1086,29 @@ class DataLoadingAgent:
         result["source_table"] = str(import_id)
         result["source_table_name"] = str(source_name)
         result["filters"] = self._normalize_load_plan_filters(result.get("filters"))
+        if resolution_error:
+            result["resolution_error"] = resolution_error
         result.pop("row_limit", None)
         return result
+
+    def _known_source_ids(self):
+        """Return the set of cached source_ids the agent can legitimately use."""
+        try:
+            user_home = getattr(self.workspace, "user_home", None)
+            if not user_home:
+                return set()
+            from data_formulator.datalake.catalog_cache import list_cached_sources
+            return set(list_cached_sources(user_home) or [])
+        except Exception:
+            logger.debug("Could not list cached sources", exc_info=True)
+            return set()
+
+    def _format_valid_sources_hint(self) -> str:
+        """Compact directory of valid source_ids for the model retry path."""
+        known = self._known_source_ids()
+        if not known:
+            return "No connected sources are currently cached."
+        return "Valid source_ids: " + ", ".join(sorted(known))
 
     def _lookup_catalog_entry(self, source_id, table_key):
         if not source_id or not table_key:

@@ -100,14 +100,35 @@ const CONNECTOR_ICON_MAP: Record<string, React.FC<SvgIconProps>> = {
     local_folder: FolderOpenIconMui,
 };
 
-/** Category sort order for data source sidebar. Lower = higher in the list. */
+/** Category sort order for data source sidebar. Lower = higher in the list.
+ *  The backend exposes connector type in two shapes depending on the
+ *  endpoint:
+ *    - `/api/connectors` (sidebar): `source_type` is the loader class name
+ *      (`MySQLDataLoader`, `SampleDatasetsLoader`, ...).
+ *    - `/api/data-loaders` (upload dialog): `type` is the loader id
+ *      (`mysql`, `sample_datasets`, ...).
+ *  We index by both so a single comparator works for both call sites. */
 const CONNECTOR_CATEGORY_ORDER: Record<string, number> = {
-    local_folder: -1,                            // Local (top)
-    mysql: 0, mssql: 0, postgresql: 0,       // Relational DB
-    mongodb: 1, cosmosdb: 1,                  // Document Store
-    s3: 2, azure_blob: 2,                     // Cloud Storage
-    bigquery: 3, kusto: 3, athena: 3,         // Query Engine
-    superset: 4,                              // Dashboard
+    // Example Datasets (always top)
+    sample_datasets: -100, SampleDatasetsLoader: -100,
+    // Local
+    local_folder: -1, LocalFolderDataLoader: -1,
+    // Relational DB
+    mysql: 0, MySQLDataLoader: 0,
+    mssql: 0, MSSQLDataLoader: 0,
+    postgresql: 0, PostgreSQLDataLoader: 0,
+    // Document Store
+    mongodb: 1, MongoDBDataLoader: 1,
+    cosmosdb: 1, CosmosDBDataLoader: 1,
+    // Cloud Storage
+    s3: 2, S3DataLoader: 2,
+    azure_blob: 2, AzureBlobDataLoader: 2,
+    // Query Engine
+    bigquery: 3, BigQueryDataLoader: 3,
+    kusto: 3, KustoDataLoader: 3,
+    athena: 3, AthenaDataLoader: 3,
+    // Dashboard
+    superset: 4, SupersetLoader: 4,
 };
 
 /** Sort comparator: group by category, then alphabetical within each group. */

@@ -202,6 +202,14 @@ export interface DataFormulatorState {
     // Conversational data loading chat
     dataLoadingChatMessages: ChatMessage[];
     dataLoadingChatInProgress: boolean;
+    /**
+     * Monotonic counter bumped whenever the chat is reset externally
+     * (clearChatMessages). DataLoadingChat watches this to abort any
+     * in-flight stream and discard partial dispatches that would
+     * otherwise pollute the freshly-cleared thread.
+     * Transient — not persisted.
+     */
+    dataLoadingChatResetCounter: number;
 
     // Generated reports state
     generatedReports: GeneratedReport[];
@@ -281,6 +289,7 @@ const initialState: DataFormulatorState = {
 
     dataLoadingChatMessages: [],
     dataLoadingChatInProgress: false,
+    dataLoadingChatResetCounter: 0,
 
     generatedReports: [],
 
@@ -664,6 +673,7 @@ export const dataFormulatorSlice = createSlice({
 
             state.dataLoadingChatMessages = [];
             state.dataLoadingChatInProgress = false;
+            state.dataLoadingChatResetCounter = (state.dataLoadingChatResetCounter ?? 0) + 1;
 
             state.generatedReports = [];
 
@@ -791,6 +801,7 @@ export const dataFormulatorSlice = createSlice({
                 chartInsightInProgress: [],
                 cleanInProgress: false,
                 dataLoadingChatInProgress: false,
+                dataLoadingChatResetCounter: 0,
                 sessionLoading: false,
                 sessionLoadingLabel: '',
 
@@ -1598,7 +1609,15 @@ export const dataFormulatorSlice = createSlice({
             }
         },
         clearChatMessages: (state) => {
+            // Reset is a coherent operation: clear messages, drop the
+            // in-progress flag, and bump the reset counter so the chat
+            // surface aborts its in-flight stream and discards any
+            // pending dispatches from that stream. Doing all three in
+            // one reducer avoids interleaving with redux/react render
+            // cycles that would otherwise let stale messages slip in.
             state.dataLoadingChatMessages = [];
+            state.dataLoadingChatInProgress = false;
+            state.dataLoadingChatResetCounter = (state.dataLoadingChatResetCounter ?? 0) + 1;
         },
         confirmTableLoad: (state, action: PayloadAction<{messageId: string, tableName: string}>) => {
             const msg = state.dataLoadingChatMessages.find(m => m.id === action.payload.messageId);

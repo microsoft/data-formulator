@@ -42,7 +42,9 @@ export interface DataFrameTableProps {
      * When true, columns size to content (CSS `tableLayout: auto`,
      * `width: max-content`) instead of stretching to fill the container.
      * Use for previews inside containers that should adapt to the table's
-     * natural width rather than dictate it.
+     * natural width rather than dictate it. The table still stretches to
+     * `min-width: 100%` of its container, so a narrow table doesn't leave
+     * empty space when the container has a minimum width of its own.
      */
     autoWidth?: boolean;
 }
@@ -92,6 +94,7 @@ export const DataFrameTable: React.FC<DataFrameTableProps> = ({
                 fontSize,
                 fontFamily: CODE_FONT,
                 width: autoWidth ? 'max-content' : '100%',
+                minWidth: autoWidth ? '100%' : undefined,
                 tableLayout: autoWidth ? 'auto' : 'fixed',
                 '& th, & td': {
                     px: 0.75, py: 0.3, textAlign: 'left',

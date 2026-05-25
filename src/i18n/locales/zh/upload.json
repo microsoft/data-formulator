@@ -36,6 +36,17 @@
     "previewMode": "预览模式：编辑已禁用。点击\"显示完整\"以启用编辑。",
     "showPreview": "显示预览",
     "showFull": "显示完整",
+    "dataLoadingAgent": "数据加载助手",
+    "resumePreviousConversation": "上次对话 →",
+    "agentChatPlaceholder": "让助手查找数据集，或从图片、文本中提取数据…",
+    "agentChatTabSuggestion": "这里有哪些数据集？",
+    "agentChatSuggestionsLabel": "试试这样问",
+    "agentChatSendTooltip": "开始与助手对话",
+    "agentChatSuggestion": {
+      "askConnected": "已连接的数据源里有哪些数据集？",
+      "findCPI": "帮我加载消费者价格指数数据",
+      "findSpaceLaunches": "从公开数据源加载航天发射数据集"
+    },
     "uploadData": "上传数据",
     "importData": "导入数据",
     "dataConnections": "数据连接",

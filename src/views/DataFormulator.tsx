@@ -90,6 +90,7 @@ export const DataFormulatorFC = ({ }) => {
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const identityKey = useSelector((state: DataFormulatorState) => `${state.identity.type}:${state.identity.id}`);
+    const dataLoadingChatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const theme = useTheme();
 
     const dispatch = useDispatch<AppDispatch>();
@@ -300,17 +301,21 @@ export const DataFormulatorFC = ({ }) => {
     // State for unified data upload dialog
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [uploadDialogInitialTab, setUploadDialogInitialTab] = useState<UploadTabType>('menu');
+    const [uploadDialogInitialChatPrompt, setUploadDialogInitialChatPrompt] = useState<string | undefined>(undefined);
+    const [uploadDialogInitialChatImages, setUploadDialogInitialChatImages] = useState<string[] | undefined>(undefined);
 
     // Loading state for sessions (from Redux, shared with App.tsx)
     const sessionLoading = useSelector((state: DataFormulatorState) => state.sessionLoading);
     const sessionLoadingLabel = useSelector((state: DataFormulatorState) => state.sessionLoadingLabel);
 
-    const openUploadDialog = (tab: UploadTabType) => {
+    const openUploadDialog = (tab: UploadTabType, initialChatPrompt?: string, initialChatImages?: string[]) => {
         // If no workspace is active, generate an ID (backend creates folder lazily on first data op)
         if (!activeWorkspace) {
             dispatch(dfActions.setActiveWorkspace({ id: generateSessionId(), displayName: 'Untitled Session' }));
         }
         setUploadDialogInitialTab(tab);
+        setUploadDialogInitialChatPrompt(initialChatPrompt);
+        setUploadDialogInitialChatImages(initialChatImages);
         setUploadDialogOpen(true);
     };
 
@@ -710,8 +715,10 @@ export const DataFormulatorFC = ({ }) => {
                             openUploadDialog(`connector:${conn.id}` as UploadTabType);
                         }
                     }}
+                    onStartChat={(prompt, images) => openUploadDialog('extract', prompt, images)}
+                    hasPriorConversation={dataLoadingChatMessages.length > 0}
+                    onResumeChat={() => openUploadDialog('extract')}
                     serverConfig={serverConfig}
-                    variant="page"
                     connectors={pageConnectors}
                 />
             </Box>
@@ -909,8 +916,18 @@ export const DataFormulatorFC = ({ }) => {
                 )}
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
-                    onClose={() => { setUploadDialogOpen(false); refreshPageConnectors(); }}
+                    onClose={() => {
+                        setUploadDialogOpen(false);
+                        // Clear one-shot seed values so the next dialog
+                        // open (e.g. via the upload button) doesn't
+                        // re-fire the agent with a stale prompt/image.
+                        setUploadDialogInitialChatPrompt(undefined);
+                        setUploadDialogInitialChatImages(undefined);
+                        refreshPageConnectors();
+                    }}
                     initialTab={uploadDialogInitialTab}
+                    initialChatPrompt={uploadDialogInitialChatPrompt}
+                    initialChatImages={uploadDialogInitialChatImages}
                     onConnectorsChanged={handleConnectorsChanged}
                 />
                 {/* Loading overlay for session loading */}

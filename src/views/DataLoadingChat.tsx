@@ -8,13 +8,11 @@ import Markdown from 'react-markdown';
 import {
     Box, Button, Chip, CircularProgress, IconButton,
     Paper, Stack, Tooltip, Typography,
-    alpha, useTheme, Collapse, InputBase,
+    alpha, useTheme, Collapse,
 } from '@mui/material';
-import SendIcon from '@mui/icons-material/Send';
-import StopIcon from '@mui/icons-material/Stop';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import CloseIcon from '@mui/icons-material/Close';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CheckIcon from '@mui/icons-material/Check';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import LanguageIcon from '@mui/icons-material/Language';
@@ -22,25 +20,22 @@ import ImageIcon from '@mui/icons-material/Image';
 import TextFieldsIcon from '@mui/icons-material/TextFields';
 import DatasetIcon from '@mui/icons-material/Dataset';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import AddIcon from '@mui/icons-material/Add';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors } from '../app/dfSlice';
-import type { ModelConfig } from '../app/dfSlice';
 import { borderColor, transition, radius, shadow } from '../app/tokens';
 import exampleImageTable from '../assets/example-image-table.png';
 import { getUrls, fetchWithIdentity } from '../app/utils';
 import { apiRequest, streamRequest } from '../app/apiClient';
 import { ChatMessage, ChatAttachment, InlineTablePreview, CodeExecution, PendingTableLoad, LoadPlan, LoadPlanCandidate } from '../components/ComponentType';
 import { createTableFromText } from '../data/utils';
-import { createTableFromFromObjectArray } from '../data/utils';
 import { loadTable } from '../app/tableThunks';
-import { TableIcon } from '../icons';
-import { DataFrameTable } from './DataFrameTable';
 import { LoadPlanCard } from '../components/LoadPlanCard';
+import { TablePreviewRow, TablePreviewData } from '../components/TablePreviewRow';
+import { AgentChatInput } from './AgentChatInput';
 
 // ---------------------------------------------------------------------------
 // Helper: generate table name
@@ -186,85 +181,72 @@ const InlineTablePreviewView: React.FC<{
     const { t } = useTranslation();
     const [expanded, setExpanded] = useState(true);
 
-    const allCols = preview.columns;
-
     const rowLabel = preview.totalRows > preview.sampleRows.length
         ? `${preview.totalRows.toLocaleString()} ${t('dataLoading.rows')}`
         : '';
-    const meta = [rowLabel, `${allCols.length} ${t('dataLoading.cols')}`].filter(Boolean).join(' · ');
+    const meta = [rowLabel, `${preview.columns.length} ${t('dataLoading.cols')}`].filter(Boolean).join(' · ');
 
-    // Pill colors
-    const pillBg = confirmed
-        ? alpha(theme.palette.success.main, 0.08)
-        : alpha(theme.palette.primary.main, 0.07);
-    const pillColor = confirmed
-        ? theme.palette.success.main
-        : theme.palette.text.primary;
+    const isDark = theme.palette.mode === 'dark';
+    const borderColorBase = confirmed
+        ? alpha(theme.palette.success.main, 0.3)
+        : alpha(theme.palette.primary.main, isDark ? 0.25 : 0.15);
+    const borderColorHover = confirmed
+        ? alpha(theme.palette.success.main, 0.45)
+        : alpha(theme.palette.primary.main, isDark ? 0.4 : 0.3);
+    const shadowBase = isDark
+        ? '0 1px 2px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.2)'
+        : '0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03)';
+    const shadowHover = isDark
+        ? '0 2px 4px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3)'
+        : '0 2px 4px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.04)';
 
     return (
-        <Box sx={{ my: 0.75 }}>
-            {/* Pill row: pill + Load button inline */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-                {/* Soft pill — click to expand/collapse */}
-                <Box
-                    onClick={() => setExpanded(!expanded)}
-                    sx={{
-                        display: 'inline-flex', alignItems: 'center', gap: 0.6,
-                        px: 1.25, py: 0.4,
-                        borderRadius: '99px',
-                        bgcolor: pillBg,
-                        cursor: 'pointer',
-                        transition: transition.fast,
-                        '&:hover': { bgcolor: confirmed
-                            ? alpha(theme.palette.success.main, 0.14)
-                            : alpha(theme.palette.primary.main, 0.12),
-                        },
-                        userSelect: 'none',
-                    }}
-                >
-                    {confirmed
-                        ? <CheckCircleIcon sx={{ fontSize: 13, color: 'success.main' }} />
-                        : <TableIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                    }
-                    <Typography sx={{ fontSize: 12, fontWeight: 600, color: pillColor, lineHeight: 1 }}>
-                        {preview.name}
-                    </Typography>
-                    {meta && (
-                        <Typography sx={{ fontSize: 10, color: 'text.disabled', lineHeight: 1 }}>
-                            {meta}
+        <Box sx={{
+            my: 0.75,
+            p: 1,
+            border: `1px solid ${borderColorBase}`,
+            borderRadius: 1.5,
+            boxShadow: shadowBase,
+            transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
+            '&:hover': {
+                borderColor: borderColorHover,
+                boxShadow: shadowHover,
+            },
+        }}>
+            <TablePreviewRow
+                name={preview.name}
+                meta={meta}
+                leading={confirmed ? <CheckIcon sx={{ fontSize: 16, color: 'success.main', mx: 0.25 }} /> : undefined}
+                preview={{
+                    state: 'ready',
+                    columns: preview.columns,
+                    rows: preview.sampleRows,
+                    totalRows: preview.totalRows,
+                }}
+                expanded={expanded}
+                onTogglePreview={preview.sampleRows.length > 0 ? () => setExpanded(!expanded) : undefined}
+            />
+            {/* Footer: matches LoadPlanCard — right-aligned contained
+                Load button (unconfirmed) or quiet "Loaded" caption. */}
+            {(onLoad || confirmed) && (
+                <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center' }}>
+                    <Box sx={{ flex: 1 }} />
+                    {confirmed ? (
+                        <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 500 }}>
+                            {t('dataLoading.loadPlan.loadedCount', { count: 1, defaultValue: '✓ Loaded' })}
                         </Typography>
-                    )}
-                    {preview.sampleRows.length > 0 && (
-                        expanded
-                            ? <ExpandLessIcon sx={{ fontSize: 14, color: 'text.disabled', ml: -0.25 }} />
-                            : <ExpandMoreIcon sx={{ fontSize: 14, color: 'text.disabled', ml: -0.25 }} />
-                    )}
+                    ) : onLoad ? (
+                        <Button size="small" variant="contained" onClick={onLoad}
+                            sx={{
+                                textTransform: 'none', fontSize: 12,
+                                py: 0.5, px: 2, minHeight: 0,
+                                borderRadius: 1.5, boxShadow: 'none',
+                            }}>
+                            {t('dataLoading.loadTable')}
+                        </Button>
+                    ) : null}
                 </Box>
-
-                {/* Load button next to pill */}
-                {onLoad && !confirmed && (
-                    <Button size="small" variant="text" onClick={onLoad}
-                        sx={{ textTransform: 'none', fontSize: 11, py: 0, px: 1, minHeight: 0, color: 'primary.main' }}>
-                        {t('dataLoading.load')}
-                    </Button>
-                )}
-            </Box>
-
-            {/* Collapsible table rows */}
-            <Collapse in={expanded}>
-                {preview.sampleRows.length > 0 && (
-                    <Box sx={{ mt: 0.75, mb: 0.5 }}>
-                        <DataFrameTable
-                            columns={allCols}
-                            rows={preview.sampleRows}
-                            totalRows={preview.totalRows}
-                            maxRows={5}
-                            maxColumns={6}
-                            maxCellLength={18}
-                        />
-                    </Box>
-                )}
-            </Collapse>
+            )}
         </Box>
     );
 };
@@ -344,33 +326,7 @@ const ChatBubble: React.FC<{
     const handleLoadTable = async (pending: PendingTableLoad) => {
         const unique = getUniqueTableName(pending.name, existingNames);
         try {
-            if (pending.sampleDataset) {
-                const ds = pending.sampleDataset;
-                for (const tableInfo of ds.tables) {
-                    const res = await fetch(tableInfo.tableUrl);
-                    const textData = await res.text();
-                    const tableName = tableInfo.tableUrl.split('/').pop()?.split('.')[0]?.split('?')[0] || unique;
-                    let dictTable;
-                    if (tableInfo.format === 'csv' || tableInfo.format === 'tsv') {
-                        dictTable = createTableFromText(tableName, textData);
-                    } else {
-                        dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
-                    }
-                    if (dictTable) {
-                        if (ds.live) {
-                            dictTable.source = {
-                                type: 'stream', url: tableInfo.tableUrl,
-                                autoRefresh: true, refreshIntervalSeconds: ds.refreshIntervalSeconds || 60,
-                                lastRefreshed: Date.now(),
-                            };
-                        } else {
-                            dictTable.source = { type: 'example', url: tableInfo.tableUrl };
-                        }
-                        await dispatch(loadTable({ table: dictTable }));
-                    }
-                }
-                dispatch(dfActions.confirmTableLoad({ messageId: message.id, tableName: pending.name }));
-            } else if (pending.csvScratchPath) {
+            if (pending.csvScratchPath) {
                 const scratchUrl = `${getUrls().SCRATCH_BASE_URL}/${pending.csvScratchPath.replace(/^scratch\//, '')}`;
                 const res = await fetchWithIdentity(scratchUrl);
                 if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
@@ -440,12 +396,16 @@ const ChatBubble: React.FC<{
                 {message.pendingLoads?.map((pending, i) => (
                     <InlineTablePreviewView key={i} preview={pending.preview}
                         confirmed={pending.confirmed}
-                        onLoad={(message.pendingLoads && message.pendingLoads.length > 1) ? (() => handleLoadTable(pending)) : undefined} />
+                        onLoad={pending.confirmed ? undefined : () => handleLoadTable(pending)} />
                 ))}
 
-                {/* Prominent load button at bottom — always shown when there are unloaded tables */}
-                {message.pendingLoads && message.pendingLoads.some(p => !p.confirmed) && (
-                    <Box sx={{ mt: 1 }}>
+                {/* Unified "Load all" — only when there are multiple
+                    pending loads. Single-table uses the in-wrapper footer
+                    for visual parity with LoadPlanCard. */}
+                {message.pendingLoads && message.pendingLoads.length > 1
+                    && message.pendingLoads.some(p => !p.confirmed) && (
+                    <Box sx={{ mt: 1, display: 'flex' }}>
+                        <Box sx={{ flex: 1 }} />
                         <Button size="small" variant="contained"
                             onClick={async () => {
                                 for (const pending of message.pendingLoads || []) {
@@ -453,14 +413,21 @@ const ChatBubble: React.FC<{
                                 }
                             }}
                             sx={{ textTransform: 'none', fontSize: 12, py: 0.5, px: 2, minHeight: 0, borderRadius: 1.5, boxShadow: 'none' }}>
-                            {message.pendingLoads.length === 1
-                                ? t('dataLoading.loadTable')
-                                : t('dataLoading.loadAllTables', { count: message.pendingLoads.filter(p => !p.confirmed).length })}
+                            {t('dataLoading.loadAllTables', { count: message.pendingLoads.filter(p => !p.confirmed).length })}
                         </Button>
                     </Box>
                 )}
 
-                {/* Load plan card — Agent-proposed multi-table import */}
+                {/* Load plan card — Agent-proposed multi-table import.
+                    The plan's reasoning is rendered *above* the card as
+                    plain assistant text so it reads as a continuation of
+                    the agent's voice rather than a callout inside the
+                    card's visual container. */}
+                {message.loadPlan?.reasoning && (
+                    <Box sx={{ mt: message.content ? 0.5 : 0 }}>
+                        <MarkdownContent content={message.loadPlan.reasoning} />
+                    </Box>
+                )}
                 {message.loadPlan && (
                     <LoadPlanCard
                         plan={message.loadPlan}
@@ -551,11 +518,12 @@ const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> =
     const theme = useTheme();
     return (
         <Box sx={{ mb: 2 }}>
-            {content ? <MarkdownContent content={content} /> : null}
-
-            {/* Tool call steps */}
+            {/* Tool call steps are rendered FIRST. Tool calls always
+                happen before the agent's final text, so showing them
+                above the text matches actual temporal order and avoids
+                a confusing "text first, then checkmarks below" layout. */}
             {toolSteps.length > 0 && (
-                <Box sx={{ mt: content ? 0.75 : 0, mb: 0.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Box sx={{ mb: content ? 0.75 : 0.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                     {toolSteps.map((step, i) => (
                         <Box key={i} sx={{
                             display: 'inline-flex', alignItems: 'center', gap: 0.75,
@@ -587,6 +555,8 @@ const StreamingIndicator: React.FC<{ content: string; toolSteps: ToolStep[] }> =
                     ))}
                 </Box>
             )}
+
+            {content ? <MarkdownContent content={content} /> : null}
 
             {/* Bouncing dots when no tool is running and no text yet */}
             {toolSteps.every(s => s.status === 'done') && (
@@ -680,13 +650,45 @@ const SampleTaskItem: React.FC<{
 // Main chat component
 // ---------------------------------------------------------------------------
 
-export const DataLoadingChat: React.FC = () => {
+export interface DataLoadingChatProps {
+    /**
+     * Optional initial text to pre-fill the chat input when the component
+     * mounts (or when the value changes). Used by external entry points
+     * (e.g. landing page quick-chat box) that want to hand off a prompt
+     * to the agent.
+     */
+    initialPrompt?: string;
+    /**
+     * Optional images (data URLs) to seed alongside `initialPrompt` —
+     * used when an external surface (e.g. landing-page agent box) has
+     * already collected pasted/attached images and is handing them off.
+     */
+    initialImages?: string[];
+    /**
+     * If true, automatically send the `initialPrompt` once on mount/change.
+     * Otherwise the prompt is only pre-filled and the user presses Enter.
+     */
+    autoSendInitialPrompt?: boolean;
+}
+
+export const DataLoadingChat: React.FC<DataLoadingChatProps> = ({
+    initialPrompt,
+    initialImages,
+    autoSendInitialPrompt,
+}) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const dispatch = useDispatch<AppDispatch>();
 
     const chatMessages = useSelector((state: DataFormulatorState) => state.dataLoadingChatMessages);
     const chatInProgress = useSelector((state: DataFormulatorState) => state.dataLoadingChatInProgress);
+    // External reset signal — bumped by `clearChatMessages` (manual reset
+    // button, new menu-level query, full session reset). When it changes
+    // we abort any in-flight stream, drop partial UI state, and re-seed
+    // from props if the parent provided a new prompt/images. Without
+    // this, an in-flight stream's eventual dispatches would leak into
+    // the freshly-cleared thread.
+    const chatResetCounter = useSelector((state: DataFormulatorState) => state.dataLoadingChatResetCounter ?? 0);
     const existingTables = useSelector((state: DataFormulatorState) => state.tables);
     const activeModel = useSelector(dfSelectors.getActiveModel);
     const frontendRowLimit = useSelector((state: DataFormulatorState) => state.config?.frontendRowLimit ?? 2_000_000);
@@ -699,8 +701,13 @@ export const DataLoadingChat: React.FC = () => {
     const [debugEvents, setDebugEvents] = useState<any[]>([]);
     const [showDebugPanel] = useState(false);
     const abortControllerRef = useRef<AbortController | null>(null);
+    // Monotonic session token. Bumped on every external reset; the
+    // currently-running `sendMessage` captures the value at the time
+    // it started and discards any state/dispatch updates if the token
+    // has moved on (i.e. the user reset / restarted the chat mid-stream).
+    const sessionRef = useRef(0);
+    const lastResetRef = useRef(chatResetCounter);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
 
     // Auto-scroll to bottom
@@ -711,46 +718,52 @@ export const DataLoadingChat: React.FC = () => {
     // Auto-focus input
     useEffect(() => { inputRef.current?.focus(); }, []);
 
-    const canSend = (prompt.trim().length > 0 || userImages.length > 0) && !chatInProgress;
-
-    // ---- Paste handler (images + text) ----
-    const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-        if (e.clipboardData?.files?.length) {
-            const imageFiles = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
-            if (imageFiles.length > 0) {
-                e.preventDefault();
-                imageFiles.forEach(file => {
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        if (reader.result) setUserImages(prev => [...prev, reader.result as string]);
-                    };
-                    reader.readAsDataURL(file);
-                });
-            }
+    // ---- External initial prompt handling -------------------------------
+    // Pre-fill the input (and optionally auto-send) when `initialPrompt`
+    // is provided. Used by external surfaces (e.g. landing-page quick chat
+    // box) to hand off text to the agent. Auto-send only fires for a
+    // fresh conversation — we never auto-resend on remount mid-chat.
+    const hasExistingMessages = chatMessages.length > 0;
+    const [pendingAutoSend, setPendingAutoSend] = useState(false);
+    useEffect(() => {
+        // Detect external reset: abort, invalidate in-flight session,
+        // and clear all local UI state before re-seeding. Including
+        // `chatResetCounter` in the dep list also guarantees that an
+        // identical-prompt re-submission (same `initialPrompt` string)
+        // still triggers a fresh auto-send — otherwise the deps would
+        // be unchanged and the effect would skip.
+        const isReset = chatResetCounter !== lastResetRef.current;
+        if (isReset) {
+            lastResetRef.current = chatResetCounter;
+            sessionRef.current += 1;
+            abortControllerRef.current?.abort();
+            abortControllerRef.current = null;
+            setStreamingContent('');
+            setStreamingToolSteps([]);
+            setPrompt('');
+            setUserImages([]);
+            setPendingAutoSend(false);
         }
-    };
 
-    // ---- File upload handler ----
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        if (file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = () => {
-                if (reader.result) setUserImages(prev => [...prev, reader.result as string]);
-            };
-            reader.readAsDataURL(file);
-        } else {
-            const formData = new FormData();
-            formData.append('file', file);
-            apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
-                method: 'POST', body: formData,
-            }).then(() => {
-                setPrompt(prev => prev + (prev ? '\n' : '') + t('dataLoading.uploaded', { name: file.name }));
-            }).catch(err => console.error('Upload failed:', err));
+        const hasText = !!initialPrompt && initialPrompt.trim().length > 0;
+        const hasImages = !!initialImages && initialImages.length > 0;
+        if (hasText) setPrompt(initialPrompt!);
+        if (hasImages) {
+            // Always replace, never append. The prop is a "seed" — each
+            // change represents a fresh handoff from the parent, not an
+            // additive update. Appending caused the same image to stack
+            // up every time the parent re-rendered with a new array ref.
+            setUserImages([...initialImages!]);
         }
-        if (fileInputRef.current) fileInputRef.current.value = '';
-    };
+        // Auto-send when this is a fresh conversation. A reset always
+        // produces a fresh conversation, so allow auto-send post-reset
+        // even though `hasExistingMessages` may not have re-rendered to
+        // `false` yet in this tick.
+        if (autoSendInitialPrompt && (hasText || hasImages) && (isReset || !hasExistingMessages)) {
+            setPendingAutoSend(true);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialPrompt, initialImages, autoSendInitialPrompt, chatResetCounter]);
 
     const stopGeneration = () => { abortControllerRef.current?.abort(); };
 
@@ -769,6 +782,13 @@ export const DataLoadingChat: React.FC = () => {
             attachments: attachments.length > 0 ? attachments : undefined,
             timestamp: Date.now(),
         };
+
+        // Capture the session token at send-time so that, if the user
+        // resets the chat mid-stream, post-await dispatches below can
+        // detect they are stale and bail without polluting the fresh
+        // (now-cleared) thread.
+        const mySession = sessionRef.current;
+        const isCurrent = () => mySession === sessionRef.current;
 
         dispatch(dfActions.addChatMessage(userMsg));
         dispatch(dfActions.setDataLoadingChatInProgress(true));
@@ -812,28 +832,6 @@ export const DataLoadingChat: React.FC = () => {
                             csvScratchPath: action.csv_scratch_path || '',
                             preview, confirmed: false,
                         });
-                    } else if (action.type === 'load_sample_dataset') {
-                        const dsLive = action.live;
-                        const dsRefresh = action.refreshIntervalSeconds;
-                        for (const tbl of (action.tables || [])) {
-                            const tableName = tbl.table_url?.split('/').pop()?.split('.')[0]?.split('?')[0] || action.name || 'table';
-                            const cols = tbl.columns || (tbl.sample_rows?.[0] ? Object.keys(tbl.sample_rows[0]) : []);
-                            const sampleRows = tbl.sample_rows || [];
-                            const preview: InlineTablePreview = {
-                                name: tableName, columns: cols,
-                                sampleRows: sampleRows.slice(0, 5),
-                                totalRows: sampleRows.length,
-                            };
-                            tables.push(preview);
-                            pendingLoads.push({
-                                name: tableName, csvScratchPath: '', preview, confirmed: false,
-                                sampleDataset: {
-                                    datasetName: action.name || tableName,
-                                    tables: [{ tableUrl: tbl.table_url, format: tbl.format || 'json' }],
-                                    live: dsLive, refreshIntervalSeconds: dsRefresh,
-                                },
-                            });
-                        }
                     } else if (action.type === 'load_plan') {
                         loadPlanRef = {
                             candidates: (action.candidates || []).map((c: any) => ({
@@ -845,7 +843,8 @@ export const DataLoadingChat: React.FC = () => {
                                 filters: c.filters,
                                 sortBy: c.sort_by,
                                 sortOrder: c.sort_order,
-                                selected: true,
+                                resolutionError: c.resolution_error,
+                                selected: !c.resolution_error,
                             })),
                             reasoning: action.reasoning,
                         };
@@ -863,6 +862,10 @@ export const DataLoadingChat: React.FC = () => {
                     row_limit: frontendRowLimit,
                 }),
             }, controller.signal)) {
+                // If a reset has happened while we were awaiting, drop
+                // all further events on the floor. We avoid `break` so
+                // the underlying iterator gets a chance to clean up.
+                if (!isCurrent()) continue;
                 // Log all events for debug panel
                 if (event.type !== 'text_delta') {
                     rawEvents.push(event);
@@ -921,6 +924,10 @@ export const DataLoadingChat: React.FC = () => {
                 }
             }
 
+            // Stream finished. If a reset happened in the meantime, don't
+            // commit a final assistant message into the new thread.
+            if (!isCurrent()) return;
+
             const assistantMsg: ChatMessage = {
                 id: `msg-${Date.now()}-assistant`, role: 'assistant',
                 content: fullText,
@@ -934,6 +941,11 @@ export const DataLoadingChat: React.FC = () => {
             setStreamingContent('');
             setStreamingToolSteps([]);
             } catch (error: any) {
+                // A reset (which calls controller.abort()) will trigger
+                // AbortError here. Discard everything in that case — the
+                // user wants a fresh thread, not the dying gasps of the
+                // previous one.
+                if (!isCurrent()) return;
                 const partialContent = streamingContent;
                 if (error.name === 'AbortError') {
                     if (partialContent) {
@@ -955,18 +967,28 @@ export const DataLoadingChat: React.FC = () => {
                 setStreamingContent('');
                 setStreamingToolSteps([]);
             } finally {
-                dispatch(dfActions.setDataLoadingChatInProgress(false));
-                abortControllerRef.current = null;
+                // Only clear the in-progress flag if we still own the
+                // session. The reset reducer already cleared it; a stale
+                // dispatch here would flip it back to false after a
+                // legitimate new stream had set it true.
+                if (isCurrent()) {
+                    dispatch(dfActions.setDataLoadingChatInProgress(false));
+                }
+                if (abortControllerRef.current === controller) {
+                    abortControllerRef.current = null;
+                }
             }
         })();
     }, [prompt, userImages, chatInProgress, chatMessages, activeModel, existingTables, dispatch, streamingContent, t]);
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            if (canSend) sendMessage();
-        }
-    };
+    // Auto-send the initial prompt once it has been applied to state.
+    useEffect(() => {
+        if (!pendingAutoSend) return;
+        if (chatInProgress) return;
+        if (prompt.trim().length === 0 && userImages.length === 0) return;
+        setPendingAutoSend(false);
+        sendMessage();
+    }, [pendingAutoSend, prompt, userImages, chatInProgress, sendMessage]);
 
     const sampleTasks = [
         {
@@ -1083,96 +1105,30 @@ export const DataLoadingChat: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'center', px: 2, pb: 1.5, pt: 0.75 }}>
               <Box sx={{ width: '100%', maxWidth: 640 }}>
                 <Box sx={{
-                    border: `1px solid ${borderColor.divider}`,
-                    borderRadius: '12px',
-                    bgcolor: theme.palette.background.paper,
-                    transition: transition.fast,
-                    '&:focus-within': {
-                        borderColor: theme.palette.primary.main,
-                        boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.15)}`,
-                    },
                     display: 'flex', flexDirection: 'column',
                     overflow: 'hidden',
                 }}>
-                    {/* Image previews inside the input box */}
-                    {userImages.length > 0 && (
-                        <Box sx={{ display: 'flex', gap: 0.75, p: 1, pb: 0, flexWrap: 'wrap' }}>
-                            {userImages.map((img, i) => (
-                                <Box key={i} sx={{ position: 'relative', flexShrink: 0 }}>
-                                    <Box component="img" src={img}
-                                        sx={{
-                                            width: 56, height: 56, objectFit: 'cover',
-                                            borderRadius: 1, border: `1px solid ${borderColor.component}`,
-                                        }} />
-                                    <IconButton size="small"
-                                        onClick={() => setUserImages(prev => prev.filter((_, idx) => idx !== i))}
-                                        sx={{
-                                            position: 'absolute', top: -4, right: -4,
-                                            width: 18, height: 18,
-                                            bgcolor: 'rgba(0,0,0,0.55)', color: 'white',
-                                            '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' },
-                                        }}>
-                                        <CloseIcon sx={{ fontSize: 12 }} />
-                                    </IconButton>
-                                </Box>
-                            ))}
-                        </Box>
-                    )}
-
-                    {/* Text input row */}
-                    <Box sx={{ display: 'flex', alignItems: 'flex-end', px: 1, py: 0.5 }}>
-                        <input type="file" ref={fileInputRef} style={{ display: 'none' }}
-                            accept="image/*,.csv,.json,.xlsx,.xls,.txt,.tsv"
-                            onChange={handleFileUpload} />
-                        <Tooltip title={t('dataLoading.attachTooltip')} placement="top">
-                            <IconButton size="small" onClick={() => fileInputRef.current?.click()}
-                                disabled={chatInProgress}
-                                sx={{ mb: 0.25, color: 'text.secondary' }}>
-                                <AddIcon sx={{ fontSize: 20 }} />
-                            </IconButton>
-                        </Tooltip>
-
-                        <InputBase
-                            inputRef={inputRef}
-                            multiline
-                            maxRows={8}
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            onPaste={handlePaste}
-                            placeholder={t('dataLoading.placeholder')}
-                            disabled={chatInProgress}
-                            sx={{ flex: 1, px: 1, py: 0.75, fontSize: 13, lineHeight: 1.5 }}
-                        />
-
-                        {chatInProgress ? (
-                            <Tooltip title={t('dataLoading.stopTooltip')} placement="top">
-                                <IconButton size="small" onClick={stopGeneration}
-                                    sx={{
-                                        mb: 0.25, bgcolor: 'error.main', color: 'white',
-                                        width: 28, height: 28,
-                                        '&:hover': { bgcolor: 'error.dark' },
-                                    }}>
-                                    <StopIcon sx={{ fontSize: 16 }} />
-                                </IconButton>
-                            </Tooltip>
-                        ) : (
-                            <Tooltip title={t('dataLoading.sendTooltip')} placement="top">
-                                <span>
-                                    <IconButton size="small" onClick={sendMessage} disabled={!canSend}
-                                        sx={{
-                                            mb: 0.25, width: 28, height: 28,
-                                            bgcolor: canSend ? 'primary.main' : 'transparent',
-                                            color: canSend ? 'white' : 'text.disabled',
-                                            '&:hover': { bgcolor: canSend ? 'primary.dark' : 'transparent' },
-                                            '&.Mui-disabled': { bgcolor: 'transparent', color: 'text.disabled' },
-                                        }}>
-                                        <SendIcon sx={{ fontSize: 16 }} />
-                                    </IconButton>
-                                </span>
-                            </Tooltip>
-                        )}
-                    </Box>
+                    <AgentChatInput
+                        value={prompt}
+                        onChange={setPrompt}
+                        images={userImages}
+                        onImagesChange={setUserImages}
+                        onSend={sendMessage}
+                        onStop={stopGeneration}
+                        inProgress={chatInProgress}
+                        placeholder={t('dataLoading.placeholder')}
+                        autoFocus
+                        inputRef={inputRef}
+                        onNonImageFile={(file) => {
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            apiRequest(getUrls().SCRATCH_UPLOAD_URL, {
+                                method: 'POST', body: formData,
+                            }).then(() => {
+                                setPrompt(prev => prev + (prev ? '\n' : '') + t('dataLoading.uploaded', { name: file.name }));
+                            }).catch(err => console.error('Upload failed:', err));
+                        }}
+                    />
                 </Box>
 
                 <Typography sx={{ fontSize: 10, color: 'text.disabled', textAlign: 'center', mt: 0.5 }}>

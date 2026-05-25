@@ -32,7 +32,7 @@ import { normalizeClarifyEvent, formatClarificationResponses } from '../app/clar
 
 import { alpha } from '@mui/material/styles';
 import { WritingPencil } from '../components/FunComponents';
-import SendIcon from '@mui/icons-material/Send';
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
@@ -1608,7 +1608,7 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                                         }
                                     }}
                                 >
-                                    <SendIcon sx={{ fontSize: 18 }} />
+                                    <ArrowUpwardRoundedIcon sx={{ fontSize: 20 }} />
                                 </IconButton>
                             </span>
                         </Tooltip>
@@ -1638,7 +1638,6 @@ export const SimpleChartRecBox: FC<{ onInputFocus?: () => void }> = function ({ 
                 open={uploadDialogOpen}
                 onClose={() => setUploadDialogOpen(false)}
                 initialTab="menu"
-                hideSampleDatasets
             />
         </Box>
     );

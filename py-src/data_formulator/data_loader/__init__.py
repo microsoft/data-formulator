@@ -49,6 +49,7 @@ _LOADER_SPECS: list[tuple[str, str, str, str]] = [
     ("athena",     "data_formulator.data_loader.athena_data_loader",     "AthenaDataLoader",     "boto3"),
     ("superset",   "data_formulator.data_loader.superset_data_loader",   "SupersetLoader",       "requests"),
     ("local_folder", "data_formulator.data_loader.local_folder_data_loader", "LocalFolderDataLoader", "pyarrow"),
+    ("sample_datasets", "data_formulator.data_loader.sample_datasets_loader", "SampleDatasetsLoader", "requests"),
 ]
 
 # ---------------------------------------------------------------------------

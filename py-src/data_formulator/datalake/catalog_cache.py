@@ -126,15 +126,33 @@ def delete_catalog(workspace_root: Path | str, source_id: str) -> None:
 
 
 def list_cached_sources(workspace_root: Path | str) -> list[str]:
-    """Return source IDs (sanitised stems) that have a cached catalog.
+    """Return the original source IDs that have a cached catalog.
 
-    The returned strings are filename-safe stems, usable as keys for
-    ``load_catalog`` / ``delete_catalog``.
+    Each cache file stores the original (un-sanitised) ``source_id`` so that
+    ``mysql:mysql`` round-trips correctly even though its filename stem is
+    ``mysql--mysql``. We prefer that stored value here; consumers (agent
+    context, ``load_catalog``, ``delete_catalog``) all accept the original
+    id and re-apply ``safe_source_id`` internally when touching the disk.
+
+    Falls back to the filename stem if a cache file is missing or corrupt.
     """
     cache_dir = _cache_dir(workspace_root)
     if not cache_dir.exists():
         return []
-    return [p.stem for p in cache_dir.glob("*.json")]
+    sources: list[str] = []
+    for path in cache_dir.glob("*.json"):
+        original: str | None = None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            if isinstance(raw, dict):
+                value = raw.get("source_id")
+                if isinstance(value, str) and value:
+                    original = value
+        except Exception:
+            logger.debug("Failed to read source_id from %s", path, exc_info=True)
+        sources.append(original or path.stem)
+    return sources
 
 
 def _search_python(

@@ -36,6 +36,17 @@
     "previewMode": "Preview mode: Editing disabled. Click \"Show Full\" to enable editing.",
     "showPreview": "Show Preview",
     "showFull": "Show Full",
+    "dataLoadingAgent": "Data Loading Agent",
+    "resumePreviousConversation": "Previous conversation →",
+    "agentChatPlaceholder": "Ask the agent to find datasets, or extract data from an image or text…",
+    "agentChatTabSuggestion": "What datasets do we have here?",
+    "agentChatSuggestionsLabel": "Try asking",
+    "agentChatSendTooltip": "Start chatting with the agent",
+    "agentChatSuggestion": {
+      "askConnected": "What datasets do we have from connected sources?",
+      "findCPI": "Help me load consumer price index data",
+      "findSpaceLaunches": "Load space launch datasets from a few public sources"
+    },
     "uploadData": "Upload Data",
     "importData": "Import data",
     "dataConnections": "Data connections",

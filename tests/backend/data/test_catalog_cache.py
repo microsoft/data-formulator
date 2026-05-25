@@ -157,6 +157,26 @@ class TestListCachedSources:
     def test_returns_empty_for_missing_dir(self, tmp_path: Path) -> None:
         assert list_cached_sources(tmp_path / "nonexistent") == []
 
+    def test_returns_canonical_id_with_colon(self, tmp_path: Path) -> None:
+        # ``mysql:mysql`` is sanitised to ``mysql--mysql.json`` on disk, but
+        # callers (agents, frontend) need the canonical id back so that
+        # ``connector_id`` lookups against the in-memory registry succeed.
+        # Regression: previously this returned the filename stem.
+        save_catalog(tmp_path, "mysql:mysql", [])
+        save_catalog(tmp_path, "postgresql:prod-db", [])
+        assert set(list_cached_sources(tmp_path)) == {
+            "mysql:mysql",
+            "postgresql:prod-db",
+        }
+
+    def test_falls_back_to_stem_when_source_id_missing(self, tmp_path: Path) -> None:
+        # Corrupted / legacy files without a ``source_id`` field still surface
+        # something usable rather than silently dropping the source.
+        cache_dir = tmp_path / "catalog_cache"
+        cache_dir.mkdir()
+        (cache_dir / "legacy_stem.json").write_text("{}", encoding="utf-8")
+        assert list_cached_sources(tmp_path) == ["legacy_stem"]
+
 
 # ==================================================================
 # Tests: search_catalog_cache

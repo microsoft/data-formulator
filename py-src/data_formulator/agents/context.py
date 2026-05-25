@@ -26,6 +26,61 @@ TABLE_SAMPLE_MAX_ROWS = 5
 TABLE_SAMPLE_CHAR_LIMIT = 1000
 
 
+def _ensure_no_auth_catalogs_cached(user_home: Any) -> None:
+    """Populate the disk catalog cache for any admin connector that has no
+    required auth parameters and isn't cached yet.
+
+    Used to surface zero-config admin connectors (notably the built-in
+    ``sample_datasets`` connector) to the agent's search/read tools on
+    first use, without requiring an explicit "Connect" step in the UI.
+    Silent on failure — auth-gated connectors will simply remain
+    un-synced until the user provides credentials through the normal
+    flow.
+    """
+    if not user_home:
+        return
+    try:
+        from pathlib import Path
+        from data_formulator.data_connector import (
+            DATA_CONNECTORS,
+            _ADMIN_CONNECTOR_IDS,
+        )
+        from data_formulator.datalake.catalog_cache import save_catalog
+
+        cache_dir = Path(user_home) / "catalog_cache"
+        for source_id in list(_ADMIN_CONNECTOR_IDS):
+            cache_path = cache_dir / f"{source_id}.json"
+            if cache_path.exists():
+                continue
+            connector = DATA_CONNECTORS.get(source_id)
+            if not connector:
+                continue
+            loader_class = connector._loader_class
+            try:
+                params = loader_class.list_params()
+            except Exception:
+                continue
+            # Only auto-sync if no params are required (true no-auth case)
+            if any(p.get("required") for p in params):
+                continue
+            try:
+                loader = loader_class(connector._default_params or {})
+                if not loader.test_connection():
+                    continue
+                tables = loader.sync_catalog_metadata()
+                save_catalog(Path(user_home), source_id, tables)
+                logger.info(
+                    "Auto-synced catalog for '%s' (%d tables)",
+                    source_id, len(tables),
+                )
+            except Exception:
+                logger.debug(
+                    "Auto-sync failed for '%s'", source_id, exc_info=True,
+                )
+    except Exception:
+        logger.debug("Catalog auto-sync setup failed", exc_info=True)
+
+
 def _get_workspace_metadata_lookups(workspace: Any) -> tuple[dict[str, str], dict[str, dict[str, str]], dict[str, str]]:
     """Return table descriptions, column descriptions, and import options from workspace metadata."""
     table_descs: dict[str, str] = {}
@@ -94,11 +149,7 @@ def build_focused_thread_context(focused_thread: list[dict[str, Any]]) -> str:
 def build_peripheral_thread_context(other_threads: list[dict[str, Any]]) -> str:
     """Build Tier 3: minimal peripheral thread context.
 
-    One line per step. Each step string carries the user's instruction, the
-    rendered chart type/encodings, and — when available — the agent's own
-    per-step finding (``" — finding: ..."``). That per-step commentary is what
-    lets the model recognise a similar question has already been answered and
-    avoid producing a near-duplicate chart in a new thread.
+    One line per step, just display_instruction + chart type.
     """
     lines = ["[OTHER THREADS]"]
     for thread in other_threads:
@@ -308,6 +359,9 @@ def handle_search_data_tables(
     if not query or not query.strip():
         return "Please provide a search keyword."
 
+    # Surface zero-config admin connectors (e.g. sample_datasets) on first use.
+    _ensure_no_auth_catalogs_cached(user_home)
+
     results: list[dict[str, Any]] = []
 
     # ── Layer 1: workspace metadata search ───────────────────────────
@@ -355,9 +409,22 @@ def handle_search_data_tables(
             logger.debug("Catalog cache search failed", exc_info=True)
 
     if not results:
-        return f"No tables found matching '{query}'."
+        try:
+            from data_formulator.datalake.catalog_cache import list_cached_sources
+            known = sorted(list_cached_sources(user_home) or []) if user_home else []
+        except Exception:
+            known = []
+        hint = (
+            f"\n\nValid source_ids you can search: {', '.join(known)}"
+            if known else ""
+        )
+        return f"No tables found matching '{query}'.{hint}"
 
-    lines = [f"Search results for '{query}' ({len(results)} matches):\n"]
+    lines = [
+        f"Search results for '{query}' ({len(results)} matches):",
+        "Each [connected] result below is ready to pass to propose_load_plan — use source_id and table_key VERBATIM.",
+        "",
+    ]
     for i, r in enumerate(results, 1):
         line = f"{i}. [{r['source']}] {r['name']}"
         if r["description"]:
@@ -365,9 +432,22 @@ def handle_search_data_tables(
         if r["matched_columns"]:
             line += f"  (matched columns: {', '.join(r['matched_columns'][:5])})"
         line += f"  [{r['status']}]"
-        if r.get("source_id") and r.get("table_key"):
-            line += f"  {{source_id: {r['source_id']}, table_key: {r['table_key']}}}"
         lines.append(line)
+        if r.get("source_id") and r.get("table_key"):
+            # Place IDs on their own line so they survive truncation and are
+            # unambiguous when the model copies them verbatim.
+            lines.append(f"   source_id: {r['source_id']}")
+            lines.append(f"   table_key: {r['table_key']}")
+
+    # Footer: full list of valid source_ids so the model never has to guess.
+    try:
+        from data_formulator.datalake.catalog_cache import list_cached_sources
+        known = sorted(list_cached_sources(user_home) or []) if user_home else []
+    except Exception:
+        known = []
+    if known:
+        lines.append("")
+        lines.append(f"All connected source_ids: {', '.join(known)}")
 
     text = "\n".join(lines)
     return text[:3000] + "\n..." if len(text) > 3000 else text
@@ -392,6 +472,9 @@ def handle_read_catalog_metadata(
     user_home = getattr(workspace, "user_home", None) if workspace else None
     if not user_home:
         return "Cannot read catalog metadata: user home not available."
+
+    # Surface zero-config admin connectors (e.g. sample_datasets) on first use.
+    _ensure_no_auth_catalogs_cached(user_home)
 
     from pathlib import Path
     from data_formulator.datalake.catalog_cache import load_catalog

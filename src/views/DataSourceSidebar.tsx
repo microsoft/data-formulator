@@ -19,6 +19,7 @@ import {
     Tooltip,
     Collapse,
     CircularProgress,
+    Fade,
     Popover,
     Button,
     Dialog,
@@ -50,7 +51,6 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import ExploreOutlinedIcon from '@mui/icons-material/ExploreOutlined';
 import ContentPasteOutlinedIcon from '@mui/icons-material/ContentPasteOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
@@ -919,11 +919,16 @@ const DataSourceSidebarPanel: React.FC<{
         });
     }, [fetchCatalogTree]);
 
-    // Auto-expand the first connected connector on panel open so the sidebar
-    // isn't an all-collapsed list. Tracked per identity/refresh so a user
-    // collapse stays collapsed across re-renders within the same panel mount.
-    // The panel re-mounts when the sidebar is reopened, which naturally
-    // re-triggers this effect.
+    // Auto-expand only when there's a single connected connector — for a
+    // fresh user that's just the built-in sample_datasets, so the sidebar
+    // isn't an empty-looking collapsed list. Once the user has added their
+    // own connectors, we leave everything collapsed; expansion then happens
+    // only via explicit user click or a focus handoff (e.g. from the upload
+    // dialog / front page).
+    //
+    // Tracked per identity/refresh so a user collapse stays collapsed across
+    // re-renders within the same panel mount. The panel re-mounts when the
+    // sidebar is reopened, which naturally re-triggers this effect.
     //
     // Suppressed when an explicit focus request is pending — otherwise that
     // focus would compete with an unrelated expansion.
@@ -935,12 +940,13 @@ const DataSourceSidebarPanel: React.FC<{
         const key = `${identityKey}:${connectorRefreshKey}`;
         if (autoExpandedRef.current === key) return;
         if (focusedConnectorId) return;
-        const first = sortedConnectors.find(c => c.connected);
-        if (!first) return;
+        const connected = sortedConnectors.filter(c => c.connected);
+        if (connected.length !== 1) return;
+        const only = connected[0];
         autoExpandedRef.current = key;
-        setExpandedConnectorId(prev => prev ?? first.id);
-        if (!catalogCacheRef.current[first.id]) {
-            fetchCatalogTree(first.id);
+        setExpandedConnectorId(prev => prev ?? only.id);
+        if (!catalogCacheRef.current[only.id]) {
+            fetchCatalogTree(only.id);
         }
     }, [sortedConnectors, identityKey, connectorRefreshKey, fetchCatalogTree, focusedConnectorId]);
 
@@ -982,6 +988,29 @@ const DataSourceSidebarPanel: React.FC<{
         const ref = buildSourceTableRef(node);
         const nodeMeta = node.metadata || {};
 
+        // Fast path: when the catalog node already carries an embedded
+        // preview (columns + sample_rows in metadata, as the sample-datasets
+        // connector emits via list_tables), skip the network round-trip and
+        // render the popover instantly. The real data is only fetched when
+        // the user clicks "Load Table". rowCount is intentionally left
+        // null — for embedded previews we don't know the true total without
+        // downloading the URL, and the preview UI handles that gracefully.
+        const embeddedSampleRows = Array.isArray(nodeMeta.sample_rows) ? nodeMeta.sample_rows : null;
+        const embeddedColumns = Array.isArray(nodeMeta.columns) ? nodeMeta.columns : null;
+        if (embeddedSampleRows && embeddedSampleRows.length > 0 && embeddedColumns && embeddedColumns.length > 0) {
+            setPreview({
+                connectorId,
+                node,
+                columns: embeddedColumns as any,
+                sampleRows: embeddedSampleRows,
+                rowCount: nodeMeta.row_count ?? null,
+                tableDescription: nodeMeta.source_description || nodeMeta.description,
+                loading: false,
+            });
+            setPreviewAnchor(anchorEl);
+            return;
+        }
+
         setPreview({
             connectorId,
             node,
@@ -1007,11 +1036,22 @@ const DataSourceSidebarPanel: React.FC<{
                     setPreview(prev => {
                         if (!prev) return null;
                         const newCols = (data.columns as typeof prev.columns);
+                        const sampleLen = (data.rows || []).length;
+                        // Only treat `total_row_count` as authoritative when
+                        // it's strictly greater than the returned sample, or
+                        // when the sample is short of the preview cap (10) —
+                        // both indicate the loader actually knows the total
+                        // rather than falling back to `len(rows)`. Otherwise
+                        // keep whatever the catalog metadata already gave us.
+                        const total = data.total_row_count;
+                        const totalReliable =
+                            total != null &&
+                            (total > sampleLen || sampleLen < 10);
                         return {
                             ...prev,
                             columns: newCols.length > 0 ? newCols : prev.columns,
                             sampleRows: data.rows || [],
-                            rowCount: data.total_row_count ?? prev.rowCount,
+                            rowCount: totalReliable ? total : prev.rowCount,
                             tableDescription: data.description ?? prev.tableDescription,
                             loading: false,
                         };
@@ -1267,7 +1307,6 @@ const DataSourceSidebarPanel: React.FC<{
                 </Box>
                 <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', py: 0.5 }}>
                     {[
-                        { icon: <ExploreOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.sampleDatasets', { defaultValue: 'Sample datasets' }), tab: 'explore' },
                         { icon: <UploadFileIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.uploadFile', { defaultValue: 'Upload file' }), tab: 'upload' },
                         { icon: <ContentPasteOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.pasteData', { defaultValue: 'Paste data' }), tab: 'paste' },
                         { icon: <SmartToyOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, label: t('upload.extractData', { defaultValue: 'Data Assistant' }), tab: 'extract' },
@@ -1443,10 +1482,23 @@ const DataSourceSidebarPanel: React.FC<{
 
                     return (
                         <Box key={connector.id}>
-                            {/* Source header */}
+                            {/* Source header — uses the same chevron-in-gutter
+                                layout primitives as the catalog tree below, so
+                                the whole sidebar reads as one continuous tree.
+                                Layout (matches VirtualizedCatalogTree):
+                                  LEADING_PAD(6) | chevron(12) | GAP(4) | icon …
+                                The catalog wrapper below then offsets its tree
+                                by exactly one INDENT_PER_LEVEL (12px), so the
+                                first catalog row's chevron sits one step right
+                                of the connector header's chevron. */}
                             <Box
                                 onClick={() => {
-                                    if (connector.connected) {
+                                    // No-auth connectors (auth_mode = 'none')
+                                    // are always available — clicking the
+                                    // header just toggles expansion, never
+                                    // opens a credentials dialog.
+                                    const isAlwaysOn = connector.auth_mode === 'none';
+                                    if (connector.connected || isAlwaysOn) {
                                         toggleSource(connector.id);
                                     } else {
                                         // Not connected — open config dialog for this connector
@@ -1454,10 +1506,12 @@ const DataSourceSidebarPanel: React.FC<{
                                     }
                                 }}
                                 sx={{
+                                    position: 'relative',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 0.75,
-                                    px: 1.5,
+                                    gap: 0.5,
+                                    pl: '22px',  // LEADING_PAD(6) + CHEVRON_WIDTH(12) + CHEVRON_GAP(4)
+                                    pr: 0.5,
                                     py: 0.75,
                                     cursor: 'pointer',
                                     '&:hover': { bgcolor: 'action.hover' },
@@ -1465,18 +1519,39 @@ const DataSourceSidebarPanel: React.FC<{
                                     userSelect: 'none',
                                 }}
                             >
-                                {connector.connected
-                                    ? (isExpanded
-                                        ? <ExpandMoreIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                                        : <ChevronRightIcon sx={{ fontSize: 14, color: 'text.disabled' }} />)
-                                    : <ChevronRightIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                                }
+                                <Box
+                                    sx={{
+                                        position: 'absolute',
+                                        left: '6px',  // LEADING_PAD
+                                        top: 0, bottom: 0,
+                                        width: 12, minWidth: 12,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        color: 'text.disabled',
+                                        pointerEvents: 'none',
+                                    }}
+                                >
+                                    {(connector.connected || connector.auth_mode === 'none') && isExpanded
+                                        ? <ExpandMoreIcon sx={{ fontSize: 14 }} />
+                                        : <ChevronRightIcon sx={{ fontSize: 14 }} />}
+                                </Box>
                                 {getConnectorIcon(connector.icon || connector.source_type, { sx: { fontSize: 16, opacity: 0.7 } })}
-                                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: connector.connected ? 'success.main' : 'warning.main', flexShrink: 0 }} />
-                                <Typography noWrap sx={{ fontSize: 12, flex: 1, fontWeight: 500, color: connector.connected ? 'text.primary' : 'text.secondary' }}>
+                                {/* Status dot — green for live connections
+                                    and for always-on built-ins (which are
+                                    ready by definition), warning for
+                                    disconnected. */}
+                                <Box sx={{
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: '50%',
+                                    flexShrink: 0,
+                                    bgcolor: (connector.connected || connector.auth_mode === 'none')
+                                        ? 'success.main'
+                                        : 'warning.main',
+                                }} />
+                                <Typography noWrap sx={{ fontSize: 12, flex: 1, fontWeight: 500, color: (connector.connected || connector.auth_mode === 'none') ? 'text.primary' : 'text.secondary' }}>
                                     {connector.display_name}
                                 </Typography>
-                                {connector.connected && (
+                                {(connector.connected || connector.auth_mode === 'none') && (
                                     <Tooltip title={t('sidebar.refreshCatalog', { defaultValue: 'Refresh' })}>
                                         <IconButton
                                             size="small"
@@ -1505,7 +1580,10 @@ const DataSourceSidebarPanel: React.FC<{
                                 {/* Edit connection — available for both user and admin
                                     connectors. Admin connectors can't be deleted, but
                                     the user still needs a way to (re)enter credentials
-                                    or trigger a fresh login after disconnecting. */}
+                                    or trigger a fresh login after disconnecting.
+                                    No-auth connectors have no credentials to configure,
+                                    so we skip this entirely. */}
+                                {connector.auth_mode !== 'none' && (
                                 <Tooltip title={t('sidebar.configureConnector', { defaultValue: 'Edit connection' })}>
                                     <IconButton
                                         size="small"
@@ -1519,6 +1597,7 @@ const DataSourceSidebarPanel: React.FC<{
                                         <SettingsOutlinedIcon sx={{ fontSize: 14 }} />
                                     </IconButton>
                                 </Tooltip>
+                                )}
                                 {connector.deletable ? (
                                     <Tooltip title={t('sidebar.deleteConnector', { defaultValue: 'Delete connector' })}>
                                         <IconButton
@@ -1533,11 +1612,12 @@ const DataSourceSidebarPanel: React.FC<{
                                             <DeleteOutlineIcon sx={{ fontSize: 14 }} />
                                         </IconButton>
                                     </Tooltip>
-                                ) : connector.connected && (
+                                ) : connector.connected && connector.auth_mode !== 'none' && (
                                     /* Admin connector: surface Disconnect in place of Delete.
                                        Only meaningful when there's an active session/credentials
                                        to clear; if already disconnected, "Edit connection" is
-                                       the path to re-authenticate. */
+                                       the path to re-authenticate.
+                                       No-auth connectors have nothing to disconnect. */
                                     <Tooltip title={t('sidebar.disconnectConnector', { defaultValue: 'Disconnect connector' })}>
                                         <IconButton
                                             size="small"
@@ -1555,15 +1635,20 @@ const DataSourceSidebarPanel: React.FC<{
                             </Box>
 
                             {/* Catalog tree — only for connected sources.
-                                Wrapper pl is intentionally one indent step (8px)
-                                deeper than the connector header's `px: 1.5`,
-                                so the first-level namespace icon sits one
-                                step right of the database icon — same step as
-                                namespace → leaf. Keeps the icon column visually
-                                uniform between connector → namespace → leaf. */}
+                                Aligned at the chevron column (the row's
+                                primary structural column). The connector's
+                                type icon (folder / cylinder / etc.) is treated
+                                as part of the connector's name decoration, not
+                                a separate structural column — so depth-0 rows
+                                sit directly under the connector's chevron.
+
+                                  connector chevron col @ x = 6
+                                  catalog depth 0 slot  @ x = 6  (same column)
+                                  catalog depth 1 slot  @ x = 18 (+12)
+                                  catalog depth 2 slot  @ x = 30 (+12) */}
                             {connector.connected && (
                             <Collapse in={isExpanded} timeout={100}>
-                                <Box sx={{ pl: 2, pr: 0.5, pb: 1 }}>
+                                <Box sx={{ pl: '6px', pr: 0.5, pb: 1 }}>
                                     {!displayCache && isLoading && (
                                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
                                             <CircularProgress size={16} />
@@ -1897,19 +1982,24 @@ const DataSourceSidebarPanel: React.FC<{
                 onClose={closePreview}
                 anchorOrigin={{ vertical: 'center', horizontal: 'right' }}
                 transformOrigin={{ vertical: 'center', horizontal: 'left' }}
+                // Use Fade instead of the default Grow transition. Grow
+                // scales the paper from 75% → 100%, which reads as a
+                // "small → large" pop even when the paper layout is
+                // pixel-stable. Fade only crossfades opacity, so the
+                // popover appears at its final size in one shot.
+                slots={{ transition: Fade }}
                 slotProps={{
+                    transition: { timeout: 120 } as any,
                     paper: {
                         sx: {
-                            // Size to the table's natural width (DataFrameTable
-                            // is rendered with autoWidth in the connector
-                            // preview), bounded so very narrow tables still
-                            // give the header room and very wide tables
-                            // don't dominate the viewport. Users can still
-                            // resize the popover larger via the resize handle.
-                            width: 'auto',
-                            minWidth: 480,
-                            maxWidth: 'min(1100px, 75vw)',
-                            minHeight: 300,
+                            // Fixed width so the popover doesn't grow when
+                            // the table renders; height is content-driven
+                            // because the preview is capped at 10 rows and
+                            // therefore intrinsically stable. The table area
+                            // itself reserves space for ~10 rows during
+                            // loading (see ConnectorTablePreview) so the
+                            // popover opens at its final height.
+                            width: 'min(640px, 70vw)',
                             maxHeight: '85vh',
                             display: 'flex', flexDirection: 'column', overflow: 'hidden',
                             resize: 'both',

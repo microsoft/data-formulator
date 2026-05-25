@@ -30,15 +30,16 @@
     "metadataStatusUnavailable": "Unavailable",
     "metadataStatusNotSynced": "Not synced",
     "loadPlan": {
-      "title": "Agent recommends loading",
       "filters": "Filters",
       "rowLimit": "Row limit",
       "loadSelected": "Load selected",
-      "loaded": "Loaded",
+      "loadedCount": "✓ Loaded {{count}} table",
+      "loadedCount_plural": "✓ Loaded {{count}} tables",
       "preview": "Preview",
+      "hidePreview": "Hide",
       "previewing": "Previewing...",
       "previewFailed": "Preview failed",
-      "noFilters": "No filters"
+      "fromSource": "from"
     },
     "toolLabels": {
       "readingFile": "Reading file",

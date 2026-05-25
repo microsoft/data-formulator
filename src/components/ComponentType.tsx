@@ -155,16 +155,6 @@ export interface PendingTableLoad {
     csvScratchPath: string;
     preview: InlineTablePreview;
     confirmed: boolean;
-    // For sample dataset loading
-    sampleDataset?: {
-        datasetName: string;
-        tables: Array<{
-            tableUrl: string;
-            format: string;
-        }>;
-        live?: boolean;
-        refreshIntervalSeconds?: number;
-    };
 }
 
 export interface LoadPlanCandidate {
@@ -177,6 +167,8 @@ export interface LoadPlanCandidate {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     selected?: boolean;
+    /** Backend-detected reason this candidate cannot be loaded (unknown source_id, missing table_key, etc.). */
+    resolutionError?: string;
 }
 
 export interface LoadPlan {
