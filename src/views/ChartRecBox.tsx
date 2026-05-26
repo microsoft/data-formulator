@@ -708,8 +708,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     (state: DataFormulatorState) => state.dataLoaderConnectParams,
   );
 
-  const [mode] = useState<"interactive">("interactive");
-
   const focusNextChartRef = useRef<boolean>(true);
 
   // Color map for different modes - easy to customize!
@@ -740,16 +738,8 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
       isQcIdea?: boolean;
     }[]
   >([]);
+  const [, setAgentIdeas] = useState<any[]>([]);
 
-  const [agentIdeas, setAgentIdeas] = useState<
-    {
-      breadth_questions: string[];
-      depth_questions: string[];
-      goal: string;
-      difficulty: "easy" | "medium" | "hard";
-      focus: "breadth" | "depth";
-    }[]
-  >([]);
   const [thinkingBuffer, setThinkingBuffer] = useState<string>("");
 
   let thinkingBufferEffect = (
@@ -1068,11 +1058,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
   };
 
   useEffect(() => {
-    if (mode === "agent") {
-      setAgentIdeas([]);
-    } else {
-      setIdeas([]);
-    }
+    setIdeas([]);
   }, [tableId]);
 
   useEffect(() => {
@@ -1095,11 +1081,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
     } else if (event.key === "Enter" && prompt.trim() !== "") {
       event.preventDefault();
       focusNextChartRef.current = true;
-      if (mode === "agent") {
-        exploreDataFromNLWithStartingQuestion(prompt.trim());
-      } else {
-        deriveDataFromNL(prompt.trim());
-      }
+      deriveDataFromNL(prompt.trim());
     }
   };
 
@@ -2151,13 +2133,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                         }}
                         onClick={() => {
                           focusNextChartRef.current = true;
-                          if (mode === "agent") {
-                            exploreDataFromNLWithStartingQuestion(
-                              prompt.trim(),
-                            );
-                          } else {
-                            deriveDataFromNL(prompt.trim());
-                          }
+                          deriveDataFromNL(prompt.trim());
                         }}
                       >
                         {isFormulating ? (
@@ -2173,10 +2149,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                               sx={{ color: modeColor }}
                             />
                           </Box>
-                        ) : mode === "agent" ? (
-                          <MovingIcon
-                            sx={{ transform: "rotate(90deg)", fontSize: 24 }}
-                          />
                         ) : (
                           <PrecisionManufacturing sx={{ fontSize: 24 }} />
                         )}
@@ -2187,11 +2159,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
               },
             }}
             value={prompt}
-            label={
-              mode === "agent"
-                ? "Where should the agent go?"
-                : "What do you want to explore?"
-            }
+            label={"What do you want to explore?"}
             placeholder={`${getQuestion()}`}
             fullWidth
             multiline
@@ -2231,7 +2199,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                         backgroundColor: alpha(modeColor, 0.08),
                       },
                     }}
-                    onClick={() => getIdeasFromAgent(mode)}
+                    onClick={() => getIdeasFromAgent("interactive")}
                   >
                     {isLoadingIdeas ? (
                       <Box
@@ -2272,7 +2240,7 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
           }
         </Box>
         {/* Ideas Chips Section */}
-        {mode === "interactive" && (ideas.length > 0 || thinkingBuffer) && (
+        {(ideas.length > 0 || thinkingBuffer) && (
           <Box>
             {ideas.length > 0 && (
               <Box
@@ -2308,73 +2276,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({
                   }}
                   disabled={isFormulating}
                   customChartTypes={idea.isQcIdea ? QC_CHART_TYPES : undefined}
-                  sx={{
-                    width: "46%",
-                  }}
-                />
-              ))}
-              {isLoadingIdeas && thinkingBuffer && thinkingBufferEffect}
-            </Box>
-          </Box>
-        )}
-        {mode === "agent" && (agentIdeas.length > 0 || thinkingBuffer) && (
-          <Box>
-            {agentIdeas.length > 0 && (
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  marginBottom: 1,
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontSize: 12,
-                    color: "text.secondary",
-                    ".MuiSvgIcon-root": {
-                      cursor: "help",
-                      transform: "rotate(90deg)",
-                      verticalAlign: "middle",
-                      fontSize: 12,
-                    },
-                  }}
-                >
-                  directions{" "}
-                  <Tooltip title="deep dive">
-                    <MovingIcon />
-                  </Tooltip>{" "}
-                  <Tooltip title="branch">
-                    <CallSplitIcon />
-                  </Tooltip>
-                </Typography>
-              </Box>
-            )}
-            <Box
-              sx={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 0.5,
-                marginBottom: 1,
-              }}
-            >
-              {agentIdeas.map((idea, index) => (
-                <AgentIdeaChip
-                  mini
-                  key={index}
-                  idea={idea}
-                  theme={theme}
-                  onClick={() => {
-                    focusNextChartRef.current = true;
-                    exploreDataFromNL(idea.depth_questions);
-                    idea.breadth_questions.forEach((question, index) => {
-                      setTimeout(() => {
-                        setPrompt(question);
-                        deriveDataFromNL(question, "idea");
-                      }, (index + 1) * 1000); // 1000ms delay between each call
-                    });
-                  }}
-                  disabled={isFormulating}
                   sx={{
                     width: "46%",
                   }}
